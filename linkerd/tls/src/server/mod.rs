@@ -23,7 +23,7 @@ use tracing::{debug, trace, warn};
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientId(pub id::Name);
 
-/// Indicates a serverside connection's TLS status.
+/// Indicates a server-side connection's TLS status.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ServerTls {
     Established {

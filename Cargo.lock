@@ -2096,18 +2096,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.29"
+version = "1.0.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "602eca064b2d83369e2b2f34b09c70b605402801927c65c11071ac911d299b88"
+checksum = "854babe52e4df1653706b98fcfc05843010039b406875930a70e4d9644e5c417"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.29"
+version = "1.0.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bad553cc2c78e8de258400763a647e80e6d1b31ee237275d756f6836d204494c"
+checksum = "aa32fd3f627f367fe16f893e2597ae3c05020f8bba2666a4e6ea73d377e5714b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2274,14 +2274,15 @@ dependencies = [
 
 [[package]]
 name = "tower"
-version = "0.4.8"
+version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f60422bc7fefa2f3ec70359b8ff1caff59d785877eb70595904605bcc412470f"
+checksum = "d15a6b60cdff0cb039d81d3b37f8bc3d7e53dca09069aae3ef2502ca4834fe30"
 dependencies = [
  "futures-core",
  "futures-util",
  "indexmap",
  "pin-project",
+ "pin-project-lite",
  "rand",
  "slab",
  "tokio",
@@ -2406,9 +2407,9 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-proto"
-version = "0.21.0-alpha.3"
+version = "0.21.0-alpha.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c92f7753caf275df6cff04b2ecbade15d62dbe38edf57e764180ba011d077ce"
+checksum = "d2e43c627e8301d45629cdfaf63e2e0c57305a07e9f1ea48208fd262ba2d87eb"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -2431,9 +2432,9 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-resolver"
-version = "0.21.0-alpha.3"
+version = "0.21.0-alpha.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "717ae0b892f6e9f251ee878f7d3625f145d53c5df2fd67f751e85dc00b5cc4f6"
+checksum = "3aec2bf8a00c7dc8afbf61e7e7fc1f419c58af67d29c5857eb93fe089a1fe089"
 dependencies = [
  "cfg-if",
  "futures-util",

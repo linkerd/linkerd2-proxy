@@ -168,6 +168,7 @@ impl From<ServerId> for id::Name {
 
 impl Deref for ServerId {
     type Target = id::Name;
+
     fn deref(&self) -> &id::Name {
         &self.0
     }

@@ -14,7 +14,7 @@
 // ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use std::{convert::TryFrom, fmt, ops::Deref};
+use std::{fmt, ops::Deref};
 use thiserror::Error;
 
 /// A DNS Name suitable for use in the TLS Server Name Indication (SNI)
@@ -40,13 +40,9 @@ pub struct Name(String);
 /// are specified in [RFC 5280 Section 7.2], except that underscores are also
 /// allowed.
 ///
-/// `Eq`, `PartialEq`, etc. are not implemented because name comparison
-/// frequently should be done case-insensitively and/or with other caveats that
-/// depend on the specific circumstances in which the comparison is done.
-///
 /// [RFC 5280 Section 7.2]: https://tools.ietf.org/html/rfc5280#section-7.2
-#[derive(Clone, Copy, Debug)]
-pub struct NameRef<'a>(&'a [u8]);
+#[derive(Clone, Copy, Debug, Eq, Hash)]
+pub struct NameRef<'a>(&'a str);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Error)]
 #[error("invalid DNS name")]
@@ -55,6 +51,28 @@ pub struct InvalidName;
 // === impl Name ===
 
 impl Name {
+    /// Constructs a `Name` if the input is a syntactically-valid DNS name.
+    #[inline]
+    pub fn try_from_ascii(n: &[u8]) -> Result<Self, InvalidName> {
+        let n = NameRef::try_from_ascii(n)?;
+        Ok(n.to_owned())
+    }
+
+    #[inline]
+    pub fn as_ref(&self) -> NameRef<'_> {
+        NameRef(self.0.as_str())
+    }
+
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
     #[inline]
     pub fn is_localhost(&self) -> bool {
         self.as_str().eq_ignore_ascii_case("localhost.")
@@ -64,19 +82,6 @@ impl Name {
     pub fn without_trailing_dot(&self) -> &str {
         self.as_str().trim_end_matches('.')
     }
-
-    #[inline]
-    pub fn as_ref(&self) -> NameRef<'_> {
-        NameRef(self.0.as_bytes())
-    }
-
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        self.0.as_bytes()
-    }
 }
 
 impl fmt::Display for Name {
@@ -85,18 +90,12 @@ impl fmt::Display for Name {
     }
 }
 
-impl<'a> TryFrom<&'a [u8]> for Name {
-    type Error = InvalidName;
-    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
-        let n = NameRef::try_from_ascii(s)?;
-        Ok(n.to_owned())
-    }
-}
-
 impl std::str::FromStr for Name {
     type Err = InvalidName;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::try_from(s.as_bytes())
+
+    #[inline]
+    fn from_str(n: &str) -> Result<Self, Self::Err> {
+        Self::try_from_ascii(n.as_bytes())
     }
 }
 
@@ -109,13 +108,7 @@ impl Deref for Name {
     }
 }
 
-impl Deref for NameRef<'_> {
-    type Target = [u8];
-    #[inline]
-    fn deref(&self) -> &[u8] {
-        self.0
-    }
-}
+// === impl NameRef ===
 
 impl<'a> NameRef<'a> {
     /// Constructs a `NameRef` from the given input if the input is a
@@ -125,31 +118,45 @@ impl<'a> NameRef<'a> {
             return Err(InvalidName);
         }
 
-        Ok(Self(dns_name))
+        let s = std::str::from_utf8(dns_name).map_err(|_| InvalidName)?;
+        Ok(Self(s))
     }
 
-    /// Constructs a `NameRef` from the given input if the input is a
-    /// syntactically-valid DNS name.
-    pub fn try_from_ascii_str(dns_name: &'a str) -> Result<Self, InvalidName> {
-        Self::try_from_ascii(dns_name.as_bytes())
+    pub fn try_from_ascii_str(n: &'a str) -> Result<Self, InvalidName> {
+        Self::try_from_ascii(n.as_bytes())
     }
 
     /// Constructs a `Name` from this `NameRef`
     pub fn to_owned(self) -> Name {
         // NameRef is already guaranteed to be valid ASCII, which is a
         // subset of UTF-8.
-        let s: &str = self.into();
-        Name(s.to_ascii_lowercase())
+        Name(self.as_str().to_ascii_lowercase())
+    }
+
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        self.0
+    }
+
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
     }
 }
 
-impl<'a> From<NameRef<'a>> for &'a str {
-    fn from(NameRef(d): NameRef<'a>) -> Self {
-        // The unwrap won't fail because NameRefs are guaranteed to be ASCII
-        // and ASCII is a subset of UTF-8.
-        core::str::from_utf8(d).unwrap()
+impl<'a> PartialEq<NameRef<'a>> for NameRef<'_> {
+    fn eq(&self, other: &NameRef<'a>) -> bool {
+        self.0.eq_ignore_ascii_case(other.0)
     }
 }
+
+impl fmt::Display for NameRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        self.as_str().fmt(f)
+    }
+}
+
+// === Helpers ===
 
 fn is_valid_reference_dns_id(hostname: untrusted::Input<'_>) -> bool {
     is_valid_dns_id(hostname)
@@ -249,6 +256,66 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parse() {
+        const CASES: &[(&str, bool)] = &[
+            ("", false),
+            (".", false),
+            ("..", false),
+            ("...", false),
+            ("*", false),
+            ("a", true),
+            ("a.", true),
+            ("d.c.b.a", true),
+            ("d.c.b.a.", true),
+            (" d.c.b.a.", false),
+            ("d.c.b.a-", false),
+            ("*.a.", false),
+            (".a.", false),
+            ("a1", true),
+            ("_m.foo.bar", true),
+            ("m.foo.bar_", true),
+            ("example.com:80", false),
+            ("1", false),
+            ("1.a", true),
+            ("a.1", false),
+            ("1.2.3.4", false),
+            ("::1", false),
+            ("xn--poema-9qae5a.com.br", true), // IDN
+        ];
+        for &(n, expected_result) in CASES {
+            assert!(n.parse::<Name>().is_ok() == expected_result, "{}", n);
+        }
+    }
+
+    #[test]
+    fn test_eq() {
+        const CASES: &[(&str, &str, bool)] = &[
+            ("a", "a", true),
+            ("a", "b", false),
+            ("d.c.b.a", "d.c.b.a", true),
+            // case sensitivity
+            (
+                "abcdefghijklmnopqrstuvwxyz",
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                true,
+            ),
+            ("aBc", "Abc", true),
+            ("a1", "A1", true),
+            ("example", "example", true),
+            ("example.", "example.", true),
+            ("example", "example.", false),
+            ("example.com", "example.com", true),
+            ("example.com.", "example.com.", true),
+            ("example.com", "example.com.", false),
+        ];
+        for &(left, right, expected_result) in CASES {
+            let l = left.parse::<Name>().unwrap();
+            let r = right.parse::<Name>().unwrap();
+            assert_eq!(l == r, expected_result, "{:?} vs {:?}", l, r);
+        }
+    }
+
+    #[test]
     fn test_is_localhost() {
         let cases = &[
             ("localhost", false), // Not absolute
@@ -258,7 +325,7 @@ mod tests {
             ("localhost1.", false), // suffixed
         ];
         for (host, expected_result) in cases {
-            let dns_name = Name::try_from(host.as_bytes()).unwrap();
+            let dns_name = host.parse::<Name>().unwrap();
             assert_eq!(dns_name.is_localhost(), *expected_result, "{:?}", dns_name)
         }
     }
@@ -273,7 +340,8 @@ mod tests {
             ("web.svc.local.", "web.svc.local"),
         ];
         for (host, expected_result) in cases {
-            let dns_name = Name::try_from(host.as_bytes())
+            let dns_name = host
+                .parse::<Name>()
                 .unwrap_or_else(|_| panic!("'{}' was invalid", host));
             assert_eq!(
                 dns_name.without_trailing_dot(),
@@ -283,6 +351,7 @@ mod tests {
             )
         }
         assert!(".".parse::<Name>().is_err());
+        assert!("..".parse::<Name>().is_err());
         assert!("".parse::<Name>().is_err());
     }
 }

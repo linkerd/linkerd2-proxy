@@ -43,7 +43,7 @@ where
             .and_then(|tls| match tls {
                 tls::ServerTls::Established { client_id, .. } => {
                     client_id.as_ref().and_then(|id| {
-                        match http::HeaderValue::from_str((*id).as_str()) {
+                        match http::HeaderValue::from_str(id.as_str()) {
                             Ok(v) => Some(v),
                             Err(error) => {
                                 tracing::warn!(%error, "identity not a valid header value");

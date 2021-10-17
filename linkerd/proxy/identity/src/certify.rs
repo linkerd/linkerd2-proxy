@@ -231,7 +231,7 @@ impl LocalCrtKey {
     }
 
     pub fn name(&self) -> &id::Name {
-        &self.id.0
+        &*self.id
     }
 
     fn client_config(&self) -> Arc<rustls::ClientConfig> {

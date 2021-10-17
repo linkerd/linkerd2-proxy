@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub use linkerd_dns_name::InvalidName;
-use std::{convert::TryFrom, fmt, str::FromStr, sync::Arc};
+use std::{fmt, ops::Deref, str::FromStr, sync::Arc};
 
 /// An endpoint's identity.
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -20,19 +20,11 @@ impl From<linkerd_dns_name::Name> for Name {
     }
 }
 
-impl std::ops::Deref for Name {
-    type Target = linkerd_dns_name::Name;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 impl FromStr for Name {
     type Err = InvalidName;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.as_bytes().last() == Some(&b'.') {
+        if s.ends_with('.') {
             return Err(InvalidName); // SNI hostnames are implicitly absolute.
         }
 
@@ -40,15 +32,11 @@ impl FromStr for Name {
     }
 }
 
-impl TryFrom<&[u8]> for Name {
-    type Error = InvalidName;
+impl Deref for Name {
+    type Target = linkerd_dns_name::Name;
 
-    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
-        if s.last() == Some(&b'.') {
-            return Err(InvalidName); // SNI hostnames are implicitly absolute.
-        }
-
-        linkerd_dns_name::Name::try_from(s).map(|n| Name(Arc::new(n)))
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -78,7 +66,7 @@ impl From<Name> for LocalId {
     }
 }
 
-impl std::ops::Deref for LocalId {
+impl Deref for LocalId {
     type Target = Name;
 
     fn deref(&self) -> &Name {
