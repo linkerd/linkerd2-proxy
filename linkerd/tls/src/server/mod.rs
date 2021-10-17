@@ -167,13 +167,18 @@ where
             let (peer, io) = match sni {
                 // If we detected an SNI matching this proxy, terminate TLS.
                 Some(ServerId(sni)) if sni == id => {
+                    trace!("Identified local SNI");
                     let (peer, io) = tls.oneshot(io).await?;
                     (Conditional::Some(peer), EitherIo::Left(io))
                 }
+                // If we detected another SNI, continue proxying the
+                // opaque stream.
                 Some(sni) => {
+                    debug!(%sni, "Identified foreign SNI");
                     let peer = ServerTls::Passthru { sni };
                     (Conditional::Some(peer), EitherIo::Right(io))
                 }
+                // If no TLS was detected, continue proxying the stream.
                 None => (
                     Conditional::None(NoServerTls::NoClientHello),
                     EitherIo::Right(io),
