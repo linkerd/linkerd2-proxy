@@ -245,7 +245,7 @@ mod tests {
 #[cfg(fuzzing)]
 pub mod fuzz_logic {
     use super::*;
-    use std::str::FromStr;
+
     pub struct FuzzConfig {}
 
     // Empty config resolver that we can use.
@@ -255,11 +255,11 @@ pub mod fuzz_logic {
 
     // Test the resolvers do not panic unexpectedly.
     pub async fn fuzz_entry(fuzz_data: &str) {
-        if let Ok(name) = Name::from_str(fuzz_data) {
+        if let Ok(name) = fuzz_data.parse::<Name>() {
             let fcon = FuzzConfig {};
             let resolver = Resolver::from_system_config_with(&fcon).unwrap();
-            let _w = resolver.resolve_a(&name).await;
-            let _w2 = resolver.resolve_srv(&name).await;
+            let _w = resolver.resolve_a(name.as_ref()).await;
+            let _w2 = resolver.resolve_srv(name.as_ref()).await;
         }
     }
 }
