@@ -7,11 +7,6 @@ use std::{pin::Pin, sync::Arc};
 use tokio_rustls::rustls::{Certificate, ServerConfig, Session};
 use tracing::debug;
 
-#[derive(Clone)]
-pub struct Terminate {
-    config: Arc<ServerConfig>,
-}
-
 pub type TerminateFuture<I> = futures::future::MapOk<
     tokio_rustls::Accept<I>,
     fn(tokio_rustls::server::TlsStream<I>) -> (ServerTls, ServerIo<I>),
@@ -20,8 +15,7 @@ pub type TerminateFuture<I> = futures::future::MapOk<
 #[derive(Debug)]
 pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
 
-// === impl Terminate ===
-
+/// Terminates a TLS connection.
 pub fn terminate<I>(config: Arc<ServerConfig>, io: I) -> TerminateFuture<I>
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
