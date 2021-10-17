@@ -96,6 +96,11 @@ impl sign::Signer for Signer {
 // === impl TrustAnchors ===
 
 impl TrustAnchors {
+    #[cfg(any(test, feature = "test-util"))]
+    fn empty() -> Self {
+        TrustAnchors(Arc::new(ClientConfig::new()))
+    }
+
     pub fn from_pem(s: &str) -> Option<Self> {
         use std::io::Cursor;
 
