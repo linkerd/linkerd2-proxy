@@ -6,7 +6,7 @@ use linkerd_identity as id;
 use linkerd_metrics::Counter;
 use linkerd_stack::{NewService, Param, Service};
 use linkerd_tls as tls;
-use linkerd_tls_rustls::{self as rustls, Crt, CrtKey, Csr, Key, TrustAnchors};
+use linkerd_tls_rustls::{self as rustls, Crt, CrtKey, Key, TrustAnchors};
 use std::{
     convert::TryFrom,
     sync::Arc,
@@ -33,6 +33,10 @@ pub struct Config {
     pub min_refresh: Duration,
     pub max_refresh: Duration,
 }
+
+/// A DER-encoded X.509 certificate signing request.
+#[derive(Clone, Debug)]
+pub struct Csr(Arc<Vec<u8>>);
 
 /// Holds the process's local TLS identity state.
 ///
@@ -284,5 +288,21 @@ where
 impl Param<id::LocalId> for LocalCrtKey {
     fn param(&self) -> id::LocalId {
         self.id().clone()
+    }
+}
+
+// === impl Csr ===
+
+impl Csr {
+    pub fn from_der(der: Vec<u8>) -> Option<Self> {
+        if der.is_empty() {
+            return None;
+        }
+
+        Some(Csr(Arc::new(der)))
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.to_vec()
     }
 }

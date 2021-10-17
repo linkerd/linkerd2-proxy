@@ -24,10 +24,6 @@ pub struct Key(Arc<EcdsaKeyPair>);
 struct SigningKey(Arc<EcdsaKeyPair>);
 struct Signer(Arc<EcdsaKeyPair>);
 
-/// A DER-encoded X.509 certificate signing request.
-#[derive(Clone, Debug)]
-pub struct Csr(Arc<Vec<u8>>);
-
 #[derive(Clone)]
 pub struct TrustAnchors(Arc<ClientConfig>);
 
@@ -59,22 +55,6 @@ const SIGNATURE_ALG_RUSTLS_SCHEME: SignatureScheme = SignatureScheme::ECDSA_NIST
 const SIGNATURE_ALG_RUSTLS_ALGORITHM: internal::msgs::enums::SignatureAlgorithm =
     internal::msgs::enums::SignatureAlgorithm::ECDSA;
 const TLS_VERSIONS: &[ProtocolVersion] = &[ProtocolVersion::TLSv1_3];
-
-// === impl Csr ===
-
-impl Csr {
-    pub fn from_der(der: Vec<u8>) -> Option<Self> {
-        if der.is_empty() {
-            return None;
-        }
-
-        Some(Csr(Arc::new(der)))
-    }
-
-    pub fn to_vec(&self) -> Vec<u8> {
-        self.0.to_vec()
-    }
-}
 
 // === impl Key ===
 
