@@ -9,6 +9,7 @@ use linkerd_stack::{layer, Param};
 use std::{
     fmt,
     future::Future,
+    ops::Deref,
     pin::Pin,
     str::FromStr,
     sync::Arc,
@@ -146,7 +147,9 @@ where
         let connect = self.inner.call(target);
         Either::Right(Box::pin(async move {
             let io = connect.await?;
-            let io = handshake.connect((&server_id.0).into(), io).await?;
+            let sni = webpki::DNSNameRef::try_from_ascii(server_id.as_bytes())
+                .expect("identity must be a valid DNS-like name");
+            let io = handshake.connect(sni, io).await?;
             if let Some(alpn) = io.get_ref().1.get_alpn_protocol() {
                 debug!(alpn = ?std::str::from_utf8(alpn));
             }
@@ -169,8 +172,10 @@ impl From<ServerId> for id::Name {
     }
 }
 
-impl AsRef<id::Name> for ServerId {
-    fn as_ref(&self) -> &id::Name {
+impl Deref for ServerId {
+    type Target = id::Name;
+
+    fn deref(&self) -> &id::Name {
         &self.0
     }
 }

@@ -204,7 +204,7 @@ impl LocalCrtKey {
     }
 
     pub fn name(&self) -> &id::Name {
-        self.id.as_ref()
+        &*self.id
     }
 
     pub fn client_config(&self) -> tls::client::Config {

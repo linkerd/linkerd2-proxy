@@ -11,6 +11,7 @@ use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
 use linkerd_stack::{layer, ExtractParam, InsertParam, NewService, Param};
 use std::{
     fmt,
+    ops::Deref,
     pin::Pin,
     str::FromStr,
     sync::Arc,
@@ -304,7 +305,12 @@ fn client_identity<S>(tls: &TlsStream<S>) -> Option<ClientId> {
 
     match dns_names.first()? {
         GeneralDNSNameRef::DNSName(n) => {
-            Some(ClientId(id::Name::from(dns::Name::from(n.to_owned()))))
+            // Unfortunately we have to allocate a new string here, since there's no way to get the
+            // underlying bytes from a `DNSNameRef`.
+            let name = AsRef::<str>::as_ref(&n.to_owned())
+                .parse::<dns::Name>()
+                .ok()?;
+            Some(ClientId(name.into()))
         }
         GeneralDNSNameRef::Wildcard(_) => {
             // Wildcards can perhaps be handled in a future path...
@@ -327,8 +333,10 @@ impl From<ClientId> for id::Name {
     }
 }
 
-impl AsRef<id::Name> for ClientId {
-    fn as_ref(&self) -> &id::Name {
+impl Deref for ClientId {
+    type Target = id::Name;
+
+    fn deref(&self) -> &id::Name {
         &self.0
     }
 }
