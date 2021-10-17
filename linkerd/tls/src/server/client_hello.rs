@@ -1,6 +1,5 @@
 use crate::ServerId;
 use linkerd_identity as id;
-use std::convert::TryFrom;
 use tracing::trace;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -30,11 +29,15 @@ pub fn parse_sni(input: &[u8]) -> Result<Option<ServerId>, Incomplete> {
     });
     match r {
         Ok(Some(sni)) => {
-            let sni = id::Name::try_from(sni.as_slice_less_safe())
-                .ok()
-                .map(ServerId);
+            let sni = match std::str::from_utf8(sni.as_slice_less_safe()) {
+                Ok(sni) => match sni.parse::<id::Name>() {
+                    Ok(sni) => sni,
+                    Err(_) => return Ok(None),
+                },
+                Err(_) => return Ok(None),
+            };
             trace!(?sni, "parse_sni: parsed correctly up to SNI");
-            Ok(sni)
+            Ok(Some(ServerId(sni)))
         }
         Ok(None) => {
             trace!("parse_sni: failed to parse up to SNI");

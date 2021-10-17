@@ -86,7 +86,7 @@ where
         if let Some(require_id) = Self::extract_id(&mut request) {
             match self.tls.as_ref() {
                 Conditional::Some(tls::ClientTls { server_id, .. }) => {
-                    if require_id != *server_id.as_ref() {
+                    if require_id != **server_id {
                         debug!(
                             required = %require_id,
                             found = %server_id,

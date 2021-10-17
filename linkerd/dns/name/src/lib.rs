@@ -4,5 +4,5 @@
 mod name;
 mod suffix;
 
-pub use self::name::{InvalidName, Name};
+pub use self::name::{InvalidName, Name, NameRef};
 pub use self::suffix::Suffix;
