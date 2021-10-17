@@ -308,7 +308,6 @@ where
         task::Poll::Ready(Ok(()))
     }
 
-    #[inline]
     fn call(&mut self, io: I) -> Self::Future {
         // Copy the underlying TLS config and set an ALPN value.
         //

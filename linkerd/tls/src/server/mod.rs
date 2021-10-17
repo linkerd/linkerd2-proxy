@@ -263,7 +263,7 @@ impl From<ClientId> for id::Name {
 impl Deref for ClientId {
     type Target = id::Name;
 
-    fn deref(&self) -> &Self::Target {
+    fn deref(&self) -> &id::Name {
         &self.0
     }
 }
