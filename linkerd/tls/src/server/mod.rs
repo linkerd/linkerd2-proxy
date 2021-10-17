@@ -57,7 +57,7 @@ pub type ConditionalServerTls = Conditional<ServerTls, NoServerTls>;
 
 pub type DetectIo<T> = EitherIo<T, PrefixedIo<T>>;
 
-pub type Io<I, J> = EitherIo<J, DetectIo<I>>;
+pub type Io<I, J> = EitherIo<I, DetectIo<J>>;
 
 #[derive(Clone, Debug)]
 pub struct NewDetectTls<L, P, N> {
@@ -138,7 +138,7 @@ where
     L::Future: Send,
     LIo: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
     N: NewService<P::Target, Service = NSvc> + Clone + Send + 'static,
-    NSvc: Service<Io<I, LIo>, Response = ()> + Send + 'static,
+    NSvc: Service<Io<LIo, I>, Response = ()> + Send + 'static,
     NSvc::Error: Into<Error>,
     NSvc::Future: Send,
 {

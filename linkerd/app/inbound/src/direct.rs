@@ -52,7 +52,7 @@ pub struct ClientInfo {
     pub local_addr: OrigDstAddr,
 }
 
-type TlsIo<I> = tls::server::Io<I, rustls::ServerIo<tls::server::DetectIo<I>>>;
+type TlsIo<I> = tls::server::Io<rustls::ServerIo<tls::server::DetectIo<I>>, I>;
 type FwdIo<I> = SensorIo<io::PrefixedIo<TlsIo<I>>>;
 pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<TlsIo<I>>>;
 

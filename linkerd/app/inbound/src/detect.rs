@@ -53,7 +53,7 @@ struct TlsParams {
     identity: identity::LocalCrtKey,
 }
 
-type TlsIo<I> = tls::server::Io<I, rustls::ServerIo<tls::server::DetectIo<I>>>;
+type TlsIo<I> = tls::server::Io<rustls::ServerIo<tls::server::DetectIo<I>>, I>;
 
 // === impl Inbound ===
 
