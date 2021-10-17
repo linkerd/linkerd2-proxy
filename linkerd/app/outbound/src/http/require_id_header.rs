@@ -85,22 +85,21 @@ where
         // In either case, we clear the header so it is not passed on outbound requests.
         if let Some(require_id) = Self::extract_id(&mut request) {
             match self.tls.as_ref() {
-                Conditional::Some(tls::ClientTls { server_id, .. })
-                    if require_id == **server_id =>
-                {
-                    trace!(required = %require_id, "Identity required by header");
-                }
                 Conditional::Some(tls::ClientTls { server_id, .. }) => {
-                    debug!(
-                        required = %require_id,
-                        found = %server_id,
-                        "Identity required by header not satisfied"
-                    );
-                    let e = IdentityRequired {
-                        required: require_id.into(),
-                        found: Some(server_id.clone()),
-                    };
-                    return future::Either::Left(future::err(e.into()));
+                    if require_id != **server_id {
+                        debug!(
+                            required = %require_id,
+                            found = %server_id,
+                            "Identity required by header not satisfied"
+                        );
+                        let e = IdentityRequired {
+                            required: require_id.into(),
+                            found: Some(server_id.clone()),
+                        };
+                        return future::Either::Left(future::err(e.into()));
+                    } else {
+                        trace!(required = %require_id, "Identity required by header");
+                    }
                 }
                 Conditional::None(_) => {
                     debug!(required = %require_id, "Identity required by header not satisfied");
