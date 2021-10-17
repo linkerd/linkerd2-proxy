@@ -96,7 +96,7 @@ impl sign::Signer for Signer {
 // === impl TrustAnchors ===
 
 impl TrustAnchors {
-    #[cfg(any(test, feature = "test-util"))]
+    #[cfg(feature = "test-util")]
     fn empty() -> Self {
         TrustAnchors(Arc::new(ClientConfig::new()))
     }
