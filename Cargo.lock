@@ -1375,12 +1375,10 @@ name = "linkerd-tls-rustls"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd-dns-name",
  "linkerd-identity",
  "linkerd-io",
  "linkerd-stack",
  "linkerd-tls",
- "pin-project",
  "ring",
  "thiserror",
  "tokio-rustls",

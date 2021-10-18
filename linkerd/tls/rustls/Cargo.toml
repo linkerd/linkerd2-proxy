@@ -12,12 +12,10 @@ test-util = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-linkerd-dns-name = { path = "../../dns/name" }
 linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = ".." }
-pin-project = "1"
 ring = "0.16.19"
 thiserror = "1"
 tokio-rustls = "0.22"
