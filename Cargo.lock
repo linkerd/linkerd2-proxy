@@ -992,10 +992,6 @@ name = "linkerd-identity"
 version = "0.1.0"
 dependencies = [
  "linkerd-dns-name",
- "pin-project",
- "thiserror",
- "tracing",
- "untrusted",
 ]
 
 [[package]]

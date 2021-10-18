@@ -7,7 +7,3 @@ edition = "2018"
 
 [dependencies]
 linkerd-dns-name = { path = "../dns/name" }
-thiserror = "1.0"
-pin-project = "1"
-tracing = "0.1.29"
-untrusted = "0.7"
