@@ -89,7 +89,7 @@ where
         dispatch_timeout,
         ..
     } = inbound.config().proxy.clone();
-    let local_id = inbound.identity().map(|l| l.id().clone());
+    let local_id = inbound.identity().id().clone();
 
     // For each gatewayed connection that is *not* HTTP, use the target from the
     // transport header to lookup a service profile. If the profile includes a

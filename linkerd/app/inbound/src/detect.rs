@@ -50,7 +50,7 @@ struct ConfigureHttpDetect;
 #[derive(Clone)]
 struct TlsParams {
     timeout: tls::server::Timeout,
-    identity: Option<LocalCrtKey>,
+    identity: LocalCrtKey,
 }
 
 // === impl Inbound ===
@@ -135,7 +135,7 @@ impl<N> Inbound<N> {
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .push(tls::NewDetectTls::layer(TlsParams {
+                .push(tls::NewDetectTls::<LocalCrtKey, _, _>::layer(TlsParams {
                     timeout: tls::server::Timeout(detect_timeout),
                     identity: rt.identity.clone(),
                 }))
@@ -425,9 +425,9 @@ impl<T> svc::ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> svc::ExtractParam<Option<LocalCrtKey>, T> for TlsParams {
+impl<T> svc::ExtractParam<LocalCrtKey, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> Option<LocalCrtKey> {
+    fn extract_param(&self, _: &T) -> LocalCrtKey {
         self.identity.clone()
     }
 }

@@ -116,7 +116,13 @@ impl<C> Inbound<C> {
                     rt.span_sink.clone(),
                     super::trace_labels(),
                 ))
-                .push_on_service(http::BoxResponse::layer());
+                .push_on_service(svc::layers()
+                    .push(http::BoxResponse::layer())
+                    // This box is needed to reduce compile times on recent (2021-10-17) nightlies,
+                    // though this may be fixed by https://github.com/rust-lang/rust/pull/89831. It
+                    // should be removed when possible.
+                    .push(svc::BoxService::layer())
+                );
 
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
@@ -219,11 +225,12 @@ impl<C> Inbound<C> {
                         .push(http::BoxResponse::layer()),
                 )
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
-                .instrument(|t: &Logical| match (t.http, t.logical.as_ref()) {
-                    (http::Version::H2, None) => debug_span!("http2"),
-                    (http::Version::H2, Some(name)) => debug_span!("http2", %name),
-                    (http::Version::Http1, None) => debug_span!("http1"),
-                    (http::Version::Http1, Some(name)) => debug_span!("http1", %name),
+                .instrument(|t: &Logical| {
+                    let name = t.logical.as_ref().map(tracing::field::display);
+                    match t.http {
+                        http::Version::H2 => debug_span!("http2", name),
+                        http::Version::Http1 => debug_span!("http1", name),
+                    }
                 })
                 // Routes each request to a target, obtains a service for that target, and
                 // dispatches the request. NewRouter moves the NewService into the service type, so

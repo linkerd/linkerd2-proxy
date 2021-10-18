@@ -18,6 +18,7 @@ http = "0.2"
 linkerd-app-core = { path = "../../core" }
 linkerd-app-inbound = { path = ".." }
 linkerd-app-test = { path = "../../test" }
+linkerd-proxy-identity = { path = "../../../proxy/identity", features = ["test-util"] }
 linkerd-tracing = { path = "../../../tracing", features = ["ansi"] }
 tracing = "0.1"
 

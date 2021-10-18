@@ -12,8 +12,8 @@ linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 parking_lot = "0.11"
 tokio = { version = "1", default-features = false, features = ["rt", "sync", "time"] }
-tower = { version = "0.4.8", default-features = false, features = ["util"] }
-tracing = "0.1.28"
+tower = { version = "0.4.9", default-features = false, features = ["util"] }
+tracing = "0.1.29"
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["macros", "test-util", "time"] }

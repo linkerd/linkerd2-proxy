@@ -10,8 +10,8 @@ publish = false
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 futures = { version = "0.3", default-features = false }
-tower = { version = "0.4.8", default-features = false }
-tracing = "0.1.28"
+tower = { version = "0.4.9", default-features = false }
+tracing = "0.1.29"
 pin-project = "1"
 
 [dev-dependencies]

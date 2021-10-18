@@ -11,6 +11,7 @@ use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
 use linkerd_stack::{layer, ExtractParam, InsertParam, NewService, Param};
 use std::{
     fmt,
+    ops::Deref,
     pin::Pin,
     str::FromStr,
     sync::Arc,
@@ -72,7 +73,7 @@ type DetectIo<T> = EitherIo<T, PrefixedIo<T>>;
 pub type Io<T> = EitherIo<TlsStream<DetectIo<T>>, DetectIo<T>>;
 
 #[derive(Clone, Debug)]
-pub struct NewDetectTls<P, L, N> {
+pub struct NewDetectTls<L, P, N> {
     inner: N,
     params: P,
     _local_identity: std::marker::PhantomData<fn() -> L>,
@@ -86,9 +87,9 @@ pub struct Timeout(pub Duration);
 pub struct ServerTlsTimeoutError(());
 
 #[derive(Clone, Debug)]
-pub struct DetectTls<T, P, L, N> {
+pub struct DetectTls<T, L, P, N> {
     target: T,
-    local_identity: Option<L>,
+    local_identity: L,
     timeout: Timeout,
     params: P,
     inner: N,
@@ -102,7 +103,7 @@ const PEEK_CAPACITY: usize = 512;
 // insufficient. This is the same value used in HTTP detection.
 const BUFFER_CAPACITY: usize = 8192;
 
-impl<P, L, N> NewDetectTls<P, L, N> {
+impl<L, P, N> NewDetectTls<L, P, N> {
     pub fn new(params: P, inner: N) -> Self {
         Self {
             inner,
@@ -119,12 +120,12 @@ impl<P, L, N> NewDetectTls<P, L, N> {
     }
 }
 
-impl<T, P, L, N> NewService<T> for NewDetectTls<P, L, N>
+impl<T, L, P, N> NewService<T> for NewDetectTls<L, P, N>
 where
-    P: ExtractParam<Timeout, T> + ExtractParam<Option<L>, T> + Clone,
+    P: ExtractParam<Timeout, T> + ExtractParam<L, T> + Clone,
     N: Clone,
 {
-    type Service = DetectTls<T, P, L, N>;
+    type Service = DetectTls<T, L, P, N>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let timeout = self.params.extract_param(&target);
@@ -139,7 +140,7 @@ where
     }
 }
 
-impl<I, T, P, L, N, NSvc> tower::Service<I> for DetectTls<T, P, L, N>
+impl<I, T, L, P, N, NSvc> tower::Service<I> for DetectTls<T, L, P, N>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
     T: Clone + Send + 'static,
@@ -164,52 +165,39 @@ where
         let params = self.params.clone();
         let new_accept = self.inner.clone();
 
-        match self.local_identity.as_ref() {
-            Some(local) => {
-                let config: Config = local.param();
-                let LocalId(local_id) = local.param();
+        let config: Config = self.local_identity.param();
+        let LocalId(local_id) = self.local_identity.param();
 
-                // Detect the SNI from a ClientHello (or timeout).
-                let Timeout(timeout) = self.timeout;
-                let detect = time::timeout(timeout, detect_sni(io));
-                Box::pin(async move {
-                    let (sni, io) = detect.await.map_err(|_| ServerTlsTimeoutError(()))??;
+        // Detect the SNI from a ClientHello (or timeout).
+        let Timeout(timeout) = self.timeout;
+        let detect = time::timeout(timeout, detect_sni(io));
+        Box::pin(async move {
+            let (sni, io) = detect.await.map_err(|_| ServerTlsTimeoutError(()))??;
 
-                    let (peer, io) = match sni {
-                        // If we detected an SNI matching this proxy, terminate TLS.
-                        Some(ServerId(id)) if id == local_id => {
-                            trace!("Identified local SNI");
-                            let (peer, io) = handshake(config, io).await?;
-                            (Conditional::Some(peer), EitherIo::Left(io))
-                        }
-                        // If we detected another SNI, continue proxying the
-                        // opaque stream.
-                        Some(sni) => {
-                            debug!(%sni, "Identified foreign SNI");
-                            let peer = ServerTls::Passthru { sni };
-                            (Conditional::Some(peer), EitherIo::Right(io))
-                        }
-                        // If no TLS was detected, continue proxying the stream.
-                        None => (
-                            Conditional::None(NoServerTls::NoClientHello),
-                            EitherIo::Right(io),
-                        ),
-                    };
+            let (peer, io) = match sni {
+                // If we detected an SNI matching this proxy, terminate TLS.
+                Some(ServerId(id)) if id == local_id => {
+                    trace!("Identified local SNI");
+                    let (peer, io) = handshake(config, io).await?;
+                    (Conditional::Some(peer), EitherIo::Left(io))
+                }
+                // If we detected another SNI, continue proxying the
+                // opaque stream.
+                Some(sni) => {
+                    debug!(%sni, "Identified foreign SNI");
+                    let peer = ServerTls::Passthru { sni };
+                    (Conditional::Some(peer), EitherIo::Right(io))
+                }
+                // If no TLS was detected, continue proxying the stream.
+                None => (
+                    Conditional::None(NoServerTls::NoClientHello),
+                    EitherIo::Right(io),
+                ),
+            };
 
-                    let svc = new_accept.new_service(params.insert_param(peer, target));
-                    svc.oneshot(io).err_into::<Error>().await
-                })
-            }
-
-            None => {
-                let peer = Conditional::None(NoServerTls::Disabled);
-                let svc = new_accept.new_service(params.insert_param(peer, target));
-                Box::pin(
-                    svc.oneshot(EitherIo::Right(EitherIo::Left(io)))
-                        .err_into::<Error>(),
-                )
-            }
-        }
+            let svc = new_accept.new_service(params.insert_param(peer, target));
+            svc.oneshot(io).err_into::<Error>().await
+        })
     }
 }
 
@@ -304,7 +292,12 @@ fn client_identity<S>(tls: &TlsStream<S>) -> Option<ClientId> {
 
     match dns_names.first()? {
         GeneralDNSNameRef::DNSName(n) => {
-            Some(ClientId(id::Name::from(dns::Name::from(n.to_owned()))))
+            // Unfortunately we have to allocate a new string here, since there's no way to get the
+            // underlying bytes from a `DNSNameRef`.
+            let name = AsRef::<str>::as_ref(&n.to_owned())
+                .parse::<dns::Name>()
+                .ok()?;
+            Some(ClientId(name.into()))
         }
         GeneralDNSNameRef::Wildcard(_) => {
             // Wildcards can perhaps be handled in a future path...
@@ -327,8 +320,10 @@ impl From<ClientId> for id::Name {
     }
 }
 
-impl AsRef<id::Name> for ClientId {
-    fn as_ref(&self) -> &id::Name {
+impl Deref for ClientId {
+    type Target = id::Name;
+
+    fn deref(&self) -> &id::Name {
         &self.0
     }
 }

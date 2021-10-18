@@ -1347,7 +1347,6 @@ async fn retry_reconnect_errors() {
     metrics::metric("tcp_open_total")
         .label("peer", "src")
         .label("direction", "inbound")
-        .label("tls", "disabled")
         .label("srv_name", "default:all-unauthenticated")
         .value(1u64)
         .assert_in(&metrics)

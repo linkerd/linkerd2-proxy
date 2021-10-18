@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # Requires:
 # go get -u github.com/cloudflare/cfssl/cmd/cfssl
@@ -52,6 +52,7 @@ ca "Cluster-local CA 1" ca1
 # The controller itself.
 # ee ca1 controller linkerd linkerd
 
+ee ca1 default default linkerd
 ee ca1 foo ns1 linkerd
 # ee ca2 foo ns1 linkerd # Same, but different CA
 ee ca1 bar ns1 linkerd # Different service.

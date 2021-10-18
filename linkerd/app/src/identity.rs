@@ -11,26 +11,16 @@ use linkerd_app_core::{
 use std::{future::Future, pin::Pin};
 use tracing::Instrument;
 
-// The Disabled case is extraordinarily rare.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
-pub enum Config {
-    Disabled,
-    Enabled {
-        control: control::Config,
-        certify: certify::Config,
-    },
+pub struct Config {
+    pub control: control::Config,
+    pub certify: certify::Config,
 }
 
-// The Disabled case is extraordinarily rare.
-#[allow(clippy::large_enum_variant)]
-pub enum Identity {
-    Disabled,
-    Enabled {
-        addr: control::ControlAddr,
-        local: LocalCrtKey,
-        task: Task,
-    },
+pub struct Identity {
+    addr: control::ControlAddr,
+    local: LocalCrtKey,
+    task: Task,
 }
 
 #[derive(Clone, Debug)]
@@ -41,51 +31,43 @@ pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 // === impl Config ===
 
 impl Config {
-    pub fn build(self, dns: dns::Resolver, metrics: Metrics) -> Result<Identity, Error> {
-        match self {
-            Config::Disabled => Ok(Identity::Disabled),
-            Config::Enabled { control, certify } => {
-                let (local, daemon) = LocalCrtKey::new(&certify);
+    pub fn build(self, dns: dns::Resolver, metrics: Metrics) -> Identity {
+        let (local, daemon) = LocalCrtKey::new(&self.certify);
 
-                let addr = control.addr.clone();
-                let svc = control.build(dns, metrics, Some(local.clone()));
+        let addr = self.control.addr.clone();
+        let svc = self.control.build(dns, metrics, local.clone());
 
-                // Save to be spawned on an auxiliary runtime.
-                let task = {
-                    let addr = addr.clone();
-                    Box::pin(daemon.run(svc).instrument(
-                        tracing::debug_span!("identity", server.addr = %addr).or_current(),
-                    ))
-                };
+        // Save to be spawned on an auxiliary runtime.
+        let task = {
+            let addr = addr.clone();
+            Box::pin(
+                daemon
+                    .run(svc)
+                    .instrument(tracing::debug_span!("identity", server.addr = %addr).or_current()),
+            )
+        };
 
-                Ok(Identity::Enabled { addr, local, task })
-            }
-        }
+        Identity { addr, local, task }
     }
 }
 
 // === impl Identity ===
 
 impl Identity {
-    pub fn local(&self) -> Option<LocalCrtKey> {
-        match self {
-            Identity::Disabled => None,
-            Identity::Enabled { ref local, .. } => Some(local.clone()),
-        }
+    pub fn addr(&self) -> control::ControlAddr {
+        self.addr.clone()
+    }
+
+    pub fn local(&self) -> LocalCrtKey {
+        self.local.clone()
     }
 
     pub fn metrics(&self) -> metrics::Report {
-        match self {
-            Identity::Disabled => metrics::Report::disabled(),
-            Identity::Enabled { ref local, .. } => local.metrics(),
-        }
+        self.local.metrics()
     }
 
     pub fn task(self) -> Task {
-        match self {
-            Identity::Disabled => Box::pin(async {}),
-            Identity::Enabled { task, .. } => task,
-        }
+        self.task
     }
 }
 

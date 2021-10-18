@@ -144,8 +144,8 @@ impl AllowPolicy {
                             ..
                         }) = tls
                         {
-                            if identities.contains(id.as_ref())
-                                || suffixes.iter().any(|s| s.contains(id.as_ref()))
+                            if identities.contains(id.as_str())
+                                || suffixes.iter().any(|s| s.contains(id.as_str()))
                             {
                                 return Ok(Permit::new(self.dst, &*server, authz));
                             }

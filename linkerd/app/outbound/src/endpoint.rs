@@ -26,7 +26,6 @@ pub struct Endpoint<P> {
 
 #[derive(Clone)]
 pub struct FromMetadata {
-    pub identity_disabled: bool,
     pub inbound_ips: Arc<HashSet<IpAddr>>,
 }
 
@@ -184,15 +183,10 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
         mut metadata: Metadata,
     ) -> Self::Out {
         tracing::trace!(%addr, ?metadata, ?concrete, "Resolved endpoint");
-        let tls = if self.identity_disabled || self.inbound_ips.contains(&addr.ip()) {
-            let reason = if self.identity_disabled {
-                tls::NoClientTls::Disabled
-            } else {
-                metadata.clear_upgrade();
-                tracing::debug!(%addr, ?metadata, ?addr, ?self.inbound_ips, "Target is local");
-                tls::NoClientTls::Loopback
-            };
-            tls::ConditionalClientTls::None(reason)
+        let tls = if self.inbound_ips.contains(&addr.ip()) {
+            metadata.clear_upgrade();
+            tracing::debug!(%addr, ?metadata, ?addr, ?self.inbound_ips, "Target is local");
+            tls::ConditionalClientTls::None(tls::NoClientTls::Loopback)
         } else {
             Self::client_tls(&metadata, tls::NoClientTls::NotProvidedByServiceDiscovery)
         };
