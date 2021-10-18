@@ -23,11 +23,11 @@ use linkerd_app_core::{
     config::ProxyConfig,
     drain,
     http_tracing::OpenCensusSink,
+    identity::LocalCrtKey,
     io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
-        identity::LocalCrtKey,
         tap,
     },
     serve,

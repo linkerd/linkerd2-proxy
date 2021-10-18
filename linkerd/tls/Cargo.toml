@@ -16,16 +16,15 @@ linkerd-error = { path = "../error" }
 linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
+pin-project = "1"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "time"] }
-tokio-rustls = "0.22"
-tower = "0.4.9"
+tower = "0.4"
 tracing = "0.1.29"
-webpki = "0.21"
 untrusted = "0.7"
 
 [dev-dependencies]
-linkerd-identity = { path = "../identity", features = ["test-util"] }
+linkerd-tls-rustls = { path = "rustls", features = ["test-util"] }
 linkerd-proxy-transport = { path = "../proxy/transport" }
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }

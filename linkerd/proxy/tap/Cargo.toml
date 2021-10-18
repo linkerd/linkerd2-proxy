@@ -23,6 +23,7 @@ linkerd-proxy-http = { path = "../http" }
 linkerd-proxy-transport = { path = "../transport" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
+linkerd-tls-rustls = { path = "../../tls/rustls" }
 parking_lot = "0.11"
 rand = { version = "0.8" }
 thiserror = "1.0"

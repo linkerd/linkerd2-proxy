@@ -64,18 +64,6 @@ impl PeerAddr for tokio::net::TcpStream {
     }
 }
 
-impl<T: PeerAddr> PeerAddr for tokio_rustls::client::TlsStream<T> {
-    fn peer_addr(&self) -> Result<SocketAddr> {
-        self.get_ref().0.peer_addr()
-    }
-}
-
-impl<T: PeerAddr> PeerAddr for tokio_rustls::server::TlsStream<T> {
-    fn peer_addr(&self) -> Result<SocketAddr> {
-        self.get_ref().0.peer_addr()
-    }
-}
-
 #[cfg(feature = "tokio-test")]
 impl PeerAddr for tokio_test::io::Mock {
     fn peer_addr(&self) -> Result<SocketAddr> {

@@ -1,9 +1,10 @@
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
+    identity::LocalCrtKey,
     metrics,
     profiles::{self, DiscoveryRejected},
-    proxy::{api_resolve as api, http, identity::LocalCrtKey, resolve::recover},
+    proxy::{api_resolve as api, http, resolve::recover},
     svc::{self, NewService},
     Error, Recover,
 };

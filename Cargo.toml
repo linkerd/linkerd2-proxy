@@ -53,6 +53,7 @@ members = [
     "linkerd/system",
     "linkerd/tonic-watch",
     "linkerd/tls",
+    "linkerd/tls/rustls",
     "linkerd/tracing",
     "linkerd/transport-header",
     "linkerd/transport-metrics",
