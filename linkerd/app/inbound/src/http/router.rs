@@ -116,7 +116,13 @@ impl<C> Inbound<C> {
                     rt.span_sink.clone(),
                     super::trace_labels(),
                 ))
-                .push_on_service(http::BoxResponse::layer());
+                .push_on_service(svc::layers()
+                    .push(http::BoxResponse::layer())
+                    // This box is needed to reduce compile times on recent (2021-10-17) nightlies,
+                    // though this may be fixed by https://github.com/rust-lang/rust/pull/89831. It
+                    // should be removed when possible.
+                    .push(svc::BoxService::layer())
+                );
 
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
