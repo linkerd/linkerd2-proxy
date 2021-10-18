@@ -260,6 +260,7 @@ impl NewService<tls::ClientTls> for LocalCrtKey {
     type Service = rustls::Connect;
 
     /// Creates a new TLS client service.
+    #[inline]
     fn new_service(&self, target: tls::ClientTls) -> Self::Service {
         rustls::Connect::new(target, self.client_config())
     }
