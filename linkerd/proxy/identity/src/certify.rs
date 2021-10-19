@@ -6,7 +6,7 @@ use linkerd_identity as id;
 use linkerd_metrics::Counter;
 use linkerd_stack::{NewService, Param, Service};
 use linkerd_tls as tls;
-use linkerd_tls_rustls::{self as rustls, Crt, CrtKey, Key, TrustAnchors};
+use linkerd_tls_rustls as rustls;
 use std::{
     convert::TryFrom,
     sync::Arc,
@@ -25,8 +25,6 @@ use tracing::{debug, error, trace};
 /// Configures the Identity service and local identity.
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub trust_anchors: TrustAnchors,
-    pub key: Key,
     pub csr: Csr,
     pub token: TokenSource,
     pub local_id: id::LocalId,
@@ -38,14 +36,16 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub struct Csr(Arc<Vec<u8>>);
 
+#[derive(Clone, Debug)]
+pub struct Crt(Vec<u8>);
+
 /// Holds the process's local TLS identity state.
 ///
 /// Updates dynamically as certificates are provisioned from the Identity service.
 #[derive(Clone, Debug)]
 pub struct LocalCrtKey {
-    trust_anchors: TrustAnchors,
     id: id::LocalId,
-    crt_key: watch::Receiver<Option<CrtKey>>,
+    crt_key: watch::Receiver<Option<Crt>>,
     refreshes: Arc<Counter>,
 }
 
@@ -57,13 +57,11 @@ pub struct AwaitCrt(Option<LocalCrtKey>);
 #[error("identity initialization failed")]
 pub struct LostDaemon(());
 
-pub type CrtKeySender = watch::Sender<Option<CrtKey>>;
-
 #[derive(Debug)]
 pub struct Daemon {
-    crt_key_watch: CrtKeySender,
-    refreshes: Arc<linkerd_metrics::Counter>,
     config: Config,
+    crt_key_tx: watch::Sender<Option<Crt>>,
+    refreshes: Arc<linkerd_metrics::Counter>,
 }
 
 // === impl Config ===
@@ -101,7 +99,7 @@ impl Daemon {
         <S::ResponseBody as Body>::Error: Into<Error> + Send,
     {
         let Self {
-            crt_key_watch,
+            crt_key_tx,
             refreshes,
             config,
         } = self;
@@ -134,35 +132,38 @@ impl Daemon {
                                 intermediate_certificates,
                                 valid_until,
                             } = rsp.into_inner();
-                            match valid_until.and_then(|d| SystemTime::try_from(d).ok()) {
-                                None => error!(
-                                    "Identity service did not specify a certificate expiration."
-                                ),
-                                Some(expiry) => {
-                                    let key = config.key.clone();
-                                    let crt = Crt::new(
-                                        config.local_id.clone(),
-                                        leaf_certificate,
-                                        intermediate_certificates,
-                                        expiry,
+                            let expiry =
+                                match valid_until.and_then(|d| SystemTime::try_from(d).ok()) {
+                                    Some(expiry) => expiry,
+                                    None => {
+                                        error!(
+                                        "Identity service did not specify a certificate expiration."
                                     );
-
-                                    match config.trust_anchors.certify(key, crt) {
-                                        Err(e) => {
-                                            error!("Received invalid certificate: {}", e);
-                                        }
-                                        Ok(crt_key) => {
-                                            debug!("daemon certified until {:?}", expiry);
-                                            if crt_key_watch.send(Some(crt_key)).is_err() {
-                                                // If we can't store a value, than all observations
-                                                // have been dropped and we can stop refreshing.
-                                                return;
-                                            }
-
-                                            refreshes.incr();
-                                            curr_expiry = expiry;
-                                        }
+                                        continue;
                                     }
+                                };
+                            let crt = Crt::new(
+                                config.local_id.clone(),
+                                leaf_certificate,
+                                intermediate_certificates,
+                                expiry,
+                            );
+
+                            match config.trust_anchors.certify(key, crt) {
+                                Err(e) => {
+                                    error!("Received invalid certificate: {}", e);
+                                    continue;
+                                }
+                                Ok(crt_key) => {
+                                    debug!("daemon certified until {:?}", expiry);
+                                    if crt_key_tx.send(Some(crt_key)).is_err() {
+                                        // If we can't store a value, than all observations
+                                        // have been dropped and we can stop refreshing.
+                                        return;
+                                    }
+
+                                    refreshes.incr();
+                                    curr_expiry = expiry;
                                 }
                             }
                         }
@@ -183,14 +184,13 @@ impl LocalCrtKey {
         let refreshes = Arc::new(Counter::new());
         let l = Self {
             id: config.local_id.clone(),
-            trust_anchors: config.trust_anchors.clone(),
             crt_key: w,
             refreshes: refreshes.clone(),
         };
         let daemon = Daemon {
             config: config.clone(),
             refreshes,
-            crt_key_watch: s,
+            crt_key_tx: s,
         };
         (l, daemon)
     }
