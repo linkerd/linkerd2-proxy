@@ -29,4 +29,4 @@ linkerd-identity = { path = "../identity", features = ["test-util"] }
 linkerd-proxy-transport = { path = "../proxy/transport" }
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
-tower = { version = "0.4.9", default-features = false, features = ["util"] }
+tower = { version = "0.4.10", default-features = false, features = ["util"] }
