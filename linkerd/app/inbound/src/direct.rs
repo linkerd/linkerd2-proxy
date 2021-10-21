@@ -1,14 +1,14 @@
 use crate::{policy, Inbound};
 use linkerd_app_core::{
-    io,
-    proxy::identity::LocalCrtKey,
+    identity::LocalCrtKey,
+    io, rustls,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote, ServerAddr},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
     Conditional, Error, NameAddr, Result,
 };
-use std::{convert::TryFrom, fmt::Debug};
+use std::{convert::TryFrom, fmt::Debug, task};
 use thiserror::Error;
 use tracing::{debug_span, info_span};
 
@@ -52,8 +52,9 @@ pub struct ClientInfo {
     pub local_addr: OrigDstAddr,
 }
 
-type FwdIo<I> = SensorIo<io::PrefixedIo<tls::server::Io<I>>>;
-pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<tls::server::Io<I>>>;
+type TlsIo<I> = tls::server::Io<rustls::ServerIo<tls::server::DetectIo<I>>, I>;
+type FwdIo<I> = SensorIo<io::PrefixedIo<TlsIo<I>>>;
+pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<TlsIo<I>>>;
 
 #[derive(Clone)]
 struct TlsParams {
@@ -102,7 +103,6 @@ impl<N> Inbound<N> {
                     rt.metrics.proxy.transport.clone(),
                 ))
                 .instrument(|_: &_| debug_span!("opaque"))
-                .check_new_service::<Local, _>()
                 // When the transport header is present, it may be used for either local TCP
                 // forwarding, or we may be processing an HTTP gateway connection. HTTP gateway
                 // connections that have a transport header must provide a target name as a part of
@@ -129,8 +129,13 @@ impl<N> Inbound<N> {
                                             negotiated_protocol: client.alpn,
                                         },
                                     );
-                                    let permit = allow.check_authorized(client.client_addr, &tls)?;
-                                    Ok(svc::Either::A(Local { addr: Remote(ServerAddr(addr)), permit, client_id: client.client_id, }))
+                                    let permit =
+                                        allow.check_authorized(client.client_addr, &tls)?;
+                                    Ok(svc::Either::A(Local {
+                                        addr: Remote(ServerAddr(addr)),
+                                        permit,
+                                        client_id: client.client_id,
+                                    }))
                                 }
                                 TransportHeader {
                                     port,
@@ -167,30 +172,27 @@ impl<N> Inbound<N> {
                         .instrument(
                             |g: &GatewayTransportHeader| info_span!("gateway", dst = %g.target),
                         )
-                        .check_new_service::<GatewayTransportHeader, io::PrefixedIo<tls::server::Io<I>>>()
                         .into_inner(),
                 )
                 // Use ALPN to determine whether a transport header should be read.
                 .push(NewTransportHeaderServer::layer(detect_timeout))
-                .push_request_filter(
-                    |client: ClientInfo| -> Result<_> {
-                        if client.header_negotiated() {
-                            Ok(client)
-                        } else {
-                            Err(RefusedNoTarget.into())
-                        }
-                    },
-                )
-                .check_new_service::<ClientInfo, tls::server::Io<I>>()
+                .push_request_filter(|client: ClientInfo| -> Result<_> {
+                    if client.header_negotiated() {
+                        Ok(client)
+                    } else {
+                        Err(RefusedNoTarget.into())
+                    }
+                })
                 // Build a ClientInfo target for each accepted connection. Refuse the
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
                 .push(svc::ArcNewService::layer())
-                .push(tls::NewDetectTls::<WithTransportHeaderAlpn, _, _>::layer(TlsParams {
-                    timeout: tls::server::Timeout(detect_timeout),
-                    identity: WithTransportHeaderAlpn(rt.identity.clone()),
-                }))
-                .check_new_service::<T, I>()
+                .push(tls::NewDetectTls::<WithTransportHeaderAlpn, _, _>::layer(
+                    TlsParams {
+                        timeout: tls::server::Timeout(detect_timeout),
+                        identity: WithTransportHeaderAlpn(rt.identity.clone()),
+                    },
+                ))
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
@@ -293,8 +295,20 @@ impl Param<tls::ConditionalServerTls> for GatewayTransportHeader {
 
 // === impl WithTransportHeaderAlpn ===
 
-impl svc::Param<tls::server::Config> for WithTransportHeaderAlpn {
-    fn param(&self) -> tls::server::Config {
+impl<I> svc::Service<I> for WithTransportHeaderAlpn
+where
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
+{
+    type Response = (tls::ServerTls, rustls::ServerIo<I>);
+    type Error = io::Error;
+    type Future = rustls::TerminateFuture<I>;
+
+    #[inline]
+    fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), io::Error>> {
+        task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, io: I) -> Self::Future {
         // Copy the underlying TLS config and set an ALPN value.
         //
         // TODO: Avoid cloning the server config for every connection. It would
@@ -304,7 +318,7 @@ impl svc::Param<tls::server::Config> for WithTransportHeaderAlpn {
         config
             .alpn_protocols
             .push(transport_header::PROTOCOL.into());
-        config.into()
+        rustls::terminate(config.into(), io)
     }
 }
 

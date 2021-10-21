@@ -1,29 +1,24 @@
-use futures::{
-    future::{Either, MapOk},
-    prelude::*,
-};
+use crate::{HasNegotiatedProtocol, NegotiatedProtocolRef};
+use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_identity as id;
 use linkerd_io as io;
-use linkerd_stack::{layer, Param};
+use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
     fmt,
     future::Future,
     ops::Deref,
     pin::Pin,
     str::FromStr,
-    sync::Arc,
     task::{Context, Poll},
 };
-pub use tokio_rustls::client::TlsStream;
-use tokio_rustls::rustls::{self, Session};
 use tracing::debug;
 
 /// A newtype for target server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerId(pub id::Name);
 
-/// A stack paramter that configures a `Client` to establish a TLS connection.
+/// A stack parameter that configures a `Client` to establish a TLS connection.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientTls {
     pub server_id: ServerId,
@@ -55,19 +50,18 @@ pub enum NoClientTls {
 /// known TLS identity.
 pub type ConditionalClientTls = Conditional<ClientTls, NoClientTls>;
 
-pub type Config = Arc<rustls::ClientConfig>;
-
 #[derive(Clone, Debug)]
 pub struct Client<L, C> {
-    local: L,
+    identity: L,
     inner: C,
 }
 
-type Connect<F, I> = MapOk<F, fn(I) -> io::EitherIo<I, TlsStream<I>>>;
-type Handshake<I> =
-    Pin<Box<dyn Future<Output = io::Result<io::EitherIo<I, TlsStream<I>>>> + Send + 'static>>;
-
-pub type Io<I> = io::EitherIo<I, TlsStream<I>>;
+#[pin_project::pin_project(project = ConnectProj)]
+#[derive(Debug)]
+pub enum Connect<F, I, H: Service<I>> {
+    Connect(#[pin] F, Option<H>),
+    Handshake(#[pin] Oneshot<H, I>),
+}
 
 // === impl ClientTls ===
 
@@ -83,25 +77,28 @@ impl From<ServerId> for ClientTls {
 // === impl Client ===
 
 impl<L: Clone, C> Client<L, C> {
-    pub fn layer(local: L) -> impl layer::Layer<C, Service = Self> + Clone {
+    pub fn layer(identity: L) -> impl layer::Layer<C, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
-            local: local.clone(),
+            identity: identity.clone(),
         })
     }
 }
 
-impl<L, C, T> tower::Service<T> for Client<L, C>
+impl<T, L, H, C> Service<T> for Client<L, C>
 where
-    L: Clone + Param<Config>,
     T: Param<ConditionalClientTls>,
-    C: tower::Service<T, Error = io::Error>,
+    L: NewService<ClientTls, Service = H>,
+    C: Service<T, Error = io::Error>,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Future: Send + 'static,
+    H: Service<C::Response, Error = io::Error> + Send + 'static,
+    H::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + HasNegotiatedProtocol,
+    H::Future: Send + 'static,
 {
-    type Response = Io<C::Response>;
+    type Response = io::EitherIo<C::Response, H::Response>;
     type Error = io::Error;
-    type Future = Either<Connect<C::Future, C::Response>, Handshake<C::Response>>;
+    type Future = Connect<C::Future, C::Response, H>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -109,44 +106,49 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let ClientTls { server_id, alpn } = match target.param() {
-            Conditional::Some(tls) => tls,
+        let handshake = match target.param() {
+            Conditional::Some(tls) => Some(self.identity.new_service(tls)),
             Conditional::None(reason) => {
                 debug!(%reason, "Peer does not support TLS");
-                return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
+                None
             }
         };
 
-        // Build a rustls ClientConfig for this connection.
-        //
-        // If ALPN protocols are configured by the endpoint, we have to clone the
-        // entire configuration and set the protocols. If there are no
-        // ALPN options, clone the Arc'd base configuration without
-        // extra allocation.
-        //
-        // TODO it would be better to avoid cloning the whole TLS config
-        // per-connection.
-        let handshake = match alpn {
-            None => tokio_rustls::TlsConnector::from(self.local.param()),
-            Some(AlpnProtocols(protocols)) => {
-                let mut config: rustls::ClientConfig = self.local.param().as_ref().clone();
-                config.alpn_protocols = protocols;
-                tokio_rustls::TlsConnector::from(Arc::new(config))
-            }
-        };
-
-        debug!(server.id = %server_id, "Initiating TLS connection");
         let connect = self.inner.call(target);
-        Either::Right(Box::pin(async move {
-            let io = connect.await?;
-            let sni = webpki::DNSNameRef::try_from_ascii(server_id.as_bytes())
-                .expect("identity must be a valid DNS-like name");
-            let io = handshake.connect(sni, io).await?;
-            if let Some(alpn) = io.get_ref().1.get_alpn_protocol() {
-                debug!(alpn = ?std::str::from_utf8(alpn));
+        Connect::Connect(connect, handshake)
+    }
+}
+
+impl<F, I, H> Future for Connect<F, I, H>
+where
+    F: TryFuture<Ok = I, Error = io::Error>,
+    H: Service<I, Error = io::Error>,
+    H::Response: HasNegotiatedProtocol,
+{
+    type Output = io::Result<io::EitherIo<I, H::Response>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        loop {
+            match self.as_mut().project() {
+                ConnectProj::Connect(fut, tls) => {
+                    let io = futures::ready!(fut.try_poll(cx))?;
+                    match tls.take() {
+                        None => return Poll::Ready(Ok(io::EitherIo::Left(io))),
+                        Some(tls) => self.set(Connect::Handshake(tls.oneshot(io))),
+                    }
+                }
+                ConnectProj::Handshake(fut) => {
+                    let io = futures::ready!(fut.try_poll(cx))?;
+                    debug!(
+                        alpn = io
+                            .negotiated_protocol()
+                            .and_then(|NegotiatedProtocolRef(p)| std::str::from_utf8(p).ok())
+                            .map(tracing::field::display)
+                    );
+                    return Poll::Ready(Ok(io::EitherIo::Right(io)));
+                }
             }
-            Ok(io::EitherIo::Right(io))
-        }))
+        }
     }
 }
 

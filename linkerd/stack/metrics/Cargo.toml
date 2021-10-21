@@ -9,5 +9,5 @@ publish = false
 [dependencies]
 linkerd-metrics = { path = "../../metrics" }
 parking_lot = "0.11"
-tower = { version = "0.4.9", default-features = false }
+tower = { version = "0.4.10", default-features = false }
 tokio = { version = "1", features = ["time"] }

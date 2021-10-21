@@ -352,7 +352,7 @@ impl App {
                                 .await_crt()
                                 .map_ok(move |id| {
                                     latch.release();
-                                    info!("Certified identity: {}", id.name().as_ref());
+                                    info!("Certified identity: {}", id.name());
                                 })
                                 .map_err(|_| {
                                     // The daemon task was lost?!

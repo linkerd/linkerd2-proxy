@@ -14,7 +14,7 @@ linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
 opencensus-proto = { path = "../../opencensus-proto" }
 tonic = { version = "0.5", default-features = false, features = ["prost", "codegen"] }
-tower = { version = "0.4.9", default-features = false }
+tower = { version = "0.4.10", default-features = false }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 tokio-stream = { version = "0.1.7", features = ["sync"] }
 tracing = "0.1.29"

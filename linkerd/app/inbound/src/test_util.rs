@@ -3,10 +3,11 @@ pub use futures::prelude::*;
 use linkerd_app_core::{
     config,
     dns::Suffix,
-    drain, exp_backoff, metrics,
+    drain, exp_backoff,
+    identity::LocalCrtKey,
+    metrics,
     proxy::{
         http::{h1, h2},
-        identity::LocalCrtKey,
         tap,
     },
     transport::{Keepalive, ListenAddr},

@@ -1,41 +1,51 @@
+use crate::TokenSource;
 use http_body::Body;
 use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient};
 use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_metrics::Counter;
-use linkerd_stack::{NewService, Param};
+use linkerd_stack::{NewService, Param, Service};
 use linkerd_tls as tls;
-use pin_project::pin_project;
-use std::convert::TryFrom;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use linkerd_tls_rustls::{self as rustls, Crt, CrtKey, Key, TrustAnchors};
+use std::{
+    convert::TryFrom,
+    sync::Arc,
+    task,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use thiserror::Error;
-use tokio::sync::watch;
-use tokio::time::{self, Sleep};
+use tokio::{
+    io,
+    sync::watch,
+    time::{self, Sleep},
+};
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
 use tracing::{debug, error, trace};
 
 /// Configures the Identity service and local identity.
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub trust_anchors: id::TrustAnchors,
-    pub key: id::Key,
-    pub csr: id::Csr,
-    pub token: id::TokenSource,
+    pub trust_anchors: TrustAnchors,
+    pub key: Key,
+    pub csr: Csr,
+    pub token: TokenSource,
     pub local_id: id::LocalId,
     pub min_refresh: Duration,
     pub max_refresh: Duration,
 }
 
+/// A DER-encoded X.509 certificate signing request.
+#[derive(Clone, Debug)]
+pub struct Csr(Arc<Vec<u8>>);
+
 /// Holds the process's local TLS identity state.
 ///
 /// Updates dynamically as certificates are provisioned from the Identity service.
-#[pin_project]
 #[derive(Clone, Debug)]
 pub struct LocalCrtKey {
-    trust_anchors: id::TrustAnchors,
+    trust_anchors: TrustAnchors,
     id: id::LocalId,
-    crt_key: watch::Receiver<Option<id::CrtKey>>,
+    crt_key: watch::Receiver<Option<CrtKey>>,
     refreshes: Arc<Counter>,
 }
 
@@ -47,7 +57,7 @@ pub struct AwaitCrt(Option<LocalCrtKey>);
 #[error("identity initialization failed")]
 pub struct LostDaemon(());
 
-pub type CrtKeySender = watch::Sender<Option<id::CrtKey>>;
+pub type CrtKeySender = watch::Sender<Option<CrtKey>>;
 
 #[derive(Debug)]
 pub struct Daemon {
@@ -130,7 +140,7 @@ impl Daemon {
                                 ),
                                 Some(expiry) => {
                                     let key = config.key.clone();
-                                    let crt = id::Crt::new(
+                                    let crt = Crt::new(
                                         config.local_id.clone(),
                                         leaf_certificate,
                                         intermediate_certificates,
@@ -186,7 +196,7 @@ impl LocalCrtKey {
     }
 
     #[cfg(feature = "test-util")]
-    pub fn for_test(id: &id::test_util::Identity) -> Self {
+    pub fn for_test(id: &rustls::test_util::Identity) -> Self {
         let crt_key = id.validate().expect("Identity must be valid");
         let (tx, rx) = watch::channel(Some(crt_key));
         // Prevent the receiver stream from ending.
@@ -203,7 +213,7 @@ impl LocalCrtKey {
 
     #[cfg(feature = "test-util")]
     pub fn default_for_test() -> Self {
-        Self::for_test(&id::test_util::DEFAULT_DEFAULT)
+        Self::for_test(&rustls::test_util::DEFAULT_DEFAULT)
     }
 
     pub async fn await_crt(mut self) -> Result<Self, LostDaemon> {
@@ -228,7 +238,7 @@ impl LocalCrtKey {
         &*self.id
     }
 
-    pub fn client_config(&self) -> tls::client::Config {
+    fn client_config(&self) -> Arc<rustls::ClientConfig> {
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.client_config();
         }
@@ -236,29 +246,64 @@ impl LocalCrtKey {
         self.trust_anchors.client_config()
     }
 
-    pub fn server_config(&self) -> tls::server::Config {
+    pub fn server_config(&self) -> Arc<rustls::ServerConfig> {
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.server_config();
         }
 
-        tls::server::empty_config()
+        let verifier = rustls::NoClientAuth::new();
+        Arc::new(rustls::ServerConfig::new(verifier))
     }
 }
 
-impl Param<tls::client::Config> for LocalCrtKey {
-    fn param(&self) -> tls::client::Config {
-        self.client_config()
+impl NewService<tls::ClientTls> for LocalCrtKey {
+    type Service = rustls::Connect;
+
+    /// Creates a new TLS client service.
+    #[inline]
+    fn new_service(&self, target: tls::ClientTls) -> Self::Service {
+        rustls::Connect::new(target, self.client_config())
     }
 }
 
-impl Param<tls::server::Config> for LocalCrtKey {
-    fn param(&self) -> tls::server::Config {
-        self.server_config()
+impl<I> Service<I> for LocalCrtKey
+where
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
+{
+    type Response = (tls::ServerTls, rustls::ServerIo<I>);
+    type Error = io::Error;
+    type Future = rustls::TerminateFuture<I>;
+
+    #[inline]
+    fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), io::Error>> {
+        task::Poll::Ready(Ok(()))
+    }
+
+    /// Terminates a server-side TLS connection.
+    #[inline]
+    fn call(&mut self, io: I) -> Self::Future {
+        rustls::terminate(self.server_config(), io)
     }
 }
 
 impl Param<id::LocalId> for LocalCrtKey {
     fn param(&self) -> id::LocalId {
         self.id().clone()
+    }
+}
+
+// === impl Csr ===
+
+impl Csr {
+    pub fn from_der(der: Vec<u8>) -> Option<Self> {
+        if der.is_empty() {
+            return None;
+        }
+
+        Some(Csr(Arc::new(der)))
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.to_vec()
     }
 }

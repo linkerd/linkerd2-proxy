@@ -689,6 +689,7 @@ dependencies = [
  "linkerd-stack-tracing",
  "linkerd-system",
  "linkerd-tls",
+ "linkerd-tls-rustls",
  "linkerd-trace-context",
  "linkerd-tracing",
  "linkerd-transport-header",
@@ -991,12 +992,6 @@ name = "linkerd-identity"
 version = "0.1.0"
 dependencies = [
  "linkerd-dns-name",
- "ring",
- "thiserror",
- "tokio-rustls",
- "tracing",
- "untrusted",
- "webpki",
 ]
 
 [[package]]
@@ -1009,7 +1004,6 @@ dependencies = [
  "linkerd-errno",
  "pin-project",
  "tokio",
- "tokio-rustls",
  "tokio-test",
  "tokio-util",
 ]
@@ -1152,6 +1146,7 @@ dependencies = [
  "linkerd-metrics",
  "linkerd-stack",
  "linkerd-tls",
+ "linkerd-tls-rustls",
  "linkerd2-proxy-api",
  "pin-project",
  "thiserror",
@@ -1189,6 +1184,7 @@ dependencies = [
  "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-tls",
+ "linkerd-tls-rustls",
  "linkerd2-proxy-api",
  "parking_lot",
  "pin-project",
@@ -1364,13 +1360,29 @@ dependencies = [
  "linkerd-io",
  "linkerd-proxy-transport",
  "linkerd-stack",
+ "linkerd-tls-rustls",
  "linkerd-tracing",
+ "pin-project",
  "thiserror",
  "tokio",
- "tokio-rustls",
  "tower",
  "tracing",
  "untrusted",
+]
+
+[[package]]
+name = "linkerd-tls-rustls"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-stack",
+ "linkerd-tls",
+ "ring",
+ "thiserror",
+ "tokio-rustls",
+ "tracing",
  "webpki",
 ]
 
@@ -2256,9 +2268,9 @@ dependencies = [
 
 [[package]]
 name = "tower"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d15a6b60cdff0cb039d81d3b37f8bc3d7e53dca09069aae3ef2502ca4834fe30"
+checksum = "c00e500fff5fa1131c866b246041a6bf96da9c965f8fe4128cb1421f23e93c00"
 dependencies = [
  "futures-core",
  "futures-util",

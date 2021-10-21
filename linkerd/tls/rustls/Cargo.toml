@@ -1,0 +1,23 @@
+[package]
+name = "linkerd-tls-rustls"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2018"
+publish = false
+
+[features]
+default = []
+test-util = []
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+linkerd-identity = { path = "../../identity" }
+linkerd-io = { path = "../../io" }
+linkerd-stack = { path = "../../stack" }
+linkerd-tls = { path = ".." }
+ring = "0.16.19"
+thiserror = "1"
+tokio-rustls = "0.22"
+tracing = "0.1"
+webpki = "0.21"

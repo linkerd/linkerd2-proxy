@@ -128,21 +128,66 @@ where
 /// Handles HTTP/2 client errors for HTTP/1.1 requests by wrapping the error type. This
 /// simplifies error handling elsewhere so that HTTP/2 errors can only be encountered when the
 /// original request was HTTP/2.
-fn downgrade_h2_error(error: hyper::Error) -> Error {
-    use std::error::Error;
+fn downgrade_h2_error<E: std::error::Error + Send + Sync + 'static>(orig: E) -> Error {
+    #[inline]
+    fn reason(e: &(dyn std::error::Error + 'static)) -> Option<h2::Reason> {
+        e.downcast_ref::<h2::H2Error>()?.reason()
+    }
 
-    let mut cause = error.source();
-    while let Some(e) = cause {
-        if let Some(e) = e.downcast_ref::<h2::H2Error>() {
-            if let Some(reason) = e.reason() {
-                return DowngradedH2Error(reason).into();
-            }
+    // If the provided error was an H2 error, wrap it as a downgraded error.
+    if let Some(reason) = reason(&orig) {
+        return DowngradedH2Error(reason).into();
+    }
+
+    // Otherwise, check the source chain to see if its original error was an H2 error.
+    let mut cause = orig.source();
+    while let Some(error) = cause {
+        if let Some(reason) = reason(error) {
+            return DowngradedH2Error(reason).into();
         }
 
         cause = error.source();
     }
 
-    error.into()
+    // If the error was not an H2 error, return the original error (boxed).
+    orig.into()
+}
+
+#[cfg(test)]
+#[test]
+fn test_downgrade_h2_error() {
+    assert!(
+        downgrade_h2_error(h2::H2Error::from(h2::Reason::PROTOCOL_ERROR)).is::<DowngradedH2Error>(),
+        "h2 errors must be downgraded"
+    );
+
+    #[derive(Debug, Error)]
+    #[error("wrapped h2 error: {0}")]
+    struct WrapError(#[source] Error);
+    assert!(
+        downgrade_h2_error(WrapError(
+            h2::H2Error::from(h2::Reason::PROTOCOL_ERROR).into()
+        ))
+        .is::<DowngradedH2Error>(),
+        "wrapped h2 errors must be downgraded"
+    );
+
+    assert!(
+        downgrade_h2_error(WrapError(
+            WrapError(h2::H2Error::from(h2::Reason::PROTOCOL_ERROR).into()).into()
+        ))
+        .is::<DowngradedH2Error>(),
+        "double-wrapped h2 errors must be downgraded"
+    );
+
+    assert!(
+        !downgrade_h2_error(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "non h2 error"
+        ))
+        .is::<DowngradedH2Error>(),
+        "other h2 errors must not be downgraded"
+    );
 }
 
 // === impl UpgradeResponseBody ===
