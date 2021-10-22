@@ -3,7 +3,7 @@ name = "opencensus-proto"
 version = "0.1.0"
 authors = ["The OpenCensus Authors"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 description = """
 gRPC bindings for OpenCensus.

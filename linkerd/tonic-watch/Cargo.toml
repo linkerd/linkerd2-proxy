@@ -3,7 +3,7 @@ name = "linkerd-tonic-watch"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 description = """
 Provides a utility for creating robust watches from a service that returns a stream.

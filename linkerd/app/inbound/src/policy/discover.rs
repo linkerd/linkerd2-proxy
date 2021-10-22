@@ -12,7 +12,7 @@ use linkerd_server_policy::{
     Authentication, Authorization, Network, Protocol, ServerPolicy, Suffix,
 };
 use linkerd_tonic_watch::StreamWatch;
-use std::{convert::TryInto, net::IpAddr};
+use std::net::IpAddr;
 
 #[derive(Clone, Debug)]
 pub(super) struct Discover<S> {

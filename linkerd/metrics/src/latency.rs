@@ -44,7 +44,6 @@ pub struct Us(Duration);
 
 impl From<Us> for u64 {
     fn from(Us(us): Us) -> u64 {
-        use std::convert::TryInto;
         us.as_micros().try_into().unwrap_or_else(|_| {
             // These measurements should never be long enough to overflow
             tracing::warn!("Duration::as_micros would overflow u64");

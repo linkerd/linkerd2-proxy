@@ -26,7 +26,7 @@ use linkerd_app_inbound::{
     policy, Inbound,
 };
 use linkerd_app_outbound::{self as outbound, Outbound};
-use std::{convert::TryInto, fmt};
+use std::fmt;
 use thiserror::Error;
 use tracing::debug_span;
 

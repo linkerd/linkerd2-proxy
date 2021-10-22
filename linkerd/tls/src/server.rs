@@ -306,13 +306,13 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         let (mut client_io, server_io) = tokio::io::duplex(1024);
-        let input = include_bytes!("testdata/curl-example-com-client-hello.bin");
+        let input = include_bytes!("server/testdata/curl-example-com-client-hello.bin");
         let len = input.len();
         let client_task = tokio::spawn(async move {
             client_io
                 .write_all(&*input)
                 .await
-                .expect("Write must suceed");
+                .expect("Write must succeed");
         });
 
         let (sni, io) = detect_sni(server_io)
