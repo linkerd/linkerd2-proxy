@@ -13,9 +13,11 @@ multicore = ["tokio/rt-multi-thread", "num_cpus"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-mimalloc = { version = "0.1.26", optional = true }
 num_cpus = { version = "1", optional = true }
 linkerd-app = { path = "../linkerd/app" }
 linkerd-signal = { path = "../linkerd/signal" }
 tokio = { version = "1", features = ["rt", "time", "net"] }
 tracing = "0.1.29"
+
+[target.x86_64-unknown-linux-gnu.dependencies]
+jemallocator = { version = "0.3" }
