@@ -19,6 +19,16 @@ jobs:
       contents: read
     steps:
     - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
+    - name: cache Rust dependencies
+      uses: actions/cache@c64c572235d810460d0d6876e9c705ad5002b353
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d
       with:
         command: check advisories
@@ -46,6 +56,17 @@ jobs:
       - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz
+      - name: cache Rust dependencies
+        uses: actions/cache@c64c572235d810460d0d6876e9c705ad5002b353
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          # use a separate cache key because we're on nightly here
+          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('**/Cargo.lock') }}
       # Iterate through all fuzz crates to ensure each compiles independently.
       - run: cd linkerd/${{matrix.dir}}/fuzz && cargo +nightly fuzz build
 
@@ -59,6 +80,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
+      - name: cache Rust dependencies
+        uses: actions/cache@c64c572235d810460d0d6876e9c705ad5002b353
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - run: make build
         env:
           CARGO_RELEASE: true
