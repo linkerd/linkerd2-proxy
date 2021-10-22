@@ -9,6 +9,7 @@ use linkerd_signal as signal;
 use tokio::sync::mpsc;
 pub use tracing::{debug, error, info, warn};
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
