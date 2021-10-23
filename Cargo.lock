@@ -1389,8 +1389,9 @@ name = "linkerd-tls-rustls"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd-identity",
+ "linkerd-error",
  "linkerd-io",
+ "linkerd-proxy-identity",
  "linkerd-stack",
  "linkerd-tls",
  "ring",

@@ -12,11 +12,12 @@ test-util = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-linkerd-identity = { path = "../../identity" }
+linkerd-error = { path = "../../error" }
 linkerd-io = { path = "../../io" }
+linkerd-proxy-identity = { path = "../../proxy/identity" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = ".." }
-ring = "0.16.19"
+ring = { version = "0.16.19", features = ["std"] }
 thiserror = "1"
 tokio-rustls = "0.22"
 tracing = "0.1"

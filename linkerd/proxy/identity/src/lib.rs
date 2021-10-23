@@ -14,7 +14,7 @@ use std::time::SystemTime;
 pub trait Credentials {
     fn name(&self) -> &Name;
 
-    fn get_csr(&mut self) -> Vec<u8>;
+    fn get_csr(&self) -> Vec<u8>;
 
     fn set_crt(&mut self, leaf: Vec<u8>, chain: Vec<Vec<u8>>, expiry: SystemTime) -> Result<()>;
 }
