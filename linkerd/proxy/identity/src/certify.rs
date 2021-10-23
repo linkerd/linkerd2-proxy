@@ -29,6 +29,15 @@ pub struct Certify {
 
 // === impl Certify ===
 
+impl From<Config> for Certify {
+    fn from(config: Config) -> Self {
+        Self {
+            config,
+            metrics: Metrics::default(),
+        }
+    }
+}
+
 impl Certify {
     pub fn metrics(&self) -> Metrics {
         self.metrics.clone()
@@ -95,7 +104,7 @@ where
         valid_until,
     } = IdentityClient::new(client).certify(req).await?.into_inner();
 
-    let exp = valid_until.ok_or("missing expiration")?;
+    let exp = valid_until.ok_or("identity certification missing expiration")?;
     let expiry = SystemTime::try_from(exp)?;
     credentials.set_crt(leaf_certificate, intermediate_certificates, expiry)?;
     Ok(expiry)
