@@ -8,7 +8,6 @@ publish = false
 
 [features]
 rustfmt = ["linkerd2-proxy-api/rustfmt"]
-test-util = ["linkerd-tls-rustls/test-util"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
@@ -17,8 +16,7 @@ linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
-linkerd-tls = { path = "../../tls" }
-linkerd-tls-rustls = { path = "../../tls/rustls" }
+parking_lot = "0.11"
 thiserror = "1"
 tokio = { version = "1", features = ["time", "sync"] }
 tonic = { version = "0.5", default-features = false }
