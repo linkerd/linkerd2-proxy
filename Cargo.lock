@@ -1396,6 +1396,7 @@ dependencies = [
  "linkerd-tls",
  "ring",
  "thiserror",
+ "tokio",
  "tokio-rustls",
  "tracing",
  "webpki",
