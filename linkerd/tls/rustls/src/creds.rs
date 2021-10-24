@@ -45,8 +45,8 @@ const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
 const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
     rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
 const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_3];
-static RUSTLS_SUPPORTED_CIPHERSUITES: &[&rustls::SupportedCipherSuite] =
-    &[&rustls::ciphersuite::TLS13_CHACHA20_POLY1305_SHA256];
+static TLS_SUPPORTED_CIPHERSUITES: [&rustls::SupportedCipherSuite; 1] =
+    [&rustls::ciphersuite::TLS13_CHACHA20_POLY1305_SHA256];
 
 impl Creds {
     pub fn load(identity: id::Name, roots_pem: &str, key_pkcs8: &[u8], csr: &[u8]) -> Result<Self> {
@@ -108,6 +108,7 @@ impl id::Credentials for Creds {
         chain.extend(intermediates.into_iter().map(rustls::Certificate));
 
         let mut client = rustls::ClientConfig::new();
+        client.ciphersuites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
 
         // XXX: Rustls's built-in verifiers don't let us tweak things as fully
         // as we'd like (e.g. controlling the set of trusted signature
@@ -115,7 +116,6 @@ impl id::Credentials for Creds {
         // TODO: lock down the verification further.
         // TODO: Change Rustls's API to avoid needing to clone `root_cert_store`.
         client.root_store = self.roots.clone();
-        client.ciphersuites = RUSTLS_SUPPORTED_CIPHERSUITES.to_vec();
 
         // Disable session resumption for the time-being until resumption is
         // more tested.
@@ -171,7 +171,7 @@ impl id::Credentials for Creds {
         );
         server.versions = TLS_VERSIONS.to_vec();
         server.cert_resolver = resolver;
-        server.ciphersuites = RUSTLS_SUPPORTED_CIPHERSUITES.to_vec();
+        server.ciphersuites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
 
         self.server_tx
             .send(Some(Crt {
