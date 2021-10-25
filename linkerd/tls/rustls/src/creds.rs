@@ -396,11 +396,6 @@ mod tests {
             }
         });
 
-        tokio::select! {
-            _ = (&mut server) => panic!("server must not be ready"),
-            _ = time::sleep(time::Duration::from_millis(100)) => {}
-        }
-
         let server_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
         server_tx
             .send(Some(server_config.clone()))
