@@ -1,6 +1,7 @@
 use futures::prelude::*;
 use linkerd_io as io;
-use linkerd_stack::Service;
+use linkerd_proxy_identity::{LocalId, Name};
+use linkerd_stack::{Param, Service};
 use linkerd_tls::{
     ClientId, HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls,
 };
@@ -11,6 +12,7 @@ use tracing::debug;
 
 #[derive(Clone)]
 pub struct Terminate {
+    name: Name,
     rx: watch::Receiver<Arc<ServerConfig>>,
     _handle: Option<Arc<tokio::task::JoinHandle<()>>>,
 }
@@ -25,10 +27,12 @@ pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
 
 impl Terminate {
     pub(crate) fn new(
+        name: Name,
         rx: watch::Receiver<Arc<ServerConfig>>,
         handle: Option<tokio::task::JoinHandle<()>>,
     ) -> Self {
         Self {
+            name,
             rx,
             _handle: handle.map(Arc::new),
         }
@@ -37,6 +41,12 @@ impl Terminate {
     #[cfg(test)]
     pub(crate) fn config(&self) -> Arc<ServerConfig> {
         (*self.rx.borrow()).clone()
+    }
+}
+
+impl Param<LocalId> for Terminate {
+    fn param(&self) -> LocalId {
+        LocalId(self.name.clone())
     }
 }
 

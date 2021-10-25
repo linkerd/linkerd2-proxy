@@ -6,10 +6,6 @@ license = "Apache-2.0"
 edition = "2018"
 publish = false
 
-[features]
-default = []
-test-util = []
-
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
@@ -25,4 +21,9 @@ tracing = "0.1"
 webpki = "0.21"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "test-util", "time"] }
+linkerd-conditional = { path = "../../conditional" }
+linkerd-proxy-transport = { path = "../../proxy/transport" }
+linkerd-tls-test-util = { path = "../test-util" }
+linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tower = { version = "0.4.10", default-features = false, features = ["util"] }

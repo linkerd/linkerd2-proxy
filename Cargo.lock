@@ -1372,10 +1372,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-identity",
  "linkerd-io",
- "linkerd-proxy-transport",
  "linkerd-stack",
- "linkerd-tls-rustls",
- "linkerd-tracing",
  "pin-project",
  "thiserror",
  "tokio",
@@ -1389,18 +1386,27 @@ name = "linkerd-tls-rustls"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "linkerd-conditional",
  "linkerd-error",
  "linkerd-io",
  "linkerd-proxy-identity",
+ "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-tls",
+ "linkerd-tls-test-util",
+ "linkerd-tracing",
  "ring",
  "thiserror",
  "tokio",
  "tokio-rustls",
+ "tower",
  "tracing",
  "webpki",
 ]
+
+[[package]]
+name = "linkerd-tls-test-util"
+version = "0.1.0"
 
 [[package]]
 name = "linkerd-tonic-watch"
