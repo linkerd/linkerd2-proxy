@@ -1,8 +1,6 @@
 use crate::{NewClient, Terminate};
-use linkerd_error::Result;
 use linkerd_proxy_identity::Name;
 use std::sync::Arc;
-use thiserror::Error;
 use tokio::sync::watch;
 use tokio_rustls::rustls;
 
@@ -12,10 +10,6 @@ pub struct Receiver {
     client_rx: watch::Receiver<Arc<rustls::ClientConfig>>,
     server_rx: watch::Receiver<Arc<rustls::ServerConfig>>,
 }
-
-#[derive(Debug, Error)]
-#[error("credential store lost")]
-pub struct LostStore(());
 
 // === impl Receiver ===
 
@@ -38,42 +32,6 @@ impl Receiver {
 
     pub fn server(&self) -> Terminate {
         Terminate::new(self.name.clone(), self.server_rx.clone(), None)
-    }
-
-    pub fn spawn_server_with_alpn(
-        &self,
-        alpn_protocols: Vec<Vec<u8>>,
-    ) -> Result<Terminate, LostStore> {
-        if alpn_protocols.is_empty() {
-            return Ok(self.server());
-        }
-
-        let mut orig_rx = self.server_rx.clone();
-
-        let mut c = (**orig_rx.borrow_and_update()).clone();
-        c.alpn_protocols = alpn_protocols.clone();
-        let (tx, rx) = watch::channel(c.into());
-
-        // Spawn a background task that watches the optional server configuration and publishes it
-        // as a reliable channel, including any ALPN overrides.
-        eprintln!("spawning task");
-        let task = tokio::spawn(async move {
-            loop {
-                eprintln!("Waiting for update");
-                if orig_rx.changed().await.is_err() {
-                    return;
-                }
-
-                let mut c = (*orig_rx.borrow().clone()).clone();
-                c.alpn_protocols = alpn_protocols.clone();
-                eprintln!("Updating config");
-                if tx.send(c.into()).is_err() {
-                    return;
-                }
-            }
-        });
-
-        Ok(Terminate::new(self.name.clone(), rx, Some(task)))
     }
 }
 
@@ -125,7 +83,8 @@ mod tests {
         };
 
         let server = receiver
-            .spawn_server_with_alpn(vec![b"my.alpn".to_vec()])
+            .server()
+            .spawn_with_alpn(vec![b"my.alpn".to_vec()])
             .expect("sender must not be lost");
 
         let init_sc = server.config();

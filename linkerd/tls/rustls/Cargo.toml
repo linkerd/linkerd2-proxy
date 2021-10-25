@@ -6,6 +6,9 @@ license = "Apache-2.0"
 edition = "2018"
 publish = false
 
+[features]
+test-util = ["linkerd-tls-test-util"]
+
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
@@ -13,6 +16,7 @@ linkerd-io = { path = "../../io" }
 linkerd-proxy-identity = { path = "../../proxy/identity" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = ".." }
+linkerd-tls-test-util = { path = "../test-util", optional = true }
 ring = { version = "0.16.19", features = ["std"] }
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }

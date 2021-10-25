@@ -6,6 +6,7 @@ use linkerd_tls::{
     ClientId, HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls,
 };
 use std::{pin::Pin, sync::Arc, task};
+use thiserror::Error;
 use tokio::sync::watch;
 use tokio_rustls::rustls::{Certificate, ServerConfig, Session};
 use tracing::debug;
@@ -25,6 +26,10 @@ pub type TerminateFuture<I> = futures::future::MapOk<
 #[derive(Debug)]
 pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
 
+#[derive(Debug, Error)]
+#[error("credential store lost")]
+pub struct LostStore(());
+
 impl Terminate {
     pub(crate) fn new(
         name: Name,
@@ -41,6 +46,36 @@ impl Terminate {
     #[cfg(test)]
     pub(crate) fn config(&self) -> Arc<ServerConfig> {
         (*self.rx.borrow()).clone()
+    }
+
+    pub fn spawn_with_alpn(self, alpn_protocols: Vec<Vec<u8>>) -> Result<Self, LostStore> {
+        if alpn_protocols.is_empty() {
+            return Ok(self);
+        }
+
+        let mut orig_rx = self.rx.clone();
+
+        let mut c = (**orig_rx.borrow_and_update()).clone();
+        c.alpn_protocols = alpn_protocols.clone();
+        let (tx, rx) = watch::channel(c.into());
+
+        // Spawn a background task that watches the optional server configuration and publishes it
+        // as a reliable channel, including any ALPN overrides.
+        let task = tokio::spawn(async move {
+            loop {
+                if orig_rx.changed().await.is_err() {
+                    return;
+                }
+
+                let mut c = (*orig_rx.borrow().clone()).clone();
+                c.alpn_protocols = alpn_protocols.clone();
+                if tx.send(c.into()).is_err() {
+                    return;
+                }
+            }
+        });
+
+        Ok(Self::new(self.name, rx, Some(task)))
     }
 }
 

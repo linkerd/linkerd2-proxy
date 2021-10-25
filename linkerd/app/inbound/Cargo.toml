@@ -17,6 +17,7 @@ linkerd-app-core = { path = "../core" }
 linkerd-server-policy = { path = "../../server-policy" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 linkerd2-proxy-api = { version = "0.2", features = ["client", "inbound"] }
+parking_lot = "0.11"
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
 tonic = { version = "0.5", default-features = false }
@@ -33,7 +34,7 @@ libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
 hyper = { version = "0.14.14", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
-#linkerd-proxy-identity = { path = "../../proxy/identity", features = ["test-util"] }
+linkerd-tls-rustls = { path = "../../tls/rustls", features = ["test-util"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["full", "macros"] }
 tokio-test = "0.4"

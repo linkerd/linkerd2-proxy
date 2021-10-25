@@ -50,6 +50,21 @@ pub fn watch(
     Ok((store, rx))
 }
 
+#[cfg(feature = "test-util")]
+pub fn for_test(ent: &linkerd_tls_test_util::Entity) -> (Store, Receiver) {
+    watch(
+        ent.name.parse().expect("name must be valid"),
+        std::str::from_utf8(ent.trust_anchors).expect("roots must be PEM"),
+        &ent.key,
+        b"fake CSR",
+    ).expect("credentials must be valid")
+}
+
+#[cfg(feature = "test-util")]
+pub fn default_for_test() -> (Store, Receiver) {
+    for_test(&linkerd_tls_test_util::FOO_NS1)
+}
+
 mod params {
     use tokio_rustls::rustls;
 
