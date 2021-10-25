@@ -1,11 +1,19 @@
 use futures::prelude::*;
 use linkerd_io as io;
+use linkerd_stack::Service;
 use linkerd_tls::{
     ClientId, HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls,
 };
-use std::{pin::Pin, sync::Arc};
+use std::{pin::Pin, sync::Arc, task};
+use tokio::sync::watch;
 use tokio_rustls::rustls::{Certificate, ServerConfig, Session};
 use tracing::debug;
+
+#[derive(Clone)]
+pub struct Terminate {
+    rx: watch::Receiver<Arc<ServerConfig>>,
+    _handle: Arc<tokio::task::JoinHandle<()>>,
+}
 
 pub type TerminateFuture<I> = futures::future::MapOk<
     tokio_rustls::Accept<I>,
@@ -14,6 +22,37 @@ pub type TerminateFuture<I> = futures::future::MapOk<
 
 #[derive(Debug)]
 pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
+
+impl Terminate {
+    pub(crate) fn new(
+        rx: watch::Receiver<Arc<ServerConfig>>,
+        _handle: tokio::task::JoinHandle<()>,
+    ) -> Self {
+        Self {
+            rx,
+            _handle: Arc::new(_handle),
+        }
+    }
+}
+
+impl<I> Service<I> for Terminate
+where
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
+{
+    type Response = (ServerTls, ServerIo<I>);
+    type Error = std::io::Error;
+    type Future = TerminateFuture<I>;
+
+    #[inline]
+    fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> task::Poll<Result<(), Self::Error>> {
+        task::Poll::Ready(Ok(()))
+    }
+
+    #[inline]
+    fn call(&mut self, io: I) -> Self::Future {
+        terminate((*self.rx.borrow()).clone(), io)
+    }
+}
 
 /// Terminates a TLS connection.
 pub fn terminate<I>(config: Arc<ServerConfig>, io: I) -> TerminateFuture<I>

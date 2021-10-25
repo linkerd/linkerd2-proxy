@@ -1,6 +1,5 @@
-use super::*;
-use linkerd_identity::{LocalId, Name};
-use std::time::{Duration, SystemTime};
+use linkerd_proxy_identity::Name;
+//use std::time::{Duration, SystemTime};
 
 pub struct Identity {
     pub name: &'static str,
@@ -31,10 +30,11 @@ pub static BAR_NS1: Identity = Identity {
 };
 
 impl Identity {
-    pub fn id(&self) -> LocalId {
-        LocalId(self.name.parse().expect("Invalid identity string"))
+    pub fn id(&self) -> Name {
+        self.name.parse().expect("Invalid identity string")
     }
 
+    /*
     pub fn trust_anchors(&self) -> TrustAnchors {
         let pem = ::std::str::from_utf8(self.trust_anchors).expect("utf-8");
         TrustAnchors::from_pem(pem).unwrap_or_else(TrustAnchors::empty)
@@ -57,4 +57,5 @@ impl Identity {
         let c = self.crt();
         self.trust_anchors().certify(k, c)
     }
+    */
 }

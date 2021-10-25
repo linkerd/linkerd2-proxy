@@ -4,18 +4,22 @@ use ring::{error::KeyRejected, rand, signature::EcdsaKeyPair};
 use std::{sync::Arc, time::SystemTime};
 use thiserror::Error;
 use tokio::sync::watch;
-use tokio_rustls::rustls;
+use tokio_rustls::rustls::{self};
 use tracing::{debug, warn};
 
-pub struct Creds {
+pub struct Store {
     roots: rustls::RootCertStore,
     key: Arc<EcdsaKeyPair>,
     csr: Arc<[u8]>,
     identity: id::Name,
-    client_rx: watch::Receiver<Option<Crt<rustls::ClientConfig>>>,
-    client_tx: watch::Sender<Option<Crt<rustls::ClientConfig>>>,
-    server_rx: watch::Receiver<Option<Crt<rustls::ServerConfig>>>,
-    server_tx: watch::Sender<Option<Crt<rustls::ServerConfig>>>,
+    client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
+    server_tx: watch::Sender<Option<Arc<rustls::ServerConfig>>>,
+}
+
+#[derive(Clone)]
+pub struct Receiver {
+    client_rx: watch::Receiver<Arc<rustls::ClientConfig>>,
+    server_rx: watch::Receiver<Option<Arc<rustls::ServerConfig>>>,
 }
 
 #[derive(Debug, Error)]
@@ -26,11 +30,9 @@ pub struct InvalidKey(KeyRejected);
 #[error("invalid trust roots")]
 pub struct InvalidTrustRoots(());
 
-#[derive(Clone, Debug)]
-pub struct Crt<T> {
-    pub config: Arc<T>,
-    pub expiry: SystemTime,
-}
+#[derive(Debug, Error)]
+#[error("credential store lost")]
+pub struct LostStore(());
 
 #[derive(Clone)]
 struct Key(Arc<EcdsaKeyPair>);
@@ -48,47 +50,46 @@ const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv
 static TLS_SUPPORTED_CIPHERSUITES: [&rustls::SupportedCipherSuite; 1] =
     [&rustls::ciphersuite::TLS13_CHACHA20_POLY1305_SHA256];
 
-impl Creds {
-    pub fn load(identity: id::Name, roots_pem: &str, key_pkcs8: &[u8], csr: &[u8]) -> Result<Self> {
-        let mut roots = rustls::RootCertStore::empty();
-        let (added, skipped) = roots
-            .add_pem_file(&mut std::io::Cursor::new(roots_pem))
-            .map_err(InvalidTrustRoots)?;
-        if skipped != 0 {
-            warn!("Skipped {} invalid trust anchors", skipped);
-        }
-        if added == 0 {
-            return Err("no trust roots loaded".into());
-        }
-
-        let key =
-            EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, key_pkcs8).map_err(InvalidKey)?;
-
-        let (client_tx, client_rx) = watch::channel(None);
-        let (server_tx, server_rx) = watch::channel(None);
-
-        Ok(Self {
-            roots,
-            key: Arc::new(key),
-            csr: csr.into(),
-            identity,
-            client_rx,
-            client_tx,
-            server_rx,
-            server_tx,
-        })
+pub fn watch(
+    identity: id::Name,
+    roots_pem: &str,
+    key_pkcs8: &[u8],
+    csr: &[u8],
+) -> Result<(Store, Receiver)> {
+    let mut roots = rustls::RootCertStore::empty();
+    let (added, skipped) = roots
+        .add_pem_file(&mut std::io::Cursor::new(roots_pem))
+        .map_err(InvalidTrustRoots)?;
+    if skipped != 0 {
+        warn!("Skipped {} invalid trust anchors", skipped);
+    }
+    if added == 0 {
+        return Err("no trust roots loaded".into());
     }
 
-    pub fn client(&self) -> watch::Receiver<Option<Crt<rustls::ClientConfig>>> {
-        self.client_rx.clone()
-    }
+    let key =
+        EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, key_pkcs8).map_err(InvalidKey)?;
 
-    pub fn server(&self) -> watch::Receiver<Option<Crt<rustls::ServerConfig>>> {
-        self.server_rx.clone()
-    }
+    let (client_tx, client_rx) = watch::channel(Arc::new(rustls::ClientConfig::new()));
+    let (server_tx, server_rx) = watch::channel(None);
+
+    let store = Store {
+        roots,
+        key: Arc::new(key),
+        csr: csr.into(),
+        identity,
+        client_tx,
+        server_tx,
+    };
+    let rx = Receiver {
+        client_rx,
+        server_rx,
+    };
+
+    Ok((store, rx))
 }
 
-impl id::Credentials for Creds {
+impl id::Credentials for Store {
     fn name(&self) -> &id::Name {
         &self.identity
     }
@@ -101,7 +102,7 @@ impl id::Credentials for Creds {
         &mut self,
         leaf: Vec<u8>,
         intermediates: Vec<Vec<u8>>,
-        expiry: SystemTime,
+        _expiry: SystemTime,
     ) -> Result<()> {
         let mut chain = Vec::with_capacity(intermediates.len() + 1);
         chain.push(rustls::Certificate(leaf));
@@ -149,13 +150,7 @@ impl id::Credentials for Creds {
         // Enable client authentication.
         client.client_auth_cert_resolver = resolver.clone();
 
-        self.client_tx
-            .send(Some(Crt {
-                config: client.into(),
-                expiry,
-            }))
-            .ok()
-            .expect("receivers are held");
+        let _ = self.client_tx.send(client.into());
 
         // Ask TLS clients for a certificate and accept any certificate issued
         // by our trusted CA(s).
@@ -173,15 +168,76 @@ impl id::Credentials for Creds {
         server.cert_resolver = resolver;
         server.ciphersuites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
 
-        self.server_tx
-            .send(Some(Crt {
-                config: server.into(),
-                expiry,
-            }))
-            .ok()
-            .expect("receivers are held");
+        let _ = self.server_tx.send(Some(server.into()));
 
         Ok(())
+    }
+}
+
+// === impl Receiver ===
+
+impl Receiver {
+    // pub fn client(&self) -> crate::Connect {
+    //     crate::Connect::new(self.client_rx.clone())
+    // }
+
+    pub async fn spawn_server(
+        &mut self,
+        alpn_protocols: Vec<Vec<u8>>,
+    ) -> Result<crate::Terminate, LostStore> {
+        let mut orig_rx = self.server_rx.clone();
+
+        let mut config = Self::wait_for_server(&mut orig_rx).await?;
+
+        // If we're creating a server that advertises ALPN, we create a new Arc<ServerConfig> that
+        // includes the relevant ALPN protocols. This allows servers that expose ALPN to avoid
+        // cloning the server config for every connection by, instead, doing this clone at the watch
+        // level.
+        if !alpn_protocols.is_empty() {
+            let mut c = (*config).clone();
+            c.alpn_protocols = alpn_protocols.clone();
+            config = c.into();
+        }
+
+        let (tx, rx) = watch::channel(config);
+
+        // Spawn a background task that watches the optional server configuration and publishes it
+        // as a reliable channel, including any ALPN overrides.
+        let task = tokio::spawn(async move {
+            loop {
+                if orig_rx.changed().await.is_err() {
+                    return;
+                }
+
+                if let Some(mut config) = orig_rx.borrow().as_ref().cloned() {
+                    // Propagate ALPN as necessary.
+                    if !alpn_protocols.is_empty() {
+                        let mut c = (*config).clone();
+                        c.alpn_protocols = alpn_protocols.clone();
+                        config = c.into();
+                    }
+                    if tx.send(config).is_err() {
+                        return;
+                    }
+                }
+            }
+        });
+
+        Ok(crate::Terminate::new(rx, task))
+    }
+
+    /// Waits until a server TLS config is ready.
+    async fn wait_for_server(
+        rx: &mut watch::Receiver<Option<Arc<rustls::ServerConfig>>>,
+    ) -> Result<Arc<rustls::ServerConfig>, LostStore> {
+        loop {
+            let config = (*rx.borrow_and_update()).as_ref().cloned();
+            if let Some(c) = config {
+                return Ok(c);
+            }
+
+            rx.changed().await.map_err(|_| LostStore(()))?;
+        }
     }
 }
 
