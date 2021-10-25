@@ -812,6 +812,7 @@ dependencies = [
  "linkerd-http-retry",
  "linkerd-identity",
  "linkerd-io",
+ "linkerd-tls-rustls",
  "linkerd-tracing",
  "parking_lot",
  "pin-project",

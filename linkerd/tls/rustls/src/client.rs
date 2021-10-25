@@ -41,6 +41,12 @@ impl NewService<ClientTls> for NewClient {
     }
 }
 
+impl std::fmt::Debug for NewClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewClient").finish()
+    }
+}
+
 // === impl Connect ===
 
 impl Connect {

@@ -72,7 +72,7 @@ pub struct Outbound<S> {
 #[derive(Clone, Debug)]
 struct Runtime {
     metrics: Metrics,
-    identity: LocalCrtKey,
+    identity: rustls::NewClient,
     tap: tap::Registry,
     span_sink: OpenCensusSink,
     drain: drain::Watch,
@@ -90,7 +90,7 @@ impl Outbound<()> {
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         let runtime = Runtime {
             metrics: Metrics::new(runtime.metrics),
-            identity: runtime.identity,
+            identity: runtime.identity.new_client(),
             tap: runtime.tap,
             span_sink: runtime.span_sink,
             drain: runtime.drain,
