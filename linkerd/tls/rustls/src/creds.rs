@@ -210,12 +210,13 @@ impl Receiver {
                 }
 
                 if let Some(mut config) = orig_rx.borrow().as_ref().cloned() {
-                    // Propagate ALPN as necessary.
+                    // If there's an ALPN override, copy the config with the new alpn values.
                     if !alpn_protocols.is_empty() {
                         let mut c = (*config).clone();
                         c.alpn_protocols = alpn_protocols.clone();
                         config = c.into();
                     }
+
                     if tx.send(config).is_err() {
                         return;
                     }
@@ -324,5 +325,100 @@ impl rustls::sign::Signer for Key {
 
     fn get_scheme(&self) -> rustls::SignatureScheme {
         SIGNATURE_ALG_RUSTLS_SCHEME
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time;
+
+    #[tokio::test]
+    async fn test_spawn_server() {
+        time::pause();
+
+        let (server_tx, server_rx) = watch::channel(None);
+        let (_, client_rx) = watch::channel(Arc::new(rustls::ClientConfig::new()));
+        let receiver = Receiver {
+            server_rx,
+            client_rx,
+        };
+
+        let mut server = tokio::spawn({
+            let mut rx = receiver.clone();
+            async move {
+                rx.spawn_server(vec![])
+                    .await
+                    .expect("sender must not be lost")
+            }
+        });
+
+        tokio::select! {
+            _ = (&mut server) => panic!("server must not be ready"),
+            _ = time::sleep(time::Duration::from_millis(100)) => {}
+        }
+
+        let server_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
+        server_tx
+            .send(Some(server_config.clone()))
+            .ok()
+            .expect("receiver is held");
+
+        tokio::select! {
+            res = (&mut server) => {
+                let srv = res.expect("task must complete");
+                // Test that we're using the same exact Arc.
+                assert!(Arc::ptr_eq(&server_config, &srv.config()));
+            }
+            _ = time::sleep(time::Duration::from_millis(100)) => {
+                panic!("server must be ready");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_spawn_server_alpn() {
+        time::pause();
+
+        let (server_tx, server_rx) = watch::channel(None);
+        let (_, client_rx) = watch::channel(Arc::new(rustls::ClientConfig::new()));
+        let receiver = Receiver {
+            server_rx,
+            client_rx,
+        };
+
+        let mut server = tokio::spawn({
+            let mut rx = receiver.clone();
+            async move {
+                rx.spawn_server(vec![b"my.alpn".to_vec()])
+                    .await
+                    .expect("sender must not be lost")
+            }
+        });
+
+        tokio::select! {
+            _ = (&mut server) => panic!("server must not be ready"),
+            _ = time::sleep(time::Duration::from_millis(100)) => {}
+        }
+
+        let server_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
+        server_tx
+            .send(Some(server_config.clone()))
+            .ok()
+            .expect("receiver is held");
+
+        tokio::select! {
+            res = (&mut server) => {
+                let srv = res.expect("task must complete");
+                let sc = srv.config();
+                // Confirm that we're not using the same exact Arc, since we're using a copy with
+                // ALPN set.
+                assert!(!Arc::ptr_eq(&server_config, &sc));
+                assert_eq!(sc.alpn_protocols, [b"my.alpn"]);
+            }
+            _ = time::sleep(time::Duration::from_millis(100)) => {
+                panic!("server must be ready");
+            }
+        }
     }
 }

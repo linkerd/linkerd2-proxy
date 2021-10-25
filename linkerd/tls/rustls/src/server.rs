@@ -33,6 +33,11 @@ impl Terminate {
             _handle: Arc::new(_handle),
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn config(&self) -> Arc<ServerConfig> {
+        (*self.rx.borrow()).clone()
+    }
 }
 
 impl<I> Service<I> for Terminate

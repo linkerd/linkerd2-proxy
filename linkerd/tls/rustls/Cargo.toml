@@ -23,3 +23,6 @@ tokio = { version = "1", features = ["sync"] }
 tokio-rustls = "0.22"
 tracing = "0.1"
 webpki = "0.21"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "test-util", "time"] }
