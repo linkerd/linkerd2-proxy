@@ -57,7 +57,7 @@ const DEFAULT_PORT: u16 = 80;
 
 #[derive(Clone, Debug)]
 pub struct ProxyRuntime {
-    pub identity: identity::LocalCrtKey,
+    pub identity: rustls::creds::Receiver,
     pub metrics: metrics::Proxy,
     pub tap: proxy::tap::Registry,
     pub span_sink: http_tracing::OpenCensusSink,

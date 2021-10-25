@@ -77,6 +77,14 @@ impl Receiver {
     }
 }
 
+impl std::fmt::Debug for Receiver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Receiver")
+            .field("name", &self.name)
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
