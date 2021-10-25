@@ -21,16 +21,7 @@ jobs:
       contents: read
     steps:
     - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
-    - name: cache Rust dependencies
-      uses: actions/cache@c64c572235d810460d0d6876e9c705ad5002b353
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - uses: Swatinem/rust-cache@d12701459954fec471b2d34cdf7ea3374b026383
     - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d
       with:
         command: check bans licenses sources
@@ -46,16 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
       - run: rustup component add clippy
-      - name: cache Rust dependencies
-        uses: actions/cache@c64c572235d810460d0d6876e9c705ad5002b353
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - uses: Swatinem/rust-cache@d12701459954fec471b2d34cdf7ea3374b026383
       - run: make lint
 
   # Iterate through all (non-fuzzer) sub-crates to ensure each compiles independently.
@@ -68,16 +50,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
-      - name: cache Rust dependencies
-        uses: actions/cache@c64c572235d810460d0d6876e9c705ad5002b353
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - uses: Swatinem/rust-cache@d12701459954fec471b2d34cdf7ea3374b026383
       - run: for d in $(for toml in $(find . -mindepth 2 -name Cargo.toml -not -path '*/fuzz/*') ; do echo ${toml%/*} ; done | sort -r ) ; do echo "# $d" ; (cd $d ; cargo check --all-targets) ; done
 
   # Enforce automated formatting.
@@ -91,16 +64,7 @@ jobs:
     steps:
       - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
       - run: rustup component add rustfmt
-      - name: cache Rust dependencies
-        uses: actions/cache@c64c572235d810460d0d6876e9c705ad5002b353
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - uses: Swatinem/rust-cache@d12701459954fec471b2d34cdf7ea3374b026383
       - run: make check-fmt
 
   # Run all tests.
@@ -111,16 +75,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
-      - name: cache Rust dependencies
-        uses: actions/cache@c64c572235d810460d0d6876e9c705ad5002b353
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - uses: Swatinem/rust-cache@d12701459954fec471b2d34cdf7ea3374b026383
       - run: make test
 
   # Generate docs
@@ -131,14 +86,5 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
-      - name: cache Rust dependencies
-        uses: actions/cache@c64c572235d810460d0d6876e9c705ad5002b353
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - uses: Swatinem/rust-cache@d12701459954fec471b2d34cdf7ea3374b026383
       - run: cargo doc
