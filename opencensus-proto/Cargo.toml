@@ -18,7 +18,7 @@ prost = "0.8"
 prost-types = "0.8"
 
 [build-dependencies]
-tonic-build = { version = "0.5", features = ["prost"], default-features = false }
+tonic-build = { version = "0.6", features = ["prost"], default-features = false }
 
 [lib]
 doctest = false
