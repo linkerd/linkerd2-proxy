@@ -13,13 +13,13 @@ pub struct Store {
     csr: Arc<[u8]>,
     identity: id::Name,
     client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
-    server_tx: watch::Sender<Option<Arc<rustls::ServerConfig>>>,
+    server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
 }
 
 #[derive(Clone)]
 pub struct Receiver {
     client_rx: watch::Receiver<Arc<rustls::ClientConfig>>,
-    server_rx: watch::Receiver<Option<Arc<rustls::ServerConfig>>>,
+    server_rx: watch::Receiver<Arc<rustls::ServerConfig>>,
 }
 
 #[derive(Debug, Error)]
@@ -71,7 +71,9 @@ pub fn watch(
         EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, key_pkcs8).map_err(InvalidKey)?;
 
     let (client_tx, client_rx) = watch::channel(Arc::new(rustls::ClientConfig::new()));
-    let (server_tx, server_rx) = watch::channel(None);
+    let (server_tx, server_rx) = watch::channel(Arc::new(rustls::ServerConfig::new(
+        rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots.clone()),
+    )));
 
     let store = Store {
         roots,
@@ -168,7 +170,7 @@ impl id::Credentials for Store {
         server.cert_resolver = resolver;
         server.ciphersuites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
 
-        let _ = self.server_tx.send(Some(server.into()));
+        let _ = self.server_tx.send(server.into());
 
         Ok(())
     }
@@ -181,64 +183,44 @@ impl Receiver {
     //     crate::Connect::new(self.client_rx.clone())
     // }
 
-    pub async fn spawn_server(
-        &mut self,
+    pub fn server(&self) -> crate::Terminate {
+        crate::Terminate::new(self.server_rx.clone(), None)
+    }
+
+    pub fn spawn_server_with_alpn(
+        &self,
         alpn_protocols: Vec<Vec<u8>>,
     ) -> Result<crate::Terminate, LostStore> {
-        let mut orig_rx = self.server_rx.clone();
-
-        let mut config = Self::wait_for_server(&mut orig_rx).await?;
-
-        // If we're creating a server that advertises ALPN, we create a new Arc<ServerConfig> that
-        // includes the relevant ALPN protocols. This allows servers that expose ALPN to avoid
-        // cloning the server config for every connection by, instead, doing this clone at the watch
-        // level.
-        if !alpn_protocols.is_empty() {
-            let mut c = (*config).clone();
-            c.alpn_protocols = alpn_protocols.clone();
-            config = c.into();
+        if alpn_protocols.is_empty() {
+            return Ok(self.server());
         }
 
-        let (tx, rx) = watch::channel(config);
+        let mut orig_rx = self.server_rx.clone();
+
+        let mut c = (**orig_rx.borrow_and_update()).clone();
+        c.alpn_protocols = alpn_protocols.clone();
+        let (tx, rx) = watch::channel(c.into());
 
         // Spawn a background task that watches the optional server configuration and publishes it
         // as a reliable channel, including any ALPN overrides.
+        eprintln!("spawning task");
         let task = tokio::spawn(async move {
             loop {
+                eprintln!("Waiting for update");
                 if orig_rx.changed().await.is_err() {
                     return;
                 }
 
-                if let Some(mut config) = orig_rx.borrow().as_ref().cloned() {
-                    // If there's an ALPN override, copy the config with the new alpn values.
-                    if !alpn_protocols.is_empty() {
-                        let mut c = (*config).clone();
-                        c.alpn_protocols = alpn_protocols.clone();
-                        config = c.into();
-                    }
-
-                    if tx.send(config).is_err() {
-                        return;
-                    }
+                let mut c = (*orig_rx.borrow().clone()).clone();
+                c.alpn_protocols = alpn_protocols.clone();
+                eprintln!("Updating config");
+                if tx.send(c.into()).is_err() {
+                    return;
                 }
             }
         });
 
-        Ok(crate::Terminate::new(rx, task))
-    }
-
-    /// Waits until a server TLS config is ready.
-    async fn wait_for_server(
-        rx: &mut watch::Receiver<Option<Arc<rustls::ServerConfig>>>,
-    ) -> Result<Arc<rustls::ServerConfig>, LostStore> {
-        loop {
-            let config = (*rx.borrow_and_update()).as_ref().cloned();
-            if let Some(c) = config {
-                return Ok(c);
-            }
-
-            rx.changed().await.map_err(|_| LostStore(()))?;
-        }
+        Ok(crate::Terminate::new(rx, Some(task)))
     }
 }
 
@@ -334,86 +316,63 @@ mod tests {
     use tokio::time;
 
     #[tokio::test]
-    async fn test_spawn_server() {
+    async fn test_server() {
         time::pause();
 
-        let (server_tx, server_rx) = watch::channel(None);
+        let init_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
+        let (server_tx, server_rx) = watch::channel(init_config.clone());
         let (_, client_rx) = watch::channel(Arc::new(rustls::ClientConfig::new()));
         let receiver = Receiver {
             server_rx,
             client_rx,
         };
 
-        let mut server = tokio::spawn({
-            let mut rx = receiver.clone();
-            async move {
-                rx.spawn_server(vec![])
-                    .await
-                    .expect("sender must not be lost")
-            }
-        });
+        let server = receiver.server();
 
-        tokio::select! {
-            _ = (&mut server) => panic!("server must not be ready"),
-            _ = time::sleep(time::Duration::from_millis(100)) => {}
-        }
+        assert!(Arc::ptr_eq(&server.config(), &init_config));
 
         let server_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
         server_tx
-            .send(Some(server_config.clone()))
+            .send(server_config.clone())
             .ok()
             .expect("receiver is held");
 
-        tokio::select! {
-            res = (&mut server) => {
-                let srv = res.expect("task must complete");
-                // Test that we're using the same exact Arc.
-                assert!(Arc::ptr_eq(&server_config, &srv.config()));
-            }
-            _ = time::sleep(time::Duration::from_millis(100)) => {
-                panic!("server must be ready");
-            }
-        }
+        assert!(Arc::ptr_eq(&server.config(), &server_config));
     }
 
     #[tokio::test]
-    async fn test_spawn_server_alpn() {
+    async fn test_spawn_server_with_alpn() {
         time::pause();
 
-        let (server_tx, server_rx) = watch::channel(None);
+        let init_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
+        let (server_tx, server_rx) = watch::channel(init_config.clone());
         let (_, client_rx) = watch::channel(Arc::new(rustls::ClientConfig::new()));
         let receiver = Receiver {
             server_rx,
             client_rx,
         };
 
-        let mut server = tokio::spawn({
-            let mut rx = receiver.clone();
-            async move {
-                rx.spawn_server(vec![b"my.alpn".to_vec()])
-                    .await
-                    .expect("sender must not be lost")
-            }
-        });
+        let server = receiver
+            .spawn_server_with_alpn(vec![b"my.alpn".to_vec()])
+            .expect("sender must not be lost");
 
-        let server_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
+        let init_sc = server.config();
+        assert!(!Arc::ptr_eq(&init_config, &init_sc));
+        assert_eq!(init_sc.alpn_protocols, [b"my.alpn"]);
+
+        let update_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
+        assert!(!Arc::ptr_eq(&update_config, &init_config));
         server_tx
-            .send(Some(server_config.clone()))
+            .send(update_config.clone())
             .ok()
             .expect("receiver is held");
 
-        tokio::select! {
-            res = (&mut server) => {
-                let srv = res.expect("task must complete");
-                let sc = srv.config();
-                // Confirm that we're not using the same exact Arc, since we're using a copy with
-                // ALPN set.
-                assert!(!Arc::ptr_eq(&server_config, &sc));
-                assert_eq!(sc.alpn_protocols, [b"my.alpn"]);
-            }
-            _ = time::sleep(time::Duration::from_millis(100)) => {
-                panic!("server must be ready");
-            }
-        }
+        // Give the update task a chance to run.
+        tokio::task::yield_now().await;
+
+        let update_sc = server.config();
+        assert!(!Arc::ptr_eq(&update_config, &update_sc));
+        assert!(!Arc::ptr_eq(&init_sc, &update_sc));
+        assert_eq!(update_sc.alpn_protocols, [b"my.alpn"]);
     }
 }

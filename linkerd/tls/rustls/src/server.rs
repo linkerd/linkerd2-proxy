@@ -12,7 +12,7 @@ use tracing::debug;
 #[derive(Clone)]
 pub struct Terminate {
     rx: watch::Receiver<Arc<ServerConfig>>,
-    _handle: Arc<tokio::task::JoinHandle<()>>,
+    _handle: Option<Arc<tokio::task::JoinHandle<()>>>,
 }
 
 pub type TerminateFuture<I> = futures::future::MapOk<
@@ -26,11 +26,11 @@ pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
 impl Terminate {
     pub(crate) fn new(
         rx: watch::Receiver<Arc<ServerConfig>>,
-        _handle: tokio::task::JoinHandle<()>,
+        handle: Option<tokio::task::JoinHandle<()>>,
     ) -> Self {
         Self {
             rx,
-            _handle: Arc::new(_handle),
+            _handle: handle.map(Arc::new),
         }
     }
 
