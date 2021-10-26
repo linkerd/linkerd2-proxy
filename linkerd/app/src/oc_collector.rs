@@ -1,5 +1,5 @@
 use linkerd_app_core::{
-    control, dns, metrics::ControlHttp as HttpMetrics, rustls, svc::NewService, Error,
+    control, dns, identity, metrics::ControlHttp as HttpMetrics, svc::NewService, Error,
 };
 use linkerd_opencensus::{self as opencensus, metrics, proto};
 use std::{collections::HashMap, future::Future, pin::Pin, time::SystemTime};
@@ -41,7 +41,7 @@ impl Config {
 
     pub fn build(
         self,
-        identity: rustls::NewClient,
+        identity: identity::NewClient,
         dns: dns::Resolver,
         metrics: metrics::Registry,
         client_metrics: HttpMetrics,

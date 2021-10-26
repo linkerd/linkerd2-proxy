@@ -1,6 +1,6 @@
 use crate::{
-    classify, config, control, dns, metrics, proxy::http, rustls, svc, tls, transport::ConnectTcp,
-    Addr, Error,
+    classify, config, control, dns, identity, metrics, proxy::http, svc, tls,
+    transport::ConnectTcp, Addr, Error,
 };
 use futures::future::Either;
 use std::fmt;
@@ -43,7 +43,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: rustls::NewClient,
+        identity: identity::NewClient,
     ) -> svc::ArcNewService<
         (),
         impl svc::Service<

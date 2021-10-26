@@ -1,9 +1,9 @@
 use futures::prelude::*;
 use linkerd_app_core::{
     config::ServerConfig,
-    drain,
+    drain, identity,
     proxy::tap,
-    rustls, serve,
+    serve,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
@@ -34,14 +34,14 @@ pub enum Tap {
 
 #[derive(Clone)]
 struct TlsParams {
-    identity: rustls::Server,
+    identity: identity::Server,
 }
 
 impl Config {
     pub fn build<B>(
         self,
         bind: B,
-        identity: rustls::Server,
+        identity: identity::Server,
         drain: drain::Watch,
     ) -> Result<Tap, Error>
     where
@@ -78,7 +78,7 @@ impl Config {
                         }
                     }))
                     .push(svc::ArcNewService::layer())
-                    .push(tls::NewDetectTls::<rustls::Server, _, _>::layer(
+                    .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                         TlsParams { identity },
                     ))
                     .check_new_service::<B::Addrs, _>()
@@ -114,9 +114,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<rustls::Server, T> for TlsParams {
+impl<T> ExtractParam<identity::Server, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> rustls::Server {
+    fn extract_param(&self, _: &T) -> identity::Server {
         self.identity.clone()
     }
 }

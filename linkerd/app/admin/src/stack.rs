@@ -1,10 +1,10 @@
 use linkerd_app_core::{
     classify,
     config::ServerConfig,
-    detect, drain, errors,
+    detect, drain, errors, identity,
     metrics::{self, FmtMetrics},
     proxy::http,
-    rustls, serve,
+    serve,
     svc::{self, ExtractParam, InsertParam, Param},
     tls, trace,
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
@@ -58,7 +58,7 @@ struct Permitted {
 
 #[derive(Clone)]
 struct TlsParams {
-    identity: rustls::Server,
+    identity: identity::Server,
 }
 
 const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
@@ -74,7 +74,7 @@ impl Config {
         self,
         bind: B,
         policy: impl inbound::policy::CheckPolicy,
-        identity: rustls::Server,
+        identity: identity::Server,
         report: R,
         metrics: inbound::Metrics,
         trace: trace::Handle,
@@ -153,7 +153,7 @@ impl Config {
                 }
             })
             .push(svc::ArcNewService::layer())
-            .push(tls::NewDetectTls::<rustls::Server, _, _>::layer(TlsParams {
+            .push(tls::NewDetectTls::<identity::Server, _, _>::layer(TlsParams {
                 identity,
             }))
             .into_inner();
@@ -240,9 +240,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<rustls::Server, T> for TlsParams {
+impl<T> ExtractParam<identity::Server, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> rustls::Server {
+    fn extract_param(&self, _: &T) -> identity::Server {
         self.identity.clone()
     }
 }

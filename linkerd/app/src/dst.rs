@@ -1,10 +1,9 @@
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    metrics,
+    identity, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{api_resolve as api, http, resolve::recover},
-    rustls,
     svc::{self, NewService},
     Error, Recover,
 };
@@ -37,7 +36,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: rustls::NewClient,
+        identity: identity::NewClient,
     ) -> Result<
         Dst<
             impl svc::Service<

@@ -4,7 +4,7 @@ use linkerd_app_core::{
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     identity,
     metrics::ControlHttp as Metrics,
-    rustls, Error, Result,
+    Error, Result,
 };
 use std::{future::Future, pin::Pin};
 use tokio::sync::watch;
@@ -27,7 +27,7 @@ pub struct Documents {
 
 pub struct Identity {
     addr: control::ControlAddr,
-    receiver: rustls::creds::Receiver,
+    receiver: identity::creds::Receiver,
     ready: watch::Receiver<bool>,
     metrics: identity::Metrics,
     task: Task,
@@ -39,7 +39,7 @@ pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 struct Recover(ExponentialBackoff);
 
 struct NotifyReady {
-    store: rustls::creds::Store,
+    store: identity::creds::Store,
     tx: watch::Sender<bool>,
 }
 
@@ -47,7 +47,7 @@ struct NotifyReady {
 
 impl Config {
     pub fn build(self, dns: dns::Resolver, client_metrics: Metrics) -> Result<Identity> {
-        let (store, receiver) = rustls::creds::watch(
+        let (store, receiver) = identity::creds::watch(
             (*self.documents.id).clone(),
             &self.documents.trust_anchors_pem,
             &self.documents.key_pkcs8,
@@ -134,7 +134,7 @@ impl Identity {
         })
     }
 
-    pub fn receiver(&self) -> rustls::creds::Receiver {
+    pub fn receiver(&self) -> identity::creds::Receiver {
         self.receiver.clone()
     }
 

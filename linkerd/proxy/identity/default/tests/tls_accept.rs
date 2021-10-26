@@ -9,8 +9,7 @@ use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_error::Infallible;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use linkerd_proxy_identity::{Credentials, DerX509, Name};
-use linkerd_proxy_identity_rustls as rustls;
+use linkerd_proxy_identity_default::{self as identity, Credentials, DerX509, Name};
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},
@@ -29,12 +28,18 @@ use tracing::instrument::Instrument;
 
 type ServerConn<T, I> = (
     (tls::ConditionalServerTls, T),
-    io::EitherIo<rustls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
+    io::EitherIo<identity::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
 );
 
-fn load(ent: &test_util::Entity) -> (rustls::creds::Store, rustls::NewClient, rustls::Server) {
+fn load(
+    ent: &test_util::Entity,
+) -> (
+    identity::creds::Store,
+    identity::NewClient,
+    identity::Server,
+) {
     let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
-    let (mut store, rx) = rustls::creds::watch(
+    let (mut store, rx) = identity::creds::watch(
         ent.name.parse().unwrap(),
         roots_pem,
         ent.key,
@@ -147,19 +152,19 @@ struct Transported<I, R> {
 
 #[derive(Clone)]
 struct ServerParams {
-    identity: rustls::Server,
+    identity: identity::Server,
 }
 
-type ClientIo = io::EitherIo<io::ScopedIo<TcpStream>, rustls::ClientIo<io::ScopedIo<TcpStream>>>;
+type ClientIo = io::EitherIo<io::ScopedIo<TcpStream>, identity::ClientIo<io::ScopedIo<TcpStream>>>;
 
 /// Runs a test for a single TCP connection. `client` processes the connection
 /// on the client side and `server` processes the connection on the server
 /// side.
 async fn run_test<C, CF, CR, S, SF, SR>(
-    client_tls: rustls::NewClient,
+    client_tls: identity::NewClient,
     client_server_id: Conditional<tls::ServerId, tls::NoClientTls>,
     client: C,
-    server_id: rustls::Server,
+    server_id: identity::Server,
     server: S,
 ) -> (
     Transported<tls::ConditionalClientTls, CR>,
@@ -182,7 +187,7 @@ where
         // Saves the result of every connection.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerTls, SR>>();
 
-        let detect = tls::NewDetectTls::<rustls::Server, _, _>::new(
+        let detect = tls::NewDetectTls::<identity::Server, _, _>::new(
             ServerParams {
                 identity: server_id,
             },
@@ -370,8 +375,8 @@ impl<T> ExtractParam<tls::server::Timeout, T> for ServerParams {
     }
 }
 
-impl<T> ExtractParam<rustls::Server, T> for ServerParams {
-    fn extract_param(&self, _: &T) -> rustls::Server {
+impl<T> ExtractParam<identity::Server, T> for ServerParams {
+    fn extract_param(&self, _: &T) -> identity::Server {
         self.identity.clone()
     }
 }

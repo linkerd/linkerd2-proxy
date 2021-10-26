@@ -23,13 +23,13 @@ use linkerd_app_core::{
     config::ProxyConfig,
     drain,
     http_tracing::OpenCensusSink,
-    io, profiles,
+    identity, io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
         tap,
     },
-    rustls, serve,
+    serve,
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
@@ -72,7 +72,7 @@ pub struct Outbound<S> {
 #[derive(Clone, Debug)]
 struct Runtime {
     metrics: Metrics,
-    identity: rustls::NewClient,
+    identity: identity::NewClient,
     tap: tap::Registry,
     span_sink: OpenCensusSink,
     drain: drain::Watch,

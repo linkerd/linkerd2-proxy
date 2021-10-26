@@ -1,12 +1,11 @@
 use crate::Config;
 pub use futures::prelude::*;
 use linkerd_app_core::{
-    config, drain, exp_backoff, metrics,
+    config, drain, exp_backoff, identity, metrics,
     proxy::{
         http::{h1, h2},
         tap,
     },
-    rustls,
     transport::{Keepalive, ListenAddr},
     IpMatch, IpNet, ProxyRuntime,
 };
@@ -54,7 +53,7 @@ pub(crate) fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (tap, _) = tap::new();
     let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
     let runtime = ProxyRuntime {
-        identity: rustls::creds::default_for_test().1,
+        identity: identity::creds::default_for_test().1,
         metrics: metrics.proxy,
         tap,
         span_sink: None,

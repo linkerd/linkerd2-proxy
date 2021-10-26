@@ -1,5 +1,5 @@
 use super::{discover::Discover, DefaultPolicy, ServerPolicy, Store};
-use linkerd_app_core::{control, dns, metrics, rustls, svc::NewService};
+use linkerd_app_core::{control, dns, identity, metrics, svc::NewService};
 use std::collections::{HashMap, HashSet};
 
 /// Configures inbound policies.
@@ -27,7 +27,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: rustls::NewClient,
+        identity: identity::NewClient,
     ) -> Store {
         match self {
             Self::Fixed { default, ports } => {

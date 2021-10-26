@@ -1,6 +1,6 @@
 use crate::{policy, Inbound};
 use linkerd_app_core::{
-    io, rustls,
+    identity, io,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote, ServerAddr},
@@ -48,14 +48,14 @@ pub struct ClientInfo {
     pub local_addr: OrigDstAddr,
 }
 
-type TlsIo<I> = tls::server::Io<rustls::ServerIo<tls::server::DetectIo<I>>, I>;
+type TlsIo<I> = tls::server::Io<identity::ServerIo<tls::server::DetectIo<I>>, I>;
 type FwdIo<I> = SensorIo<io::PrefixedIo<TlsIo<I>>>;
 pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<TlsIo<I>>>;
 
 #[derive(Clone)]
 struct TlsParams {
     timeout: tls::server::Timeout,
-    identity: rustls::Server,
+    identity: identity::Server,
 }
 
 impl<N> Inbound<N> {
@@ -189,7 +189,7 @@ impl<N> Inbound<N> {
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
                 .push(svc::ArcNewService::layer())
-                .push(tls::NewDetectTls::<rustls::Server, _, _>::layer(
+                .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                     TlsParams {
                         timeout: tls::server::Timeout(detect_timeout),
                         identity,
@@ -315,9 +315,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<rustls::Server, T> for TlsParams {
+impl<T> ExtractParam<identity::Server, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> rustls::Server {
+    fn extract_param(&self, _: &T) -> identity::Server {
         self.identity.clone()
     }
 }

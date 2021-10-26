@@ -17,7 +17,7 @@ libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
 linkerd-app-core = { path = "../../core" }
 linkerd-app-inbound = { path = ".." }
 linkerd-app-test = { path = "../../test" }
-linkerd-proxy-identity-rustls = { path = "../../../proxy/identity/rustls", features = ["test-util"] }
+linkerd-proxy-identity-default = { path = "../../../proxy/identity/default", features = ["test-util"] }
 linkerd-tracing = { path = "../../../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"

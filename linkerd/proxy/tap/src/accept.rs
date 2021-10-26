@@ -5,7 +5,7 @@ use linkerd_conditional::Conditional;
 use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_proxy_http::{trace, HyperServerSvc};
-use linkerd_proxy_identity_rustls as rustls;
+use linkerd_proxy_identity_default as mtls;
 use linkerd_tls as tls;
 use std::{
     collections::HashSet,
@@ -24,7 +24,7 @@ pub struct AcceptPermittedClients {
 
 type Connection<T, I> = (
     (tls::ConditionalServerTls, T),
-    io::EitherIo<rustls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
+    io::EitherIo<mtls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
 );
 
 pub type ServeFuture = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;

@@ -39,8 +39,7 @@ linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd-proxy-discover = { path = "../../proxy/discover" }
-linkerd-proxy-identity = { path = "../../proxy/identity" }
-linkerd-proxy-identity-rustls = { path = "../../proxy/identity/rustls" }
+linkerd-proxy-identity-default = { path = "../../proxy/identity/default" }
 linkerd-proxy-http = { path = "../../proxy/http" }
 linkerd-proxy-resolve = { path = "../../proxy/resolve" }
 linkerd-proxy-dns-resolve = { path = "../../proxy/dns-resolve" }

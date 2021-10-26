@@ -682,8 +682,7 @@ dependencies = [
  "linkerd-proxy-discover",
  "linkerd-proxy-dns-resolve",
  "linkerd-proxy-http",
- "linkerd-proxy-identity",
- "linkerd-proxy-identity-rustls",
+ "linkerd-proxy-identity-default",
  "linkerd-proxy-resolve",
  "linkerd-proxy-tap",
  "linkerd-proxy-tcp",
@@ -744,7 +743,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-io",
- "linkerd-proxy-identity-rustls",
+ "linkerd-proxy-identity-default",
  "linkerd-server-policy",
  "linkerd-tonic-watch",
  "linkerd-tracing",
@@ -800,7 +799,7 @@ dependencies = [
  "linkerd-http-retry",
  "linkerd-identity",
  "linkerd-io",
- "linkerd-proxy-identity-rustls",
+ "linkerd-proxy-identity-default",
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
@@ -1156,7 +1155,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-proxy-identity-rustls"
+name = "linkerd-proxy-identity-default"
 version = "0.1.0"
 dependencies = [
  "futures",
@@ -1204,7 +1203,7 @@ dependencies = [
  "linkerd-identity",
  "linkerd-io",
  "linkerd-proxy-http",
- "linkerd-proxy-identity-rustls",
+ "linkerd-proxy-identity-default",
  "linkerd-stack",
  "linkerd-tls",
  "linkerd2-proxy-api",

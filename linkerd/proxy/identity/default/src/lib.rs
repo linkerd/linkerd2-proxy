@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(dead_code)]
 
 mod client;
 pub mod creds;
@@ -10,3 +9,4 @@ pub use self::{
     client::{ClientIo, Connect, ConnectFuture, NewClient},
     server::{Server, ServerIo, TerminateFuture},
 };
+pub use linkerd_proxy_identity::*;

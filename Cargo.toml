@@ -38,7 +38,7 @@ members = [
     "linkerd/proxy/discover",
     "linkerd/proxy/http",
     "linkerd/proxy/identity",
-    "linkerd/proxy/identity/rustls",
+    "linkerd/proxy/identity/default",
     "linkerd/proxy/resolve",
     "linkerd/proxy/tap",
     "linkerd/proxy/tcp",
