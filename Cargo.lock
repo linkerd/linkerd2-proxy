@@ -401,15 +401,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "html-escape"
-version = "0.2.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "816ea801a95538fc5f53c836697b3f8b64a9d664c4f0b91efe1fe7c92e4dbcb7"
-dependencies = [
- "utf8-width",
-]
-
-[[package]]
 name = "http"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -649,7 +640,6 @@ name = "linkerd-app-admin"
 version = "0.1.0"
 dependencies = [
  "futures",
- "html-escape",
  "http",
  "hyper",
  "linkerd-app-core",
@@ -700,7 +690,6 @@ dependencies = [
  "linkerd-proxy-transport",
  "linkerd-reconnect",
  "linkerd-retry",
- "linkerd-server-policy",
  "linkerd-service-profiles",
  "linkerd-stack",
  "linkerd-stack-metrics",
@@ -882,7 +871,6 @@ dependencies = [
  "futures",
  "linkerd-dns-name",
  "linkerd-error",
- "pin-project",
  "thiserror",
  "tokio",
  "tracing",
@@ -996,7 +984,6 @@ dependencies = [
  "linkerd-error",
  "linkerd-tracing",
  "parking_lot",
- "pin-project",
  "thiserror",
  "tokio",
  "tracing",
@@ -1058,7 +1045,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
- "tower",
  "tracing",
 ]
 
@@ -1089,7 +1075,6 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-error",
- "pin-project",
  "tower",
 ]
 
@@ -1144,7 +1129,6 @@ dependencies = [
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-io",
- "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-tracing",
  "pin-project",
@@ -1202,7 +1186,6 @@ dependencies = [
  "linkerd-identity",
  "linkerd-io",
  "linkerd-proxy-http",
- "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-tls",
  "linkerd2-proxy-api",
@@ -2489,12 +2472,6 @@ dependencies = [
  "matches",
  "percent-encoding",
 ]
-
-[[package]]
-name = "utf8-width"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cf7d77f457ef8dfa11e4cd5933c5ddb5dc52a94664071951219a97710f0a32b"
 
 [[package]]
 name = "want"

@@ -14,4 +14,3 @@ thiserror = "1.0"
 tracing = "0.1.29"
 trust-dns-resolver = "0.21.0-alpha.4"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
-pin-project = "1"
