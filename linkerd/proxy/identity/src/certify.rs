@@ -97,7 +97,7 @@ where
     let req = tonic::Request::new(api::CertifyRequest {
         token: token.load()?,
         identity: credentials.get_dns_name().to_string(),
-        certificate_signing_request: credentials.get_certificate_signing_request().to_vec(),
+        certificate_signing_request: credentials.gen_certificate_signing_request().to_vec(),
     });
 
     let api::CertifyResponse {

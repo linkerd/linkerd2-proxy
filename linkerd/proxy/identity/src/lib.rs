@@ -11,13 +11,13 @@ use std::{ops::Deref, time::SystemTime};
 pub use self::{certify::Certify, metrics::Metrics, token::TokenSource};
 pub use linkerd_identity::*;
 
-/// A strategy
+/// Publishes certificates to be used by TLS implementations.
 pub trait Credentials {
     /// Get the authoritative DNS-like name used in the certificate.
     fn get_dns_name(&self) -> &Name;
 
-    /// Get a CSR to to be sent to the identity service.
-    fn get_certificate_signing_request(&self) -> DerX509;
+    /// Generate a CSR to to be sent to the identity service.
+    fn gen_certificate_signing_request(&mut self) -> DerX509;
 
     /// Set the certificate returned by the identity service.
     ///

@@ -11,7 +11,7 @@ pub struct Store {
     roots: rustls::RootCertStore,
     key: Arc<EcdsaKeyPair>,
     csr: Arc<[u8]>,
-    identity: id::Name,
+    name: id::Name,
     client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
     server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
 }
@@ -28,7 +28,7 @@ impl Store {
         roots: rustls::RootCertStore,
         key: EcdsaKeyPair,
         csr: &[u8],
-        identity: id::Name,
+        name: id::Name,
         client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
         server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
     ) -> Self {
@@ -36,36 +36,14 @@ impl Store {
             roots,
             key: Arc::new(key),
             csr: csr.into(),
-            identity,
+            name,
             client_tx,
             server_tx,
         }
     }
-}
 
-impl id::Credentials for Store {
-    fn get_dns_name(&self) -> &id::Name {
-        &self.identity
-    }
-
-    fn get_certificate_signing_request(&self) -> id::DerX509 {
-        id::DerX509(self.csr.to_vec())
-    }
-
-    fn set_certificate(
-        &mut self,
-        id::DerX509(leaf): id::DerX509,
-        intermediates: Vec<id::DerX509>,
-        _expiry: std::time::SystemTime,
-    ) -> Result<()> {
-        let mut chain = Vec::with_capacity(intermediates.len() + 1);
-        chain.push(rustls::Certificate(leaf));
-        chain.extend(
-            intermediates
-                .into_iter()
-                .map(|id::DerX509(der)| rustls::Certificate(der)),
-        );
-
+    /// Builds a new TLS client configuration.
+    fn client(&self, resolver: Arc<CertResolver>) -> rustls::ClientConfig {
         let mut client = rustls::ClientConfig::new();
         client.ciphersuites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
 
@@ -80,42 +58,19 @@ impl id::Credentials for Store {
         // more tested.
         client.enable_tickets = false;
 
-        // Ensure the certificate is valid for the services we terminate for
-        // TLS. This assumes that server cert validation does the same or
-        // more validation than client cert validation.
-        //
-        // XXX: Rustls currently only provides access to a
-        // `ServerCertVerifier` through
-        // `ClientConfig::get_verifier()`.
-        //
-        // XXX: Once `ServerCertVerified` is exposed in Rustls's
-        // safe API, use it to pass proof to CertCertResolver::new....
-        //
-        // TODO: Restrict accepted signature algorithms.
-        let crt_id = webpki::DNSNameRef::try_from_ascii(self.identity.as_bytes())
-            .expect("identity must be a valid DNS name");
-        static NO_OCSP: &[u8] = &[];
-        client
-            .get_verifier()
-            .verify_server_cert(&self.roots, &*chain, crt_id, NO_OCSP)?;
-        debug!("Certified");
-
-        let resolver = Arc::new(CertResolver(rustls::sign::CertifiedKey::new(
-            chain,
-            Arc::new(Box::new(Key(self.key.clone()))),
-        )));
-
         // Enable client authentication.
-        client.client_auth_cert_resolver = resolver.clone();
+        client.client_auth_cert_resolver = resolver;
 
-        let _ = self.client_tx.send(client.into());
+        client
+    }
 
-        // Ask TLS clients for a certificate and accept any certificate issued
-        // by our trusted CA(s).
+    /// Builds a new TLS server configuration.
+    fn server(&self, resolver: Arc<CertResolver>) -> rustls::ServerConfig {
+        // Ask TLS clients for a certificate and accept any certificate issued by our trusted CA(s).
         //
-        // XXX: Rustls's built-in verifiers don't let us tweak things as fully
-        // as we'd like (e.g. controlling the set of trusted signature
-        // algorithms), but they provide good enough defaults for now.
+        // XXX: Rustls's built-in verifiers don't let us tweak things as fully as we'd like (e.g.
+        // controlling the set of trusted signature algorithms), but they provide good enough
+        // defaults for now.
         // TODO: lock down the verification further.
         //
         // TODO: Change Rustls's API to avoid needing to clone `root_cert_store`.
@@ -125,7 +80,70 @@ impl id::Credentials for Store {
         server.versions = TLS_VERSIONS.to_vec();
         server.cert_resolver = resolver;
         server.ciphersuites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
+        server
+    }
 
+    /// Ensures the certificate is valid for the services we terminate for TLS. This assumes that
+    /// server cert validation does the same or more validation than client cert validation.
+    fn validate(&self, client: &rustls::ClientConfig, certs: &[rustls::Certificate]) -> Result<()> {
+        // XXX: Rustls currently only provides access to a `ServerCertVerifier` through
+        // `ClientConfig::get_verifier()`.
+        //
+        // XXX: Once `ServerCertVerified` is exposed in Rustls's safe API, use it to pass proof to
+        // CertCertResolver::new....
+        //
+        // TODO: Restrict accepted signature algorithms.
+        let crt_id = webpki::DNSNameRef::try_from_ascii(self.name.as_bytes())
+            .expect("identity must be a valid DNS name");
+        static NO_OCSP: &[u8] = &[];
+        client
+            .get_verifier()
+            .verify_server_cert(&self.roots, &*certs, crt_id, NO_OCSP)?;
+        debug!("Certified");
+        Ok(())
+    }
+}
+
+impl id::Credentials for Store {
+    /// Returns the proxy's identity.
+    fn get_dns_name(&self) -> &id::Name {
+        &self.name
+    }
+
+    /// Returns the CSR that was configured at proxy startup.
+    fn gen_certificate_signing_request(&mut self) -> id::DerX509 {
+        id::DerX509(self.csr.to_vec())
+    }
+
+    /// Publishes TLS client and server configurations using
+    fn set_certificate(
+        &mut self,
+        id::DerX509(leaf): id::DerX509,
+        intermediates: Vec<id::DerX509>,
+        _expiry: std::time::SystemTime,
+    ) -> Result<()> {
+        let mut chain = Vec::with_capacity(intermediates.len() + 1);
+        chain.push(rustls::Certificate(leaf));
+        chain.extend(
+            intermediates
+                .into_iter()
+                .map(|id::DerX509(der)| rustls::Certificate(der)),
+        );
+
+        let resolver = Arc::new(CertResolver(rustls::sign::CertifiedKey::new(
+            chain.clone(),
+            Arc::new(Box::new(Key(self.key.clone()))),
+        )));
+
+        // Build new client and server TLS configs.
+        let client = self.client(resolver.clone());
+        let server = self.server(resolver);
+
+        // Use the client's verifier to validate the certificate for our local name.
+        self.validate(&client, &*chain)?;
+
+        // Publish the new configs.
+        let _ = self.client_tx.send(client.into());
         let _ = self.server_tx.send(server.into());
 
         Ok(())

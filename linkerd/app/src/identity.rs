@@ -90,8 +90,8 @@ impl identity::Credentials for NotifyReady {
     }
 
     #[inline]
-    fn get_certificate_signing_request(&self) -> identity::DerX509 {
-        self.store.get_certificate_signing_request()
+    fn gen_certificate_signing_request(&mut self) -> identity::DerX509 {
+        self.store.gen_certificate_signing_request()
     }
 
     fn set_certificate(
