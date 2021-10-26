@@ -7,12 +7,18 @@ use linkerd_app_core::{
     rustls, Error, Result,
 };
 use std::{future::Future, pin::Pin};
+use tokio::sync::watch;
 use tracing::Instrument;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub control: control::Config,
     pub certify: certify::Config,
+    pub documents: Documents,
+}
+
+#[derive(Clone)]
+pub struct Documents {
     pub id: LocalId,
     pub trust_anchors_pem: String,
     pub key_pkcs8: Vec<u8>,
@@ -22,30 +28,38 @@ pub struct Config {
 pub struct Identity {
     addr: control::ControlAddr,
     local: rustls::creds::Receiver,
+    ready: watch::Receiver<bool>,
     metrics: identity::Metrics,
     task: Task,
 }
 
+pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
 #[derive(Clone, Debug)]
 struct Recover(ExponentialBackoff);
 
-pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+struct NotifyReady {
+    store: rustls::creds::Store,
+    tx: watch::Sender<bool>,
+}
 
 // === impl Config ===
 
 impl Config {
     pub fn build(self, dns: dns::Resolver, client_metrics: Metrics) -> Result<Identity> {
         let (store, receiver) = rustls::creds::watch(
-            (*self.id).clone(),
-            &self.trust_anchors_pem,
-            &self.key_pkcs8,
-            &self.csr_der,
+            (*self.documents.id).clone(),
+            &self.documents.trust_anchors_pem,
+            &self.documents.key_pkcs8,
+            &self.documents.csr_der,
         )?;
 
         let certify = identity::Certify::from(self.certify);
         let metrics = certify.metrics();
 
         let addr = self.control.addr.clone();
+
+        let (tx, ready) = watch::channel(false);
 
         // Save to be spawned on an auxiliary runtime.
         let task = Box::pin({
@@ -55,7 +69,7 @@ impl Config {
                 .build(dns, client_metrics, receiver.new_client());
 
             certify
-                .run(store, svc)
+                .run(NotifyReady { store, tx }, svc)
                 .instrument(tracing::debug_span!("identity", server.addr = %addr).or_current())
         });
 
@@ -63,8 +77,43 @@ impl Config {
             addr,
             local: receiver,
             metrics,
+            ready,
             task,
         })
+    }
+}
+
+impl identity::Credentials for NotifyReady {
+    #[inline]
+    fn name(&self) -> &Name {
+        self.store.name()
+    }
+
+    #[inline]
+    fn get_csr(&self) -> Vec<u8> {
+        self.store.get_csr()
+    }
+
+    fn set_crt(
+        &mut self,
+        leaf: Vec<u8>,
+        chain: Vec<Vec<u8>>,
+        expiry: std::time::SystemTime,
+    ) -> Result<()> {
+        self.store.set_crt(leaf, chain, expiry)?;
+        let _ = self.tx.send(true);
+        Ok(())
+    }
+}
+
+// === impl Documents ===
+
+impl std::fmt::Debug for Documents {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Documents")
+            .field("id", &self.id)
+            .field("trust_anchors_pem", &self.trust_anchors_pem)
+            .finish()
     }
 }
 
@@ -73,6 +122,15 @@ impl Config {
 impl Identity {
     pub fn addr(&self) -> control::ControlAddr {
         self.addr.clone()
+    }
+
+    pub fn ready(&self) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+        let mut ready = self.ready.clone();
+        Box::pin(async move {
+            while !*ready.borrow_and_update() {
+                ready.changed().await.expect("identity sender must be held");
+            }
+        })
     }
 
     pub fn local(&self) -> rustls::creds::Receiver {

@@ -10,7 +10,7 @@ pub mod oc_collector;
 pub mod tap;
 
 pub use self::metrics::Metrics;
-use futures::{future, FutureExt, TryFutureExt};
+use futures::{future, Future, FutureExt};
 use linkerd_app_admin as admin;
 pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
@@ -201,15 +201,13 @@ impl Config {
 
         // Build a task that initializes and runs the proxy stacks.
         let start_proxy = {
-            let identity = identity.local();
+            let identity_ready = identity.ready();
             let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
             let resolve = dst.resolve;
 
             Box::pin(async move {
-                Self::await_identity(identity)
-                    .await
-                    .expect("failed to initialize identity");
+                Self::await_identity(identity_ready).await;
 
                 tokio::spawn(
                     outbound
@@ -247,15 +245,11 @@ impl Config {
     /// Waits for the proxy's identity to be certified.
     ///
     /// If this does not complete in a timely fashion, warnings are logged every 15s
-    async fn await_identity(id: identity::LocalCrtKey) -> Result<(), Error> {
-        tokio::pin! {
-            let fut = id.await_crt();
-        }
-
+    async fn await_identity(mut fut: Pin<Box<dyn Future<Output = ()> + Send + 'static>>) {
         const TIMEOUT: time::Duration = time::Duration::from_secs(15);
         loop {
             tokio::select! {
-                res = (&mut fut) => return res.map(|_| ()).map_err(Into::into),
+                _ = (&mut fut) => return,
                 _ = time::sleep(TIMEOUT) => {
                     tracing::warn!("Waiting for identity to be initialized...");
                 }
@@ -288,8 +282,8 @@ impl App {
         &self.dst
     }
 
-    pub fn local_identity(&self) -> &identity::Name {
-        self.identity.local().name()
+    pub fn local_identity(&self) -> identity::Name {
+        self.identity.local().name().clone()
     }
 
     pub fn identity_addr(&self) -> ControlAddr {
@@ -341,23 +335,20 @@ impl App {
 
                         // Kick off the identity so that the process can become ready.
                         let local = identity.local();
+                        let local_id = local.name().clone();
+                        let ready = identity.ready();
                         tokio::spawn(
                             identity
-                                .task()
+                                .into_task()
                                 .instrument(info_span!("identity").or_current()),
                         );
 
                         let latch = admin.latch;
                         tokio::spawn(
-                            local
-                                .await_crt()
-                                .map_ok(move |id| {
+                            ready
+                                .map(move |()| {
                                     latch.release();
-                                    info!("Certified identity: {}", id.name());
-                                })
-                                .map_err(|_| {
-                                    // The daemon task was lost?!
-                                    panic!("Failed to certify identity!");
+                                    info!(id = %local_id, "Certified identity");
                                 })
                                 .instrument(info_span!("identity").or_current()),
                         );

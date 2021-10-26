@@ -61,7 +61,7 @@ fn main() {
             Some(addr) => info!("Tap interface on {}", addr),
         }
 
-        info!("Local identity is {}", app.local_identity().name());
+        info!("Local identity is {}", app.local_identity());
         let addr = app.identity_addr();
         match addr.identity.value() {
             None => info!("Identity verified via {}", addr.addr),
