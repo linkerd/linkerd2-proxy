@@ -11,10 +11,10 @@ futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 parking_lot = "0.11"
-tokio = { version = "1", default-features = false, features = ["rt", "sync", "time"] }
+tokio = { version = "1", default-features = false, features = ["macros", "rt", "sync", "time"] }
 tower = { version = "0.4.10", default-features = false, features = ["util"] }
 tracing = "0.1.29"
 
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = ["macros", "test-util", "time"] }
+tokio = { version = "1", default-features = false, features = ["test-util", "time"] }
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }

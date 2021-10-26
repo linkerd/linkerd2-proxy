@@ -21,7 +21,6 @@ linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-http = { path = "../http" }
 linkerd-proxy-identity-rustls = { path = "../../proxy/identity/rustls" }
-linkerd-proxy-transport = { path = "../transport" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 parking_lot = "0.11"
