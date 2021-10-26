@@ -196,16 +196,17 @@ impl LocalCrtKey {
     }
 
     #[cfg(feature = "test-util")]
-    pub fn for_test(id: &rustls::test_util::Identity) -> Self {
-        let crt_key = id.validate().expect("Identity must be valid");
+    pub fn for_test(id: &linkerd_tls_test_util::Entity) -> Self {
+        let (trust_anchors, crt_key) = CrtKey::for_test(id);
+        let id = crt_key.id().clone();
         let (tx, rx) = watch::channel(Some(crt_key));
         // Prevent the receiver stream from ending.
         tokio::spawn(async move {
             tx.closed().await;
         });
         Self {
-            id: id.id(),
-            trust_anchors: id.trust_anchors(),
+            id,
+            trust_anchors,
             crt_key: rx,
             refreshes: Arc::new(Counter::new()),
         }
@@ -213,7 +214,7 @@ impl LocalCrtKey {
 
     #[cfg(feature = "test-util")]
     pub fn default_for_test() -> Self {
-        Self::for_test(&rustls::test_util::DEFAULT_DEFAULT)
+        Self::for_test(&linkerd_tls_test_util::DEFAULT_DEFAULT)
     }
 
     pub async fn await_crt(mut self) -> Result<Self, LostDaemon> {
