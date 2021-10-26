@@ -3,8 +3,6 @@
 
 mod client;
 mod server;
-#[cfg(feature = "test-util")]
-pub mod test_util;
 
 pub use self::{
     client::{ClientIo, Connect, ConnectFuture},
@@ -96,8 +94,7 @@ impl sign::Signer for Signer {
 // === impl TrustAnchors ===
 
 impl TrustAnchors {
-    #[cfg(feature = "test-util")]
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         TrustAnchors(Arc::new(ClientConfig::new()))
     }
 
@@ -224,6 +221,26 @@ impl From<&'_ Crt> for id::LocalId {
 // === CrtKey ===
 
 impl CrtKey {
+    #[cfg(feature = "test-util")]
+    pub fn for_test(id: &linkerd_tls_test_util::Entity) -> (TrustAnchors, Self) {
+        let key = Key::from_pkcs8(id.key).expect("key must be valid");
+
+        let crt = {
+            let n = id.name.parse::<id::Name>().expect("name must be valid");
+            let der = id.crt.iter().copied().collect();
+            let expiry = std::time::SystemTime::now() + std::time::Duration::from_secs(60 * 60);
+            Crt::new(id::LocalId(n), der, vec![], expiry)
+        };
+
+        let anchors = {
+            let pem = std::str::from_utf8(id.trust_anchors).expect("utf-8");
+            TrustAnchors::from_pem(pem).unwrap_or_else(TrustAnchors::empty)
+        };
+
+        let ck = anchors.certify(key, crt).expect("Identity must be valid");
+        (anchors, ck)
+    }
+
     pub fn name(&self) -> &id::Name {
         &self.id.0
     }
