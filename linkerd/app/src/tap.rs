@@ -34,14 +34,14 @@ pub enum Tap {
 
 #[derive(Clone)]
 struct TlsParams {
-    identity: rustls::Terminate,
+    identity: rustls::Server,
 }
 
 impl Config {
     pub fn build<B>(
         self,
         bind: B,
-        identity: rustls::Terminate,
+        identity: rustls::Server,
         drain: drain::Watch,
     ) -> Result<Tap, Error>
     where
@@ -78,7 +78,7 @@ impl Config {
                         }
                     }))
                     .push(svc::ArcNewService::layer())
-                    .push(tls::NewDetectTls::<rustls::Terminate, _, _>::layer(
+                    .push(tls::NewDetectTls::<rustls::Server, _, _>::layer(
                         TlsParams { identity },
                     ))
                     .check_new_service::<B::Addrs, _>()
@@ -114,9 +114,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<rustls::Terminate, T> for TlsParams {
+impl<T> ExtractParam<rustls::Server, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> rustls::Terminate {
+    fn extract_param(&self, _: &T) -> rustls::Server {
         self.identity.clone()
     }
 }

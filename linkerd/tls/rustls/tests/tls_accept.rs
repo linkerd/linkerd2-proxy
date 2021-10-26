@@ -32,7 +32,7 @@ type ServerConn<T, I> = (
     io::EitherIo<rustls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
 );
 
-fn load(ent: &test_util::Entity) -> (rustls::creds::Store, rustls::NewClient, rustls::Terminate) {
+fn load(ent: &test_util::Entity) -> (rustls::creds::Store, rustls::NewClient, rustls::Server) {
     let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
     let (mut store, rx) = rustls::creds::watch(
         ent.name.parse().unwrap(),
@@ -150,7 +150,7 @@ struct Transported<I, R> {
 
 #[derive(Clone)]
 struct ServerParams {
-    identity: rustls::Terminate,
+    identity: rustls::Server,
 }
 
 type ClientIo = io::EitherIo<io::ScopedIo<TcpStream>, rustls::ClientIo<io::ScopedIo<TcpStream>>>;
@@ -162,7 +162,7 @@ async fn run_test<C, CF, CR, S, SF, SR>(
     client_tls: rustls::NewClient,
     client_server_id: Conditional<tls::ServerId, tls::NoClientTls>,
     client: C,
-    server_id: rustls::Terminate,
+    server_id: rustls::Server,
     server: S,
 ) -> (
     Transported<tls::ConditionalClientTls, CR>,
@@ -185,7 +185,7 @@ where
         // Saves the result of every connection.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerTls, SR>>();
 
-        let detect = tls::NewDetectTls::<rustls::Terminate, _, _>::new(
+        let detect = tls::NewDetectTls::<rustls::Server, _, _>::new(
             ServerParams {
                 identity: server_id,
             },
@@ -373,8 +373,8 @@ impl<T> ExtractParam<tls::server::Timeout, T> for ServerParams {
     }
 }
 
-impl<T> ExtractParam<rustls::Terminate, T> for ServerParams {
-    fn extract_param(&self, _: &T) -> rustls::Terminate {
+impl<T> ExtractParam<rustls::Server, T> for ServerParams {
+    fn extract_param(&self, _: &T) -> rustls::Server {
         self.identity.clone()
     }
 }

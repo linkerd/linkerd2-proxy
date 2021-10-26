@@ -50,7 +50,7 @@ struct ConfigureHttpDetect;
 #[derive(Clone)]
 struct TlsParams {
     timeout: tls::server::Timeout,
-    identity: rustls::Terminate,
+    identity: rustls::Server,
 }
 
 type TlsIo<I> = tls::server::Io<rustls::ServerIo<tls::server::DetectIo<I>>, I>;
@@ -137,7 +137,7 @@ impl<N> Inbound<N> {
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .push(tls::NewDetectTls::<rustls::Terminate, _, _>::layer(
+                .push(tls::NewDetectTls::<rustls::Server, _, _>::layer(
                     TlsParams {
                         timeout: tls::server::Timeout(detect_timeout),
                         identity: rt.identity.server(),
@@ -429,9 +429,9 @@ impl<T> svc::ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> svc::ExtractParam<rustls::Terminate, T> for TlsParams {
+impl<T> svc::ExtractParam<rustls::Server, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> rustls::Terminate {
+    fn extract_param(&self, _: &T) -> rustls::Server {
         self.identity.clone()
     }
 }

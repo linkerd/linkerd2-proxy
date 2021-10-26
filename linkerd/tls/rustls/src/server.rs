@@ -12,7 +12,7 @@ use tokio_rustls::rustls::{Certificate, ServerConfig, Session};
 use tracing::debug;
 
 #[derive(Clone)]
-pub struct Terminate {
+pub struct Server {
     name: Name,
     rx: watch::Receiver<Arc<ServerConfig>>,
     _handle: Option<Arc<tokio::task::JoinHandle<()>>>,
@@ -30,7 +30,7 @@ pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
 #[error("credential store lost")]
 pub struct LostStore(());
 
-impl Terminate {
+impl Server {
     pub(crate) fn new(
         name: Name,
         rx: watch::Receiver<Arc<ServerConfig>>,
@@ -79,13 +79,13 @@ impl Terminate {
     }
 }
 
-impl Param<LocalId> for Terminate {
+impl Param<LocalId> for Server {
     fn param(&self) -> LocalId {
         LocalId(self.name.clone())
     }
 }
 
-impl<I> Service<I> for Terminate
+impl<I> Service<I> for Server
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
 {

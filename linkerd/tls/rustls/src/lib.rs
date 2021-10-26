@@ -8,6 +8,6 @@ mod server;
 
 pub use self::{
     client::{ClientIo, Connect, ConnectFuture, NewClient},
-    server::{terminate, ServerIo, Terminate, TerminateFuture},
+    server::{terminate, Server, ServerIo, TerminateFuture},
 };
 pub use tokio_rustls::rustls::*;

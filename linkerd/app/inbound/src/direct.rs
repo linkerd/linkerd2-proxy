@@ -55,7 +55,7 @@ pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<TlsIo<I>>>;
 #[derive(Clone)]
 struct TlsParams {
     timeout: tls::server::Timeout,
-    identity: rustls::Terminate,
+    identity: rustls::Server,
 }
 
 impl<N> Inbound<N> {
@@ -189,7 +189,7 @@ impl<N> Inbound<N> {
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
                 .push(svc::ArcNewService::layer())
-                .push(tls::NewDetectTls::<rustls::Terminate, _, _>::layer(
+                .push(tls::NewDetectTls::<rustls::Server, _, _>::layer(
                     TlsParams {
                         timeout: tls::server::Timeout(detect_timeout),
                         identity,
@@ -315,9 +315,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<rustls::Terminate, T> for TlsParams {
+impl<T> ExtractParam<rustls::Server, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> rustls::Terminate {
+    fn extract_param(&self, _: &T) -> rustls::Server {
         self.identity.clone()
     }
 }

@@ -58,7 +58,7 @@ struct Permitted {
 
 #[derive(Clone)]
 struct TlsParams {
-    identity: rustls::Terminate,
+    identity: rustls::Server,
 }
 
 const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
@@ -74,7 +74,7 @@ impl Config {
         self,
         bind: B,
         policy: impl inbound::policy::CheckPolicy,
-        identity: rustls::Terminate,
+        identity: rustls::Server,
         report: R,
         metrics: inbound::Metrics,
         trace: trace::Handle,
@@ -153,7 +153,7 @@ impl Config {
                 }
             })
             .push(svc::ArcNewService::layer())
-            .push(tls::NewDetectTls::<rustls::Terminate, _, _>::layer(TlsParams {
+            .push(tls::NewDetectTls::<rustls::Server, _, _>::layer(TlsParams {
                 identity,
             }))
             .into_inner();
@@ -240,9 +240,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<rustls::Terminate, T> for TlsParams {
+impl<T> ExtractParam<rustls::Server, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> rustls::Terminate {
+    fn extract_param(&self, _: &T) -> rustls::Server {
         self.identity.clone()
     }
 }

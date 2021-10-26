@@ -1,4 +1,4 @@
-use crate::{NewClient, Terminate};
+use crate::{NewClient, Server};
 use linkerd_proxy_identity::Name;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -34,8 +34,8 @@ impl Receiver {
         NewClient::new(self.client_rx.clone())
     }
 
-    pub fn server(&self) -> Terminate {
-        Terminate::new(self.name.clone(), self.server_rx.clone(), None)
+    pub fn server(&self) -> Server {
+        Server::new(self.name.clone(), self.server_rx.clone(), None)
     }
 }
 
