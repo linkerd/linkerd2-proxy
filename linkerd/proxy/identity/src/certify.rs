@@ -116,13 +116,13 @@ where
 /// though it is never less than min_refresh or larger than max_refresh.
 fn refresh_in(config: &Config, expiry: SystemTime) -> Duration {
     match expiry
-            .duration_since(SystemTime::now())
-            .ok()
-            .map(|d| d * 7 / 10) // 70% duration
-        {
-            None => config.min_refresh,
-            Some(lifetime) if lifetime < config.min_refresh => config.min_refresh,
-            Some(lifetime) if config.max_refresh < lifetime => config.max_refresh,
-            Some(lifetime) => lifetime,
-        }
+        .duration_since(SystemTime::now())
+        .ok()
+        .map(|d| d * 7 / 10) // 70% duration
+    {
+        None => config.min_refresh,
+        Some(lifetime) if lifetime < config.min_refresh => config.min_refresh,
+        Some(lifetime) if config.max_refresh < lifetime => config.max_refresh,
+        Some(lifetime) => lifetime,
+    }
 }
