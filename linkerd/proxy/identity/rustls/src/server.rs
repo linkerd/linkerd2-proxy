@@ -11,6 +11,7 @@ use tokio::sync::watch;
 use tokio_rustls::rustls::{Certificate, ServerConfig, Session};
 use tracing::debug;
 
+/// A Service that terminates TLS connections using a dynamically updated server configuration.
 #[derive(Clone)]
 pub struct Server {
     name: Name,
@@ -100,34 +101,26 @@ where
 
     #[inline]
     fn call(&mut self, io: I) -> Self::Future {
-        terminate((*self.rx.borrow()).clone(), io)
+        tokio_rustls::TlsAcceptor::from((*self.rx.borrow()).clone())
+            .accept(io)
+            .map_ok(|io| {
+                // Determine the peer's identity, if it exist.
+                let client_id = client_identity(&io);
+
+                let negotiated_protocol = io
+                    .get_ref()
+                    .1
+                    .get_alpn_protocol()
+                    .map(|b| NegotiatedProtocol(b.into()));
+
+                debug!(client.id = ?client_id, alpn = ?negotiated_protocol, "Accepted TLS connection");
+                let tls = ServerTls::Established {
+                    client_id,
+                    negotiated_protocol,
+                };
+                (tls, ServerIo(io))
+            })
     }
-}
-
-/// Terminates a TLS connection.
-pub fn terminate<I>(config: Arc<ServerConfig>, io: I) -> TerminateFuture<I>
-where
-    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
-{
-    tokio_rustls::TlsAcceptor::from(config)
-        .accept(io)
-        .map_ok(|io| {
-            // Determine the peer's identity, if it exist.
-            let client_id = client_identity(&io);
-
-            let negotiated_protocol = io
-                .get_ref()
-                .1
-                .get_alpn_protocol()
-                .map(|b| NegotiatedProtocol(b.into()));
-
-            debug!(client.id = ?client_id, alpn = ?negotiated_protocol, "Accepted TLS connection");
-            let tls = ServerTls::Established {
-                client_id,
-                negotiated_protocol,
-            };
-            (tls, ServerIo(io))
-        })
 }
 
 fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<ClientId> {

@@ -6,11 +6,13 @@ use std::{pin::Pin, sync::Arc};
 use tokio::sync::watch;
 use tokio_rustls::rustls::{ClientConfig, Session};
 
+/// A `NewService` that produces `Connect` services from a dynamic TLS configuration.
 #[derive(Clone)]
 pub struct NewClient {
     config: watch::Receiver<Arc<ClientConfig>>,
 }
 
+/// A `Service` that initiates client-side TLS connections.
 #[derive(Clone)]
 pub struct Connect {
     server_id: webpki::DNSName,

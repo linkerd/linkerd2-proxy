@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use tokio_rustls::rustls;
 
+/// Receives TLS config updates to build `NewClient` and `Server` types.
 #[derive(Clone)]
 pub struct Receiver {
     name: Name,
@@ -26,14 +27,17 @@ impl Receiver {
         }
     }
 
+    /// Returns the local identity.
     pub fn name(&self) -> &Name {
         &self.name
     }
 
+    /// Returns a `NewClient` that can be used to establish TLS on client connections.
     pub fn new_client(&self) -> NewClient {
         NewClient::new(self.client_rx.clone())
     }
 
+    /// Returns a `Server` that can be used to terminate TLS on server connections.
     pub fn server(&self) -> Server {
         Server::new(self.name.clone(), self.server_rx.clone(), None)
     }
