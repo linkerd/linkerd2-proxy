@@ -13,7 +13,7 @@ test_util = []
 
 [dependencies]
 deflate = { version = "0.9.1", features = ["gzip"] }
-hdrhistogram = { version = "7.3", default-features = false, optional = true }
+hdrhistogram = { version = "7.4", default-features = false, optional = true }
 http = "0.2"
 hyper = { version = "0.14.14", features = ["http1", "http2"] }
 linkerd-stack = { path = "../stack", optional = true }
