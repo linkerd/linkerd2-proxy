@@ -15,7 +15,7 @@ futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
-tokio = { version = "1", features = ["sync", "time"] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
 tokio-util = "0.6.8"
 tower = { version = "0.4.10", features = ["discover"] }
 tracing = "0.1.29"
@@ -23,5 +23,5 @@ pin-project = "1"
 
 [dev-dependencies]
 async-stream = "0.3"
-tokio = { version = "1", features = ["macros", "rt"] }
+tokio = { version = "1", features = ["macros"] }
 tower = { version = "0.4.10", default-features = false, features = ["discover", "util"]}
