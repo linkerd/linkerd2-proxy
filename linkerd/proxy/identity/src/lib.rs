@@ -5,16 +5,47 @@ pub mod certify;
 pub mod metrics;
 mod token;
 
+use linkerd_error::Result;
+use std::{ops::Deref, time::SystemTime};
+
 pub use self::{certify::Certify, metrics::Metrics, token::TokenSource};
 pub use linkerd_identity::*;
 
-use linkerd_error::Result;
-use std::time::SystemTime;
-
+/// A strategy
 pub trait Credentials {
-    fn name(&self) -> &Name;
+    /// Get the authoritative DNS-like name used in the certificate.
+    fn get_dns_name(&self) -> &Name;
 
-    fn get_csr(&self) -> Vec<u8>;
+    /// Get a CSR to to be sent to the identity service.
+    fn get_certificate_signing_request(&self) -> DerX509;
 
-    fn set_crt(&mut self, leaf: Vec<u8>, chain: Vec<Vec<u8>>, expiry: SystemTime) -> Result<()>;
+    /// Set the certificate returned by the identity service.
+    ///
+    /// Fails if the certificate is not valid.
+    fn set_certificate(
+        &mut self,
+        leaf: DerX509,
+        chain: Vec<DerX509>,
+        expiry: SystemTime,
+    ) -> Result<()>;
+}
+
+/// DER-formatted X.509 data.
+#[derive(Clone, Debug)]
+pub struct DerX509(pub Vec<u8>);
+
+// === impl DerX509 ===
+
+impl DerX509 {
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.clone()
+    }
+}
+
+impl Deref for DerX509 {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
 }

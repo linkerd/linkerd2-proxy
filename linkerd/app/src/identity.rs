@@ -27,7 +27,7 @@ pub struct Documents {
 
 pub struct Identity {
     addr: control::ControlAddr,
-    local: rustls::creds::Receiver,
+    receiver: rustls::creds::Receiver,
     ready: watch::Receiver<bool>,
     metrics: identity::Metrics,
     task: Task,
@@ -75,7 +75,7 @@ impl Config {
 
         Ok(Identity {
             addr,
-            local: receiver,
+            receiver,
             metrics,
             ready,
             task,
@@ -85,22 +85,22 @@ impl Config {
 
 impl identity::Credentials for NotifyReady {
     #[inline]
-    fn name(&self) -> &Name {
-        self.store.name()
+    fn get_dns_name(&self) -> &Name {
+        self.store.get_dns_name()
     }
 
     #[inline]
-    fn get_csr(&self) -> Vec<u8> {
-        self.store.get_csr()
+    fn get_certificate_signing_request(&self) -> identity::DerX509 {
+        self.store.get_certificate_signing_request()
     }
 
-    fn set_crt(
+    fn set_certificate(
         &mut self,
-        leaf: Vec<u8>,
-        chain: Vec<Vec<u8>>,
+        leaf: identity::DerX509,
+        chain: Vec<identity::DerX509>,
         expiry: std::time::SystemTime,
     ) -> Result<()> {
-        self.store.set_crt(leaf, chain, expiry)?;
+        self.store.set_certificate(leaf, chain, expiry)?;
         let _ = self.tx.send(true);
         Ok(())
     }
@@ -124,6 +124,7 @@ impl Identity {
         self.addr.clone()
     }
 
+    /// Returns a future that is satisfied once certificates have been provisioned.
     pub fn ready(&self) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         let mut ready = self.ready.clone();
         Box::pin(async move {
@@ -133,8 +134,8 @@ impl Identity {
         })
     }
 
-    pub fn local(&self) -> rustls::creds::Receiver {
-        self.local.clone()
+    pub fn receiver(&self) -> rustls::creds::Receiver {
+        self.receiver.clone()
     }
 
     pub fn metrics(&self) -> identity::Metrics {

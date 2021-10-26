@@ -2,7 +2,7 @@ use super::params::*;
 use linkerd_error::Result;
 use linkerd_proxy_identity as id;
 use ring::{rand, signature::EcdsaKeyPair};
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 use tokio::sync::watch;
 use tokio_rustls::rustls;
 use tracing::debug;
@@ -44,23 +44,27 @@ impl Store {
 }
 
 impl id::Credentials for Store {
-    fn name(&self) -> &id::Name {
+    fn get_dns_name(&self) -> &id::Name {
         &self.identity
     }
 
-    fn get_csr(&self) -> Vec<u8> {
-        self.csr.to_vec()
+    fn get_certificate_signing_request(&self) -> id::DerX509 {
+        id::DerX509(self.csr.to_vec())
     }
 
-    fn set_crt(
+    fn set_certificate(
         &mut self,
-        leaf: Vec<u8>,
-        intermediates: Vec<Vec<u8>>,
-        _expiry: SystemTime,
+        id::DerX509(leaf): id::DerX509,
+        intermediates: Vec<id::DerX509>,
+        _expiry: std::time::SystemTime,
     ) -> Result<()> {
         let mut chain = Vec::with_capacity(intermediates.len() + 1);
         chain.push(rustls::Certificate(leaf));
-        chain.extend(intermediates.into_iter().map(rustls::Certificate));
+        chain.extend(
+            intermediates
+                .into_iter()
+                .map(|id::DerX509(der)| rustls::Certificate(der)),
+        );
 
         let mut client = rustls::ClientConfig::new();
         client.ciphersuites = TLS_SUPPORTED_CIPHERSUITES.to_vec();

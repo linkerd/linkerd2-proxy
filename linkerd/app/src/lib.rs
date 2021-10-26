@@ -124,17 +124,17 @@ impl Config {
         let tap = {
             let bind = bind_admin.clone();
             info_span!("tap")
-                .in_scope(|| tap.build(bind, identity.local().server(), drain_rx.clone()))?
+                .in_scope(|| tap.build(bind, identity.receiver().server(), drain_rx.clone()))?
         };
 
         let dst = {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local().new_client()))
+            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.receiver().new_client()))
         }?;
 
         let oc_collector = {
-            let identity = identity.local().new_client();
+            let identity = identity.receiver().new_client();
             let dns = dns.resolver.clone();
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
@@ -143,7 +143,7 @@ impl Config {
         }?;
 
         let runtime = ProxyRuntime {
-            identity: identity.local(),
+            identity: identity.receiver(),
             metrics: metrics.proxy.clone(),
             tap: tap.registry(),
             span_sink: oc_collector.span_sink(),
@@ -159,7 +159,7 @@ impl Config {
         };
 
         let admin = {
-            let identity = identity.local().server();
+            let identity = identity.receiver().server();
             let metrics = inbound.metrics();
             let policy = inbound_policies.clone();
             let report = inbound
@@ -283,7 +283,7 @@ impl App {
     }
 
     pub fn local_identity(&self) -> identity::Name {
-        self.identity.local().name().clone()
+        self.identity.receiver().name().clone()
     }
 
     pub fn identity_addr(&self) -> ControlAddr {
@@ -334,7 +334,7 @@ impl App {
                         );
 
                         // Kick off the identity so that the process can become ready.
-                        let local = identity.local();
+                        let local = identity.receiver();
                         let local_id = local.name().clone();
                         let ready = identity.ready();
                         tokio::spawn(

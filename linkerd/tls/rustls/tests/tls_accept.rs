@@ -9,7 +9,7 @@ use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_error::Infallible;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use linkerd_proxy_identity::{Credentials, Name};
+use linkerd_proxy_identity::{Credentials, DerX509, Name};
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},
@@ -42,12 +42,9 @@ fn load(ent: &test_util::Entity) -> (rustls::creds::Store, rustls::NewClient, ru
     )
     .expect("credentials must be readable");
 
+    let expiry = std::time::SystemTime::now() + Duration::from_secs(600);
     store
-        .set_crt(
-            ent.crt.to_vec(),
-            vec![],
-            std::time::SystemTime::now() + std::time::Duration::from_secs(60),
-        )
+        .set_certificate(DerX509(ent.crt.to_vec()), vec![], expiry)
         .expect("certificate must be valid");
 
     (store, rx.new_client(), rx.server())

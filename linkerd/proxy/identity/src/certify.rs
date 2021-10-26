@@ -1,4 +1,4 @@
-use crate::{Credentials, Metrics, TokenSource};
+use crate::{Credentials, DerX509, Metrics, TokenSource};
 use http_body::Body;
 use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient};
 use linkerd_error::{Error, Result};
@@ -59,10 +59,10 @@ impl Certify {
             debug!("Certifying identity");
             let crt = certify(
                 &self.config.token,
-                &mut credentials,
                 // The client is used for infrequent communication with the identity controller;
                 // so clients are instantiated on-demand rather than held.
                 new_client.new_service(()),
+                &mut credentials,
             )
             .await;
 
@@ -84,7 +84,9 @@ impl Certify {
     }
 }
 
-async fn certify<C, S>(token: &TokenSource, credentials: &mut C, client: S) -> Result<SystemTime>
+/// Issues a certificate signing request to the identity service with a token loaded frm the token
+/// source.
+async fn certify<C, S>(token: &TokenSource, client: S, credentials: &mut C) -> Result<SystemTime>
 where
     C: Credentials,
     S: GrpcService<BoxBody>,
@@ -94,8 +96,8 @@ where
 {
     let req = tonic::Request::new(api::CertifyRequest {
         token: token.load()?,
-        identity: credentials.name().to_string(),
-        certificate_signing_request: credentials.get_csr().to_vec(),
+        identity: credentials.get_dns_name().to_string(),
+        certificate_signing_request: credentials.get_certificate_signing_request().to_vec(),
     });
 
     let api::CertifyResponse {
@@ -106,7 +108,15 @@ where
 
     let exp = valid_until.ok_or("identity certification missing expiration")?;
     let expiry = SystemTime::try_from(exp)?;
-    credentials.set_crt(leaf_certificate, intermediate_certificates, expiry)?;
+    if expiry <= SystemTime::now() {
+        return Err("certificate already expired".into());
+    }
+    credentials.set_certificate(
+        DerX509(leaf_certificate),
+        intermediate_certificates.into_iter().map(DerX509).collect(),
+        expiry,
+    )?;
+
     Ok(expiry)
 }
 
