@@ -40,6 +40,7 @@ linkerd-proxy-core = { path = "../../proxy/core" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd-proxy-discover = { path = "../../proxy/discover" }
 linkerd-proxy-identity = { path = "../../proxy/identity" }
+linkerd-proxy-identity-rustls = { path = "../../proxy/identity/rustls" }
 linkerd-proxy-http = { path = "../../proxy/http" }
 linkerd-proxy-resolve = { path = "../../proxy/resolve" }
 linkerd-proxy-dns-resolve = { path = "../../proxy/dns-resolve" }
@@ -57,7 +58,6 @@ linkerd-tracing = { path = "../../tracing" }
 linkerd-transport-header = { path = "../../transport-header" }
 linkerd-transport-metrics = { path = "../../transport-metrics" }
 linkerd-tls = { path = "../../tls" }
-linkerd-tls-rustls = { path = "../../tls/rustls" }
 linkerd-trace-context = { path = "../../trace-context" }
 regex = "1.5.4"
 serde_json = "1"

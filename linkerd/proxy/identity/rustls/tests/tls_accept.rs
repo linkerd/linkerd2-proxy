@@ -10,6 +10,7 @@ use linkerd_conditional::Conditional;
 use linkerd_error::Infallible;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_proxy_identity::{Credentials, DerX509, Name};
+use linkerd_proxy_identity_rustls as rustls;
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},
@@ -17,7 +18,6 @@ use linkerd_proxy_transport::{
 };
 use linkerd_stack::{ExtractParam, InsertParam, NewService, Param};
 use linkerd_tls as tls;
-use linkerd_tls_rustls as rustls;
 use linkerd_tls_test_util as test_util;
 use std::{future::Future, net::SocketAddr, sync::mpsc, time::Duration};
 use tokio::net::TcpStream;
