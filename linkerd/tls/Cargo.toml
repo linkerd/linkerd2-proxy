@@ -23,9 +23,9 @@ tower = "0.4"
 tracing = "0.1.29"
 untrusted = "0.7"
 
-# [dev-dependencies]
+[dev-dependencies]
 # linkerd-tls-rustls = { path = "rustls", features = ["test-util"] }
 # linkerd-proxy-transport = { path = "../proxy/transport" }
-# linkerd-tracing = { path = "../tracing", features = ["ansi"] }
+linkerd-tracing = { path = "../tracing", features = ["ansi"] }
 # tokio = { version = "1", features = ["rt-multi-thread"] }
 # tower = { version = "0.4.10", default-features = false, features = ["util"] }

@@ -1376,6 +1376,7 @@ dependencies = [
  "linkerd-identity",
  "linkerd-io",
  "linkerd-stack",
+ "linkerd-tracing",
  "pin-project",
  "thiserror",
  "tokio",
