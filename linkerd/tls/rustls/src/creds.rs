@@ -55,7 +55,7 @@ pub fn for_test(ent: &linkerd_tls_test_util::Entity) -> (Store, Receiver) {
     watch(
         ent.name.parse().expect("name must be valid"),
         std::str::from_utf8(ent.trust_anchors).expect("roots must be PEM"),
-        &ent.key,
+        ent.key,
         b"fake CSR",
     )
     .expect("credentials must be valid")

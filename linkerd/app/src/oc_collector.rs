@@ -41,7 +41,7 @@ impl Config {
 
     pub fn build(
         self,
-        identity: rustls::Terminate,
+        identity: rustls::NewClient,
         dns: dns::Resolver,
         metrics: metrics::Registry,
         client_metrics: HttpMetrics,
