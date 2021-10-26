@@ -1098,12 +1098,13 @@ pub fn parse_control_addr<S: Strings>(
     }
 }
 
-pub fn parse_identity_config<S: Strings>(
-    strings: &S,
-) -> Result<(ControlAddr, identity::certify::Config), EnvError> {
+pub fn parse_identity_config<S: Strings>(strings: &S) -> Result<identity::Config, EnvError> {
     let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
-        identity::TrustAnchors::from_pem(s).ok_or(ParseError::InvalidTrustAnchors)
+        if s.is_empty() {
+            return Err(ParseError::InvalidTrustAnchors);
+        }
+        Ok(s.to_string())
     });
     let dir = parse(strings, ENV_IDENTITY_DIR, |ref s| Ok(PathBuf::from(s)));
     let tok = parse(strings, ENV_IDENTITY_TOKEN_FILE, |ref s| {
@@ -1131,7 +1132,7 @@ pub fn parse_identity_config<S: Strings>(
     match (control?, ta?, dir?, li?, tok?, min_refresh?, max_refresh?) {
         (
             Some(control),
-            Some(trust_anchors),
+            Some(trust_anchors_pem),
             Some(dir),
             Some(local_name),
             Some(token),
@@ -1149,10 +1150,11 @@ pub fn parse_identity_config<S: Strings>(
                         EnvError::InvalidEnvVar
                     })
                     .and_then(|b| {
-                        identity::Key::from_pkcs8(&b).map_err(|e| {
-                            error!("Invalid key: {}", e);
-                            EnvError::InvalidEnvVar
-                        })
+                        if b.is_empty() {
+                            error!("No CSR found");
+                            return Err(EnvError::InvalidEnvVar);
+                        }
+                        Ok(b)
                     })
             };
 
@@ -1167,23 +1169,27 @@ pub fn parse_identity_config<S: Strings>(
                         EnvError::InvalidEnvVar
                     })
                     .and_then(|b| {
-                        identity::Csr::from_der(b).ok_or_else(|| {
+                        if b.is_empty() {
                             error!("No CSR found");
-                            EnvError::InvalidEnvVar
-                        })
+                            return Err(EnvError::InvalidEnvVar);
+                        }
+                        Ok(b)
                     })
             };
 
-            let config = identity::certify::Config {
-                local_id: tls::LocalId(local_name),
+            let certify = identity::certify::Config {
                 token,
-                trust_anchors,
-                csr: csr?,
-                key: key?,
                 min_refresh: min_refresh.unwrap_or(DEFAULT_IDENTITY_MIN_REFRESH),
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
             };
-            Ok((control, config))
+            Ok(identity::Config {
+                control,
+                certify,
+                id: identity::LocalId(local_name),
+                trust_anchors_pem,
+                key_pkcs8: key?,
+                csr_der: csr?,
+            })
         }
         (addr, trust_anchors, end_entity_dir, local_id, token, _minr, _maxr) => {
             let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);

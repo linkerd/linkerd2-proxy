@@ -2,9 +2,8 @@ use futures::prelude::*;
 use linkerd_app_core::{
     config::ServerConfig,
     drain,
-    identity::LocalCrtKey,
     proxy::tap,
-    serve,
+    rustls, serve,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
@@ -35,11 +34,16 @@ pub enum Tap {
 
 #[derive(Clone)]
 struct TlsParams {
-    identity: LocalCrtKey,
+    identity: rustls::Terminate,
 }
 
 impl Config {
-    pub fn build<B>(self, bind: B, identity: LocalCrtKey, drain: drain::Watch) -> Result<Tap, Error>
+    pub fn build<B>(
+        self,
+        bind: B,
+        identity: rustls::Terminate,
+        drain: drain::Watch,
+    ) -> Result<Tap, Error>
     where
         B: Bind<ServerConfig>,
         B::Addrs: Param<Remote<ClientAddr>>,
@@ -74,9 +78,9 @@ impl Config {
                         }
                     }))
                     .push(svc::ArcNewService::layer())
-                    .push(tls::NewDetectTls::<LocalCrtKey, _, _>::layer(TlsParams {
-                        identity,
-                    }))
+                    .push(tls::NewDetectTls::<rustls::Terminate, _, _>::layer(
+                        TlsParams { identity },
+                    ))
                     .check_new_service::<B::Addrs, _>()
                     .into_inner();
 
@@ -110,9 +114,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<LocalCrtKey, T> for TlsParams {
+impl<T> ExtractParam<rustls::Terminate, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> LocalCrtKey {
+    fn extract_param(&self, _: &T) -> rustls::Terminate {
         self.identity.clone()
     }
 }

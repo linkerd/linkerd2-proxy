@@ -1,5 +1,6 @@
-use crate::{dns, identity::LocalCrtKey};
-use linkerd_app_core::{control, metrics::ControlHttp as HttpMetrics, svc::NewService, Error};
+use linkerd_app_core::{
+    control, dns, metrics::ControlHttp as HttpMetrics, rustls, svc::NewService, Error,
+};
 use linkerd_opencensus::{self as opencensus, metrics, proto};
 use std::{collections::HashMap, future::Future, pin::Pin, time::SystemTime};
 use tokio::sync::mpsc;
@@ -40,7 +41,7 @@ impl Config {
 
     pub fn build(
         self,
-        identity: LocalCrtKey,
+        identity: rustls::Terminate,
         dns: dns::Resolver,
         metrics: metrics::Registry,
         client_metrics: HttpMetrics,

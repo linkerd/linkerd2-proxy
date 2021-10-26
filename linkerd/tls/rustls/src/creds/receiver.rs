@@ -26,6 +26,10 @@ impl Receiver {
         }
     }
 
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
     pub fn new_client(&self) -> NewClient {
         NewClient::new(self.client_rx.clone())
     }

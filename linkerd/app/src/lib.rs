@@ -115,7 +115,7 @@ impl Config {
 
         // Ensure that we've obtained a valid identity before binding any servers.
         let identity = info_span!("identity")
-            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()));
+            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
 
         let report = identity.metrics().and_report(report);
 
@@ -123,17 +123,18 @@ impl Config {
 
         let tap = {
             let bind = bind_admin.clone();
-            info_span!("tap").in_scope(|| tap.build(bind, identity.local(), drain_rx.clone()))?
+            info_span!("tap")
+                .in_scope(|| tap.build(bind, identity.local().server(), drain_rx.clone()))?
         };
 
         let dst = {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local()))
+            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local().new_client()))
         }?;
 
         let oc_collector = {
-            let identity = identity.local();
+            let identity = identity.local().new_client();
             let dns = dns.resolver.clone();
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
@@ -158,7 +159,7 @@ impl Config {
         };
 
         let admin = {
-            let identity = identity.local();
+            let identity = identity.local().server();
             let metrics = inbound.metrics();
             let policy = inbound_policies.clone();
             let report = inbound
@@ -287,8 +288,8 @@ impl App {
         &self.dst
     }
 
-    pub fn local_identity(&self) -> identity::LocalCrtKey {
-        self.identity.local()
+    pub fn local_identity(&self) -> &identity::Name {
+        self.identity.local().name()
     }
 
     pub fn identity_addr(&self) -> ControlAddr {
