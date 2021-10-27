@@ -7,22 +7,21 @@
 
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
-use linkerd_error::Infallible;
+use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},
     ConnectTcp, Keepalive, ListenAddr,
 };
-use linkerd_stack::{ExtractParam, InsertParam, NewService, Param, Service};
+use linkerd_stack::{
+    layer::Layer, service_fn, ExtractParam, InsertParam, NewService, Param, Service, ServiceExt,
+};
 use linkerd_tls as tls;
 use linkerd_tls_rustls as rustls;
-use std::{future::Future, net::SocketAddr, sync::mpsc, task, time::Duration};
+use linkerd_tls_test_util as test_util;
+use std::{convert::Infallible, future::Future, net::SocketAddr, sync::mpsc, task, time::Duration};
 use tokio::net::TcpStream;
-use tower::{
-    layer::Layer,
-    util::{service_fn, ServiceExt},
-};
 use tracing::instrument::Instrument;
 
 type ServerConn<T, I> = (
@@ -30,10 +29,29 @@ type ServerConn<T, I> = (
     io::EitherIo<rustls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
 );
 
+fn load(id: &linkerd_tls_test_util::Entity) -> (rustls::TrustAnchors, rustls::CrtKey) {
+    let key = rustls::Key::from_pkcs8(id.key).expect("key must be valid");
+
+    let crt = {
+        let n = id.name.parse::<id::Name>().expect("name must be valid");
+        let der = id.crt.iter().copied().collect();
+        let expiry = std::time::SystemTime::now() + std::time::Duration::from_secs(60 * 60);
+        rustls::Crt::new(id::LocalId(n), der, vec![], expiry)
+    };
+
+    let anchors = {
+        let pem = std::str::from_utf8(id.trust_anchors).expect("utf-8");
+        rustls::TrustAnchors::from_pem(pem).unwrap_or_else(rustls::TrustAnchors::empty)
+    };
+
+    let ck = anchors.certify(key, crt).expect("Identity must be valid");
+    (anchors, ck)
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn plaintext() {
-    let server_tls = rustls::test_util::FOO_NS1.validate().unwrap();
-    let client_tls = rustls::test_util::BAR_NS1.validate().unwrap();
+    let (_, server_tls) = load(&test_util::FOO_NS1);
+    let (_, client_tls) = load(&test_util::BAR_NS1);
     let (client_result, server_result) = run_test(
         client_tls,
         Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
@@ -58,8 +76,8 @@ async fn plaintext() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn proxy_to_proxy_tls_works() {
-    let server_tls = rustls::test_util::FOO_NS1.validate().unwrap();
-    let client_tls = rustls::test_util::BAR_NS1.validate().unwrap();
+    let (_, server_tls) = load(&test_util::FOO_NS1);
+    let (_, client_tls) = load(&test_util::BAR_NS1);
     let server_id = tls::ServerId(server_tls.name().clone());
     let (client_result, server_result) = run_test(
         client_tls.clone(),
@@ -89,14 +107,12 @@ async fn proxy_to_proxy_tls_works() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
-    let server_tls = rustls::test_util::FOO_NS1.validate().unwrap();
+    let (_, server_tls) = load(&test_util::FOO_NS1);
 
     // Misuse the client's identity instead of the server's identity. Any
     // identity other than `server_tls.server_identity` would work.
-    let client_tls = rustls::test_util::BAR_NS1
-        .validate()
-        .expect("valid client cert");
-    let sni = rustls::test_util::BAR_NS1.crt().name().clone();
+    let (_, client_tls) = load(&test_util::BAR_NS1);
+    let sni = (**client_tls.id()).clone();
 
     let (client_result, server_result) = run_test(
         client_tls,
