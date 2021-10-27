@@ -106,7 +106,7 @@ impl Store {
 
 impl id::Credentials for Store {
     /// Returns the proxy's identity.
-    fn get_dns_name(&self) -> &id::Name {
+    fn dns_name(&self) -> &id::Name {
         &self.name
     }
 

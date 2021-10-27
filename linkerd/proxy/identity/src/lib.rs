@@ -14,7 +14,7 @@ pub use linkerd_identity::*;
 /// Publishes certificates to be used by TLS implementations.
 pub trait Credentials {
     /// Get the authoritative DNS-like name used in the certificate.
-    fn get_dns_name(&self) -> &Name;
+    fn dns_name(&self) -> &Name;
 
     /// Generate a CSR to to be sent to the identity service.
     fn gen_certificate_signing_request(&mut self) -> DerX509;

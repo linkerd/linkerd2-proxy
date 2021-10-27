@@ -87,8 +87,8 @@ impl Config {
 
 impl identity::Credentials for NotifyReady {
     #[inline]
-    fn get_dns_name(&self) -> &Name {
-        self.store.get_dns_name()
+    fn dns_name(&self) -> &Name {
+        self.store.dns_name()
     }
 
     #[inline]
