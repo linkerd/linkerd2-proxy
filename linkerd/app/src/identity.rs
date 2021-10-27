@@ -38,6 +38,8 @@ pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 #[derive(Clone, Debug)]
 struct Recover(ExponentialBackoff);
 
+/// Wraps a credential with a watch sender that notifies receivers when the store has been updated
+/// at least once.
 struct NotifyReady {
     store: identity::creds::Store,
     tx: watch::Sender<bool>,

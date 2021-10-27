@@ -39,7 +39,7 @@ impl Receiver {
 
     /// Returns a `Server` that can be used to terminate TLS on server connections.
     pub fn server(&self) -> Server {
-        Server::new(self.name.clone(), self.server_rx.clone(), None)
+        Server::new(self.name.clone(), self.server_rx.clone())
     }
 }
 

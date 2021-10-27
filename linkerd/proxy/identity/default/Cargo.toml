@@ -19,7 +19,7 @@ linkerd-tls = { path = "../../../tls" }
 linkerd-tls-test-util = { path = "../../../tls/test-util", optional = true }
 ring = { version = "0.16.19", features = ["std"] }
 thiserror = "1"
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["macros", "sync"] }
 tokio-rustls = "0.22"
 tracing = "0.1"
 webpki = "0.21"

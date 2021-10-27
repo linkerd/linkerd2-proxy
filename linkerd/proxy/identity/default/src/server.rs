@@ -16,7 +16,6 @@ use tracing::debug;
 pub struct Server {
     name: Name,
     rx: watch::Receiver<Arc<ServerConfig>>,
-    _handle: Option<Arc<tokio::task::JoinHandle<()>>>,
 }
 
 pub type TerminateFuture<I> = futures::future::MapOk<
@@ -32,16 +31,8 @@ pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
 pub struct LostStore(());
 
 impl Server {
-    pub(crate) fn new(
-        name: Name,
-        rx: watch::Receiver<Arc<ServerConfig>>,
-        handle: Option<tokio::task::JoinHandle<()>>,
-    ) -> Self {
-        Self {
-            name,
-            rx,
-            _handle: handle.map(Arc::new),
-        }
+    pub(crate) fn new(name: Name, rx: watch::Receiver<Arc<ServerConfig>>) -> Self {
+        Self { name, rx }
     }
 
     #[cfg(test)]
@@ -49,12 +40,15 @@ impl Server {
         (*self.rx.borrow()).clone()
     }
 
+    /// Spawns a background task that watches for TLS configuration updates and creates an augmented
+    /// configuration with the provided ALPN protocols. The returned server uses this ALPN-aware
+    /// configuration.
     pub fn spawn_with_alpn(self, alpn_protocols: Vec<Vec<u8>>) -> Result<Self, LostStore> {
         if alpn_protocols.is_empty() {
             return Ok(self);
         }
 
-        let mut orig_rx = self.rx.clone();
+        let mut orig_rx = self.rx;
 
         let mut c = (**orig_rx.borrow_and_update()).clone();
         c.alpn_protocols = alpn_protocols.clone();
@@ -62,21 +56,31 @@ impl Server {
 
         // Spawn a background task that watches the optional server configuration and publishes it
         // as a reliable channel, including any ALPN overrides.
-        let task = tokio::spawn(async move {
+        //
+        // The background task completes when the original sender is closed or when all receivers
+        // are dropped.
+        tokio::spawn(async move {
             loop {
-                if orig_rx.changed().await.is_err() {
-                    return;
+                tokio::select! {
+                    _ = tx.closed() => {
+                        debug!("ALPN TLS config receivers dropped");
+                        return;
+                    }
+                    res = orig_rx.changed() => {
+                        if res.is_err() {
+                            debug!("TLS config sender closed");
+                            return;
+                        }
+                    }
                 }
 
                 let mut c = (*orig_rx.borrow().clone()).clone();
                 c.alpn_protocols = alpn_protocols.clone();
-                if tx.send(c.into()).is_err() {
-                    return;
-                }
+                let _ = tx.send(c.into());
             }
         });
 
-        Ok(Self::new(self.name, rx, Some(task)))
+        Ok(Self::new(self.name, rx))
     }
 }
 
