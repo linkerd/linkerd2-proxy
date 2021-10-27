@@ -17,7 +17,7 @@ async-stream = "0.3"
 futures = { version = "0.3", default-features = false }
 linkerd-addr = { path = "../../addr" }
 linkerd-error = { path = "../../error" }
-linkerd2-proxy-api = { version = "0.2", features = ["destination", "client"] }
+linkerd2-proxy-api = { version = "0.3", features = ["destination", "client"] }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }

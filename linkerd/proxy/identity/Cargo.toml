@@ -12,7 +12,7 @@ test-util = ["linkerd-tls-test-util", "linkerd-tls-rustls/test-util"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-linkerd2-proxy-api = { version = "0.2", features = ["identity", "client"] }
+linkerd2-proxy-api = { version = "0.3", features = ["identity", "client"] }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
 linkerd-metrics = { path = "../../metrics" }
