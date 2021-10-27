@@ -84,7 +84,7 @@ impl Certify {
     }
 }
 
-/// Issues a certificate signing request to the identity service with a token loaded frm the token
+/// Issues a certificate signing request to the identity service with a token loaded from the token
 /// source.
 async fn certify<C, S>(token: &TokenSource, client: S, credentials: &mut C) -> Result<SystemTime>
 where
