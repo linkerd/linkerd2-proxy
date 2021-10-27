@@ -1,13 +1,10 @@
 use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge};
-use linkerd_tls_rustls::CrtKey;
-use std::{fmt, sync::Arc, time::UNIX_EPOCH};
-use tokio::sync::watch;
-
-#[derive(Debug, Clone)]
-pub struct Report {
-    crt_key_watch: watch::Receiver<Option<CrtKey>>,
-    refreshes: Arc<Counter>,
-}
+use parking_lot::Mutex;
+use std::{
+    fmt,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 metrics! {
     identity_cert_expiration_timestamp_seconds: Gauge {
@@ -19,28 +16,31 @@ metrics! {
     }
 }
 
-impl Report {
-    pub(crate) fn new(
-        crt_key_watch: watch::Receiver<Option<CrtKey>>,
-        refreshes: Arc<Counter>,
-    ) -> Self {
+#[derive(Clone, Debug)]
+pub struct Metrics {
+    expiry: Arc<Mutex<SystemTime>>,
+    refreshes: Arc<Counter>,
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
         Self {
-            crt_key_watch,
-            refreshes,
+            expiry: Arc::new(Mutex::new(UNIX_EPOCH)),
+            refreshes: Arc::new(Counter::new()),
         }
     }
 }
 
-impl FmtMetrics for Report {
+impl Metrics {
+    pub(crate) fn refresh(&self, expiry: SystemTime) {
+        self.refreshes.incr();
+        *self.expiry.lock() = expiry;
+    }
+}
+
+impl FmtMetrics for Metrics {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(ref crt_key) = *(self.crt_key_watch.borrow()) {
-            let dur = crt_key
-            .expiry()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|error| {
-                tracing::warn!(%error, "an identity would expire before the beginning of the UNIX epoch, something is probably wrong");
-                fmt::Error
-            })?;
+        if let Ok(dur) = self.expiry.lock().duration_since(UNIX_EPOCH) {
             identity_cert_expiration_timestamp_seconds.fmt_help(f)?;
             identity_cert_expiration_timestamp_seconds
                 .fmt_metric(f, &Gauge::from(dur.as_secs()))?;

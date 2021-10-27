@@ -1,6 +1,6 @@
 use crate::{
-    classify, config, control, dns, metrics, proxy::http, svc, tls, transport::ConnectTcp, Addr,
-    Error,
+    classify, config, control, dns, identity, metrics, proxy::http, svc, tls,
+    transport::ConnectTcp, Addr, Error,
 };
 use futures::future::Either;
 use std::fmt;
@@ -39,11 +39,11 @@ type BalanceBody =
 pub type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 
 impl Config {
-    pub fn build<L>(
+    pub fn build(
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: L,
+        identity: identity::NewClient,
     ) -> svc::ArcNewService<
         (),
         impl svc::Service<
@@ -52,11 +52,7 @@ impl Config {
                 Error = Error,
                 Future = impl Send,
             > + Clone,
-    >
-    where
-        L: svc::NewService<tls::ClientTls, Service = linkerd_tls_rustls::Connect>,
-        L: Clone + Send + Sync + 'static,
-    {
+    > {
         let addr = self.addr;
 
         // When a DNS resolution fails, log the error and use the TTL, if there

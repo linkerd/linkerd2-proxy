@@ -32,7 +32,8 @@ pin-project = "1"
 hyper = { version = "0.14.14", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
-linkerd-proxy-identity = { path = "../../proxy/identity", features = ["test-util"] }
+linkerd-proxy-identity-default = { path = "../../proxy/identity/default", features = ["test-util"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
-tokio = { version = "1", features = ["full", "macros"] }
+parking_lot = "0.11"
+tokio = { version = "1", features = ["time", "macros"] }
 tokio-test = "0.4"

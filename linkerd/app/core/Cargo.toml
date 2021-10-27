@@ -33,14 +33,13 @@ linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-metrics = { path = "../../http-metrics" }
 linkerd-http-retry = { path = "../../http-retry" }
-linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd-proxy-discover = { path = "../../proxy/discover" }
-linkerd-proxy-identity = { path = "../../proxy/identity" }
+linkerd-proxy-identity-default = { path = "../../proxy/identity/default" }
 linkerd-proxy-http = { path = "../../proxy/http" }
 linkerd-proxy-resolve = { path = "../../proxy/resolve" }
 linkerd-proxy-dns-resolve = { path = "../../proxy/dns-resolve" }
@@ -57,7 +56,6 @@ linkerd-tracing = { path = "../../tracing" }
 linkerd-transport-header = { path = "../../transport-header" }
 linkerd-transport-metrics = { path = "../../transport-metrics" }
 linkerd-tls = { path = "../../tls" }
-linkerd-tls-rustls = { path = "../../tls/rustls" }
 linkerd-trace-context = { path = "../../trace-context" }
 regex = "1.5.4"
 serde_json = "1"

@@ -1,10 +1,18 @@
 use futures::prelude::*;
 use linkerd_io as io;
-use linkerd_stack::Service;
+use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef};
 use std::{pin::Pin, sync::Arc};
+use tokio::sync::watch;
 use tokio_rustls::rustls::{ClientConfig, Session};
 
+/// A `NewService` that produces `Connect` services from a dynamic TLS configuration.
+#[derive(Clone)]
+pub struct NewClient {
+    config: watch::Receiver<Arc<ClientConfig>>,
+}
+
+/// A `Service` that initiates client-side TLS connections.
 #[derive(Clone)]
 pub struct Connect {
     server_id: webpki::DNSName,
@@ -19,21 +27,42 @@ pub type ConnectFuture<I> = futures::future::MapOk<
 #[derive(Debug)]
 pub struct ClientIo<I>(tokio_rustls::client::TlsStream<I>);
 
+// === impl NewClient ===
+
+impl NewClient {
+    pub(crate) fn new(config: watch::Receiver<Arc<ClientConfig>>) -> Self {
+        Self { config }
+    }
+}
+
+impl NewService<ClientTls> for NewClient {
+    type Service = Connect;
+
+    fn new_service(&self, target: ClientTls) -> Self::Service {
+        Connect::new(target, (*self.config.borrow()).clone())
+    }
+}
+
+impl std::fmt::Debug for NewClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewClient").finish()
+    }
+}
+
 // === impl Connect ===
 
 impl Connect {
-    pub fn new(client_tls: ClientTls, config: Arc<ClientConfig>) -> Self {
-        // If ALPN protocols are configured by the endpoint, we have to clone the
-        // entire configuration and set the protocols. If there are no
-        // ALPN options, clone the Arc'd base configuration without
-        // extra allocation.
+    pub(crate) fn new(client_tls: ClientTls, config: Arc<ClientConfig>) -> Self {
+        // If ALPN protocols are configured by the endpoint, we have to clone the entire
+        // configuration and set the protocols. If there are no ALPN options, clone the Arc'd base
+        // configuration without extra allocation.
         //
-        // TODO it would be better to avoid cloning the whole TLS config
-        // per-connection.
+        // TODO it would be better to avoid cloning the whole TLS config per-connection, but the
+        // Rustls API doesn't give us a lot of options.
         let config = match client_tls.alpn {
             None => config,
             Some(AlpnProtocols(protocols)) => {
-                let mut c: ClientConfig = config.as_ref().clone();
+                let mut c = (*config).clone();
                 c.alpn_protocols = protocols;
                 Arc::new(c)
             }

@@ -5,7 +5,7 @@ use crate::{
 use linkerd_app_core::{
     detect, identity, io,
     proxy::http,
-    rustls, svc, tls,
+    svc, tls,
     transport::{
         self,
         addrs::{ClientAddr, OrigDstAddr, Remote},
@@ -50,10 +50,10 @@ struct ConfigureHttpDetect;
 #[derive(Clone)]
 struct TlsParams {
     timeout: tls::server::Timeout,
-    identity: identity::LocalCrtKey,
+    identity: identity::Server,
 }
 
-type TlsIo<I> = tls::server::Io<rustls::ServerIo<tls::server::DetectIo<I>>, I>;
+type TlsIo<I> = tls::server::Io<identity::ServerIo<tls::server::DetectIo<I>>, I>;
 
 // === impl Inbound ===
 
@@ -137,10 +137,10 @@ impl<N> Inbound<N> {
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .push(tls::NewDetectTls::<identity::LocalCrtKey, _, _>::layer(
+                .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                     TlsParams {
                         timeout: tls::server::Timeout(detect_timeout),
-                        identity: rt.identity.clone(),
+                        identity: rt.identity.server(),
                     },
                 ))
                 .push_switch(
@@ -429,9 +429,9 @@ impl<T> svc::ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> svc::ExtractParam<identity::LocalCrtKey, T> for TlsParams {
+impl<T> svc::ExtractParam<identity::Server, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> identity::LocalCrtKey {
+    fn extract_param(&self, _: &T) -> identity::Server {
         self.identity.clone()
     }
 }

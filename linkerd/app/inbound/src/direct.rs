@@ -1,19 +1,15 @@
 use crate::{policy, Inbound};
 use linkerd_app_core::{
-    identity::LocalCrtKey,
-    io, rustls,
+    identity, io,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote, ServerAddr},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
     Conditional, Error, NameAddr, Result,
 };
-use std::{convert::TryFrom, fmt::Debug, task};
+use std::{convert::TryFrom, fmt::Debug};
 use thiserror::Error;
 use tracing::{debug_span, info_span};
-
-#[derive(Clone, Debug)]
-struct WithTransportHeaderAlpn(LocalCrtKey);
 
 /// Creates I/O errors when a connection cannot be forwarded because no transport
 /// header was present.
@@ -52,14 +48,14 @@ pub struct ClientInfo {
     pub local_addr: OrigDstAddr,
 }
 
-type TlsIo<I> = tls::server::Io<rustls::ServerIo<tls::server::DetectIo<I>>, I>;
+type TlsIo<I> = tls::server::Io<identity::ServerIo<tls::server::DetectIo<I>>, I>;
 type FwdIo<I> = SensorIo<io::PrefixedIo<TlsIo<I>>>;
 pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<TlsIo<I>>>;
 
 #[derive(Clone)]
 struct TlsParams {
     timeout: tls::server::Timeout,
-    identity: WithTransportHeaderAlpn,
+    identity: identity::Server,
 }
 
 impl<N> Inbound<N> {
@@ -97,6 +93,12 @@ impl<N> Inbound<N> {
     {
         self.map_stack(|config, rt, inner| {
             let detect_timeout = config.proxy.detect_protocol_timeout;
+
+            let identity = rt
+                .identity
+                .server()
+                .spawn_with_alpn(vec![transport_header::PROTOCOL.into()])
+                .expect("TLS credential store must be held");
 
             inner
                 .push(transport::metrics::NewServer::layer(
@@ -187,10 +189,10 @@ impl<N> Inbound<N> {
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
                 .push(svc::ArcNewService::layer())
-                .push(tls::NewDetectTls::<WithTransportHeaderAlpn, _, _>::layer(
+                .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                     TlsParams {
                         timeout: tls::server::Timeout(detect_timeout),
-                        identity: WithTransportHeaderAlpn(rt.identity.clone()),
+                        identity,
                     },
                 ))
                 .push_on_service(svc::BoxService::layer())
@@ -293,41 +295,6 @@ impl Param<tls::ConditionalServerTls> for GatewayTransportHeader {
     }
 }
 
-// === impl WithTransportHeaderAlpn ===
-
-impl<I> svc::Service<I> for WithTransportHeaderAlpn
-where
-    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
-{
-    type Response = (tls::ServerTls, rustls::ServerIo<I>);
-    type Error = io::Error;
-    type Future = rustls::TerminateFuture<I>;
-
-    #[inline]
-    fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), io::Error>> {
-        task::Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, io: I) -> Self::Future {
-        // Copy the underlying TLS config and set an ALPN value.
-        //
-        // TODO: Avoid cloning the server config for every connection. It would
-        // be preferable if rustls::ServerConfig wrapped individual fields in an
-        // Arc so they could be overridden independently.
-        let mut config = self.0.server_config().as_ref().clone();
-        config
-            .alpn_protocols
-            .push(transport_header::PROTOCOL.into());
-        rustls::terminate(config.into(), io)
-    }
-}
-
-impl svc::Param<tls::LocalId> for WithTransportHeaderAlpn {
-    fn param(&self) -> tls::LocalId {
-        self.0.id().clone()
-    }
-}
-
 // === impl RefusedNoHeader ===
 
 impl From<RefusedNoHeader> for Error {
@@ -348,9 +315,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<WithTransportHeaderAlpn, T> for TlsParams {
+impl<T> ExtractParam<identity::Server, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> WithTransportHeaderAlpn {
+    fn extract_param(&self, _: &T) -> identity::Server {
         self.identity.clone()
     }
 }

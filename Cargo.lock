@@ -674,7 +674,6 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-http-metrics",
  "linkerd-http-retry",
- "linkerd-identity",
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-opencensus",
@@ -683,7 +682,7 @@ dependencies = [
  "linkerd-proxy-discover",
  "linkerd-proxy-dns-resolve",
  "linkerd-proxy-http",
- "linkerd-proxy-identity",
+ "linkerd-proxy-identity-default",
  "linkerd-proxy-resolve",
  "linkerd-proxy-tap",
  "linkerd-proxy-tcp",
@@ -696,7 +695,6 @@ dependencies = [
  "linkerd-stack-tracing",
  "linkerd-system",
  "linkerd-tls",
- "linkerd-tls-rustls",
  "linkerd-trace-context",
  "linkerd-tracing",
  "linkerd-transport-header",
@@ -745,7 +743,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-io",
- "linkerd-proxy-identity",
+ "linkerd-proxy-identity-default",
  "linkerd-server-policy",
  "linkerd-tonic-watch",
  "linkerd-tracing",
@@ -801,7 +799,7 @@ dependencies = [
  "linkerd-http-retry",
  "linkerd-identity",
  "linkerd-io",
- "linkerd-proxy-identity",
+ "linkerd-proxy-identity-default",
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
@@ -1147,15 +1145,36 @@ dependencies = [
  "linkerd-identity",
  "linkerd-metrics",
  "linkerd-stack",
- "linkerd-tls",
- "linkerd-tls-rustls",
- "linkerd-tls-test-util",
  "linkerd2-proxy-api",
+ "parking_lot",
  "pin-project",
  "thiserror",
  "tokio",
  "tonic",
  "tracing",
+]
+
+[[package]]
+name = "linkerd-proxy-identity-default"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-conditional",
+ "linkerd-error",
+ "linkerd-io",
+ "linkerd-proxy-identity",
+ "linkerd-proxy-transport",
+ "linkerd-stack",
+ "linkerd-tls",
+ "linkerd-tls-test-util",
+ "linkerd-tracing",
+ "ring",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tracing",
+ "webpki",
 ]
 
 [[package]]
@@ -1184,9 +1203,9 @@ dependencies = [
  "linkerd-identity",
  "linkerd-io",
  "linkerd-proxy-http",
+ "linkerd-proxy-identity-default",
  "linkerd-stack",
  "linkerd-tls",
- "linkerd-tls-rustls",
  "linkerd2-proxy-api",
  "parking_lot",
  "pin-project",
@@ -1368,27 +1387,6 @@ dependencies = [
  "tower",
  "tracing",
  "untrusted",
-]
-
-[[package]]
-name = "linkerd-tls-rustls"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-conditional",
- "linkerd-identity",
- "linkerd-io",
- "linkerd-proxy-transport",
- "linkerd-stack",
- "linkerd-tls",
- "linkerd-tls-test-util",
- "linkerd-tracing",
- "ring",
- "thiserror",
- "tokio",
- "tokio-rustls",
- "tracing",
- "webpki",
 ]
 
 [[package]]
