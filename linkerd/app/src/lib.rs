@@ -339,7 +339,7 @@ impl App {
                         let ready = identity.ready();
                         tokio::spawn(
                             identity
-                                .into_task()
+                                .run()
                                 .instrument(info_span!("identity").or_current()),
                         );
 

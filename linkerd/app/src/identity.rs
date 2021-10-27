@@ -144,7 +144,7 @@ impl Identity {
         self.metrics.clone()
     }
 
-    pub fn into_task(self) -> Task {
+    pub fn run(self) -> Task {
         self.task
     }
 }
