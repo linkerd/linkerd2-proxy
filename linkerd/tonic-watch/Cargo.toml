@@ -13,7 +13,7 @@ Provides a utility for creating robust watches from a service that returns a str
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
-tonic = { version = "0.5", default-features = false }
+tonic = { version = "0.6", default-features = false }
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tracing = "0.1"
 
