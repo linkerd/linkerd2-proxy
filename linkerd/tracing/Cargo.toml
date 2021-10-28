@@ -14,7 +14,7 @@ ansi = ["tracing-subscriber/ansi"]
 linkerd-error = { path = "../error" }
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1.29"
-tracing-appender = "0.1.2"
+tracing-appender = "0.2"
 tracing-log = "0.1.2"
 
 [dependencies.tracing-subscriber]

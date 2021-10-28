@@ -4,7 +4,7 @@ use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::{
     field::RecordFields,
     filter::{Directive, FilterFn, Filtered},
-    fmt::{FormatFields, FormattedFields, MakeWriter},
+    fmt::{format, FormatFields, FormattedFields, MakeWriter},
     layer::{Context, Layer},
     registry::LookupSpan,
 };
@@ -30,7 +30,7 @@ pub(super) struct ApacheCommon {
 
 struct ApacheCommonVisitor<'writer> {
     res: fmt::Result,
-    writer: &'writer mut dyn fmt::Write,
+    writer: format::Writer<'writer>,
 }
 
 pub(super) fn build<S>() -> Option<(AccessLogLayer<S>, Guard, Directive)>
@@ -92,15 +92,18 @@ where
     S: Subscriber + for<'span> LookupSpan<'span>,
     F: for<'writer> FormatFields<'writer> + 'static,
 {
-    fn new_span(&self, attrs: &span::Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
+    fn on_new_span(&self, attrs: &span::Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
         let span = ctx.span(id).expect("Span not found, this is a bug");
         let mut extensions = span.extensions_mut();
 
         if extensions.get_mut::<FormattedFields<F>>().is_none() {
-            let mut buf = String::new();
-            if self.formatter.format_fields(&mut buf, attrs).is_ok() {
-                let fmt_fields = FormattedFields::<F>::new(buf);
-                extensions.insert(fmt_fields);
+            let mut fields = FormattedFields::<F>::new(String::new());
+            if self
+                .formatter
+                .format_fields(fields.as_writer(), attrs)
+                .is_ok()
+            {
+                extensions.insert(fields);
             }
         }
     }
@@ -108,17 +111,18 @@ where
     fn on_record(&self, id: &Id, values: &span::Record<'_>, ctx: Context<'_, S>) {
         let span = ctx.span(id).expect("Span not found, this is a bug");
         let mut extensions = span.extensions_mut();
-        if let Some(FormattedFields { ref mut fields, .. }) =
-            extensions.get_mut::<FormattedFields<F>>()
-        {
+        if let Some(fields) = extensions.get_mut::<FormattedFields<F>>() {
             let _ = self.formatter.add_fields(fields, values);
             return;
         }
 
-        let mut buf = String::new();
-        if self.formatter.format_fields(&mut buf, values).is_ok() {
-            let fmt_fields = FormattedFields::<F>::new(buf);
-            extensions.insert(fmt_fields);
+        let mut fields = FormattedFields::<F>::new(String::new());
+        if self
+            .formatter
+            .format_fields(fields.as_writer(), values)
+            .is_ok()
+        {
+            extensions.insert(fields);
         }
     }
 
@@ -145,11 +149,7 @@ impl ApacheCommon {
 }
 
 impl<'writer> FormatFields<'writer> for ApacheCommon {
-    fn format_fields<R: RecordFields>(
-        &self,
-        writer: &'writer mut dyn fmt::Write,
-        fields: R,
-    ) -> fmt::Result {
+    fn format_fields<R: RecordFields>(&self, writer: format::Writer<'_>, fields: R) -> fmt::Result {
         let mut visitor = ApacheCommonVisitor {
             writer,
             res: Ok(()),
@@ -158,8 +158,13 @@ impl<'writer> FormatFields<'writer> for ApacheCommon {
         visitor.res
     }
 
-    fn add_fields(&self, current: &'writer mut String, fields: &span::Record<'_>) -> fmt::Result {
-        self.format_fields(current, fields)
+    #[inline]
+    fn add_fields(
+        &self,
+        current: &mut FormattedFields<Self>,
+        fields: &span::Record<'_>,
+    ) -> fmt::Result {
+        self.format_fields(current.as_writer(), fields)
     }
 }
 
@@ -169,7 +174,6 @@ impl field::Visit for ApacheCommonVisitor<'_> {
     }
 
     fn record_debug(&mut self, field: &field::Field, val: &dyn fmt::Debug) {
-        use fmt::Write;
         self.res = match field.name() {
             n if ApacheCommon::SKIPPED_FIELDS.contains(&n) => return,
             "timestamp" => write!(&mut self.writer, " [{:?}]", val),
