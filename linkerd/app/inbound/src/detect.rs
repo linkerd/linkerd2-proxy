@@ -4,7 +4,7 @@ use crate::{
 };
 use linkerd_app_core::{
     detect, identity, io,
-    proxy::{http, identity::LocalCrtKey},
+    proxy::http,
     svc, tls,
     transport::{
         self,
@@ -50,8 +50,10 @@ struct ConfigureHttpDetect;
 #[derive(Clone)]
 struct TlsParams {
     timeout: tls::server::Timeout,
-    identity: LocalCrtKey,
+    identity: identity::Server,
 }
+
+type TlsIo<I> = tls::server::Io<identity::ServerIo<tls::server::DetectIo<I>>, I>;
 
 // === impl Inbound ===
 
@@ -92,7 +94,7 @@ impl<N> Inbound<N> {
         I: Debug + Send + Sync + Unpin + 'static,
         N: svc::NewService<Tls, Service = NSvc>,
         N: Clone + Send + Sync + Unpin + 'static,
-        NSvc: svc::Service<tls::server::Io<I>, Response = ()>,
+        NSvc: svc::Service<TlsIo<I>, Response = ()>,
         NSvc: Send + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
@@ -135,10 +137,12 @@ impl<N> Inbound<N> {
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .push(tls::NewDetectTls::<LocalCrtKey, _, _>::layer(TlsParams {
-                    timeout: tls::server::Timeout(detect_timeout),
-                    identity: rt.identity.clone(),
-                }))
+                .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
+                    TlsParams {
+                        timeout: tls::server::Timeout(detect_timeout),
+                        identity: rt.identity.server(),
+                    },
+                ))
                 .push_switch(
                     // If this port's policy indicates that authentication is not required and
                     // detection should be skipped, use the TCP stack directly.
@@ -425,9 +429,9 @@ impl<T> svc::ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> svc::ExtractParam<LocalCrtKey, T> for TlsParams {
+impl<T> svc::ExtractParam<identity::Server, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> LocalCrtKey {
+    fn extract_param(&self, _: &T) -> identity::Server {
         self.identity.clone()
     }
 }

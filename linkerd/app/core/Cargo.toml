@@ -3,7 +3,7 @@ name = "linkerd-app-core"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 description = """
 Core infrastructure for the proxy application
@@ -17,7 +17,7 @@ bytes = "1"
 drain = { version = "0.1.0", features = ["retain"] }
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.13", features = ["http1", "http2"] }
+hyper = { version = "0.14.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.3"
 linkerd-addr = { path = "../../addr" }
@@ -33,14 +33,13 @@ linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-metrics = { path = "../../http-metrics" }
 linkerd-http-retry = { path = "../../http-retry" }
-linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd-proxy-discover = { path = "../../proxy/discover" }
-linkerd-proxy-identity = { path = "../../proxy/identity" }
+linkerd-proxy-identity-default = { path = "../../proxy/identity/default" }
 linkerd-proxy-http = { path = "../../proxy/http" }
 linkerd-proxy-resolve = { path = "../../proxy/resolve" }
 linkerd-proxy-dns-resolve = { path = "../../proxy/dns-resolve" }
@@ -49,7 +48,6 @@ linkerd-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-reconnect = { path = "../../reconnect" }
 linkerd-retry = { path = "../../retry" }
-linkerd-server-policy = { path = "../../server-policy" }
 linkerd-service-profiles = { path = "../../service-profiles" }
 linkerd-stack = { path = "../../stack" }
 linkerd-stack-metrics = { path = "../../stack/metrics" }
@@ -64,13 +62,13 @@ serde_json = "1"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}
 tokio-stream = { version = "0.1.7", features = ["time"] }
-tonic = { version = "0.5", default-features = false, features = ["prost"] }
+tonic = { version = "0.6", default-features = false, features = ["prost"] }
 tracing = "0.1.29"
 parking_lot = "0.11"
 pin-project = "1"
 
 [dependencies.tower]
-version = "0.4.8"
+version = "0.4.10"
 default-features = false
 features = [
     "buffer",

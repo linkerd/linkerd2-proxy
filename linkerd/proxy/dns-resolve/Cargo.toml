@@ -3,7 +3,7 @@ name = "linkerd-proxy-dns-resolve"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 description = """
 Service Dns Resolutions for the proxy
@@ -18,5 +18,5 @@ linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync"] }
 tokio-stream = { version = "0.1.7", features = ["sync"]}
-tower = "0.4.8"
+tower = "0.4.10"
 tracing = "0.1.29"

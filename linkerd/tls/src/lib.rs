@@ -1,19 +1,18 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
-pub use linkerd_identity::LocalId;
-use linkerd_io as io;
-pub use tokio_rustls::rustls::Session;
-
 pub mod client;
 pub mod server;
+
+pub use linkerd_identity::LocalId;
+use linkerd_io as io;
 
 pub use self::{
     client::{Client, ClientTls, ConditionalClientTls, NoClientTls, ServerId},
     server::{ClientId, ConditionalServerTls, NewDetectTls, NoServerTls, ServerTls},
 };
 
-/// A trait implented by transport streams to indicate its negotiated protocol.
+/// A trait implemented by transport streams to indicate its negotiated protocol.
 pub trait HasNegotiatedProtocol {
     fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>>;
 }
@@ -55,26 +54,6 @@ impl std::fmt::Debug for NegotiatedProtocolRef<'_> {
             Ok(s) => s.fmt(f),
             Err(_) => self.0.fmt(f),
         }
-    }
-}
-
-impl<I> HasNegotiatedProtocol for self::client::TlsStream<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        self.get_ref()
-            .1
-            .get_alpn_protocol()
-            .map(NegotiatedProtocolRef)
-    }
-}
-
-impl<I> HasNegotiatedProtocol for self::server::TlsStream<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        self.get_ref()
-            .1
-            .get_alpn_protocol()
-            .map(NegotiatedProtocolRef)
     }
 }
 

@@ -3,10 +3,9 @@ name = "linkerd-dns-name"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 [dependencies]
 thiserror = "1.0"
 untrusted = "0.7"
-webpki = "0.21"

@@ -3,7 +3,7 @@ name = "linkerd-tls"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 [dependencies]
@@ -16,17 +16,13 @@ linkerd-error = { path = "../error" }
 linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
+pin-project = "1"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "time"] }
-tokio-rustls = "0.22"
-tower = "0.4.8"
+tower = "0.4"
 tracing = "0.1.29"
-webpki = "0.21"
 untrusted = "0.7"
 
 [dev-dependencies]
-linkerd-identity = { path = "../identity", features = ["test-util"] }
-linkerd-proxy-transport = { path = "../proxy/transport" }
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
-tower = { version = "0.4.8", default-features = false, features = ["util"] }

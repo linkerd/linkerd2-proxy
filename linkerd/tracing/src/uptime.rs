@@ -1,5 +1,6 @@
 use std::fmt;
 use tokio::time::{Duration, Instant};
+use tracing_subscriber::fmt::{format, time::FormatTime};
 
 pub(crate) struct Uptime {
     start_time: Instant,
@@ -12,14 +13,14 @@ impl Uptime {
         }
     }
 
-    fn format(d: Duration, w: &mut dyn fmt::Write) -> fmt::Result {
+    fn format(d: Duration, w: &mut impl fmt::Write) -> fmt::Result {
         let micros = d.subsec_micros();
         write!(w, "[{:>6}.{:06}s]", d.as_secs(), micros)
     }
 }
 
-impl tracing_subscriber::fmt::time::FormatTime for Uptime {
-    fn format_time(&self, w: &mut dyn fmt::Write) -> fmt::Result {
+impl FormatTime for Uptime {
+    fn format_time(&self, w: &mut format::Writer<'_>) -> fmt::Result {
         Self::format(Instant::now() - self.start_time, w)
     }
 }

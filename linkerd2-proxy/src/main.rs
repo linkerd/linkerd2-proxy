@@ -9,9 +9,9 @@ use linkerd_signal as signal;
 use tokio::sync::mpsc;
 pub use tracing::{debug, error, info, warn};
 
-#[cfg(feature = "mimalloc")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 mod rt;
 
@@ -61,7 +61,7 @@ fn main() {
             Some(addr) => info!("Tap interface on {}", addr),
         }
 
-        info!("Local identity is {}", app.local_identity().name());
+        info!("Local identity is {}", app.local_identity());
         let addr = app.identity_addr();
         match addr.identity.value() {
             None => info!("Identity verified via {}", addr.addr),

@@ -3,7 +3,7 @@ name = "linkerd-app-gateway"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 [dependencies]
@@ -14,12 +14,12 @@ linkerd-app-inbound = { path = "../inbound" }
 linkerd-app-outbound = { path = "../outbound" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
-tower = { version = "0.4.8", default-features = false }
+tower = { version = "0.4.10", default-features = false }
 tracing = "0.1.29"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
 tokio-test = "0.4"
-tower = { version = "0.4.8", default-features = false, features = ["util"] }
+tower = { version = "0.4.10", default-features = false, features = ["util"] }
 tower-test = "0.4"
 linkerd-app-test = { path = "../test" }

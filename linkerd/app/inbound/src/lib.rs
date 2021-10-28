@@ -21,9 +21,8 @@ use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
     drain,
     http_tracing::OpenCensusSink,
-    io,
-    proxy::tcp,
-    proxy::{identity::LocalCrtKey, tap},
+    identity, io,
+    proxy::{tap, tcp},
     svc,
     transport::{self, Remote, ServerAddr},
     Error, NameMatch, ProxyRuntime,
@@ -54,7 +53,7 @@ pub struct Inbound<S> {
 #[derive(Clone)]
 struct Runtime {
     metrics: Metrics,
-    identity: LocalCrtKey,
+    identity: identity::creds::Receiver,
     tap: tap::Registry,
     span_sink: OpenCensusSink,
     drain: drain::Watch,
@@ -82,7 +81,7 @@ impl<S> Inbound<S> {
         &self.config
     }
 
-    pub fn identity(&self) -> &LocalCrtKey {
+    pub fn identity(&self) -> &identity::creds::Receiver {
         &self.runtime.identity
     }
 

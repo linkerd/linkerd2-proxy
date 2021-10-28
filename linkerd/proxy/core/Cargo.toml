@@ -3,7 +3,7 @@ name = "linkerd-proxy-core"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 description = """
 Core interfaces needed to implement proxy components
@@ -12,5 +12,4 @@ Core interfaces needed to implement proxy components
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
-tower = { version = "0.4.8", default-features = false }
-pin-project = "1"
+tower = { version = "0.4.10", default-features = false }

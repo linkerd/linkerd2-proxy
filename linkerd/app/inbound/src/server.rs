@@ -24,7 +24,7 @@ impl Inbound<()> {
         self.config
             .policy
             .clone()
-            .build(dns, control_metrics, self.runtime.identity.clone())
+            .build(dns, control_metrics, self.runtime.identity.new_client())
     }
 
     pub async fn serve<A, I, G, GSvc, P>(

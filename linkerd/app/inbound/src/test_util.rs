@@ -3,7 +3,7 @@ pub use futures::prelude::*;
 use linkerd_app_core::{
     config,
     dns::Suffix,
-    drain, exp_backoff, metrics,
+    drain, exp_backoff, identity, metrics,
     proxy::{
         http::{h1, h2},
         tap,
@@ -73,7 +73,7 @@ pub fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (tap, _) = tap::new();
     let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
     let runtime = ProxyRuntime {
-        identity: linkerd_proxy_identity::LocalCrtKey::default_for_test(),
+        identity: identity::creds::default_for_test().1,
         metrics: metrics.proxy,
         tap,
         span_sink: None,

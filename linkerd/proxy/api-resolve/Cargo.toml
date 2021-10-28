@@ -3,7 +3,7 @@ name = "linkerd-proxy-api-resolve"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 description = """
 Implements the Resolve trait using the proxy's gRPC API
@@ -17,14 +17,14 @@ async-stream = "0.3"
 futures = { version = "0.3", default-features = false }
 linkerd-addr = { path = "../../addr" }
 linkerd-error = { path = "../../error" }
-linkerd2-proxy-api = { version = "0.2", features = ["destination", "client"] }
+linkerd2-proxy-api = { version = "0.3", features = ["destination", "client"] }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 http = "0.2"
 http-body = "0.4"
 pin-project = "1"
-prost = "0.8"
-tonic = { version = "0.5", default-features = false }
-tower = { version = "0.4.8", default-features = false }
+prost = "0.9"
+tonic = { version = "0.6", default-features = false }
+tower = { version = "0.4.10", default-features = false }
 tracing = "0.1.29"

@@ -116,7 +116,13 @@ impl<C> Inbound<C> {
                     rt.span_sink.clone(),
                     super::trace_labels(),
                 ))
-                .push_on_service(http::BoxResponse::layer());
+                .push_on_service(svc::layers()
+                    .push(http::BoxResponse::layer())
+                    // This box is needed to reduce compile times on recent (2021-10-17) nightlies,
+                    // though this may be fixed by https://github.com/rust-lang/rust/pull/89831. It
+                    // should be removed when possible.
+                    .push(svc::BoxService::layer())
+                );
 
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
@@ -272,7 +278,7 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
         use linkerd_app_core::{
             http_request_authority_addr, http_request_host_addr, CANONICAL_DST_HEADER,
         };
-        use std::{convert::TryInto, str::FromStr};
+        use std::str::FromStr;
 
         // Try to read a logical named address from the request. First check the canonical-dst
         // header as set by the client proxy; otherwise fallback to the request's `:authority` or

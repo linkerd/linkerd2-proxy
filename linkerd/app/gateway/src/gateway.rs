@@ -155,7 +155,7 @@ where
                 {
                     if let Some(by) = fwd_by(forwarded) {
                         tracing::info!(%forwarded);
-                        if by == local_id.as_ref() {
+                        if by == local_id.as_str() {
                             return Box::pin(future::err(GatewayLoop.into()));
                         }
                     }

@@ -4,7 +4,7 @@ use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;
 use linkerd_proxy_api_resolve::pb as resolve;
 use regex::Regex;
-use std::{convert::TryInto, str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use tower::retry::budget::Budget;
 use tracing::warn;
 

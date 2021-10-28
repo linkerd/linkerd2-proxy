@@ -48,6 +48,7 @@ pub use self::{
     unwrap_or::UnwrapOr,
 };
 pub use tower::{
+    service_fn,
     util::{future_service, FutureService, Oneshot, ServiceExt},
     Service,
 };
