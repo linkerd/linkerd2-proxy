@@ -37,7 +37,7 @@ pub struct Handle(Option<Inner>);
 #[derive(Clone)]
 struct Inner {
     level: level::Handle,
-    guard: Option<access_log::Guard>,
+    _guard: Option<access_log::Guard>,
 }
 
 /// Initialize tracing and logging with the value of the `ENV_LOG`
@@ -154,7 +154,7 @@ impl Settings {
         let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
 
         let mut filter = EnvFilter::new(log_level);
-        let (access_log, guard) = match access_log::build() {
+        let (access_log, _guard) = match access_log::build() {
             Some((access_log, guard, directive)) => {
                 filter = filter.add_directive(directive);
                 (Some(access_log), Some(guard))
@@ -172,7 +172,7 @@ impl Settings {
             !meta.target().starts_with(access_log::TRACE_TARGET)
         }));
 
-        let handle = Handle(Some(Inner { level, guard }));
+        let handle = Handle(Some(Inner { level, _guard }));
 
         let dispatch = tracing_subscriber::registry()
             .with(filter)
