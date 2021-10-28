@@ -13,7 +13,7 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 use svc::{NewService, Param};
 use tracing::{field, span, Level, Span};
@@ -105,12 +105,6 @@ where
                 .unwrap_or_default()
         };
 
-        let now = || {
-            chrono::Utc::now().format_with_items(
-                [chrono::format::Item::Fixed(chrono::format::Fixed::RFC3339)].iter(),
-            )
-        };
-
         let span = span!(target: TRACE_TARGET, Level::INFO, "http",
             client.addr = %self.client_addr,
             client.id = self.client_id.as_ref().map(|n| n.as_str()).unwrap_or("-"),
@@ -190,4 +184,9 @@ where
 
         Poll::Ready(Ok(response))
     }
+}
+
+#[inline]
+fn now() -> humantime::Rfc3339Timestamp {
+    humantime::format_rfc3339(SystemTime::now())
 }
