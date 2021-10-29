@@ -240,8 +240,12 @@ async fn retry_without_content_length() {
                 .body(body)
                 .unwrap();
             let res = tokio::spawn(async move { client.request_body(req).await });
-            let _ = tx.send_data(Bytes::from_static(b"hello")).await;
-            let _ = tx.send_data(Bytes::from_static(b"world")).await;
+            tx.send_data(Bytes::from_static(b"hello"))
+                .await
+                .expect("the whole body should be read");
+            tx.send_data(Bytes::from_static(b"world"))
+                .await
+                .expect("the whole body should be read");
             drop(tx);
             let res = res.await.unwrap();
             assert_eq!(res.status(), 200);
@@ -326,11 +330,17 @@ async fn does_not_retry_if_streaming_body_exceeds_max_length() {
                 .unwrap();
             let res = tokio::spawn(async move { client.request_body(req).await });
             // send a 32k chunk
-            let _ = tx.send_data(Bytes::from(&[1u8; 32 * 1024][..])).await;
+            tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
+                .await
+                .expect("the whole body should be read");
             // ...and another one...
-            let _ = tx.send_data(Bytes::from(&[1u8; 32 * 1024][..])).await;
+            tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
+                .await
+                .expect("the whole body should be read");
             // ...and a third one (exceeding the max length limit)
-            let _ = tx.send_data(Bytes::from(&[1u8; 32 * 1024][..])).await;
+            tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
+                .await
+                .expect("the whole body should be read");
             drop(tx);
             let res = res.await.unwrap();
             assert_eq!(res.status(), 533);
