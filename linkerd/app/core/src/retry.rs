@@ -67,20 +67,24 @@ impl RetryPolicy {
         };
 
         // Requests without bodies can always be retried, as we will not need to
-        // buffer the body. If the request *does* have a body, check if it has a
-        // `Content-Length` header with a value over the maximum buffered bytes
-        // limit. If it does, we know the request body will exceed the limit, so
-        // don't bother trying to retry. If there's no `Content-Length`, assume
-        // the request is retryable --- we'll still stop buffering if it exceeds
-        // the max length.
-        let has_body = !req.body().is_end_stream();
-        if has_body
-            && content_length(req)
-                .map(|length| length > MAX_BUFFERED_BYTES)
-                .unwrap_or(false)
+        // buffer the body.
+        if req.body().is_end_stream() {
+            tracing::trace!(req.has_body = false, "retryable");
+            return true;
+        }
+
+        // If the request *does* have a body, check if it has a
+        // `Content-Length` header with a value over the maximum
+        // buffered bytes limit. If it does, we know the request body
+        // will exceed the limit, so don't bother trying to retry. If
+        // there's no `Content-Length`, assume the request is retryable
+        // --- we'll still stop buffering if it exceeds the max length.
+        if content_length(req)
+            .map(|length| length > MAX_BUFFERED_BYTES)
+            .unwrap_or(false)
         {
             tracing::trace!(
-                req.has_body = has_body,
+                req.has_body = true,
                 req.content_length = ?content_length(req),
                 "not retryable",
             );
@@ -88,7 +92,7 @@ impl RetryPolicy {
         }
 
         tracing::trace!(
-            req.has_body = has_body,
+            req.has_body = true,
             req.content_length = ?content_length(req),
             "retryable",
         );
