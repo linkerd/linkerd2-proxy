@@ -48,7 +48,8 @@ macro_rules! profile_test {
                 async move {
                     // Read the entire body before responding, so that the
                     // client doesn't fail when writing it out.
-                    let _body = hyper::body::aggregate(req.into_body()).await;
+                    let _body = hyper::body::to_bytes(req.into_body()).await;
+                    tracing::debug!(body = ?_body.as_ref().map(|body| body.len()), "recieved body");
                     Ok::<_, Error>(if fail {
                         Response::builder()
                             .status(533)
@@ -239,8 +240,8 @@ async fn retry_without_content_length() {
                 .body(body)
                 .unwrap();
             let res = tokio::spawn(async move { client.request_body(req).await });
-            let _ = tx.send_data(Bytes::from_static(b"hello"));
-            let _ = tx.send_data(Bytes::from_static(b"world"));
+            let _ = tx.send_data(Bytes::from_static(b"hello")).await;
+            let _ = tx.send_data(Bytes::from_static(b"world")).await;
             drop(tx);
             let res = res.await.unwrap();
             assert_eq!(res.status(), 200);
@@ -325,11 +326,11 @@ async fn does_not_retry_if_streaming_body_exceeds_max_length() {
                 .unwrap();
             let res = tokio::spawn(async move { client.request_body(req).await });
             // send a 32k chunk
-            let _ = tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]));
+            let _ = tx.send_data(Bytes::from(&[1u8; 32 * 1024][..])).await;
             // ...and another one...
-            let _ = tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]));
+            let _ = tx.send_data(Bytes::from(&[1u8; 32 * 1024][..])).await;
             // ...and a third one (exceeding the max length limit)
-            let _ = tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]));
+            let _ = tx.send_data(Bytes::from(&[1u8; 32 * 1024][..])).await;
             drop(tx);
             let res = res.await.unwrap();
             assert_eq!(res.status(), 533);
