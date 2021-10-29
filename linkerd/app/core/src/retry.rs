@@ -100,24 +100,33 @@ impl RetryPolicy {
     }
 }
 
-impl<A, B, E> retry::Policy<http::Request<A>, http::Response<B>, E> for RetryPolicy
+impl<A, B, E> retry::Policy<http::Request<ReplayBody<A>>, http::Response<B>, E> for RetryPolicy
 where
-    A: http_body::Body + Clone,
+    A: http_body::Body + Unpin,
+    A::Error: Into<Error>,
 {
     type Future = future::Ready<Self>;
 
     fn retry(
         &self,
-        req: &http::Request<A>,
+        req: &http::Request<ReplayBody<A>>,
         result: Result<&http::Response<B>, &E>,
     ) -> Option<Self::Future> {
         let retryable = match result {
             Err(_) => false,
-            Ok(rsp) => classify::Request::from(self.response_classes.clone())
-                .classify(req)
-                .start(rsp)
-                .eos(None)
-                .is_failure(),
+            Ok(rsp) => {
+                // is the request a failure?
+                let is_failure = classify::Request::from(self.response_classes.clone())
+                    .classify(req)
+                    .start(rsp)
+                    .eos(None)
+                    .is_failure();
+                // did the body exceed the maximum length limit?
+                let exceeded_max_len = req.body().is_capped();
+                let retryable = is_failure && !exceeded_max_len;
+                tracing::trace!(is_failure, exceeded_max_len, retryable);
+                retryable
+            }
         };
 
         if !retryable {
@@ -134,7 +143,10 @@ where
         Some(future::ready(self.clone()))
     }
 
-    fn clone_request(&self, req: &http::Request<A>) -> Option<http::Request<A>> {
+    fn clone_request(
+        &self,
+        req: &http::Request<ReplayBody<A>>,
+    ) -> Option<http::Request<ReplayBody<A>>> {
         let can_retry = self.can_retry(req);
         debug_assert!(
             can_retry,
