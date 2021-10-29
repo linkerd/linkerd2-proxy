@@ -62,7 +62,7 @@ regex = "1.5.4"
 serde_json = "1"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}
-tokio-stream = { version = "0.1.7", features = ["time"] }
+tokio-stream = { version = "0.1.8", features = ["time"] }
 tonic = { version = "0.6", default-features = false, features = ["prost"] }
 tracing = "0.1.29"
 parking_lot = "0.11"
