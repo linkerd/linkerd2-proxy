@@ -9,7 +9,7 @@ use std::{
     task::{Context, Poll},
 };
 use tower::discover::Change;
-use tracing::trace;
+use tracing::{debug, trace};
 
 #[derive(Clone, Debug)]
 pub struct FromResolve<R, E> {
@@ -106,7 +106,7 @@ where
         loop {
             let this = self.as_mut().project();
             if let Some(change) = this.pending.pop_front() {
-                trace!(?change, "Changed");
+                debug!(?change, "Changed");
                 return Poll::Ready(Some(Ok(change)));
             }
 
