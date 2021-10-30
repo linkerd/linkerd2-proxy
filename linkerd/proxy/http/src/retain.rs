@@ -100,10 +100,12 @@ impl<T, B: http_body::Body> http_body::Body for RetainBody<T, B> {
     type Data = B::Data;
     type Error = B::Error;
 
+    #[inline]
     fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
 
+    #[inline]
     fn poll_data(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -111,6 +113,7 @@ impl<T, B: http_body::Body> http_body::Body for RetainBody<T, B> {
         self.project().inner.poll_data(cx)
     }
 
+    #[inline]
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -118,6 +121,7 @@ impl<T, B: http_body::Body> http_body::Body for RetainBody<T, B> {
         self.project().inner.poll_trailers(cx)
     }
 
+    #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         self.inner.size_hint()
     }

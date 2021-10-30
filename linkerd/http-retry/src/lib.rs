@@ -4,7 +4,7 @@
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
-use http_body::Body;
+use http_body::{Body, SizeHint};
 use linkerd_error::Error;
 use parking_lot::Mutex;
 use std::{collections::VecDeque, io::IoSlice, pin::Pin, sync::Arc, task::Context, task::Poll};
@@ -70,6 +70,8 @@ struct SharedState<B> {
     /// always return `true` from `is_end_stream` even when they don't own the
     /// shared state.
     was_empty: bool,
+
+    size_hint: SizeHint,
 }
 
 #[derive(Debug)]
@@ -96,6 +98,7 @@ impl<B: Body> ReplayBody<B> {
     /// will simply stop buffering any additional data for retries.
     pub fn new(body: B, max_bytes: usize) -> Self {
         let was_empty = body.is_end_stream();
+        let size_hint = body.size_hint();
         Self {
             state: Some(BodyState {
                 buf: Default::default(),
@@ -106,6 +109,7 @@ impl<B: Body> ReplayBody<B> {
             }),
             shared: Arc::new(SharedState {
                 body: Mutex::new(None),
+                size_hint,
                 was_empty,
             }),
             // The initial `ReplayBody` has nothing to replay
@@ -301,32 +305,9 @@ where
             && is_inner_eos
     }
 
-    fn size_hint(&self) -> http_body::SizeHint {
-        let mut hint = http_body::SizeHint::default();
-        if let Some(ref state) = self.state {
-            let rem = state.buf.remaining() as u64;
-
-            // Have we read the entire body? If so, the size is exactly the size
-            // of the buffer.
-            if state.is_completed {
-                return http_body::SizeHint::with_exact(rem);
-            }
-
-            // Otherwise, the size is the size of the current buffer plus the
-            // size hint returned by the inner body.
-            let (rest_lower, rest_upper) = state
-                .rest
-                .as_ref()
-                .map(|rest| {
-                    let hint = rest.size_hint();
-                    (hint.lower(), hint.upper().unwrap_or(0))
-                })
-                .unwrap_or_default();
-            hint.set_lower(rem + rest_lower);
-            hint.set_upper(rem + rest_upper);
-        }
-
-        hint
+    #[inline]
+    fn size_hint(&self) -> SizeHint {
+        self.shared.size_hint.clone()
     }
 }
 

@@ -4,6 +4,7 @@ use super::http_metrics::retries::Handle;
 use super::metrics::HttpRouteRetry;
 use crate::profiles;
 use futures::future;
+use http_body::SizeHint;
 use linkerd_error::Error;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_http_retry::ReplayBody;
@@ -29,9 +30,6 @@ pub struct RetryPolicy {
     budget: Arc<retry::Budget>,
     response_classes: profiles::http::ResponseClasses,
 }
-
-/// Allow buffering requests up to 64 kb
-const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 
 // === impl NewRetryPolicy ===
 
@@ -59,44 +57,49 @@ impl retry::NewPolicy<Route> for NewRetryPolicy {
 // === impl Retry ===
 
 impl RetryPolicy {
-    fn can_retry<A: http_body::Body>(&self, req: &http::Request<A>) -> bool {
-        let content_length = |req: &http::Request<_>| {
-            req.headers()
-                .get(http::header::CONTENT_LENGTH)
-                .and_then(|value| value.to_str().ok()?.parse::<usize>().ok())
-        };
+    /// Allow buffering requests up to 64 kb
+    const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 
-        // Requests without bodies can always be retried, as we will not need to
-        // buffer the body.
-        if req.body().is_end_stream() {
-            tracing::trace!(req.has_body = false, "retryable");
-            return true;
+    /// Checks whether the request is known to be too large to buffer (without actually reading its
+    /// body).
+    ///
+    /// Returns false unless the request has a `content-length` larger than
+    fn body_too_big<A: http_body::Body>(req: &http::Request<A>) -> bool {
+        let size = Self::body_size(req).map(|sz| sz.lower());
+        let too_big = size
+            .map(|sz| sz > Self::MAX_BUFFERED_BYTES as u64)
+            .unwrap_or(false);
+        tracing::trace!(body.size = ?size, %too_big);
+        too_big
+    }
+
+    /// Estimates the size of the given request's body.
+    ///
+    /// If the request has a `content-length` header, its value is returned. Otherwise, we inspect
+    /// the body (without reading it) to determine if its size is known. Otherwise, we return
+    /// `None`.
+    fn body_size<A: http_body::Body>(req: &http::Request<A>) -> Option<SizeHint> {
+        let hint = req.body().size_hint();
+        if hint.upper().is_some() {
+            return Some(hint);
         }
 
-        // If the request *does* have a body, check if it has a
-        // `Content-Length` header with a value over the maximum
-        // buffered bytes limit. If it does, we know the request body
-        // will exceed the limit, so don't bother trying to retry. If
-        // there's no `Content-Length`, assume the request is retryable
-        // --- we'll still stop buffering if it exceeds the max length.
-        if content_length(req)
-            .map(|length| length > MAX_BUFFERED_BYTES)
-            .unwrap_or(false)
-        {
-            tracing::trace!(
-                req.has_body = true,
-                req.content_length = ?content_length(req),
-                "not retryable",
-            );
-            return false;
-        }
-
-        tracing::trace!(
-            req.has_body = true,
-            req.content_length = ?content_length(req),
-            "retryable",
+        // If there was a content-length header set, the size hint should have an exact value (and
+        // so the upper limit would be set). This could be broken, however, if a body wrapper
+        // implementation failed to override `HttpBody::size_hint` properly; so we fallback to
+        // checking the request headers when running in release mode.
+        debug_assert!(
+            !req.headers().contains_key(http::header::CONTENT_LENGTH),
+            "a size hint should be known if the content-length is set on {}",
+            std::any::type_name::<A>()
         );
-        true
+        let content_length = req
+            .headers()
+            .get(http::header::CONTENT_LENGTH)?
+            .to_str()
+            .ok()?;
+        let size = content_length.parse().ok()?;
+        Some(SizeHint::with_exact(size))
     }
 }
 
@@ -147,12 +150,12 @@ where
         &self,
         req: &http::Request<ReplayBody<A>>,
     ) -> Option<http::Request<ReplayBody<A>>> {
-        let can_retry = self.can_retry(req);
+        let body_too_big = Self::body_too_big(req);
         debug_assert!(
-            can_retry,
+            !body_too_big,
             "The retry policy attempted to clone an un-retryable request. This is unexpected."
         );
-        if !can_retry {
+        if body_too_big {
             return None;
         }
 
@@ -183,9 +186,61 @@ where
         &self,
         req: http::Request<A>,
     ) -> Either<Self::RetryRequest, http::Request<A>> {
-        if self.can_retry(&req) {
-            return Either::A(req.map(|body| ReplayBody::new(body, MAX_BUFFERED_BYTES)));
+        if Self::body_too_big(&req) {
+            return Either::B(req);
         }
-        Either::B(req)
+
+        // The body may still be too large to be buffered (if the body's length was not known).
+        // `ReplayBody` handles this gracefully.
+        Either::A(req.map(|body| ReplayBody::new(body, Self::MAX_BUFFERED_BYTES)))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn body_too_big() {
+        let mk_body =
+            |sz: usize| -> hyper::Body { (0..sz).map(|_| "x").collect::<String>().into() };
+        let mk_req = |sz: usize| {
+            http::Request::builder()
+                .header(http::header::CONTENT_LENGTH, sz)
+                .body(mk_body(sz))
+                .unwrap()
+        };
+
+        assert!(
+            !RetryPolicy::body_too_big(&mk_req(0)),
+            "empty body is not too big"
+        );
+
+        assert!(
+            !RetryPolicy::body_too_big(&mk_req(RetryPolicy::MAX_BUFFERED_BYTES)),
+            "body at maximum capacity is not too big"
+        );
+
+        assert!(
+            RetryPolicy::body_too_big(&mk_req(RetryPolicy::MAX_BUFFERED_BYTES + 1)),
+            "over-sized body is considered too big"
+        );
+
+        let req = http::Request::builder()
+            .body(mk_body(RetryPolicy::MAX_BUFFERED_BYTES * 2))
+            .unwrap();
+        assert!(!req.headers().contains_key(http::header::CONTENT_LENGTH));
+        assert!(
+            RetryPolicy::body_too_big(&req),
+            "over-sized body without content-length is considered too big if the size hint is known"
+        );
+
+        let (_sender, body) = hyper::Body::channel();
+        let req = http::Request::builder().body(body).unwrap();
+        assert!(!req.headers().contains_key(http::header::CONTENT_LENGTH));
+        assert!(
+            !RetryPolicy::body_too_big(&req),
+            "body without content-length is not considered too big if the size hint is not known"
+        );
     }
 }
