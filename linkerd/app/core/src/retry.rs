@@ -4,7 +4,6 @@ use super::http_metrics::retries::Handle;
 use super::metrics::HttpRouteRetry;
 use crate::profiles;
 use futures::future;
-use http_body::SizeHint;
 use linkerd_error::Error;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_http_retry::ReplayBody;
@@ -68,9 +67,15 @@ impl RetryPolicy {
         // Use the lower bound of the size hint to determine whether we may be able to buffer the
         // entire body. If the body ends up larger than that, the `ReplayBody` should handle that
         // case gracefully.
-        //
-        // If a `content-length` was specified the size hint will be set to that value.
         let size = req.body().size_hint().lower();
+        debug_assert!(
+            req.headers()
+                .get(http::header::CONTENT_LENGTH)
+                .and_then(|l| l.to_str().ok()?.parse::<u64>().ok())
+                .map(|cl| cl == size)
+                .unwrap_or(true),
+            "if content-length is set it must match the hint",
+        );
         let too_big = size > Self::MAX_BUFFERED_BYTES as u64;
         tracing::trace!(body.size = ?size, %too_big);
         too_big
