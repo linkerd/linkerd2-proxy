@@ -347,7 +347,7 @@ impl<B> Clone for ReplayBody<B> {
 
 impl<B> Drop for ReplayBody<B> {
     fn drop(&mut self) {
-        // If this clone owned the shared state, put it back.`s
+        // If this clone owned the shared state, put it back.
         if let Some(state) = self.state.take() {
             *self.shared.body.lock() = Some(state);
         }
