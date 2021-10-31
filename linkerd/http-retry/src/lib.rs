@@ -81,7 +81,7 @@ struct BodyState<B> {
     rest: Option<B>,
     is_completed: bool,
 
-    /// Maxiumum number of bytes to buffer.
+    /// Maximum number of bytes to buffer.
     max_bytes: usize,
 }
 
@@ -90,16 +90,27 @@ struct BodyState<B> {
 impl<B: Body> ReplayBody<B> {
     /// Wraps an initial `Body` in a `ReplayBody`.
     ///
-    /// In order to prevent unbounded buffering, this takes a maximum number of
-    /// bytes to buffer as a second parameter. If more than than that number of
-    /// bytes would be buffered, the buffered data is discarded and any
-    /// subsequent clones of this body will fail. However, the *currently
-    /// active* clone of the body is allowed to continue without erroring. It
-    /// will simply stop buffering any additional data for retries.
-    pub fn new(body: B, max_bytes: usize) -> Self {
-        let was_empty = body.is_end_stream();
+    /// In order to prevent unbounded buffering, this takes a maximum number of bytes to buffer as a
+    /// second parameter. If more than than that number of bytes would be buffered, the buffered
+    /// data is discarded and any subsequent clones of this body will fail. However, the *currently
+    /// active* clone of the body is allowed to continue without erroring. It will simply stop
+    /// buffering any additional data for retries.
+    ///
+    /// If the body has a size hint with a lower bound greater than `max_bytes`, the original body
+    /// is returned in the error variant.
+    pub fn try_new(body: B, max_bytes: usize) -> Result<Self, B> {
         let orig_size_hint = body.size_hint();
-        Self {
+        tracing::trace!(body.size_hint = %orig_size_hint.lower(), %max_bytes);
+        if orig_size_hint.lower() > max_bytes as u64 {
+            return Err(body);
+        }
+
+        Ok(Self {
+            shared: Arc::new(SharedState {
+                body: Mutex::new(None),
+                orig_size_hint,
+                was_empty: body.is_end_stream(),
+            }),
             state: Some(BodyState {
                 buf: Default::default(),
                 trailers: None,
@@ -107,15 +118,10 @@ impl<B: Body> ReplayBody<B> {
                 is_completed: false,
                 max_bytes: max_bytes + 1,
             }),
-            shared: Arc::new(SharedState {
-                body: Mutex::new(None),
-                orig_size_hint,
-                was_empty,
-            }),
             // The initial `ReplayBody` has nothing to replay
             replay_body: false,
             replay_trailers: false,
-        }
+        })
     }
 
     /// Mutably borrows the body state if this clone currently owns it,
@@ -770,7 +776,8 @@ mod tests {
     fn empty_body_is_always_eos() {
         // If the initial body was empty, every clone should always return
         // `true` from `is_end_stream`.
-        let initial = ReplayBody::new(hyper::Body::empty(), 64 * 1024);
+        let initial = ReplayBody::try_new(hyper::Body::empty(), 64 * 1024)
+            .expect("empty body can't be too large");
         assert!(initial.is_end_stream());
 
         let replay = initial.clone();
@@ -784,7 +791,8 @@ mod tests {
     async fn eos_only_when_fully_replayed() {
         // Test that each clone of a body is not EOS until the data has been
         // fully replayed.
-        let mut initial = ReplayBody::new(hyper::Body::from("hello world"), 64 * 1024);
+        let mut initial = ReplayBody::try_new(hyper::Body::from("hello world"), 64 * 1024)
+            .expect("body must not be too large");
         let mut replay = initial.clone();
 
         body_to_string(&mut initial).await;
@@ -828,7 +836,7 @@ mod tests {
         let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
 
         let (mut tx, body) = hyper::Body::channel();
-        let mut initial = ReplayBody::new(body, 8);
+        let mut initial = ReplayBody::try_new(body, 8).expect("channel body must not be too large");
         let mut replay = initial.clone();
 
         // Send enough data to reach the cap
@@ -858,7 +866,7 @@ mod tests {
         let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=debug");
 
         let (mut tx, body) = hyper::Body::channel();
-        let mut initial = ReplayBody::new(body, 8);
+        let mut initial = ReplayBody::try_new(body, 8).expect("channel body must not be too large");
         let mut replay = initial.clone();
 
         // Send enough data to reach the cap
@@ -884,6 +892,34 @@ mod tests {
         assert!(err.is::<Capped>())
     }
 
+    #[test]
+    fn body_too_big() {
+        let max_size = 8;
+        let mk_body =
+            |sz: usize| -> hyper::Body { (0..sz).map(|_| "x").collect::<String>().into() };
+
+        assert!(
+            ReplayBody::try_new(hyper::Body::empty(), max_size).is_ok(),
+            "empty body is not too big"
+        );
+
+        assert!(
+            ReplayBody::try_new(mk_body(max_size), max_size).is_ok(),
+            "body at maximum capacity is not too big"
+        );
+
+        assert!(
+            ReplayBody::try_new(mk_body(max_size + 1), max_size).is_err(),
+            "over-sized body is too big"
+        );
+
+        let (_sender, body) = hyper::Body::channel();
+        assert!(
+            ReplayBody::try_new(body, max_size).is_ok(),
+            "body without size hint is not too big"
+        );
+    }
+
     struct Test {
         tx: Tx,
         initial: ReplayBody<hyper::Body>,
@@ -896,7 +932,7 @@ mod tests {
     impl Test {
         fn new() -> Self {
             let (tx, body) = hyper::Body::channel();
-            let initial = ReplayBody::new(body, 64 * 1024);
+            let initial = ReplayBody::try_new(body, 64 * 1024).expect("body too large");
             let replay = initial.clone();
             Self {
                 tx: Tx(tx),
