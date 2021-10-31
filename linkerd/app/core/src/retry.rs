@@ -65,6 +65,11 @@ impl RetryPolicy {
     ///
     /// Returns false unless the request is known to be larger than `MAX_BUFFERED_BYTES`.
     fn body_too_big<A: http_body::Body>(req: &http::Request<A>) -> bool {
+        // Use the lower bound of the size hint to determine whether we may be able to buffer the
+        // entire body. If the body ends up larger than that, the `ReplayBody` should handle that
+        // case gracefully.
+        //
+        // If a `content-length` was specified the size hint will be set to that value.
         let size = req.body().size_hint().lower();
         let too_big = size > Self::MAX_BUFFERED_BYTES as u64;
         tracing::trace!(body.size = ?size, %too_big);
