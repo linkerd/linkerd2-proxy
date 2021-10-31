@@ -30,6 +30,9 @@ pub struct RetryPolicy {
     response_classes: profiles::http::ResponseClasses,
 }
 
+/// Allow buffering requests up to 64 kb
+const MAX_BUFFERED_BYTES: usize = 64 * 1024;
+
 // === impl NewRetryPolicy ===
 
 impl NewRetryPolicy {
@@ -54,11 +57,6 @@ impl retry::NewPolicy<Route> for NewRetryPolicy {
 }
 
 // === impl Retry ===
-
-impl RetryPolicy {
-    /// Allow buffering requests up to 64 kb
-    const MAX_BUFFERED_BYTES: usize = 64 * 1024;
-}
 
 impl<A, B, E> retry::Policy<http::Request<ReplayBody<A>>, http::Response<B>, E> for RetryPolicy
 where
@@ -136,20 +134,20 @@ where
         &self,
         req: http::Request<A>,
     ) -> Either<Self::RetryRequest, http::Request<A>> {
-        let (parts, body) = req.into_parts();
-        match ReplayBody::try_new(body, Self::MAX_BUFFERED_BYTES) {
-            Ok(body) => {
-                // The body may still be too large to be buffered (if the body's length was not
-                // known). `ReplayBody` handles this gracefully.
-                Either::A(http::Request::from_parts(parts, body))
-            }
+        let (head, body) = req.into_parts();
+        let replay_body = match ReplayBody::try_new(body, MAX_BUFFERED_BYTES) {
+            Ok(body) => body,
             Err(body) => {
                 tracing::debug!(
                     size = body.size_hint().lower(),
                     "Body is too large to buffer"
                 );
-                Either::B(http::Request::from_parts(parts, body))
+                return Either::B(http::Request::from_parts(head, body));
             }
-        }
+        };
+
+        // The body may still be too large to be buffered if the body's length was not known.
+        // `ReplayBody` handles this gracefully.
+        Either::A(http::Request::from_parts(head, replay_body))
     }
 }
