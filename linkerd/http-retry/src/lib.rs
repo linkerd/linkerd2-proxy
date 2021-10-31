@@ -71,7 +71,7 @@ struct SharedState<B> {
     /// shared state.
     was_empty: bool,
 
-    size_hint: SizeHint,
+    orig_size_hint: SizeHint,
 }
 
 #[derive(Debug)]
@@ -98,7 +98,7 @@ impl<B: Body> ReplayBody<B> {
     /// will simply stop buffering any additional data for retries.
     pub fn new(body: B, max_bytes: usize) -> Self {
         let was_empty = body.is_end_stream();
-        let size_hint = body.size_hint();
+        let orig_size_hint = body.size_hint();
         Self {
             state: Some(BodyState {
                 buf: Default::default(),
@@ -109,7 +109,7 @@ impl<B: Body> ReplayBody<B> {
             }),
             shared: Arc::new(SharedState {
                 body: Mutex::new(None),
-                size_hint,
+                orig_size_hint,
                 was_empty,
             }),
             // The initial `ReplayBody` has nothing to replay
@@ -307,7 +307,28 @@ where
 
     #[inline]
     fn size_hint(&self) -> SizeHint {
-        self.shared.size_hint.clone()
+        // If this clone isn't holding the body, return the original size hint.
+        let state = match self.state.as_ref() {
+            Some(state) => state,
+            None => return self.shared.orig_size_hint.clone(),
+        };
+
+        // Otherwise, if we're holding the state but have dropped the inner body, the entire body is
+        // buffered so we know the exact size hint.
+        let buffered = state.buf.remaining() as u64;
+        let rest_hint = match state.rest.as_ref() {
+            Some(rest) => rest.size_hint(),
+            None => return SizeHint::with_exact(buffered),
+        };
+
+        // Otherwise, add the inner body's size hint to the amount of buffered data. An upper limit
+        // is only set if the inner body has an upper limit.
+        let mut hint = SizeHint::default();
+        hint.set_lower(buffered + rest_hint.lower());
+        if let Some(rest_upper) = rest_hint.upper() {
+            hint.set_upper(buffered + rest_upper);
+        }
+        hint
     }
 }
 
