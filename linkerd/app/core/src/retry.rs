@@ -63,43 +63,12 @@ impl RetryPolicy {
     /// Checks whether the request is known to be too large to buffer (without actually reading its
     /// body).
     ///
-    /// Returns false unless the request has a `content-length` larger than
+    /// Returns false unless the request is known to be larger than `MAX_BUFFERED_BYTES`.
     fn body_too_big<A: http_body::Body>(req: &http::Request<A>) -> bool {
-        let size = Self::body_size(req).map(|sz| sz.lower());
-        let too_big = size
-            .map(|sz| sz > Self::MAX_BUFFERED_BYTES as u64)
-            .unwrap_or(false);
+        let size = req.body().size_hint().lower();
+        let too_big = size > Self::MAX_BUFFERED_BYTES as u64;
         tracing::trace!(body.size = ?size, %too_big);
         too_big
-    }
-
-    /// Estimates the size of the given request's body.
-    ///
-    /// If the request has a `content-length` header, its value is returned. Otherwise, we inspect
-    /// the body (without reading it) to determine if its size is known. Otherwise, we return
-    /// `None`.
-    fn body_size<A: http_body::Body>(req: &http::Request<A>) -> Option<SizeHint> {
-        let hint = req.body().size_hint();
-        if hint.upper().is_some() {
-            return Some(hint);
-        }
-
-        // If there was a content-length header set, the size hint should have an exact value (and
-        // so the upper limit would be set). This could be broken, however, if a body wrapper
-        // implementation failed to override `HttpBody::size_hint` properly; so we fallback to
-        // checking the request headers when running in release mode.
-        debug_assert!(
-            !req.headers().contains_key(http::header::CONTENT_LENGTH),
-            "a size hint should be known if the content-length is set on {}",
-            std::any::type_name::<A>()
-        );
-        let content_length = req
-            .headers()
-            .get(http::header::CONTENT_LENGTH)?
-            .to_str()
-            .ok()?;
-        let size = content_length.parse().ok()?;
-        Some(SizeHint::with_exact(size))
     }
 }
 
