@@ -199,13 +199,6 @@ where
             }
         }
 
-        // Get access to the initial body. If we don't have access to the inner body, there's no
-        // more work to do.
-        let rest = match state.rest.as_mut() {
-            Some(rest) => rest,
-            None => return Poll::Ready(None),
-        };
-
         // If the inner body has previously ended, don't poll it again.
         //
         // NOTE(eliza): we would expect the inner body to just happily return `None` multiple times
@@ -217,14 +210,23 @@ where
 
         // Poll the inner body for more data. If the body has ended, remember that so that future
         // clones will not try polling it again (as described above).
-        tracing::trace!("Polling initial body");
-        let mut data = match futures::ready!(Pin::new(rest).poll_data(cx)) {
-            Some(Ok(data)) => data,
-            Some(Err(e)) => return Poll::Ready(Some(Err(e.into()))),
-            None => {
-                tracing::trace!("Initial body completed");
-                state.is_completed = true;
-                return Poll::Ready(None);
+        let mut data = {
+            // Get access to the initial body. If we don't have access to the inner body, there's no
+            // more work to do.
+            let rest = match state.rest.as_mut() {
+                Some(rest) => rest,
+                None => return Poll::Ready(None),
+            };
+
+            tracing::trace!("Polling initial body");
+            match futures::ready!(Pin::new(rest).poll_data(cx)) {
+                Some(Ok(data)) => data,
+                Some(Err(e)) => return Poll::Ready(Some(Err(e.into()))),
+                None => {
+                    tracing::trace!("Initial body completed");
+                    state.is_completed = true;
+                    return Poll::Ready(None);
+                }
             }
         };
 
