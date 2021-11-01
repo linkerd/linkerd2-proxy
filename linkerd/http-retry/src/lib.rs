@@ -232,7 +232,7 @@ where
         // don't buffer any more.
         let length = data.remaining();
         state.max_bytes = state.max_bytes.saturating_sub(length);
-        if state.is_capped() {
+        let chunk = if state.is_capped() {
             // If there's data in the buffer, discard it now, since we won't allow any clones to
             // have a complete body.
             if state.buf.has_remaining() {
@@ -242,11 +242,13 @@ where
                 );
                 state.buf = Default::default();
             }
-            return Poll::Ready(Some(Ok(Data::Initial(data.copy_to_bytes(length)))));
-        }
+            data.copy_to_bytes(length)
+        } else {
+            // Buffer and return the bytes.
+            state.buf.push_chunk(data)
+        };
 
-        // Buffer and return the bytes.
-        Poll::Ready(Some(Ok(Data::Initial(state.buf.push_chunk(data)))))
+        Poll::Ready(Some(Ok(Data::Initial(chunk))))
     }
 
     fn poll_trailers(
