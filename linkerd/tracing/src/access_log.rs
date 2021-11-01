@@ -1,4 +1,4 @@
-use std::{fmt, io::Write, path::PathBuf, sync::Arc};
+use std::{ffi::OsStr, fmt, io::Write, path::PathBuf, sync::Arc};
 use tracing::{field, span, Id, Level, Metadata, Subscriber};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::{
@@ -16,7 +16,8 @@ pub const TRACE_TARGET: &str = "_access_log";
 #[derive(Clone, Debug)]
 pub struct Guard(Arc<WorkerGuard>);
 
-pub(super) type AccessLogLayer<S> = Filtered<Writer, FilterFn, S>;
+pub(super) type AccessLogLayer<S> =
+    Filtered<Box<dyn Layer<S> + Send + Sync + 'static>, FilterFn, S>;
 
 pub(super) struct Writer<F = ApacheCommon> {
     make_writer: NonBlocking,
@@ -39,7 +40,7 @@ where
 {
     // Create the access log file, or open it in append-only mode if
     // it already exists.
-    let file = {
+    let (file, is_json) = {
         let path = {
             let p = std::env::var(ENV_ACCESS_LOG).ok()?;
             p.parse::<PathBuf>()
@@ -47,19 +48,28 @@ where
                 .ok()?
         };
 
-        std::fs::OpenOptions::new()
+        let file = std::fs::OpenOptions::new()
             .append(true)
             .create(true)
             .open(&path)
             .map_err(|e| eprintln!("Failed to open file {}: {}", path.display(), e,))
-            .ok()?
+            .ok()?;
+        (
+            file,
+            path.extension().and_then(OsStr::to_str) == Some("json"),
+        )
     };
 
     // If we successfully created or opened the access log file,
     // build the access log layer.
     eprintln!("Writing access log to {:?}", file);
     let (non_blocking, guard) = tracing_appender::non_blocking(file);
-    let writer = Writer::new(non_blocking).with_filter(
+    let writer: Box<dyn Layer<S> + Send + Sync + 'static> = if is_json {
+        Box::new(Writer::<format::JsonFields>::new(non_blocking))
+    } else {
+        Box::new(Writer::<ApacheCommon>::new(non_blocking))
+    };
+    let writer = writer.with_filter(
         FilterFn::new(
             (|meta| meta.level() == &Level::INFO && meta.target().starts_with(TRACE_TARGET))
                 as fn(&Metadata<'_>) -> bool,
@@ -78,7 +88,7 @@ where
 
 // === impl Writer ===
 
-impl Writer {
+impl<F: Default> Writer<F> {
     pub fn new(make_writer: NonBlocking) -> Self {
         Self {
             make_writer,
