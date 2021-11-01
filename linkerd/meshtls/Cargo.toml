@@ -1,0 +1,22 @@
+[package]
+name = "linkerd-meshtls"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2018"
+publish = false
+
+[features]
+default = ["rustls"]
+rustls = ["linkerd-meshtls-rustls"]
+
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+linkerd-error = { path = "../error" }
+linkerd-identity = { path = "../identity" }
+linkerd-io = { path = "../io" }
+linkerd-meshtls-rustls = { path = "rustls", optional = true }
+linkerd-stack = { path = "../stack" }
+linkerd-tls = { path = "../tls" }
+pin-project = "1"

@@ -20,10 +20,8 @@ pub use linkerd_dns;
 pub use linkerd_error::{is_error, Error, Infallible, Recover, Result};
 pub use linkerd_exp_backoff as exp_backoff;
 pub use linkerd_http_metrics as http_metrics;
-pub use linkerd_identity_default as identity;
 pub use linkerd_io as io;
 pub use linkerd_opencensus as opencensus;
-pub use linkerd_proxy_identity_client as identity_client;
 pub use linkerd_service_profiles as profiles;
 pub use linkerd_stack_metrics as stack_metrics;
 pub use linkerd_stack_tracing as stack_tracing;
@@ -50,6 +48,12 @@ pub mod telemetry;
 pub mod transport;
 
 pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
+
+pub mod identity {
+    pub use linkerd_identity::*;
+    pub use linkerd_meshtls::*;
+    pub use linkerd_proxy_identity_client as client;
+}
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";
 

@@ -12,6 +12,10 @@ This crate conglomerates proxy configuration, runtime administration, etc,
 independently of the inbound and outbound proxy logic.
 """
 
+[features]
+default = ["meshtls-rustls"]
+meshtls-rustls = ["linkerd-meshtls/rustls"]
+
 [dependencies]
 bytes = "1"
 drain = { version = "0.1.0", features = ["retain"] }
@@ -33,8 +37,9 @@ linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-metrics = { path = "../../http-metrics" }
 linkerd-http-retry = { path = "../../http-retry" }
-linkerd-identity-default = { path = "../../identity/default" }
+linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
+linkerd-meshtls = { path = "../../meshtls", default-features = false }
 linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
