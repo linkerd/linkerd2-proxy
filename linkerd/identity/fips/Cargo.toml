@@ -7,6 +7,8 @@ edition = "2018"
 publish = false
 
 [dependencies]
+boring = { git = 'https://github.com/netapp/boring', branch = "feat/fips-support"}
+boring-sys = { git = 'https://github.com/netapp/boring', branch = "feat/fips-support"}
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
 linkerd-io = { path = "../../io" }
@@ -15,4 +17,5 @@ linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "sync"] }
+tokio-boring = { git = 'https://github.com/netapp/boring', branch = "feat/fips-support"}
 tracing = "0.1"
