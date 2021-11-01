@@ -3,9 +3,9 @@ use futures::future;
 use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
 use linkerd_conditional::Conditional;
 use linkerd_error::Error;
+use linkerd_identity_default as identity;
 use linkerd_io as io;
 use linkerd_proxy_http::{trace, HyperServerSvc};
-use linkerd_proxy_identity_default as identity;
 use linkerd_tls as tls;
 use std::{
     collections::HashSet,

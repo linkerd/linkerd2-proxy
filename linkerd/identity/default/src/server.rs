@@ -1,6 +1,6 @@
 use futures::prelude::*;
+use linkerd_identity::{LocalId, Name};
 use linkerd_io as io;
-use linkerd_proxy_identity::{LocalId, Name};
 use linkerd_stack::{Param, Service};
 use linkerd_tls::{
     ClientId, HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls,

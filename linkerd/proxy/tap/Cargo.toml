@@ -17,10 +17,9 @@ ipnet = "2.3"
 linkerd2-proxy-api = { version = "0.3", features = ["tap", "server"] }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-error = { path = "../../error" }
-linkerd-identity = { path = "../../identity" }
+linkerd-identity-default = { path = "../../identity/default" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-http = { path = "../http" }
-linkerd-proxy-identity-default = { path = "../../proxy/identity/default" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 parking_lot = "0.11"

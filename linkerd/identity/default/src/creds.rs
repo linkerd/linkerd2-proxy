@@ -3,7 +3,7 @@ mod store;
 
 pub use self::{receiver::Receiver, store::Store};
 use linkerd_error::Result;
-use linkerd_proxy_identity as id;
+use linkerd_identity as id;
 use ring::{error::KeyRejected, signature::EcdsaKeyPair};
 use std::sync::Arc;
 use thiserror::Error;
