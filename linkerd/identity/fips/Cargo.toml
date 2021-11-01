@@ -1,0 +1,18 @@
+[package]
+name = "linkerd-identity-fips"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+linkerd-error = { path = "../../error" }
+linkerd-io = { path = "../../io" }
+linkerd-identity = { path = ".." }
+linkerd-stack = { path = "../../stack" }
+linkerd-tls = { path = "../../tls" }
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "sync"] }
+tracing = "0.1"

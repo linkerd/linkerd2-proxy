@@ -1023,6 +1023,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-identity-fips"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-stack",
+ "linkerd-tls",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-io"
 version = "0.1.0"
 dependencies = [
