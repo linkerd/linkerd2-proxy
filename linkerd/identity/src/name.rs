@@ -1,5 +1,5 @@
 use linkerd_dns_name::InvalidName;
-use std::{fmt, str::FromStr, ops::Deref, sync::Arc};
+use std::{fmt, ops::Deref, str::FromStr, sync::Arc};
 
 /// An endpoint's identity.
 #[derive(Clone, Eq, PartialEq, Hash)]

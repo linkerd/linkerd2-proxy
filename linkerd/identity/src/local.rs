@@ -27,7 +27,6 @@ impl fmt::Display for LocalId {
     }
 }
 
-
 impl From<LocalId> for Name {
     fn from(LocalId(name): LocalId) -> Name {
         name
