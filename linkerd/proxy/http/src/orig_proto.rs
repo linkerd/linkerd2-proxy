@@ -218,6 +218,11 @@ impl HttpBody for UpgradeResponseBody {
             .poll_trailers(cx)
             .map_err(downgrade_h2_error)
     }
+
+    #[inline]
+    fn size_hint(&self) -> http_body::SizeHint {
+        HttpBody::size_hint(&self.inner)
+    }
 }
 
 // === impl Downgrade ===

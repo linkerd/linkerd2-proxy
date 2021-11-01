@@ -127,6 +127,11 @@ where
 
         this.body.poll_trailers(cx)
     }
+
+    #[inline]
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        self.body.size_hint()
+    }
 }
 
 // ==== PendingUntilEosBody ====
@@ -147,6 +152,7 @@ impl<T: Send + 'static, B: HttpBody> HttpBody for PendingUntilEosBody<T, B> {
     type Data = B::Data;
     type Error = B::Error;
 
+    #[inline]
     fn is_end_stream(&self) -> bool {
         self.body.is_end_stream()
     }
@@ -180,6 +186,11 @@ impl<T: Send + 'static, B: HttpBody> HttpBody for PendingUntilEosBody<T, B> {
         drop(this.handle.take());
 
         Poll::Ready(ret)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        self.body.size_hint()
     }
 }
 
