@@ -283,6 +283,7 @@ where
         self.project().inner.poll_trailers(cx)
     }
 
+    #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         self.inner.size_hint()
     }
@@ -437,6 +438,11 @@ where
         }
 
         Poll::Ready(Ok(trls))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.inner.size_hint()
     }
 }
 

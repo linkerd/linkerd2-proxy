@@ -58,48 +58,6 @@ impl retry::NewPolicy<Route> for NewRetryPolicy {
 
 // === impl Retry ===
 
-impl RetryPolicy {
-    fn can_retry<A: http_body::Body>(&self, req: &http::Request<A>) -> bool {
-        let content_length = |req: &http::Request<_>| {
-            req.headers()
-                .get(http::header::CONTENT_LENGTH)
-                .and_then(|value| value.to_str().ok()?.parse::<usize>().ok())
-        };
-
-        // Requests without bodies can always be retried, as we will not need to
-        // buffer the body.
-        if req.body().is_end_stream() {
-            tracing::trace!(req.has_body = false, "retryable");
-            return true;
-        }
-
-        // If the request *does* have a body, check if it has a
-        // `Content-Length` header with a value over the maximum
-        // buffered bytes limit. If it does, we know the request body
-        // will exceed the limit, so don't bother trying to retry. If
-        // there's no `Content-Length`, assume the request is retryable
-        // --- we'll still stop buffering if it exceeds the max length.
-        if content_length(req)
-            .map(|length| length > MAX_BUFFERED_BYTES)
-            .unwrap_or(false)
-        {
-            tracing::trace!(
-                req.has_body = true,
-                req.content_length = ?content_length(req),
-                "not retryable",
-            );
-            return false;
-        }
-
-        tracing::trace!(
-            req.has_body = true,
-            req.content_length = ?content_length(req),
-            "retryable",
-        );
-        true
-    }
-}
-
 impl<A, B, E> retry::Policy<http::Request<ReplayBody<A>>, http::Response<B>, E> for RetryPolicy
 where
     A: http_body::Body + Unpin,
@@ -147,15 +105,8 @@ where
         &self,
         req: &http::Request<ReplayBody<A>>,
     ) -> Option<http::Request<ReplayBody<A>>> {
-        let can_retry = self.can_retry(req);
-        debug_assert!(
-            can_retry,
-            "The retry policy attempted to clone an un-retryable request. This is unexpected."
-        );
-        if !can_retry {
-            return None;
-        }
-
+        // Since the body is already wrapped in a ReplayBody, it must not be obviously too large to
+        // buffer/clone.
         let mut clone = http::Request::new(req.body().clone());
         *clone.method_mut() = req.method().clone();
         *clone.uri_mut() = req.uri().clone();
@@ -183,9 +134,20 @@ where
         &self,
         req: http::Request<A>,
     ) -> Either<Self::RetryRequest, http::Request<A>> {
-        if self.can_retry(&req) {
-            return Either::A(req.map(|body| ReplayBody::new(body, MAX_BUFFERED_BYTES)));
-        }
-        Either::B(req)
+        let (head, body) = req.into_parts();
+        let replay_body = match ReplayBody::try_new(body, MAX_BUFFERED_BYTES) {
+            Ok(body) => body,
+            Err(body) => {
+                tracing::debug!(
+                    size = body.size_hint().lower(),
+                    "Body is too large to buffer"
+                );
+                return Either::B(http::Request::from_parts(head, body));
+            }
+        };
+
+        // The body may still be too large to be buffered if the body's length was not known.
+        // `ReplayBody` handles this gracefully.
+        Either::A(http::Request::from_parts(head, replay_body))
     }
 }
