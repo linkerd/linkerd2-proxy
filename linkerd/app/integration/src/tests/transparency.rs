@@ -843,9 +843,7 @@ macro_rules! http1_tests {
 
             let srv = server::http1()
                 .route_fn("/", |req| {
-                    let has_body_header = req.headers().contains_key("transfer-encoding")
-                        || req.headers().contains_key("content-length");
-                    let status = if has_body_header {
+                    let status = if req.headers().contains_key(http::header::TRANSFER_ENCODING) {
                         StatusCode::BAD_REQUEST
                     } else {
                         StatusCode::OK
