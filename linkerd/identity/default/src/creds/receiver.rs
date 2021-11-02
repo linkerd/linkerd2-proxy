@@ -1,5 +1,5 @@
 use crate::{NewClient, Server};
-use linkerd_proxy_identity::Name;
+use linkerd_identity::Name;
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio_rustls::rustls;
