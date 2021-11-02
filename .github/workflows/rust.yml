@@ -34,6 +34,7 @@ jobs:
     permissions:
       contents: read
     steps:
+      - run: apt update && apt install -y cmake
       - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
       - run: rustup component add clippy
       - run: make lint
@@ -47,6 +48,7 @@ jobs:
     permissions:
       contents: read
     steps:
+      - run: apt update && apt install -y cmake
       - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
       - run: for d in $(for toml in $(find . -mindepth 2 -name Cargo.toml -not -path '*/fuzz/*') ; do echo ${toml%/*} ; done | sort -r ) ; do echo "# $d" ; (cd $d ; cargo check --all-targets) ; done
 
