@@ -27,13 +27,16 @@ pub fn watch(
 
     let key = PKey::private_key_from_pkcs8(key_pkcs8)?;
 
-    let (client_tx, client_rx) =
-        watch::channel(ssl::SslConnector::builder(ssl::SslMethod::tls_client())?.build());
-    let (server_tx, server_rx) = watch::channel(
-        ssl::SslAcceptor::mozilla_intermediate_v5(ssl::SslMethod::tls_server())?.build(),
-    );
+    let (client_tx, client_rx) = {
+        let conn = ssl::SslConnector::builder(ssl::SslMethod::tls_client())?;
+        watch::channel(conn.build())
+    };
+    let (server_tx, server_rx) = {
+        let acc = ssl::SslAcceptor::mozilla_intermediate_v5(ssl::SslMethod::tls_server())?;
+        watch::channel(acc.build())
+    };
+    let rx = Receiver::new(identity.clone(), client_rx, server_rx);
     let store = Store::new(roots, key, csr, identity, client_tx, server_tx);
-    let rx = Receiver::new(client_rx, server_rx);
 
     Ok((store, rx))
 }
