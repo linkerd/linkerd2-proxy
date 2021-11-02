@@ -1,5 +1,5 @@
 [package]
-name = "linkerd-identity-fips"
+name = "linkerd-identity-mozilla-intermediate-v5"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"

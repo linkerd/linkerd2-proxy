@@ -840,7 +840,7 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-http-metrics",
  "linkerd-http-retry",
- "linkerd-identity-default",
+ "linkerd-identity-rustls-meshtls",
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-opencensus",
@@ -909,7 +909,7 @@ dependencies = [
  "libfuzzer-sys",
  "linkerd-app-core",
  "linkerd-app-test",
- "linkerd-identity-default",
+ "linkerd-identity-rustls-meshtls",
  "linkerd-io",
  "linkerd-server-policy",
  "linkerd-tonic-watch",
@@ -965,7 +965,7 @@ dependencies = [
  "linkerd-app-test",
  "linkerd-http-retry",
  "linkerd-identity",
- "linkerd-identity-default",
+ "linkerd-identity-rustls-meshtls",
  "linkerd-io",
  "linkerd-tracing",
  "parking_lot",
@@ -1166,7 +1166,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-identity-default"
+name = "linkerd-identity-mozilla-intermediate-v5"
+version = "0.1.0"
+dependencies = [
+ "boring",
+ "boring-sys",
+ "futures",
+ "linkerd-dns-name",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-stack",
+ "linkerd-tls",
+ "thiserror",
+ "tokio",
+ "tokio-boring",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-identity-rustls-meshtls"
 version = "0.1.0"
 dependencies = [
  "futures",
@@ -1186,25 +1205,6 @@ dependencies = [
  "tower",
  "tracing",
  "webpki",
-]
-
-[[package]]
-name = "linkerd-identity-fips"
-version = "0.1.0"
-dependencies = [
- "boring",
- "boring-sys",
- "futures",
- "linkerd-dns-name",
- "linkerd-error",
- "linkerd-identity",
- "linkerd-io",
- "linkerd-stack",
- "linkerd-tls",
- "thiserror",
- "tokio",
- "tokio-boring",
- "tracing",
 ]
 
 [[package]]
@@ -1387,7 +1387,7 @@ dependencies = [
  "ipnet",
  "linkerd-conditional",
  "linkerd-error",
- "linkerd-identity-default",
+ "linkerd-identity-rustls-meshtls",
  "linkerd-io",
  "linkerd-proxy-http",
  "linkerd-stack",

@@ -33,7 +33,7 @@ linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-metrics = { path = "../../http-metrics" }
 linkerd-http-retry = { path = "../../http-retry" }
-linkerd-identity-default = { path = "../../identity/default" }
+linkerd-identity-rustls-meshtls = { path = "../../identity/rustls-meshtls" }
 linkerd-io = { path = "../../io" }
 linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
 linkerd-opencensus = { path = "../../opencensus" }

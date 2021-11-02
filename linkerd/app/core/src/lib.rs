@@ -20,7 +20,7 @@ pub use linkerd_dns;
 pub use linkerd_error::{is_error, Error, Infallible, Recover, Result};
 pub use linkerd_exp_backoff as exp_backoff;
 pub use linkerd_http_metrics as http_metrics;
-pub use linkerd_identity_default as identity;
+pub use linkerd_identity_rustls_meshtls as identity;
 pub use linkerd_io as io;
 pub use linkerd_opencensus as opencensus;
 pub use linkerd_proxy_identity_client as identity_client;

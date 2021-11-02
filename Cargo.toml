@@ -4,7 +4,7 @@
 resolver = "2"
 
 exclude = [
-    "linkerd/identity/fips",
+    "linkerd/identity/boring-mozilla-intermediate-v5",
 ]
 
 members = [
@@ -33,8 +33,8 @@ members = [
     "linkerd/http-metrics",
     "linkerd/http-retry",
     "linkerd/identity",
-    "linkerd/identity/default",
-    "linkerd/identity/fips",
+    "linkerd/identity/boring-mozilla-intermediate-v5",
+    "linkerd/identity/rustls-meshtls",
     "linkerd/io",
     "linkerd/metrics",
     "linkerd/opencensus",
