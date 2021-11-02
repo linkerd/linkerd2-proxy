@@ -1,4 +1,5 @@
 use boring::ssl;
+use linkerd_error::Result;
 use linkerd_identity::Name;
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
@@ -24,6 +25,14 @@ pub struct ServerIo<I>(tokio_boring::SslStream<I>);
 impl Server {
     pub(crate) fn new(name: Name, rx: watch::Receiver<ssl::SslAcceptor>) -> Self {
         Self { name, rx }
+    }
+
+    pub fn spawn_with_alpn(self, alpn_protocols: Vec<Vec<u8>>) -> Result<Self> {
+        if alpn_protocols.is_empty() {
+            return Ok(self);
+        }
+
+        todo!("support ALPN")
     }
 }
 
