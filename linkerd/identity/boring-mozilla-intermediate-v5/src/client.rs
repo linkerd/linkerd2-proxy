@@ -1,6 +1,5 @@
 use boring::ssl;
-use futures::prelude::*;
-use linkerd_error::{Error, Result};
+use linkerd_error::Result;
 use linkerd_identity::Name;
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};

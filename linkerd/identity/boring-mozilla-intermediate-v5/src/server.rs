@@ -1,9 +1,8 @@
 use boring::ssl;
-use futures::prelude::*;
 use linkerd_identity::Name;
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
-use linkerd_tls::{ClientId, LocalId, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls};
+use linkerd_tls::{ClientId, LocalId, NegotiatedProtocolRef, ServerTls};
 use std::{future::Future, pin::Pin};
 use tokio::sync::watch;
 use tracing::debug;

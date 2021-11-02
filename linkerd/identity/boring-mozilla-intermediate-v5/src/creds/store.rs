@@ -1,5 +1,4 @@
 use boring::{
-    error::ErrorStack,
     pkey::{PKey, Private},
     ssl,
     x509::{store::X509Store, X509StoreContext, X509},
@@ -42,7 +41,7 @@ impl Store {
         for san in cert.subject_alt_names().into_iter().flatten() {
             if let Some(n) = san.dnsname() {
                 if let Ok(name) = n.parse::<linkerd_dns_name::Name>() {
-                    if &name == &*self.name {
+                    if name == *self.name {
                         return true;
                     }
                 }
@@ -88,10 +87,10 @@ impl id::Credentials for Store {
         }
 
         let mut chain = boring::stack::Stack::new()?;
-        chain.push(cert.clone());
+        chain.push(cert.clone())?;
         for id::DerX509(der) in intermediates.iter() {
             let cert = X509::from_der(der)?;
-            chain.push(cert);
+            chain.push(cert)?;
         }
 
         let mut context = X509StoreContext::new()?;
