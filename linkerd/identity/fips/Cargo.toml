@@ -11,6 +11,7 @@ boring = { version = "1" }
 boring-sys = { version = "1"}
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
+linkerd-dns-name = { path = "../../dns/name" }
 linkerd-io = { path = "../../io" }
 linkerd-identity = { path = ".." }
 linkerd-stack = { path = "../../stack" }

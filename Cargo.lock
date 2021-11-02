@@ -1195,6 +1195,7 @@ dependencies = [
  "boring",
  "boring-sys",
  "futures",
+ "linkerd-dns-name",
  "linkerd-error",
  "linkerd-identity",
  "linkerd-io",
