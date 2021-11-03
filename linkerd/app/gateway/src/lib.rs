@@ -72,7 +72,7 @@ where
     O: Clone + Send + Sync + Unpin + 'static,
     O: svc::Service<outbound::tcp::Connect, Error = io::Error>,
     O::Response:
-        io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
+        io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Sync + Unpin + 'static,
     O::Future: Send + Unpin + 'static,
     P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,

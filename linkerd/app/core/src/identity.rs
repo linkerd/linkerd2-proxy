@@ -5,7 +5,7 @@ use linkerd_error::Result;
 pub use linkerd_identity::*;
 use linkerd_io as io;
 pub use linkerd_proxy_identity_client as client;
-use linkerd_stack::{NewService, Service};
+use linkerd_stack::{NewService, Param, Service};
 use linkerd_tls::{ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef, ServerTls};
 use std::{
     pin::Pin,
@@ -19,23 +19,6 @@ pub enum Mode {
 
     #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
     BoringMozillaIntermediateV5,
-}
-
-pub enum Store {
-    #[cfg(feature = "identity-rustls-meshtls")]
-    RustlsMeshtls(linkerd_identity_rustls_meshtls::creds::Store),
-
-    #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
-    BoringMozillaIntermediateV5(linkerd_identity_boring_mozilla_intermediate_v5::creds::Store),
-}
-
-#[derive(Clone, Debug)]
-pub enum Receiver {
-    #[cfg(feature = "identity-rustls-meshtls")]
-    RustlsMeshtls(linkerd_identity_rustls_meshtls::creds::Receiver),
-
-    #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
-    BoringMozillaIntermediateV5(linkerd_identity_boring_mozilla_intermediate_v5::creds::Receiver),
 }
 
 #[derive(Clone, Debug)]
@@ -113,6 +96,23 @@ pub enum ServerIo<I> {
 
 // === impl Mode ===
 
+#[cfg(feature = "identity-rustls-meshtls")]
+impl Default for Mode {
+    fn default() -> Self {
+        Self::RustlsMeshtls
+    }
+}
+
+#[cfg(all(
+    not(feature = "identity-rustls-meshtls"),
+    feature = "identity-boring-mozilla-intermediate-v5"
+))]
+impl Default for Mode {
+    fn default() -> Self {
+        Self::BoringMozillaIntermediateV5
+    }
+}
+
 impl Mode {
     pub fn watch(
         self,
@@ -120,14 +120,14 @@ impl Mode {
         roots_pem: &str,
         key_pkcs8: &[u8],
         csr: &[u8],
-    ) -> Result<(Store, Receiver)> {
+    ) -> Result<(creds::Store, creds::Receiver)> {
         #[cfg(feature = "identity-rustls-meshtls")]
         if let Self::RustlsMeshtls = self {
             let (store, receiver) =
                 linkerd_identity_rustls_meshtls::creds::watch(identity, roots_pem, key_pkcs8, csr)?;
             return Ok((
-                Store::RustlsMeshtls(store),
-                Receiver::RustlsMeshtls(receiver),
+                creds::Store::RustlsMeshtls(store),
+                creds::Receiver::RustlsMeshtls(receiver),
             ));
         }
 
@@ -137,106 +137,9 @@ impl Mode {
                 identity, roots_pem, key_pkcs8, csr,
             )?;
             return Ok((
-                Store::BoringMozillaIntermediateV5(store),
-                Receiver::BoringMozillaIntermediateV5(receiver),
+                creds::Store::BoringMozillaIntermediateV5(store),
+                creds::Receiver::BoringMozillaIntermediateV5(receiver),
             ));
-        }
-
-        unreachable!()
-    }
-}
-
-// === impl Store ===
-
-impl Credentials for Store {
-    fn dns_name(&self) -> &Name {
-        #[cfg(feature = "identity-rustls-meshtls")]
-        if let Self::RustlsMeshtls(store) = self {
-            return store.dns_name();
-        }
-
-        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
-        if let Self::BoringMozillaIntermediateV5(store) = self {
-            return store.dns_name();
-        }
-
-        unreachable!()
-    }
-
-    fn gen_certificate_signing_request(&mut self) -> DerX509 {
-        #[cfg(feature = "identity-rustls-meshtls")]
-        if let Self::RustlsMeshtls(store) = self {
-            return store.gen_certificate_signing_request();
-        }
-
-        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
-        if let Self::BoringMozillaIntermediateV5(store) = self {
-            return store.gen_certificate_signing_request();
-        }
-
-        unreachable!()
-    }
-
-    fn set_certificate(
-        &mut self,
-        leaf: DerX509,
-        chain: Vec<DerX509>,
-        expiry: std::time::SystemTime,
-    ) -> Result<()> {
-        #[cfg(feature = "identity-rustls-meshtls")]
-        if let Self::RustlsMeshtls(store) = self {
-            return store.set_certificate(leaf, chain, expiry);
-        }
-
-        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
-        if let Self::BoringMozillaIntermediateV5(store) = self {
-            return store.set_certificate(leaf, chain, expiry);
-        }
-
-        unreachable!()
-    }
-}
-
-// === impl Receiver ===
-
-impl Receiver {
-    pub fn name(&self) -> &Name {
-        #[cfg(feature = "identity-rustls-meshtls")]
-        if let Self::RustlsMeshtls(receiver) = self {
-            return receiver.name();
-        }
-
-        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
-        if let Self::BoringMozillaIntermediateV5(receiver) = self {
-            return receiver.name();
-        }
-
-        unreachable!()
-    }
-
-    pub fn new_client(&self) -> NewClient {
-        #[cfg(feature = "identity-rustls-meshtls")]
-        if let Self::RustlsMeshtls(receiver) = self {
-            return NewClient::RustlsMeshtls(receiver.new_client());
-        }
-
-        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
-        if let Self::BoringMozillaIntermediateV5(receiver) = self {
-            return NewClient::BoringMozillaIntermediateV5(receiver.new_client());
-        }
-
-        unreachable!()
-    }
-
-    pub fn server(&self) -> Server {
-        #[cfg(feature = "identity-rustls-meshtls")]
-        if let Self::RustlsMeshtls(receiver) = self {
-            return Server::RustlsMeshtls(receiver.server());
-        }
-
-        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
-        if let Self::BoringMozillaIntermediateV5(receiver) = self {
-            return Server::BoringMozillaIntermediateV5(receiver.server());
         }
 
         unreachable!()
@@ -267,7 +170,7 @@ impl NewService<ClientTls> for NewClient {
 
 impl<I> Service<I> for Connect
 where
-    I: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + std::fmt::Debug + 'static,
+    I: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
 {
     type Response = ClientIo<I>;
     type Error = io::Error;
@@ -463,6 +366,81 @@ impl<I: io::PeerAddr> io::PeerAddr for ClientIo<I> {
     }
 }
 
+// === impl Server ===
+
+impl Param<LocalId> for Server {
+    fn param(&self) -> LocalId {
+        #[cfg(feature = "identity-rustls-meshtls")]
+        if let Self::RustlsMeshtls(srv) = self {
+            return srv.param();
+        }
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        if let Self::BoringMozillaIntermediateV5(srv) = self {
+            return srv.param();
+        }
+
+        unreachable!()
+    }
+}
+
+impl Server {
+    pub fn spawn_with_alpn(self, alpn_protocols: Vec<Vec<u8>>) -> Result<Self> {
+        #[cfg(feature = "identity-rustls-meshtls")]
+        if let Self::RustlsMeshtls(srv) = self {
+            return srv.spawn_with_alpn(alpn_protocols).map(Self::RustlsMeshtls).map_err(Into::into);
+        }
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        if let Self::BoringMozillaIntermediateV5(srv) = self {
+            return srv.spawn_with_alpn(alpn_protocols).map(Self::BoringMozillaIntermediateV5);
+        }
+
+        unreachable!()
+    }
+}
+
+impl<I> Service<I> for Server
+where
+    I: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
+{
+    type Response = (ServerTls, ServerIo<I>);
+    type Error = io::Error;
+    type Future = TerminateFuture<I>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        #[cfg(feature = "identity-rustls-meshtls")]
+        if let Self::RustlsMeshtls(svc) = self {
+            return <linkerd_identity_rustls_meshtls::Server as Service<I>>::poll_ready(svc, cx);
+        }
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        if let Self::BoringMozillaIntermediateV5(svc) = self {
+            return <linkerd_identity_boring_mozilla_intermediate_v5::Server as Service<I>>::poll_ready(
+                svc,
+                cx,
+            );
+        }
+
+        unreachable!()
+    }
+
+    #[inline]
+    fn call(&mut self, io: I) -> Self::Future {
+        #[cfg(feature = "identity-rustls-meshtls")]
+        if let Self::RustlsMeshtls(svc) = self {
+            return TerminateFuture::RustlsMeshtls(svc.call(io));
+        }
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        if let Self::BoringMozillaIntermediateV5(svc) = self {
+            return TerminateFuture::BoringMozillaIntermediateV5(svc.call(io));
+        }
+
+        unreachable!()
+    }
+}
+
 // === impl TerminateFuture ===
 
 impl<I> Future for TerminateFuture<I>
@@ -489,5 +467,253 @@ where
         }
 
         unreachable!()
+    }
+}
+
+// === impl ServerIo ===
+
+impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ServerIo<I> {
+    #[inline]
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut io::ReadBuf<'_>,
+    ) -> io::Poll<()> {
+        let this = self.project();
+
+        #[cfg(feature = "identity-rustls-meshtls")]
+        if let ServerIoProj::RustlsMeshtls(io) = this {
+            return io.poll_read(cx, buf);
+        }
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        if let ServerIoProj::BoringMozillaIntermediateV5(io) = this {
+            return io.poll_read(cx, buf);
+        }
+
+        unreachable!()
+    }
+}
+
+impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
+    #[inline]
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        let this = self.project();
+
+        #[cfg(feature = "identity-rustls-meshtls")]
+        if let ServerIoProj::RustlsMeshtls(io) = this {
+            return io.poll_flush(cx);
+        }
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        if let ServerIoProj::BoringMozillaIntermediateV5(io) = this {
+            return io.poll_flush(cx);
+        }
+
+        unreachable!()
+    }
+
+    #[inline]
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+        let this = self.project();
+
+        #[cfg(feature = "identity-rustls-meshtls")]
+        if let ServerIoProj::RustlsMeshtls(io) = this {
+            return io.poll_shutdown(cx);
+        }
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        if let ServerIoProj::BoringMozillaIntermediateV5(io) = this {
+            return io.poll_shutdown(cx);
+        }
+
+        unreachable!()
+    }
+
+    #[inline]
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
+        let this = self.project();
+
+        #[cfg(feature = "identity-rustls-meshtls")]
+        if let ServerIoProj::RustlsMeshtls(io) = this {
+            return io.poll_write(cx, buf);
+        }
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        if let ServerIoProj::BoringMozillaIntermediateV5(io) = this {
+            return io.poll_write(cx, buf);
+        }
+
+        unreachable!()
+    }
+
+    #[inline]
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        let this = self.project();
+
+        #[cfg(feature = "identity-rustls-meshtls")]
+        if let ServerIoProj::RustlsMeshtls(io) = this {
+            return io.poll_write_vectored(cx, bufs);
+        }
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        if let ServerIoProj::BoringMozillaIntermediateV5(io) = this {
+            return io.poll_write_vectored(cx, bufs);
+        }
+
+        unreachable!()
+    }
+
+    #[inline]
+    fn is_write_vectored(&self) -> bool {
+        unimplemented!()
+    }
+}
+
+impl<I> HasNegotiatedProtocol for ServerIo<I> {
+    #[inline]
+    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+        unimplemented!()
+    }
+}
+
+impl<I: io::PeerAddr> io::PeerAddr for ServerIo<I> {
+    #[inline]
+    fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
+        #[cfg(feature = "identity-rustls-meshtls")]
+        if let Self::RustlsMeshtls(io) = self {
+            return io.peer_addr();
+        }
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        if let Self::BoringMozillaIntermediateV5(io) = self {
+            return io.peer_addr();
+        }
+
+        unreachable!()
+    }
+}
+
+pub mod creds {
+    use super::*;
+
+    pub enum Store {
+        #[cfg(feature = "identity-rustls-meshtls")]
+        RustlsMeshtls(linkerd_identity_rustls_meshtls::creds::Store),
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        BoringMozillaIntermediateV5(linkerd_identity_boring_mozilla_intermediate_v5::creds::Store),
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum Receiver {
+        #[cfg(feature = "identity-rustls-meshtls")]
+        RustlsMeshtls(linkerd_identity_rustls_meshtls::creds::Receiver),
+
+        #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+        BoringMozillaIntermediateV5(
+            linkerd_identity_boring_mozilla_intermediate_v5::creds::Receiver,
+        ),
+    }
+
+    // === impl Store ===
+
+    impl Credentials for Store {
+        fn dns_name(&self) -> &Name {
+            #[cfg(feature = "identity-rustls-meshtls")]
+            if let Self::RustlsMeshtls(store) = self {
+                return store.dns_name();
+            }
+
+            #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+            if let Self::BoringMozillaIntermediateV5(store) = self {
+                return store.dns_name();
+            }
+
+            unreachable!()
+        }
+
+        fn gen_certificate_signing_request(&mut self) -> DerX509 {
+            #[cfg(feature = "identity-rustls-meshtls")]
+            if let Self::RustlsMeshtls(store) = self {
+                return store.gen_certificate_signing_request();
+            }
+
+            #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+            if let Self::BoringMozillaIntermediateV5(store) = self {
+                return store.gen_certificate_signing_request();
+            }
+
+            unreachable!()
+        }
+
+        fn set_certificate(
+            &mut self,
+            leaf: DerX509,
+            chain: Vec<DerX509>,
+            expiry: std::time::SystemTime,
+        ) -> Result<()> {
+            #[cfg(feature = "identity-rustls-meshtls")]
+            if let Self::RustlsMeshtls(store) = self {
+                return store.set_certificate(leaf, chain, expiry);
+            }
+
+            #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+            if let Self::BoringMozillaIntermediateV5(store) = self {
+                return store.set_certificate(leaf, chain, expiry);
+            }
+
+            unreachable!()
+        }
+    }
+
+    // === impl Receiver ===
+
+    impl Receiver {
+        pub fn name(&self) -> &Name {
+            #[cfg(feature = "identity-rustls-meshtls")]
+            if let Self::RustlsMeshtls(receiver) = self {
+                return receiver.name();
+            }
+
+            #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+            if let Self::BoringMozillaIntermediateV5(receiver) = self {
+                return receiver.name();
+            }
+
+            unreachable!()
+        }
+
+        pub fn new_client(&self) -> NewClient {
+            #[cfg(feature = "identity-rustls-meshtls")]
+            if let Self::RustlsMeshtls(receiver) = self {
+                return NewClient::RustlsMeshtls(receiver.new_client());
+            }
+
+            #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+            if let Self::BoringMozillaIntermediateV5(receiver) = self {
+                return NewClient::BoringMozillaIntermediateV5(receiver.new_client());
+            }
+
+            unreachable!()
+        }
+
+        pub fn server(&self) -> Server {
+            #[cfg(feature = "identity-rustls-meshtls")]
+            if let Self::RustlsMeshtls(receiver) = self {
+                return Server::RustlsMeshtls(receiver.server());
+            }
+
+            #[cfg(feature = "identity-boring-mozilla-intermediate-v5")]
+            if let Self::BoringMozillaIntermediateV5(receiver) = self {
+                return Server::BoringMozillaIntermediateV5(receiver.server());
+            }
+
+            unreachable!()
+        }
     }
 }

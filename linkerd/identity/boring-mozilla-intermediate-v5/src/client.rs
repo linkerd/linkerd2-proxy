@@ -66,7 +66,7 @@ impl Connect {
 
 impl<I> Service<I> for Connect
 where
-    I: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + std::fmt::Debug + 'static,
+    I: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
 {
     type Response = ClientIo<I>;
     type Error = io::Error;

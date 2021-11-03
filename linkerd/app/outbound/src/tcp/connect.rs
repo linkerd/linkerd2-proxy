@@ -52,7 +52,7 @@ impl<C> Outbound<C> {
             + svc::Param<transport::labels::Key>,
         C: svc::Service<Connect, Error = io::Error> + Clone + Send + 'static,
         C::Response: tls::HasNegotiatedProtocol,
-        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        C::Response: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
         C::Future: Send + 'static,
     {
         self.map_stack(|config, rt, connect| {
