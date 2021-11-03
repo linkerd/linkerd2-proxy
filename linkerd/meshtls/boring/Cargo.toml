@@ -1,5 +1,5 @@
 [package]
-name = "linkerd-identity-boring-mozilla-intermediate-v5"
+name = "linkerd-meshtls-boring"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -12,8 +12,8 @@ boring-sys = { version = "1"}
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
 linkerd-dns-name = { path = "../../dns/name" }
+linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
-linkerd-identity = { path = ".." }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 thiserror = "1"

@@ -210,8 +210,13 @@ impl<S> Outbound<S> {
     where
         Self: Clone + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error> + Clone + Send + Sync + Unpin + 'static,
-        S::Response:
-            tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
+        S::Response: tls::HasNegotiatedProtocol
+            + io::AsyncRead
+            + io::AsyncWrite
+            + Send
+            + Sync
+            + Unpin
+            + 'static,
         S::Future: Send + Unpin,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: fmt::Debug + Send + Sync + Unpin + 'static,

@@ -8,8 +8,8 @@
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_error::Infallible;
-use linkerd_identity_rustls_meshtls::{self as identity, Credentials, DerX509, Name};
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use linkerd_meshtls_rustls::{self as identity, Credentials, DerX509, Name};
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},

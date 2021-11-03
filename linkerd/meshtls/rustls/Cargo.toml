@@ -1,5 +1,5 @@
 [package]
-name = "linkerd-identity-rustls-meshtls"
+name = "linkerd-meshtls-rustls"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"

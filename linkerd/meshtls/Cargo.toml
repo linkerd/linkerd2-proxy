@@ -8,8 +8,8 @@ publish = false
 
 [features]
 default = ["rustls"]
-rustls = ["linkerd-identity-rustls-meshtls"]
-boring = ["linkerd-identity-boring-mozilla-intermediate-v5"]
+rustls = ["linkerd-meshtls-rustls"]
+boring = ["linkerd-meshtls-boring"]
 
 
 [dependencies]
@@ -17,8 +17,8 @@ futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../error" }
 linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
-linkerd-identity-rustls-meshtls = { path = "../identity/rustls-meshtls", optional = true }
-linkerd-identity-boring-mozilla-intermediate-v5 = { path = "../identity/boring-mozilla-intermediate-v5", optional = true }
+linkerd-meshtls-boring = { path = "boring", optional = true }
+linkerd-meshtls-rustls = { path = "rustls", optional = true }
 linkerd-stack = { path = "../stack" }
 linkerd-tls = { path = "../tls" }
 pin-project = "1"

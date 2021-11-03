@@ -910,8 +910,8 @@ dependencies = [
  "libfuzzer-sys",
  "linkerd-app-core",
  "linkerd-app-test",
- "linkerd-identity-rustls-meshtls",
  "linkerd-io",
+ "linkerd-meshtls-rustls",
  "linkerd-server-policy",
  "linkerd-tonic-watch",
  "linkerd-tracing",
@@ -966,8 +966,8 @@ dependencies = [
  "linkerd-app-test",
  "linkerd-http-retry",
  "linkerd-identity",
- "linkerd-identity-rustls-meshtls",
  "linkerd-io",
+ "linkerd-meshtls-rustls",
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
@@ -1167,48 +1167,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-identity-boring-mozilla-intermediate-v5"
-version = "0.1.0"
-dependencies = [
- "boring",
- "boring-sys",
- "futures",
- "linkerd-dns-name",
- "linkerd-error",
- "linkerd-identity",
- "linkerd-io",
- "linkerd-stack",
- "linkerd-tls",
- "thiserror",
- "tokio",
- "tokio-boring",
- "tracing",
-]
-
-[[package]]
-name = "linkerd-identity-rustls-meshtls"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-conditional",
- "linkerd-error",
- "linkerd-identity",
- "linkerd-io",
- "linkerd-proxy-transport",
- "linkerd-stack",
- "linkerd-tls",
- "linkerd-tls-test-util",
- "linkerd-tracing",
- "ring",
- "thiserror",
- "tokio",
- "tokio-rustls",
- "tower",
- "tracing",
- "webpki",
-]
-
-[[package]]
 name = "linkerd-io"
 version = "0.1.0"
 dependencies = [
@@ -1229,12 +1187,54 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-identity",
- "linkerd-identity-boring-mozilla-intermediate-v5",
- "linkerd-identity-rustls-meshtls",
  "linkerd-io",
+ "linkerd-meshtls-boring",
+ "linkerd-meshtls-rustls",
  "linkerd-stack",
  "linkerd-tls",
  "pin-project",
+]
+
+[[package]]
+name = "linkerd-meshtls-boring"
+version = "0.1.0"
+dependencies = [
+ "boring",
+ "boring-sys",
+ "futures",
+ "linkerd-dns-name",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-stack",
+ "linkerd-tls",
+ "thiserror",
+ "tokio",
+ "tokio-boring",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-meshtls-rustls"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-conditional",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-proxy-transport",
+ "linkerd-stack",
+ "linkerd-tls",
+ "linkerd-tls-test-util",
+ "linkerd-tracing",
+ "ring",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tracing",
+ "webpki",
 ]
 
 [[package]]

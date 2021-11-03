@@ -11,6 +11,12 @@ use std::{
     task::{Context, Poll},
 };
 
+#[cfg(feature = "boring")]
+pub use linkerd_meshtls_boring as boring;
+
+#[cfg(feature = "rustls")]
+pub use linkerd_meshtls_rustls as rustls;
+
 #[derive(Copy, Clone, Debug)]
 pub enum Mode {
     #[cfg(feature = "rustls")]
@@ -23,66 +29,66 @@ pub enum Mode {
 #[derive(Clone, Debug)]
 pub enum NewClient {
     #[cfg(feature = "rustls")]
-    Rustls(linkerd_identity_rustls_meshtls::NewClient),
+    Rustls(linkerd_meshtls_rustls::NewClient),
 
     #[cfg(feature = "boring")]
-    Boring(linkerd_identity_boring_mozilla_intermediate_v5::NewClient),
+    Boring(linkerd_meshtls_boring::NewClient),
 }
 
 #[derive(Clone)]
 pub enum Connect {
     #[cfg(feature = "rustls")]
-    Rustls(linkerd_identity_rustls_meshtls::Connect),
+    Rustls(linkerd_meshtls_rustls::Connect),
 
     #[cfg(feature = "boring")]
-    Boring(linkerd_identity_boring_mozilla_intermediate_v5::Connect),
+    Boring(linkerd_meshtls_boring::Connect),
 }
 
 #[pin_project::pin_project(project = ConnectFutureProj)]
 pub enum ConnectFuture<I> {
     #[cfg(feature = "rustls")]
-    Rustls(#[pin] linkerd_identity_rustls_meshtls::ConnectFuture<I>),
+    Rustls(#[pin] linkerd_meshtls_rustls::ConnectFuture<I>),
 
     #[cfg(feature = "boring")]
-    Boring(#[pin] linkerd_identity_boring_mozilla_intermediate_v5::ConnectFuture<I>),
+    Boring(#[pin] linkerd_meshtls_boring::ConnectFuture<I>),
 }
 
 #[pin_project::pin_project(project = ClientIoProj)]
 #[derive(Debug)]
 pub enum ClientIo<I> {
     #[cfg(feature = "rustls")]
-    Rustls(#[pin] linkerd_identity_rustls_meshtls::ClientIo<I>),
+    Rustls(#[pin] linkerd_meshtls_rustls::ClientIo<I>),
 
     #[cfg(feature = "boring")]
-    Boring(#[pin] linkerd_identity_boring_mozilla_intermediate_v5::ClientIo<I>),
+    Boring(#[pin] linkerd_meshtls_boring::ClientIo<I>),
 }
 
 #[derive(Clone)]
 pub enum Server {
     #[cfg(feature = "rustls")]
-    Rustls(linkerd_identity_rustls_meshtls::Server),
+    Rustls(linkerd_meshtls_rustls::Server),
 
     #[cfg(feature = "boring")]
-    Boring(linkerd_identity_boring_mozilla_intermediate_v5::Server),
+    Boring(linkerd_meshtls_boring::Server),
 }
 
 #[pin_project::pin_project(project = TerminateFutureProj)]
 pub enum TerminateFuture<I> {
     #[cfg(feature = "rustls")]
-    Rustls(#[pin] linkerd_identity_rustls_meshtls::TerminateFuture<I>),
+    Rustls(#[pin] linkerd_meshtls_rustls::TerminateFuture<I>),
 
     #[cfg(feature = "boring")]
-    Boring(#[pin] linkerd_identity_boring_mozilla_intermediate_v5::TerminateFuture<I>),
+    Boring(#[pin] linkerd_meshtls_boring::TerminateFuture<I>),
 }
 
 #[pin_project::pin_project(project = ServerIoProj)]
 #[derive(Debug)]
 pub enum ServerIo<I> {
     #[cfg(feature = "rustls")]
-    Rustls(#[pin] linkerd_identity_rustls_meshtls::ServerIo<I>),
+    Rustls(#[pin] linkerd_meshtls_rustls::ServerIo<I>),
 
     #[cfg(feature = "boring")]
-    Boring(#[pin] linkerd_identity_boring_mozilla_intermediate_v5::ServerIo<I>),
+    Boring(#[pin] linkerd_meshtls_boring::ServerIo<I>),
 }
 
 // === impl Mode ===
@@ -112,7 +118,7 @@ impl Mode {
         #[cfg(feature = "rustls")]
         if let Self::Rustls = self {
             let (store, receiver) =
-                linkerd_identity_rustls_meshtls::creds::watch(identity, roots_pem, key_pkcs8, csr)?;
+                linkerd_meshtls_rustls::creds::watch(identity, roots_pem, key_pkcs8, csr)?;
             return Ok((
                 creds::Store::Rustls(store),
                 creds::Receiver::Rustls(receiver),
@@ -121,9 +127,8 @@ impl Mode {
 
         #[cfg(feature = "boring")]
         if let Self::Boring = self {
-            let (store, receiver) = linkerd_identity_boring_mozilla_intermediate_v5::creds::watch(
-                identity, roots_pem, key_pkcs8, csr,
-            )?;
+            let (store, receiver) =
+                linkerd_meshtls_boring::creds::watch(identity, roots_pem, key_pkcs8, csr)?;
             return Ok((
                 creds::Store::Boring(store),
                 creds::Receiver::Boring(receiver),
@@ -167,17 +172,12 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         #[cfg(feature = "rustls")]
         if let Self::Rustls(connect) = self {
-            return <linkerd_identity_rustls_meshtls::Connect as Service<I>>::poll_ready(
-                connect, cx,
-            );
+            return <linkerd_meshtls_rustls::Connect as Service<I>>::poll_ready(connect, cx);
         }
 
         #[cfg(feature = "boring")]
         if let Self::Boring(connect) = self {
-            return <linkerd_identity_boring_mozilla_intermediate_v5::Connect as Service<I>>::poll_ready(
-                connect,
-                cx,
-            );
+            return <linkerd_meshtls_boring::Connect as Service<I>>::poll_ready(connect, cx);
         }
 
         unreachable!()
@@ -402,15 +402,12 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         #[cfg(feature = "rustls")]
         if let Self::Rustls(svc) = self {
-            return <linkerd_identity_rustls_meshtls::Server as Service<I>>::poll_ready(svc, cx);
+            return <linkerd_meshtls_rustls::Server as Service<I>>::poll_ready(svc, cx);
         }
 
         #[cfg(feature = "boring")]
         if let Self::Boring(svc) = self {
-            return <linkerd_identity_boring_mozilla_intermediate_v5::Server as Service<I>>::poll_ready(
-                svc,
-                cx,
-            );
+            return <linkerd_meshtls_boring::Server as Service<I>>::poll_ready(svc, cx);
         }
 
         unreachable!()
@@ -592,19 +589,19 @@ pub mod creds {
 
     pub enum Store {
         #[cfg(feature = "rustls")]
-        Rustls(linkerd_identity_rustls_meshtls::creds::Store),
+        Rustls(linkerd_meshtls_rustls::creds::Store),
 
         #[cfg(feature = "boring")]
-        Boring(linkerd_identity_boring_mozilla_intermediate_v5::creds::Store),
+        Boring(linkerd_meshtls_boring::creds::Store),
     }
 
     #[derive(Clone, Debug)]
     pub enum Receiver {
         #[cfg(feature = "rustls")]
-        Rustls(linkerd_identity_rustls_meshtls::creds::Receiver),
+        Rustls(linkerd_meshtls_rustls::creds::Receiver),
 
         #[cfg(feature = "boring")]
-        Boring(linkerd_identity_boring_mozilla_intermediate_v5::creds::Receiver),
+        Boring(linkerd_meshtls_boring::creds::Receiver),
     }
 
     // === impl Store ===
@@ -659,6 +656,20 @@ pub mod creds {
     }
 
     // === impl Receiver ===
+
+    #[cfg(feature = "boring")]
+    impl From<boring::creds::Receiver> for Receiver {
+        fn from(rx: boring::creds::Receiver) -> Self {
+            Self::Boring(rx)
+        }
+    }
+
+    #[cfg(feature = "rustls")]
+    impl From<rustls::creds::Receiver> for Receiver {
+        fn from(rx: rustls::creds::Receiver) -> Self {
+            Self::Rustls(rx)
+        }
+    }
 
     impl Receiver {
         pub fn name(&self) -> &Name {
