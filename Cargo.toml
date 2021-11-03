@@ -36,6 +36,7 @@ members = [
     "linkerd/identity/boring-mozilla-intermediate-v5",
     "linkerd/identity/rustls-meshtls",
     "linkerd/io",
+    "linkerd/meshtls",
     "linkerd/metrics",
     "linkerd/opencensus",
     "linkerd/proxy/api-resolve",

@@ -90,7 +90,7 @@ where
                 .await
                 .map_err(|e| match e.as_io_error() {
                     Some(ioe) => io::Error::new(ioe.kind(), ioe.to_string()),
-                    None => io::Error::new(io::ErrorKind::Other, e),
+                    None => io::Error::new(io::ErrorKind::Other, "unexpected TLS error"),
                 })?;
             Ok(ClientIo(io))
         })

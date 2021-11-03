@@ -39,7 +39,6 @@ pub mod dns;
 pub mod dst;
 pub mod errors;
 pub mod http_tracing;
-pub mod identity;
 pub mod metrics;
 pub mod proxy;
 pub mod retry;
@@ -49,6 +48,12 @@ pub mod telemetry;
 pub mod transport;
 
 pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
+
+pub mod identity {
+    pub use linkerd_identity::*;
+    pub use linkerd_meshtls::*;
+    pub use linkerd_proxy_identity_client as client;
+}
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";
 

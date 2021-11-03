@@ -841,9 +841,8 @@ dependencies = [
  "linkerd-http-metrics",
  "linkerd-http-retry",
  "linkerd-identity",
- "linkerd-identity-boring-mozilla-intermediate-v5",
- "linkerd-identity-rustls-meshtls",
  "linkerd-io",
+ "linkerd-meshtls",
  "linkerd-metrics",
  "linkerd-opencensus",
  "linkerd-proxy-api-resolve",
@@ -1224,6 +1223,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-meshtls"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-identity-boring-mozilla-intermediate-v5",
+ "linkerd-identity-rustls-meshtls",
+ "linkerd-io",
+ "linkerd-stack",
+ "linkerd-tls",
+ "pin-project",
+]
+
+[[package]]
 name = "linkerd-metrics"
 version = "0.1.0"
 dependencies = [
@@ -1389,8 +1403,8 @@ dependencies = [
  "ipnet",
  "linkerd-conditional",
  "linkerd-error",
- "linkerd-identity-rustls-meshtls",
  "linkerd-io",
+ "linkerd-meshtls",
  "linkerd-proxy-http",
  "linkerd-stack",
  "linkerd-tls",

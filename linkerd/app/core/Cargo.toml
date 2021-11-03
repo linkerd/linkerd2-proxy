@@ -13,9 +13,9 @@ independently of the inbound and outbound proxy logic.
 """
 
 [features]
-default = ["identity-rustls-meshtls"]
-identity-rustls-meshtls = ["linkerd-identity-rustls-meshtls"]
-identity-boring-mozilla-intermediate-v5 = ["linkerd-identity-boring-mozilla-intermediate-v5"]
+default = ["meshtls-rustls"]
+meshtls-rustls = ["linkerd-meshtls/rustls"]
+meshtls-boring = ["linkerd-meshtls/boring"]
 
 [dependencies]
 bytes = "1"
@@ -39,9 +39,8 @@ linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-metrics = { path = "../../http-metrics" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
-linkerd-identity-rustls-meshtls = { path = "../../identity/rustls-meshtls", optional = true }
-linkerd-identity-boring-mozilla-intermediate-v5 = { path = "../../identity/boring-mozilla-intermediate-v5", optional = true }
 linkerd-io = { path = "../../io" }
+linkerd-meshtls = { path = "../../meshtls", default-features = false }
 linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
