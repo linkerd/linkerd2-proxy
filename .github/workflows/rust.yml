@@ -15,7 +15,7 @@ jobs:
 
   # Ensures we don't take unintended dependencies.
   audit:
-    timeout-minutes: 5
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -27,7 +27,7 @@ jobs:
 
   # Linting
   clippy:
-    timeout-minutes: 5
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
@@ -54,7 +54,7 @@ jobs:
 
   # Enforce automated formatting.
   fmt:
-    timeout-minutes: 5
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
