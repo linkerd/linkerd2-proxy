@@ -20,21 +20,17 @@ pub enum Receiver {
 
 impl Credentials for Store {
     fn dns_name(&self) -> &Name {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(store) = self {
-            return store.dns_name();
+        match self {
+            #[cfg(feature = "rustls")]
+            Self::Rustls(store) => store.dns_name(),
         }
-
-        unreachable!()
     }
 
     fn gen_certificate_signing_request(&mut self) -> DerX509 {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(store) = self {
-            return store.gen_certificate_signing_request();
+        match self {
+            #[cfg(feature = "rustls")]
+            Self::Rustls(store) => store.gen_certificate_signing_request(),
         }
-
-        unreachable!()
     }
 
     fn set_certificate(
@@ -43,12 +39,10 @@ impl Credentials for Store {
         chain: Vec<DerX509>,
         expiry: std::time::SystemTime,
     ) -> Result<()> {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(store) = self {
-            return store.set_certificate(leaf, chain, expiry);
+        match self {
+            #[cfg(feature = "rustls")]
+            Self::Rustls(store) => store.set_certificate(leaf, chain, expiry),
         }
-
-        unreachable!()
     }
 }
 
@@ -63,29 +57,23 @@ impl From<rustls::creds::Receiver> for Receiver {
 
 impl Receiver {
     pub fn name(&self) -> &Name {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(receiver) = self {
-            return receiver.name();
+        match self {
+            #[cfg(feature = "rustls")]
+            Self::Rustls(receiver) => receiver.name(),
         }
-
-        unreachable!()
     }
 
     pub fn new_client(&self) -> NewClient {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(receiver) = self {
-            return NewClient::Rustls(receiver.new_client());
+        match self {
+            #[cfg(feature = "rustls")]
+            Self::Rustls(receiver) => NewClient::Rustls(receiver.new_client()),
         }
-
-        unreachable!()
     }
 
     pub fn server(&self) -> Server {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(receiver) = self {
-            return Server::Rustls(receiver.server());
+        match self {
+            #[cfg(feature = "rustls")]
+            Self::Rustls(receiver) => Server::Rustls(receiver.server()),
         }
-
-        unreachable!()
     }
 }

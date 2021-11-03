@@ -1,4 +1,5 @@
-#![allow(irrefutable_let_patterns)]
+#![deny(warnings, rust_2018_idioms)]
+#![forbid(unsafe_code)]
 
 mod client;
 pub mod creds;
@@ -37,15 +38,15 @@ impl Mode {
         key_pkcs8: &[u8],
         csr: &[u8],
     ) -> Result<(creds::Store, creds::Receiver)> {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls = self {
-            let (store, receiver) = rustls::creds::watch(identity, roots_pem, key_pkcs8, csr)?;
-            return Ok((
-                creds::Store::Rustls(store),
-                creds::Receiver::Rustls(receiver),
-            ));
+        match self {
+            #[cfg(feature = "rustls")]
+            Self::Rustls => {
+                let (store, receiver) = rustls::creds::watch(identity, roots_pem, key_pkcs8, csr)?;
+                Ok((
+                    creds::Store::Rustls(store),
+                    creds::Receiver::Rustls(receiver),
+                ))
+            }
         }
-
-        unreachable!()
     }
 }
