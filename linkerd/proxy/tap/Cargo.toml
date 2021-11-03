@@ -17,7 +17,7 @@ ipnet = "2.3"
 linkerd2-proxy-api = { version = "0.3", features = ["tap", "server"] }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-error = { path = "../../error" }
-linkerd-identity-default = { path = "../../identity/default" }
+linkerd-meshtls = { path = "../../meshtls" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-http = { path = "../http" }
 linkerd-stack = { path = "../../stack" }
