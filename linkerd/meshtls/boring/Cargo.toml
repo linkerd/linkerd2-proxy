@@ -7,8 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-boring = { version = "1" }
-boring-sys = { version = "1"}
+boring = "1"
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
 linkerd-dns-name = { path = "../../dns/name" }
@@ -16,7 +15,6 @@ linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
-thiserror = "1"
 tokio = { version = "1", features = ["macros", "sync"] }
-tokio-boring = { version = "2" }
+tokio-boring = "2"
 tracing = "0.1"

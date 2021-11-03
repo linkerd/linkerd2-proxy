@@ -1200,7 +1200,6 @@ name = "linkerd-meshtls-boring"
 version = "0.1.0"
 dependencies = [
  "boring",
- "boring-sys",
  "futures",
  "linkerd-dns-name",
  "linkerd-error",
@@ -1208,7 +1207,6 @@ dependencies = [
  "linkerd-io",
  "linkerd-stack",
  "linkerd-tls",
- "thiserror",
  "tokio",
  "tokio-boring",
  "tracing",

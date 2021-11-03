@@ -17,66 +17,62 @@ use crate::rustls;
 
 #[derive(Clone)]
 pub enum Server {
-    #[cfg(feature = "rustls")]
-    Rustls(rustls::Server),
-
     #[cfg(feature = "boring")]
     Boring(boring::Server),
+
+    #[cfg(feature = "rustls")]
+    Rustls(rustls::Server),
 }
 
 #[pin_project::pin_project(project = TerminateFutureProj)]
 pub enum TerminateFuture<I> {
-    #[cfg(feature = "rustls")]
-    Rustls(#[pin] rustls::TerminateFuture<I>),
-
     #[cfg(feature = "boring")]
     Boring(#[pin] boring::TerminateFuture<I>),
+
+    #[cfg(feature = "rustls")]
+    Rustls(#[pin] rustls::TerminateFuture<I>),
 }
 
 #[pin_project::pin_project(project = ServerIoProj)]
 #[derive(Debug)]
 pub enum ServerIo<I> {
-    #[cfg(feature = "rustls")]
-    Rustls(#[pin] rustls::ServerIo<I>),
-
     #[cfg(feature = "boring")]
     Boring(#[pin] boring::ServerIo<I>),
+
+    #[cfg(feature = "rustls")]
+    Rustls(#[pin] rustls::ServerIo<I>),
 }
 
 // === impl Server ===
 
 impl Param<LocalId> for Server {
+    #[inline]
     fn param(&self) -> LocalId {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(srv) = self {
-            return srv.param();
-        }
+        match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(srv) => srv.param(),
 
-        #[cfg(feature = "boring")]
-        if let Self::Boring(srv) = self {
-            return srv.param();
+            #[cfg(feature = "rustls")]
+            Self::Rustls(srv) => srv.param(),
         }
-
-        unreachable!()
     }
 }
 
 impl Server {
     pub fn spawn_with_alpn(self, alpn_protocols: Vec<Vec<u8>>) -> Result<Self> {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(srv) = self {
-            return srv
+        match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(srv) => srv
+                .spawn_with_alpn(alpn_protocols)
+                .map(Self::Boring)
+                .map_err(Into::into),
+
+            #[cfg(feature = "rustls")]
+            Self::Rustls(srv) => srv
                 .spawn_with_alpn(alpn_protocols)
                 .map(Self::Rustls)
-                .map_err(Into::into);
+                .map_err(Into::into),
         }
-
-        #[cfg(feature = "boring")]
-        if let Self::Boring(srv) = self {
-            return srv.spawn_with_alpn(alpn_protocols).map(Self::Boring);
-        }
-
-        unreachable!()
     }
 }
 
@@ -89,32 +85,24 @@ where
     type Future = TerminateFuture<I>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(svc) = self {
-            return <rustls::Server as Service<I>>::poll_ready(svc, cx);
-        }
+        match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(svc) => <rustls::Server as Service<I>>::poll_ready(svc, cx),
 
-        #[cfg(feature = "boring")]
-        if let Self::Boring(svc) = self {
-            return <boring::Server as Service<I>>::poll_ready(svc, cx);
+            #[cfg(feature = "rustls")]
+            Self::Rustls(svc) => <rustls::Server as Service<I>>::poll_ready(svc, cx),
         }
-
-        unreachable!()
     }
 
     #[inline]
     fn call(&mut self, io: I) -> Self::Future {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(svc) = self {
-            return TerminateFuture::Rustls(svc.call(io));
-        }
+        match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(svc) => TerminateFuture::Rustls(svc.call(io)),
 
-        #[cfg(feature = "boring")]
-        if let Self::Boring(svc) = self {
-            return TerminateFuture::Boring(svc.call(io));
+            #[cfg(feature = "rustls")]
+            Self::Rustls(svc) => TerminateFuture::Rustls(svc.call(io)),
         }
-
-        unreachable!()
     }
 }
 
@@ -127,21 +115,19 @@ where
     type Output = io::Result<(ServerTls, ServerIo<I>)>;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
+        match self.project() {
+            #[cfg(feature = "boring")]
+            TerminateFutureProj::Boring(f) => {
+                let res = futures::ready!(f.poll(cx));
+                Poll::Ready(res.map(|(tls, io)| (tls, ServerIo::Rustls(io))))
+            }
 
-        #[cfg(feature = "rustls")]
-        if let TerminateFutureProj::Rustls(f) = this {
-            let res = futures::ready!(f.poll(cx));
-            return Poll::Ready(res.map(|(tls, io)| (tls, ServerIo::Rustls(io))));
+            #[cfg(feature = "rustls")]
+            TerminateFutureProj::Rustls(f) => {
+                let res = futures::ready!(f.poll(cx));
+                Poll::Ready(res.map(|(tls, io)| (tls, ServerIo::Rustls(io))))
+            }
         }
-
-        #[cfg(feature = "boring")]
-        if let TerminateFutureProj::Boring(f) = this {
-            let res = futures::ready!(f.poll(cx));
-            return Poll::Ready(res.map(|(tls, io)| (tls, ServerIo::Boring(io))));
-        }
-
-        unreachable!()
     }
 }
 
@@ -154,72 +140,48 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ServerIo<I> {
         cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> io::Poll<()> {
-        let this = self.project();
+        match self.project() {
+            #[cfg(feature = "boring")]
+            ServerIoProj::Boring(io) => io.poll_read(cx, buf),
 
-        #[cfg(feature = "rustls")]
-        if let ServerIoProj::Rustls(io) = this {
-            return io.poll_read(cx, buf);
+            #[cfg(feature = "rustls")]
+            ServerIoProj::Rustls(io) => io.poll_read(cx, buf),
         }
-
-        #[cfg(feature = "boring")]
-        if let ServerIoProj::Boring(io) = this {
-            return io.poll_read(cx, buf);
-        }
-
-        unreachable!()
     }
 }
 
 impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
     #[inline]
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
-        let this = self.project();
+        match self.project() {
+            #[cfg(feature = "boring")]
+            ServerIoProj::Boring(io) => io.poll_flush(cx),
 
-        #[cfg(feature = "rustls")]
-        if let ServerIoProj::Rustls(io) = this {
-            return io.poll_flush(cx);
+            #[cfg(feature = "rustls")]
+            ServerIoProj::Rustls(io) => io.poll_flush(cx),
         }
-
-        #[cfg(feature = "boring")]
-        if let ServerIoProj::Boring(io) = this {
-            return io.poll_flush(cx);
-        }
-
-        unreachable!()
     }
 
     #[inline]
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
-        let this = self.project();
+        match self.project() {
+            #[cfg(feature = "boring")]
+            ServerIoProj::Boring(io) => io.poll_shutdown(cx),
 
-        #[cfg(feature = "rustls")]
-        if let ServerIoProj::Rustls(io) = this {
-            return io.poll_shutdown(cx);
+            #[cfg(feature = "rustls")]
+            ServerIoProj::Rustls(io) => io.poll_shutdown(cx),
         }
-
-        #[cfg(feature = "boring")]
-        if let ServerIoProj::Boring(io) = this {
-            return io.poll_shutdown(cx);
-        }
-
-        unreachable!()
     }
 
     #[inline]
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
-        let this = self.project();
+        match self.project() {
+            #[cfg(feature = "boring")]
+            ServerIoProj::Boring(io) => io.poll_write(cx, buf),
 
-        #[cfg(feature = "rustls")]
-        if let ServerIoProj::Rustls(io) = this {
-            return io.poll_write(cx, buf);
+            #[cfg(feature = "rustls")]
+            ServerIoProj::Rustls(io) => io.poll_write(cx, buf),
         }
-
-        #[cfg(feature = "boring")]
-        if let ServerIoProj::Boring(io) = this {
-            return io.poll_write(cx, buf);
-        }
-
-        unreachable!()
     }
 
     #[inline]
@@ -228,50 +190,33 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<Result<usize, std::io::Error>> {
-        let this = self.project();
-
-        #[cfg(feature = "rustls")]
-        if let ServerIoProj::Rustls(io) = this {
-            return io.poll_write_vectored(cx, bufs);
+        match self.project() {
+            #[cfg(feature = "rustls")]
+            ServerIoProj::Rustls(io) => io.poll_write_vectored(cx, bufs),
         }
-
-        #[cfg(feature = "boring")]
-        if let ServerIoProj::Boring(io) = this {
-            return io.poll_write_vectored(cx, bufs);
-        }
-
-        unreachable!()
     }
 
     #[inline]
     fn is_write_vectored(&self) -> bool {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(io) = self {
-            return io.is_write_vectored();
-        }
+        match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(io) => io.is_write_vectored(),
 
-        #[cfg(feature = "boring")]
-        if let Self::Boring(io) = self {
-            return io.is_write_vectored();
+            #[cfg(feature = "rustls")]
+            Self::Rustls(io) => io.is_write_vectored(),
         }
-
-        unreachable!()
     }
 }
 
 impl<I: io::PeerAddr> io::PeerAddr for ServerIo<I> {
     #[inline]
     fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
-        #[cfg(feature = "rustls")]
-        if let Self::Rustls(io) = self {
-            return io.peer_addr();
-        }
+        match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(io) => io.peer_addr(),
 
-        #[cfg(feature = "boring")]
-        if let Self::Boring(io) = self {
-            return io.peer_addr();
+            #[cfg(feature = "rustls")]
+            Self::Rustls(io) => io.peer_addr(),
         }
-
-        unreachable!()
     }
 }

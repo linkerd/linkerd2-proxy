@@ -3,10 +3,6 @@
 # dependencies. This will be the default behavior in Rust 2021.
 resolver = "2"
 
-exclude = [
-    "linkerd/meshtls/boring",
-]
-
 members = [
     "hyper-balance",
     "linkerd/addr",
