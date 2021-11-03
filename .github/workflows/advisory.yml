@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
+    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
     - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d
       with:
         command: check advisories
@@ -43,7 +43,7 @@ jobs:
           - tls
           - transport-header
     steps:
-      - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz
       # Iterate through all fuzz crates to ensure each compiles independently.
@@ -58,7 +58,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@1e204e9a9253d643386038d443f96446fa156a97
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: make build
         env:
           CARGO_RELEASE: true
