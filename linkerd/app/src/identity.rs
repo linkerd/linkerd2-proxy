@@ -1,10 +1,14 @@
-pub use linkerd_app_core::identity::*;
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    identity,
-    metrics::ControlHttp as Metrics,
+    identity::{creds, Credentials, DerX509},
+    identity_client::{Certify, Metrics as IdentityMetrics},
+    metrics::ControlHttp as ClientMetrics,
     Error, Result,
+};
+pub use linkerd_app_core::{
+    identity::{InvalidName, LocalId, Name},
+    identity_client::{certify, TokenSource},
 };
 use std::{future::Future, pin::Pin};
 use tokio::sync::watch;
@@ -27,9 +31,9 @@ pub struct Documents {
 
 pub struct Identity {
     addr: control::ControlAddr,
-    receiver: identity::creds::Receiver,
+    receiver: creds::Receiver,
     ready: watch::Receiver<bool>,
-    metrics: identity::Metrics,
+    metrics: IdentityMetrics,
     task: Task,
 }
 
@@ -41,22 +45,22 @@ struct Recover(ExponentialBackoff);
 /// Wraps a credential with a watch sender that notifies receivers when the store has been updated
 /// at least once.
 struct NotifyReady {
-    store: identity::creds::Store,
+    store: creds::Store,
     tx: watch::Sender<bool>,
 }
 
 // === impl Config ===
 
 impl Config {
-    pub fn build(self, dns: dns::Resolver, client_metrics: Metrics) -> Result<Identity> {
-        let (store, receiver) = identity::creds::watch(
+    pub fn build(self, dns: dns::Resolver, client_metrics: ClientMetrics) -> Result<Identity> {
+        let (store, receiver) = creds::watch(
             (*self.documents.id).clone(),
             &self.documents.trust_anchors_pem,
             &self.documents.key_pkcs8,
             &self.documents.csr_der,
         )?;
 
-        let certify = identity::Certify::from(self.certify);
+        let certify = Certify::from(self.certify);
         let metrics = certify.metrics();
 
         let addr = self.control.addr.clone();
@@ -85,21 +89,21 @@ impl Config {
     }
 }
 
-impl identity::Credentials for NotifyReady {
+impl Credentials for NotifyReady {
     #[inline]
     fn dns_name(&self) -> &Name {
         self.store.dns_name()
     }
 
     #[inline]
-    fn gen_certificate_signing_request(&mut self) -> identity::DerX509 {
+    fn gen_certificate_signing_request(&mut self) -> DerX509 {
         self.store.gen_certificate_signing_request()
     }
 
     fn set_certificate(
         &mut self,
-        leaf: identity::DerX509,
-        chain: Vec<identity::DerX509>,
+        leaf: DerX509,
+        chain: Vec<DerX509>,
         expiry: std::time::SystemTime,
     ) -> Result<()> {
         self.store.set_certificate(leaf, chain, expiry)?;
@@ -136,11 +140,11 @@ impl Identity {
         })
     }
 
-    pub fn receiver(&self) -> identity::creds::Receiver {
+    pub fn receiver(&self) -> creds::Receiver {
         self.receiver.clone()
     }
 
-    pub fn metrics(&self) -> identity::Metrics {
+    pub fn metrics(&self) -> IdentityMetrics {
         self.metrics.clone()
     }
 

@@ -1,5 +1,5 @@
 [package]
-name = "linkerd-proxy-identity-default"
+name = "linkerd-identity-default"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -11,12 +11,12 @@ test-util = ["linkerd-tls-test-util"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-linkerd-error = { path = "../../../error" }
-linkerd-io = { path = "../../../io" }
-linkerd-proxy-identity = { path = ".." }
-linkerd-stack = { path = "../../../stack" }
-linkerd-tls = { path = "../../../tls" }
-linkerd-tls-test-util = { path = "../../../tls/test-util", optional = true }
+linkerd-error = { path = "../../error" }
+linkerd-io = { path = "../../io" }
+linkerd-identity = { path = "../../identity" }
+linkerd-stack = { path = "../../stack" }
+linkerd-tls = { path = "../../tls" }
+linkerd-tls-test-util = { path = "../../tls/test-util", optional = true }
 ring = { version = "0.16.19", features = ["std"] }
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "sync"] }
@@ -25,9 +25,9 @@ tracing = "0.1"
 webpki = "0.21"
 
 [dev-dependencies]
-linkerd-conditional = { path = "../../../conditional" }
-linkerd-proxy-transport = { path = "../../transport" }
-linkerd-tls-test-util = { path = "../../../tls/test-util" }
-linkerd-tracing = { path = "../../../tracing", features = ["ansi"] }
+linkerd-conditional = { path = "../../conditional" }
+linkerd-proxy-transport = { path = "../../proxy/transport" }
+linkerd-tls-test-util = { path = "../../tls/test-util" }
+linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tower = { version = "0.4.10", default-features = false, features = ["util"] }

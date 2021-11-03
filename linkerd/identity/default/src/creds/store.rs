@@ -1,6 +1,6 @@
 use super::params::*;
 use linkerd_error::Result;
-use linkerd_proxy_identity as id;
+use linkerd_identity as id;
 use ring::{rand, signature::EcdsaKeyPair};
 use std::sync::Arc;
 use tokio::sync::watch;

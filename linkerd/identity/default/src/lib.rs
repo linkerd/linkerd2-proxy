@@ -9,4 +9,4 @@ pub use self::{
     client::{ClientIo, Connect, ConnectFuture, NewClient},
     server::{Server, ServerIo, TerminateFuture},
 };
-pub use linkerd_proxy_identity::*;
+pub use linkerd_identity::*;

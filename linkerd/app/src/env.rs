@@ -2,6 +2,7 @@ use crate::core::{
     addr,
     config::*,
     control::{Config as ControlConfig, ControlAddr},
+    identity_client,
     proxy::http::{h1, h2},
     tls,
     transport::{Keepalive, ListenAddr},
@@ -1101,7 +1102,14 @@ pub fn parse_control_addr<S: Strings>(
 
 pub fn parse_identity_config<S: Strings>(
     strings: &S,
-) -> Result<(ControlAddr, identity::certify::Config, identity::Documents), EnvError> {
+) -> Result<
+    (
+        ControlAddr,
+        identity_client::certify::Config,
+        identity::Documents,
+    ),
+    EnvError,
+> {
     let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         if s.is_empty() {

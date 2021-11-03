@@ -1,15 +1,6 @@
-#![deny(warnings, rust_2018_idioms)]
-#![forbid(unsafe_code)]
-
-pub mod certify;
-pub mod metrics;
-mod token;
-
+use crate::Name;
 use linkerd_error::Result;
 use std::{ops::Deref, time::SystemTime};
-
-pub use self::{certify::Certify, metrics::Metrics, token::TokenSource};
-pub use linkerd_identity::*;
 
 /// Publishes certificates to be used by TLS implementations.
 pub trait Credentials {

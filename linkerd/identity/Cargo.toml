@@ -8,3 +8,4 @@ publish = false
 
 [dependencies]
 linkerd-dns-name = { path = "../dns/name" }
+linkerd-error = { path = "../error" }

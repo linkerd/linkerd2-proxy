@@ -35,7 +35,7 @@ libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
 hyper = { version = "0.14.14", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
-linkerd-proxy-identity-default = { path = "../../proxy/identity/default", features = ["test-util"] }
+linkerd-identity-default = { path = "../../identity/default", features = ["test-util"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["full", "macros"] }
 tokio-test = "0.4"

@@ -626,9 +626,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.105"
+version = "0.2.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "869d572136620d55835903746bcb5cdc54cb2851fd0aeec53220b4bb65ef3013"
+checksum = "a60553f9a9e039a333b4e9b20573b9e9b9c0bb3a11e201ccc48ef4283456d673"
 
 [[package]]
 name = "libfuzzer-sys"
@@ -716,6 +716,7 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-http-metrics",
  "linkerd-http-retry",
+ "linkerd-identity-default",
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-opencensus",
@@ -724,7 +725,7 @@ dependencies = [
  "linkerd-proxy-discover",
  "linkerd-proxy-dns-resolve",
  "linkerd-proxy-http",
- "linkerd-proxy-identity-default",
+ "linkerd-proxy-identity-client",
  "linkerd-proxy-resolve",
  "linkerd-proxy-tap",
  "linkerd-proxy-tcp",
@@ -785,8 +786,8 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-http-access-log",
+ "linkerd-identity-default",
  "linkerd-io",
- "linkerd-proxy-identity-default",
  "linkerd-server-policy",
  "linkerd-tonic-watch",
  "linkerd-tracing",
@@ -841,8 +842,8 @@ dependencies = [
  "linkerd-app-test",
  "linkerd-http-retry",
  "linkerd-identity",
+ "linkerd-identity-default",
  "linkerd-io",
- "linkerd-proxy-identity-default",
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
@@ -1054,6 +1055,30 @@ name = "linkerd-identity"
 version = "0.1.0"
 dependencies = [
  "linkerd-dns-name",
+ "linkerd-error",
+]
+
+[[package]]
+name = "linkerd-identity-default"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-conditional",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-proxy-transport",
+ "linkerd-stack",
+ "linkerd-tls",
+ "linkerd-tls-test-util",
+ "linkerd-tracing",
+ "ring",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tracing",
+ "webpki",
 ]
 
 [[package]]
@@ -1195,7 +1220,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-proxy-identity"
+name = "linkerd-proxy-identity-client"
 version = "0.1.0"
 dependencies = [
  "futures",
@@ -1211,29 +1236,6 @@ dependencies = [
  "tokio",
  "tonic",
  "tracing",
-]
-
-[[package]]
-name = "linkerd-proxy-identity-default"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-conditional",
- "linkerd-error",
- "linkerd-io",
- "linkerd-proxy-identity",
- "linkerd-proxy-transport",
- "linkerd-stack",
- "linkerd-tls",
- "linkerd-tls-test-util",
- "linkerd-tracing",
- "ring",
- "thiserror",
- "tokio",
- "tokio-rustls",
- "tower",
- "tracing",
- "webpki",
 ]
 
 [[package]]
@@ -1259,10 +1261,9 @@ dependencies = [
  "ipnet",
  "linkerd-conditional",
  "linkerd-error",
- "linkerd-identity",
+ "linkerd-identity-default",
  "linkerd-io",
  "linkerd-proxy-http",
- "linkerd-proxy-identity-default",
  "linkerd-stack",
  "linkerd-tls",
  "linkerd2-proxy-api",
@@ -2216,9 +2217,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.12.0"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2c2416fdedca8443ae44b4527de1ea633af61d8f7169ffa6e72c5b53d24efcc"
+checksum = "588b2d10a336da58d877567cd8fb8a14b463e2104910f8132cd054b4b96e29ee"
 dependencies = [
  "autocfg",
  "bytes",
@@ -2268,9 +2269,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-stream"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b2f3f698253f03119ac0102beaa64f67a67e08074d03a22d18784104543727f"
+checksum = "50145484efff8818b5ccd256697f36863f587da82cf8b409c53adf1e840798e3"
 dependencies = [
  "futures-core",
  "pin-project-lite",
@@ -2293,9 +2294,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.6.8"
+version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d3725d3efa29485e87311c5b699de63cde14b00ed4d256b8318aa30ca452cd"
+checksum = "9e99e1983e5d376cd8eb4b66604d2e99e79f5bd988c3055891dcd8c9e2604cc0"
 dependencies = [
  "bytes",
  "futures-core",

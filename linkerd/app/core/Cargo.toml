@@ -33,13 +33,14 @@ linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-metrics = { path = "../../http-metrics" }
 linkerd-http-retry = { path = "../../http-retry" }
+linkerd-identity-default = { path = "../../identity/default" }
 linkerd-io = { path = "../../io" }
 linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd-proxy-discover = { path = "../../proxy/discover" }
-linkerd-proxy-identity-default = { path = "../../proxy/identity/default" }
+linkerd-proxy-identity-client = { path = "../../proxy/identity-client" }
 linkerd-proxy-http = { path = "../../proxy/http" }
 linkerd-proxy-resolve = { path = "../../proxy/resolve" }
 linkerd-proxy-dns-resolve = { path = "../../proxy/dns-resolve" }
@@ -61,7 +62,7 @@ regex = "1.5.4"
 serde_json = "1"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}
-tokio-stream = { version = "0.1.7", features = ["time"] }
+tokio-stream = { version = "0.1.8", features = ["time"] }
 tonic = { version = "0.6", default-features = false, features = ["prost"] }
 tracing = "0.1.29"
 parking_lot = "0.11"

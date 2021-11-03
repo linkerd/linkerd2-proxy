@@ -45,10 +45,12 @@ impl Body for BoxBody {
     type Data = Data;
     type Error = Error;
 
+    #[inline]
     fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
 
+    #[inline]
     fn poll_data(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -56,6 +58,7 @@ impl Body for BoxBody {
         self.as_mut().inner.as_mut().poll_data(cx)
     }
 
+    #[inline]
     fn poll_trailers(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -63,6 +66,7 @@ impl Body for BoxBody {
         self.as_mut().inner.as_mut().poll_trailers(cx)
     }
 
+    #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         self.inner.size_hint()
     }
@@ -95,6 +99,7 @@ where
     type Data = Data;
     type Error = Error;
 
+    #[inline]
     fn is_end_stream(&self) -> bool {
         self.0.is_end_stream()
     }
@@ -111,6 +116,7 @@ where
         }))
     }
 
+    #[inline]
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -118,6 +124,7 @@ where
         Poll::Ready(futures::ready!(self.project().0.poll_trailers(cx)).map_err(Into::into))
     }
 
+    #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         self.0.size_hint()
     }
