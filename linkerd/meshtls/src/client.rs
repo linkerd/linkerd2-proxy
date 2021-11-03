@@ -176,14 +176,24 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
 
     #[inline]
     fn is_write_vectored(&self) -> bool {
-        unimplemented!()
+        #[cfg(feature = "rustls")]
+        if let Self::Rustls(io) = self {
+            return io.is_write_vectored();
+        }
+
+        unreachable!()
     }
 }
 
 impl<I> HasNegotiatedProtocol for ClientIo<I> {
     #[inline]
     fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        unimplemented!()
+        #[cfg(feature = "rustls")]
+        if let Self::Rustls(io) = self {
+            return io.negotiated_protocol();
+        }
+
+        unreachable!()
     }
 }
 
