@@ -55,6 +55,7 @@ pub enum ClientIo<I> {
 impl NewService<ClientTls> for NewClient {
     type Service = Connect;
 
+    #[inline]
     fn new_service(&self, target: ClientTls) -> Self::Service {
         match self {
             #[cfg(feature = "boring")]
@@ -76,6 +77,7 @@ where
     type Error = io::Error;
     type Future = ConnectFuture<I>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
             #[cfg(feature = "boring")]
@@ -106,6 +108,7 @@ where
 {
     type Output = io::Result<ClientIo<I>>;
 
+    #[inline]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project() {
             #[cfg(feature = "boring")]

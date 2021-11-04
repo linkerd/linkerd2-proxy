@@ -78,12 +78,13 @@ impl Server {
 
 impl<I> Service<I> for Server
 where
-    I: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
 {
     type Response = (ServerTls, ServerIo<I>);
     type Error = io::Error;
     type Future = TerminateFuture<I>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
             #[cfg(feature = "boring")]
@@ -114,6 +115,7 @@ where
 {
     type Output = io::Result<(ServerTls, ServerIo<I>)>;
 
+    #[inline]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project() {
             #[cfg(feature = "boring")]
