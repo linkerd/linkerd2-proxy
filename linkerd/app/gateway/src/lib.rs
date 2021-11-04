@@ -73,7 +73,6 @@ where
     O: svc::Service<outbound::tcp::Connect, Error = io::Error>,
     O::Response:
         io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
-    O::Response: Sync + std::fmt::Debug, // Needed by `boring`.
     O::Future: Send + Unpin + 'static,
     P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,

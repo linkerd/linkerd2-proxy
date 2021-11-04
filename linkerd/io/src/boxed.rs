@@ -10,14 +10,14 @@ pub struct BoxedIo(Pin<Box<dyn Io + Unpin>>);
 /// This is necessary for `BoxedIo`, as `dyn AsyncRead + AsyncWrite + PeerAddr`
 /// is not a valid trait object. However, it needn't be public --- it's just
 /// used internally.
-trait Io: AsyncRead + AsyncWrite + PeerAddr + Send + Sync {}
+trait Io: AsyncRead + AsyncWrite + PeerAddr + Send {}
 
-impl<I> Io for I where I: AsyncRead + AsyncWrite + PeerAddr + Send + Sync {}
+impl<I> Io for I where I: AsyncRead + AsyncWrite + PeerAddr + Send {}
 
 impl BoxedIo {
     pub fn new<T>(io: T) -> Self
     where
-        T: AsyncRead + AsyncWrite + PeerAddr + Send + Sync + Unpin + 'static,
+        T: AsyncRead + AsyncWrite + PeerAddr + Send + Unpin + 'static,
     {
         BoxedIo(Box::pin(io))
     }

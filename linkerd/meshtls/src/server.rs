@@ -79,8 +79,6 @@ impl Server {
 impl<I> Service<I> for Server
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
-    // XXX `boring` requires that the socket type implements `Debug` for its error types.
-    I: std::fmt::Debug,
 {
     type Response = (ServerTls, ServerIo<I>);
     type Error = io::Error;

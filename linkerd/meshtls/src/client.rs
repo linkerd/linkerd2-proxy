@@ -71,8 +71,6 @@ impl NewService<ClientTls> for NewClient {
 impl<I> Service<I> for Connect
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-    // XXX `boring` has these additional constraints:
-    I: Sync + std::fmt::Debug,
 {
     type Response = ClientIo<I>;
     type Error = io::Error;

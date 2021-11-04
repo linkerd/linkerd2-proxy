@@ -65,9 +65,7 @@ impl Connect {
 
 impl<I> Service<I> for Connect
 where
-    I: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
-    // The boring error types don't implement error unless the socket is `Debug`.
-    I: std::fmt::Debug,
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
 {
     type Response = ClientIo<I>;
     type Error = io::Error;
@@ -89,7 +87,9 @@ where
                 .map_err(|e| match e.as_io_error() {
                     // TODO(ver) boring should let us take ownership of the error directly.
                     Some(ioe) => io::Error::new(ioe.kind(), ioe.to_string()),
-                    None => io::Error::new(io::ErrorKind::Other, e),
+                    // XXX(ver) to use the boring error directly here we have to constraint the socket on Sync +
+                    // std::fmt::Debug, which is a pain.
+                    None => io::Error::new(io::ErrorKind::Other, "unexpected TLS handshake error"),
                 })?;
             Ok(ClientIo(io))
         })

@@ -212,7 +212,6 @@ impl<S> Outbound<S> {
         S: svc::Service<tcp::Connect, Error = io::Error> + Clone + Send + Sync + Unpin + 'static,
         S::Response:
             tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-        S::Response: Sync + std::fmt::Debug, // Needed by `boring`
         S::Future: Send + Unpin,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: fmt::Debug + Send + Sync + Unpin + 'static,
