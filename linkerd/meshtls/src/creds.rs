@@ -2,6 +2,9 @@ use crate::{NewClient, Server};
 use linkerd_error::Result;
 use linkerd_identity::{Credentials, DerX509, Name};
 
+#[cfg(feature = "boring")]
+pub use crate::boring;
+
 #[cfg(feature = "rustls")]
 pub use crate::rustls;
 
@@ -27,6 +30,9 @@ pub enum Receiver {
 impl Credentials for Store {
     fn dns_name(&self) -> &Name {
         match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(store) => store.dns_name(),
+
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.dns_name(),
         }
@@ -34,6 +40,9 @@ impl Credentials for Store {
 
     fn gen_certificate_signing_request(&mut self) -> DerX509 {
         match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(store) => store.gen_certificate_signing_request(),
+
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.gen_certificate_signing_request(),
         }
@@ -46,6 +55,9 @@ impl Credentials for Store {
         expiry: std::time::SystemTime,
     ) -> Result<()> {
         match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(store) => store.set_certificate(leaf, chain, expiry),
+
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.set_certificate(leaf, chain, expiry),
         }
@@ -53,6 +65,13 @@ impl Credentials for Store {
 }
 
 // === impl Receiver ===
+
+#[cfg(feature = "boring")]
+impl From<boring::creds::Receiver> for Receiver {
+    fn from(rx: boring::creds::Receiver) -> Self {
+        Self::Boring(rx)
+    }
+}
 
 #[cfg(feature = "rustls")]
 impl From<rustls::creds::Receiver> for Receiver {
@@ -85,7 +104,7 @@ impl Receiver {
     pub fn server(&self) -> Server {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(receiver) => Server::Rustls(receiver.server()),
+            Self::Boring(receiver) => Server::Boring(receiver.server()),
 
             #[cfg(feature = "rustls")]
             Self::Rustls(receiver) => Server::Rustls(receiver.server()),

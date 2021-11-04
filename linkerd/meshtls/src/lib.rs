@@ -12,11 +12,17 @@ pub use self::{
 use linkerd_error::Result;
 use linkerd_identity::Name;
 
+#[cfg(feature = "boring")]
+pub use linkerd_meshtls_boring as boring;
+
 #[cfg(feature = "rustls")]
 pub use linkerd_meshtls_rustls as rustls;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Mode {
+    #[cfg(feature = "boring")]
+    Boring,
+
     #[cfg(feature = "rustls")]
     Rustls,
 }
@@ -27,6 +33,14 @@ pub enum Mode {
 impl Default for Mode {
     fn default() -> Self {
         Self::Rustls
+    }
+}
+
+// FIXME(ver) We should have a way to opt into boring by configuration when both are enabled.
+#[cfg(all(feature = "boring", not(feature = "rustls")))]
+impl Default for Mode {
+    fn default() -> Self {
+        Self::Boring
     }
 }
 

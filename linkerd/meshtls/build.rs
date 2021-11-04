@@ -1,6 +1,6 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Ensure that at least one TLS implementation feature is enabled.
-    static TLS_FEATURES: &[&str] = &["rustls"];
+    static TLS_FEATURES: &[&str] = &["boring", "rustls"];
     if !TLS_FEATURES
         .iter()
         .any(|f| std::env::var_os(&*format!("CARGO_FEATURE_{}", f.to_ascii_uppercase())).is_some())

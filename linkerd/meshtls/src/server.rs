@@ -79,6 +79,8 @@ impl Server {
 impl<I> Service<I> for Server
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
+    // XXX `boring` requires that the socket type implements `Debug` for its error types.
+    I: std::fmt::Debug,
 {
     type Response = (ServerTls, ServerIo<I>);
     type Error = io::Error;
@@ -87,7 +89,7 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(svc) => <rustls::Server as Service<I>>::poll_ready(svc, cx),
+            Self::Boring(svc) => <boring::Server as Service<I>>::poll_ready(svc, cx),
 
             #[cfg(feature = "rustls")]
             Self::Rustls(svc) => <rustls::Server as Service<I>>::poll_ready(svc, cx),
@@ -98,7 +100,7 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(svc) => TerminateFuture::Rustls(svc.call(io)),
+            Self::Boring(svc) => TerminateFuture::Boring(svc.call(io)),
 
             #[cfg(feature = "rustls")]
             Self::Rustls(svc) => TerminateFuture::Rustls(svc.call(io)),
@@ -119,7 +121,7 @@ where
             #[cfg(feature = "boring")]
             TerminateFutureProj::Boring(f) => {
                 let res = futures::ready!(f.poll(cx));
-                Poll::Ready(res.map(|(tls, io)| (tls, ServerIo::Rustls(io))))
+                Poll::Ready(res.map(|(tls, io)| (tls, ServerIo::Boring(io))))
             }
 
             #[cfg(feature = "rustls")]
@@ -191,6 +193,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<Result<usize, std::io::Error>> {
         match self.project() {
+            #[cfg(feature = "boring")]
+            ServerIoProj::Boring(io) => io.poll_write_vectored(cx, bufs),
+
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_write_vectored(cx, bufs),
         }

@@ -71,6 +71,8 @@ impl NewService<ClientTls> for NewClient {
 impl<I> Service<I> for Connect
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+    // XXX `boring` has these additional constraints:
+    I: Sync + std::fmt::Debug,
 {
     type Response = ClientIo<I>;
     type Error = io::Error;
@@ -79,7 +81,7 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(connect) => <rustls::Connect as Service<I>>::poll_ready(connect, cx),
+            Self::Boring(connect) => <boring::Connect as Service<I>>::poll_ready(connect, cx),
 
             #[cfg(feature = "rustls")]
             Self::Rustls(connect) => <rustls::Connect as Service<I>>::poll_ready(connect, cx),
@@ -111,7 +113,7 @@ where
             #[cfg(feature = "boring")]
             ConnectFutureProj::Boring(f) => {
                 let res = futures::ready!(f.poll(cx));
-                Poll::Ready(res.map(ClientIo::Rustls))
+                Poll::Ready(res.map(ClientIo::Boring))
             }
 
             #[cfg(feature = "rustls")]
@@ -183,6 +185,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<Result<usize, std::io::Error>> {
         match self.project() {
+            #[cfg(feature = "boring")]
+            ClientIoProj::Boring(io) => io.poll_write_vectored(cx, bufs),
+
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_write_vectored(cx, bufs),
         }
@@ -191,6 +196,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     #[inline]
     fn is_write_vectored(&self) -> bool {
         match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(io) => io.is_write_vectored(),
+
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.is_write_vectored(),
         }

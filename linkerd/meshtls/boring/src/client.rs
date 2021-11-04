@@ -66,6 +66,8 @@ impl Connect {
 impl<I> Service<I> for Connect
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
+    // The boring error types don't implement error unless the socket is `Debug`.
+    I: std::fmt::Debug,
 {
     type Response = ClientIo<I>;
     type Error = io::Error;
@@ -85,8 +87,9 @@ where
             let io = tokio_boring::connect(config, id.as_str(), io)
                 .await
                 .map_err(|e| match e.as_io_error() {
+                    // TODO(ver) boring should let us take ownership of the error directly.
                     Some(ioe) => io::Error::new(ioe.kind(), ioe.to_string()),
-                    None => io::Error::new(io::ErrorKind::Other, "unexpected TLS error"),
+                    None => io::Error::new(io::ErrorKind::Other, e),
                 })?;
             Ok(ClientIo(io))
         })
