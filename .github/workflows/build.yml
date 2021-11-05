@@ -1,5 +1,3 @@
-name: Rust PR
-
 on:
   pull_request: {}
 
@@ -10,20 +8,6 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
-
-  ## Required builds
-
-  # Ensures we don't take unintended dependencies.
-  audit:
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-    - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d
-      with:
-        command: check bans licenses sources
 
   # Linting
   clippy:
@@ -52,7 +36,7 @@ jobs:
 
   # Enforce automated formatting.
   fmt:
-    timeout-minutes: 5
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
@@ -63,17 +47,6 @@ jobs:
       - run: rustup component add rustfmt
       - run: make check-fmt
 
-  # Run all tests.
-  test:
-    timeout-minutes: 15
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: make build-test
-      - run: make test
-
   # Generate docs
   docs:
     timeout-minutes: 15
@@ -82,4 +55,19 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: cargo doc
+      - run: cargo doc --all
+
+  # It's easy to make changes that are innocuous in dev builds that end up ballooning resources
+  # needed for release builds. This job builds the proxy in release-mode to ensure the build isn't
+  # OOM-killed.
+  release-binary:
+    timeout-minutes: 20
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: make build
+        env:
+          CARGO_RELEASE: true
