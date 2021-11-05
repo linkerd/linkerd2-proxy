@@ -14,6 +14,8 @@ pub enum Store {
 
     #[cfg(feature = "rustls")]
     Rustls(rustls::creds::Store),
+    #[cfg(not(feature = "__has_any_tls_impls"))]
+    NoTls,
 }
 
 #[derive(Clone, Debug)]
@@ -23,6 +25,8 @@ pub enum Receiver {
 
     #[cfg(feature = "rustls")]
     Rustls(rustls::creds::Receiver),
+    #[cfg(not(feature = "__has_any_tls_impls"))]
+    NoTls,
 }
 
 // === impl Store ===
@@ -35,6 +39,8 @@ impl Credentials for Store {
 
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.dns_name(),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 
@@ -45,6 +51,8 @@ impl Credentials for Store {
 
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.gen_certificate_signing_request(),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 
@@ -60,6 +68,8 @@ impl Credentials for Store {
 
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.set_certificate(leaf, chain, expiry),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(leaf, chain, expiry),
         }
     }
 }
@@ -88,6 +98,8 @@ impl Receiver {
 
             #[cfg(feature = "rustls")]
             Self::Rustls(receiver) => receiver.name(),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 
@@ -98,6 +110,8 @@ impl Receiver {
 
             #[cfg(feature = "rustls")]
             Self::Rustls(receiver) => NewClient::Rustls(receiver.new_client()),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 
@@ -108,6 +122,8 @@ impl Receiver {
 
             #[cfg(feature = "rustls")]
             Self::Rustls(receiver) => Server::Rustls(receiver.server()),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 }

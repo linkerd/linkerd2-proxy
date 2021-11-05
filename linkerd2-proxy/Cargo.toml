@@ -8,13 +8,18 @@ publish = false
 description = "The main proxy executable"
 
 [features]
-default = ["multicore"]
+default = ["multicore", "meshtls-rustls"]
 multicore = ["tokio/rt-multi-thread", "num_cpus"]
+meshtls-boring = ["linkerd-meshtls/boring"]
+meshtls-rustls = ["linkerd-meshtls/rustls"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
 num_cpus = { version = "1", optional = true }
 linkerd-app = { path = "../linkerd/app" }
+# We don't actually use code from this crate in `main`; it's here only so we can
+# control its feature flags.
+linkerd-meshtls = { path = "../linkerd/meshtls" }
 linkerd-signal = { path = "../linkerd/signal" }
 tokio = { version = "1", features = ["rt", "time", "net"] }
 tracing = "0.1.29"

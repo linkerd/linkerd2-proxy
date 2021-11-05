@@ -1,12 +1,18 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
-// Emit a compile-time error if no TLS implementations are enabled. When adding
-// new implementations, add their feature flags here!
-#[cfg(not(any(feature = "boring", feature = "rustls")))]
-compile_error!(
-    "at least one of the following TLS implementations must be enabled: 'boring', 'rustls'"
-);
+#[cfg(not(feature = "__has_any_tls_impls"))]
+#[macro_export]
+macro_rules! no_tls {
+    ($($field:ident),*) => {
+        {
+            $(
+                let _ = $field;
+            )*
+            unreachable!("compiled without any TLS implementations enabled!");
+        }
+    };
+}
 
 mod client;
 pub mod creds;
@@ -32,6 +38,9 @@ pub enum Mode {
 
     #[cfg(feature = "rustls")]
     Rustls,
+
+    #[cfg(not(feature = "__has_any_tls_impls"))]
+    NoTls,
 }
 
 // === impl Mode ===
@@ -48,6 +57,13 @@ impl Default for Mode {
 impl Default for Mode {
     fn default() -> Self {
         Self::Boring
+    }
+}
+
+#[cfg(not(feature = "__has_any_tls_impls"))]
+impl Default for Mode {
+    fn default() -> Self {
+        Self::NoTls
     }
 }
 
@@ -77,6 +93,9 @@ impl Mode {
                     creds::Receiver::Rustls(receiver),
                 ))
             }
+
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => no_tls!(identity, roots_pem, key_pkcs8, csr),
         }
     }
 }

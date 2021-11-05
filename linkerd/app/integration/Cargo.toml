@@ -42,4 +42,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 
 [dev-dependencies]
 flate2 = { version = "1.0.22", default-features = false, features = ["rust_backend"] }
+# No code from this crate is actually used; only necessary to enable the Rustls
+# implementation.
+linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
