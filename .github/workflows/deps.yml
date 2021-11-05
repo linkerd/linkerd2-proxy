@@ -1,0 +1,38 @@
+name: dependencies
+
+on:
+  pull_request: {}
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+permissions:
+  contents: read
+
+jobs:
+  # Check for security advisories.
+  #
+  # TODO(ver): This should open issues against the linkerd2 repo (and be run in a cron).
+  advisories:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    # Prevent sudden announcement of a new advisory from failing Ci.
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+    - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d
+      with:
+        command: check advisories
+
+  # Audit licenses, unreleased crates, and unexpected duplicate versions.
+  bans:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+    - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d
+      with:
+        command: check bans licenses sources

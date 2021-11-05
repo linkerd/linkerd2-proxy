@@ -1,0 +1,34 @@
+name: test
+
+on:
+  pull_request: {}
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+permissions:
+  contents: read
+
+jobs:
+
+  # Run all non-integration tests.
+  unit:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: cargo test --all --exclude=linkerd-app-integration --no-run
+      - run: cargo test --all --exclude=linkerd-app-integration
+
+  # Run only the integration tests. These have the potential to be flakey as they depend on opening
+  # sockets and may have timing sensitivity.
+  integration:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: cargo test --package=linkerd-app-integration --no-run
+      - run: cargo test --package=linkerd-app-integration
