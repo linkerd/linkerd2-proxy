@@ -1,8 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
+
 // Emit a compile-time error if no TLS implementations are enabled. When adding
 // new implementations, add their feature flags here!
-#![cfg(not(any(feature = "rustls")))]
+#[cfg(not(any(feature = "rustls")))]
 compile_error!("at least one of the following TLS implementations must be enabled: 'rustls'");
 
 mod client;
