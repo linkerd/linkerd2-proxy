@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
-#[cfg(not(feature = "has_any_tls_impls"))]
+#[cfg(not(feature = "__has_any_tls_impls"))]
 #[macro_export]
 macro_rules! no_tls {
     ($($field:ident),*) => {
@@ -33,7 +33,7 @@ pub enum Mode {
     #[cfg(feature = "rustls")]
     Rustls,
 
-    #[cfg(not(feature = "has_any_tls_impls"))]
+    #[cfg(not(feature = "__has_any_tls_impls"))]
     NoTls,
 }
 
@@ -45,7 +45,7 @@ impl Default for Mode {
         return Self::Rustls;
 
         // This may not be unreachable if no feature flags are enabled.
-        #[cfg(not(feature = "has_any_tls_impls"))]
+        #[cfg(not(feature = "__has_any_tls_impls"))]
         Self::NoTls
     }
 }
@@ -68,7 +68,7 @@ impl Mode {
                 ))
             }
 
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => no_tls!(identity, roots_pem, key_pkcs8, csr),
         }
     }

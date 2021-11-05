@@ -7,7 +7,7 @@ use std::{
     task::{Context, Poll},
 };
 
-#[cfg(not(feature = "has_any_tls_impls"))]
+#[cfg(not(feature = "__has_any_tls_impls"))]
 use std::marker::PhantomData;
 
 #[cfg(feature = "rustls")]
@@ -18,7 +18,7 @@ pub enum NewClient {
     #[cfg(feature = "rustls")]
     Rustls(rustls::NewClient),
 
-    #[cfg(not(feature = "has_any_tls_impls"))]
+    #[cfg(not(feature = "__has_any_tls_impls"))]
     NoTls,
 }
 
@@ -27,7 +27,7 @@ pub enum Connect {
     #[cfg(feature = "rustls")]
     Rustls(rustls::Connect),
 
-    #[cfg(not(feature = "has_any_tls_impls"))]
+    #[cfg(not(feature = "__has_any_tls_impls"))]
     NoTls,
 }
 
@@ -36,7 +36,7 @@ pub enum ConnectFuture<I> {
     #[cfg(feature = "rustls")]
     Rustls(#[pin] rustls::ConnectFuture<I>),
 
-    #[cfg(not(feature = "has_any_tls_impls"))]
+    #[cfg(not(feature = "__has_any_tls_impls"))]
     NoTls(PhantomData<fn(I)>),
 }
 
@@ -46,7 +46,7 @@ pub enum ClientIo<I> {
     #[cfg(feature = "rustls")]
     Rustls(#[pin] rustls::ClientIo<I>),
 
-    #[cfg(not(feature = "has_any_tls_impls"))]
+    #[cfg(not(feature = "__has_any_tls_impls"))]
     NoTls(PhantomData<fn(I)>),
 }
 
@@ -60,7 +60,7 @@ impl NewService<ClientTls> for NewClient {
             #[cfg(feature = "rustls")]
             Self::Rustls(new_client) => Connect::Rustls(new_client.new_service(target)),
 
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(target),
         }
     }
@@ -80,7 +80,7 @@ where
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(connect) => <rustls::Connect as Service<I>>::poll_ready(connect, cx),
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(cx),
         }
     }
@@ -90,7 +90,7 @@ where
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(connect) => ConnectFuture::Rustls(connect.call(io)),
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(io),
         }
     }
@@ -111,7 +111,7 @@ where
                 let res = futures::ready!(f.poll(cx));
                 Poll::Ready(res.map(ClientIo::Rustls))
             }
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(cx),
         }
     }
@@ -129,7 +129,7 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ClientIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_read(cx, buf),
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(cx, buf),
         }
     }
@@ -141,7 +141,7 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_flush(cx),
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(cx),
         }
     }
@@ -151,7 +151,7 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_shutdown(cx),
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(cx),
         }
     }
@@ -161,7 +161,7 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_write(cx, buf),
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(cx, buf),
         }
     }
@@ -175,7 +175,7 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_write_vectored(cx, bufs),
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(cx, bufs),
         }
     }
@@ -185,7 +185,7 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.is_write_vectored(),
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(),
         }
     }
@@ -197,7 +197,7 @@ impl<I> HasNegotiatedProtocol for ClientIo<I> {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.negotiated_protocol(),
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(),
         }
     }
@@ -209,7 +209,7 @@ impl<I: io::PeerAddr> io::PeerAddr for ClientIo<I> {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.peer_addr(),
-            #[cfg(not(feature = "has_any_tls_impls"))]
+            #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(),
         }
     }
