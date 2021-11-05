@@ -88,7 +88,7 @@ impl id::Credentials for Store {
 
         let mut chain = boring::stack::Stack::new()?;
         chain.push(cert.clone())?;
-        for id::DerX509(der) in intermediates.iter() {
+        for id::DerX509(der) in &intermediates {
             let cert = X509::from_der(der)?;
             chain.push(cert)?;
         }
@@ -104,7 +104,7 @@ impl id::Credentials for Store {
             b.set_private_key(self.key.as_ref())?;
             b.set_cert_store(self.clone_roots()?);
             b.set_certificate(cert.as_ref())?;
-            for id::DerX509(der) in intermediates.iter() {
+            for id::DerX509(der) in &intermediates {
                 let cert = X509::from_der(der)?;
                 b.add_extra_chain_cert(cert)?;
             }
@@ -118,7 +118,7 @@ impl id::Credentials for Store {
             b.set_private_key(self.key.as_ref())?;
             b.set_cert_store(self.clone_roots()?);
             b.set_certificate(cert.as_ref())?;
-            for id::DerX509(der) in intermediates.iter() {
+            for id::DerX509(der) in &intermediates {
                 let cert = X509::from_der(der)?;
                 b.add_extra_chain_cert(cert)?;
             }
