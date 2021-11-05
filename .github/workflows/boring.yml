@@ -24,7 +24,7 @@ jobs:
       - run: apt update && apt install -y cmake clang golang
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup component add clippy
-      - run: cargo clippy --all --exclude linkerd-meshtls-boring
+      - run: cd linkerd-meshtls-boring && cargo clippy
 
   boring-test:
     timeout-minutes: 15
@@ -34,5 +34,5 @@ jobs:
     steps:
       - run: apt update && apt install -y cmake clang golang
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: cargo test --package=linkerd-meshtls-boring
+      - run: cd linkerd-meshtls-boring && cargo test
 
