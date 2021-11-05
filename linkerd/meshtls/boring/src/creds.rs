@@ -18,10 +18,11 @@ pub fn watch(
     csr: &[u8],
 ) -> Result<(Store, Receiver)> {
     let roots = {
+        let certs = X509::stack_from_pem(roots_pem.as_bytes())?
         let mut store = X509StoreBuilder::new()?;
-        // FIXME(ver) This should handle a list of PEM-encoded certificates.
-        let cert = X509::from_pem(roots_pem.as_bytes())?;
-        store.add_cert(cert)?;
+        for c in certs.into_iter() {
+            store.add_cert(c)?;
+        }
         store.build()
     };
 
