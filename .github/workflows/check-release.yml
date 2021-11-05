@@ -1,0 +1,25 @@
+# It's easy to make changes that are innocuous in dev builds that end up ballooning resources needed
+# for release builds. This workflow builds the proxy in release-mode to ensure the build isn't
+# OOM-killed.
+name: check-release
+
+on:
+  pull_request: {}
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+  CARGO_RELEASE: true
+
+permissions:
+  contents: read
+
+jobs:
+  check-release:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: make build
