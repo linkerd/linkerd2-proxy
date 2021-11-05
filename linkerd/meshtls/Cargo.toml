@@ -7,9 +7,9 @@ edition = "2018"
 publish = false
 
 [features]
-default = ["rustls"]
-rustls = ["linkerd-meshtls-rustls"]
-
+rustls = ["linkerd-meshtls-rustls", "__has_any_tls_impls"]
+# Enabled if *any* TLS impl is enabled.
+__has_any_tls_impls = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
