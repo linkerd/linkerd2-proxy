@@ -9,6 +9,9 @@ env:
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
 
+permissions:
+  contents: read
+
 jobs:
 
   # Linting
@@ -17,8 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup component add clippy
@@ -30,11 +31,13 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: for d in $(for toml in $(find . -mindepth 2 -name Cargo.toml -not -path '*/fuzz/*') ; do echo ${toml%/*} ; done | sort -r ) ; do echo "# $d" ; (cd $d ; cargo check --all-targets) ; done
+      - run: |
+          for d in $(for toml in $(find . -mindepth 2 -name Cargo.toml -not -path '*/fuzz/*') ; do echo ${toml%/*} ; done | sort -r ) ; do
+            echo "# $d"
+            (cd $d ; cargo check --all-targets)
+          done
 
   # Enforce automated formatting.
   fmt:
@@ -42,8 +45,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup component add rustfmt
@@ -64,12 +65,9 @@ jobs:
   # OOM-killed.
   release-binary:
     timeout-minutes: 20
-    continue-on-error: true
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: make build
-        env:
+      - env:
           CARGO_RELEASE: true
+        run: make build

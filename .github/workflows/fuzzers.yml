@@ -9,17 +9,18 @@ env:
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
 
+permissions:
+  contents: read
+
 jobs:
   # Ensure that all of the fuzzers continue to build.
   #
-  # This is optional because it depends on the nightly toolchain.
+  # This is depends on the nightly toolchain, so it may break unexpectedly.
   fuzzers:
     timeout-minutes: 40
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
-    permissions:
-      contents: read
     strategy:
       matrix:
         dir:
