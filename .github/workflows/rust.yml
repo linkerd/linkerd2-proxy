@@ -71,6 +71,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: make build-test
       - run: make test
 
   # Generate docs

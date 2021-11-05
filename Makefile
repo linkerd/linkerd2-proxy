@@ -99,8 +99,12 @@ shellcheck:
 		! -path "$(CURDIR)"/.git/hooks/\*.sample \
 		| while read -r f; do [ "$$(file -b --mime-type "$$f")" = 'text/x-shellscript' ] && printf '%s\0' "$$f"; done | xargs -0)
 
+.PHONY: build-test
+build-test: fetch
+	$(CARGO_TEST) --no-run
+
 .PHONY: test
-test: fetch
+test: build-test
 	$(CARGO_TEST)
 
 .PHONY: test-flakey
