@@ -2,13 +2,14 @@ use super::params::*;
 use linkerd_error::Result;
 use linkerd_identity as id;
 use ring::{rand, signature::EcdsaKeyPair};
-use std::sync::Arc;
+use std::{convert::TryFrom, sync::Arc};
 use tokio::sync::watch;
 use tokio_rustls::rustls;
 use tracing::debug;
 
 pub struct Store {
     roots: rustls::RootCertStore,
+    server_cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
     key: Arc<EcdsaKeyPair>,
     csr: Arc<[u8]>,
     name: id::Name,
@@ -19,13 +20,15 @@ pub struct Store {
 #[derive(Clone)]
 struct Key(Arc<EcdsaKeyPair>);
 
-struct CertResolver(rustls::sign::CertifiedKey);
+#[derive(Clone)]
+pub(super) struct CertResolver(Arc<rustls::sign::CertifiedKey>);
 
 // === impl Store ===
 
 impl Store {
     pub(super) fn new(
         roots: rustls::RootCertStore,
+        server_cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
         key: EcdsaKeyPair,
         csr: &[u8],
         name: id::Name,
@@ -35,6 +38,7 @@ impl Store {
         Self {
             roots,
             key: Arc::new(key),
+            server_cert_verifier,
             csr: csr.into(),
             name,
             client_tx,
@@ -43,62 +47,43 @@ impl Store {
     }
 
     /// Builds a new TLS client configuration.
-    fn client(&self, resolver: Arc<CertResolver>) -> rustls::ClientConfig {
-        let mut client = rustls::ClientConfig::new();
-        client.ciphersuites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
-
-        // XXX: Rustls's built-in verifiers don't let us tweak things as fully
-        // as we'd like (e.g. controlling the set of trusted signature
-        // algorithms), but they provide good enough defaults for now.
-        // TODO: lock down the verification further.
-        // TODO: Change Rustls's API to avoid needing to clone `root_cert_store`.
-        client.root_store = self.roots.clone();
-
-        // Disable session resumption for the time-being until resumption is
-        // more tested.
-        client.enable_tickets = false;
-
-        // Enable client authentication.
-        client.client_auth_cert_resolver = resolver;
-
-        client
-    }
+    fn client(&self, resolver: CertResolver) -> rustls::ClientConfig {}
 
     /// Builds a new TLS server configuration.
-    fn server(&self, resolver: Arc<CertResolver>) -> rustls::ServerConfig {
+    fn server(&self, resolver: CertResolver) -> rustls::ServerConfig {
         // Ask TLS clients for a certificate and accept any certificate issued by our trusted CA(s).
         //
         // XXX: Rustls's built-in verifiers don't let us tweak things as fully as we'd like (e.g.
         // controlling the set of trusted signature algorithms), but they provide good enough
         // defaults for now.
         // TODO: lock down the verification further.
-        //
-        // TODO: Change Rustls's API to avoid needing to clone `root_cert_store`.
-        let mut server = rustls::ServerConfig::new(
-            rustls::AllowAnyAnonymousOrAuthenticatedClient::new(self.roots.clone()),
-        );
-        server.versions = TLS_VERSIONS.to_vec();
-        server.cert_resolver = resolver;
-        server.ciphersuites = TLS_SUPPORTED_CIPHERSUITES.to_vec();
-        server
+        let client_cert_verifier =
+            rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(self.roots.clone());
+        rustls::ServerConfig::builder()
+            .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
+            .with_safe_default_kx_groups()
+            .with_protocol_versions(TLS_VERSIONS)
+            .expect("server config must be valid")
+            .with_client_cert_verifier(client_cert_verifier)
+            .with_cert_resolver(Arc::new(resolver))
     }
 
     /// Ensures the certificate is valid for the services we terminate for TLS. This assumes that
     /// server cert validation does the same or more validation than client cert validation.
     fn validate(&self, client: &rustls::ClientConfig, certs: &[rustls::Certificate]) -> Result<()> {
-        // XXX: Rustls currently only provides access to a `ServerCertVerifier` through
-        // `ClientConfig::get_verifier()`.
-        //
-        // XXX: Once `ServerCertVerified` is exposed in Rustls's safe API, use it to pass proof to
-        // CertCertResolver::new....
-        //
-        // TODO: Restrict accepted signature algorithms.
-        let crt_id = webpki::DNSNameRef::try_from_ascii(self.name.as_bytes())
-            .expect("identity must be a valid DNS name");
+        let name = rustls::ServerName::try_from(self.name.as_str())
+            .expect("server name must be a valid DNS name");
         static NO_OCSP: &[u8] = &[];
-        client
-            .get_verifier()
-            .verify_server_cert(&self.roots, &*certs, crt_id, NO_OCSP)?;
+        let end_entity = &certs[0];
+        let intermediates = &certs[1..];
+        self.server_cert_verifier.verify_server_cert(
+            end_entity,
+            intermediates,
+            &name,
+            &mut std::iter::empty(), // no certificate transparency logs
+            NO_OCSP,
+            std::time::SystemTime::now(),
+        )?;
         debug!("Certified");
         Ok(())
     }
@@ -130,9 +115,9 @@ impl id::Credentials for Store {
                 .map(|id::DerX509(der)| rustls::Certificate(der)),
         );
 
-        let resolver = Arc::new(CertResolver(rustls::sign::CertifiedKey::new(
+        let resolver = CertResolver(Arc::new(rustls::sign::CertifiedKey::new(
             chain.clone(),
-            Arc::new(Box::new(Key(self.key.clone()))),
+            Arc::new(Key(self.key.clone())),
         )));
 
         // Build new client and server TLS configs.
@@ -170,17 +155,15 @@ impl rustls::sign::SigningKey for Key {
 }
 
 impl rustls::sign::Signer for Key {
-    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::TLSError> {
+    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
         let rng = rand::SystemRandom::new();
         self.0
             .sign(&rng, message)
             .map(|signature| signature.as_ref().to_owned())
-            .map_err(|ring::error::Unspecified| {
-                rustls::TLSError::General("Signing Failed".to_owned())
-            })
+            .map_err(|ring::error::Unspecified| rustls::Error::General("Signing Failed".to_owned()))
     }
 
-    fn get_scheme(&self) -> rustls::SignatureScheme {
+    fn scheme(&self) -> rustls::SignatureScheme {
         SIGNATURE_ALG_RUSTLS_SCHEME
     }
 }
@@ -192,7 +175,7 @@ impl CertResolver {
     fn resolve_(
         &self,
         sigschemes: &[rustls::SignatureScheme],
-    ) -> Option<rustls::sign::CertifiedKey> {
+    ) -> Option<Arc<rustls::sign::CertifiedKey>> {
         if !sigschemes.contains(&SIGNATURE_ALG_RUSTLS_SCHEME) {
             debug!("Signature scheme not supported -> no certificate");
             return None;
@@ -202,12 +185,12 @@ impl CertResolver {
     }
 }
 
-impl rustls::ResolvesClientCert for CertResolver {
+impl rustls::client::ResolvesClientCert for CertResolver {
     fn resolve(
         &self,
         _acceptable_issuers: &[&[u8]],
         sigschemes: &[rustls::SignatureScheme],
-    ) -> Option<rustls::sign::CertifiedKey> {
+    ) -> Option<Arc<rustls::sign::CertifiedKey>> {
         self.resolve_(sigschemes)
     }
 
@@ -216,22 +199,30 @@ impl rustls::ResolvesClientCert for CertResolver {
     }
 }
 
-impl rustls::ResolvesServerCert for CertResolver {
-    fn resolve(&self, hello: rustls::ClientHello<'_>) -> Option<rustls::sign::CertifiedKey> {
-        let server_name = hello.server_name().or_else(|| {
-            debug!("no SNI -> no certificate");
-            None
-        })?;
+impl rustls::server::ResolvesServerCert for CertResolver {
+    fn resolve(
+        &self,
+        hello: rustls::server::ClientHello<'_>,
+    ) -> Option<Arc<rustls::sign::CertifiedKey>> {
+        let server_name = match hello.server_name() {
+            Some(name) => webpki::DnsNameRef::try_from_ascii_str(name)
+                .expect("server name must be a valid server name"),
+
+            None => {
+                debug!("no SNI -> no certificate");
+                return None;
+            }
+        };
 
         // Verify that our certificate is valid for the given SNI name.
         let c = self.0.cert.first()?;
-        if let Err(error) = webpki::EndEntityCert::from(c.as_ref())
+        if let Err(error) = webpki::EndEntityCert::try_from(c.as_ref())
             .and_then(|c| c.verify_is_valid_for_dns_name(server_name))
         {
             debug!(%error, "Local certificate is not valid for SNI");
             return None;
         };
 
-        self.resolve_(hello.sigschemes())
+        self.resolve_(hello.signature_schemes())
     }
 }

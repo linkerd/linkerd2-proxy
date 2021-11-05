@@ -20,9 +20,11 @@ linkerd-tls-test-util = { path = "../../tls/test-util", optional = true }
 ring = { version = "0.16.19", features = ["std"] }
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
-tokio-rustls = "0.22"
+tokio-rustls = "0.23.1"
+rustls = { version = "0.20", features = ["dangerous_configuration"] }
+rustls-pemfile = "0.2"
 tracing = "0.1"
-webpki = "0.21"
+webpki = "0.22"
 
 [dev-dependencies]
 linkerd-conditional = { path = "../../conditional" }

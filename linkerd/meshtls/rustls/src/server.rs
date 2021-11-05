@@ -5,10 +5,10 @@ use linkerd_stack::{Param, Service};
 use linkerd_tls::{
     ClientId, HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls,
 };
-use std::{pin::Pin, sync::Arc, task};
+use std::{convert::TryFrom, pin::Pin, sync::Arc, task};
 use thiserror::Error;
 use tokio::sync::watch;
-use tokio_rustls::rustls::{Certificate, ServerConfig, Session};
+use tokio_rustls::rustls::{Certificate, ServerConfig};
 use tracing::debug;
 
 /// A Service that terminates TLS connections using a dynamically updated server configuration.
@@ -114,7 +114,7 @@ where
                 let negotiated_protocol = io
                     .get_ref()
                     .1
-                    .get_alpn_protocol()
+                    .alpn_protocol()
                     .map(|b| NegotiatedProtocol(b.into()));
 
                 debug!(client.id = ?client_id, alpn = ?negotiated_protocol, "Accepted TLS connection");
@@ -129,17 +129,17 @@ where
 
 fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<ClientId> {
     let (_io, session) = tls.get_ref();
-    let certs = session.get_peer_certificates()?;
+    let certs = session.peer_certificates()?;
     let c = certs.first().map(Certificate::as_ref)?;
-    let end_cert = webpki::EndEntityCert::from(c).ok()?;
+    let end_cert = webpki::EndEntityCert::try_from(c).ok()?;
     let dns_names = end_cert.dns_names().ok()?;
 
     match dns_names.first()? {
-        webpki::GeneralDNSNameRef::DNSName(n) => {
+        webpki::GeneralDnsNameRef::DnsName(n) => {
             let s: &str = (*n).into();
             s.parse().ok().map(ClientId)
         }
-        webpki::GeneralDNSNameRef::Wildcard(_) => {
+        webpki::GeneralDnsNameRef::Wildcard(_) => {
             // Wildcards can perhaps be handled in a future path...
             None
         }
@@ -200,7 +200,7 @@ impl<I> HasNegotiatedProtocol for ServerIo<I> {
         self.0
             .get_ref()
             .1
-            .get_alpn_protocol()
+            .alpn_protocol()
             .map(NegotiatedProtocolRef)
     }
 }

@@ -8,7 +8,7 @@ use tokio::task::JoinHandle;
 use tokio_rustls::rustls::ClientConfig;
 use tracing::info_span;
 use tracing::instrument::Instrument;
-use webpki::{DNSName, DNSNameRef};
+use webpki::{DnsName, DnsNameRef};
 
 type ClientError = hyper::Error;
 type Request = http::Request<hyper::Body>;
@@ -18,12 +18,12 @@ type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, C
 #[derive(Clone)]
 pub struct TlsConfig {
     client_config: Arc<ClientConfig>,
-    name: DNSName,
+    name: DnsName,
 }
 
 impl TlsConfig {
     pub fn new(client_config: Arc<ClientConfig>, name: &str) -> Self {
-        let dns_name = DNSNameRef::try_from_ascii_str(name)
+        let dns_name = DnsNameRef::try_from_ascii_str(name)
             .expect("no_fail")
             .to_owned();
         TlsConfig {
@@ -327,7 +327,7 @@ impl tower::Service<hyper::Uri> for Conn {
             }) = tls
             {
                 let io = tokio_rustls::TlsConnector::from(client_config.clone())
-                    .connect(DNSName::as_ref(&name), io)
+                    .connect(DnsName::as_ref(&name), io)
                     .await?;
                 Box::pin(io) as Pin<Box<dyn Io + Send + 'static>>
             } else {

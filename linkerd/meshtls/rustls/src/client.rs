@@ -4,7 +4,7 @@ use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef};
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::watch;
-use tokio_rustls::rustls::{ClientConfig, Session};
+use tokio_rustls::rustls::{ClientConfig, Connection};
 
 /// A `NewService` that produces `Connect` services from a dynamic TLS configuration.
 #[derive(Clone)]
@@ -15,7 +15,7 @@ pub struct NewClient {
 /// A `Service` that initiates client-side TLS connections.
 #[derive(Clone)]
 pub struct Connect {
-    server_id: webpki::DNSName,
+    server_id: webpki::DnsName,
     config: Arc<ClientConfig>,
 }
 
@@ -68,7 +68,7 @@ impl Connect {
             }
         };
 
-        let server_id = webpki::DNSNameRef::try_from_ascii(client_tls.server_id.as_bytes())
+        let server_id = webpki::DnsNameRef::try_from_ascii(client_tls.server_id.as_bytes())
             .expect("identity must be a valid DNS name")
             .to_owned();
 
@@ -152,7 +152,7 @@ impl<I> HasNegotiatedProtocol for ClientIo<I> {
         self.0
             .get_ref()
             .1
-            .get_alpn_protocol()
+            .alpn_protocol()
             .map(NegotiatedProtocolRef)
     }
 }

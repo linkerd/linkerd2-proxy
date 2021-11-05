@@ -165,7 +165,7 @@ fn is_valid_reference_dns_id(hostname: untrusted::Input<'_>) -> bool {
 // https://tools.ietf.org/html/rfc5280#section-4.2.1.6:
 //
 //   When the subjectAltName extension contains a domain name system
-//   label, the domain name MUST be stored in the dNSName (an IA5String).
+//   label, the domain name MUST be stored in the DnsName (an IA5String).
 //   The name MUST be in the "preferred name syntax", as specified by
 //   Section 3.5 of [RFC1034] and as modified by Section 2.1 of
 //   [RFC1123].
