@@ -1,4 +1,4 @@
-name: build
+name: check
 
 on:
   pull_request: {}
@@ -26,7 +26,7 @@ jobs:
       - run: make lint
 
   # Iterate through all (non-fuzzer) sub-crates to ensure each compiles independently.
-  check:
+  each-crate:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
@@ -58,16 +58,4 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: cargo doc --all
-
-  # It's easy to make changes that are innocuous in dev builds that end up ballooning resources
-  # needed for release builds. This job builds the proxy in release-mode to ensure the build isn't
-  # OOM-killed.
-  release-binary:
-    timeout-minutes: 20
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - env:
-          CARGO_RELEASE: true
-        run: make build
+      - run: cargo doc
