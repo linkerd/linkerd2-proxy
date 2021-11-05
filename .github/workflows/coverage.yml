@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
-      image: docker://rust:1.56.0-alpine
+      image: docker://rust:1.56.0-buster
       options: --security-opt seccomp=unconfined
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
