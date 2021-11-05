@@ -1,14 +1,16 @@
+pub use linkerd_app_core::identity::{
+    client::{certify, TokenSource},
+    InvalidName, LocalId, Name,
+};
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    identity::{creds, Credentials, DerX509},
-    identity_client::{Certify, Metrics as IdentityMetrics},
+    identity::{
+        client::{Certify, Metrics as IdentityMetrics},
+        creds, Credentials, DerX509, Mode,
+    },
     metrics::ControlHttp as ClientMetrics,
     Error, Result,
-};
-pub use linkerd_app_core::{
-    identity::{InvalidName, LocalId, Name},
-    identity_client::{certify, TokenSource},
 };
 use std::{future::Future, pin::Pin};
 use tokio::sync::watch;
@@ -53,7 +55,7 @@ struct NotifyReady {
 
 impl Config {
     pub fn build(self, dns: dns::Resolver, client_metrics: ClientMetrics) -> Result<Identity> {
-        let (store, receiver) = creds::watch(
+        let (store, receiver) = Mode::default().watch(
             (*self.documents.id).clone(),
             &self.documents.trust_anchors_pem,
             &self.documents.key_pkcs8,

@@ -716,8 +716,9 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-http-metrics",
  "linkerd-http-retry",
- "linkerd-identity-default",
+ "linkerd-identity",
  "linkerd-io",
+ "linkerd-meshtls",
  "linkerd-metrics",
  "linkerd-opencensus",
  "linkerd-proxy-api-resolve",
@@ -786,8 +787,8 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-http-access-log",
- "linkerd-identity-default",
  "linkerd-io",
+ "linkerd-meshtls-rustls",
  "linkerd-server-policy",
  "linkerd-tonic-watch",
  "linkerd-tracing",
@@ -842,8 +843,8 @@ dependencies = [
  "linkerd-app-test",
  "linkerd-http-retry",
  "linkerd-identity",
- "linkerd-identity-default",
  "linkerd-io",
+ "linkerd-meshtls-rustls",
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
@@ -1059,7 +1060,35 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-identity-default"
+name = "linkerd-io"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "linkerd-errno",
+ "pin-project",
+ "tokio",
+ "tokio-test",
+ "tokio-util",
+]
+
+[[package]]
+name = "linkerd-meshtls"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-meshtls-rustls",
+ "linkerd-stack",
+ "linkerd-tls",
+ "pin-project",
+]
+
+[[package]]
+name = "linkerd-meshtls-rustls"
 version = "0.1.0"
 dependencies = [
  "futures",
@@ -1079,20 +1108,6 @@ dependencies = [
  "tower",
  "tracing",
  "webpki",
-]
-
-[[package]]
-name = "linkerd-io"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "futures",
- "linkerd-errno",
- "pin-project",
- "tokio",
- "tokio-test",
- "tokio-util",
 ]
 
 [[package]]
@@ -1261,8 +1276,8 @@ dependencies = [
  "ipnet",
  "linkerd-conditional",
  "linkerd-error",
- "linkerd-identity-default",
  "linkerd-io",
+ "linkerd-meshtls",
  "linkerd-proxy-http",
  "linkerd-stack",
  "linkerd-tls",
