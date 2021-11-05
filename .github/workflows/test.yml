@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: cargo test --all --exclude=linkerd-app-integration --no-run
-      - run: cargo test --all --exclude=linkerd-app-integration
+      - run: cargo test --all --exclude=linkerd-app-integration --exclude=linkerd-meshtls-boring --no-run
+      - run: cargo test --all --exclude=linkerd-app-integration --exclude=linkerd-meshtls-boring
 
   # Run only the integration tests. These have the potential to be flakey as they depend on opening
   # sockets and may have timing sensitivity.

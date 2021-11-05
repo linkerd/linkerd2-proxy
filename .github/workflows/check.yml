@@ -21,10 +21,9 @@ jobs:
     container:
       image: docker://rust:1.56.0-buster
     steps:
-      - run: apt update && apt install -y cmake clang golang
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup component add clippy
-      - run: make lint
+      - run: cargo clippy --all --exclude linkerd-meshtls-boring
 
   # Iterate through all (non-fuzzer) sub-crates to ensure each compiles independently.
   check-each-crate:
@@ -33,10 +32,11 @@ jobs:
     container:
       image: docker://rust:1.56.0-buster
     steps:
-      - run: apt update && apt install -y cmake clang golang
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: |
-          for d in $(for toml in $(find . -mindepth 2 -name Cargo.toml -not -path '*/fuzz/*') ; do echo ${toml%/*} ; done | sort -r ) ; do
+          for toml in $(find . -mindepth 2 -name Cargo.toml -not -path '*/fuzz/*' -and -not -path linkerd/meshtls/boring/\* | sort -r)
+          do
+            d="${toml%/*}"
             echo "# $d"
             (cd $d ; cargo check --all-targets)
           done
