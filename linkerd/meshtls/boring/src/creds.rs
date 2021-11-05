@@ -18,7 +18,7 @@ pub fn watch(
     csr: &[u8],
 ) -> Result<(Store, Receiver)> {
     let roots = {
-        let certs = X509::stack_from_pem(roots_pem.as_bytes())?
+        let certs = X509::stack_from_pem(roots_pem.as_bytes())?;
         let mut store = X509StoreBuilder::new()?;
         for c in certs.into_iter() {
             store.add_cert(c)?;
