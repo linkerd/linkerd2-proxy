@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 jobs:
-  binary:
+  check-release:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:

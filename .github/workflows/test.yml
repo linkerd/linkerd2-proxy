@@ -15,7 +15,7 @@ permissions:
 jobs:
 
   # Run all non-integration tests.
-  unit:
+  test-unit:
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
@@ -25,7 +25,7 @@ jobs:
 
   # Run only the integration tests. These have the potential to be flakey as they depend on opening
   # sockets and may have timing sensitivity.
-  integration:
+  test-integration:
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
