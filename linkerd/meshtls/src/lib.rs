@@ -1,6 +1,13 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
+// Emit a compile-time error if no TLS implementations are enabled. When adding
+// new implementations, add their feature flags here!
+#[cfg(not(any(feature = "boring", feature = "rustls")))]
+compile_error!(
+    "at least one of the following TLS implementations must be enabled: 'boring', 'rustls'"
+);
+
 mod client;
 pub mod creds;
 mod server;
