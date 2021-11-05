@@ -5,10 +5,12 @@ use linkerd_stack::{Param, Service};
 use linkerd_tls::ServerTls;
 use std::{
     future::Future,
-    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
+
+#[cfg(not(feature = "has_any_tls_impls"))]
+use std::marker::PhantomData;
 
 #[cfg(feature = "rustls")]
 use crate::rustls;
@@ -17,6 +19,8 @@ use crate::rustls;
 pub enum Server {
     #[cfg(feature = "rustls")]
     Rustls(rustls::Server),
+
+    #[cfg(not(feature = "has_any_tls_impls"))]
     NoTls,
 }
 
@@ -24,6 +28,8 @@ pub enum Server {
 pub enum TerminateFuture<I> {
     #[cfg(feature = "rustls")]
     Rustls(#[pin] rustls::TerminateFuture<I>),
+
+    #[cfg(not(feature = "has_any_tls_impls"))]
     NoTls(PhantomData<fn(I)>),
 }
 
@@ -32,6 +38,8 @@ pub enum TerminateFuture<I> {
 pub enum ServerIo<I> {
     #[cfg(feature = "rustls")]
     Rustls(#[pin] rustls::ServerIo<I>),
+
+    #[cfg(not(feature = "has_any_tls_impls"))]
     NoTls(PhantomData<fn(I)>),
 }
 
@@ -42,7 +50,9 @@ impl Param<LocalId> for Server {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(srv) => srv.param(),
-            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
+
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 }
@@ -55,10 +65,9 @@ impl Server {
                 .spawn_with_alpn(alpn_protocols)
                 .map(Self::Rustls)
                 .map_err(Into::into),
-            Self::NoTls => {
-                let _ = alpn_protocols;
-                unreachable!("compiled with no TLS implementations enabled!");
-            }
+
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(alpn_protocols),
         }
     }
 }
@@ -75,10 +84,9 @@ where
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(svc) => <rustls::Server as Service<I>>::poll_ready(svc, cx),
-            Self::NoTls => {
-                let _ = cx;
-                unreachable!("compiled with no TLS implementations enabled!");
-            }
+
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(cx),
         }
     }
 
@@ -87,10 +95,9 @@ where
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(svc) => TerminateFuture::Rustls(svc.call(io)),
-            Self::NoTls => {
-                let _ = io;
-                unreachable!("compiled with no TLS implementations enabled!");
-            }
+
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(io),
         }
     }
 }
@@ -110,10 +117,9 @@ where
                 let res = futures::ready!(f.poll(cx));
                 Poll::Ready(res.map(|(tls, io)| (tls, ServerIo::Rustls(io))))
             }
-            TerminateFutureProj::NoTls(_) => {
-                let _ = cx;
-                unreachable!("compiled with no TLS implementations enabled!")
-            }
+
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(cx),
         }
     }
 }
@@ -130,11 +136,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ServerIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_read(cx, buf),
-            ServerIoProj::NoTls(_) => {
-                let _ = cx;
-                let _ = buf;
-                unreachable!("compiled with no TLS implementations enabled!")
-            }
+
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(cx, buf),
         }
     }
 }
@@ -145,10 +149,8 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_flush(cx),
-            ServerIoProj::NoTls(_) => {
-                let _ = cx;
-                unreachable!("compiled with no TLS implementations enabled!")
-            }
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(cx),
         }
     }
 
@@ -157,10 +159,8 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_shutdown(cx),
-            ServerIoProj::NoTls(_) => {
-                let _ = cx;
-                unreachable!("compiled with no TLS implementations enabled!")
-            }
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(cx),
         }
     }
 
@@ -169,11 +169,8 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_write(cx, buf),
-            ServerIoProj::NoTls(_) => {
-                let _ = cx;
-                let _ = buf;
-                unreachable!("compiled with no TLS implementations enabled!")
-            }
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(cx, buf),
         }
     }
 
@@ -186,11 +183,8 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_write_vectored(cx, bufs),
-            ServerIoProj::NoTls(_) => {
-                let _ = cx;
-                let _ = bufs;
-                unreachable!("compiled with no TLS implementations enabled!")
-            }
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(cx, bufs),
         }
     }
 
@@ -199,9 +193,8 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.is_write_vectored(),
-            Self::NoTls(_) => {
-                unreachable!("compiled with no TLS implementations enabled!")
-            }
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 }
@@ -212,9 +205,8 @@ impl<I: io::PeerAddr> io::PeerAddr for ServerIo<I> {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.peer_addr(),
-            Self::NoTls(_) => {
-                unreachable!("compiled with no TLS implementations enabled!")
-            }
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 }

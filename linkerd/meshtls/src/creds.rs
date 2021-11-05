@@ -8,6 +8,7 @@ pub use crate::rustls;
 pub enum Store {
     #[cfg(feature = "rustls")]
     Rustls(rustls::creds::Store),
+    #[cfg(not(feature = "has_any_tls_impls"))]
     NoTls,
 }
 
@@ -15,6 +16,7 @@ pub enum Store {
 pub enum Receiver {
     #[cfg(feature = "rustls")]
     Rustls(rustls::creds::Receiver),
+    #[cfg(not(feature = "has_any_tls_impls"))]
     NoTls,
 }
 
@@ -25,7 +27,8 @@ impl Credentials for Store {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.dns_name(),
-            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 
@@ -33,7 +36,8 @@ impl Credentials for Store {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.gen_certificate_signing_request(),
-            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 
@@ -46,12 +50,8 @@ impl Credentials for Store {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.set_certificate(leaf, chain, expiry),
-            Self::NoTls => {
-                let _ = leaf;
-                let _ = chain;
-                let _ = expiry;
-                unreachable!("compiled with no TLS implementations enabled!")
-            }
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(leaf, chain, expiry),
         }
     }
 }
@@ -70,8 +70,8 @@ impl Receiver {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(receiver) => receiver.name(),
-
-            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 
@@ -79,7 +79,8 @@ impl Receiver {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(receiver) => NewClient::Rustls(receiver.new_client()),
-            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 
@@ -87,7 +88,8 @@ impl Receiver {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(receiver) => Server::Rustls(receiver.server()),
-            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 }

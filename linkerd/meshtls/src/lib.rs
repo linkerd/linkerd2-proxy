@@ -1,6 +1,19 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
+#[cfg(not(feature = "has_any_tls_impls"))]
+#[macro_export]
+macro_rules! no_tls {
+    ($($field:ident),*) => {
+        {
+            $(
+                let _ = $field;
+            )*
+            unreachable!("compiled without any TLS implementations enabled!");
+        }
+    };
+}
+
 mod client;
 pub mod creds;
 mod server;
@@ -19,6 +32,8 @@ pub use linkerd_meshtls_rustls as rustls;
 pub enum Mode {
     #[cfg(feature = "rustls")]
     Rustls,
+
+    #[cfg(not(feature = "has_any_tls_impls"))]
     NoTls,
 }
 
@@ -30,7 +45,7 @@ impl Default for Mode {
         return Self::Rustls;
 
         // This may not be unreachable if no feature flags are enabled.
-        #[allow(unreachable_code)]
+        #[cfg(not(feature = "has_any_tls_impls"))]
         Self::NoTls
     }
 }
@@ -53,13 +68,8 @@ impl Mode {
                 ))
             }
 
-            Self::NoTls => {
-                let _ = identity;
-                let _ = roots_pem;
-                let _ = key_pkcs8;
-                let _ = csr;
-                unreachable!("compiled with no TLS implementations enabled!");
-            }
+            #[cfg(not(feature = "has_any_tls_impls"))]
+            _ => no_tls!(identity, roots_pem, key_pkcs8, csr),
         }
     }
 }
