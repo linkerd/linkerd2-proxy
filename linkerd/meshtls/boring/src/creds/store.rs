@@ -50,17 +50,6 @@ impl Store {
 
         false
     }
-
-    fn clone_roots(&self) -> Result<X509Store> {
-        // X509Store does not implement clone, so we need to manually copy it.
-        let mut roots = boring::x509::store::X509StoreBuilder::new()?;
-        for obj in self.roots.objects() {
-            if let Some(c) = obj.x509() {
-                roots.add_cert(c.to_owned())?;
-            }
-        }
-        Ok(roots.build())
-    }
 }
 
 impl id::Credentials for Store {
@@ -102,7 +91,7 @@ impl id::Credentials for Store {
             // FIXME(ver) Restrict TLS version, algorithms, etc.
             let mut b = ssl::SslConnector::builder(ssl::SslMethod::tls_client())?;
             b.set_private_key(self.key.as_ref())?;
-            b.set_cert_store(self.clone_roots()?);
+            b.set_cert_store(super::clone_roots(&self.roots)?);
             b.set_certificate(cert.as_ref())?;
             for id::DerX509(der) in &intermediates {
                 let cert = X509::from_der(der)?;
@@ -116,7 +105,7 @@ impl id::Credentials for Store {
             // TODO(ver) Ensure that this configuration includes FIPS-approved algorithms.
             let mut b = ssl::SslAcceptor::mozilla_intermediate_v5(ssl::SslMethod::tls_server())?;
             b.set_private_key(self.key.as_ref())?;
-            b.set_cert_store(self.clone_roots()?);
+            b.set_cert_store(super::clone_roots(&self.roots)?);
             b.set_certificate(cert.as_ref())?;
             for id::DerX509(der) in &intermediates {
                 let cert = X509::from_der(der)?;

@@ -13,6 +13,7 @@ use linkerd_error::Result;
 
 /// Encodes a list of ALPN protocols into a slice of bytes.
 ///
+///
 /// `boring` requires that the list of protocols be encoded in the wire format.
 #[allow(dead_code)]
 fn serialize_alpn(protocols: &[Vec<u8>]) -> Result<Vec<u8>> {
