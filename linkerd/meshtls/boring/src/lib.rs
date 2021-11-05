@@ -15,19 +15,21 @@ use linkerd_error::Result;
 ///
 /// `boring` requires that the list of protocols be encoded in the wire format.
 #[allow(dead_code)]
-fn serialize_alpn(protos: &[Vec<u8>]) -> Result<Vec<u8>> {
+fn serialize_alpn(protocols: &[Vec<u8>]) -> Result<Vec<u8>> {
+    // Allocate a buffer to hold the encoded protocols.
     let mut bytes = {
         // One additional byte for each protocol's length prefix.
-        let cap = protos.len() + protos.iter().map(|p| p.len()).sum::<usize>();
+        let cap = protocols.len() + protocols.iter().map(Vec::len).sum::<usize>();
         Vec::with_capacity(cap)
     };
 
-    for proto in protos {
-        if proto.len() > 255 {
-            return Err("ALPN protocol must be less than 255 bytes".into());
+    // Encode each protocol as a length-prefixed string.
+    for p in protocols {
+        if p.len() > 255 {
+            return Err("ALPN protocols must be less than 256 bytes".into());
         }
-        bytes.push(proto.len() as u8);
-        bytes.extend(&*proto);
+        bytes.push(p.len() as u8);
+        bytes.extend(p);
     }
 
     Ok(bytes)
@@ -41,4 +43,7 @@ fn test_serialize_alpn() {
         serialize_alpn(&[b"h2".to_vec(), b"http/1.1".to_vec()]).unwrap(),
         b"\x02h2\x08http/1.1"
     );
+
+    assert!(serialize_alpn(&[(0..255).collect()]).is_ok());
+    assert!(serialize_alpn(&[(0..=255).collect()]).is_err());
 }
