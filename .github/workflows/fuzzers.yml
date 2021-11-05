@@ -13,10 +13,11 @@ permissions:
   contents: read
 
 jobs:
+
   # Ensure that all of the fuzzers continue to build.
   #
   # This is depends on the nightly toolchain, so it may break unexpectedly.
-  fuzzers:
+  build:
     timeout-minutes: 40
     runs-on: ubuntu-latest
     container:
