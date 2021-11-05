@@ -1,3 +1,5 @@
+name: tests
+
 on:
   pull_request: {}
 

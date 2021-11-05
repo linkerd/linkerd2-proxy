@@ -1,4 +1,4 @@
-name: Dependencies
+name: dependencies
 
 on:
   pull_request: {}

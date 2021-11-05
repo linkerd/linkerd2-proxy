@@ -1,3 +1,5 @@
+name: fuzzers
+
 on:
   pull_request: {}
 
