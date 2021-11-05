@@ -21,7 +21,50 @@ pub struct Store {
 struct Key(Arc<EcdsaKeyPair>);
 
 #[derive(Clone)]
-pub(super) struct CertResolver(Arc<rustls::sign::CertifiedKey>);
+struct CertResolver(Arc<rustls::sign::CertifiedKey>);
+
+pub(super) fn client_config_builder(
+    cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
+) -> rustls::ConfigBuilder<rustls::ClientConfig, rustls::client::WantsClientCert> {
+    rustls::ClientConfig::builder()
+        .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
+        .with_safe_default_kx_groups()
+        .with_protocol_versions(TLS_VERSIONS)
+        .expect("client config must be valid")
+        // XXX: Rustls's built-in verifiers don't let us tweak things as fully
+        // as we'd like (e.g. controlling the set of trusted signature
+        // algorithms), but they provide good enough defaults for now.
+        // TODO: lock down the verification further.
+        //
+        // NOTE(eliza): Rustls considers setting a custom server cert
+        // verifier to be a "dangerous configuration", but we're doing
+        // *exactly* what its builder API does internally. the difference is
+        // just that we want to share the verifier with the `Store`, so that
+        // it can be used in `Store::validate`, so we have to `Arc` it and
+        // pass it in ourselves. this is considered "dangerous" because we
+        // could pass in some arbitrary verifier, but we're actually using
+        // the same verifier `rustls` makes by default. so, we're not
+        // *actually* doing anything untoward here...
+        .with_custom_certificate_verifier(cert_verifier)
+}
+
+pub(super) fn server_config_builder(
+    roots: rustls::RootCertStore,
+) -> rustls::ConfigBuilder<rustls::ServerConfig, rustls::server::WantsServerCert> {
+    // Ask TLS clients for a certificate and accept any certificate issued by our trusted CA(s).
+    //
+    // XXX: Rustls's built-in verifiers don't let us tweak things as fully as we'd like (e.g.
+    // controlling the set of trusted signature algorithms), but they provide good enough
+    // defaults for now.
+    // TODO: lock down the verification further.
+    let client_cert_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(roots);
+    rustls::ServerConfig::builder()
+        .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
+        .with_safe_default_kx_groups()
+        .with_protocol_versions(TLS_VERSIONS)
+        .expect("server config must be valid")
+        .with_client_cert_verifier(client_cert_verifier)
+}
 
 // === impl Store ===
 
@@ -35,6 +78,14 @@ impl Store {
         client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
         server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
     ) -> Self {
+        // XXX: Rustls's built-in verifiers don't let us tweak things as fully as we'd like (e.g.
+        // controlling the set of trusted signature algorithms), but they provide good enough
+        // defaults for now.
+        // TODO: lock down the verification further.
+        let server_cert_verifier = Arc::new(rustls::client::WebPkiVerifier::new(
+            roots.clone(),
+            None, // no certificate transparency policy
+        ));
         Self {
             roots,
             key: Arc::new(key),
@@ -47,25 +98,20 @@ impl Store {
     }
 
     /// Builds a new TLS client configuration.
-    fn client(&self, resolver: CertResolver) -> rustls::ClientConfig {}
+    fn client(&self, resolver: CertResolver) -> rustls::ClientConfig {
+        let cfg = client_config_builder(self.server_cert_verifier.clone())
+            .with_client_cert_resolver(Arc::new(resolver));
+
+        // Disable session resumption for the time-being until resumption is
+        // more tested.
+        cfg.enable_tickets = false;
+
+        cfg
+    }
 
     /// Builds a new TLS server configuration.
     fn server(&self, resolver: CertResolver) -> rustls::ServerConfig {
-        // Ask TLS clients for a certificate and accept any certificate issued by our trusted CA(s).
-        //
-        // XXX: Rustls's built-in verifiers don't let us tweak things as fully as we'd like (e.g.
-        // controlling the set of trusted signature algorithms), but they provide good enough
-        // defaults for now.
-        // TODO: lock down the verification further.
-        let client_cert_verifier =
-            rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(self.roots.clone());
-        rustls::ServerConfig::builder()
-            .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
-            .with_safe_default_kx_groups()
-            .with_protocol_versions(TLS_VERSIONS)
-            .expect("server config must be valid")
-            .with_client_cert_verifier(client_cert_verifier)
-            .with_cert_resolver(Arc::new(resolver))
+        server_config_builder(self.roots.clone()).with_cert_resolver(Arc::new(resolver))
     }
 
     /// Ensures the certificate is valid for the services we terminate for TLS. This assumes that

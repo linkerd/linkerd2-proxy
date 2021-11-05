@@ -1,6 +1,8 @@
 mod receiver;
 mod store;
 
+use crate::server;
+
 pub use self::{receiver::Receiver, store::Store};
 use linkerd_error::Result;
 use linkerd_identity as id;
@@ -37,7 +39,7 @@ pub fn watch(
         }
         Ok(certs) => certs,
     };
-    let certs: Vec<webpki::TrustAnchor<'_>> = match certs
+    let trust_anchors: Vec<webpki::TrustAnchor<'_>> = match certs
         .iter()
         .map(|cert| webpki::TrustAnchor::try_from_cert_der(&cert[..]))
         .collect()
@@ -48,7 +50,7 @@ pub fn watch(
         }
         Ok(certs) => certs,
     };
-
+    roots.add_server_trust_anchors(trust_anchors.iter());
     let key = EcdsaKeyPair::from_pkcs8(params::SIGNATURE_ALG_RING_SIGNING, key_pkcs8)
         .map_err(InvalidKey)?;
 
@@ -62,17 +64,25 @@ pub fn watch(
     ));
 
     let (client_tx, client_rx) = {
-        let mut c = rustls::ClientConfig::builder();
-        c.root_store = roots.clone();
+        let mut c =
+            store::client_config_builder(server_cert_verifier.clone()).with_no_client_auth();
         c.enable_tickets = false;
         watch::channel(Arc::new(c))
     };
-    let (server_tx, server_rx) = watch::channel(Arc::new(rustls::ServerConfig::new(
-        rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots.clone()),
-    )));
+    let (server_tx, server_rx) = watch::channel(Arc::new(
+        store::server_config_builder(roots.clone()).with_single_cert(certs.clone(), key.clone()),
+    ));
 
     let rx = Receiver::new(identity.clone(), client_rx, server_rx);
-    let store = Store::new(roots, key, csr, identity, client_tx, server_tx);
+    let store = Store::new(
+        roots,
+        server_cert_verifier,
+        key,
+        csr,
+        identity,
+        client_tx,
+        server_tx,
+    );
 
     Ok((store, rx))
 }
@@ -91,39 +101,6 @@ pub fn for_test(ent: &linkerd_tls_test_util::Entity) -> (Store, Receiver) {
 #[cfg(feature = "test-util")]
 pub fn default_for_test() -> (Store, Receiver) {
     for_test(&linkerd_tls_test_util::FOO_NS1)
-}
-
-fn client_config(
-    cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
-    resolver: CertResolver,
-) -> rustls::ClientConfig {
-    let cfg = rustls::ClientConfig::builder()
-        .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
-        .with_safe_default_kx_groups()
-        .with_protocol_versions(TLS_VERSIONS)
-        .expect("client config must be valid")
-        // XXX: Rustls's built-in verifiers don't let us tweak things as fully
-        // as we'd like (e.g. controlling the set of trusted signature
-        // algorithms), but they provide good enough defaults for now.
-        // TODO: lock down the verification further.
-        //
-        // NOTE(eliza): Rustls considers setting a custom server cert
-        // verifier to be a "dangerous configuration", but we're doing
-        // *exactly* what its builder API does internally. the difference is
-        // just that we want to share the verifier with the `Store`, so that
-        // it can be used in `Store::validate`, so we have to `Arc` it and
-        // pass it in ourselves. this is considered "dangerous" because we
-        // could pass in some arbitrary verifier, but we're actually using
-        // the same verifier `rustls` makes by default. so, we're not
-        // *actually* doing anything untoward here...
-        .with_custom_certificate_verifier(cert_verifier)
-        .with_client_cert_resolver(Arc::new(resolver));
-
-    // Disable session resumption for the time-being until resumption is
-    // more tested.
-    cfg.enable_tickets = false;
-
-    cfg
 }
 
 mod params {
