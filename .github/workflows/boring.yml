@@ -29,6 +29,8 @@ jobs:
   boring-test:
     timeout-minutes: 15
     runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.0-buster
     steps:
       - run: apt update && apt install -y cmake clang golang
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
