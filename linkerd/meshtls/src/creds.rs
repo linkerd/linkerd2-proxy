@@ -8,12 +8,14 @@ pub use crate::rustls;
 pub enum Store {
     #[cfg(feature = "rustls")]
     Rustls(rustls::creds::Store),
+    NoTls,
 }
 
 #[derive(Clone, Debug)]
 pub enum Receiver {
     #[cfg(feature = "rustls")]
     Rustls(rustls::creds::Receiver),
+    NoTls,
 }
 
 // === impl Store ===
@@ -23,6 +25,7 @@ impl Credentials for Store {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.dns_name(),
+            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
         }
     }
 
@@ -30,6 +33,7 @@ impl Credentials for Store {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.gen_certificate_signing_request(),
+            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
         }
     }
 
@@ -42,6 +46,12 @@ impl Credentials for Store {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(store) => store.set_certificate(leaf, chain, expiry),
+            Self::NoTls => {
+                let _ = leaf;
+                let _ = chain;
+                let _ = expiry;
+                unreachable!("compiled with no TLS implementations enabled!")
+            }
         }
     }
 }
@@ -60,6 +70,8 @@ impl Receiver {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(receiver) => receiver.name(),
+
+            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
         }
     }
 
@@ -67,6 +79,7 @@ impl Receiver {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(receiver) => NewClient::Rustls(receiver.new_client()),
+            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
         }
     }
 
@@ -74,6 +87,7 @@ impl Receiver {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(receiver) => Server::Rustls(receiver.server()),
+            Self::NoTls => unreachable!("compiled with no TLS implementations enabled!"),
         }
     }
 }

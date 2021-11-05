@@ -1,11 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
-// Emit a compile-time error if no TLS implementations are enabled. When adding
-// new implementations, add their feature flags here!
-#[cfg(not(any(feature = "rustls")))]
-compile_error!("at least one of the following TLS implementations must be enabled: 'rustls'");
-
 mod client;
 pub mod creds;
 mod server;
@@ -24,14 +19,19 @@ pub use linkerd_meshtls_rustls as rustls;
 pub enum Mode {
     #[cfg(feature = "rustls")]
     Rustls,
+    NoTls,
 }
 
 // === impl Mode ===
 
-#[cfg(feature = "rustls")]
 impl Default for Mode {
     fn default() -> Self {
-        Self::Rustls
+        #[cfg(feature = "rustls")]
+        return Self::Rustls;
+
+        // This may not be unreachable if no feature flags are enabled.
+        #[allow(unreachable_code)]
+        Self::NoTls
     }
 }
 
@@ -51,6 +51,14 @@ impl Mode {
                     creds::Store::Rustls(store),
                     creds::Receiver::Rustls(receiver),
                 ))
+            }
+
+            Self::NoTls => {
+                let _ = identity;
+                let _ = roots_pem;
+                let _ = key_pkcs8;
+                let _ = csr;
+                unreachable!("compiled with no TLS implementations enabled!");
             }
         }
     }

@@ -4,6 +4,13 @@
 #![forbid(unsafe_code)]
 #![type_length_limit = "16289823"]
 
+// Emit a compile-time error if no TLS implementations are enabled. When adding
+// new implementations, add their feature flags here!
+#[cfg(not(any(feature = "meshtls-rustls")))]
+compile_error!(
+    "at least one of the following TLS implementations must be enabled: 'meshtls-rustls'"
+);
+
 use linkerd_app::{core::transport::BindTcp, trace, Config};
 use linkerd_signal as signal;
 use tokio::sync::mpsc;

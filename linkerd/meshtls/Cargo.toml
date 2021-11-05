@@ -7,9 +7,7 @@ edition = "2018"
 publish = false
 
 [features]
-default = ["rustls"]
 rustls = ["linkerd-meshtls-rustls"]
-
 
 [dependencies]
 futures = { version = "0.3", default-features = false }

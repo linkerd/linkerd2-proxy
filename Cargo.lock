@@ -1494,6 +1494,7 @@ dependencies = [
  "futures",
  "jemallocator",
  "linkerd-app",
+ "linkerd-meshtls",
  "linkerd-signal",
  "num_cpus",
  "tokio",
