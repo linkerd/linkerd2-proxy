@@ -88,7 +88,7 @@ impl id::Credentials for Store {
         }
 
         let conn = {
-            // FIXME(ver) Restrict TLS version, algorithms, etc.
+            // TODO(ver) Restrict TLS version, algorithms, etc.
             let mut b = ssl::SslConnector::builder(ssl::SslMethod::tls_client())?;
             b.set_private_key(self.key.as_ref())?;
             b.set_cert_store(super::clone_roots(&self.roots)?);
@@ -102,7 +102,7 @@ impl id::Credentials for Store {
 
         let acc = {
             // mozilla_intermediate_v5 is the only variant that enables TLSv1.3, so we use that.
-            // TODO(ver) Ensure that this configuration includes FIPS-approved algorithms.
+            // TODO(ver) We should set explicit TLS versions, algorithms, etc.
             let mut b = ssl::SslAcceptor::mozilla_intermediate_v5(ssl::SslMethod::tls_server())?;
             b.set_private_key(self.key.as_ref())?;
             b.set_cert_store(super::clone_roots(&self.roots)?);
@@ -116,6 +116,8 @@ impl id::Credentials for Store {
             b.build()
         };
 
+        // If receivers are dropped, we don't return an error (as this would likely cause the
+        // updater to retry more aggressively). It's fine to silently ignore these errors.
         let _ = self.server_tx.send(acc);
         let _ = self.client_tx.send(conn);
 
