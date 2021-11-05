@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.56.0-alpine
     permissions:
       contents: read
     steps:
@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.56.0-alpine
     permissions:
       contents: read
     steps:
@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.56.0-alpine
     permissions:
       contents: read
     steps:

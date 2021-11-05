@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 40
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.56.0-alpine
     permissions:
       contents: read
     strategy:
