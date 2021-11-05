@@ -39,7 +39,12 @@ pub fn watch(
     let key = EcdsaKeyPair::from_pkcs8(params::SIGNATURE_ALG_RING_SIGNING, key_pkcs8)
         .map_err(InvalidKey)?;
 
-    let (client_tx, client_rx) = watch::channel(Arc::new(rustls::ClientConfig::new()));
+    let (client_tx, client_rx) = {
+        let mut c = rustls::ClientConfig::new();
+        c.root_store = roots.clone();
+        c.enable_tickets = false;
+        watch::channel(Arc::new(c))
+    };
     let (server_tx, server_rx) = watch::channel(Arc::new(rustls::ServerConfig::new(
         rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots.clone()),
     )));
