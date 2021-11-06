@@ -1,35 +1,48 @@
-use super::test_util::*;
+use linkerd_identity::{Credentials, DerX509};
+use linkerd_tls_test_util::*;
+use std::time::Duration;
+
+fn load(ent: &Entity) -> crate::creds::Store {
+    let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
+    let (store, _) = crate::creds::watch(
+        ent.name.parse().unwrap(),
+        roots_pem,
+        ent.key,
+        b"fake CSR data",
+    )
+    .expect("credentials must be readable");
+    store
+}
 
 #[test]
 fn can_construct_client_and_server_config_from_valid_settings() {
-    FOO_NS1.validate().expect("foo.ns1 must be valid");
+    assert!(load(&FOO_NS1)
+        .set_certificate(
+            DerX509(FOO_NS1.crt.to_vec()),
+            vec![],
+            std::time::SystemTime::now() + Duration::from_secs(600)
+        )
+        .is_ok());
 }
 
 #[test]
 fn recognize_ca_did_not_issue_cert() {
-    let s = Identity {
-        trust_anchors: include_bytes!("testdata/ca2.pem"),
-        ..FOO_NS1
-    };
-    assert!(s.validate().is_err(), "ca2 should not validate foo.ns1");
+    assert!(load(&FOO_NS1_CA2)
+        .set_certificate(
+            DerX509(FOO_NS1.crt.to_vec()),
+            vec![],
+            std::time::SystemTime::now() + Duration::from_secs(600)
+        )
+        .is_err());
 }
 
 #[test]
 fn recognize_cert_is_not_valid_for_identity() {
-    let s = Identity {
-        crt: BAR_NS1.crt,
-        key: BAR_NS1.key,
-        ..FOO_NS1
-    };
-    assert!(s.validate().is_err(), "identity should not be valid");
-}
-
-#[test]
-#[ignore] // XXX this doesn't fail because we don't actually check the key against the cert...
-fn recognize_private_key_is_not_valid_for_cert() {
-    let s = Identity {
-        key: BAR_NS1.key,
-        ..FOO_NS1
-    };
-    assert!(s.validate().is_err(), "identity should not be valid");
+    assert!(load(&BAR_NS1)
+        .set_certificate(
+            DerX509(FOO_NS1.crt.to_vec()),
+            vec![],
+            std::time::SystemTime::now() + Duration::from_secs(600)
+        )
+        .is_err());
 }
