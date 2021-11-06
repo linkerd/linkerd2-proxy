@@ -78,14 +78,6 @@ impl Store {
         client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
         server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
     ) -> Self {
-        // XXX: Rustls's built-in verifiers don't let us tweak things as fully as we'd like (e.g.
-        // controlling the set of trusted signature algorithms), but they provide good enough
-        // defaults for now.
-        // TODO: lock down the verification further.
-        let server_cert_verifier = Arc::new(rustls::client::WebPkiVerifier::new(
-            roots.clone(),
-            None, // no certificate transparency policy
-        ));
         Self {
             roots,
             key: Arc::new(key),
@@ -99,7 +91,7 @@ impl Store {
 
     /// Builds a new TLS client configuration.
     fn client(&self, resolver: CertResolver) -> rustls::ClientConfig {
-        let cfg = client_config_builder(self.server_cert_verifier.clone())
+        let mut cfg = client_config_builder(self.server_cert_verifier.clone())
             .with_client_cert_resolver(Arc::new(resolver));
 
         // Disable session resumption for the time-being until resumption is
@@ -116,7 +108,7 @@ impl Store {
 
     /// Ensures the certificate is valid for the services we terminate for TLS. This assumes that
     /// server cert validation does the same or more validation than client cert validation.
-    fn validate(&self, client: &rustls::ClientConfig, certs: &[rustls::Certificate]) -> Result<()> {
+    fn validate(&self, certs: &[rustls::Certificate]) -> Result<()> {
         let name = rustls::ServerName::try_from(self.name.as_str())
             .expect("server name must be a valid DNS name");
         static NO_OCSP: &[u8] = &[];
@@ -161,17 +153,17 @@ impl id::Credentials for Store {
                 .map(|id::DerX509(der)| rustls::Certificate(der)),
         );
 
+        // Use the client's verifier to validate the certificate for our local name.
+        self.validate(&*chain)?;
+
         let resolver = CertResolver(Arc::new(rustls::sign::CertifiedKey::new(
-            chain.clone(),
+            chain,
             Arc::new(Key(self.key.clone())),
         )));
 
         // Build new client and server TLS configs.
         let client = self.client(resolver.clone());
         let server = self.server(resolver);
-
-        // Use the client's verifier to validate the certificate for our local name.
-        self.validate(&client, &*chain)?;
 
         // Publish the new configs.
         let _ = self.client_tx.send(client.into());

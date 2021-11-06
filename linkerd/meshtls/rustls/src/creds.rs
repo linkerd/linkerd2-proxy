@@ -1,8 +1,6 @@
 mod receiver;
 mod store;
 
-use crate::server;
-
 pub use self::{receiver::Receiver, store::Store};
 use linkerd_error::Result;
 use linkerd_identity as id;
@@ -35,22 +33,19 @@ pub fn watch(
         }
         Ok(certs) if certs.is_empty() => {
             warn!("no valid certs in trust anchors file");
-            return Err(InvalidTrustRoots(()).into());
+            return Err("no trust roots in PEM file".into());
         }
         Ok(certs) => certs,
     };
-    let trust_anchors: Vec<webpki::TrustAnchor<'_>> = match certs
-        .iter()
-        .map(|cert| webpki::TrustAnchor::try_from_cert_der(&cert[..]))
-        .collect()
-    {
-        Err(error) => {
-            warn!(%error, "invalid trust anchor");
-            return Err(error.into());
-        }
-        Ok(certs) => certs,
-    };
-    roots.add_server_trust_anchors(trust_anchors.iter());
+
+    let (added, skipped) = roots.add_parsable_certificates(&certs[..]);
+    if skipped != 0 {
+        warn!("Skipped {} invalid trust anchors", skipped);
+    }
+    if added == 0 {
+        return Err("no trust roots loaded".into());
+    }
+
     let key = EcdsaKeyPair::from_pkcs8(params::SIGNATURE_ALG_RING_SIGNING, key_pkcs8)
         .map_err(InvalidKey)?;
 
@@ -70,7 +65,10 @@ pub fn watch(
         watch::channel(Arc::new(c))
     };
     let (server_tx, server_rx) = watch::channel(Arc::new(
-        store::server_config_builder(roots.clone()).with_single_cert(certs.clone(), key.clone()),
+        store::server_config_builder(roots.clone())
+            // empty cert resolver --- no server certificates, so handshakes will
+            // always fail.
+            .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new())),
     ));
 
     let rx = Receiver::new(identity.clone(), client_rx, server_rx);
@@ -113,7 +111,7 @@ mod params {
         rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
     pub const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
         rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
-    pub const TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
+    pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
     pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
         &[rustls::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
 }
