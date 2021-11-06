@@ -34,7 +34,15 @@ jobs:
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: |
-          for d in $(for toml in $(find . -mindepth 2 -name Cargo.toml -not -path '*/fuzz/*') ; do echo ${toml%/*} ; done | sort -r ) ; do
+          # Skip:
+          # - linkerd/app/**, linkerd2-proxy: top-level and slower to compile
+          # - **/fuzz: requires nightly
+          for d in $( find . -mindepth 2 -name Cargo.toml | sort | \
+                      sed -e 's/\/Cargo.toml$//' \
+                          -e '/linkerd\/app\/$/d' \
+                          -e '/\/fuzz$/d' \
+                          -e '/linkerd2-proxy$/d' )
+          do
             echo "# $d"
             (cd $d ; cargo check --all-targets)
           done
