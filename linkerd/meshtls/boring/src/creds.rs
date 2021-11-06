@@ -135,6 +135,9 @@ fn serialize_alpn(protocols: &[Vec<u8>]) -> Result<Vec<u8>> {
 
     // Encode each protocol as a length-prefixed string.
     for p in protocols {
+        if p.len() == 0 {
+            continue;
+        }
         if p.len() > 255 {
             return Err("ALPN protocols must be less than 256 bytes".into());
         }
@@ -151,6 +154,14 @@ fn test_serialize_alpn() {
     assert_eq!(serialize_alpn(&[b"h2".to_vec()]).unwrap(), b"\x02h2");
     assert_eq!(
         serialize_alpn(&[b"h2".to_vec(), b"http/1.1".to_vec()]).unwrap(),
+        b"\x02h2\x08http/1.1"
+    );
+    assert_eq!(
+        serialize_alpn(&[b"h2".to_vec(), b"http/1.1".to_vec()]).unwrap(),
+        b"\x02h2\x08http/1.1"
+    );
+    assert_eq!(
+        serialize_alpn(&[b"h2".to_vec(), vec![], b"http/1.1".to_vec()]).unwrap(),
         b"\x02h2\x08http/1.1"
     );
 
