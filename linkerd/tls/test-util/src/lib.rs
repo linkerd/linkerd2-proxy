@@ -1,3 +1,6 @@
+#![deny(warnings, rust_2018_idioms)]
+#![forbid(unsafe_code)]
+
 pub struct Entity {
     pub name: &'static str,
     pub trust_anchors: &'static [u8],
