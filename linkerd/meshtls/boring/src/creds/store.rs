@@ -1,39 +1,25 @@
-use boring::{
-    pkey::{PKey, Private},
-    ssl,
-    x509::{store::X509Store, X509StoreContext, X509},
-};
+use super::{BaseCreds, Certs, Creds, CredsTx};
+use boring::x509::{X509StoreContext, X509};
 use linkerd_error::Result;
 use linkerd_identity as id;
-use tokio::sync::watch;
+use std::sync::Arc;
 
 pub struct Store {
-    roots: X509Store,
-    key: PKey<Private>,
+    creds: Arc<BaseCreds>,
     csr: Vec<u8>,
     name: id::Name,
-    client_tx: watch::Sender<ssl::SslConnector>,
-    server_tx: watch::Sender<ssl::SslAcceptor>,
+    tx: CredsTx,
 }
 
 // === impl Store ===
 
 impl Store {
-    pub(super) fn new(
-        roots: X509Store,
-        key: PKey<Private>,
-        csr: &[u8],
-        name: id::Name,
-        client_tx: watch::Sender<ssl::SslConnector>,
-        server_tx: watch::Sender<ssl::SslAcceptor>,
-    ) -> Self {
+    pub(super) fn new(creds: Arc<BaseCreds>, csr: &[u8], name: id::Name, tx: CredsTx) -> Self {
         Self {
-            roots,
-            key,
+            creds,
             csr: csr.into(),
             name,
-            client_tx,
-            server_tx,
+            tx,
         }
     }
 
@@ -70,56 +56,42 @@ impl id::Credentials for Store {
         intermediates: Vec<id::DerX509>,
         _expiry: std::time::SystemTime,
     ) -> Result<()> {
-        let cert = X509::from_der(&leaf)?;
-        if !self.cert_matches_name(&cert) {
+        let leaf = X509::from_der(&leaf)?;
+        if !self.cert_matches_name(&leaf) {
             return Err("certificate does not have a DNS name SAN for the local identity".into());
         }
 
-        let mut chain = boring::stack::Stack::new()?;
-        chain.push(cert.clone())?;
-        for id::DerX509(der) in &intermediates {
-            let cert = X509::from_der(der)?;
-            chain.push(cert)?;
-        }
+        let intermediates = intermediates
+            .into_iter()
+            .map(|id::DerX509(der)| X509::from_der(&der).map_err(Into::into))
+            .collect::<Result<Vec<_>>>()?;
+
+        let creds = Creds {
+            base: self.creds.clone(),
+            certs: Some(Certs {
+                leaf,
+                intermediates,
+            }),
+        };
 
         let mut context = X509StoreContext::new()?;
-        if !context.init(&self.roots, &cert, &chain, |c| c.verify_cert())? {
+        let roots = creds.root_store()?;
+
+        let mut chain = boring::stack::Stack::new()?;
+        for i in &creds.certs.as_ref().unwrap().intermediates {
+            chain.push(i.to_owned())?;
+        }
+        let init = {
+            let leaf = &creds.certs.as_ref().unwrap().leaf;
+            context.init(&roots, leaf, &chain, |c| c.verify_cert())?
+        };
+        if !init {
             return Err("certificate could not be validated against the trust chain".into());
         }
 
-        let conn = {
-            // TODO(ver) Restrict TLS version, algorithms, etc.
-            let mut b = ssl::SslConnector::builder(ssl::SslMethod::tls_client())?;
-            b.set_private_key(self.key.as_ref())?;
-            b.set_cert_store(super::clone_roots(&self.roots)?);
-            b.set_certificate(cert.as_ref())?;
-            for id::DerX509(der) in &intermediates {
-                let cert = X509::from_der(der)?;
-                b.add_extra_chain_cert(cert)?;
-            }
-            b.build()
-        };
-
-        let acc = {
-            // mozilla_intermediate_v5 is the only variant that enables TLSv1.3, so we use that.
-            // TODO(ver) We should set explicit TLS versions, algorithms, etc.
-            let mut b = ssl::SslAcceptor::mozilla_intermediate_v5(ssl::SslMethod::tls_server())?;
-            b.set_private_key(self.key.as_ref())?;
-            b.set_cert_store(super::clone_roots(&self.roots)?);
-            b.set_certificate(cert.as_ref())?;
-            for id::DerX509(der) in &intermediates {
-                let cert = X509::from_der(der)?;
-                b.add_extra_chain_cert(cert)?;
-            }
-            b.set_verify(ssl::SslVerifyMode::PEER);
-            b.check_private_key()?;
-            b.build()
-        };
-
         // If receivers are dropped, we don't return an error (as this would likely cause the
         // updater to retry more aggressively). It's fine to silently ignore these errors.
-        let _ = self.server_tx.send(acc);
-        let _ = self.client_tx.send(conn);
+        let _ = self.tx.send(creds);
 
         Ok(())
     }

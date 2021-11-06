@@ -1,20 +1,20 @@
-use boring::ssl;
+use crate::creds::CredsRx;
 use linkerd_identity::Name;
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
 use linkerd_tls::{
     client::AlpnProtocols, ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef, ServerId,
 };
-use std::{future::Future, pin::Pin, task::Context};
-use tokio::sync::watch;
+use std::{future::Future, pin::Pin, sync::Arc, task::Context};
 
 #[derive(Clone)]
-pub struct NewClient(watch::Receiver<ssl::SslConnector>);
+pub struct NewClient(CredsRx);
 
 #[derive(Clone)]
 pub struct Connect {
+    rx: CredsRx,
+    alpn: Option<Arc<[Vec<u8>]>>,
     server_id: Name,
-    connector: ssl::SslConnector,
 }
 
 pub type ConnectFuture<I> = Pin<Box<dyn Future<Output = io::Result<ClientIo<I>>> + Send>>;
@@ -25,7 +25,7 @@ pub struct ClientIo<I>(tokio_boring::SslStream<I>);
 // === impl NewClient ===
 
 impl NewClient {
-    pub(crate) fn new(rx: watch::Receiver<ssl::SslConnector>) -> Self {
+    pub(crate) fn new(rx: CredsRx) -> Self {
         Self(rx)
     }
 }
@@ -34,7 +34,7 @@ impl NewService<ClientTls> for NewClient {
     type Service = Connect;
 
     fn new_service(&self, target: ClientTls) -> Self::Service {
-        Connect::new(target, (*self.0.borrow()).clone())
+        Connect::new(target, self.0.clone())
     }
 }
 
@@ -47,19 +47,13 @@ impl std::fmt::Debug for NewClient {
 // === impl Connect ===
 
 impl Connect {
-    pub(crate) fn new(client_tls: ClientTls, connector: ssl::SslConnector) -> Self {
+    pub(crate) fn new(client_tls: ClientTls, rx: CredsRx) -> Self {
         let ServerId(server_id) = client_tls.server_id;
-
-        if let Some(AlpnProtocols(protocols)) = client_tls.alpn {
-            if !protocols.is_empty() {
-                // todo!("support ALPN")
-                tracing::warn!("ALPN not supported");
-            }
-        }
-
+        let alpn = client_tls.alpn.map(|AlpnProtocols(ps)| ps.into());
         Self {
+            rx,
+            alpn,
             server_id,
-            connector,
         }
     }
 }
@@ -77,9 +71,13 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        let conn = self.connector.clone();
         let id = self.server_id.clone();
+        let connector = match &self.alpn {
+            None => self.rx.borrow().connector(&[]),
+            Some(alpn) => self.rx.borrow().connector(alpn),
+        };
         Box::pin(async move {
+            let conn = connector.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             let config = conn
                 .configure()
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;

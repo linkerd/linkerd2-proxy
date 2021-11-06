@@ -74,13 +74,10 @@ impl Param<LocalId> for Server {
 }
 
 impl Server {
-    pub fn spawn_with_alpn(self, alpn_protocols: Vec<Vec<u8>>) -> Result<Self> {
+    pub fn with_alpn(self, alpn_protocols: Vec<Vec<u8>>) -> Result<Self> {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(srv) => srv
-                .spawn_with_alpn(alpn_protocols)
-                .map(Self::Boring)
-                .map_err(Into::into),
+            Self::Boring(srv) => Ok(Self::Boring(srv.with_alpn(alpn_protocols))),
 
             #[cfg(feature = "rustls")]
             Self::Rustls(srv) => srv

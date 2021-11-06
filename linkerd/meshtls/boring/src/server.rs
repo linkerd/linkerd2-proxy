@@ -1,17 +1,16 @@
-use boring::ssl;
-use linkerd_error::Result;
+use crate::creds::CredsRx;
 use linkerd_identity::Name;
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
 use linkerd_tls::{ClientId, LocalId, NegotiatedProtocolRef, ServerTls};
-use std::{future::Future, pin::Pin, task::Context};
-use tokio::sync::watch;
+use std::{future::Future, pin::Pin, sync::Arc, task::Context};
 use tracing::debug;
 
 #[derive(Clone)]
 pub struct Server {
     name: Name,
-    rx: watch::Receiver<ssl::SslAcceptor>,
+    rx: CredsRx,
+    alpn: Option<Arc<[Vec<u8>]>>,
 }
 
 pub type TerminateFuture<I> =
@@ -23,18 +22,20 @@ pub struct ServerIo<I>(tokio_boring::SslStream<I>);
 // === impl Server ===
 
 impl Server {
-    pub(crate) fn new(name: Name, rx: watch::Receiver<ssl::SslAcceptor>) -> Self {
-        Self { name, rx }
+    pub(crate) fn new(name: Name, rx: CredsRx) -> Self {
+        Self {
+            name,
+            rx,
+            alpn: None,
+        }
     }
 
-    pub fn spawn_with_alpn(self, alpn_protocols: Vec<Vec<u8>>) -> Result<Self> {
-        if alpn_protocols.is_empty() {
-            return Ok(self);
+    pub fn with_alpn(mut self, alpn_protocols: Vec<Vec<u8>>) -> Self {
+        if !alpn_protocols.is_empty() {
+            self.alpn = Some(alpn_protocols.into());
         }
 
-        // todo!("support ALPN")
-        tracing::warn!("ALPN not supported");
-        Ok(self)
+        self
     }
 }
 
@@ -58,8 +59,14 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        let acc = (*self.rx.borrow()).clone();
+        // TODO(ver) we should avoid creating a new context for each connection.
+        let acceptor = match &self.alpn {
+            Some(alpn) => self.rx.borrow().acceptor(alpn),
+            None => self.rx.borrow().acceptor(&[]),
+        };
+
         Box::pin(async move {
+            let acc = acceptor.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             let io = tokio_boring::accept(&acc, io)
                 .await
                 .map(ServerIo)
