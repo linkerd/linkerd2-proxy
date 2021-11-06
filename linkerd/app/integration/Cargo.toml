@@ -38,7 +38,6 @@ rustls-pemfile = "0.2.1"
 tower = { version = "0.4.10", default-features = false }
 tonic = { version = "0.6", default-features = false }
 tracing = "0.1.29"
-webpki = "0.22"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 
 [dev-dependencies]
