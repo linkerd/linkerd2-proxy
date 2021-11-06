@@ -777,6 +777,7 @@ dependencies = [
  "linkerd-tracing",
  "linkerd2-proxy-api",
  "regex",
+ "rustls-pemfile",
  "socket2 0.4.2",
  "tokio",
  "tokio-rustls",
