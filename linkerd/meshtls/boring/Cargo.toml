@@ -18,3 +18,6 @@ linkerd-tls = { path = "../../tls" }
 tokio = { version = "1", features = ["macros", "sync"] }
 tokio-boring = "2"
 tracing = "0.1"
+
+[dev-dependencies]
+linkerd-tls-test-util = { path = "../../tls/test-util" }

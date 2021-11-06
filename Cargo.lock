@@ -1210,6 +1210,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-stack",
  "linkerd-tls",
+ "linkerd-tls-test-util",
  "tokio",
  "tokio-boring",
  "tracing",
