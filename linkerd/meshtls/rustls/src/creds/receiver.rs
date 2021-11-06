@@ -55,11 +55,35 @@ impl std::fmt::Debug for Receiver {
 mod tests {
     use super::*;
 
+    /// Returns the simplest default rustls server config.
+    ///
+    /// This configuration has no server cert, and will fail to accept all
+    /// incoming handshakes, but that doesn't matter for these tests, where we
+    /// don't actually do any TLS.
+    fn empty_server_config() -> rustls::ServerConfig {
+        rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_client_cert_verifier(rustls::server::NoClientAuth::new())
+            .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()))
+    }
+
+    /// Returns the simplest default rustls client config.
+    ///
+    /// This configuration will fail to handshake with any TLS servers, because
+    /// it doesn't trust any root certificates. However, that doesn't actually
+    /// matter for these tests, which don't actually do TLS.
+    fn empty_client_config() -> rustls::ClientConfig {
+        rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_no_client_auth()
+    }
+
     #[tokio::test]
     async fn test_server() {
-        let init_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
+        let init_config = Arc::new(empty_server_config());
         let (server_tx, server_rx) = watch::channel(init_config.clone());
-        let (_, client_rx) = watch::channel(Arc::new(rustls::ClientConfig::new()));
+        let (_, client_rx) = watch::channel(Arc::new(empty_client_config()));
         let receiver = Receiver {
             name: "example".parse().unwrap(),
             server_rx,
@@ -70,7 +94,7 @@ mod tests {
 
         assert!(Arc::ptr_eq(&server.config(), &init_config));
 
-        let server_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
+        let server_config = Arc::new(empty_server_config());
         server_tx
             .send(server_config.clone())
             .ok()
@@ -81,9 +105,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_server_with_alpn() {
-        let init_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
+        let init_config = Arc::new(empty_server_config());
         let (server_tx, server_rx) = watch::channel(init_config.clone());
-        let (_, client_rx) = watch::channel(Arc::new(rustls::ClientConfig::new()));
+        let (_, client_rx) = watch::channel(Arc::new(empty_client_config()));
         let receiver = Receiver {
             name: "example".parse().unwrap(),
             server_rx,
@@ -99,7 +123,7 @@ mod tests {
         assert!(!Arc::ptr_eq(&init_config, &init_sc));
         assert_eq!(init_sc.alpn_protocols, [b"my.alpn"]);
 
-        let update_config = Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new()));
+        let update_config = Arc::new(empty_server_config());
         assert!(!Arc::ptr_eq(&update_config, &init_config));
         server_tx
             .send(update_config.clone())
