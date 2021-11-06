@@ -32,7 +32,9 @@ impl Server {
             return Ok(self);
         }
 
-        todo!("support ALPN")
+        // todo!("support ALPN")
+        tracing::warn!("ALPN not supported");
+        Ok(self)
     }
 }
 

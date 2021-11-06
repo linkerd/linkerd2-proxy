@@ -52,7 +52,8 @@ impl Connect {
 
         if let Some(AlpnProtocols(protocols)) = client_tls.alpn {
             if !protocols.is_empty() {
-                todo!("support ALPN")
+                // todo!("support ALPN")
+                tracing::warn!("ALPN not supported");
             }
         }
 
