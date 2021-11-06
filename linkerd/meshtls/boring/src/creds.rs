@@ -135,7 +135,7 @@ fn serialize_alpn(protocols: &[Vec<u8>]) -> Result<Vec<u8>> {
 
     // Encode each protocol as a length-prefixed string.
     for p in protocols {
-        if p.len() == 0 {
+        if p.is_empty() {
             continue;
         }
         if p.len() > 255 {

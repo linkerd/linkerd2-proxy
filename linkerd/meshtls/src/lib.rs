@@ -79,10 +79,10 @@ impl Mode {
             #[cfg(feature = "boring")]
             Self::Boring => {
                 let (store, receiver) = boring::creds::watch(identity, roots_pem, key_pkcs8, csr)?;
-                return Ok((
+                Ok((
                     creds::Store::Boring(store),
                     creds::Receiver::Boring(receiver),
-                ));
+                ))
             }
 
             #[cfg(feature = "rustls")]
