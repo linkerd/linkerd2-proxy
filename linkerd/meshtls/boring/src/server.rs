@@ -78,7 +78,7 @@ where
                 })?;
 
             let client_id = io.client_identity();
-            let negotiated_protocol = io.negotiated_protocol().map(|p| p.to_owned());
+            let negotiated_protocol = io.negotiated_protocol();
 
             debug!(
                 tls = io.0.ssl().version_str(),
