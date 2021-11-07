@@ -54,16 +54,19 @@ type CredsTx = watch::Sender<Creds>;
 
 impl From<Arc<BaseCreds>> for Creds {
     fn from(base: Arc<BaseCreds>) -> Self {
-        Creds { base, certs: None }
+        Self { base, certs: None }
     }
 }
 
 impl Creds {
-    // TODO(ver) Restrict TLS version, algorithms, etc.
+    // TODO(ver) Specify certificate types, signing algorithms, cipher suites..
     pub(crate) fn acceptor(&self, alpn_protocols: &[Vec<u8>]) -> Result<ssl::SslAcceptor> {
         // mozilla_intermediate_v5 is the only variant that enables TLSv1.3, so we use that.
-        // TODO(ver) We should set explicit TLS versions, algorithms, etc.
         let mut conn = ssl::SslAcceptor::mozilla_intermediate_v5(ssl::SslMethod::tls_server())?;
+
+        // Force use of TLSv1.3.
+        conn.set_options(ssl::SslOptions::NO_TLSV1_2);
+        conn.clear_options(ssl::SslOptions::NO_TLSV1_3);
 
         let roots = self.root_store()?;
         tracing::debug!(
@@ -101,13 +104,19 @@ impl Creds {
         Ok(conn.build())
     }
 
-    // TODO(ver) Restrict TLS version, algorithms, etc.
+    // TODO(ver) Specify certificate types, signing algorithms, cipher suites..
     pub(crate) fn connector(&self, alpn_protocols: &[Vec<u8>]) -> Result<ssl::SslConnector> {
         // XXX(ver) This function reads from the environment and/or the filesystem. This likely is
         // at best wasteful and at worst unsafe (if another thread were to mutate these environment
         // variables simultaneously, for instance). Unfortunately, the boring APIs don't really give
         // us an alternative AFAICT.
         let mut conn = ssl::SslConnector::builder(ssl::SslMethod::tls_client())?;
+
+        // Explicitly enable use of TLSv1.3
+        conn.set_options(ssl::SslOptions::NO_TLSV1 | ssl::SslOptions::NO_TLSV1_1);
+        // XXX(ver) if we disable use of TLSv1.2, connections just hang.
+        //conn.set_options(ssl::SslOptions::NO_TLSV1_2);
+        conn.clear_options(ssl::SslOptions::NO_TLSV1_3);
 
         tracing::debug!(
             roots = ?self
