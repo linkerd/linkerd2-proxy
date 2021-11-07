@@ -71,9 +71,8 @@ impl Creds {
                 .base
                 .roots
                 .iter()
-                .filter_map(|c| c.digest(boring::hash::MessageDigest::sha256()).ok())
-                .map(|d| hex::ToHex::encode_hex(&&*d))
-                .collect::<Vec<String>>(),
+                .filter_map(|c| super::fingerprint(&*c))
+                .collect::<Vec<_>>(),
             "Configuring acceptor roots",
         );
         conn.set_cert_store(roots);
@@ -83,7 +82,7 @@ impl Creds {
 
         if let Some(certs) = &self.certs {
             tracing::debug!(
-                cert = ?certs.leaf.digest(boring::hash::MessageDigest::sha256()).ok().map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
+                cert = ?super::fingerprint(&*certs.leaf),
                 "Configuring acceptor certificate",
             );
             conn.set_private_key(&self.base.key)?;
@@ -115,9 +114,8 @@ impl Creds {
                 .base
                 .roots
                 .iter()
-                .filter_map(|c| c.digest(boring::hash::MessageDigest::sha256()).ok())
-                .map(|d| hex::ToHex::encode_hex(&&*d))
-                .collect::<Vec<String>>(),
+                .filter_map(|c| super::fingerprint(&*c))
+                .collect::<Vec<_>>(),
             "Configuring connector roots",
         );
         let roots = self.root_store()?;
@@ -125,7 +123,7 @@ impl Creds {
 
         if let Some(certs) = &self.certs {
             tracing::debug!(
-                cert = ?certs.leaf.digest(boring::hash::MessageDigest::sha256()).ok().map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
+                cert = ?super::fingerprint(&*certs.leaf),
                 intermediates = %certs.intermediates.len(),
                 "Configuring connector certificate",
             );

@@ -82,8 +82,8 @@ where
 
             debug!(
                 tls = io.0.ssl().version_str(),
-                srv.cert = ?io.0.ssl().certificate().and_then(|c| c.digest(boring::hash::MessageDigest::sha256()).ok()).map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
-                peer.cert = ?io.0.ssl().peer_certificate().and_then(|c| c.digest(boring::hash::MessageDigest::sha256()).ok()).map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
+                srv.cert = ?io.0.ssl().certificate().as_deref().and_then(super::fingerprint),
+                peer.cert = ?io.0.ssl().peer_certificate().as_deref().and_then(super::fingerprint),
                 client.id = ?client_id,
                 alpn = ?negotiated_protocol,
                 "Accepted TLS connection"

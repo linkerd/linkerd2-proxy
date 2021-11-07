@@ -94,8 +94,8 @@ where
 
             debug!(
                 tls = io.ssl().version_str(),
-                client.cert = ?io.ssl().certificate().and_then(|c| c.digest(boring::hash::MessageDigest::sha256()).ok()).map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
-                peer.cret = ?io.ssl().peer_certificate().and_then(|c| c.digest(boring::hash::MessageDigest::sha256()).ok()).map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
+                client.cert = ?io.ssl().certificate().and_then(super::fingerprint),
+                peer.cert = ?io.ssl().peer_certificate().as_deref().and_then(super::fingerprint),
                 alpn = ?io.ssl().selected_alpn_protocol(),
                 "Initiated TLS connection"
             );
