@@ -1,9 +1,10 @@
-#![cfg(test)]
-
 // These are basically integration tests for the `connection` submodule, but
 // they cannot be "real" integration tests because `connection` isn't a public
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use
 // by these tests.
+//
+// This file is almost identical to ../../rustls/tests/tls_accept.rs. Making this
+// generic makes this all much more complicated, though.
 
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
@@ -231,7 +232,7 @@ where
         // type, e.g. `Arc<Mutex>`, but using a channel simplifies the code and
         // parallels the server side.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalClientTls, CR>>();
-        let sender_clone = sender.clone();
+        let sender = sender.clone();
 
         let tls = Some(client_server_id.clone().map(Into::into));
         let client = async move {
@@ -241,7 +242,7 @@ where
                 .await;
             match conn {
                 Err(e) => {
-                    sender_clone
+                    sender
                         .send(Transported {
                             tls: None,
                             result: Err(e),
