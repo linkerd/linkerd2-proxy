@@ -15,5 +15,5 @@ pub use self::{
 fn fingerprint(c: &boring::x509::X509Ref) -> Option<String> {
     c.digest(boring::hash::MessageDigest::sha256())
         .ok()
-        .map(|d| hex::ToHex::encode_hex::<String>(&&*d)[0..8].to_string())
+        .map(|d| hex::encode(d)[0..8].to_string())
 }
