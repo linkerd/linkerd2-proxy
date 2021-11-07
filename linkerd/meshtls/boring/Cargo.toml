@@ -19,5 +19,11 @@ tokio = { version = "1", features = ["macros", "sync"] }
 tokio-boring = "2"
 tracing = "0.1"
 
+hex = "0.4"
+
 [dev-dependencies]
+linkerd-conditional = { path = "../../conditional" }
+linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-tls-test-util = { path = "../../tls/test-util" }
+linkerd-tracing = { path = "../../tracing" }
+tokio = { version = "1", features = ["rt-multi-thread"] }

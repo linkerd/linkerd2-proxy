@@ -2,7 +2,7 @@ use crate::creds::CredsRx;
 use linkerd_identity::Name;
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
-use linkerd_tls::{ClientId, LocalId, NegotiatedProtocolRef, ServerTls};
+use linkerd_tls::{ClientId, LocalId, NegotiatedProtocol, ServerTls};
 use std::{future::Future, pin::Pin, sync::Arc, task::Context};
 use tracing::debug;
 
@@ -78,9 +78,16 @@ where
                 })?;
 
             let client_id = io.client_identity();
-            let negotiated_protocol = io.negotiated_protocol_ref().map(|p| p.to_owned());
+            let negotiated_protocol = io.negotiated_protocol().map(|p| p.to_owned());
 
-            debug!(client.id = ?client_id, alpn = ?negotiated_protocol, "Accepted TLS connection");
+            debug!(
+                tls = io.0.ssl().version_str(),
+                srv.cert = ?io.0.ssl().certificate().and_then(|c| c.digest(boring::hash::MessageDigest::sha256()).ok()).map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
+                peer.cert = ?io.0.ssl().peer_certificate().and_then(|c| c.digest(boring::hash::MessageDigest::sha256()).ok()).map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
+                client.id = ?client_id,
+                alpn = ?negotiated_protocol,
+                "Accepted TLS connection"
+            );
             let tls = ServerTls::Established {
                 client_id,
                 negotiated_protocol,
@@ -93,17 +100,30 @@ where
 // === impl ServerIo ===
 
 impl<I> ServerIo<I> {
-    fn negotiated_protocol_ref(&self) -> Option<NegotiatedProtocolRef<'_>> {
+    #[inline]
+    fn negotiated_protocol(&self) -> Option<NegotiatedProtocol> {
         self.0
             .ssl()
             .selected_alpn_protocol()
-            .map(NegotiatedProtocolRef)
+            .map(|p| NegotiatedProtocol(p.to_vec()))
     }
 
     fn client_identity(&self) -> Option<ClientId> {
-        let cert = self.0.ssl().peer_certificate()?;
-        let peer = cert.subject_alt_names()?.pop()?;
-        peer.dnsname()?.parse().ok()
+        let cert = self.0.ssl().peer_certificate().or_else(|| {
+            debug!("Connection missing peer certificate");
+            None
+        })?;
+        let sans = cert.subject_alt_names().or_else(|| {
+            debug!("Peer certificate missing SANs");
+            None
+        })?;
+        sans.into_iter()
+            .filter_map(|san| san.dnsname()?.parse().ok())
+            .next()
+            .or_else(|| {
+                debug!("Peer certificate missing DNS SANs");
+                None
+            })
     }
 }
 

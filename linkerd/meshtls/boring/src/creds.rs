@@ -66,11 +66,29 @@ impl Creds {
         let mut conn = ssl::SslAcceptor::mozilla_intermediate_v5(ssl::SslMethod::tls_server())?;
 
         let roots = self.root_store()?;
+        tracing::debug!(
+            roots = ?self
+                .base
+                .roots
+                .iter()
+                .filter_map(|c| c.digest(boring::hash::MessageDigest::sha256()).ok())
+                .map(|d| hex::ToHex::encode_hex(&&*d))
+                .collect::<Vec<String>>(),
+            "Configuring acceptor roots",
+        );
         conn.set_cert_store(roots);
 
+        // Ensure that client certificates are validated when present.
+        conn.set_verify(ssl::SslVerifyMode::PEER);
+
         if let Some(certs) = &self.certs {
+            tracing::debug!(
+                cert = ?certs.leaf.digest(boring::hash::MessageDigest::sha256()).ok().map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
+                "Configuring acceptor certificate",
+            );
             conn.set_private_key(&self.base.key)?;
             conn.set_certificate(&certs.leaf)?;
+            conn.check_private_key()?;
             for c in &certs.intermediates {
                 conn.add_extra_chain_cert(c.to_owned())?;
             }
@@ -92,12 +110,28 @@ impl Creds {
         // us an alternative AFAICT.
         let mut conn = ssl::SslConnector::builder(ssl::SslMethod::tls_client())?;
 
+        tracing::debug!(
+            roots = ?self
+                .base
+                .roots
+                .iter()
+                .filter_map(|c| c.digest(boring::hash::MessageDigest::sha256()).ok())
+                .map(|d| hex::ToHex::encode_hex(&&*d))
+                .collect::<Vec<String>>(),
+            "Configuring connector roots",
+        );
         let roots = self.root_store()?;
         conn.set_cert_store(roots);
 
         if let Some(certs) = &self.certs {
+            tracing::debug!(
+                cert = ?certs.leaf.digest(boring::hash::MessageDigest::sha256()).ok().map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
+                intermediates = %certs.intermediates.len(),
+                "Configuring connector certificate",
+            );
             conn.set_private_key(&self.base.key)?;
             conn.set_certificate(&certs.leaf)?;
+            conn.check_private_key()?;
             for c in &certs.intermediates {
                 conn.add_extra_chain_cert(c.to_owned())?;
             }

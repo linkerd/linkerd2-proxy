@@ -6,6 +6,7 @@ use linkerd_tls::{
     client::AlpnProtocols, ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef, ServerId,
 };
 use std::{future::Future, pin::Pin, sync::Arc, task::Context};
+use tracing::debug;
 
 #[derive(Clone)]
 pub struct NewClient(CredsRx);
@@ -90,6 +91,14 @@ where
                     // std::fmt::Debug, which is a pain.
                     None => io::Error::new(io::ErrorKind::Other, "unexpected TLS handshake error"),
                 })?;
+
+            debug!(
+                tls = io.ssl().version_str(),
+                client.cert = ?io.ssl().certificate().and_then(|c| c.digest(boring::hash::MessageDigest::sha256()).ok()).map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
+                peer.cret = ?io.ssl().peer_certificate().and_then(|c| c.digest(boring::hash::MessageDigest::sha256()).ok()).map(|d| hex::ToHex::encode_hex::<String>(&&*d)),
+                alpn = ?io.ssl().selected_alpn_protocol(),
+                "Initiated TLS connection"
+            );
             Ok(ClientIo(io))
         })
     }
