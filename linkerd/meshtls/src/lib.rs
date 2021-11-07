@@ -114,12 +114,12 @@ impl FromStr for Mode {
 
     fn from_str(s: &str) -> Result<Self> {
         #[cfg(feature = "boring")]
-        if s == "boring" {
+        if s.eq_ignore_ascii_case("boring") {
             return Ok(Self::Boring);
         }
 
         #[cfg(feature = "rustls")]
-        if s == "rustls" {
+        if s.eq_ignore_ascii_case("rustls") {
             return Ok(Self::Rustls);
         }
 
