@@ -47,7 +47,7 @@ jobs:
   # types) and have the potential to be flakey as they depend on opening sockets and may have timing
   # sensitivity.
   test-integration:
-    timeout-minutes: 15
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
