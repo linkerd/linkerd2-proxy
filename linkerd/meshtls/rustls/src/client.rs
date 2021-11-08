@@ -2,7 +2,7 @@ use futures::prelude::*;
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef};
-use std::{pin::Pin, sync::Arc, task::Context};
+use std::{pin::Pin, sync::Arc};
 use tokio::sync::watch;
 use tokio_rustls::rustls::{ClientConfig, Session};
 
@@ -84,8 +84,11 @@ where
     type Error = io::Error;
     type Future = ConnectFuture<I>;
 
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> io::Poll<()> {
-        io::Poll::Ready(Ok(()))
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, io: I) -> Self::Future {
@@ -101,7 +104,7 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ClientIo<I> {
     #[inline]
     fn poll_read(
         mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        cx: &mut std::task::Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> io::Poll<()> {
         Pin::new(&mut self.0).poll_read(cx, buf)
@@ -110,26 +113,30 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ClientIo<I> {
 
 impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     #[inline]
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> io::Poll<()> {
         Pin::new(&mut self.0).poll_flush(cx)
     }
 
     #[inline]
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> io::Poll<()> {
         Pin::new(&mut self.0).poll_shutdown(cx)
     }
 
     #[inline]
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> io::Poll<usize> {
         Pin::new(&mut self.0).poll_write(cx, buf)
     }
 
     #[inline]
     fn poll_write_vectored(
         mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        cx: &mut std::task::Context<'_>,
         bufs: &[io::IoSlice<'_>],
-    ) -> io::Poll<usize> {
+    ) -> std::task::Poll<Result<usize, std::io::Error>> {
         Pin::new(&mut self.0).poll_write_vectored(cx, bufs)
     }
 
