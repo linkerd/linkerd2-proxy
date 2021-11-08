@@ -75,4 +75,4 @@ debug = false
 lto = true
 
 [patch.crates-io]
-webpki = { git = "https://github.com/hawkw/webpki", branch = "cert-dns-names-0.22" }
+webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.22" }

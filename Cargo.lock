@@ -2610,7 +2610,7 @@ dependencies = [
 [[package]]
 name = "webpki"
 version = "0.22.0"
-source = "git+https://github.com/hawkw/webpki?branch=cert-dns-names-0.22#a26def03ec88d3b69542ccd2f0073369ecedc4f9"
+source = "git+https://github.com/linkerd/webpki?branch=cert-dns-names-0.22#a26def03ec88d3b69542ccd2f0073369ecedc4f9"
 dependencies = [
  "ring",
  "untrusted",
