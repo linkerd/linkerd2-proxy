@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 //! This crate provides an implementation of _meshtls_ backed by `boringssl` (as provided by
-//! https://github.com/cloudflare/boring).
+//! <https://github.com/cloudflare/boring>).
 //!
 //! There are several caveats with the current implementation:
 //!
