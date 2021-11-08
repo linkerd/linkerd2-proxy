@@ -15,7 +15,7 @@ permissions:
 jobs:
 
   # Linting
-  boring-clippy:
+  check-boring:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
@@ -25,9 +25,9 @@ jobs:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup component add clippy
       - working-directory: linkerd/meshtls
-        run: cargo clippy --no-default-features --features=boring
+        run: cargo clippy --no-default-features --features=boring --all-targets
 
-  boring-test:
+  test-boring:
     timeout-minutes: 15
     runs-on: ubuntu-latest
     container:

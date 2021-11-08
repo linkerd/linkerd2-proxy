@@ -14,21 +14,79 @@ permissions:
 
 jobs:
 
-  # Run all non-integration tests.
+  # Run non-integration tests. This should be quick.
   test-unit:
     timeout-minutes: 15
     runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.0-buster
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: cargo test --all --exclude=linkerd-app-integration --exclude=linkerd-meshtls-boring --no-run
-      - run: cargo test --all --exclude=linkerd-app-integration --exclude=linkerd-meshtls-boring
+      - run: |
+          cargo test --all --no-run \
+            --exclude=linkerd-app \
+            --exclude=linkerd-app-admin \
+            --exclude=linkerd-app-core \
+            --exclude=linkerd-app-gateway \
+            --exclude=linkerd-app-inbound \
+            --exclude=linkerd-app-integration \
+            --exclude=linkerd-app-outbound \
+            --exclude=linkerd-meshtls \
+            --exclude=linkerd-meshtls-boring \
+            --exclude=linkerd-meshtls-rustls \
+            --exclude=linkerd2-proxy
+      - run: |
+          cargo test --all \
+            --exclude=linkerd-app \
+            --exclude=linkerd-app-admin \
+            --exclude=linkerd-app-core \
+            --exclude=linkerd-app-gateway \
+            --exclude=linkerd-app-inbound \
+            --exclude=linkerd-app-integration \
+            --exclude=linkerd-app-outbound \
+            --exclude=linkerd-meshtls \
+            --exclude=linkerd-meshtls-boring \
+            --exclude=linkerd-meshtls-rustls \
+            --exclude=linkerd2-proxy
 
-  # Run only the integration tests. These have the potential to be flakey as they depend on opening
-  # sockets and may have timing sensitivity.
+  # Test the default meshtls backend.
+  test-rustls:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.0-buster
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - working-directory: ./linkerd/meshtls
+        run: cargo test --features=rustls --no-run
+      - working-directory: ./linkerd/meshtls
+        run: cargo test --features=rustls
+
+  # Run only the app-level tests. These may take longer to compile (usually due to very large stack
+  # types) and have the potential to be flakey as they depend on opening sockets and may have timing
+  # sensitivity.
   test-integration:
     timeout-minutes: 15
     runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.0-buster
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: cargo test --package=linkerd-app-integration --no-run
-      - run: cargo test --package=linkerd-app-integration
+      - run: |
+          cargo test --all --no-run \
+            --exclude=linkerd-app \
+            --exclude=linkerd-app-admin \
+            --exclude=linkerd-app-core \
+            --exclude=linkerd-app-gateway \
+            --exclude=linkerd-app-inbound \
+            --exclude=linkerd-app-integration \
+            --exclude=linkerd-app-outbound
+      - run: |
+          cargo test --all \
+            --exclude=linkerd-app \
+            --exclude=linkerd-app-admin \
+            --exclude=linkerd-app-core \
+            --exclude=linkerd-app-gateway \
+            --exclude=linkerd-app-inbound \
+            --exclude=linkerd-app-integration \
+            --exclude=linkerd-app-outbound
