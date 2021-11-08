@@ -39,7 +39,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: make build
+      - env:
+          CARGO_RELEASE: "1"
+        run: make build
 
   # Run only the app-level tests. These may take longer to compile (usually due to very large stack
   # types) and have the potential to be flakey as they depend on opening sockets and may have timing
