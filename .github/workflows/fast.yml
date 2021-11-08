@@ -44,7 +44,11 @@ jobs:
       image: docker://rust:1.56.0-buster
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: cargo doc --no-deps
+      - run: |
+          cargo doc --no-deps \
+            --exclude=linkerd-meshtls \
+            --exclude=linkerd-meshtls-boring \
+            --exclude=linkerd-meshtls-rustls \
 
   # Test the default meshtls backend.
   test-meshtls:
@@ -73,6 +77,13 @@ jobs:
       - run: rustup component add clippy
       - working-directory: linkerd/meshtls
         run: cargo clippy --features=boring --all-targets
+      - working-directory: linkerd/meshtls
+        run: |
+          cargo doc --all-features --no-deps \
+            --package=linkerd-meshtls \
+            --package=linkerd-meshtls-boring \
+            --package=linkerd-meshtls-rustls
+
 
   # Run non-integration tests. This should be quick.
   test-unit:
