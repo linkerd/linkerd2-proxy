@@ -44,7 +44,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: cargo doc
+      - run: cargo doc --all --no-deps
 
   # Test the default meshtls backend.
   test-meshtls:
