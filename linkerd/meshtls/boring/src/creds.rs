@@ -165,7 +165,6 @@ impl Creds {
 /// Encodes a list of ALPN protocols into a slice of bytes.
 ///
 /// `boring` requires that the list of protocols be encoded in the wire format.
-#[allow(dead_code)]
 fn serialize_alpn(protocols: &[Vec<u8>]) -> Result<Vec<u8>> {
     // Allocate a buffer to hold the encoded protocols.
     let mut bytes = {
