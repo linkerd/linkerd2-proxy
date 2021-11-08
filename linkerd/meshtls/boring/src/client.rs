@@ -73,10 +73,10 @@ where
 
     fn call(&mut self, io: I) -> Self::Future {
         let id = self.server_id.clone();
-        let connector = match &self.alpn {
-            None => self.rx.borrow().connector(&[]),
-            Some(alpn) => self.rx.borrow().connector(alpn),
-        };
+        let connector = self
+            .rx
+            .borrow()
+            .connector(self.alpn.as_deref().unwrap_or(&[]));
         Box::pin(async move {
             let conn = connector.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             let config = conn

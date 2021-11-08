@@ -60,11 +60,10 @@ where
 
     fn call(&mut self, io: I) -> Self::Future {
         // TODO(ver) we should avoid creating a new context for each connection.
-        let acceptor = match &self.alpn {
-            Some(alpn) => self.rx.borrow().acceptor(alpn),
-            None => self.rx.borrow().acceptor(&[]),
-        };
-
+        let acceptor = self
+            .rx
+            .borrow()
+            .acceptor(self.alpn.as_deref().unwrap_or(&[]));
         Box::pin(async move {
             let acc = acceptor.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             let io = tokio_boring::accept(&acc, io)
