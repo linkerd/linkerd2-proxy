@@ -6,9 +6,9 @@
 
 // Emit a compile-time error if no TLS implementations are enabled. When adding
 // new implementations, add their feature flags here!
-#[cfg(not(any(feature = "meshtls-rustls")))]
+#[cfg(not(any(feature = "meshtls-boring", feature = "meshtls-rustls")))]
 compile_error!(
-    "at least one of the following TLS implementations must be enabled: 'meshtls-rustls'"
+    "at least one of the following TLS implementations must be enabled: 'meshtls-boring', 'meshtls-rustls'"
 );
 
 use linkerd_app::{core::transport::BindTcp, trace, Config};

@@ -7,14 +7,20 @@ use std::{
     task::{Context, Poll},
 };
 
-#[cfg(not(feature = "__has_any_tls_impls"))]
-use std::marker::PhantomData;
+#[cfg(feature = "boring")]
+use crate::boring;
 
 #[cfg(feature = "rustls")]
 use crate::rustls;
 
+#[cfg(not(feature = "__has_any_tls_impls"))]
+use std::marker::PhantomData;
+
 #[derive(Clone, Debug)]
 pub enum NewClient {
+    #[cfg(feature = "boring")]
+    Boring(boring::NewClient),
+
     #[cfg(feature = "rustls")]
     Rustls(rustls::NewClient),
 
@@ -24,6 +30,9 @@ pub enum NewClient {
 
 #[derive(Clone)]
 pub enum Connect {
+    #[cfg(feature = "boring")]
+    Boring(boring::Connect),
+
     #[cfg(feature = "rustls")]
     Rustls(rustls::Connect),
 
@@ -33,6 +42,9 @@ pub enum Connect {
 
 #[pin_project::pin_project(project = ConnectFutureProj)]
 pub enum ConnectFuture<I> {
+    #[cfg(feature = "boring")]
+    Boring(#[pin] boring::ConnectFuture<I>),
+
     #[cfg(feature = "rustls")]
     Rustls(#[pin] rustls::ConnectFuture<I>),
 
@@ -43,6 +55,9 @@ pub enum ConnectFuture<I> {
 #[pin_project::pin_project(project = ClientIoProj)]
 #[derive(Debug)]
 pub enum ClientIo<I> {
+    #[cfg(feature = "boring")]
+    Boring(#[pin] boring::ClientIo<I>),
+
     #[cfg(feature = "rustls")]
     Rustls(#[pin] rustls::ClientIo<I>),
 
@@ -55,8 +70,12 @@ pub enum ClientIo<I> {
 impl NewService<ClientTls> for NewClient {
     type Service = Connect;
 
+    #[inline]
     fn new_service(&self, target: ClientTls) -> Self::Service {
         match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(new_client) => Connect::Boring(new_client.new_service(target)),
+
             #[cfg(feature = "rustls")]
             Self::Rustls(new_client) => Connect::Rustls(new_client.new_service(target)),
 
@@ -76,8 +95,12 @@ where
     type Error = io::Error;
     type Future = ConnectFuture<I>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(connect) => <boring::Connect as Service<I>>::poll_ready(connect, cx),
+
             #[cfg(feature = "rustls")]
             Self::Rustls(connect) => <rustls::Connect as Service<I>>::poll_ready(connect, cx),
             #[cfg(not(feature = "__has_any_tls_impls"))]
@@ -88,6 +111,9 @@ where
     #[inline]
     fn call(&mut self, io: I) -> Self::Future {
         match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(connect) => ConnectFuture::Boring(connect.call(io)),
+
             #[cfg(feature = "rustls")]
             Self::Rustls(connect) => ConnectFuture::Rustls(connect.call(io)),
             #[cfg(not(feature = "__has_any_tls_impls"))]
@@ -104,8 +130,15 @@ where
 {
     type Output = io::Result<ClientIo<I>>;
 
+    #[inline]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project() {
+            #[cfg(feature = "boring")]
+            ConnectFutureProj::Boring(f) => {
+                let res = futures::ready!(f.poll(cx));
+                Poll::Ready(res.map(ClientIo::Boring))
+            }
+
             #[cfg(feature = "rustls")]
             ConnectFutureProj::Rustls(f) => {
                 let res = futures::ready!(f.poll(cx));
@@ -127,6 +160,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ClientIo<I> {
         buf: &mut io::ReadBuf<'_>,
     ) -> io::Poll<()> {
         match self.project() {
+            #[cfg(feature = "boring")]
+            ClientIoProj::Boring(io) => io.poll_read(cx, buf),
+
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_read(cx, buf),
             #[cfg(not(feature = "__has_any_tls_impls"))]
@@ -139,6 +175,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     #[inline]
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
         match self.project() {
+            #[cfg(feature = "boring")]
+            ClientIoProj::Boring(io) => io.poll_flush(cx),
+
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_flush(cx),
             #[cfg(not(feature = "__has_any_tls_impls"))]
@@ -149,6 +188,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     #[inline]
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
         match self.project() {
+            #[cfg(feature = "boring")]
+            ClientIoProj::Boring(io) => io.poll_shutdown(cx),
+
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_shutdown(cx),
             #[cfg(not(feature = "__has_any_tls_impls"))]
@@ -159,6 +201,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     #[inline]
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
         match self.project() {
+            #[cfg(feature = "boring")]
+            ClientIoProj::Boring(io) => io.poll_write(cx, buf),
+
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_write(cx, buf),
             #[cfg(not(feature = "__has_any_tls_impls"))]
@@ -173,6 +218,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<Result<usize, std::io::Error>> {
         match self.project() {
+            #[cfg(feature = "boring")]
+            ClientIoProj::Boring(io) => io.poll_write_vectored(cx, bufs),
+
             #[cfg(feature = "rustls")]
             ClientIoProj::Rustls(io) => io.poll_write_vectored(cx, bufs),
             #[cfg(not(feature = "__has_any_tls_impls"))]
@@ -183,6 +231,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     #[inline]
     fn is_write_vectored(&self) -> bool {
         match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(io) => io.is_write_vectored(),
+
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.is_write_vectored(),
             #[cfg(not(feature = "__has_any_tls_impls"))]
@@ -195,6 +246,9 @@ impl<I> HasNegotiatedProtocol for ClientIo<I> {
     #[inline]
     fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
         match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(io) => io.negotiated_protocol(),
+
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.negotiated_protocol(),
             #[cfg(not(feature = "__has_any_tls_impls"))]
@@ -207,6 +261,9 @@ impl<I: io::PeerAddr> io::PeerAddr for ClientIo<I> {
     #[inline]
     fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
         match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(io) => io.peer_addr(),
+
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.peer_addr(),
             #[cfg(not(feature = "__has_any_tls_impls"))]

@@ -50,8 +50,15 @@ deny = [
     # the `tokio-rustls` re-export.
     { name = "rustls", wrappers = ["tokio-rustls", "linkerd-meshtls-rustls"] }
 ]
-skip = []
-skip-tree = []
+skip = [
+    # boring-sys pulls in an old version via bindgen. See
+    # https://github.com/cloudflare/boring/pull/55.
+    { name = "ansi_term" },
+]
+skip-tree = [
+    # Hasn't seen a new release since 2017. Pulls in an older version of nom.
+    { name = "procinfo" }
+]
 
 [sources]
 unknown-registry = "deny"

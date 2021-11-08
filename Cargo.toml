@@ -31,6 +31,7 @@ members = [
     "linkerd/identity",
     "linkerd/io",
     "linkerd/meshtls",
+    "linkerd/meshtls/boring",
     "linkerd/meshtls/rustls",
     "linkerd/metrics",
     "linkerd/opencensus",
