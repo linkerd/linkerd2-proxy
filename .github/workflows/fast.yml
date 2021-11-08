@@ -36,7 +36,7 @@ jobs:
       - run: rustup component add rustfmt
       - run: make check-fmt
 
-  # Generate docs
+  # Generate docs.
   check-docs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -86,7 +86,7 @@ jobs:
 
   # Run non-integration tests. This should be quick.
   test-unit:
-    timeout-minutes: 15
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
