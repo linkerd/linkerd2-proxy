@@ -90,9 +90,9 @@ impl Store {
     }
 
     /// Builds a new TLS client configuration.
-    fn client(&self, resolver: CertResolver) -> rustls::ClientConfig {
+    fn client(&self, resolver: Arc<CertResolver>) -> rustls::ClientConfig {
         let mut cfg = client_config_builder(self.server_cert_verifier.clone())
-            .with_client_cert_resolver(Arc::new(resolver));
+            .with_client_cert_resolver(resolver);
 
         // Disable session resumption for the time-being until resumption is
         // more tested.
@@ -102,8 +102,8 @@ impl Store {
     }
 
     /// Builds a new TLS server configuration.
-    fn server(&self, resolver: CertResolver) -> rustls::ServerConfig {
-        server_config_builder(self.roots.clone()).with_cert_resolver(Arc::new(resolver))
+    fn server(&self, resolver: Arc<CertResolver>) -> rustls::ServerConfig {
+        server_config_builder(self.roots.clone()).with_cert_resolver(resolver)
     }
 
     /// Ensures the certificate is valid for the services we terminate for TLS. This assumes that
@@ -156,10 +156,10 @@ impl id::Credentials for Store {
         // Use the client's verifier to validate the certificate for our local name.
         self.validate(&*chain)?;
 
-        let resolver = CertResolver(Arc::new(rustls::sign::CertifiedKey::new(
+        let resolver = Arc::new(CertResolver(Arc::new(rustls::sign::CertifiedKey::new(
             chain,
             Arc::new(Key(self.key.clone())),
-        )));
+        ))));
 
         // Build new client and server TLS configs.
         let client = self.client(resolver.clone());
