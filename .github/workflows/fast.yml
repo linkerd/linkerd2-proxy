@@ -24,7 +24,6 @@ jobs:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup component add clippy
       - run: cargo clippy --all --exclude linkerd-meshtls-boring
-      - run: cargo doc --all --no-deps
 
   # Enforce automated formatting.
   check-fmt:
@@ -36,6 +35,16 @@ jobs:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup component add rustfmt
       - run: make check-fmt
+
+  # Generate docs
+  check-docs:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.0-buster
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: cargo doc --no-deps
 
   # Test the default meshtls backend.
   test-meshtls:
