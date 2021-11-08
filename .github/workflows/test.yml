@@ -73,7 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: |
-          cargo test --all --no-run \
+          cargo test --no-run \
             --package=linkerd-app \
             --package=linkerd-app-admin \
             --package=linkerd-app-core \
@@ -82,7 +82,7 @@ jobs:
             --package=linkerd-app-integration \
             --package=linkerd-app-outbound
       - run: |
-          cargo test --all \
+          cargo test \
             --package=linkerd-app \
             --package=linkerd-app-admin \
             --package=linkerd-app-core \
