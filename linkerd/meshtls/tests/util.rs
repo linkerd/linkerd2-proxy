@@ -1,17 +1,9 @@
-// These are basically integration tests for the `connection` submodule, but
-// they cannot be "real" integration tests because `connection` isn't a public
-// interface and because `connection` exposes a `#[cfg(test)]`-only API for use
-// by these tests.
-//
-// This file is almost identical to ../../rustls/tests/tls_accept.rs. Making this
-// generic makes this all much more complicated, though.
-
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_error::Infallible;
 use linkerd_identity::{Credentials, DerX509, Name};
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use linkerd_meshtls_boring as meshtls;
+use linkerd_meshtls as meshtls;
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},
@@ -24,35 +16,11 @@ use linkerd_tls as tls;
 use linkerd_tls_test_util as test_util;
 use std::{future::Future, net::SocketAddr, sync::mpsc, time::Duration};
 use tokio::net::TcpStream;
-use tracing::instrument::Instrument;
+use tracing::Instrument;
 
-type ServerConn<T, I> = (
-    (tls::ConditionalServerTls, T),
-    io::EitherIo<meshtls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
-);
-
-fn load(ent: &test_util::Entity) -> (meshtls::creds::Store, meshtls::NewClient, meshtls::Server) {
-    let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
-    let (mut store, rx) = meshtls::creds::watch(
-        ent.name.parse().unwrap(),
-        roots_pem,
-        ent.key,
-        b"fake CSR data",
-    )
-    .expect("credentials must be readable");
-
-    let expiry = std::time::SystemTime::now() + Duration::from_secs(600);
-    store
-        .set_certificate(DerX509(ent.crt.to_vec()), vec![], expiry)
-        .expect("certificate must be valid");
-
-    (store, rx.new_client(), rx.server())
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn plaintext() {
-    let (_foo, _, server_tls) = load(&test_util::FOO_NS1);
-    let (_bar, client_tls, _) = load(&test_util::BAR_NS1);
+pub async fn plaintext(mode: meshtls::Mode) {
+    let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
+    let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
     let (client_result, server_result) = run_test(
         client_tls,
         Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
@@ -75,10 +43,9 @@ async fn plaintext() {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn proxy_to_proxy_tls_works() {
-    let (_foo, _, server_tls) = load(&test_util::FOO_NS1);
-    let (_bar, client_tls, _) = load(&test_util::BAR_NS1);
+pub async fn proxy_to_proxy_tls_works(mode: meshtls::Mode) {
+    let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
+    let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
     let server_id = tls::ServerId(test_util::FOO_NS1.name.parse().unwrap());
     let (client_result, server_result) = run_test(
         client_tls.clone(),
@@ -106,13 +73,12 @@ async fn proxy_to_proxy_tls_works() {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
-    let (_foo, _, server_tls) = load(&test_util::FOO_NS1);
+pub async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match(mode: meshtls::Mode) {
+    let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
 
     // Misuse the client's identity instead of the server's identity. Any
     // identity other than `server_tls.server_identity` would work.
-    let (_bar, client_tls, _) = load(&test_util::BAR_NS1);
+    let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
     let sni = test_util::BAR_NS1.name.parse::<Name>().unwrap();
 
     let (client_result, server_result) = run_test(
@@ -137,6 +103,33 @@ async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     assert_eq!(&server_result.result.unwrap()[..], START_OF_TLS);
 }
 
+type ServerConn<T, I> = (
+    (tls::ConditionalServerTls, T),
+    io::EitherIo<meshtls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
+);
+
+fn load(
+    mode: meshtls::Mode,
+    ent: &test_util::Entity,
+) -> (meshtls::creds::Store, meshtls::NewClient, meshtls::Server) {
+    let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
+    let (mut store, rx) = mode
+        .watch(
+            ent.name.parse().unwrap(),
+            roots_pem,
+            ent.key,
+            b"fake CSR data",
+        )
+        .expect("credentials must be readable");
+
+    let expiry = std::time::SystemTime::now() + Duration::from_secs(600);
+    store
+        .set_certificate(DerX509(ent.crt.to_vec()), vec![], expiry)
+        .expect("certificate must be valid");
+
+    (store, rx.new_client(), rx.server())
+}
+
 struct Transported<I, R> {
     tls: Option<I>,
 
@@ -149,7 +142,8 @@ struct ServerParams {
     identity: meshtls::Server,
 }
 
-type ClientIo = io::EitherIo<io::ScopedIo<TcpStream>, meshtls::ClientIo<io::ScopedIo<TcpStream>>>;
+type ClientIo =
+    io::EitherIo<io::ScopedIo<TcpStream>, linkerd_meshtls::ClientIo<io::ScopedIo<TcpStream>>>;
 
 /// Runs a test for a single TCP connection. `client` processes the connection
 /// on the client side and `server` processes the connection on the server
@@ -158,7 +152,7 @@ async fn run_test<C, CF, CR, S, SF, SR>(
     client_tls: meshtls::NewClient,
     client_server_id: Conditional<tls::ServerId, tls::NoClientTls>,
     client: C,
-    server_id: meshtls::Server,
+    server_tls: meshtls::Server,
     server: S,
 ) -> (
     Transported<tls::ConditionalClientTls, CR>,
@@ -183,7 +177,7 @@ where
 
         let detect = tls::NewDetectTls::<meshtls::Server, _, _>::new(
             ServerParams {
-                identity: server_id,
+                identity: server_tls,
             },
             move |meta: (tls::ConditionalServerTls, Addrs)| {
                 let server = server.clone();
@@ -221,7 +215,7 @@ where
             accept.oneshot(io).await.expect("connection failed");
             tracing::debug!("done");
         }
-        .instrument(tracing::info_span!("server", %listen_addr));
+        .instrument(tracing::info_span!("run_server", %listen_addr));
 
         (server, listen_addr, receiver)
     };
@@ -250,14 +244,13 @@ where
                         .expect("send result");
                 }
                 Ok(conn) => {
-                    let result = client(conn).await;
+                    let result = client(conn).instrument(tracing::info_span!("client")).await;
                     sender
                         .send(Transported { tls, result })
                         .expect("send result");
                 }
             };
-        }
-        .instrument(tracing::info_span!("client"));
+        };
 
         (client, receiver)
     };

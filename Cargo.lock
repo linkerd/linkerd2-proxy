@@ -1188,14 +1188,20 @@ name = "linkerd-meshtls"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "linkerd-conditional",
  "linkerd-error",
  "linkerd-identity",
  "linkerd-io",
  "linkerd-meshtls-boring",
  "linkerd-meshtls-rustls",
+ "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-tls",
+ "linkerd-tls-test-util",
+ "linkerd-tracing",
  "pin-project",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
