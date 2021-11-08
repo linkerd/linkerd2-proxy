@@ -62,6 +62,16 @@ jobs:
         run: cargo test --all-features --no-run
       - working-directory: ./linkerd/meshtls
         run: cargo test --all-features
+      - working-directory: ./linkerd/meshtls
+        run: |
+          cargo test --no-run \
+            --package=linkerd-meshtls-boring \
+            --package=linkerd-meshtls-rustls
+      - working-directory: ./linkerd/meshtls
+        run: |
+          cargo test \
+            --package=linkerd-meshtls-boring \
+            --package=linkerd-meshtls-rustls
       # Run clippy on the boring components while we have the dependencies instaled.
       - run: rustup component add clippy
       - working-directory: linkerd/meshtls
