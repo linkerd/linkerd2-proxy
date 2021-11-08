@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup component add clippy
-      - run: cargo clippy --all
+      - run: cargo clippy --all --exclude=linkerd-meshtls-boring
 
   # Enforce automated formatting.
   check-fmt:
@@ -48,6 +48,7 @@ jobs:
       - run: |
           cargo doc --all --no-deps \
             --exclude=linkerd-meshtls \
+            --exclude=linkerd-meshtls-boring \
             --exclude=linkerd-meshtls-rustls
 
   # Test the meshtls backends.
@@ -57,6 +58,7 @@ jobs:
     container:
       image: docker://rust:1.56.0-buster
     steps:
+      - run: apt update && apt install -y cmake clang golang # for boring
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - working-directory: ./linkerd/meshtls
         run: cargo test --all-features --no-run
@@ -65,16 +67,23 @@ jobs:
       - working-directory: ./linkerd/meshtls
         run: |
           cargo test --no-run \
+            --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
       - working-directory: ./linkerd/meshtls
         run: |
           cargo test \
+            --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
       - working-directory: linkerd/meshtls
         run: |
           cargo doc --all-features --no-deps \
             --package=linkerd-meshtls \
+            --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
+      # Run clippy on the boring components while we have the dependencies installed.
+      - run: rustup component add clippy
+      - working-directory: linkerd/meshtls
+        run: cargo clippy --features=boring --all-targets
 
   # Run non-integration tests. This should be quick.
   test-unit:
@@ -95,6 +104,7 @@ jobs:
             --exclude=linkerd-app-outbound \
             --exclude=linkerd-app-test \
             --exclude=linkerd-meshtls \
+            --exclude=linkerd-meshtls-boring \
             --exclude=linkerd-meshtls-rustls \
             --exclude=linkerd2-proxy
       - run: |
@@ -108,6 +118,7 @@ jobs:
             --exclude=linkerd-app-outbound \
             --exclude=linkerd-app-test \
             --exclude=linkerd-meshtls \
+            --exclude=linkerd-meshtls-boring \
             --exclude=linkerd-meshtls-rustls \
             --exclude=linkerd2-proxy
 

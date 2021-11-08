@@ -8,6 +8,7 @@ publish = false
 
 [features]
 rustls = ["linkerd-meshtls-rustls", "__has_any_tls_impls"]
+boring = ["linkerd-meshtls-boring", "__has_any_tls_impls"]
 # Enabled if *any* TLS impl is enabled.
 __has_any_tls_impls = []
 
@@ -16,6 +17,7 @@ futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../error" }
 linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
+linkerd-meshtls-boring = { path = "boring", optional = true }
 linkerd-meshtls-rustls = { path = "rustls", optional = true }
 linkerd-stack = { path = "../stack" }
 linkerd-tls = { path = "../tls" }

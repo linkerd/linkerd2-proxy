@@ -10,6 +10,7 @@ description = "The main proxy executable"
 [features]
 default = ["multicore", "meshtls-rustls"]
 multicore = ["tokio/rt-multi-thread", "num_cpus"]
+meshtls-boring = ["linkerd-meshtls/boring"]
 meshtls-rustls = ["linkerd-meshtls/rustls"]
 
 [dependencies]
