@@ -87,6 +87,7 @@ jobs:
             --exclude=linkerd-app-inbound \
             --exclude=linkerd-app-integration \
             --exclude=linkerd-app-outbound \
+            --exclude=linkerd-app-test \
             --exclude=linkerd-meshtls \
             --exclude=linkerd-meshtls-boring \
             --exclude=linkerd-meshtls-rustls \
@@ -100,6 +101,7 @@ jobs:
             --exclude=linkerd-app-inbound \
             --exclude=linkerd-app-integration \
             --exclude=linkerd-app-outbound \
+            --exclude=linkerd-app-test \
             --exclude=linkerd-meshtls \
             --exclude=linkerd-meshtls-boring \
             --exclude=linkerd-meshtls-rustls \
@@ -113,6 +115,7 @@ jobs:
             --exclude=linkerd-app-inbound \
             --exclude=linkerd-app-integration \
             --exclude=linkerd-app-outbound \
+            --exclude=linkerd-app-test \
             --exclude=linkerd-meshtls \
             --exclude=linkerd-meshtls-boring \
             --exclude=linkerd-meshtls-rustls \
