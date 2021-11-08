@@ -74,19 +74,19 @@ jobs:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: |
           cargo test --all --no-run \
-            --exclude=linkerd-app \
-            --exclude=linkerd-app-admin \
-            --exclude=linkerd-app-core \
-            --exclude=linkerd-app-gateway \
-            --exclude=linkerd-app-inbound \
-            --exclude=linkerd-app-integration \
-            --exclude=linkerd-app-outbound
+            --package=linkerd-app \
+            --package=linkerd-app-admin \
+            --package=linkerd-app-core \
+            --package=linkerd-app-gateway \
+            --package=linkerd-app-inbound \
+            --package=linkerd-app-integration \
+            --package=linkerd-app-outbound
       - run: |
           cargo test --all \
-            --exclude=linkerd-app \
-            --exclude=linkerd-app-admin \
-            --exclude=linkerd-app-core \
-            --exclude=linkerd-app-gateway \
-            --exclude=linkerd-app-inbound \
-            --exclude=linkerd-app-integration \
-            --exclude=linkerd-app-outbound
+            --package=linkerd-app \
+            --package=linkerd-app-admin \
+            --package=linkerd-app-core \
+            --package=linkerd-app-gateway \
+            --package=linkerd-app-inbound \
+            --package=linkerd-app-integration \
+            --package=linkerd-app-outbound
