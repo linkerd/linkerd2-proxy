@@ -1,4 +1,4 @@
-name: check
+name: slow
 
 on:
   pull_request: {}
@@ -13,17 +13,6 @@ permissions:
   contents: read
 
 jobs:
-
-  # Linting
-  check-clippy:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.56.0-buster
-    steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: rustup component add clippy
-      - run: cargo clippy --all --exclude linkerd-meshtls-boring
 
   # Iterate through all (non-fuzzer) sub-crates to ensure each compiles independently.
   check-each-crate:
@@ -45,23 +34,38 @@ jobs:
             (cd $d ; cargo check --all-targets)
           done
 
-  # Enforce automated formatting.
-  check-fmt:
-    timeout-minutes: 10
+  check-release:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: make build
+
+  # Run only the app-level tests. These may take longer to compile (usually due to very large stack
+  # types) and have the potential to be flakey as they depend on opening sockets and may have timing
+  # sensitivity.
+  test-integration:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: rustup component add rustfmt
-      - run: make check-fmt
-
-  # Generate docs
-  check-docs:
-    timeout-minutes: 15
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: cargo doc
+      - run: |
+          cargo test --no-run \
+            --package=linkerd-app \
+            --package=linkerd-app-admin \
+            --package=linkerd-app-core \
+            --package=linkerd-app-gateway \
+            --package=linkerd-app-inbound \
+            --package=linkerd-app-integration \
+            --package=linkerd-app-outbound
+      - run: |
+          cargo test \
+            --package=linkerd-app \
+            --package=linkerd-app-admin \
+            --package=linkerd-app-core \
+            --package=linkerd-app-gateway \
+            --package=linkerd-app-inbound \
+            --package=linkerd-app-integration \
+            --package=linkerd-app-outbound
