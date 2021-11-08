@@ -35,5 +35,5 @@ jobs:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz
-      # Iterate through all fuzz crates to ensure each compiles independently.
-      - run: cd linkerd/${{matrix.dir}}/fuzz && cargo +nightly fuzz build
+      - working-directory: linkerd/${{matrix.dir}}/fuzz
+        run: cargo +nightly fuzz build
