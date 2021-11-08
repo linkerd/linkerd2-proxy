@@ -69,3 +69,13 @@ jobs:
             --package=linkerd-app-inbound \
             --package=linkerd-app-integration \
             --package=linkerd-app-outbound
+      - run: |
+          cargo doc --no-deps \
+            --package=linkerd-app \
+            --package=linkerd-app-admin \
+            --package=linkerd-app-core \
+            --package=linkerd-app-gateway \
+            --package=linkerd-app-inbound \
+            --package=linkerd-app-integration \
+            --package=linkerd-app-outbound
+

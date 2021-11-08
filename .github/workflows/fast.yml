@@ -36,20 +36,6 @@ jobs:
       - run: rustup component add rustfmt
       - run: make check-fmt
 
-  # Generate docs
-  check-docs:
-    timeout-minutes: 15
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.56.0-buster
-    steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: |
-          cargo doc --no-deps \
-            --exclude=linkerd-meshtls \
-            --exclude=linkerd-meshtls-boring \
-            --exclude=linkerd-meshtls-rustls \
-
   # Test the default meshtls backend.
   test-meshtls:
     timeout-minutes: 15
@@ -83,7 +69,6 @@ jobs:
             --package=linkerd-meshtls \
             --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
-
 
   # Run non-integration tests. This should be quick.
   test-unit:
@@ -119,3 +104,17 @@ jobs:
             --exclude=linkerd-meshtls-boring \
             --exclude=linkerd-meshtls-rustls \
             --exclude=linkerd2-proxy
+      - run: |
+          cargo doc --all --no-deps \
+            --exclude=linkerd-app \
+            --exclude=linkerd-app-admin \
+            --exclude=linkerd-app-core \
+            --exclude=linkerd-app-gateway \
+            --exclude=linkerd-app-inbound \
+            --exclude=linkerd-app-integration \
+            --exclude=linkerd-app-outbound \
+            --exclude=linkerd-meshtls \
+            --exclude=linkerd-meshtls-boring \
+            --exclude=linkerd-meshtls-rustls \
+            --exclude=linkerd2-proxy
+
