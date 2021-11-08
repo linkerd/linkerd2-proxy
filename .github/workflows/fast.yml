@@ -1,3 +1,4 @@
+# Each job should typically run in under 5 minutes.
 name: fast
 
 on:

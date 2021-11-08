@@ -1,3 +1,4 @@
+# Each job typically runs for more than 5 minutes.
 name: slow
 
 on:
