@@ -31,9 +31,11 @@ impl Server {
     }
 
     pub fn with_alpn(mut self, alpn_protocols: Vec<Vec<u8>>) -> Self {
-        if !alpn_protocols.is_empty() {
-            self.alpn = Some(alpn_protocols.into());
-        }
+        self.alpn = if alpn_protocols.is_empty() {
+            None
+        } else {
+            Some(alpn_protocols.into())
+        };
 
         self
     }
