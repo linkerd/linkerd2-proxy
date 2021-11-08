@@ -7,9 +7,9 @@ edition = "2018"
 publish = false
 
 [features]
-default = ["rustls"]
-rustls = ["linkerd-meshtls-rustls"]
-
+rustls = ["linkerd-meshtls-rustls", "__has_any_tls_impls"]
+# Enabled if *any* TLS impl is enabled.
+__has_any_tls_impls = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
@@ -20,3 +20,11 @@ linkerd-meshtls-rustls = { path = "rustls", optional = true }
 linkerd-stack = { path = "../stack" }
 linkerd-tls = { path = "../tls" }
 pin-project = "1"
+
+[dev-dependencies]
+linkerd-conditional = { path = "../conditional" }
+linkerd-proxy-transport = { path = "../proxy/transport" }
+linkerd-tls-test-util = { path = "../tls/test-util" }
+linkerd-tracing = { path = "../tracing", features = ["ansi"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tracing = "0.1"

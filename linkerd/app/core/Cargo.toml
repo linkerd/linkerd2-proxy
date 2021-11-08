@@ -12,10 +12,6 @@ This crate conglomerates proxy configuration, runtime administration, etc,
 independently of the inbound and outbound proxy logic.
 """
 
-[features]
-default = ["meshtls-rustls"]
-meshtls-rustls = ["linkerd-meshtls/rustls"]
-
 [dependencies]
 bytes = "1"
 drain = { version = "0.1.0", features = ["retain"] }

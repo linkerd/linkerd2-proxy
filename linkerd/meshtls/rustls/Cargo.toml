@@ -27,9 +27,4 @@ tracing = "0.1"
 webpki = "0.22"
 
 [dev-dependencies]
-linkerd-conditional = { path = "../../conditional" }
-linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-tls-test-util = { path = "../../tls/test-util" }
-linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-tower = { version = "0.4.10", default-features = false, features = ["util"] }

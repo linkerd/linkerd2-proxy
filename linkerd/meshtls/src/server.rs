@@ -9,6 +9,9 @@ use std::{
     task::{Context, Poll},
 };
 
+#[cfg(not(feature = "__has_any_tls_impls"))]
+use std::marker::PhantomData;
+
 #[cfg(feature = "rustls")]
 use crate::rustls;
 
@@ -16,12 +19,18 @@ use crate::rustls;
 pub enum Server {
     #[cfg(feature = "rustls")]
     Rustls(rustls::Server),
+
+    #[cfg(not(feature = "__has_any_tls_impls"))]
+    NoTls,
 }
 
 #[pin_project::pin_project(project = TerminateFutureProj)]
 pub enum TerminateFuture<I> {
     #[cfg(feature = "rustls")]
     Rustls(#[pin] rustls::TerminateFuture<I>),
+
+    #[cfg(not(feature = "__has_any_tls_impls"))]
+    NoTls(PhantomData<fn(I)>),
 }
 
 #[pin_project::pin_project(project = ServerIoProj)]
@@ -29,6 +38,9 @@ pub enum TerminateFuture<I> {
 pub enum ServerIo<I> {
     #[cfg(feature = "rustls")]
     Rustls(#[pin] rustls::ServerIo<I>),
+
+    #[cfg(not(feature = "__has_any_tls_impls"))]
+    NoTls(PhantomData<fn(I)>),
 }
 
 // === impl Server ===
@@ -38,6 +50,9 @@ impl Param<LocalId> for Server {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(srv) => srv.param(),
+
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 }
@@ -50,6 +65,9 @@ impl Server {
                 .spawn_with_alpn(alpn_protocols)
                 .map(Self::Rustls)
                 .map_err(Into::into),
+
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(alpn_protocols),
         }
     }
 }
@@ -66,6 +84,9 @@ where
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(svc) => <rustls::Server as Service<I>>::poll_ready(svc, cx),
+
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx),
         }
     }
 
@@ -74,6 +95,9 @@ where
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(svc) => TerminateFuture::Rustls(svc.call(io)),
+
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(io),
         }
     }
 }
@@ -93,6 +117,9 @@ where
                 let res = futures::ready!(f.poll(cx));
                 Poll::Ready(res.map(|(tls, io)| (tls, ServerIo::Rustls(io))))
             }
+
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx),
         }
     }
 }
@@ -109,6 +136,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ServerIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_read(cx, buf),
+
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx, buf),
         }
     }
 }
@@ -119,6 +149,8 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_flush(cx),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx),
         }
     }
 
@@ -127,6 +159,8 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_shutdown(cx),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx),
         }
     }
 
@@ -135,6 +169,8 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_write(cx, buf),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx, buf),
         }
     }
 
@@ -147,6 +183,8 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         match self.project() {
             #[cfg(feature = "rustls")]
             ServerIoProj::Rustls(io) => io.poll_write_vectored(cx, bufs),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(cx, bufs),
         }
     }
 
@@ -155,6 +193,8 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.is_write_vectored(),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 }
@@ -165,6 +205,8 @@ impl<I: io::PeerAddr> io::PeerAddr for ServerIo<I> {
         match self {
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.peer_addr(),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(),
         }
     }
 }

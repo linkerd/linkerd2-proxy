@@ -1,3 +1,6 @@
+#![deny(warnings, rust_2018_idioms)]
+#![forbid(unsafe_code)]
+
 pub struct Entity {
     pub name: &'static str,
     pub trust_anchors: &'static [u8],
@@ -17,6 +20,13 @@ pub static FOO_NS1: Entity = Entity {
     trust_anchors: include_bytes!("testdata/ca1.pem"),
     crt: include_bytes!("testdata/foo-ns1-ca1/crt.der"),
     key: include_bytes!("testdata/foo-ns1-ca1/key.p8"),
+};
+
+pub static FOO_NS1_CA2: Entity = Entity {
+    name: "foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    trust_anchors: include_bytes!("testdata/ca2.pem"),
+    crt: include_bytes!("testdata/foo-ns1-ca2/crt.der"),
+    key: include_bytes!("testdata/foo-ns1-ca2/key.p8"),
 };
 
 pub static BAR_NS1: Entity = Entity {

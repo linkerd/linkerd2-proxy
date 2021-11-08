@@ -4,6 +4,8 @@
 mod client;
 pub mod creds;
 mod server;
+#[cfg(test)]
+mod tests;
 
 pub use self::{
     client::{ClientIo, Connect, ConnectFuture, NewClient},
