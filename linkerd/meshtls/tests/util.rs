@@ -1,3 +1,6 @@
+#![deny(warnings)]
+#![forbid(unsafe_code)]
+
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_error::Infallible;
@@ -226,7 +229,6 @@ where
         // type, e.g. `Arc<Mutex>`, but using a channel simplifies the code and
         // parallels the server side.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalClientTls, CR>>();
-        let sender = sender.clone();
 
         let tls = Some(client_server_id.clone().map(Into::into));
         let client = async move {

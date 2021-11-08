@@ -75,7 +75,7 @@ jobs:
       # Run clippy on the boring components while we have the dependencies instaled.
       - run: rustup component add clippy
       - working-directory: linkerd/meshtls
-        run: cargo clippy --no-default-features --features=boring --all-targets
+        run: cargo clippy --features=boring --all-targets
 
   # Run only the app-level tests. These may take longer to compile (usually due to very large stack
   # types) and have the potential to be flakey as they depend on opening sockets and may have timing
