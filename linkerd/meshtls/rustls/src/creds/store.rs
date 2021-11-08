@@ -36,21 +36,18 @@ pub(super) fn client_config_builder(
         // algorithms), but they provide good enough defaults for now.
         // TODO: lock down the verification further.
         //
-        // NOTE(eliza): Rustls considers setting a custom server cert
-        // verifier to be a "dangerous configuration", but we're doing
-        // *exactly* what its builder API does internally. the difference is
-        // just that we want to share the verifier with the `Store`, so that
-        // it can be used in `Store::validate`, so we have to `Arc` it and
-        // pass it in ourselves. this is considered "dangerous" because we
-        // could pass in some arbitrary verifier, but we're actually using
-        // the same verifier `rustls` makes by default. so, we're not
-        // *actually* doing anything untoward here...
+        // NOTE(eliza): Rustls considers setting a custom server cert verifier
+        // to be a "dangerous configuration", but we're doing *exactly* what its
+        // builder API does internally. However, we want to share the verifier
+        // with the `Store` so that it can be used in `Store::validate` which
+        // requires using this API.
         .with_custom_certificate_verifier(cert_verifier)
 }
 
-pub(super) fn server_config_builder(
+pub(super) fn server_config(
     roots: rustls::RootCertStore,
-) -> rustls::ConfigBuilder<rustls::ServerConfig, rustls::server::WantsServerCert> {
+    resolver: Arc<dyn rustls::server::ResolvesServerCert>,
+) -> Arc<rustls::ServerConfig> {
     // Ask TLS clients for a certificate and accept any certificate issued by our trusted CA(s).
     //
     // XXX: Rustls's built-in verifiers don't let us tweak things as fully as we'd like (e.g.
@@ -64,6 +61,8 @@ pub(super) fn server_config_builder(
         .with_protocol_versions(TLS_VERSIONS)
         .expect("server config must be valid")
         .with_client_cert_verifier(client_cert_verifier)
+        .with_cert_resolver(resolver)
+        .into()
 }
 
 // === impl Store ===
@@ -90,7 +89,7 @@ impl Store {
     }
 
     /// Builds a new TLS client configuration.
-    fn client(&self, resolver: Arc<CertResolver>) -> rustls::ClientConfig {
+    fn client_config(&self, resolver: Arc<CertResolver>) -> Arc<rustls::ClientConfig> {
         let mut cfg = client_config_builder(self.server_cert_verifier.clone())
             .with_client_cert_resolver(resolver);
 
@@ -98,12 +97,7 @@ impl Store {
         // more tested.
         cfg.enable_tickets = false;
 
-        cfg
-    }
-
-    /// Builds a new TLS server configuration.
-    fn server(&self, resolver: Arc<CertResolver>) -> rustls::ServerConfig {
-        server_config_builder(self.roots.clone()).with_cert_resolver(resolver)
+        cfg.into()
     }
 
     /// Ensures the certificate is valid for the services we terminate for TLS. This assumes that
@@ -114,13 +108,15 @@ impl Store {
         static NO_OCSP: &[u8] = &[];
         let end_entity = &certs[0];
         let intermediates = &certs[1..];
+        let no_scts = &mut std::iter::empty();
+        let now = std::time::SystemTime::now();
         self.server_cert_verifier.verify_server_cert(
             end_entity,
             intermediates,
             &name,
-            &mut std::iter::empty(), // no certificate transparency logs
+            no_scts,
             NO_OCSP,
-            std::time::SystemTime::now(),
+            now,
         )?;
         debug!("Certified");
         Ok(())
@@ -162,12 +158,12 @@ impl id::Credentials for Store {
         ))));
 
         // Build new client and server TLS configs.
-        let client = self.client(resolver.clone());
-        let server = self.server(resolver);
+        let client = self.client_config(resolver.clone());
+        let server = server_config(self.roots.clone(), resolver);
 
         // Publish the new configs.
-        let _ = self.client_tx.send(client.into());
-        let _ = self.server_tx.send(server.into());
+        let _ = self.client_tx.send(client);
+        let _ = self.server_tx.send(server);
 
         Ok(())
     }

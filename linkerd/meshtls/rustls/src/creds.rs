@@ -59,17 +59,22 @@ pub fn watch(
     ));
 
     let (client_tx, client_rx) = {
+        // Since we don't have a certificate yet, build a client configuration
+        // that doesn't attempt client authentication. Once we get a
+        // certificate, the `Store` will publish a new configuration with a
+        // client certificate resolver.
         let mut c =
             store::client_config_builder(server_cert_verifier.clone()).with_no_client_auth();
         c.enable_tickets = false;
         watch::channel(Arc::new(c))
     };
-    let (server_tx, server_rx) = watch::channel(Arc::new(
-        store::server_config_builder(roots.clone())
-            // empty cert resolver --- no server certificates, so handshakes will
-            // always fail.
-            .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new())),
-    ));
+    let (server_tx, server_rx) = {
+        // Since we don't have a certificate yet, use an empty cert resolver so
+        // that handshaking always fails. Once we get a certificate, the `Store`
+        // will publish a new configuration with a server certificate resolver.
+        let empty_resolver = Arc::new(rustls::server::ResolvesServerCertUsingSni::new());
+        watch::channel(store::server_config(roots.clone(), empty_resolver))
+    };
 
     let rx = Receiver::new(identity.clone(), client_rx, server_rx);
     let store = Store::new(
