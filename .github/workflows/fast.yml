@@ -73,16 +73,16 @@ jobs:
           cargo test \
             --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
-      # Run clippy on the boring components while we have the dependencies instaled.
-      - run: rustup component add clippy
-      - working-directory: linkerd/meshtls
-        run: cargo clippy --features=boring --all-targets
       - working-directory: linkerd/meshtls
         run: |
           cargo doc --all-features --no-deps \
             --package=linkerd-meshtls \
             --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
+      # Run clippy on the boring components while we have the dependencies installed.
+      - run: rustup component add clippy
+      - working-directory: linkerd/meshtls
+        run: cargo clippy --features=boring --all-targets
 
   # Run non-integration tests. This should be quick.
   test-unit:
@@ -121,3 +121,26 @@ jobs:
             --exclude=linkerd-meshtls-rustls \
             --exclude=linkerd2-proxy
 
+  # Check for security advisories.
+  #
+  # TODO(ver): This should open issues against the linkerd2 repo (and be run in a cron).
+  deps-advisories:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    # Prevent sudden announcement of a new advisory from failing Ci.
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+    - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d
+      with:
+        command: check advisories
+
+  # Audit licenses, unreleased crates, and unexpected duplicate versions.
+  deps-bans:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+    - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d
+      with:
+        command: check bans licenses sources
