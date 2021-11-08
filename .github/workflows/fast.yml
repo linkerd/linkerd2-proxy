@@ -38,7 +38,7 @@ jobs:
 
   # Generate docs
   check-docs:
-    timeout-minutes: 15
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
@@ -50,9 +50,9 @@ jobs:
             --exclude=linkerd-meshtls-boring \
             --exclude=linkerd-meshtls-rustls
 
-  # Test the default meshtls backend.
+  # Test the meshtls backends.
   test-meshtls:
-    timeout-minutes: 15
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.0-buster
