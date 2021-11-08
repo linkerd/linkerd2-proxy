@@ -1231,20 +1231,16 @@ name = "linkerd-meshtls-rustls"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd-conditional",
  "linkerd-error",
  "linkerd-identity",
  "linkerd-io",
- "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-tls",
  "linkerd-tls-test-util",
- "linkerd-tracing",
  "ring",
  "thiserror",
  "tokio",
  "tokio-rustls",
- "tower",
  "tracing",
  "webpki",
 ]
