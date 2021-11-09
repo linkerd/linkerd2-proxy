@@ -45,10 +45,7 @@ multiple-versions = "deny"
 wildcards = "allow"
 highlight = "all"
 deny = [
-    # linkerd-meshtls-rustls needs an explicit `rustls` dependency to enable the
-    # "dangerous-configuration" feature flag. all other crates should only use
-    # the `tokio-rustls` re-export.
-    { name = "rustls", wrappers = ["tokio-rustls", "linkerd-meshtls-rustls"] }
+    { name = "rustls", wrappers = ["tokio-rustls"] }
 ]
 skip = [
     # boring-sys pulls in an old version via bindgen. See

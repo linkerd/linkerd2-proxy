@@ -1235,7 +1235,6 @@ dependencies = [
  "linkerd-tls",
  "linkerd-tls-test-util",
  "ring",
- "rustls",
  "rustls-pemfile",
  "thiserror",
  "tokio",
