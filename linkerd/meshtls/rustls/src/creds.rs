@@ -26,9 +26,19 @@ pub fn watch(
     csr: &[u8],
 ) -> Result<(Store, Receiver)> {
     let mut roots = rustls::RootCertStore::empty();
-    let (added, skipped) = roots
-        .add_pem_file(&mut std::io::Cursor::new(roots_pem))
-        .map_err(InvalidTrustRoots)?;
+    let certs = match rustls_pemfile::certs(&mut std::io::Cursor::new(roots_pem)) {
+        Err(error) => {
+            warn!(%error, "invalid trust anchors file");
+            return Err(error.into());
+        }
+        Ok(certs) if certs.is_empty() => {
+            warn!("no valid certs in trust anchors file");
+            return Err("no trust roots in PEM file".into());
+        }
+        Ok(certs) => certs,
+    };
+
+    let (added, skipped) = roots.add_parsable_certificates(&certs[..]);
     if skipped != 0 {
         warn!("Skipped {} invalid trust anchors", skipped);
     }
@@ -39,18 +49,43 @@ pub fn watch(
     let key = EcdsaKeyPair::from_pkcs8(params::SIGNATURE_ALG_RING_SIGNING, key_pkcs8)
         .map_err(InvalidKey)?;
 
+    // XXX: Rustls's built-in verifiers don't let us tweak things as fully as we'd like (e.g.
+    // controlling the set of trusted signature algorithms), but they provide good enough
+    // defaults for now.
+    // TODO: lock down the verification further.
+    let server_cert_verifier = Arc::new(rustls::client::WebPkiVerifier::new(
+        roots.clone(),
+        None, // no certificate transparency policy
+    ));
+
     let (client_tx, client_rx) = {
-        let mut c = rustls::ClientConfig::new();
-        c.root_store = roots.clone();
+        // Since we don't have a certificate yet, build a client configuration
+        // that doesn't attempt client authentication. Once we get a
+        // certificate, the `Store` will publish a new configuration with a
+        // client certificate resolver.
+        let mut c =
+            store::client_config_builder(server_cert_verifier.clone()).with_no_client_auth();
         c.enable_tickets = false;
         watch::channel(Arc::new(c))
     };
-    let (server_tx, server_rx) = watch::channel(Arc::new(rustls::ServerConfig::new(
-        rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots.clone()),
-    )));
+    let (server_tx, server_rx) = {
+        // Since we don't have a certificate yet, use an empty cert resolver so
+        // that handshaking always fails. Once we get a certificate, the `Store`
+        // will publish a new configuration with a server certificate resolver.
+        let empty_resolver = Arc::new(rustls::server::ResolvesServerCertUsingSni::new());
+        watch::channel(store::server_config(roots.clone(), empty_resolver))
+    };
 
     let rx = Receiver::new(identity.clone(), client_rx, server_rx);
-    let store = Store::new(roots, key, csr, identity, client_tx, server_tx);
+    let store = Store::new(
+        roots,
+        server_cert_verifier,
+        key,
+        csr,
+        identity,
+        client_tx,
+        server_tx,
+    );
 
     Ok((store, rx))
 }
@@ -81,7 +116,7 @@ mod params {
         rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
     pub const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
         rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
-    pub const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_3];
-    pub static TLS_SUPPORTED_CIPHERSUITES: [&rustls::SupportedCipherSuite; 1] =
-        [&rustls::ciphersuite::TLS13_CHACHA20_POLY1305_SHA256];
+    pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
+    pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
+        &[rustls::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
 }

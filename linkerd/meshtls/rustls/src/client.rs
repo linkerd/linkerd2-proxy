@@ -2,9 +2,9 @@ use futures::prelude::*;
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef};
-use std::{pin::Pin, sync::Arc, task::Context};
+use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
 use tokio::sync::watch;
-use tokio_rustls::rustls::{ClientConfig, Session};
+use tokio_rustls::rustls::{self, ClientConfig};
 
 /// A `NewService` that produces `Connect` services from a dynamic TLS configuration.
 #[derive(Clone)]
@@ -15,7 +15,7 @@ pub struct NewClient {
 /// A `Service` that initiates client-side TLS connections.
 #[derive(Clone)]
 pub struct Connect {
-    server_id: webpki::DNSName,
+    server_id: rustls::ServerName,
     config: Arc<ClientConfig>,
 }
 
@@ -68,9 +68,8 @@ impl Connect {
             }
         };
 
-        let server_id = webpki::DNSNameRef::try_from_ascii(client_tls.server_id.as_bytes())
-            .expect("identity must be a valid DNS name")
-            .to_owned();
+        let server_id = rustls::ServerName::try_from(client_tls.server_id.as_str())
+            .expect("identity must be a valid DNS name");
 
         Self { server_id, config }
     }
@@ -90,7 +89,8 @@ where
 
     fn call(&mut self, io: I) -> Self::Future {
         tokio_rustls::TlsConnector::from(self.config.clone())
-            .connect(self.server_id.as_ref(), io)
+            // XXX(eliza): it's a bummer that the server name has to be cloned here...
+            .connect(self.server_id.clone(), io)
             .map_ok(ClientIo)
     }
 }
@@ -145,7 +145,7 @@ impl<I> HasNegotiatedProtocol for ClientIo<I> {
         self.0
             .get_ref()
             .1
-            .get_alpn_protocol()
+            .alpn_protocol()
             .map(NegotiatedProtocolRef)
     }
 }
