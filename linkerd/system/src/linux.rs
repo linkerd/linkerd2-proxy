@@ -44,6 +44,7 @@ pub fn max_fds() -> io::Result<Option<u64>> {
     Ok(max_fds)
 }
 
+#[allow(unsafe_code)]
 fn sysconf(num: libc::c_int, name: &'static str) -> Result<u64, io::Error> {
     match unsafe { libc::sysconf(num) } {
         e if e <= 0 => {

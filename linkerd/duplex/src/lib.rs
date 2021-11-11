@@ -2,7 +2,7 @@
 //!
 //! This module uses unsafe code to implement [`BufMut`].
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms, unsafe_code)]
 
 use bytes::{Buf, BufMut};
 use futures::ready;
@@ -315,6 +315,7 @@ impl Buf for CopyBuf {
     }
 }
 
+#[allow(unsafe_code)]
 unsafe impl BufMut for CopyBuf {
     fn remaining_mut(&self) -> usize {
         self.buf.len() - self.write_pos

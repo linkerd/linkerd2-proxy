@@ -77,6 +77,7 @@ where
 }
 
 #[cfg(target_os = "linux")]
+#[allow(unsafe_code)]
 fn orig_dst_addr(sock: &TcpStream) -> io::Result<OrigDstAddr> {
     use std::os::unix::io::AsRawFd;
 
@@ -94,6 +95,7 @@ fn orig_dst_addr(_: &TcpStream) -> io::Result<OrigDstAddr> {
 }
 
 #[cfg(target_os = "linux")]
+#[allow(unsafe_code)]
 mod linux {
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
     use std::os::unix::io::RawFd;
