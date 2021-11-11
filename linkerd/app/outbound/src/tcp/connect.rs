@@ -118,7 +118,6 @@ impl<S> PreventLoopback<S> {
     #[cfg(feature = "allow-loopback")]
     // the Result is necessary to have the same type signature regardless of
     // whether or not the `allow-loopback` feature is enabled...
-    #[allow(clippy::unnecessary_wraps)]
     fn check_loopback(_: Remote<ServerAddr>) -> io::Result<()> {
         Ok(())
     }
