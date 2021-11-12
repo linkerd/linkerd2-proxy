@@ -33,7 +33,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
-    AddrMatch, Error, ProxyRuntime,
+    AddrMatch, Error, ProxyRuntime,Result
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -149,7 +149,7 @@ impl<S> Outbound<S> {
 impl Outbound<()> {
     pub async fn serve<A, I, P, R>(
         self,
-        listen: impl Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
+        listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
         profiles: P,
         resolve: R,
     ) where

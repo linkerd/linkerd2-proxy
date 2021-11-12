@@ -3,6 +3,7 @@ use crate::{
     listen::{self, Bind, Bound},
 };
 use futures::prelude::*;
+use linkerd_error::Result;
 use linkerd_io as io;
 use linkerd_stack::Param;
 use std::pin::Pin;
@@ -60,9 +61,9 @@ where
     type Addrs = Addrs<B::Addrs>;
     type Io = TcpStream;
     type Incoming =
-        Pin<Box<dyn Stream<Item = io::Result<(Self::Addrs, TcpStream)>> + Send + Sync + 'static>>;
+        Pin<Box<dyn Stream<Item = Result<(Self::Addrs, TcpStream)>> + Send + Sync + 'static>>;
 
-    fn bind(self, t: &T) -> io::Result<Bound<Self::Incoming>> {
+    fn bind(self, t: &T) -> Result<Bound<Self::Incoming>> {
         let (addr, incoming) = self.inner.bind(t)?;
 
         let incoming = incoming.map(|res| {

@@ -1447,6 +1447,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "libc",
+ "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
  "socket2 0.4.2",

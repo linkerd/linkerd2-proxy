@@ -1,5 +1,6 @@
 use crate::{addrs::*, Keepalive};
 use futures::prelude::*;
+use linkerd_error::Result;
 use linkerd_io as io;
 use linkerd_stack::Param;
 use std::{fmt, pin::Pin};
@@ -22,9 +23,9 @@ pub trait Bind<T> {
         + Sync
         + 'static;
     type Addrs: Clone + Send + Sync + 'static;
-    type Incoming: Stream<Item = io::Result<(Self::Addrs, Self::Io)>> + Send + Sync + 'static;
+    type Incoming: Stream<Item = Result<(Self::Addrs, Self::Io)>> + Send + Sync + 'static;
 
-    fn bind(self, params: &T) -> io::Result<Bound<Self::Incoming>>;
+    fn bind(self, params: &T) -> Result<Bound<Self::Incoming>>;
 }
 
 pub type Bound<I> = (Local<ServerAddr>, I);
@@ -63,10 +64,10 @@ where
     T: Param<ListenAddr> + Param<Keepalive>,
 {
     type Addrs = Addrs;
-    type Incoming = Pin<Box<dyn Stream<Item = io::Result<(Self::Addrs, Self::Io)>> + Send + Sync>>;
+    type Incoming = Pin<Box<dyn Stream<Item = Result<(Self::Addrs, Self::Io)>> + Send + Sync>>;
     type Io = TcpStream;
 
-    fn bind(self, params: &T) -> io::Result<Bound<Self::Incoming>> {
+    fn bind(self, params: &T) -> Result<Bound<Self::Incoming>> {
         let listen = {
             let ListenAddr(addr) = params.param();
             let l = std::net::TcpListener::bind(addr)?;
@@ -77,14 +78,10 @@ where
         let server = Local(ServerAddr(listen.local_addr()?));
         let Keepalive(keepalive) = params.param();
         let accept = TcpListenerStream::new(listen).map(move |res| {
-            let tcp = res.map_err(|e| io::Error::new(e.kind(), AcceptError(e)))?;
+            let tcp = res.map_err(AcceptError)?;
             super::set_nodelay_or_warn(&tcp);
-            let tcp = super::set_keepalive_or_warn(tcp, keepalive)
-                .map_err(|e| io::Error::new(e.kind(), KeepaliveError(e)))?;
-            let client = Remote(ClientAddr(
-                tcp.peer_addr()
-                    .map_err(|e| io::Error::new(e.kind(), PeerAddrError(e)))?,
-            ));
+            let tcp = super::set_keepalive_or_warn(tcp, keepalive).map_err(KeepaliveError)?;
+            let client = Remote(ClientAddr(tcp.peer_addr().map_err(PeerAddrError)?));
             Ok((Addrs { server, client }, tcp))
         });
 

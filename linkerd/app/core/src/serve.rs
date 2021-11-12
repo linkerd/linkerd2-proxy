@@ -2,6 +2,7 @@ use crate::{
     io,
     svc::{self, Param},
     transport::{ClientAddr, Remote},
+    Result,
 };
 use futures::prelude::*;
 use linkerd_error::Error;
@@ -12,7 +13,7 @@ use tracing::{debug, debug_span, info, instrument::Instrument, warn};
 ///
 /// The task is driven until shutdown is signaled.
 pub async fn serve<M, S, I, A>(
-    listen: impl Stream<Item = std::io::Result<(A, I)>>,
+    listen: impl Stream<Item = Result<(A, I)>>,
     new_accept: M,
     shutdown: impl Future,
 ) where
