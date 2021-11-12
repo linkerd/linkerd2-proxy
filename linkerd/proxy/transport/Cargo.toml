@@ -14,6 +14,7 @@ futures = { version = "0.3", default-features = false }
 linkerd-io = { path = "../../io" }
 linkerd-stack = { path = "../../stack" }
 socket2 = "0.4"
+thiserror = "1"
 tokio = { version = "1", features = ["macros", "net"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tracing = "0.1.29"

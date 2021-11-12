@@ -3,6 +3,7 @@ use futures::prelude::*;
 use linkerd_io as io;
 use linkerd_stack::Param;
 use std::{fmt, pin::Pin};
+use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio_stream::wrappers::TcpListenerStream;
 
@@ -37,6 +38,18 @@ pub struct Addrs {
     pub client: Remote<ClientAddr>,
 }
 
+#[derive(Debug, Error)]
+#[error("failed to accept socket: {0}")]
+struct AcceptError(#[source] io::Error);
+
+#[derive(Debug, Error)]
+#[error("failed to set TCP keepalive: {0}")]
+struct KeepaliveError(#[source] io::Error);
+
+#[derive(Debug, Error)]
+#[error("failed to obtain peer address: {0}")]
+struct PeerAddrError(#[source] io::Error);
+
 // === impl BindTcp ===
 
 impl BindTcp {
@@ -64,10 +77,14 @@ where
         let server = Local(ServerAddr(listen.local_addr()?));
         let Keepalive(keepalive) = params.param();
         let accept = TcpListenerStream::new(listen).map(move |res| {
-            let tcp = res?;
+            let tcp = res.map_err(|e| io::Error::new(e.kind(), AcceptError(e)))?;
             super::set_nodelay_or_warn(&tcp);
-            let tcp = super::set_keepalive_or_warn(tcp, keepalive)?;
-            let client = Remote(ClientAddr(tcp.peer_addr()?));
+            let tcp = super::set_keepalive_or_warn(tcp, keepalive)
+                .map_err(|e| io::Error::new(e.kind(), KeepaliveError(e)))?;
+            let client = Remote(ClientAddr(
+                tcp.peer_addr()
+                    .map_err(|e| io::Error::new(e.kind(), PeerAddrError(e)))?,
+            ));
             Ok((Addrs { server, client }, tcp))
         });
 
