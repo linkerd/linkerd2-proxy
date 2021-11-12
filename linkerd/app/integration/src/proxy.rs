@@ -1,8 +1,9 @@
 use super::*;
-use app_core::transport::OrigDstAddr;
 use linkerd_app_core::{
     svc::Param,
+    transport::OrigDstAddr,
     transport::{listen, orig_dst, Keepalive, ListenAddr},
+    Result,
 };
 use std::{fmt, future::Future, net::SocketAddr, pin::Pin, task::Poll, thread};
 use tokio::net::TcpStream;
@@ -65,11 +66,10 @@ where
 {
     type Addrs = orig_dst::Addrs;
     type Io = tokio::net::TcpStream;
-    type Incoming = Pin<
-        Box<dyn Stream<Item = io::Result<(orig_dst::Addrs, TcpStream)>> + Send + Sync + 'static>,
-    >;
+    type Incoming =
+        Pin<Box<dyn Stream<Item = Result<(orig_dst::Addrs, TcpStream)>> + Send + Sync + 'static>>;
 
-    fn bind(self, params: &T) -> io::Result<listen::Bound<Self::Incoming>> {
+    fn bind(self, params: &T) -> Result<listen::Bound<Self::Incoming>> {
         let (bound, incoming) = listen::BindTcp::default().bind(params)?;
         let incoming = Box::pin(incoming.map(move |res| {
             let (inner, tcp) = res?;
@@ -77,10 +77,7 @@ where
                 Self::Addr(addr) => OrigDstAddr(addr),
                 Self::Direct => OrigDstAddr(inner.server.into()),
                 Self::None => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "No mocked SO_ORIG_DST",
-                    ))
+                    return Err("No mocked SO_ORIG_DST".into());
                 }
             };
             let addrs = orig_dst::Addrs { inner, orig_dst };
