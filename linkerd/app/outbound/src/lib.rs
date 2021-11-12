@@ -33,7 +33,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
-    AddrMatch, Error, ProxyRuntime,Result
+    AddrMatch, Error, ProxyRuntime, Result,
 };
 use std::{
     collections::{HashMap, HashSet},
