@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
     classify, dst, errors, http_tracing, io, metrics,
@@ -130,9 +132,9 @@ impl<C> Inbound<C> {
             http.clone()
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // The HTTP stack doesn't use the profile resolution, so drop it.
-                .push_map_target(Logical::from)
                 .push_on_service(http::BoxResponse::layer())
-                .push(profiles::http::route_request::layer(
+                /*
+                .push(
                     svc::proxies()
                         .push_on_service(http::BoxRequest::layer())
                         // Records per-route metrics.
@@ -156,7 +158,10 @@ impl<C> Inbound<C> {
                         })
                         .push_on_service(http::BoxResponse::layer())
                         .into_inner(),
-                ))
+                )
+                */
+                .push_map_target(|(_, profile)| Logical::from(profile))
+                .push(profiles::http::route_request::layer())
                 .push_switch(
                     // If the profile was resolved to a logical (service) address, build a profile
                     // stack to include route-level metrics, etc. Otherwise, skip this stack and use

@@ -1,134 +1,88 @@
 use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
 use futures::{future, prelude::*, ready};
-use linkerd_error::Error;
-use linkerd_http_box::BoxBody;
-use linkerd_stack::{layer, NewService, Param, Proxy};
-use std::{
-    collections::HashMap,
-    marker::PhantomData,
-    task::{Context, Poll},
-};
+use linkerd_stack::{layer, NewService, Oneshot, Param, ServiceExt};
+use std::task::{Context, Poll};
 use tracing::{debug, trace};
 
-pub fn layer<M, N: Clone, R>(
-    new_route: N,
-) -> impl layer::Layer<M, Service = NewRouteRequest<M, N, R>> {
+pub fn layer<N>() -> impl layer::Layer<N, Service = NewRouteRequest<N>> {
     // This is saved so that the same `Arc`s are used and cloned instead of
     // calling `Route::default()` every time.
-    layer::mk(move |inner| NewRouteRequest {
-        inner,
-        new_route: new_route.clone(),
-        _route: PhantomData,
-    })
+    layer::mk(move |inner| NewRouteRequest { inner })
 }
 
-pub struct NewRouteRequest<M, N, R> {
-    inner: M,
-    new_route: N,
-    _route: PhantomData<R>,
+#[derive(Clone)]
+pub struct NewRouteRequest<N> {
+    inner: N,
 }
 
-pub struct RouteRequest<T, S, N, R> {
+pub struct RouteRequest<T, N>
+where
+    N: NewService<(Option<Route>, T)>,
+{
     target: T,
     rx: ReceiverStream,
-    inner: S,
-    new_route: N,
+    inner: N,
+    default: N::Service,
     http_routes: Vec<(RequestMatch, Route)>,
-    proxies: HashMap<Route, R>,
 }
 
-impl<M: Clone, N: Clone, R> Clone for NewRouteRequest<M, N, R> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            new_route: self.new_route.clone(),
-            _route: self._route,
-        }
-    }
-}
+// === impl NewRouteRequest ===
 
-impl<T, M, N> NewService<T> for NewRouteRequest<M, N, N::Service>
+impl<T, N> NewService<T> for NewRouteRequest<N>
 where
-    T: Clone + Param<Receiver>,
-    M: NewService<T>,
-    N: NewService<(Route, T)> + Clone,
+    T: Param<Receiver> + Clone,
+    N: NewService<(Option<Route>, T)> + Clone,
 {
-    type Service = RouteRequest<T, M::Service, N, N::Service>;
+    type Service = RouteRequest<T, N>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let rx = target.param();
-        let inner = self.inner.new_service(target.clone());
+        let default = self.inner.new_service((None, target.clone()));
         RouteRequest {
             rx: rx.into(),
             target,
-            inner,
-            new_route: self.new_route.clone(),
+            inner: self.inner.clone(),
+            default,
             http_routes: Vec::new(),
-            proxies: HashMap::new(),
         }
     }
 }
 
-impl<T, N, S, R> tower::Service<http::Request<BoxBody>> for RouteRequest<T, S, N, R>
+// === impl RouteRequest ===
+
+impl<B, T, N, S> tower::Service<http::Request<B>> for RouteRequest<T, N>
 where
     T: Clone,
-    N: NewService<(Route, T), Service = R> + Clone,
-    R: Proxy<
-        http::Request<BoxBody>,
-        S,
-        Request = http::Request<BoxBody>,
-        Response = http::Response<BoxBody>,
-    >,
-    S: tower::Service<http::Request<BoxBody>, Response = http::Response<BoxBody>>,
-    S::Error: Into<Error>,
+    N: NewService<(Option<Route>, T), Service = S> + Clone,
+    S: tower::Service<http::Request<B>>,
 {
-    type Response = http::Response<BoxBody>;
-    type Error = Error;
-    type Future =
-        future::Either<future::ErrInto<R::Future, Error>, future::ErrInto<S::Future, Error>>;
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = future::Either<S::Future, Oneshot<S, http::Request<B>>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let mut update = None;
-        while let Poll::Ready(Some(up)) = self.rx.poll_next_unpin(cx) {
-            tracing::trace!(update = ?up, "updated profile");
-            update = Some(up);
-        }
-
-        // Every time the profile updates, rebuild the distribution, reusing
-        // services that existed in the prior state.
-        if let Some(Profile { http_routes, .. }) = update {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+        if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
             debug!(routes = %http_routes.len(), "Updating HTTP routes");
-            let mut proxies = HashMap::with_capacity(http_routes.len());
-            for (_, ref route) in &http_routes {
-                // Reuse the prior services whenever possible.
-                let proxy = self.proxies.remove(route).unwrap_or_else(|| {
-                    debug!(?route, "Creating HTTP route");
-                    self.new_route
-                        .new_service((route.clone(), self.target.clone()))
-                });
-                proxies.insert(route.clone(), proxy);
-            }
             self.http_routes = http_routes;
-            self.proxies = proxies;
         }
 
-        Poll::Ready(ready!(self.inner.poll_ready(cx)).map_err(Into::into))
+        Poll::Ready(ready!(self.default.poll_ready(cx)))
     }
 
-    fn call(&mut self, req: http::Request<BoxBody>) -> Self::Future {
+    fn call(&mut self, req: http::Request<B>) -> Self::Future {
         for (ref condition, ref route) in &self.http_routes {
             if condition.is_match(&req) {
                 trace!(?condition, "Using configured route");
-                return future::Either::Left(
-                    self.proxies[route]
-                        .proxy(&mut self.inner, req)
-                        .err_into::<Error>(),
-                );
+                let svc = self
+                    .inner
+                    .new_service((Some(route.clone()), self.target.clone()));
+
+                return future::Either::Right(svc.oneshot(req));
             }
         }
 
         trace!("No routes matched");
-        future::Either::Right(self.inner.call(req).err_into::<Error>())
+        future::Either::Left(self.default.call(req))
     }
 }

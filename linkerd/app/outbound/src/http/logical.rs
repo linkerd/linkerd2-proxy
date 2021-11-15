@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use super::{CanonicalDstHeader, Concrete, Endpoint, Logical};
 use crate::{endpoint, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
@@ -126,8 +128,8 @@ impl<E> Outbound<E> {
                 )
                 .push_cache(cache_max_idle_age)
                 .push_on_service(http::BoxResponse::layer())
-                // Note: routes can't exert backpressure.
-                .push(profiles::http::route_request::layer(
+                /*
+                    // Note: routes can't exert backpressure.
                     svc::proxies()
                         .push_on_service(http::BoxRequest::layer())
                         .push(
@@ -160,7 +162,9 @@ impl<E> Outbound<E> {
                         .push_map_target(Logical::mk_route)
                         .push_on_service(http::BoxResponse::layer())
                         .into_inner(),
-                ))
+                */
+                .push_map_target(|(_, logical)| logical)
+                .push(profiles::http::route_request::layer())
                 .check_new_service::<Logical, http::Request<_>>()
                 .push_on_service(http::BoxRequest::layer())
                 // Strips headers that may be set by this proxy and add an outbound
