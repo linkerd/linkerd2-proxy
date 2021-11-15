@@ -1,9 +1,10 @@
 name: Coverage
 
-# Run weekly on Sunday at midnight (UTC).
+# Run daily at 11AM UTC (3AM PST).
 on:
   schedule:
-    - cron: '0 0 * * 0'
+    # cron: minute hour day month day-of-week
+    - cron: '0 11 * * *'
 
 env:
   CARGO_INCREMENTAL: 0
@@ -23,7 +24,9 @@ jobs:
       image: docker://rust:1.56.0-buster
       options: --security-opt seccomp=unconfined # 🤷
     steps:
+      - run: apt update && apt install -y cmake clang golang # for boring
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: cargo install cargo-tarpaulin
-      - run: cargo tarpaulin --verbose --workspace --out Xml
+      - run: cargo tarpaulin --verbose --workspace --no-run
+      - run: cargo tarpaulin --verbose --workspace --out Xml --ignore-tests --no-fail-fast
       - uses: codecov/codecov-action@f32b3a3741e1053eb607407145bc9619351dc93b
