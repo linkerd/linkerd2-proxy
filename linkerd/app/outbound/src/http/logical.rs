@@ -3,7 +3,7 @@
 use super::{CanonicalDstHeader, Concrete, Endpoint, Logical};
 use crate::{endpoint, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
-    classify, config, dst, profiles,
+    classify, config, dst, metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -13,6 +13,12 @@ use linkerd_app_core::{
     retry, svc, Error, Infallible,
 };
 use tracing::debug_span;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Route {
+    logical: Logical,
+    route: profiles::http::Route,
+}
 
 impl<E> Outbound<E> {
     pub fn push_http_logical<B, ESvc, R>(self, resolve: R) -> Outbound<svc::ArcNewHttp<Logical, B>>
@@ -131,45 +137,55 @@ impl<E> Outbound<E> {
                 .push_cache(cache_max_idle_age)
                 .push_on_service(http::BoxResponse::layer());
 
-            let routes = split.clone()
-                /*
+            let routes = split
+                .clone()
+                .push_map_target(|r: Route| r.logical)
+                .check_new_service::<Route, http::Request<http::BoxBody>>()
+                .push_on_service(http::BoxRequest::layer())
                 .push(
-                    // Note: routes can't exert backpressure.
-                    svc::proxies()
-                        .push_on_service(http::BoxRequest::layer())
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .http_route_actual
-                                .to_layer::<classify::Response, _, dst::Route>(),
-                        )
-                        // Depending on whether or not the request can be retried,
-                        // it may have one of two `Body` types. This layer unifies
-                        // any `Body` type into `BoxBody` so that the rest of the
-                        // stack doesn't have to implement `Service` for requests
-                        // with both body types.
-                        .push_on_service(http::BoxRequest::erased())
-                        .push_http_insert_target::<dst::Route>()
-                        // Sets an optional retry policy.
-                        .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
-                        // Sets an optional request timeout.
-                        .push(http::NewTimeout::layer())
-                        // Records per-route metrics.
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .http_route
-                                .to_layer::<classify::Response, _, _>(),
-                        )
-                        // Sets the per-route response classifier as a request
-                        // extension.
-                        .push(classify::NewClassify::layer())
-                        .push_map_target(Logical::mk_route)
-                        .push_on_service(http::BoxResponse::layer())
-                        .into_inner(),
+                    rt.metrics
+                        .proxy
+                        .http_route_actual
+                        .to_layer::<classify::Response, _, Route>(),
                 )
-                */
-                .push_map_target(|(_, logical)| logical)
+                .check_new_service::<Route, http::Request<http::BoxBody>>()
+                // Depending on whether or not the request can be retried,
+                // it may have one of two `Body` types. This layer unifies
+                // any `Body` type into `BoxBody` so that the rest of the
+                // stack doesn't have to implement `Service` for requests
+                // with both body types.
+                .push_on_service(http::BoxRequest::erased())
+                .push_http_insert_target::<profiles::http::Route>()
+                .check_new_service::<Route, http::Request<http::BoxBody>>()
+                // Sets an optional retry policy.
+                .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
+                .check_new_service::<Route, http::Request<http::BoxBody>>()
+                // Sets an optional request timeout.
+                .push(http::NewTimeout::layer())
+                .check_new_service::<Route, http::Request<http::BoxBody>>()
+                // Records per-route metrics.
+                .push(
+                    rt.metrics
+                        .proxy
+                        .http_route
+                        .to_layer::<classify::Response, _, _>(),
+                )
+                .check_new_service::<Route, http::Request<http::BoxBody>>()
+                // Sets the per-route response classifier as a request
+                // extension.
+                .push(classify::NewClassify::layer())
+                .check_new_service::<Route, http::Request<http::BoxBody>>()
+                .push_on_service(
+                    svc::layers()
+                        .push(http::BoxResponse::layer())
+                        .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
+                        .push(svc::FailFast::layer(
+                            "HTTP Route",
+                            config.proxy.dispatch_timeout,
+                        ))
+                        .push_spawn_buffer(config.proxy.buffer_capacity),
+                )
+                .push_cache(config.proxy.cache_max_idle_age)
                 .into_inner();
 
             split
@@ -177,7 +193,7 @@ impl<E> Outbound<E> {
                     |(route, logical): (Option<profiles::http::Route>, Logical)| -> Result<_, Infallible> {
                         match route {
                             None => Ok(svc::Either::A(logical)),
-                            Some(route) => Ok(svc::Either::B((route, logical))),
+                            Some(route) => Ok(svc::Either::B(Route { route, logical })),
                         }
                     },
                     routes,
@@ -193,5 +209,33 @@ impl<E> Outbound<E> {
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
+    }
+}
+
+// === impl Route ===
+
+impl svc::Param<profiles::http::Route> for Route {
+    fn param(&self) -> profiles::http::Route {
+        self.route.clone()
+    }
+}
+
+impl svc::Param<metrics::RouteLabels> for Route {
+    fn param(&self) -> metrics::RouteLabels {
+        metrics::RouteLabels::outbound(self.profile.addr.clone(), &self.route)
+    }
+}
+
+impl svc::Param<http::ResponseTimeout> for Route {
+    fn param(&self) -> http::ResponseTimeout {
+        http::ResponseTimeout(self.route.timeout())
+    }
+}
+
+impl classify::CanClassify for Route {
+    type Classify = classify::Request;
+
+    fn classify(&self) -> classify::Request {
+        self.route.response_classes().clone().into()
     }
 }

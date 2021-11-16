@@ -8,7 +8,11 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, Remote, ServerAddr},
     Error, Infallible, NameAddr, Result,
 };
-use std::{borrow::Borrow, hash::{Hasher, Hash}, net::SocketAddr};
+use std::{
+    borrow::Borrow,
+    hash::{Hash, Hasher},
+    net::SocketAddr,
+};
 use tracing::{debug, debug_span};
 
 /// Describes an HTTP client target.
@@ -138,7 +142,7 @@ impl<C> Inbound<C> {
                     rt.metrics
                         .proxy
                         .http_route
-                        .to_layer::<classify::Response, _, Route>(),
+                        .to_layer::<classify::Response, _, _>(),
                 )
                 .check_new_service::<Route, http::Request<http::BoxBody>>()
                 .push_on_service(http::BoxResponse::layer())
@@ -341,7 +345,7 @@ impl Param<profiles::http::Route> for Route {
 
 impl Param<metrics::RouteLabels> for Route {
     fn param(&self) -> metrics::RouteLabels {
-        metrics::RouteLabels::outbound(self.profile.addr.clone(), &self.route)
+        metrics::RouteLabels::inbound(self.profile.addr.clone(), &self.route)
     }
 }
 
