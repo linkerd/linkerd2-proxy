@@ -160,6 +160,7 @@ impl<E> Outbound<E> {
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
+                // TODO(ver): CloneBoxService to flatten the stack type?
                 .push_cache(config.proxy.cache_max_idle_age)
                 .push_on_service(
                     svc::layers()

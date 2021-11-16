@@ -151,6 +151,9 @@ impl<C> Inbound<C> {
                 // Sets the route as a request extension so that it can be used
                 // by tap.
                 .push_http_insert_target::<profiles::http::Route>()
+                // The endpoint service isn't `Clone`, but it needs to be shared
+                // across several routes.
+                // TODO(ver) restore proxies.
                 .push_on_service(
                     svc::layers()
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "route")))
@@ -171,7 +174,7 @@ impl<C> Inbound<C> {
             // informed by the request's headers). The stack is cached until a
             // request has not been received for `cache_max_idle_age`.
             http.clone()
-                .check_new_service::<Logical, http::Request<http::BoxBody>>()
+                // Bypass the route stack when no route is found.
                 .push_switch(
                     |(route, profile): (Option<profiles::http::Route>, Profile)| -> Result<_, Infallible> {
                         match route {
