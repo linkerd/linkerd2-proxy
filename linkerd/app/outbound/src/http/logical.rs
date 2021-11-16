@@ -56,7 +56,7 @@ impl<E> Outbound<E> {
                 .check_service::<Concrete>()
                 .into_inner();
 
-            endpoint
+            let concrete = endpoint
                 .clone()
                 .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 .push_on_service(
@@ -105,13 +105,15 @@ impl<E> Outbound<E> {
                 // concrete address.
                 .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
                 .push_map_target(Concrete::from)
-                .push(svc::ArcNewService::layer())
+                .push(svc::ArcNewService::layer());
+
                 // Distribute requests over a distribution of balancers via a
                 // traffic split.
                 //
                 // If the traffic split is empty/unavailable, eagerly fail requests.
                 // When the split is in failfast, spawn the service in a background
                 // task so it becomes ready without new requests.
+            let split = concrete
                 .check_new_service::<(ConcreteAddr, Logical), _>()
                 .push(profiles::split::layer())
                 .push_on_service(
@@ -127,8 +129,11 @@ impl<E> Outbound<E> {
                         .push_spawn_buffer(buffer_capacity),
                 )
                 .push_cache(cache_max_idle_age)
-                .push_on_service(http::BoxResponse::layer())
+                .push_on_service(http::BoxResponse::layer());
+
+            let routes = split.clone()
                 /*
+                .push(
                     // Note: routes can't exert backpressure.
                     svc::proxies()
                         .push_on_service(http::BoxRequest::layer())
@@ -162,10 +167,22 @@ impl<E> Outbound<E> {
                         .push_map_target(Logical::mk_route)
                         .push_on_service(http::BoxResponse::layer())
                         .into_inner(),
+                )
                 */
                 .push_map_target(|(_, logical)| logical)
+                .into_inner();
+
+            split
+                .push_switch(
+                    |(route, logical): (Option<profiles::http::Route>, Logical)| -> Result<_, Infallible> {
+                        match route {
+                            None => Ok(svc::Either::A(logical)),
+                            Some(route) => Ok(svc::Either::B((route, logical))),
+                        }
+                    },
+                    routes,
+                )
                 .push(profiles::http::route_request::layer())
-                .check_new_service::<Logical, http::Request<_>>()
                 .push_on_service(http::BoxRequest::layer())
                 // Strips headers that may be set by this proxy and add an outbound
                 // canonical-dst-header. The response body is boxed unify the profile

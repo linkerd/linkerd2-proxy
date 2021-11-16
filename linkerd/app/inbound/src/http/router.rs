@@ -126,15 +126,10 @@ impl<C> Inbound<C> {
                     .push(svc::BoxService::layer())
                 );
 
-            // Attempts to discover a service profile for each logical target (as
-            // informed by the request's headers). The stack is cached until a
-            // request has not been received for `cache_max_idle_age`.
-            http.clone()
+            let routes = http.clone()
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
-                // The HTTP stack doesn't use the profile resolution, so drop it.
-                .push_on_service(http::BoxResponse::layer())
+                .push_map_target(|(_, p): (_, Profile)| p.logical)
                 /*
-                .push(
                     svc::proxies()
                         .push_on_service(http::BoxRequest::layer())
                         // Records per-route metrics.
@@ -158,9 +153,23 @@ impl<C> Inbound<C> {
                         })
                         .push_on_service(http::BoxResponse::layer())
                         .into_inner(),
-                )
                 */
-                .push_map_target(|(_, profile)| Logical::from(profile))
+                .into_inner();
+
+            // Attempts to discover a service profile for each logical target (as
+            // informed by the request's headers). The stack is cached until a
+            // request has not been received for `cache_max_idle_age`.
+            http.clone()
+                .check_new_service::<Logical, http::Request<http::BoxBody>>()
+                .push_switch(
+                    |(route, profile): (Option<profiles::http::Route>, Profile)| -> Result<_, Infallible> {
+                        match route {
+                            None => Ok(svc::Either::A(profile.logical)),
+                            Some(route) => Ok(svc::Either::B((route, profile))),
+                        }
+                    },
+                    routes,
+                )
                 .push(profiles::http::route_request::layer())
                 .push_switch(
                     // If the profile was resolved to a logical (service) address, build a profile
@@ -179,7 +188,6 @@ impl<C> Inbound<C> {
                         Ok(svc::Either::B(logical))
                     },
                     http.clone()
-                        .push_on_service(http::BoxResponse::layer())
                         .check_new_service::<Logical, http::Request<_>>()
                         .into_inner(),
                 )
@@ -209,8 +217,7 @@ impl<C> Inbound<C> {
                 // Skip the profile stack if it takes too long to become ready.
                 .push_when_unready(
                     config.profile_idle_timeout,
-                    http.clone()
-                        .push_on_service(svc::layer::mk(svc::SpawnReady::new))
+                    http.push_on_service(svc::layer::mk(svc::SpawnReady::new))
                         .into_inner(),
                 )
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
