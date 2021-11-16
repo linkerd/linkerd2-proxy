@@ -128,9 +128,10 @@ impl<C> Inbound<C> {
                 ))
                 .push_on_service(svc::layers()
                     .push(http::BoxResponse::layer())
-                    // This box is needed to reduce compile times on recent (2021-10-17) nightlies,
-                    // though this may be fixed by https://github.com/rust-lang/rust/pull/89831. It
-                    // should be removed when possible.
+                    // This box is needed to reduce compile times on recent
+                    // (2021-10-17) nightlies, though this may be fixed by
+                    // https://github.com/rust-lang/rust/pull/89831. It should
+                    // be removed when possible.
                     .push(svc::BoxService::layer())
                 );
 
@@ -144,7 +145,6 @@ impl<C> Inbound<C> {
                         .http_route
                         .to_layer::<classify::Response, _, _>(),
                 )
-                .check_new_service::<Route, http::Request<http::BoxBody>>()
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
@@ -153,7 +153,7 @@ impl<C> Inbound<C> {
                 .push_http_insert_target::<profiles::http::Route>()
                 .push_on_service(
                     svc::layers()
-                        .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
+                        .push(rt.metrics.proxy.stack.layer(stack_labels("http", "route")))
                         .push(svc::FailFast::layer(
                             "HTTP Route",
                             config.proxy.dispatch_timeout,

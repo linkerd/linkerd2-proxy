@@ -1,9 +1,7 @@
-#![allow(unused_imports)]
-
 use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, Route};
 use crate::{endpoint, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
-    classify, config, dst, metrics, profiles,
+    classify, config, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -107,12 +105,12 @@ impl<E> Outbound<E> {
                 .push_map_target(Concrete::from)
                 .push(svc::ArcNewService::layer());
 
-                // Distribute requests over a distribution of balancers via a
-                // traffic split.
-                //
-                // If the traffic split is empty/unavailable, eagerly fail requests.
-                // When the split is in failfast, spawn the service in a background
-                // task so it becomes ready without new requests.
+            // Distribute requests over a distribution of balancers via a
+            // traffic split.
+            //
+            // If the traffic split is empty/unavailable, eagerly fail requests.
+            // When the split is in failfast, spawn the service in a background
+            // task so it becomes ready without new requests.
             let split = concrete
                 .check_new_service::<(ConcreteAddr, Logical), _>()
                 .push(profiles::split::layer())
@@ -131,10 +129,9 @@ impl<E> Outbound<E> {
                 .push_cache(cache_max_idle_age)
                 .push_on_service(http::BoxResponse::layer());
 
-            let route_actual = split
+            let routes = split
                 .clone()
                 .push_map_target(|r: Route| r.logical)
-                .check_new_service::<Route, http::Request<http::BoxBody>>()
                 .push_on_service(http::BoxRequest::layer())
                 .push(
                     rt.metrics
@@ -142,23 +139,17 @@ impl<E> Outbound<E> {
                         .http_route_actual
                         .to_layer::<classify::Response, _, Route>(),
                 )
-                .check_new_service::<Route, http::Request<http::BoxBody>>()
-                // Depending on whether or not the request can be retried,
-                // it may have one of two `Body` types. This layer unifies
-                // any `Body` type into `BoxBody` so that the rest of the
-                // stack doesn't have to implement `Service` for requests
-                // with both body types.
+                // Depending on whether or not the request can be retried, it
+                // may have one of two `Body` types. This layer unifies any
+                // `Body` type into `BoxBody` so that the rest of the stack
+                // doesn't have to implement `Service` for requests with both
+                // body types.
                 .push_on_service(http::BoxRequest::erased())
-                .push_http_insert_target::<profiles::http::Route>();
-
-            let routes = route_actual
-                .check_new_service::<Route, http::Request<http::BoxBody>>()
+                .push_http_insert_target::<profiles::http::Route>()
                 // Sets an optional retry policy.
                 .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
-                .check_new_service::<Route, http::Request<http::BoxBody>>()
                 // Sets an optional request timeout.
                 .push(http::NewTimeout::layer())
-                .check_new_service::<Route, http::Request<http::BoxBody>>()
                 // Records per-route metrics.
                 .push(
                     rt.metrics
@@ -166,20 +157,9 @@ impl<E> Outbound<E> {
                         .http_route
                         .to_layer::<classify::Response, _, _>(),
                 )
-                .check_new_service::<Route, http::Request<http::BoxBody>>()
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
-                .check_new_service::<Route, http::Request<http::BoxBody>>()
-                .push_on_service(
-                    svc::layers()
-                        .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
-                        .push(svc::FailFast::layer(
-                            "HTTP Route",
-                            config.proxy.dispatch_timeout,
-                        ))
-                        .push_spawn_buffer(config.proxy.buffer_capacity),
-                )
                 .push_cache(config.proxy.cache_max_idle_age)
                 .push_on_service(
                     svc::layers()
