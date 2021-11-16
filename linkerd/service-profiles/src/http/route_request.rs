@@ -1,45 +1,80 @@
 use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
 use futures::{future, prelude::*, ready};
-use linkerd_stack::{layer, NewService, Oneshot, Param, ServiceExt};
+use linkerd_error::Result;
+use linkerd_stack::{layer, NewService, Oneshot, Param, RecognizeRoute, ServiceExt};
 use std::task::{Context, Poll};
 use tracing::{debug, trace};
 
-pub fn layer<N>() -> impl layer::Layer<N, Service = NewRouteRequest<N>> {
-    // This is saved so that the same `Arc`s are used and cloned instead of
-    // calling `Route::default()` every time.
-    layer::mk(move |inner| NewRouteRequest { inner })
-}
-
 #[derive(Clone)]
-pub struct NewRouteRequest<N> {
+pub struct NewProxyRouter<N> {
     inner: N,
 }
 
-pub struct RouteRequest<T, N>
+pub struct ProxyRouter<T, N>
 where
     N: NewService<(Option<Route>, T)>,
 {
-    target: T,
+    recognize: Recognize<T>,
     rx: ReceiverStream,
     inner: N,
     default: N::Service,
     http_routes: Vec<(RequestMatch, Route)>,
 }
 
-// === impl NewRouteRequest ===
+#[derive(Copy, Clone, Debug)]
+pub struct NewRecognize(());
 
-impl<T, N> NewService<T> for NewRouteRequest<N>
+#[derive(Clone, Debug)]
+pub struct Recognize<T> {
+    rx: Receiver,
+    target: T,
+}
+
+// === impl NewRecognize ===
+
+impl<T: Param<Receiver>> NewService<T> for NewRecognize {
+    type Service = Recognize<T>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        Recognize {
+            rx: target.param(),
+            target,
+        }
+    }
+}
+
+// === impl Recognize ===
+
+impl<T: Clone, B> RecognizeRoute<http::Request<B>> for Recognize<T> {
+    type Key = (Option<Route>, T);
+
+    fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key> {
+        for (condition, route) in &self.rx.borrow().http_routes {
+            if condition.is_match(req) {
+                trace!(?condition, "Using configured route");
+                return Ok((Some(route.clone()), self.target.clone()));
+            }
+        }
+
+        trace!("No matching routes");
+        Ok((None, self.target.clone()))
+    }
+}
+
+// === impl NewProxyRouter ===
+
+impl<T, N> NewService<T> for NewProxyRouter<N>
 where
     T: Param<Receiver> + Clone,
     N: NewService<(Option<Route>, T)> + Clone,
 {
-    type Service = RouteRequest<T, N>;
+    type Service = ProxyRouter<T, N>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let rx = target.param();
         let default = self.inner.new_service((None, target.clone()));
-        RouteRequest {
+        ProxyRouter {
             rx: rx.into(),
             target,
             inner: self.inner.clone(),
@@ -49,9 +84,9 @@ where
     }
 }
 
-// === impl RouteRequest ===
+// === impl ProxyRouter ===
 
-impl<B, T, N, S> tower::Service<http::Request<B>> for RouteRequest<T, N>
+impl<B, T, N, S> tower::Service<http::Request<B>> for ProxyRouter<T, N>
 where
     T: Clone,
     N: NewService<(Option<Route>, T), Service = S> + Clone,
@@ -67,10 +102,17 @@ where
             self.http_routes = http_routes;
         }
 
-        Poll::Ready(ready!(self.default.poll_ready(cx)))
+        self.default.poll_ready(cx)
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        let (route, target) = match self.recognize.recognize(&req) {
+            Ok(r) => r,
+            Err(e) => {
+                debug!(?e, "No matching route");
+                return future::Either::Left(self.default.call(req));
+            }
+        };
         for (ref condition, ref route) in &self.http_routes {
             if condition.is_match(&req) {
                 trace!(?condition, "Using configured route");
