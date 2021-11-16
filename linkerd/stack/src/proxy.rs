@@ -2,6 +2,7 @@ use futures::{future, TryFutureExt};
 use linkerd_error::Error;
 use std::future::Future;
 use std::task::{Context, Poll};
+use tower::Layer;
 
 /// A middleware type that cannot exert backpressure.
 ///
@@ -30,6 +31,18 @@ pub trait Proxy<Req, S: tower::Service<Self::Request>> {
     {
         ProxyService::new(self, inner)
     }
+
+    fn into_service_layer(self) -> ProxyServiceLayer<Self>
+    where
+        Self: Sized,
+    {
+        ProxyServiceLayer::new(self)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct ProxyServiceLayer<P> {
+    proxy: P,
 }
 
 /// Wraps an `S`-typed `Service` with a `P`-typed `Proxy`.
@@ -52,8 +65,28 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
+    #[inline]
     fn proxy(&self, inner: &mut S, req: Req) -> Self::Future {
         inner.call(req)
+    }
+}
+
+// === impl ProxyServiceLayer ===
+
+impl<P> ProxyServiceLayer<P> {
+    pub fn new(proxy: P) -> Self {
+        Self { proxy }
+    }
+}
+
+impl<P: Clone, S> Layer<S> for ProxyServiceLayer<P> {
+    type Service = ProxyService<P, S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        ProxyService {
+            proxy: self.proxy.clone(),
+            service,
+        }
     }
 }
 
@@ -62,10 +95,6 @@ where
 impl<P, S> ProxyService<P, S> {
     pub fn new(proxy: P, service: S) -> Self {
         Self { proxy, service }
-    }
-
-    pub fn into_parts(self) -> (P, S) {
-        (self.proxy, self.service)
     }
 }
 
@@ -79,10 +108,12 @@ where
     type Error = Error;
     type Future = future::MapErr<P::Future, fn(P::Error) -> Error>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx).map_err(Into::into)
     }
 
+    #[inline]
     fn call(&mut self, req: Req) -> Self::Future {
         self.proxy.proxy(&mut self.service, req).map_err(Into::into)
     }
