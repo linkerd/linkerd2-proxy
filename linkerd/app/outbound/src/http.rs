@@ -3,6 +3,7 @@ mod endpoint;
 pub mod logical;
 mod proxy_connection_close;
 mod require_id_header;
+mod retry;
 mod server;
 mod strip_proxy_error;
 
