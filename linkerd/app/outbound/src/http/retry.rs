@@ -1,15 +1,15 @@
-use super::{classify, Route};
-use crate::profiles;
+use super::Route;
 use futures::future;
 use linkerd_app_core::{
+    classify,
     http_metrics::retries::Handle,
-    metrics,
+    metrics, profiles,
+    proxy::http::{ClientHandle, HttpBody},
     svc::{layer, Either, Param},
     Error,
 };
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_http_retry::ReplayBody;
-use linkerd_proxy_http::ClientHandle;
 use linkerd_retry as retry;
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ pub fn layer<N>(
 
 #[derive(Clone, Debug)]
 pub struct NewRetryPolicy {
-    metrics: HttpRouteRetry,
+    metrics: metrics::HttpRouteRetry,
 }
 
 #[derive(Clone, Debug)]
@@ -61,7 +61,7 @@ impl retry::NewPolicy<Route> for NewRetryPolicy {
 
 impl<A, B, E> retry::Policy<http::Request<ReplayBody<A>>, http::Response<B>, E> for RetryPolicy
 where
-    A: http_body::Body + Unpin,
+    A: HttpBody + Unpin,
     A::Error: Into<Error>,
 {
     type Future = future::Ready<Self>;
@@ -126,7 +126,7 @@ where
 
 impl<A, B, E> retry::PrepareRequest<http::Request<A>, http::Response<B>, E> for RetryPolicy
 where
-    A: http_body::Body + Unpin,
+    A: HttpBody + Unpin,
     A::Error: Into<Error>,
 {
     type RetryRequest = http::Request<ReplayBody<A>>;
