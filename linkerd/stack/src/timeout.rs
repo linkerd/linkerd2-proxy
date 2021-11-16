@@ -1,4 +1,4 @@
-use crate::Service;
+use crate::{Proxy, Service};
 use linkerd_error::{Error, Result};
 use pin_project::pin_project;
 use std::{
@@ -48,6 +48,26 @@ impl<S> Timeout<S> {
 
     pub fn layer(duration: Duration) -> impl super::layer::Layer<S, Service = Self> + Clone {
         super::layer::mk(move |inner| Self::new(inner, duration))
+    }
+}
+
+impl<P, S, Req> Proxy<Req, S> for Timeout<P>
+where
+    P: Proxy<Req, S>,
+    S: Service<P::Request>,
+{
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = Error;
+    type Future = TimeoutFuture<P::Future>;
+
+    #[inline]
+    fn proxy(&self, svc: &mut S, req: Req) -> Self::Future {
+        let inner = self.inner.proxy(svc, req);
+        match self.duration {
+            None => TimeoutFuture::Passthru(inner),
+            Some(t) => TimeoutFuture::Timeout(time::timeout(t, inner), t),
+        }
     }
 }
 

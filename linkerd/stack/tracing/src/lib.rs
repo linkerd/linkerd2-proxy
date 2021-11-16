@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
-use linkerd_stack::{layer, NewService, Service};
+use linkerd_stack::{layer, NewService, Proxy};
 use std::task::{Context, Poll};
 use tracing::instrument::{Instrument as _, Instrumented};
 use tracing::{trace, Span};
@@ -104,7 +104,26 @@ impl<T, G: GetSpan<T>, S> Instrument<T, G, S> {
     }
 }
 
-impl<Req, T, G, S> Service<Req> for Instrument<T, G, S>
+impl<Req, S, T, G, P> Proxy<Req, S> for Instrument<T, G, P>
+where
+    Req: std::fmt::Debug,
+    G: GetSpan<T>,
+    P: Proxy<Req, S>,
+    S: tower::Service<P::Request>,
+{
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = P::Error;
+    type Future = Instrumented<P::Future>;
+
+    fn proxy(&self, svc: &mut S, request: Req) -> Self::Future {
+        let span = self.get_span().entered();
+        trace!(?request, "proxy");
+        self.inner.proxy(svc, request).instrument(span.exit())
+    }
+}
+
+impl<Req, T, G, S> tower::Service<Req> for Instrument<T, G, S>
 where
     Req: std::fmt::Debug,
     G: GetSpan<T>,

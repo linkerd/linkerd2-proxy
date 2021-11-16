@@ -4,6 +4,7 @@ use http_body::Body;
 use linkerd_error::Error;
 use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
 use linkerd_metrics::NewMetrics;
+use linkerd_stack::Proxy;
 use parking_lot::Mutex;
 use pin_project::{pin_project, pinned_drop};
 use std::{
@@ -103,6 +104,52 @@ where
             inner: self.inner.clone(),
             metrics: self.metrics.clone(),
             _p: PhantomData,
+        }
+    }
+}
+
+impl<C, P, S, A, B> Proxy<http::Request<A>, S> for HttpMetrics<P, C>
+where
+    P: Proxy<http::Request<RequestBody<A, C::Class>>, S, Response = http::Response<B>>,
+    S: tower::Service<P::Request>,
+    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    C::Class: Hash + Eq + Send + Sync,
+    A: Body,
+    B: Body,
+{
+    type Request = P::Request;
+    type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
+    type Error = Error;
+    type Future = ResponseFuture<P::Future, C>;
+
+    fn proxy(&self, svc: &mut S, req: http::Request<A>) -> Self::Future {
+        let mut req_metrics = self.metrics.clone();
+
+        if req.body().is_end_stream() {
+            if let Some(lock) = req_metrics.take() {
+                let now = Instant::now();
+                let mut metrics = lock.lock();
+                (*metrics).last_update = now;
+                (*metrics).total.incr();
+            }
+        }
+
+        let req = {
+            let (head, inner) = req.into_parts();
+            let body = RequestBody {
+                metrics: req_metrics,
+                inner,
+            };
+            http::Request::from_parts(head, body)
+        };
+
+        let classify = req.extensions().get::<C>().cloned().unwrap_or_default();
+
+        ResponseFuture {
+            classify: Some(classify),
+            metrics: self.metrics.clone(),
+            stream_open_at: Instant::now(),
+            inner: self.inner.proxy(svc, req),
         }
     }
 }

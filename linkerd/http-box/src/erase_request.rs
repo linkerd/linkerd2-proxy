@@ -2,7 +2,7 @@
 
 use crate::BoxBody;
 use linkerd_error::Error;
-use linkerd_stack::{layer, Service};
+use linkerd_stack::{layer, Proxy, Service};
 use std::task::{Context, Poll};
 
 /// Boxes request bodies, erasing the original type.
@@ -62,5 +62,24 @@ where
     #[inline]
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         self.0.call(req.map(BoxBody::new))
+    }
+}
+
+impl<S, B, P> Proxy<http::Request<B>, S> for EraseRequest<P>
+where
+    B: http_body::Body + Send + 'static,
+    B::Data: Send + 'static,
+    B::Error: Into<Error>,
+    S: Service<P::Request>,
+    P: Proxy<http::Request<BoxBody>, S>,
+{
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = P::Error;
+    type Future = P::Future;
+
+    #[inline]
+    fn proxy(&self, inner: &mut S, req: http::Request<B>) -> Self::Future {
+        self.0.proxy(inner, req.map(BoxBody::new))
     }
 }
