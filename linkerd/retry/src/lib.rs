@@ -3,7 +3,7 @@
 
 use futures::future;
 use linkerd_error::Error;
-use linkerd_stack::{layer, Either, NewService, Service};
+use linkerd_stack::{layer, Either, NewService, Oneshot, Service, ServiceExt};
 use std::task::{Context, Poll};
 pub use tower::retry::{budget::Budget, Policy};
 use tracing::trace;
@@ -78,43 +78,38 @@ where
 
 // === impl Retry ===
 
-impl<R, Req, S, Rsp> Service<Req> for Retry<R, S>
+impl<P, Req, S, Rsp, Fut> Service<Req> for Retry<P, S>
 where
-    R: PrepareRequest<Req, Rsp, Error> + Clone,
-    R: tower::retry::Policy<R::RetryRequest, Rsp, Error>,
-    S: Service<Req, Response = Rsp, Error = Error>
-        + Service<R::RetryRequest, Response = Rsp, Error = Error>
+    P: PrepareRequest<Req, Rsp, Error> + Clone,
+    S: Service<Req, Response = Rsp, Future = Fut, Error = Error>
+        + Service<P::RetryRequest, Response = Rsp, Future = Fut, Error = Error>
         + Clone,
+    Fut: std::future::Future<Output = Result<Rsp, Error>>,
 {
     type Response = Rsp;
     type Error = Error;
-    type Future = future::Either<
-        <S as Service<Req>>::Future,
-        tower::retry::future::ResponseFuture<R, S, R::RetryRequest>,
-    >;
+    type Future = future::Either<Fut, Oneshot<tower::retry::Retry<P, S>, P::RetryRequest>>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
+        <S as Service<Req>>::poll_ready(&mut self.inner, cx)
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
         trace!(retryable = %self.policy.is_some());
 
         let policy = match self.policy.as_ref() {
+            None => return future::Either::Left(self.inner.call(req)),
             Some(p) => p,
-            None => return future::Either::A(self.inner.call(req)),
         };
 
-        let req = match policy.prepare_request(req) {
-            Either::A(req) => req,
-            Either::B(req) => return future::Either::A(self.inner.call(req)),
+        let retry_req = match policy.prepare_request(req) {
+            Either::A(retry_req) => retry_req,
+            Either::B(req) => return future::Either::Left(self.inner.call(req)),
         };
 
-        // `Retry` doesn't do anything special in poll_ready.
-        let svc = self.inner.clone();
-        let inner = std::mem::replace(&mut self.inner, svc);
+        let inner = self.inner.clone();
         let retry = tower::retry::Retry::new(policy.clone(), inner);
-        future::Either::B(retry.call(req))
+        future::Either::Right(retry.oneshot(retry_req))
     }
 }
