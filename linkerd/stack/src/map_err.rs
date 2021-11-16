@@ -1,5 +1,4 @@
 use futures::TryFutureExt;
-use linkerd_error::Error;
 use std::task::{Context, Poll};
 
 /// Like `tower::util::MapErr`, but with an implementation of `Proxy`.
@@ -36,23 +35,5 @@ where
     #[inline]
     fn call(&mut self, req: Req) -> Self::Future {
         self.inner.call(req).map_err(self.f.clone())
-    }
-}
-
-impl<Req, E, P, S, F: Clone> super::Proxy<Req, S> for MapErr<P, F>
-where
-    P: super::Proxy<Req, S>,
-    S: super::Service<P::Request>,
-    F: FnOnce(P::Error) -> E,
-    E: Into<Error>,
-{
-    type Request = P::Request;
-    type Response = P::Response;
-    type Error = E;
-    type Future = futures::future::MapErr<P::Future, F>;
-
-    #[inline]
-    fn proxy(&self, inner: &mut S, req: Req) -> Self::Future {
-        self.inner.proxy(inner, req).map_err(self.f.clone())
     }
 }

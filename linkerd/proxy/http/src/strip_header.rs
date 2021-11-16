@@ -18,7 +18,7 @@ impl<H: Clone, S: Clone, R> Clone for StripHeader<H, S, R> {
 
 pub mod request {
     use http::header::AsHeaderName;
-    use linkerd_stack::{layer, Proxy};
+    use linkerd_stack::layer;
     use std::{
         marker::PhantomData,
         task::{Context, Poll},
@@ -39,24 +39,6 @@ pub mod request {
             header: header.clone(),
             _marker: PhantomData,
         })
-    }
-
-    impl<H, P, S, B> Proxy<http::Request<B>, S> for StripHeader<H, P>
-    where
-        P: Proxy<http::Request<B>, S>,
-        H: AsHeaderName + Clone,
-        S: tower::Service<P::Request>,
-    {
-        type Request = P::Request;
-        type Response = P::Response;
-        type Error = P::Error;
-        type Future = P::Future;
-
-        #[inline]
-        fn proxy(&self, svc: &mut S, mut req: http::Request<B>) -> Self::Future {
-            req.headers_mut().remove(self.header.clone());
-            self.inner.proxy(svc, req)
-        }
     }
 
     impl<H, S, B> tower::Service<http::Request<B>> for StripHeader<H, S>

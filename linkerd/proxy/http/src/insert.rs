@@ -1,5 +1,5 @@
 use futures::{Future, TryFuture};
-use linkerd_stack::{layer, NewService, Param, Proxy};
+use linkerd_stack::{layer, NewService, Param};
 use std::{
     marker::PhantomData,
     pin::Pin,
@@ -136,24 +136,6 @@ impl<S, L, V> Insert<S, L, V> {
     }
 }
 
-impl<P, S, L, V, B> Proxy<http::Request<B>, S> for Insert<P, L, V>
-where
-    P: Proxy<http::Request<B>, S>,
-    S: tower::Service<P::Request>,
-    L: Lazy<V>,
-    V: Clone + Send + Sync + 'static,
-{
-    type Request = P::Request;
-    type Response = P::Response;
-    type Error = P::Error;
-    type Future = P::Future;
-
-    fn proxy(&self, svc: &mut S, mut req: http::Request<B>) -> Self::Future {
-        req.extensions_mut().insert(self.lazy.value());
-        self.inner.proxy(svc, req)
-    }
-}
-
 impl<S, L, V, B> tower::Service<http::Request<B>> for Insert<S, L, V>
 where
     S: tower::Service<http::Request<B>>,
@@ -192,27 +174,6 @@ impl<S, L, V> ResponseInsert<S, L, V> {
         Self {
             inner,
             lazy,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<Req, P, S, L, V, B> Proxy<Req, S> for ResponseInsert<P, L, V>
-where
-    P: Proxy<Req, S, Response = http::Response<B>>,
-    S: tower::Service<P::Request>,
-    L: Lazy<V>,
-    V: Clone + Send + Sync + 'static,
-{
-    type Request = P::Request;
-    type Response = P::Response;
-    type Error = P::Error;
-    type Future = ResponseInsertFuture<P::Future, L, V, B>;
-
-    fn proxy(&self, svc: &mut S, req: Req) -> Self::Future {
-        ResponseInsertFuture {
-            inner: self.inner.proxy(svc, req),
-            lazy: self.lazy.clone(),
             _marker: PhantomData,
         }
     }

@@ -18,7 +18,6 @@ mod map_target;
 pub mod monitor;
 pub mod new_service;
 mod on_service;
-mod proxy;
 mod result;
 mod router;
 mod switch_ready;
@@ -40,7 +39,6 @@ pub use self::{
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
     new_service::NewService,
     on_service::{OnService, OnServiceLayer},
-    proxy::{Proxy, ProxyService},
     result::ResultService,
     router::{NewRouter, RecognizeRoute},
     switch_ready::{NewSwitchReady, SwitchReady},
