@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 
-use super::{CanonicalDstHeader, Concrete, Endpoint, Logical};
+use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, Route};
 use crate::{endpoint, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, config, dst, metrics, profiles,
@@ -10,15 +10,9 @@ use linkerd_app_core::{
         http,
         resolve::map_endpoint,
     },
-    retry, svc, Error, Infallible,
+    svc, Error, Infallible,
 };
 use tracing::debug_span;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Route {
-    logical: Logical,
-    route: profiles::http::Route,
-}
 
 impl<E> Outbound<E> {
     pub fn push_http_logical<B, ESvc, R>(self, resolve: R) -> Outbound<svc::ArcNewHttp<Logical, B>>
@@ -137,7 +131,7 @@ impl<E> Outbound<E> {
                 .push_cache(cache_max_idle_age)
                 .push_on_service(http::BoxResponse::layer());
 
-            let routes = split
+            let route_actual = split
                 .clone()
                 .push_map_target(|r: Route| r.logical)
                 .check_new_service::<Route, http::Request<http::BoxBody>>()
@@ -155,7 +149,9 @@ impl<E> Outbound<E> {
                 // stack doesn't have to implement `Service` for requests
                 // with both body types.
                 .push_on_service(http::BoxRequest::erased())
-                .push_http_insert_target::<profiles::http::Route>()
+                .push_http_insert_target::<profiles::http::Route>();
+
+            let routes = route_actual
                 .check_new_service::<Route, http::Request<http::BoxBody>>()
                 // Sets an optional retry policy.
                 .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
@@ -177,7 +173,6 @@ impl<E> Outbound<E> {
                 .check_new_service::<Route, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers()
-                        .push(http::BoxResponse::layer())
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
                         .push(svc::FailFast::layer(
                             "HTTP Route",
@@ -186,6 +181,11 @@ impl<E> Outbound<E> {
                         .push_spawn_buffer(config.proxy.buffer_capacity),
                 )
                 .push_cache(config.proxy.cache_max_idle_age)
+                .push_on_service(
+                    svc::layers()
+                        .push(http::Retain::layer())
+                        .push(http::BoxResponse::layer()),
+                )
                 .into_inner();
 
             split
@@ -209,33 +209,5 @@ impl<E> Outbound<E> {
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
-    }
-}
-
-// === impl Route ===
-
-impl svc::Param<profiles::http::Route> for Route {
-    fn param(&self) -> profiles::http::Route {
-        self.route.clone()
-    }
-}
-
-impl svc::Param<metrics::RouteLabels> for Route {
-    fn param(&self) -> metrics::RouteLabels {
-        metrics::RouteLabels::outbound(self.profile.addr.clone(), &self.route)
-    }
-}
-
-impl svc::Param<http::ResponseTimeout> for Route {
-    fn param(&self) -> http::ResponseTimeout {
-        http::ResponseTimeout(self.route.timeout())
-    }
-}
-
-impl classify::CanClassify for Route {
-    type Classify = classify::Request;
-
-    fn classify(&self) -> classify::Request {
-        self.route.response_classes().clone().into()
     }
 }

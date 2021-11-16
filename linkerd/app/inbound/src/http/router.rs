@@ -145,7 +145,6 @@ impl<C> Inbound<C> {
                         .to_layer::<classify::Response, _, _>(),
                 )
                 .check_new_service::<Route, http::Request<http::BoxBody>>()
-                .push_on_service(http::BoxResponse::layer())
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
@@ -161,7 +160,12 @@ impl<C> Inbound<C> {
                         ))
                         .push_spawn_buffer(config.proxy.buffer_capacity),
                 )
-                .push_cache(config.proxy.cache_max_idle_age);
+                .push_cache(config.proxy.cache_max_idle_age)
+                .push_on_service(
+                    svc::layers()
+                        .push(http::Retain::layer())
+                        .push(http::BoxResponse::layer()),
+                );
 
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
