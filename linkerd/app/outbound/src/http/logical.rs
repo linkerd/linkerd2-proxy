@@ -1,4 +1,4 @@
-use super::{CanonicalDstHeader, Concrete, Endpoint, Logical};
+use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical};
 use crate::{endpoint, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, config, dst, profiles,
@@ -8,7 +8,7 @@ use linkerd_app_core::{
         http,
         resolve::map_endpoint,
     },
-    retry, svc, Error, Infallible,
+    svc, Error, Infallible,
 };
 use tracing::debug_span;
 

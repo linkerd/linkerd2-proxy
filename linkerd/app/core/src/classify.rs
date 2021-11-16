@@ -214,7 +214,7 @@ fn h2_error(err: &Error) -> String {
 // === impl Class ===
 
 impl Class {
-    pub(super) fn is_failure(&self) -> bool {
+    pub fn is_failure(&self) -> bool {
         matches!(
             self,
             Class::Default(SuccessOrFailure::Failure)
