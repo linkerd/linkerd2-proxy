@@ -42,7 +42,6 @@ pub mod errors;
 pub mod http_tracing;
 pub mod metrics;
 pub mod proxy;
-pub mod retry;
 pub mod serve;
 pub mod svc;
 pub mod telemetry;
