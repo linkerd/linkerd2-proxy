@@ -1,4 +1,5 @@
-use linkerd_stack::{layer, NewService, Proxy};
+use linkerd_stack::{layer, NewService, Proxy, Service};
+use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
 pub struct NewClassify<N> {
@@ -46,5 +47,26 @@ where
         let classify_rsp = self.classify.classify(&req);
         let _ = req.extensions_mut().insert(classify_rsp);
         self.inner.proxy(svc, req)
+    }
+}
+
+impl<C, S, B> Service<http::Request<B>> for Classify<C, S>
+where
+    C: super::Classify,
+    S: tower::Service<http::Request<B>>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    #[inline]
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+        let classify_rsp = self.classify.classify(&req);
+        let _ = req.extensions_mut().insert(classify_rsp);
+        self.inner.call(req)
     }
 }

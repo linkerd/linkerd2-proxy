@@ -53,20 +53,21 @@ impl<T: Hash + Eq, C: Hash + Eq> Default for Requests<T, C> {
     }
 }
 
-impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
-    pub fn into_report(self, retain_idle: Duration) -> Report<T, Metrics<C>>
+impl<K: Hash + Eq, C: Hash + Eq> Requests<K, C> {
+    pub fn into_report(self, retain_idle: Duration) -> Report<K, Metrics<C>>
     where
-        Report<T, Metrics<C>>: FmtMetrics,
+        Report<K, Metrics<C>>: FmtMetrics,
     {
         Report::new(retain_idle, self.0)
     }
 
-    pub fn to_layer<L, N, Tgt>(
+    pub fn to_layer<L, N, T>(
         &self,
-    ) -> impl layer::Layer<N, Service = NewHttpMetrics<N, T, L, C, N::Service>> + Clone
+    ) -> impl layer::Layer<N, Service = NewHttpMetrics<N, K, L, C, N::Service>> + Clone
     where
         L: ClassifyResponse<Class = C> + Send + Sync + 'static,
-        N: svc::NewService<Tgt>,
+        N: svc::NewService<T>,
+        NewHttpMetrics<N, K, L, C, N::Service>: svc::NewService<T>,
     {
         let reg = self.0.clone();
         NewMetrics::layer(reg)
