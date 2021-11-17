@@ -1191,6 +1191,8 @@ mod transport {
         test_tcp_connect(TcpFixture::outbound()).await;
     }
 
+    // XXX This test is flakey when running coverage tests.
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     #[tokio::test]
     async fn outbound_tcp_accept() {
         test_tcp_accept(TcpFixture::outbound()).await;
@@ -1294,6 +1296,8 @@ mod transport {
         test_read_bytes_total(TcpFixture::outbound()).await
     }
 
+    // XXX This test is flakey when running coverage tests.
+    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     #[tokio::test]
     async fn outbound_tcp_open_connections() {
         test_tcp_open_conns(TcpFixture::outbound()).await

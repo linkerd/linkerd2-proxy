@@ -9,6 +9,7 @@ on:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
+  CARGO_TARPAULIN_VERSION: 0.18.5
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
 
@@ -26,7 +27,10 @@ jobs:
     steps:
       - run: apt update && apt install -y cmake clang golang # for boring
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: cargo install cargo-tarpaulin
-      - run: cargo tarpaulin --verbose --workspace --no-run
-      - run: cargo tarpaulin --verbose --workspace --out Xml --ignore-tests --no-fail-fast
+      - name: install cargo-tarpaulin ${{ env.CARGO_TARPAULIN_VERSION }}
+        run: |
+          cd "${CARGO_HOME}/bin"
+          curl -sL https://github.com/xd009642/tarpaulin/releases/download/${CARGO_TARPAULIN_VERSION}/cargo-tarpaulin-${CARGO_TARPAULIN_VERSION}-travis.tar.gz | tar xzvf -
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --no-run
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --skip-clean --ignore-tests --no-fail-fast --out=Xml
       - uses: codecov/codecov-action@f32b3a3741e1053eb607407145bc9619351dc93b
