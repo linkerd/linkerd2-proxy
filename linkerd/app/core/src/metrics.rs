@@ -1,7 +1,7 @@
 pub use crate::transport::labels::{TargetAddr, TlsAccept};
 use crate::{
     classify::{Class, SuccessOrFailure},
-    control, dst, http_metrics, http_metrics as metrics, opencensus, profiles, stack_metrics,
+    control, http_metrics, http_metrics as metrics, opencensus, profiles, stack_metrics,
     svc::Param,
     telemetry, tls,
     transport::{self, labels::TlsConnect},
@@ -233,16 +233,6 @@ impl RouteLabels {
             addr,
             labels,
             direction: Direction::Out,
-        }
-    }
-}
-
-impl Param<RouteLabels> for dst::Route {
-    fn param(&self) -> RouteLabels {
-        RouteLabels {
-            addr: self.addr.clone(),
-            direction: self.direction,
-            labels: prefix_labels("rt", self.route.labels().iter()),
         }
     }
 }
