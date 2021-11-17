@@ -9,7 +9,6 @@ use linkerd_app_core::{
     Error, Infallible, NameAddr, Result,
 };
 use std::{
-    borrow::Borrow,
     hash::{Hash, Hasher},
     net::SocketAddr,
 };
@@ -135,9 +134,8 @@ impl<C> Inbound<C> {
                     .push(svc::BoxService::layer())
                 );
 
-            let routes = http.clone()
+            let routes = svc::proxies()
                 .push_map_target(|r: Route| r.profile.logical)
-                // Records per-route metrics.
                 .push_on_service(http::BoxRequest::layer())
                 .push(
                     rt.metrics
@@ -145,48 +143,21 @@ impl<C> Inbound<C> {
                         .http_route
                         .to_layer::<classify::Response, _, _>(),
                 )
-                // Sets the per-route response classifier as a request
-                // extension.
+                .push_on_service(http::BoxResponse::layer())
                 .push(classify::NewClassify::layer())
-                // Sets the route as a request extension so that it can be used
-                // by tap.
-                .push_http_insert_target::<profiles::http::Route>()
-                // The endpoint service isn't `Clone`, but it needs to be shared
-                // across several routes.
-                // TODO(ver) restore proxies.
-                .push_on_service(
-                    svc::layers()
-                        .push(rt.metrics.proxy.stack.layer(stack_labels("http", "route")))
-                        .push(svc::FailFast::layer(
-                            "HTTP Route",
-                            config.proxy.dispatch_timeout,
-                        ))
-                        .push_spawn_buffer(config.proxy.buffer_capacity),
-                )
-                .push_cache(config.proxy.cache_max_idle_age)
-                .push_on_service(
-                    svc::layers()
-                        .push(http::Retain::layer())
-                        .push(http::BoxResponse::layer()),
-                );
+                .push_http_insert_target::<profiles::http::Route>();
 
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
             // request has not been received for `cache_max_idle_age`.
             http.clone()
-                // Bypass the route stack when no route is found.
-                .push_switch(
-                    |(route, profile): (Option<profiles::http::Route>, Profile)| -> Result<_, Infallible> {
-                        match route {
-                            None => Ok(svc::Either::A(profile.logical)),
-                            Some(route) => Ok(svc::Either::B(Route { route, profile})),
-                        }
-                    },
+                .check_new_service::<Logical, http::Request<http::BoxBody>>()
+                .push_map_target(|p: Profile| p.logical)
+                .push(profiles::http::route_request::NewProxyRouter::layer(
                     routes
-                        .check_new_service::<Route, http::Request<http::BoxBody>>()
+                        .push_map_target(|(route, profile)| Route { route, profile })
                         .into_inner(),
-                )
-                .push(profiles::http::route_request::layer())
+                ))
                 .check_new_service::<Profile, http::Request<http::BoxBody>>()
                 .push_switch(
                     // If the profile was resolved to a logical (service) address, build a profile
@@ -194,7 +165,7 @@ impl<C> Inbound<C> {
                     // the underlying target stack directly.
                     |(rx, logical): (Option<profiles::Receiver>, Logical)| -> Result<_, Infallible> {
                         if let Some(rx) = rx {
-                            if let Some(addr) = rx.borrow().logical_addr() {
+                            if let Some(addr) = rx.logical_addr() {
                                 return Ok(svc::Either::A(Profile {
                                     addr,
                                     logical,

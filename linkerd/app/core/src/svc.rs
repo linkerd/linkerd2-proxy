@@ -8,7 +8,7 @@ pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
     self as stack, layer, ArcNewService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
     FailFast, Filter, InsertParam, MapErr, MapTargetLayer, NewRouter, NewService, Param, Predicate,
-    UnwrapOr,
+    Proxy, UnwrapOr,
 };
 pub use linkerd_stack_tracing::{NewInstrument, NewInstrumentLayer};
 use std::{
@@ -55,14 +55,14 @@ pub fn stack<S>(inner: S) -> Stack<S> {
 
 // === impl IdentityProxy ===
 
-pub fn proxies() -> Stack<IdentityProxy> {
-    Stack(IdentityProxy(()))
+pub fn proxies() -> Stack<NewIdentityProxy> {
+    Stack(NewIdentityProxy(()))
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct IdentityProxy(());
+pub struct NewIdentityProxy(());
 
-impl<T> NewService<T> for IdentityProxy {
+impl<T> NewService<T> for NewIdentityProxy {
     type Service = ();
     fn new_service(&self, _: T) -> Self::Service {}
 }
@@ -258,6 +258,16 @@ impl<S> Stack<S> {
     where
         S: NewService<T>,
         S::Service: Service<Req>,
+    {
+        self
+    }
+
+    /// Validates that this stack serves T-typed targets.
+    pub fn check_new_proxy<T, Req, P, U>(self) -> Self
+    where
+        S: NewService<T, Service = P>,
+        P: Proxy<Req, U>,
+        U: Service<P::Request>,
     {
         self
     }
