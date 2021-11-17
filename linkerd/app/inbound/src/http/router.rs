@@ -8,10 +8,7 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, Remote, ServerAddr},
     Error, Infallible, NameAddr, Result,
 };
-use std::{
-    hash::{Hash, Hasher},
-    net::SocketAddr,
-};
+use std::{hash::Hash, net::SocketAddr};
 use tracing::{debug, debug_span};
 
 /// Describes an HTTP client target.
@@ -51,7 +48,7 @@ struct Profile {
     profiles: profiles::Receiver,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 struct Route {
     profile: Profile,
     route: profiles::http::Route,
@@ -344,21 +341,6 @@ impl Param<http::ResponseTimeout> for Route {
 impl Param<profiles::Receiver> for Profile {
     fn param(&self) -> profiles::Receiver {
         self.profiles.clone()
-    }
-}
-
-impl PartialEq for Profile {
-    fn eq(&self, other: &Self) -> bool {
-        self.addr == other.addr && self.logical == other.logical
-    }
-}
-
-impl Eq for Profile {}
-
-impl Hash for Profile {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.addr.hash(state);
-        self.logical.hash(state);
     }
 }
 
