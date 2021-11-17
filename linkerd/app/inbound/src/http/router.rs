@@ -138,6 +138,8 @@ impl<C> Inbound<C> {
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_map_target(|p: Profile| p.logical)
                 .push(profiles::http::NewProxyRouter::layer(
+                    // If the request matches a route, use a per-route proxy to
+                    // wrap the inner service.
                     svc::proxies()
                         .push_map_target(|r: Route| r.profile.logical)
                         .push_on_service(http::BoxRequest::layer())
