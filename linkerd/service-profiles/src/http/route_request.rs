@@ -2,24 +2,40 @@ use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
 use futures::{future, prelude::*};
 use linkerd_error::{Error, Result};
-use linkerd_stack::{layer, NewService, Param, Proxy, RecognizeRoute, Service};
+use linkerd_stack::{layer, NewService, Oneshot, Param, Proxy, Service, ServiceExt};
 use std::{
     collections::{hash_map, HashMap, HashSet},
     task::{Context, Poll},
 };
 use tracing::{debug, trace};
 
-type NewRouter<N> = linkerd_stack::NewRouter<NewRecognize, N>;
-
-pub fn layer<N>() -> impl layer::Layer<N, Service = NewRouter<N>> + Clone {
-    linkerd_stack::NewRouter::layer(NewRecognize(()))
-}
-
+/// A router that uses a per-route `Proxy` to wrap a common underlying
+/// `Service`.
+///
+/// This router is similar to `linkerd_stack::NewRouter` and
+/// `linkerd_cache::Cache` with a few differences:
+///
+/// * It's `Proxy`-specific;
+/// * Routes are constructed eagerly as the profile updates;
+/// * Routes are removed eagerly as the profile updates (i.e. there's no
+///   idle-oriented eviction).
 #[derive(Clone, Debug)]
 pub struct NewProxyRouter<M, N> {
     new_proxy: M,
     new_service: N,
 }
+
+/// A router that uses a per-route `Service` (with a fallback service when no
+/// route is matched).
+///
+/// This router is similar to `linkerd_stack::NewRouter` and
+/// `linkerd_cache::Cache` with a few differences:
+///
+/// * Routes are constructed eagerly as the profile updates;
+/// * Routes are removed eagerly as the profile updates (i.e. there's no
+///   idle-oriented eviction).
+#[derive(Clone, Debug)]
+pub struct NewServiceRouter<N>(N);
 
 #[derive(Debug)]
 pub struct ProxyRouter<T, N, P, S> {
@@ -31,13 +47,14 @@ pub struct ProxyRouter<T, N, P, S> {
     proxies: HashMap<Route, P>,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct NewRecognize(());
-
-#[derive(Clone, Debug)]
-pub struct Recognize<T> {
-    rx: Receiver,
+#[derive(Debug)]
+pub struct ServiceRouter<T, N, S> {
+    new_route: N,
     target: T,
+    rx: ReceiverStream,
+    http_routes: Vec<(RequestMatch, Route)>,
+    services: HashMap<Route, S>,
+    default: S,
 }
 
 fn route_for_request<'r, B>(
@@ -50,32 +67,6 @@ fn route_for_request<'r, B>(
         }
     }
     None
-}
-
-// === impl NewRecognize ===
-
-impl<T: Param<Receiver>> NewService<T> for NewRecognize {
-    type Service = Recognize<T>;
-
-    fn new_service(&self, target: T) -> Self::Service {
-        Recognize {
-            rx: target.param(),
-            target,
-        }
-    }
-}
-
-// === impl Recognize ===
-
-impl<T: Clone, B> RecognizeRoute<http::Request<B>> for Recognize<T> {
-    type Key = (Option<Route>, T);
-
-    fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key> {
-        let profile = self.rx.borrow();
-        let route = route_for_request(&profile.http_routes, req);
-        trace!(?route);
-        Ok((route.cloned(), self.target.clone()))
-    }
 }
 
 // === impl NewProxyRouter ===
@@ -113,10 +104,8 @@ where
 
 // === impl ProxyRouter ===
 
-type ProxyResponseFuture<F1, E1, F2, E2> = future::Either<
-    future::MapErr<F1, fn(E1) -> Error>,
-    future::MapErr<F2, fn(E2) -> Error>,
->;
+type ProxyResponseFuture<F1, E1, F2, E2> =
+    future::Either<future::MapErr<F1, fn(E1) -> Error>, future::MapErr<F2, fn(E2) -> Error>>;
 
 impl<B, T, N, P, S, Rsp> Service<http::Request<B>> for ProxyRouter<T, N, P, S>
 where
@@ -160,20 +149,110 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        // If the request matches a route, use the route's proxy to wrap the inner service.
-        if let Some(route) = route_for_request(&self.http_routes, &req) {
-            trace!(?route, "Using route proxy");
-            return future::Either::Right(
-                self.proxies
-                    .get(route)
-                    .expect("proxy must exist")
-                    .proxy(&mut self.inner, req)
-                    .map_err(Into::into),
-            );
+        match route_for_request(&self.http_routes, &req) {
+            Some(route) => {
+                // If the request matches a route, use the route's proxy to wrap
+                // the inner service.
+                trace!(?route, "Using route proxy");
+                future::Either::Right(
+                    self.proxies
+                        .get(route)
+                        .expect("route must exist")
+                        .proxy(&mut self.inner, req)
+                        .map_err(Into::into),
+                )
+            }
+            None => {
+                // Otherwise, use the inner service directly.
+                trace!("No routes matched");
+                future::Either::Left(self.inner.call(req).map_err(Into::into))
+            }
+        }
+    }
+}
+
+// === impl NewServiceRouter ===
+
+impl<N> NewServiceRouter<N> {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(Self)
+    }
+}
+
+impl<T, N> NewService<T> for NewServiceRouter<N>
+where
+    T: Param<Receiver> + Clone,
+    N: NewService<(Option<Route>, T)> + Clone,
+{
+    type Service = ServiceRouter<T, N, N::Service>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        let rx = target.param();
+        let default = self.0.new_service((None, target.clone()));
+        ServiceRouter {
+            default,
+            target,
+            rx: rx.into(),
+            http_routes: Vec::new(),
+            services: HashMap::new(),
+            new_route: self.0.clone(),
+        }
+    }
+}
+
+// === impl ServiceRouter ===
+
+impl<B, T, N, S> Service<http::Request<B>> for ServiceRouter<T, N, S>
+where
+    T: Clone,
+    N: NewService<(Option<Route>, T), Service = S> + Clone,
+    S: Service<http::Request<B>> + Clone,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = Oneshot<S, http::Request<B>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+        // If the routes have been updated, update the cache.
+        if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
+            debug!(routes = %http_routes.len(), "Updating HTTP routes");
+            let routes = http_routes
+                .iter()
+                .map(|(_, r)| r.clone())
+                .collect::<HashSet<_>>();
+            self.http_routes = http_routes;
+
+            // Clear out defunct routes before building any missing routes.
+            self.services.retain(|r, _| routes.contains(r));
+            for route in routes.into_iter() {
+                if let hash_map::Entry::Vacant(ent) = self.services.entry(route) {
+                    let route = ent.key().clone();
+                    let svc = self
+                        .new_route
+                        .new_service((Some(route), self.target.clone()));
+                    ent.insert(svc);
+                }
+            }
         }
 
-        // Otherwise, use the inner service directly.
-        trace!("No routes matched");
-        future::Either::Left(self.inner.call(req).map_err(Into::into))
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        // If the request matches a route, use the route's proxy to wrap the
+        // inner service.
+        let inner = match route_for_request(&self.http_routes, &req) {
+            Some(route) => {
+                trace!(?route, "Using route service");
+                self.services.get(route).expect("route must exist").clone()
+            }
+            None => {
+                // Otherwise, use the inner service directly.
+                trace!("No routes matched");
+                self.default.clone()
+            }
+        };
+
+        inner.oneshot(req)
     }
 }

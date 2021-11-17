@@ -153,7 +153,7 @@ impl<C> Inbound<C> {
             http.clone()
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_map_target(|p: Profile| p.logical)
-                .push(profiles::http::route_request::NewProxyRouter::layer(
+                .push(profiles::http::NewProxyRouter::layer(
                     routes
                         .push_map_target(|(route, profile)| Route { route, profile })
                         .into_inner(),

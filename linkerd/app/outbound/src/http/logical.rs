@@ -111,7 +111,7 @@ impl<E> Outbound<E> {
             // If the traffic split is empty/unavailable, eagerly fail requests.
             // When the split is in failfast, spawn the service in a background
             // task so it becomes ready without new requests.
-            let split = concrete
+            let logical = concrete
                 .check_new_service::<(ConcreteAddr, Logical), _>()
                 .push(profiles::split::layer())
                 .push_on_service(
@@ -129,7 +129,7 @@ impl<E> Outbound<E> {
                 .push_cache(cache_max_idle_age)
                 .push_on_service(http::BoxResponse::layer());
 
-            let routes = split
+            let routes = logical
                 .clone()
                 .push_map_target(|r: Route| r.logical)
                 .push_on_service(http::BoxRequest::layer())
@@ -160,16 +160,9 @@ impl<E> Outbound<E> {
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
-                // TODO(ver): CloneBoxService to flatten the stack type?
-                .push_cache(config.proxy.cache_max_idle_age)
-                .push_on_service(
-                    svc::layers()
-                        .push(http::Retain::layer())
-                        .push(http::BoxResponse::layer()),
-                )
-                .into_inner();
+                .push_on_service(http::BoxResponse::layer());
 
-            split
+            logical
                 .push_switch(
                     |(route, logical): (Option<profiles::http::Route>, Logical)| -> Result<_, Infallible> {
                         match route {
@@ -177,9 +170,10 @@ impl<E> Outbound<E> {
                             Some(route) => Ok(svc::Either::B(Route { route, logical })),
                         }
                     },
-                    routes,
+                    // TODO(ver): CloneBoxService to flatten the stack type?
+                    routes.into_inner() ,
                 )
-                .push(profiles::http::route_request::layer())
+                .push(profiles::http::NewServiceRouter::layer())
                 .push_on_service(http::BoxRequest::layer())
                 // Strips headers that may be set by this proxy and add an outbound
                 // canonical-dst-header. The response body is boxed unify the profile

@@ -1,3 +1,5 @@
+mod route_request;
+
 use regex::Regex;
 use std::{
     fmt,
@@ -8,7 +10,7 @@ use std::{
 };
 use tower::retry::budget::Budget;
 
-pub mod route_request;
+pub use self::route_request::{NewProxyRouter, NewServiceRouter};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {
