@@ -138,10 +138,6 @@ impl Receiver {
         self.inner.borrow().opaque_protocol
     }
 
-    pub fn borrow(&self) -> watch::Ref<'_, Profile> {
-        self.inner.borrow()
-    }
-
     pub fn endpoint(&self) -> Option<(SocketAddr, Metadata)> {
         self.inner.borrow().endpoint.clone()
     }
