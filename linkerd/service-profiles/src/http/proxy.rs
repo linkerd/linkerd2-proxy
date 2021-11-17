@@ -1,4 +1,4 @@
-use super::{route_for_request, RequestMatch, Route};
+use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
 use futures::{future, prelude::*};
 use linkerd_error::{Error, Result};
@@ -115,24 +115,22 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        match route_for_request(&self.http_routes, &req) {
-            Some(route) => {
+        match super::route_for_request(&self.http_routes, &req) {
+            None => future::Either::Left({
+                // Otherwise, use the inner service directly.
+                trace!("No routes matched");
+                self.inner.call(req).map_err(Into::into)
+            }),
+            Some(route) => future::Either::Right({
                 // If the request matches a route, use the route's proxy to wrap
                 // the inner service.
                 trace!(?route, "Using route proxy");
-                future::Either::Right(
-                    self.proxies
-                        .get(route)
-                        .expect("route must exist")
-                        .proxy(&mut self.inner, req)
-                        .map_err(Into::into),
-                )
-            }
-            None => {
-                // Otherwise, use the inner service directly.
-                trace!("No routes matched");
-                future::Either::Left(self.inner.call(req).map_err(Into::into))
-            }
+                self.proxies
+                    .get(route)
+                    .expect("route must exist")
+                    .proxy(&mut self.inner, req)
+                    .map_err(Into::into)
+            }),
         }
     }
 }

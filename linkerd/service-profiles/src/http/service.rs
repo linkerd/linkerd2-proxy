@@ -1,4 +1,4 @@
-use super::{route_for_request, RequestMatch, Route};
+use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
 use futures::prelude::*;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
@@ -98,7 +98,7 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        let inner = match route_for_request(&self.http_routes, &req) {
+        let inner = match super::route_for_request(&self.http_routes, &req) {
             Some(route) => {
                 // If the request matches a route, use the route's service.
                 trace!(?route, "Using route service");
