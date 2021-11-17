@@ -1,28 +1,31 @@
 use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
-use futures::{future, prelude::*, ready};
-use linkerd_error::Result;
-use linkerd_stack::{layer, NewService, Oneshot, Param, RecognizeRoute, ServiceExt};
-use std::task::{Context, Poll};
+use futures::{future, prelude::*};
+use linkerd_error::{Error, Result};
+use linkerd_stack::{NewService, Param, Proxy, RecognizeRoute, Service, ServiceExt};
+use std::{
+    collections::{HashMap, HashSet},
+    task::{Context, Poll},
+};
 use tracing::{debug, trace};
 
-#[derive(Clone)]
-pub struct NewProxyRouter<N> {
-    inner: N,
+#[derive(Clone, Debug)]
+pub struct NewProxyRouter<M, N> {
+    new_proxy: M,
+    new_service: N,
 }
 
-pub struct ProxyRouter<T, N>
-where
-    N: NewService<(Option<Route>, T)>,
-{
-    recognize: Recognize<T>,
+#[derive(Debug)]
+pub struct ProxyRouter<T, N, P, S> {
+    new_proxy: N,
+    inner: S,
+    target: T,
     rx: ReceiverStream,
-    inner: N,
-    default: N::Service,
     http_routes: Vec<(RequestMatch, Route)>,
+    proxies: HashMap<Route, P>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct NewRecognize(());
 
 #[derive(Clone, Debug)]
@@ -64,45 +67,60 @@ impl<T: Clone, B> RecognizeRoute<http::Request<B>> for Recognize<T> {
 
 // === impl NewProxyRouter ===
 
-impl<T, N> NewService<T> for NewProxyRouter<N>
+impl<T, M, N> NewService<T> for NewProxyRouter<M, N>
 where
     T: Param<Receiver> + Clone,
-    N: NewService<(Option<Route>, T)> + Clone,
+    N: NewService<T> + Clone,
+    M: NewService<(Option<Route>, T)> + Clone,
 {
-    type Service = ProxyRouter<T, N>;
+    type Service = ProxyRouter<T, M, M::Service, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let rx = target.param();
-        let default = self.inner.new_service((None, target.clone()));
+        let inner = self.inner.new_service(target.clone());
         ProxyRouter {
-            rx: rx.into(),
+            inner,
             target,
-            inner: self.inner.clone(),
-            default,
+            rx: rx.into(),
             http_routes: Vec::new(),
+            new_proxy: self.new_proxy.clone(),
         }
     }
 }
 
 // === impl ProxyRouter ===
 
-impl<B, T, N, S> tower::Service<http::Request<B>> for ProxyRouter<T, N>
+impl<B, T, N, P, S, Rsp> Service<http::Request<B>> for ProxyRouter<T, N, P, S>
 where
     T: Clone,
-    N: NewService<(Option<Route>, T), Service = S> + Clone,
-    S: tower::Service<http::Request<B>>,
+    N: NewService<(Route, T), Service = P> + Clone,
+    P: Proxy<http::Request<B>, S, Response = Rsp>,
+    S: Service<P::Request, Response = Rsp>,
+    S::Error: Into<Error>,
 {
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = future::Either<S::Future, Oneshot<S, http::Request<B>>>;
+    type Response = Rsp;
+    type Error = Error;
+    type Future = future::Either<
+        future::MapErr<S::Future, fn(S::Error) -> Error>,
+        future::MapErr<P::Future, fn(P::Error) -> Error>,
+    >;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
         if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
             debug!(routes = %http_routes.len(), "Updating HTTP routes");
-            self.http_routes = http_routes;
+            let routes = http_routes
+                .into_iter()
+                .map(|(_, r)| r)
+                .collect::<HashSet<_>>();
+            self.proxies.retain(|r, _| routes.contains(&r));
+            for route in routes.into_iter() {
+                self.proxies
+                    .entry(route.clone())
+                    .or_insert_with(|| self.new_proxy.new_service((route, self.target.clone())));
+            }
         }
 
-        self.default.poll_ready(cx)
+        self.inner.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -110,7 +128,7 @@ where
             Ok(r) => r,
             Err(e) => {
                 debug!(?e, "No matching route");
-                return future::Either::Left(self.default.call(req));
+                return future::Either::Left(self.inner.call(req));
             }
         };
         for (ref condition, ref route) in &self.http_routes {
