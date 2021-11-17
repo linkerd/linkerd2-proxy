@@ -118,17 +118,18 @@ impl<C> Inbound<C> {
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
-                .push_on_service(http_tracing::client(
-                    rt.span_sink.clone(),
-                    super::trace_labels(),
-                ))
-                .push_on_service(svc::layers()
-                    .push(http::BoxResponse::layer())
-                    // This box is needed to reduce compile times on recent
-                    // (2021-10-17) nightlies, though this may be fixed by
-                    // https://github.com/rust-lang/rust/pull/89831. It should
-                    // be removed when possible.
-                    .push(svc::BoxService::layer())
+                .push_on_service(
+                    svc::layers()
+                        .push(http_tracing::client(
+                            rt.span_sink.clone(),
+                            super::trace_labels(),
+                        ))
+                        .push(http::BoxResponse::layer())
+                        // This box is needed to reduce compile times on recent
+                        // (2021-10-17) nightlies, though this may be fixed by
+                        // https://github.com/rust-lang/rust/pull/89831. It should
+                        // be removed when possible.
+                        .push(svc::BoxService::layer())
                 );
 
             // Attempts to discover a service profile for each logical target (as
@@ -193,19 +194,13 @@ impl<C> Inbound<C> {
                     Ok(profiles::LookupAddr(addr.into()))
                 }))
                 .instrument(|_: &Logical| debug_span!("profile"))
-                .push_on_service(
-                    svc::layers()
-                        .push(http::BoxResponse::layer())
-                        .push(svc::layer::mk(svc::SpawnReady::new)),
-                )
-                .check_new_service::<Logical, http::Request<http::BoxBody>>()
+                .push_on_service(svc::layer::mk(svc::SpawnReady::new))
                 // Skip the profile stack if it takes too long to become ready.
                 .push_when_unready(
                     config.profile_idle_timeout,
                     http.push_on_service(svc::layer::mk(svc::SpawnReady::new))
                         .into_inner(),
                 )
-                .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers()
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))

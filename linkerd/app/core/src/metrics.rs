@@ -8,7 +8,6 @@ use crate::{
 };
 use linkerd_addr::Addr;
 pub use linkerd_metrics::*;
-use profiles::LogicalAddr;
 use std::{
     fmt::{self, Write},
     net::SocketAddr,
@@ -218,7 +217,7 @@ impl FmtLabels for ControlLabels {
 // === impl RouteLabels ===
 
 impl RouteLabels {
-    pub fn inbound(addr: LogicalAddr, route: &profiles::http::Route) -> Self {
+    pub fn inbound(addr: profiles::LogicalAddr, route: &profiles::http::Route) -> Self {
         let labels = prefix_labels("rt", route.labels().iter());
         Self {
             addr,
@@ -227,7 +226,7 @@ impl RouteLabels {
         }
     }
 
-    pub fn outbound(addr: LogicalAddr, route: &profiles::http::Route) -> Self {
+    pub fn outbound(addr: profiles::LogicalAddr, route: &profiles::http::Route) -> Self {
         let labels = prefix_labels("rt", route.labels().iter());
         Self {
             addr,

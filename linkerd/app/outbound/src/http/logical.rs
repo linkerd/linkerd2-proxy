@@ -124,8 +124,7 @@ impl<E> Outbound<E> {
                         .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                         .push_spawn_buffer(buffer_capacity),
                 )
-                .push_cache(cache_max_idle_age)
-                .push_on_service(http::BoxResponse::layer());
+                .push_cache(cache_max_idle_age);
 
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.
