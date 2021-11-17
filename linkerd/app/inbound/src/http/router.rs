@@ -8,7 +8,7 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, Remote, ServerAddr},
     Error, Infallible, NameAddr, Result,
 };
-use std::{hash::Hash, net::SocketAddr};
+use std::net::SocketAddr;
 use tracing::{debug, debug_span};
 
 /// Describes an HTTP client target.
