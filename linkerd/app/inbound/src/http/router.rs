@@ -134,19 +134,6 @@ impl<C> Inbound<C> {
                     .push(svc::BoxService::layer())
                 );
 
-            let routes = svc::proxies()
-                .push_map_target(|r: Route| r.profile.logical)
-                .push_on_service(http::BoxRequest::layer())
-                .push(
-                    rt.metrics
-                        .proxy
-                        .http_route
-                        .to_layer::<classify::Response, _, _>(),
-                )
-                .push_on_service(http::BoxResponse::layer())
-                .push(classify::NewClassify::layer())
-                .push_http_insert_target::<profiles::http::Route>();
-
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
             // request has not been received for `cache_max_idle_age`.
@@ -154,7 +141,18 @@ impl<C> Inbound<C> {
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_map_target(|p: Profile| p.logical)
                 .push(profiles::http::NewProxyRouter::layer(
-                    routes
+                    svc::proxies()
+                        .push_map_target(|r: Route| r.profile.logical)
+                        .push_on_service(http::BoxRequest::layer())
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .http_route
+                                .to_layer::<classify::Response, _, _>(),
+                        )
+                        .push_on_service(http::BoxResponse::layer())
+                        .push(classify::NewClassify::layer())
+                        .push_http_insert_target::<profiles::http::Route>()
                         .push_map_target(|(route, profile)| Route { route, profile })
                         .into_inner(),
                 ))
