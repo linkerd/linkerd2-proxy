@@ -98,15 +98,14 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        // If the request matches a route, use the route's proxy to wrap the
-        // inner service.
         let inner = match route_for_request(&self.http_routes, &req) {
             Some(route) => {
+                // If the request matches a route, use the route's service.
                 trace!(?route, "Using route service");
                 self.services.get(route).expect("route must exist").clone()
             }
             None => {
-                // Otherwise, use the inner service directly.
+                // Otherwise, use the default service.
                 trace!("No routes matched");
                 self.default.clone()
             }
