@@ -153,7 +153,6 @@ impl<C> Inbound<C> {
                         .push_map_target(|(route, profile)| Route { route, profile })
                         .into_inner(),
                 ))
-                .check_new_service::<Profile, http::Request<http::BoxBody>>()
                 .push_switch(
                     // If the profile was resolved to a logical (service) address, build a profile
                     // stack to include route-level metrics, etc. Otherwise, skip this stack and use
@@ -202,7 +201,6 @@ impl<C> Inbound<C> {
                 .push_when_unready(
                     config.profile_idle_timeout,
                     http.push_on_service(svc::layer::mk(svc::SpawnReady::new))
-                        .check_new_service::<Logical, http::Request<http::BoxBody>>()
                         .into_inner(),
                 )
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
