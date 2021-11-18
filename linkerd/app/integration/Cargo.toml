@@ -35,7 +35,7 @@ tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
 tokio-stream = { version = "0.1.8", features = ["sync"] }
 tokio-rustls = "0.23.1"
 rustls-pemfile = "0.2.1"
-tower = { version = "0.4.10", default-features = false }
+tower = { version = "0.4.11", default-features = false }
 tonic = { version = "0.6", default-features = false }
 tracing = "0.1.29"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
