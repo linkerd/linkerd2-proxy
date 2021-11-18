@@ -72,6 +72,9 @@ jobs:
             --package=linkerd-app-inbound \
             --package=linkerd-app-outbound \
             --package=linkerd-app-test
+
+      # Integration: enable tests that are flakey in coverage, but disable tests
+      # that can be flakey in CI...
       - run: |
           cargo test --no-run \
             --package=linkerd-app-integration \
