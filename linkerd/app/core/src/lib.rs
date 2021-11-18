@@ -37,7 +37,6 @@ pub mod classify;
 pub mod config;
 pub mod control;
 pub mod dns;
-pub mod dst;
 pub mod errors;
 pub mod http_tracing;
 pub mod metrics;

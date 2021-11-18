@@ -1252,9 +1252,9 @@ dependencies = [
 name = "linkerd-retry"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "linkerd-error",
  "linkerd-stack",
- "pin-project",
  "tower",
  "tracing",
 ]

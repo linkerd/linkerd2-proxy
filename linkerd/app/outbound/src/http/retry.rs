@@ -1,10 +1,9 @@
+use super::Route;
 use futures::future;
 use linkerd_app_core::{
     classify,
-    dst::Route,
     http_metrics::retries::Handle,
-    metrics::HttpRouteRetry,
-    profiles,
+    metrics, profiles,
     proxy::http::{ClientHandle, HttpBody},
     svc::{layer, Either, Param},
     Error,
@@ -15,14 +14,14 @@ use linkerd_retry as retry;
 use std::sync::Arc;
 
 pub fn layer<N>(
-    metrics: HttpRouteRetry,
+    metrics: metrics::HttpRouteRetry,
 ) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N>> + Clone {
     retry::NewRetry::<_, N>::layer(NewRetryPolicy::new(metrics))
 }
 
 #[derive(Clone, Debug)]
 pub struct NewRetryPolicy {
-    metrics: HttpRouteRetry,
+    metrics: metrics::HttpRouteRetry,
 }
 
 #[derive(Clone, Debug)]
@@ -38,7 +37,7 @@ const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 // === impl NewRetryPolicy ===
 
 impl NewRetryPolicy {
-    pub fn new(metrics: HttpRouteRetry) -> Self {
+    pub fn new(metrics: metrics::HttpRouteRetry) -> Self {
         Self { metrics }
     }
 }
