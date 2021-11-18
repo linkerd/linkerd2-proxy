@@ -6,7 +6,7 @@ use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
-    self as stack, layer, ArcNewService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
+    self as stack, layer, ArcNewService, BoxCloneService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
     FailFast, Filter, InsertParam, MapErr, MapTargetLayer, NewRouter, NewService, Param, Predicate,
     UnwrapOr,
 };

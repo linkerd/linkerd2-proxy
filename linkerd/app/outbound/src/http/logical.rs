@@ -165,8 +165,11 @@ impl<E> Outbound<E> {
                         // Sets the per-route response classifier as a request
                         // extension.
                         .push(classify::NewClassify::layer())
-                        .push_on_service(http::BoxResponse::layer())
-                        // TODO(ver): CloneBoxService to flatten the stack type?
+                        .push_on_service(
+                            svc::layers()
+                                .push(http::BoxResponse::layer())
+                                .push(svc::BoxCloneService::layer())
+                        )
                         .into_inner(),
                 )
                 .push(profiles::http::NewServiceRouter::layer())
