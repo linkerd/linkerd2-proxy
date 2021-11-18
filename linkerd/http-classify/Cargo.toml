@@ -10,4 +10,4 @@ publish = false
 http = "0.2"
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
-tower = { version = "0.4.10", default-features = false }
+tower = { version = "0.4.11", default-features = false }
