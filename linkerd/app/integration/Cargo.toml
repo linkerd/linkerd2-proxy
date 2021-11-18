@@ -13,8 +13,7 @@ a dedicated crate to help the compiler cache dependencies properly.
 """
 
 [features]
-default = ["all-tests"]
-all-tests = ["flakey-in-ci"]
+default = ["flakey-in-ci"]
 flakey-in-ci = ["flakey-in-coverage"]
 flakey-in-coverage = []
 rustfmt = ["linkerd2-proxy-api/rustfmt"]

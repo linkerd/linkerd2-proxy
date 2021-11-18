@@ -6,15 +6,8 @@ license = "Apache-2.0"
 edition = "2021"
 publish = false
 description = """
-Proxy integration tests
-
-The test utilities can be very costly to compile, so they are extracted into
-a dedicated crate to help the compiler cache dependencies properly.
+Proxy test helpers
 """
-
-[features]
-# Disable to skip certain tests that should not be run on CI.
-flakey-in-ci = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
