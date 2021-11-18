@@ -65,13 +65,19 @@ jobs:
             --package=linkerd-app-outbound \
             --package=linkerd-app-test
       - run: |
+          cargo test --no-run \
+            --package=linkerd-app-integration \
+            --no-default-features --features=flakey-in-coverage
+      - run: |
           cargo test \
             --package=linkerd-app \
             --package=linkerd-app-admin \
             --package=linkerd-app-core \
             --package=linkerd-app-gateway \
             --package=linkerd-app-inbound \
-            --package=linkerd-app-integration \
             --package=linkerd-app-outbound \
             --package=linkerd-app-test
-
+      - run: |
+          cargo test \
+            --package=linkerd-app-integration \
+            --no-default-features --features=flakey-in-coverage

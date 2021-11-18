@@ -31,6 +31,8 @@ jobs:
         run: |
           cd "${CARGO_HOME}/bin"
           curl -sL https://github.com/xd009642/tarpaulin/releases/download/${CARGO_TARPAULIN_VERSION}/cargo-tarpaulin-${CARGO_TARPAULIN_VERSION}-travis.tar.gz | tar xzvf -
-      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --no-run
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-app-integration --no-run
+      - run: cargo tarpaulin --locked --workspace --package=linkerd-app-integration --no-default-features --skip-clean --no-run
       - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --skip-clean --ignore-tests --no-fail-fast --out=Xml
+      - run: cargo tarpaulin --locked --workspace --package=linkerd-app-integration --no-default-features --skip-clean --ignore-tests --no-fail-fast --out=Xml
       - uses: codecov/codecov-action@f32b3a3741e1053eb607407145bc9619351dc93b
