@@ -103,10 +103,6 @@ shellcheck:
 test: fetch
 	$(CARGO_TEST)
 
-.PHONY: test-flakey
-test-flakey: fetch
-	$(CARGO_TEST) --features linkerd-app-integration/flaky_tests
-
 .PHONY: package
 package: $(PKG_ROOT)/$(PKG)
 

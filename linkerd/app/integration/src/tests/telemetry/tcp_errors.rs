@@ -231,6 +231,7 @@ async fn inbound_multi() {
 }
 
 /// Tests that TLS detect failure metrics are collected for the direct stack.
+#[cfg_attr(not(feature = "flakey-in-coverage"), ignore)]
 #[tokio::test]
 async fn inbound_direct_multi() {
     let _trace = trace_init();
@@ -314,6 +315,7 @@ async fn inbound_invalid_ip() {
 
 /// Tests that the detect metric is not incremented when TLS is successfully
 /// detected by the direct stack.
+#[cfg_attr(not(feature = "flakey-in-coverage"), ignore)]
 #[tokio::test]
 async fn inbound_direct_success() {
     let _trace = trace_init();
