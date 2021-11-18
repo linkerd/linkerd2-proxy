@@ -45,7 +45,8 @@ where
 
     fn proxy(&self, svc: &mut S, mut req: http::Request<B>) -> Self::Future {
         let classify_rsp = self.classify.classify(&req);
-        let _ = req.extensions_mut().insert(classify_rsp);
+        let prior = req.extensions_mut().insert(classify_rsp);
+        debug_assert!(prior.is_none(), "classification extension already existed");
         self.inner.proxy(svc, req)
     }
 }
@@ -66,7 +67,8 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         let classify_rsp = self.classify.classify(&req);
-        let _ = req.extensions_mut().insert(classify_rsp);
+        let prior = req.extensions_mut().insert(classify_rsp);
+        debug_assert!(prior.is_none(), "classification extension already existed");
         self.inner.call(req)
     }
 }
