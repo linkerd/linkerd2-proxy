@@ -117,13 +117,14 @@ where
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         match super::route_for_request(&self.http_routes, &req) {
             None => future::Either::Left({
-                // Otherwise, use the inner service directly.
+                // Use the inner service directly if no route matches the
+                // request.
                 trace!("No routes matched");
                 self.inner.call(req).map_err(Into::into)
             }),
             Some(route) => future::Either::Right({
-                // If the request matches a route, use the route's proxy to wrap
-                // the inner service.
+                // Otherwise, wrap the inner service with the route-specific
+                // proxy.
                 trace!(?route, "Using route proxy");
                 self.proxies
                     .get(route)
