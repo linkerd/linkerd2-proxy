@@ -12,13 +12,13 @@ jobs:
     steps:
     - name: Build Fuzzers
       id: build
-      uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@570c150a0543d8b1a848da70caef208db0e1c3ba
+      uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@2c164afcbab66dd27378dc6dab69bb3c285e8e83
       with:
         oss-fuzz-project-name: 'linkerd2-proxy'
         dry-run: false
         language: rust
     - name: Run Fuzzers
-      uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@570c150a0543d8b1a848da70caef208db0e1c3ba
+      uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@2c164afcbab66dd27378dc6dab69bb3c285e8e83
       with:
         oss-fuzz-project-name: 'linkerd2-proxy'
         fuzz-seconds: 1200
