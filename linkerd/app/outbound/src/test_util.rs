@@ -53,7 +53,7 @@ pub(crate) fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (tap, _) = tap::new();
     let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
     let runtime = ProxyRuntime {
-        identity: linkerd_proxy_identity::LocalCrtKey::default_for_test(),
+        identity: linkerd_meshtls_rustls::creds::default_for_test().1.into(),
         metrics: metrics.proxy,
         tap,
         span_sink: None,

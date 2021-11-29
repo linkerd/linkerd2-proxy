@@ -164,6 +164,7 @@ where
     type Data = B::Data;
     type Error = B::Error;
 
+    #[inline]
     fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
@@ -197,6 +198,11 @@ where
             .map_err(|e| self.as_mut().project().err(e))?;
         self.as_mut().project().eos(trailers.as_ref());
         Poll::Ready(Ok(trailers))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        self.inner.size_hint()
     }
 }
 

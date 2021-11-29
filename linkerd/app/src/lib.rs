@@ -10,7 +10,7 @@ pub mod oc_collector;
 pub mod tap;
 
 pub use self::metrics::Metrics;
-use futures::{future, FutureExt, TryFutureExt};
+use futures::{future, Future, FutureExt};
 use linkerd_app_admin as admin;
 pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
@@ -115,7 +115,7 @@ impl Config {
 
         // Ensure that we've obtained a valid identity before binding any servers.
         let identity = info_span!("identity")
-            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()));
+            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
 
         let report = identity.metrics().and_report(report);
 
@@ -123,17 +123,18 @@ impl Config {
 
         let tap = {
             let bind = bind_admin.clone();
-            info_span!("tap").in_scope(|| tap.build(bind, identity.local(), drain_rx.clone()))?
+            info_span!("tap")
+                .in_scope(|| tap.build(bind, identity.receiver().server(), drain_rx.clone()))?
         };
 
         let dst = {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local()))
+            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.receiver().new_client()))
         }?;
 
         let oc_collector = {
-            let identity = identity.local();
+            let identity = identity.receiver().new_client();
             let dns = dns.resolver.clone();
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
@@ -142,7 +143,7 @@ impl Config {
         }?;
 
         let runtime = ProxyRuntime {
-            identity: identity.local(),
+            identity: identity.receiver(),
             metrics: metrics.proxy.clone(),
             tap: tap.registry(),
             span_sink: oc_collector.span_sink(),
@@ -158,7 +159,7 @@ impl Config {
         };
 
         let admin = {
-            let identity = identity.local();
+            let identity = identity.receiver().server();
             let metrics = inbound.metrics();
             let policy = inbound_policies.clone();
             let report = inbound
@@ -200,15 +201,13 @@ impl Config {
 
         // Build a task that initializes and runs the proxy stacks.
         let start_proxy = {
-            let identity = identity.local();
+            let identity_ready = identity.ready();
             let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
             let resolve = dst.resolve;
 
             Box::pin(async move {
-                Self::await_identity(identity)
-                    .await
-                    .expect("failed to initialize identity");
+                Self::await_identity(identity_ready).await;
 
                 tokio::spawn(
                     outbound
@@ -246,15 +245,11 @@ impl Config {
     /// Waits for the proxy's identity to be certified.
     ///
     /// If this does not complete in a timely fashion, warnings are logged every 15s
-    async fn await_identity(id: identity::LocalCrtKey) -> Result<(), Error> {
-        tokio::pin! {
-            let fut = id.await_crt();
-        }
-
+    async fn await_identity(mut fut: Pin<Box<dyn Future<Output = ()> + Send + 'static>>) {
         const TIMEOUT: time::Duration = time::Duration::from_secs(15);
         loop {
             tokio::select! {
-                res = (&mut fut) => return res.map(|_| ()).map_err(Into::into),
+                _ = (&mut fut) => return,
                 _ = time::sleep(TIMEOUT) => {
                     tracing::warn!("Waiting for identity to be initialized...");
                 }
@@ -287,8 +282,8 @@ impl App {
         &self.dst
     }
 
-    pub fn local_identity(&self) -> identity::LocalCrtKey {
-        self.identity.local()
+    pub fn local_identity(&self) -> identity::Name {
+        self.identity.receiver().name().clone()
     }
 
     pub fn identity_addr(&self) -> ControlAddr {
@@ -339,24 +334,21 @@ impl App {
                         );
 
                         // Kick off the identity so that the process can become ready.
-                        let local = identity.local();
+                        let local = identity.receiver();
+                        let local_id = local.name().clone();
+                        let ready = identity.ready();
                         tokio::spawn(
                             identity
-                                .task()
+                                .run()
                                 .instrument(info_span!("identity").or_current()),
                         );
 
                         let latch = admin.latch;
                         tokio::spawn(
-                            local
-                                .await_crt()
-                                .map_ok(move |id| {
+                            ready
+                                .map(move |()| {
                                     latch.release();
-                                    info!("Certified identity: {}", id.name());
-                                })
-                                .map_err(|_| {
-                                    // The daemon task was lost?!
-                                    panic!("Failed to certify identity!");
+                                    info!(id = %local_id, "Certified identity");
                                 })
                                 .instrument(info_span!("identity").or_current()),
                         );

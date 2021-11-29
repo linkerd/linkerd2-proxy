@@ -296,16 +296,15 @@ impl fmt::Display for NoServerTls {
 
 #[cfg(test)]
 mod tests {
-    use io::AsyncWriteExt;
-
     use super::*;
+    use linkerd_io::AsyncWriteExt;
     use std::str::FromStr;
 
     #[tokio::test(flavor = "current_thread")]
     async fn detect_buffered() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let (mut client_io, server_io) = tokio::io::duplex(1024);
+        let (mut client_io, server_io) = linkerd_io::duplex(1024);
         let input = include_bytes!("server/testdata/curl-example-com-client-hello.bin");
         let len = input.len();
         let client_task = tokio::spawn(async move {

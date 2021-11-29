@@ -4,6 +4,7 @@ use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
 use linkerd_conditional::Conditional;
 use linkerd_error::Error;
 use linkerd_io as io;
+use linkerd_meshtls as meshtls;
 use linkerd_proxy_http::{trace, HyperServerSvc};
 use linkerd_tls as tls;
 use std::{
@@ -23,7 +24,7 @@ pub struct AcceptPermittedClients {
 
 type Connection<T, I> = (
     (tls::ConditionalServerTls, T),
-    io::EitherIo<linkerd_tls_rustls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
+    io::EitherIo<meshtls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
 );
 
 pub type ServeFuture = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;

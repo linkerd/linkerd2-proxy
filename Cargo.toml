@@ -30,6 +30,9 @@ members = [
     "linkerd/http-retry",
     "linkerd/identity",
     "linkerd/io",
+    "linkerd/meshtls",
+    "linkerd/meshtls/boring",
+    "linkerd/meshtls/rustls",
     "linkerd/metrics",
     "linkerd/opencensus",
     "linkerd/proxy/api-resolve",
@@ -37,7 +40,7 @@ members = [
     "linkerd/proxy/core",
     "linkerd/proxy/discover",
     "linkerd/proxy/http",
-    "linkerd/proxy/identity",
+    "linkerd/proxy/identity-client",
     "linkerd/proxy/resolve",
     "linkerd/proxy/tap",
     "linkerd/proxy/tcp",
@@ -53,7 +56,6 @@ members = [
     "linkerd/system",
     "linkerd/tonic-watch",
     "linkerd/tls",
-    "linkerd/tls/rustls",
     "linkerd/tls/test-util",
     "linkerd/tracing",
     "linkerd/transport-header",
@@ -74,4 +76,4 @@ debug = false
 lto = true
 
 [patch.crates-io]
-webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21" }
+webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.22" }

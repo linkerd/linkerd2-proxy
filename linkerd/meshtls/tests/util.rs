@@ -1,57 +1,29 @@
-#![cfg(test)]
-
-// These are basically integration tests for the `connection` submodule, but
-// they cannot be "real" integration tests because `connection` isn't a public
-// interface and because `connection` exposes a `#[cfg(test)]`-only API for use
-// by these tests.
+#![deny(warnings)]
+#![forbid(unsafe_code)]
 
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
-use linkerd_identity as id;
+use linkerd_error::Infallible;
+use linkerd_identity::{Credentials, DerX509, Name};
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use linkerd_meshtls as meshtls;
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},
     ConnectTcp, Keepalive, ListenAddr,
 };
 use linkerd_stack::{
-    layer::Layer, service_fn, ExtractParam, InsertParam, NewService, Param, Service, ServiceExt,
+    layer::Layer, service_fn, ExtractParam, InsertParam, NewService, Param, ServiceExt,
 };
 use linkerd_tls as tls;
-use linkerd_tls_rustls as rustls;
 use linkerd_tls_test_util as test_util;
-use std::{convert::Infallible, future::Future, net::SocketAddr, sync::mpsc, task, time::Duration};
+use std::{future::Future, net::SocketAddr, sync::mpsc, time::Duration};
 use tokio::net::TcpStream;
-use tracing::instrument::Instrument;
+use tracing::Instrument;
 
-type ServerConn<T, I> = (
-    (tls::ConditionalServerTls, T),
-    io::EitherIo<rustls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
-);
-
-fn load(id: &linkerd_tls_test_util::Entity) -> (rustls::TrustAnchors, rustls::CrtKey) {
-    let key = rustls::Key::from_pkcs8(id.key).expect("key must be valid");
-
-    let crt = {
-        let n = id.name.parse::<id::Name>().expect("name must be valid");
-        let der = id.crt.iter().copied().collect();
-        let expiry = std::time::SystemTime::now() + std::time::Duration::from_secs(60 * 60);
-        rustls::Crt::new(id::LocalId(n), der, vec![], expiry)
-    };
-
-    let anchors = {
-        let pem = std::str::from_utf8(id.trust_anchors).expect("utf-8");
-        rustls::TrustAnchors::from_pem(pem).unwrap_or_else(rustls::TrustAnchors::empty)
-    };
-
-    let ck = anchors.certify(key, crt).expect("Identity must be valid");
-    (anchors, ck)
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn plaintext() {
-    let (_, server_tls) = load(&test_util::FOO_NS1);
-    let (_, client_tls) = load(&test_util::BAR_NS1);
+pub async fn plaintext(mode: meshtls::Mode) {
+    let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
+    let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
     let (client_result, server_result) = run_test(
         client_tls,
         Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
@@ -74,11 +46,10 @@ async fn plaintext() {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn proxy_to_proxy_tls_works() {
-    let (_, server_tls) = load(&test_util::FOO_NS1);
-    let (_, client_tls) = load(&test_util::BAR_NS1);
-    let server_id = tls::ServerId(server_tls.name().clone());
+pub async fn proxy_to_proxy_tls_works(mode: meshtls::Mode) {
+    let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
+    let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
+    let server_id = tls::ServerId(test_util::FOO_NS1.name.parse().unwrap());
     let (client_result, server_result) = run_test(
         client_tls.clone(),
         Conditional::Some(server_id.clone()),
@@ -98,21 +69,20 @@ async fn proxy_to_proxy_tls_works() {
     assert_eq!(
         server_result.tls,
         Some(Conditional::Some(tls::ServerTls::Established {
-            client_id: Some(tls::ClientId(client_tls.name().clone())),
+            client_id: Some(tls::ClientId(test_util::BAR_NS1.name.parse().unwrap())),
             negotiated_protocol: None,
         }))
     );
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
-    let (_, server_tls) = load(&test_util::FOO_NS1);
+pub async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match(mode: meshtls::Mode) {
+    let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
 
     // Misuse the client's identity instead of the server's identity. Any
     // identity other than `server_tls.server_identity` would work.
-    let (_, client_tls) = load(&test_util::BAR_NS1);
-    let sni = (**client_tls.id()).clone();
+    let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
+    let sni = test_util::BAR_NS1.name.parse::<Name>().unwrap();
 
     let (client_result, server_result) = run_test(
         client_tls,
@@ -136,6 +106,33 @@ async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     assert_eq!(&server_result.result.unwrap()[..], START_OF_TLS);
 }
 
+type ServerConn<T, I> = (
+    (tls::ConditionalServerTls, T),
+    io::EitherIo<meshtls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
+);
+
+fn load(
+    mode: meshtls::Mode,
+    ent: &test_util::Entity,
+) -> (meshtls::creds::Store, meshtls::NewClient, meshtls::Server) {
+    let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
+    let (mut store, rx) = mode
+        .watch(
+            ent.name.parse().unwrap(),
+            roots_pem,
+            ent.key,
+            b"fake CSR data",
+        )
+        .expect("credentials must be readable");
+
+    let expiry = std::time::SystemTime::now() + Duration::from_secs(600);
+    store
+        .set_certificate(DerX509(ent.crt.to_vec()), vec![], expiry)
+        .expect("certificate must be valid");
+
+    (store, rx.new_client(), rx.server())
+}
+
 struct Transported<I, R> {
     tls: Option<I>,
 
@@ -145,19 +142,20 @@ struct Transported<I, R> {
 
 #[derive(Clone)]
 struct ServerParams {
-    identity: rustls::CrtKey,
+    identity: meshtls::Server,
 }
 
-type ClientIo = io::EitherIo<io::ScopedIo<TcpStream>, rustls::ClientIo<io::ScopedIo<TcpStream>>>;
+type ClientIo =
+    io::EitherIo<io::ScopedIo<TcpStream>, linkerd_meshtls::ClientIo<io::ScopedIo<TcpStream>>>;
 
 /// Runs a test for a single TCP connection. `client` processes the connection
 /// on the client side and `server` processes the connection on the server
 /// side.
 async fn run_test<C, CF, CR, S, SF, SR>(
-    client_tls: rustls::CrtKey,
+    client_tls: meshtls::NewClient,
     client_server_id: Conditional<tls::ServerId, tls::NoClientTls>,
     client: C,
-    server_id: rustls::CrtKey,
+    server_tls: meshtls::Server,
     server: S,
 ) -> (
     Transported<tls::ConditionalClientTls, CR>,
@@ -180,18 +178,18 @@ where
         // Saves the result of every connection.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerTls, SR>>();
 
-        let detect = tls::NewDetectTls::<Tls, _, _>::new(
+        let detect = tls::NewDetectTls::<meshtls::Server, _, _>::new(
             ServerParams {
-                identity: server_id,
+                identity: server_tls,
             },
             move |meta: (tls::ConditionalServerTls, Addrs)| {
                 let server = server.clone();
                 let sender = sender.clone();
-                let tls = Some(meta.0.clone().map(Into::into));
+                let tls = meta.0.clone().map(Into::into);
                 service_fn(move |conn| {
                     let server = server.clone();
                     let sender = sender.clone();
-                    let tls = tls.clone();
+                    let tls = Some(tls.clone());
                     let future = server((meta.clone(), conn));
                     Box::pin(
                         async move {
@@ -231,17 +229,16 @@ where
         // type, e.g. `Arc<Mutex>`, but using a channel simplifies the code and
         // parallels the server side.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalClientTls, CR>>();
-        let sender_clone = sender.clone();
 
         let tls = Some(client_server_id.clone().map(Into::into));
         let client = async move {
-            let conn = tls::Client::layer(Tls(client_tls))
+            let conn = tls::Client::layer(client_tls)
                 .layer(ConnectTcp::new(Keepalive(None)))
                 .oneshot(Target(server_addr.into(), client_server_id.map(Into::into)))
                 .await;
             match conn {
                 Err(e) => {
-                    sender_clone
+                    sender
                         .send(Transported {
                             tls: None,
                             result: Err(e),
@@ -329,9 +326,6 @@ struct Server;
 #[derive(Clone)]
 struct Target(SocketAddr, tls::ConditionalClientTls);
 
-#[derive(Clone)]
-struct Tls(rustls::CrtKey);
-
 // === impl Target ===
 
 impl Param<Remote<ServerAddr>> for Target {
@@ -343,41 +337,6 @@ impl Param<Remote<ServerAddr>> for Target {
 impl Param<tls::ConditionalClientTls> for Target {
     fn param(&self) -> tls::ConditionalClientTls {
         self.1.clone()
-    }
-}
-
-// === impl Tls ===
-
-impl NewService<tls::ClientTls> for Tls {
-    type Service = rustls::Connect;
-
-    fn new_service(&self, target: tls::ClientTls) -> Self::Service {
-        rustls::Connect::new(target, self.0.client_config())
-    }
-}
-
-impl<I> Service<I> for Tls
-where
-    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
-{
-    type Response = (tls::ServerTls, rustls::ServerIo<I>);
-    type Error = io::Error;
-    type Future = rustls::TerminateFuture<I>;
-
-    #[inline]
-    fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), io::Error>> {
-        task::Poll::Ready(Ok(()))
-    }
-
-    #[inline]
-    fn call(&mut self, io: I) -> Self::Future {
-        rustls::terminate(self.0.server_config(), io)
-    }
-}
-
-impl Param<tls::LocalId> for Tls {
-    fn param(&self) -> tls::LocalId {
-        self.0.id().clone()
     }
 }
 
@@ -406,9 +365,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for ServerParams {
     }
 }
 
-impl<T> ExtractParam<Tls, T> for ServerParams {
-    fn extract_param(&self, _: &T) -> Tls {
-        Tls(self.identity.clone())
+impl<T> ExtractParam<meshtls::Server, T> for ServerParams {
+    fn extract_param(&self, _: &T) -> meshtls::Server {
+        self.identity.clone()
     }
 }
 

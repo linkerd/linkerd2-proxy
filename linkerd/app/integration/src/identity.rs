@@ -34,7 +34,9 @@ type Certify = Box<
         > + Send,
 >;
 
-const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_3];
+static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
+static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
+    &[rustls::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
 
 struct Certificates {
     pub leaf: Vec<u8>,
@@ -48,14 +50,11 @@ impl Certificates {
     {
         let f = fs::File::open(p)?;
         let mut r = io::BufReader::new(f);
-        let certs = rustls::internal::pemfile::certs(&mut r)
+        let mut certs = rustls_pemfile::certs(&mut r)
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "rustls error reading certs"))?;
-        let leaf = certs
-            .get(0)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no certs in pemfile"))?
-            .as_ref()
-            .into();
-        let intermediates = certs[1..].iter().map(|i| i.as_ref().into()).collect();
+        let mut certs = certs.drain(..);
+        let leaf = certs.next().expect("no leaf cert in pemfile");
+        let intermediates = certs.collect();
 
         Ok(Certificates {
             leaf,
@@ -95,21 +94,30 @@ impl Identity {
     ) -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
         use std::io::Cursor;
         let mut roots = rustls::RootCertStore::empty();
-        roots
-            .add_pem_file(&mut Cursor::new(trust_anchors))
-            .expect("add pem file");
+        let trust_anchors =
+            rustls_pemfile::certs(&mut Cursor::new(trust_anchors)).expect("error parsing pemfile");
+        let (added, skipped) = roots.add_parsable_certificates(&trust_anchors[..]);
+        assert_ne!(added, 0, "trust anchors must include at least one cert");
+        assert_eq!(skipped, 0, "no certs in pemfile should be invalid");
 
-        let mut client_config = rustls::ClientConfig::new();
-        client_config.root_store = roots;
+        let client_config = rustls::ClientConfig::builder()
+            .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
+            .with_safe_default_kx_groups()
+            .with_protocol_versions(TLS_VERSIONS)
+            .expect("client config must be valid")
+            .with_root_certificates(roots.clone())
+            .with_no_client_auth();
 
-        let mut server_config = rustls::ServerConfig::new(
-            rustls::AllowAnyAnonymousOrAuthenticatedClient::new(client_config.root_store.clone()),
-        );
-
-        server_config.versions = TLS_VERSIONS.to_vec();
-        server_config
-            .set_single_cert(certs.chain(), key)
-            .expect("set server resover");
+        let server_config = rustls::ServerConfig::builder()
+            .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
+            .with_safe_default_kx_groups()
+            .with_protocol_versions(TLS_VERSIONS)
+            .expect("server config must be valid")
+            .with_client_cert_verifier(rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(
+                roots,
+            ))
+            .with_single_cert(certs.chain(), key)
+            .unwrap();
 
         (Arc::new(client_config), Arc::new(server_config))
     }

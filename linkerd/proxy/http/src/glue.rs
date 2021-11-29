@@ -87,6 +87,11 @@ impl HttpBody for UpgradeBody {
                 e
             })
     }
+
+    #[inline]
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.body.size_hint()
+    }
 }
 
 impl Default for UpgradeBody {

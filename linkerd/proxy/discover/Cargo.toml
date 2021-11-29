@@ -16,12 +16,12 @@ linkerd-error = { path = "../../error" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["rt", "sync", "time"] }
-tokio-util = "0.6.8"
-tower = { version = "0.4.10", features = ["discover"] }
+tokio-util = "0.6.9"
+tower = { version = "0.4.11", features = ["discover"] }
 tracing = "0.1.29"
 pin-project = "1"
 
 [dev-dependencies]
 async-stream = "0.3"
 tokio = { version = "1", features = ["macros"] }
-tower = { version = "0.4.10", default-features = false, features = ["discover", "util"]}
+tower = { version = "0.4.11", default-features = false, features = ["discover", "util"]}

@@ -2,7 +2,13 @@
 
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![type_length_limit = "16289823"]
+
+// Emit a compile-time error if no TLS implementations are enabled. When adding
+// new implementations, add their feature flags here!
+#[cfg(not(any(feature = "meshtls-boring", feature = "meshtls-rustls")))]
+compile_error!(
+    "at least one of the following TLS implementations must be enabled: 'meshtls-boring', 'meshtls-rustls'"
+);
 
 use linkerd_app::{core::transport::BindTcp, trace, Config};
 use linkerd_signal as signal;
@@ -61,7 +67,7 @@ fn main() {
             Some(addr) => info!("Tap interface on {}", addr),
         }
 
-        info!("Local identity is {}", app.local_identity().name());
+        info!("Local identity is {}", app.local_identity());
         let addr = app.identity_addr();
         match addr.identity.value() {
             None => info!("Identity verified via {}", addr.addr),

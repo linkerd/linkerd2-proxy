@@ -23,8 +23,7 @@ use linkerd_app_core::{
     config::ProxyConfig,
     drain,
     http_tracing::OpenCensusSink,
-    identity::LocalCrtKey,
-    io, profiles,
+    identity, io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -34,7 +33,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
-    AddrMatch, Error, ProxyRuntime,
+    AddrMatch, Error, ProxyRuntime, Result,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -73,7 +72,7 @@ pub struct Outbound<S> {
 #[derive(Clone, Debug)]
 struct Runtime {
     metrics: Metrics,
-    identity: LocalCrtKey,
+    identity: identity::NewClient,
     tap: tap::Registry,
     span_sink: OpenCensusSink,
     drain: drain::Watch,
@@ -91,7 +90,7 @@ impl Outbound<()> {
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         let runtime = Runtime {
             metrics: Metrics::new(runtime.metrics),
-            identity: runtime.identity,
+            identity: runtime.identity.new_client(),
             tap: runtime.tap,
             span_sink: runtime.span_sink,
             drain: runtime.drain,
@@ -150,7 +149,7 @@ impl<S> Outbound<S> {
 impl Outbound<()> {
     pub async fn serve<A, I, P, R>(
         self,
-        listen: impl Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
+        listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
         profiles: P,
         resolve: R,
     ) where

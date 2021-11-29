@@ -3,7 +3,7 @@ use futures::Stream;
 use linkerd_app_core::{
     dns, io, metrics, profiles, serve, svc,
     transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Error,
+    Error, Result,
 };
 use std::fmt::Debug;
 use tracing::debug_span;
@@ -24,13 +24,13 @@ impl Inbound<()> {
         self.config
             .policy
             .clone()
-            .build(dns, control_metrics, self.runtime.identity.clone())
+            .build(dns, control_metrics, self.runtime.identity.new_client())
     }
 
     pub async fn serve<A, I, G, GSvc, P>(
         self,
         addr: Local<ServerAddr>,
-        listen: impl Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
+        listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
         policies: impl policy::CheckPolicy + Clone + Send + Sync + 'static,
         profiles: P,
         gateway: G,

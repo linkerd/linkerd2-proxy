@@ -1,14 +1,16 @@
 use super::*;
 use linkerd_app_core::proxy::http::trace;
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::{
+    convert::TryFrom,
+    sync::{Arc, Mutex},
+};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tokio_rustls::rustls::ClientConfig;
+use tokio_rustls::rustls::{self, ClientConfig};
 use tracing::info_span;
 use tracing::instrument::Instrument;
-use webpki::{DNSName, DNSNameRef};
 
 type ClientError = hyper::Error;
 type Request = http::Request<hyper::Body>;
@@ -18,17 +20,15 @@ type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, C
 #[derive(Clone)]
 pub struct TlsConfig {
     client_config: Arc<ClientConfig>,
-    name: DNSName,
+    name: rustls::ServerName,
 }
 
 impl TlsConfig {
     pub fn new(client_config: Arc<ClientConfig>, name: &str) -> Self {
-        let dns_name = DNSNameRef::try_from_ascii_str(name)
-            .expect("no_fail")
-            .to_owned();
+        let name = rustls::ServerName::try_from(name).expect("name must be a valid DNS name");
         TlsConfig {
             client_config,
-            name: dns_name,
+            name,
         }
     }
 }
@@ -327,7 +327,7 @@ impl tower::Service<hyper::Uri> for Conn {
             }) = tls
             {
                 let io = tokio_rustls::TlsConnector::from(client_config.clone())
-                    .connect(DNSName::as_ref(&name), io)
+                    .connect(name, io)
                     .await?;
                 Box::pin(io) as Pin<Box<dyn Io + Send + 'static>>
             } else {

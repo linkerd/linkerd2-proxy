@@ -40,7 +40,7 @@ pub use self::{
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
     new_service::NewService,
     on_service::{OnService, OnServiceLayer},
-    proxy::{Proxy, ProxyService},
+    proxy::Proxy,
     result::ResultService,
     router::{NewRouter, RecognizeRoute},
     switch_ready::{NewSwitchReady, SwitchReady},
@@ -49,7 +49,7 @@ pub use self::{
 };
 pub use tower::{
     service_fn,
-    util::{future_service, FutureService, Oneshot, ServiceExt},
+    util::{future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},
     Service,
 };
 

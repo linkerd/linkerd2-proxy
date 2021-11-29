@@ -1,0 +1,24 @@
+[package]
+name = "linkerd-meshtls-boring"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2018"
+publish = false
+
+[dependencies]
+boring = "1"
+futures = { version = "0.3", default-features = false }
+hex = "0.4" # used for debug logging
+linkerd-error = { path = "../../error" }
+linkerd-dns-name = { path = "../../dns/name" }
+linkerd-identity = { path = "../../identity" }
+linkerd-io = { path = "../../io" }
+linkerd-stack = { path = "../../stack" }
+linkerd-tls = { path = "../../tls" }
+tokio = { version = "1", features = ["macros", "sync"] }
+tokio-boring = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+linkerd-tls-test-util = { path = "../../tls/test-util" }

@@ -60,7 +60,6 @@ struct RefusedNoTarget(());
 #[error("the provided address could not be resolved: {}", self.0)]
 struct RefusedNotResolved(NameAddr);
 
-#[allow(clippy::too_many_arguments)]
 pub fn stack<I, O, P, R>(
     Config { allow_discovery }: Config,
     inbound: Inbound<()>,
@@ -89,7 +88,7 @@ where
         dispatch_timeout,
         ..
     } = inbound.config().proxy.clone();
-    let local_id = inbound.identity().id().clone();
+    let local_id = identity::LocalId(inbound.identity().name().clone());
 
     // For each gatewayed connection that is *not* HTTP, use the target from the
     // transport header to lookup a service profile. If the profile includes a
