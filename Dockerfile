@@ -72,4 +72,7 @@ RUN \
     rm -f /usr/bin/linkerd2-proxy-run && \
     ln /usr/lib/linkerd/linkerd2-proxy /usr/bin/linkerd2-proxy-run ; \
   fi
+
+RUN useradd -r -u 1001 linkerd
+USER linkerd
 # Inherits the ENTRYPOINT from the runtime image.
