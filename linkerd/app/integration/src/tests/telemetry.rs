@@ -1204,10 +1204,7 @@ mod transport {
     async fn inbound_tcp_connect_err() {
         let _trace = trace_init();
         let srv = tcp::server()
-            .accept_fut(move |sock| {
-                drop(sock);
-                future::ok(())
-            })
+            .accept_fut(move |sock| async { drop(sock) })
             .run()
             .await;
         let proxy = proxy::new().inbound(srv).run().await;
@@ -1218,7 +1215,7 @@ mod transport {
         let tcp_client = client.connect().await;
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, &[]);
+        assert_eq!(tcp_client.read().await, &[] as &[u8]);
         // Connection to the server should be a failure with the EXFULL error
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
@@ -1240,15 +1237,12 @@ mod transport {
             .await;
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(target_os = "macos")]
-    fn outbound_tcp_connect_err() {
+    async fn outbound_tcp_connect_err() {
         let _trace = trace_init();
         let srv = tcp::server()
-            .accept_fut(move |sock| {
-                drop(sock);
-                future::ok(())
-            })
+            .accept_fut(move |sock| async { drop(sock) })
             .run()
             .await;
         let proxy = proxy::new().outbound(srv).run().await;
@@ -1259,7 +1253,7 @@ mod transport {
         let tcp_client = client.connect().await;
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, &[]);
+        assert_eq!(tcp_client.read().await, &[] as &[u8]);
         // Connection to the server should be a failure with the EXFULL error
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
