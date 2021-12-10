@@ -11,7 +11,7 @@ rustfmt = ["linkerd2-proxy-api/rustfmt"]
 
 [dependencies]
 http = "0.2"
-hyper = { version = "0.14.15", features = ["http1", "http2"] }
+hyper = { version = "0.14.16", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.3"
 linkerd2-proxy-api = { version = "0.3", features = ["tap", "server"] }

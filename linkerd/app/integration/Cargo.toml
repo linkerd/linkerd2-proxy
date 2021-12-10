@@ -22,7 +22,7 @@ futures = { version = "0.3", default-features = false, features = ["executor"] }
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.15", features = ["http1", "http2", "stream", "client", "server"] }
+hyper = { version = "0.14.16", features = ["http1", "http2", "stream", "client", "server"] }
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
