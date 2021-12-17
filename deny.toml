@@ -47,8 +47,10 @@ highlight = "all"
 deny = [
     { name = "rustls", wrappers = ["tokio-rustls"] }
 ]
-skip = []
-skip-tree = []
+skip-tree = [
+    # Hasn't seen a new release since 2017. Pulls in an older version of nom.
+    { name = "procinfo" }
+]
 
 [sources]
 unknown-registry = "deny"
