@@ -35,7 +35,12 @@ impl Inbound<()> {
         profiles: P,
         gateway: G,
     ) where
-        A: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        A: svc::Param<Remote<ClientAddr>>
+            + svc::Param<OrigDstAddr>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         G: svc::NewService<direct::GatewayTransportHeader, Service = GSvc>,
@@ -60,15 +65,24 @@ impl Inbound<()> {
             .into_inner();
 
         // Handles connections that target the inbound proxy port.
-        let direct = self
-            .clone()
-            .into_tcp_connect(addr.port())
-            .push_tcp_forward()
-            .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
-            .push_direct(policies.clone(), gateway)
-            .into_stack()
-            .instrument(|_: &_| debug_span!("direct"))
-            .into_inner();
+        let direct = {
+            // Handles HTTP connections.
+            let http = self
+                .clone()
+                .into_tcp_connect(addr.port())
+                .push_http_router(profiles.clone())
+                .push_http_server()
+                .into_inner();
+
+            self.clone()
+                .into_tcp_connect(addr.port())
+                .push_tcp_forward()
+                .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
+                .push_direct(policies.clone(), gateway, http)
+                .into_stack()
+                .instrument(|_: &_| debug_span!("direct"))
+                .into_inner()
+        };
 
         // Handles HTTP connections.
         let http = self
