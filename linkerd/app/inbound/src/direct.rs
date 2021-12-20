@@ -50,7 +50,7 @@ pub struct ClientInfo {
 
 type TlsIo<I> = tls::server::Io<identity::ServerIo<tls::server::DetectIo<I>>, I>;
 type FwdIo<I> = SensorIo<io::PrefixedIo<TlsIo<I>>>;
-pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<TlsIo<I>>>;
+pub type GatewayIo<I> = FwdIo<I>;
 
 #[derive(Clone)]
 struct TlsParams {
@@ -167,7 +167,6 @@ impl<N> Inbound<N> {
                     // HTTP detection is not necessary in this case, since the transport
                     // header indicates the connection's HTTP version.
                     svc::stack(gateway.clone())
-                        .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
                         .push(transport::metrics::NewServer::layer(
                             rt.metrics.proxy.transport.clone(),
                         ))

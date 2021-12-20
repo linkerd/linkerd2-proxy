@@ -7,7 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-boring = "1"
+boring = "2"
 futures = { version = "0.3", default-features = false }
 hex = "0.4" # used for debug logging
 linkerd-error = { path = "../../error" }
