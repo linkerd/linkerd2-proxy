@@ -5,7 +5,7 @@ use linkerd_app_core::{
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote, ServerAddr},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
-    Conditional, Error, NameAddr, Result, proxy,
+    Conditional, Error, NameAddr, Result, proxy::http,
 };
 use std::{convert::TryFrom, fmt::Debug};
 use thiserror::Error;
@@ -120,12 +120,10 @@ impl<N> Inbound<N> {
                             Ok(svc::Either::B(t))
                         }
                     },
-                    // would have to be http
                     svc::stack(http)
                         .instrument(|_: &_| debug_span!("opaque.http"))
                         .into_inner(),
                 )
-                .check_new_service::<Local, _>()
                 // When the transport header is present, it may be used for either local TCP
                 // forwarding, or we may be processing an HTTP gateway connection. HTTP gateway
                 // connections that have a transport header must provide a target name as a part of
@@ -175,9 +173,9 @@ impl<N> Inbound<N> {
                                     name: None,
                                     protocol: Some(protocol),
                                 } => {
-                                    // When transport header provides a protocol, we use inbound stack
-                                    //
-                                    // policy stuff goes here
+                                    // When TransportHeader includes the protocol, but does not
+                                    // include an alternate name we go through the Inbound HTTP
+                                    // stack.
                                     let addr = (client.local_addr.ip(), port).into();
                                     let allow = policies.check_policy(OrigDstAddr(addr))?;
                                     Ok(svc::Either::A(Local {
@@ -213,7 +211,6 @@ impl<N> Inbound<N> {
                         Err(RefusedNoTarget.into())
                     }
                 })
-                .check_new_service::<ClientInfo, _>()
                 // Build a ClientInfo target for each accepted connection. Refuse the
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
@@ -304,19 +301,19 @@ impl svc::Param<policy::AllowPolicy> for Local {
     }
 }
 
-impl svc::Param<proxy::http::Version> for Local {
-    fn param(&self) -> proxy::http::Version {
+impl svc::Param<http::Version> for Local {
+    fn param(&self) -> http::Version {
             match &self.protocol {
-                Some(SessionProtocol::Http1) => proxy::http::Version::Http1,
-                Some(SessionProtocol::Http2) => proxy::http::Version::H2,
-                None => proxy::http::Version::H2,
+                Some(SessionProtocol::Http1) => http::Version::Http1,
+                Some(SessionProtocol::Http2) => http::Version::H2,
+                None => http::Version::H2,
             }
     }
 }
 
-impl svc::Param<proxy::http::normalize_uri::DefaultAuthority> for Local {
-    fn param(&self) -> proxy::http::normalize_uri::DefaultAuthority {
-        proxy::http::normalize_uri::DefaultAuthority(None)
+impl svc::Param<http::normalize_uri::DefaultAuthority> for Local {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(None)
     }
 }
 
