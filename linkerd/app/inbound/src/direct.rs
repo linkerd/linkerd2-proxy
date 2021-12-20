@@ -40,7 +40,7 @@ pub(crate) struct LocalHttp {
     protocol: SessionProtocol,
 }
 
-pub(crate) type Local = svc::Either<LocalTcp, LocalHttp>;
+type Local = svc::Either<LocalTcp, LocalHttp>;
 
 #[derive(Debug, Clone)]
 pub struct GatewayTransportHeader {
