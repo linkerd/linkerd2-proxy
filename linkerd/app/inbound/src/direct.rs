@@ -29,7 +29,7 @@ pub(crate) struct Local {
     addr: Remote<ServerAddr>,
     policy: policy::AllowPolicy,
     client: ClientInfo,
-    pub protocol: Option<SessionProtocol>,
+    protocol: Option<SessionProtocol>,
 }
 
 #[derive(Debug, Clone)]
