@@ -1,11 +1,12 @@
 use crate::{policy, Inbound};
 use linkerd_app_core::{
     identity, io,
+    proxy::http,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote, ServerAddr},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
-    Conditional, Error, NameAddr, Result, proxy::http,
+    Conditional, Error, NameAddr, Result,
 };
 use std::{convert::TryFrom, fmt::Debug};
 use thiserror::Error;
@@ -303,11 +304,11 @@ impl svc::Param<policy::AllowPolicy> for Local {
 
 impl svc::Param<http::Version> for Local {
     fn param(&self) -> http::Version {
-            match &self.protocol {
-                Some(SessionProtocol::Http1) => http::Version::Http1,
-                Some(SessionProtocol::Http2) => http::Version::H2,
-                None => http::Version::H2,
-            }
+        match &self.protocol {
+            Some(SessionProtocol::Http1) => http::Version::Http1,
+            Some(SessionProtocol::Http2) => http::Version::H2,
+            None => http::Version::H2,
+        }
     }
 }
 
@@ -325,11 +326,10 @@ impl svc::Param<policy::ServerLabel> for Local {
 
 impl svc::Param<tls::ConditionalServerTls> for Local {
     fn param(&self) -> tls::ConditionalServerTls {
-        tls::ConditionalServerTls::Some(
-            tls::ServerTls::Established {
-                 client_id: Some(self.client.client_id.clone()),
-                 negotiated_protocol: self.client.alpn.clone(),
-            })
+        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(self.client.client_id.clone()),
+            negotiated_protocol: self.client.alpn.clone(),
+        })
     }
 }
 

@@ -35,12 +35,7 @@ impl Inbound<()> {
         profiles: P,
         gateway: G,
     ) where
-        A: svc::Param<Remote<ClientAddr>>
-            + svc::Param<OrigDstAddr>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        A: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         G: svc::NewService<direct::GatewayTransportHeader, Service = GSvc>,
