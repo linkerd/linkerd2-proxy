@@ -163,9 +163,6 @@ impl<N> Inbound<N> {
                                             // When TransportHeader includes the protocol, but does not
                                             // include an alternate name we go through the Inbound HTTP
                                             // stack.
-                                            let addr = (client.local_addr.ip(), port).into();
-                                            let policy =
-                                                policies.check_policy(OrigDstAddr(addr))?;
                                             svc::Either::B(LocalHttp {
                                                 addr: Remote(ServerAddr(addr)),
                                                 policy,
