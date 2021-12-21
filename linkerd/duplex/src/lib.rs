@@ -76,13 +76,13 @@ where
     type Output = io::Result<()>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
-        let mut this = self.project();
+        let this = self.project();
         // This purposefully ignores the Async part, since we don't want to
         // return early if the first half isn't ready, but the other half
         // could make progress.
         trace!("poll");
-        let _ = this.half_in.copy_into(&mut this.half_out, cx)?;
-        let _ = this.half_out.copy_into(&mut this.half_in, cx)?;
+        let _ = this.half_in.copy_into(this.half_out, cx)?;
+        let _ = this.half_out.copy_into(this.half_in, cx)?;
         if this.half_in.is_done() && this.half_out.is_done() {
             Poll::Ready(Ok(()))
         } else {

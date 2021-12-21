@@ -83,7 +83,7 @@ where
 
             debug!(
                 tls = io.0.ssl().version_str(),
-                srv.cert = ?io.0.ssl().certificate().as_deref().and_then(super::fingerprint),
+                srv.cert = ?io.0.ssl().certificate().and_then(super::fingerprint),
                 peer.cert = ?io.0.ssl().peer_certificate().as_deref().and_then(super::fingerprint),
                 client.id = ?client_id,
                 alpn = ?negotiated_protocol,

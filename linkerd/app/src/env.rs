@@ -592,7 +592,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         default,
                         ports,
                         workload,
-                        control,
+                        control: Box::new(control),
                     }
                 }
 

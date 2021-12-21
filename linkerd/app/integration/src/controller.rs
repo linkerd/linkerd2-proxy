@@ -55,6 +55,7 @@ pub struct RouteBuilder {
     route: pb::Route,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum Dst {
     Call(pb::GetDestination, Result<DstReceiver, grpc::Status>),

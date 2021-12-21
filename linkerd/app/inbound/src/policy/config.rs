@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone, Debug)]
 pub enum Config {
     Discover {
-        control: control::Config,
+        control: Box<control::Config>,
         workload: String,
         default: DefaultPolicy,
         ports: HashSet<u16>,
