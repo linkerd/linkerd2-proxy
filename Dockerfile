@@ -17,7 +17,7 @@
 #     :; docker buildx build . --load
 
 # Please make changes via update-rust-version.sh
-ARG RUST_IMAGE=rust:1.56.0-buster
+ARG RUST_IMAGE=rust:1.57.0-buster
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
@@ -47,7 +47,7 @@ RUN --mount=type=cache,target=/var/lib/apt/lists \
 WORKDIR /usr/src/linkerd2-proxy
 COPY . .
 RUN --mount=type=cache,target=target \
-    --mount=type=cache,from=rust:1.56.0-buster,source=/usr/local/cargo,target=/usr/local/cargo \
+    --mount=type=cache,from=rust:1.57.0-buster,source=/usr/local/cargo,target=/usr/local/cargo \
   mkdir -p /out && \
   if [ -n "$PROXY_UNOPTIMIZED" ]; then \
     (cd linkerd2-proxy && /usr/bin/time -v cargo build --locked --no-default-features --features="$PROXY_FEATURES") && \

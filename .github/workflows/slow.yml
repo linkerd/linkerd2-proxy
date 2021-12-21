@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.57.0-buster
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: |
@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.57.0-buster
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: |
