@@ -61,7 +61,9 @@ impl Inbound<()> {
 
         // Handles connections that target the inbound proxy port.
         let direct = {
-            // Handles HTTP connections.
+            // Handles opaque connections that specify an HTTP session protocol.
+            // This is identical to the primary HTTP stack (below), but it uses different
+            // target & I/O types.
             let http = self
                 .clone()
                 .into_tcp_connect(addr.port())
