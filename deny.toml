@@ -49,7 +49,7 @@ deny = [
 ]
 skip-tree = [
     # Waiting on a release that updates itoa to v1.
-    { name = "http" },
+    { name = "hyper" },
     # Hasn't seen a new release since 2017. Pulls in an older version of nom.
     { name = "procinfo" }
 ]
