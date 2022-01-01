@@ -9,13 +9,12 @@ use crate::{h1, h2, orig_proto};
 use futures::prelude::*;
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
-use linkerd_stack::{layer, Param};
+use linkerd_stack::{layer, MakeConnection, Param, Service, ServiceExt};
 use std::{
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
-use tower::ServiceExt;
 use tracing::instrument::{Instrument, Instrumented};
 use tracing::{debug, debug_span};
 
@@ -68,10 +67,10 @@ impl<C, T, B> tower::Service<T> for MakeClient<C, B>
 where
     T: Clone + Send + Sync + 'static,
     T: Param<Settings>,
-    C: tower::make::MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
-    C::Future: Unpin + Send + 'static,
-    C::Error: Into<Error>,
+    C: MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
     C::Connection: Unpin + Send + 'static,
+    C::Error: Into<Error>,
+    C::Future: Unpin + Send + 'static,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
@@ -131,10 +130,10 @@ impl<C: Clone, B> Clone for MakeClient<C, B> {
 
 type RspFuture = Pin<Box<dyn Future<Output = Result<http::Response<BoxBody>>> + Send + 'static>>;
 
-impl<C, T, B> tower::Service<http::Request<B>> for Client<C, T, B>
+impl<C, T, B> Service<http::Request<B>> for Client<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
-    C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C: MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,

@@ -6,14 +6,14 @@ use hyper::{
     client::conn::{self, SendRequest},
 };
 use linkerd_error::{Error, Result};
-use std::time::Duration;
+use linkerd_stack::{MakeConnection, Service};
 use std::{
     future::Future,
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
+    time::Duration,
 };
-use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::instrument::Instrument;
 use tracing::{debug, debug_span, trace_span};
 
@@ -60,11 +60,11 @@ impl<C: Clone, B> Clone for Connect<C, B> {
 
 type ConnectFuture<B> = Pin<Box<dyn Future<Output = Result<Connection<B>>> + Send + 'static>>;
 
-impl<C, B, T> tower::Service<T> for Connect<C, B>
+impl<C, B, T> Service<T> for Connect<C, B>
 where
-    C: tower::make::MakeConnection<T>,
+    C: MakeConnection<T>,
+    C::Connection: Unpin + Send + 'static,
     C::Future: Send + 'static,
-    C::Connection: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     C::Error: Into<Error>,
     B: HttpBody + Send + 'static,
     B::Data: Send,

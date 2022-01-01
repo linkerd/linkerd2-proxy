@@ -4,7 +4,7 @@ use http::header::{HeaderValue, TRANSFER_ENCODING};
 use hyper::body::HttpBody;
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
-use linkerd_stack::layer;
+use linkerd_stack::{layer, MakeConnection, Service};
 use std::{
     future::Future,
     pin::Pin,
@@ -47,10 +47,10 @@ impl<C, T, B> Upgrade<C, T, B> {
     }
 }
 
-impl<C, T, B> tower::Service<http::Request<B>> for Upgrade<C, T, B>
+impl<C, T, B> Service<http::Request<B>> for Upgrade<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
-    C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C: MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
@@ -235,9 +235,9 @@ impl<S> Downgrade<S> {
 
 type DowngradeFuture<F, T> = future::MapOk<F, fn(T) -> T>;
 
-impl<S, A, B> tower::Service<http::Request<A>> for Downgrade<S>
+impl<S, A, B> Service<http::Request<A>> for Downgrade<S>
 where
-    S: tower::Service<http::Request<A>, Response = http::Response<B>>,
+    S: Service<http::Request<A>, Response = http::Response<B>>,
 {
     type Response = S::Response;
     type Error = S::Error;

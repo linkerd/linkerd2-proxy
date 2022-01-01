@@ -5,10 +5,13 @@ use hyper::body::HttpBody;
 use hyper::client::connect as hyper_connect;
 use linkerd_error::Error;
 use linkerd_io::{self as io, AsyncRead, AsyncWrite};
+use linkerd_stack::{MakeConnection, Service};
 use pin_project::{pin_project, pinned_drop};
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
@@ -166,13 +169,12 @@ impl<C, T> HyperConnect<C, T> {
     }
 }
 
-impl<C, T> tower::Service<hyper::Uri> for HyperConnect<C, T>
+impl<C, T> Service<hyper::Uri> for HyperConnect<C, T>
 where
-    C: tower::make::MakeConnection<T> + Clone + Send + Sync,
-    C::Error: Into<Error>,
-    C::Future: TryFuture<Ok = C::Connection> + Unpin + Send + 'static,
-    <C::Future as TryFuture>::Error: Into<Error>,
+    C: MakeConnection<T> + Clone + Send + Sync,
     C::Connection: Unpin + Send + 'static,
+    C::Error: Into<Error>,
+    C::Future: Unpin + Send + 'static,
     T: Clone + Send + Sync,
 {
     type Response = Connection<C::Connection>;

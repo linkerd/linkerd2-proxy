@@ -9,6 +9,7 @@ use http::{
 };
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
+use linkerd_stack::MakeConnection;
 use std::{future::Future, mem, pin::Pin, time::Duration};
 use tracing::{debug, trace};
 
@@ -65,7 +66,7 @@ type RspFuture = Pin<Box<dyn Future<Output = Result<http::Response<BoxBody>>> + 
 impl<C, T, B> Client<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
-    C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C: MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
