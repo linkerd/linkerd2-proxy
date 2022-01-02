@@ -3,7 +3,7 @@ use linkerd_identity::Name;
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
 use linkerd_tls::{
-    client::AlpnProtocols, ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef, ServerId,
+    client::AlpnProtocols, ClientTls, NegotiatedProtocolRef, ServerId,
 };
 use std::{future::Future, pin::Pin, sync::Arc, task::Context};
 use tracing::debug;
@@ -148,9 +148,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     }
 }
 
-impl<I> HasNegotiatedProtocol for ClientIo<I> {
+impl<I> ClientIo<I> {
     #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+    pub fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
         self.0
             .ssl()
             .selected_alpn_protocol()

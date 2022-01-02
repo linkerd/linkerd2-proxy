@@ -1,4 +1,4 @@
-use crate::{HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef};
+use crate::{NegotiatedProtocol};
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_identity as id;
@@ -94,7 +94,7 @@ impl<L: Clone, C> Client<L, C> {
     }
 }
 
-impl<T, L, H, C> Service<T> for Client<L, C>
+impl<T, L, H, I, C> Service<T> for Client<L, C>
 where
     T: Param<ConditionalClientTls>,
     L: NewService<ClientTls, Service = H>,
@@ -102,12 +102,12 @@ where
     C::Connection: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Metadata: Send + Unpin,
     C::Future: Send + 'static,
-    H: Service<C::Connection, Error = io::Error> + Send + 'static,
-    H::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + HasNegotiatedProtocol,
+    H: Service<C::Connection, Response = (I, Option<NegotiatedProtocol>), Error = io::Error> + Send + 'static,
     H::Future: Send + 'static,
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
 {
     type Response = (
-        io::EitherIo<C::Connection, H::Response>,
+        io::EitherIo<C::Connection, I>,
         ConnectMeta<C::Metadata>,
     );
     type Error = io::Error;
@@ -132,13 +132,12 @@ where
     }
 }
 
-impl<F, I, H, M> Future for Connect<F, I, H, M>
+impl<F, I, J, H, M> Future for Connect<F, I, H, M>
 where
     F: TryFuture<Ok = (I, M), Error = io::Error>,
-    H: Service<I, Error = io::Error>,
-    H::Response: HasNegotiatedProtocol,
+    H: Service<I, Response = (J, Option<NegotiatedProtocol>), Error = io::Error>,
 {
-    type Output = io::Result<(io::EitherIo<I, H::Response>, ConnectMeta<M>)>;
+    type Output = io::Result<(io::EitherIo<I, J>, ConnectMeta<M>)>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         loop {
@@ -160,17 +159,17 @@ where
                     }
                 }
                 ConnectProj::Handshake(fut, meta) => {
-                    let io = futures::ready!(fut.try_poll(cx))?;
-                    let alpn = io.negotiated_protocol();
+                    let (io, alpn) = futures::ready!(fut.try_poll(cx))?;
                     debug!(
                         alpn = alpn
-                            .and_then(|NegotiatedProtocolRef(p)| std::str::from_utf8(p).ok())
+                            .as_ref()
+                            .and_then(|NegotiatedProtocol(ref p)| std::str::from_utf8(p).ok())
                             .map(tracing::field::display)
                     );
                     let (tls, socket) = meta.take().expect("metadata must be set");
                     let meta = ConnectMeta {
                         socket,
-                        tls: tls.map(move |()| alpn.map(|np| np.to_owned())),
+                        tls: tls.map(move |()| alpn),
                     };
                     return Poll::Ready(Ok((io::EitherIo::Right(io), meta)));
                 }
