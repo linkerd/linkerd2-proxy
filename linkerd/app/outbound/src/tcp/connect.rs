@@ -1,11 +1,11 @@
 use super::opaque_transport::{self, OpaqueTransport};
-use crate::Outbound;
+use crate::{ConnectMeta, Outbound};
 use futures::future;
 use linkerd_app_core::{
     io,
     proxy::http,
     svc, tls,
-    transport::{self, ConnectTcp, Remote, ServerAddr},
+    transport::{self, ClientAddr, ConnectTcp, Local, Remote, ServerAddr},
     transport_header::SessionProtocol,
     Error,
 };
@@ -39,7 +39,7 @@ impl<C> Outbound<C> {
         impl svc::MakeConnection<
                 T,
                 Connection = impl Send + Unpin,
-                Metadata = impl Send + Unpin,
+                Metadata = ConnectMeta,
                 Error = Error,
                 Future = impl Send,
             > + Clone,
@@ -51,9 +51,11 @@ impl<C> Outbound<C> {
             + svc::Param<Option<http::AuthorityOverride>>
             + svc::Param<Option<SessionProtocol>>
             + svc::Param<transport::labels::Key>,
-        C: svc::MakeConnection<Connect, Error = io::Error> + Clone + Send + 'static,
+        C: svc::MakeConnection<Connect, Metadata = Local<ClientAddr>, Error = io::Error>
+            + Clone
+            + Send
+            + 'static,
         C::Connection: Send + Unpin,
-        C::Connection: tls::HasNegotiatedProtocol, // TODO metadata
         C::Metadata: Send + Unpin,
         C::Future: Send + 'static,
     {

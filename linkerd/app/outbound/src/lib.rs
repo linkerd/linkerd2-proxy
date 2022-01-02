@@ -84,6 +84,8 @@ pub struct Accept<P> {
     pub protocol: P,
 }
 
+pub type ConnectMeta = tls::ConnectMeta<Local<ClientAddr>>;
+
 // === impl Outbound ===
 
 impl Outbound<()> {

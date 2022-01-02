@@ -8,7 +8,7 @@ pub use linkerd_identity::LocalId;
 use linkerd_io as io;
 
 pub use self::{
-    client::{Client, ClientTls, ConditionalClientTls, NoClientTls, ServerId},
+    client::{Client, ClientTls, ConditionalClientTls, ConnectMeta, NoClientTls, ServerId},
     server::{ClientId, ConditionalServerTls, NewDetectTls, NoServerTls, ServerTls},
 };
 

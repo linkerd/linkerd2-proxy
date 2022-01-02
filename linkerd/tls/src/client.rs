@@ -1,4 +1,4 @@
-use crate::{HasNegotiatedProtocol, NegotiatedProtocolRef, NegotiatedProtocol};
+use crate::{HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef};
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_identity as id;
@@ -60,7 +60,10 @@ pub struct Client<L, C> {
 #[derive(Debug)]
 pub enum Connect<F, I, H: Service<I>, M> {
     Connect(#[pin] F, Option<Conditional<H, NoClientTls>>),
-    Handshake(#[pin] Oneshot<H, I>, Option<(Conditional<(), NoClientTls>, M)>),
+    Handshake(
+        #[pin] Oneshot<H, I>,
+        Option<(Conditional<(), NoClientTls>, M)>,
+    ),
 }
 
 #[derive(Clone, Debug)]
@@ -103,7 +106,10 @@ where
     H::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + HasNegotiatedProtocol,
     H::Future: Send + 'static,
 {
-    type Response = (io::EitherIo<C::Connection, H::Response>, ConnectMeta<C::Metadata>);
+    type Response = (
+        io::EitherIo<C::Connection, H::Response>,
+        ConnectMeta<C::Metadata>,
+    );
     type Error = io::Error;
     type Future = Connect<C::Future, C::Connection, H, C::Metadata>;
 
