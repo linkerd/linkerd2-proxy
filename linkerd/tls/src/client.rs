@@ -1,4 +1,4 @@
-use crate::{HasNegotiatedProtocol, NegotiatedProtocolRef};
+use crate::{HasNegotiatedProtocol, NegotiatedProtocolRef, NegotiatedProtocol};
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_identity as id;
@@ -59,8 +59,14 @@ pub struct Client<L, C> {
 #[pin_project::pin_project(project = ConnectProj)]
 #[derive(Debug)]
 pub enum Connect<F, I, H: Service<I>, M> {
-    Connect(#[pin] F, Option<H>),
-    Handshake(#[pin] Oneshot<H, I>, Option<M>),
+    Connect(#[pin] F, Option<Conditional<H, NoClientTls>>),
+    Handshake(#[pin] Oneshot<H, I>, Option<(Conditional<(), NoClientTls>, M)>),
+}
+
+#[derive(Clone, Debug)]
+pub struct ConnectMeta<M> {
+    pub socket: M,
+    pub tls: Conditional<Option<NegotiatedProtocol>, NoClientTls>,
 }
 
 // === impl ClientTls ===
@@ -97,7 +103,7 @@ where
     H::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + HasNegotiatedProtocol,
     H::Future: Send + 'static,
 {
-    type Response = (io::EitherIo<C::Connection, H::Response>, C::Metadata);
+    type Response = (io::EitherIo<C::Connection, H::Response>, ConnectMeta<C::Metadata>);
     type Error = io::Error;
     type Future = Connect<C::Future, C::Connection, H, C::Metadata>;
 
@@ -108,15 +114,15 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let handshake = match target.param() {
-            Conditional::Some(tls) => Some(self.identity.new_service(tls)),
+            Conditional::Some(tls) => Conditional::Some(self.identity.new_service(tls)),
             Conditional::None(reason) => {
                 debug!(%reason, "Peer does not support TLS");
-                None
+                Conditional::None(reason)
             }
         };
 
         let connect = self.inner.make_connection(target);
-        Connect::Connect(connect, handshake)
+        Connect::Connect(connect, Some(handshake))
     }
 }
 
@@ -126,28 +132,40 @@ where
     H: Service<I, Error = io::Error>,
     H::Response: HasNegotiatedProtocol,
 {
-    type Output = io::Result<(io::EitherIo<I, H::Response>, M)>;
+    type Output = io::Result<(io::EitherIo<I, H::Response>, ConnectMeta<M>)>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         loop {
             match self.as_mut().project() {
                 ConnectProj::Connect(fut, tls) => {
-                    let (io, meta) = futures::ready!(fut.try_poll(cx))?;
-                    match tls.take() {
-                        None => return Poll::Ready(Ok((io::EitherIo::Left(io), meta))),
-                        Some(tls) => self.set(Connect::Handshake(tls.oneshot(io), Some(meta))),
+                    let (io, socket) = futures::ready!(fut.try_poll(cx))?;
+                    match tls.take().expect("tls handshake must be set") {
+                        Conditional::Some(tls) => {
+                            let meta = (Conditional::Some(()), socket);
+                            self.set(Connect::Handshake(tls.oneshot(io), Some(meta)))
+                        }
+                        Conditional::None(reason) => {
+                            let meta = ConnectMeta {
+                                socket,
+                                tls: Conditional::None(reason),
+                            };
+                            return Poll::Ready(Ok((io::EitherIo::Left(io), meta)));
+                        }
                     }
                 }
                 ConnectProj::Handshake(fut, meta) => {
                     let io = futures::ready!(fut.try_poll(cx))?;
-                    let meta = meta.take().expect("metadata must be set");
-                    // TODO(ver) combine negotiated protocol with inner metadata.
+                    let alpn = io.negotiated_protocol();
                     debug!(
-                        alpn = io
-                            .negotiated_protocol()
+                        alpn = alpn
                             .and_then(|NegotiatedProtocolRef(p)| std::str::from_utf8(p).ok())
                             .map(tracing::field::display)
                     );
+                    let (tls, socket) = meta.take().expect("metadata must be set");
+                    let meta = ConnectMeta {
+                        socket,
+                        tls: tls.map(move |()| alpn.map(|np| np.to_owned())),
+                    };
                     return Poll::Ready(Ok((io::EitherIo::Right(io), meta)));
                 }
             }
