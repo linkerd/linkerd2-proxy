@@ -67,7 +67,7 @@ impl<C, T, B> Client<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
     C: MakeConnection<T> + Clone + Send + Sync + 'static,
-    C::Connection: Unpin + Send + 'static,
+    C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
     B: hyper::body::HttpBody + Send + 'static,

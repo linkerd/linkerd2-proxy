@@ -12,13 +12,7 @@ use linkerd_app_core::{
 };
 use tracing::debug_span;
 
-impl<C> Outbound<C>
-where
-    C: svc::Service<Endpoint> + Clone + Send + 'static,
-    C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
-    C::Error: Into<Error>,
-    C::Future: Send,
-{
+impl<C> Outbound<C> {
     /// Constructs a TCP load balancer.
     pub fn push_tcp_logical<I, R>(
         self,
@@ -30,6 +24,11 @@ where
         >,
     >
     where
+        C: svc::MakeConnection<Endpoint> + Clone + Send + 'static,
+        C::Connection: Send + Unpin,
+        C::Metadata: Send + Unpin,
+        C::Future: Send,
+        C: Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>
             + Clone
@@ -38,7 +37,6 @@ where
             + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
-        C: Send + Sync + 'static,
     {
         self.map_stack(|config, rt, connect| {
             let config::ProxyConfig {
@@ -63,6 +61,7 @@ where
                 .into_inner();
 
             connect
+                .push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
                 .instrument(|t: &Endpoint| {
                     debug_span!(
@@ -159,7 +158,8 @@ mod tests {
                 assert_eq!(*ep.addr.as_ref(), ep_addr);
                 let mut io = support::io();
                 io.write(b"hola").read(b"mundo");
-                future::ok::<_, support::io::Error>(io.build())
+                let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
+                future::ok::<_, support::io::Error>((io.build(), local))
             }))
             .push_tcp_logical(resolve)
             .into_inner();
@@ -225,13 +225,15 @@ mod tests {
                     tracing::debug!(%addr, "writing ep0");
                     let mut io = support::io();
                     io.write(b"who r u?").read(b"ep0");
-                    future::ok::<_, support::io::Error>(io.build())
+                    let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
+                    future::ok::<_, support::io::Error>((io.build(), local))
                 }
                 Remote(ServerAddr(addr)) if addr == ep1_addr => {
                     tracing::debug!(%addr, "writing ep1");
                     let mut io = support::io();
                     io.write(b"who r u?").read(b"ep1");
-                    future::ok::<_, support::io::Error>(io.build())
+                    let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
+                    future::ok::<_, support::io::Error>((io.build(), local))
                 }
                 addr => unreachable!("unexpected endpoint: {}", addr),
             }))

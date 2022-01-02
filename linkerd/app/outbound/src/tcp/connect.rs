@@ -36,9 +36,10 @@ impl<C> Outbound<C> {
     pub fn push_tcp_endpoint<T>(
         self,
     ) -> Outbound<
-        impl svc::Service<
+        impl svc::MakeConnection<
                 T,
-                Response = impl io::AsyncRead + io::AsyncWrite + Send + Unpin,
+                Connection = impl Send + Unpin,
+                Metadata = impl Send + Unpin,
                 Error = Error,
                 Future = impl Send,
             > + Clone,
@@ -50,9 +51,10 @@ impl<C> Outbound<C> {
             + svc::Param<Option<http::AuthorityOverride>>
             + svc::Param<Option<SessionProtocol>>
             + svc::Param<transport::labels::Key>,
-        C: svc::Service<Connect, Error = io::Error> + Clone + Send + 'static,
-        C::Response: tls::HasNegotiatedProtocol,
-        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        C: svc::MakeConnection<Connect, Error = io::Error> + Clone + Send + 'static,
+        C::Connection: Send + Unpin,
+        C::Connection: tls::HasNegotiatedProtocol, // TODO metadata
+        C::Metadata: Send + Unpin,
         C::Future: Send + 'static,
     {
         self.map_stack(|config, rt, connect| {
@@ -85,13 +87,14 @@ impl<C> Outbound<C> {
     where
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        C: svc::Service<T> + Clone + Send + Sync + 'static,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-        C::Error: Into<Error>,
+        C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
+        C::Connection: Send + Unpin,
+        C::Metadata: Send + Unpin,
         C::Future: Send,
     {
         self.map_stack(|_, _, conn| {
-            conn.push_make_thunk()
+            conn.push(svc::stack::WithoutConnectionMetadata::layer())
+                .push_make_thunk()
                 .push_on_service(super::Forward::layer())
                 .instrument(|_: &_| debug_span!("tcp.forward"))
                 .push(svc::ArcNewService::layer())
@@ -166,6 +169,7 @@ mod tests {
     use crate::{
         svc::{self, NewService, ServiceExt},
         test_util::*,
+        transport::{ClientAddr, Local},
     };
     use std::net::SocketAddr;
 
@@ -180,7 +184,10 @@ mod tests {
                 assert_eq!(a, addr);
                 let mut io = support::io();
                 io.write(b"hello").read(b"world");
-                future::ok::<_, support::io::Error>(io.build())
+                future::ok::<_, support::io::Error>((
+                    io.build(),
+                    Local(ClientAddr(([0, 0, 0, 0], 0).into())),
+                ))
             }))
             .push_tcp_forward()
             .into_inner();

@@ -63,7 +63,8 @@ type ConnectFuture<B> = Pin<Box<dyn Future<Output = Result<Connection<B>>> + Sen
 impl<C, B, T> Service<T> for Connect<C, B>
 where
     C: MakeConnection<T>,
-    C::Connection: Unpin + Send + 'static,
+    C::Connection: Send + Unpin + 'static,
+    C::Metadata: Send,
     C::Future: Send + 'static,
     C::Error: Into<Error>,
     B: HttpBody + Send + 'static,
@@ -93,7 +94,7 @@ where
 
         Box::pin(
             async move {
-                let io = connect.err_into::<Error>().await?;
+                let (io, _meta) = connect.err_into::<Error>().await?;
                 let mut builder = conn::Builder::new();
                 builder
                     .http2_only(true)

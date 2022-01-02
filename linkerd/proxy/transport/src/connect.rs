@@ -1,4 +1,4 @@
-use crate::{Keepalive, Remote, ServerAddr};
+use crate::{ClientAddr, Keepalive, Local, Remote, ServerAddr};
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
 use std::{
@@ -21,10 +21,9 @@ impl ConnectTcp {
 }
 
 impl<T: Param<Remote<ServerAddr>>> Service<T> for ConnectTcp {
-    type Response = io::ScopedIo<TcpStream>;
+    type Response = (io::ScopedIo<TcpStream>, Local<ClientAddr>);
     type Error = io::Error;
-    type Future =
-        Pin<Box<dyn Future<Output = io::Result<io::ScopedIo<TcpStream>>> + Send + Sync + 'static>>;
+    type Future = Pin<Box<dyn Future<Output = io::Result<Self::Response>> + Send + Sync + 'static>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -38,12 +37,13 @@ impl<T: Param<Remote<ServerAddr>>> Service<T> for ConnectTcp {
             let io = TcpStream::connect(&addr).await?;
             super::set_nodelay_or_warn(&io);
             let io = super::set_keepalive_or_warn(io, keepalive)?;
+            let local_addr = io.local_addr()?;
             debug!(
-                local.addr = %io.local_addr().expect("cannot load local addr"),
+                local.addr = %local_addr,
                 ?keepalive,
                 "Connected",
             );
-            Ok(io::ScopedIo::client(io))
+            Ok((io::ScopedIo::client(io), Local(ClientAddr(local_addr))))
         })
     }
 }

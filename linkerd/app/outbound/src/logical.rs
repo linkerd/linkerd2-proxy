@@ -118,9 +118,9 @@ impl<C> Outbound<C> {
     where
         Self: Clone + 'static,
         C: Clone + Send + Sync + Unpin + 'static,
-        C: svc::Service<tcp::Connect, Error = io::Error>,
-        C::Response:
-            tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        C: svc::MakeConnection<tcp::Connect, Error = io::Error>,
+        C::Connection: tls::HasNegotiatedProtocol + Send + Unpin,
+        C::Metadata: Send + Unpin,
         C::Future: Send + Unpin,
         R: Clone + Send + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Sync,

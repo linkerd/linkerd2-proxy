@@ -1,12 +1,12 @@
 use crate::tcp::Connect;
 use futures::prelude::*;
 use linkerd_app_core::{
-    dns, io,
+    dns,
     proxy::http,
     svc, tls,
     transport::{Remote, ServerAddr},
     transport_header::{SessionProtocol, TransportHeader, PROTOCOL},
-    Error,
+    Error, Result,
 };
 use std::{
     future::Future,
@@ -50,14 +50,15 @@ where
         + svc::Param<Option<PortOverride>>
         + svc::Param<Option<http::AuthorityOverride>>
         + svc::Param<Option<SessionProtocol>>,
-    S: svc::Service<Connect> + Send + 'static,
-    S::Error: Into<Error>,
-    S::Response: io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin,
+    S: svc::MakeConnection<Connect> + Send + 'static,
+    S::Connection: tls::HasNegotiatedProtocol + Send + Unpin,
+    S::Metadata: Send,
     S::Future: Send + 'static,
 {
-    type Response = S::Response;
+    type Response = (S::Connection, S::Metadata);
     type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<S::Response, Error>> + Send + 'static>>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<(S::Connection, S::Metadata)>> + Send + 'static>>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -72,7 +73,7 @@ where
                 addr: ep.param(),
                 tls,
             };
-            return Box::pin(self.inner.call(target).err_into::<Error>());
+            return Box::pin(self.inner.make_connection(target).err_into::<Error>());
         }
 
         // Configure the target port from the endpoint. In opaque cases, this is
@@ -110,12 +111,12 @@ where
 
         let protocol: Option<SessionProtocol> = ep.param();
 
-        let connect = self.inner.call(Connect {
+        let connect = self.inner.make_connection(Connect {
             addr: Remote(ServerAddr((addr.ip(), connect_port).into())),
             tls,
         });
         Box::pin(async move {
-            let mut io = connect.await.map_err(Into::into)?;
+            let (mut io, meta) = connect.await.map_err(Into::into)?;
 
             // If transport header support has been negotiated via ALPN, encode
             // the header and then return the socket.
@@ -132,7 +133,7 @@ where
                 trace!("Connection does not expect a transport header");
             }
 
-            Ok(io)
+            Ok((io, meta))
         })
     }
 }
@@ -173,13 +174,14 @@ mod test {
                 let Remote(ServerAddr(sa)) = ep.addr;
                 assert_eq!(sa.port(), 4321);
                 assert!(ep.tls.is_none());
-                future::ready(Ok::<_, io::Error>(Io {
+                let io = Io {
                     io: tokio_test::io::Builder::new().write(b"hello").build(),
                     alpn: None,
-                }))
+                };
+                future::ready(Ok::<_, io::Error>((io, ())))
             }),
         };
-        let mut io = svc
+        let (mut io, ()) = svc
             .oneshot(ep(Metadata::default()))
             .await
             .expect("Connect must not fail");
@@ -201,13 +203,14 @@ mod test {
                     protocol: None,
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
-                future::ready(Ok::<_, io::Error>(Io {
+                let io = Io {
                     alpn: Some(tls::NegotiatedProtocolRef(PROTOCOL)),
                     io: tokio_test::io::Builder::new()
                         .write(&buf[..])
                         .write(b"hello")
                         .build(),
-                }))
+                };
+                future::ready(Ok::<_, io::Error>((io, ())))
             }),
         };
 
@@ -220,7 +223,7 @@ mod test {
             )),
             None,
         ));
-        let mut io = svc.oneshot(e).await.expect("Connect must not fail");
+        let (mut io, ()) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
 
@@ -239,13 +242,14 @@ mod test {
                     protocol: None,
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
-                future::ready(Ok::<_, io::Error>(Io {
+                let io = Io {
                     alpn: Some(tls::NegotiatedProtocolRef(PROTOCOL)),
                     io: tokio_test::io::Builder::new()
                         .write(&buf[..])
                         .write(b"hello")
                         .build(),
-                }))
+                };
+                future::ready(Ok::<_, io::Error>((io, ())))
             }),
         };
 
@@ -258,7 +262,7 @@ mod test {
             )),
             Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
         ));
-        let mut io = svc.oneshot(e).await.expect("Connect must not fail");
+        let (mut io, ()) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
 
@@ -277,13 +281,14 @@ mod test {
                     protocol: None,
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
-                future::ready(Ok::<_, io::Error>(Io {
+                let io = Io {
                     alpn: Some(tls::NegotiatedProtocolRef(PROTOCOL)),
                     io: tokio_test::io::Builder::new()
                         .write(&buf[..])
                         .write(b"hello")
                         .build(),
-                }))
+                };
+                future::ready(Ok::<_, io::Error>((io, ())))
             }),
         };
 
@@ -296,7 +301,7 @@ mod test {
             )),
             None,
         ));
-        let mut io = svc.oneshot(e).await.expect("Connect must not fail");
+        let (mut io, ()) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
 

@@ -1,6 +1,6 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, errors, http_tracing, io, metrics,
+    classify, errors, http_tracing, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{http, tap},
     svc::{self, ExtractParam, Param},
@@ -84,9 +84,9 @@ impl<C> Inbound<C> {
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
         P::Error: Send,
-        C: svc::Service<Http> + Clone + Send + Sync + Unpin + 'static,
-        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-        C::Error: Into<Error>,
+        C: svc::MakeConnection<Http> + Clone + Send + Sync + Unpin + 'static,
+        C::Connection: Send + Unpin,
+        C::Metadata: Send,
         C::Future: Send,
     {
         self.map_stack(|config, rt, connect| {
@@ -94,12 +94,17 @@ impl<C> Inbound<C> {
 
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http = connect
+                .push(svc::layer::mk(|inner: C| inner.into_service()))
+                .check_service::<Http>()
                 .push(svc::stack::BoxFuture::layer())
+                .check_service::<Http>()
                 .push(transport::metrics::Client::layer(rt.metrics.proxy.transport.clone()))
+                .check_service::<Http>()
                 .push(http::client::layer(
                     config.proxy.connect.h1_settings,
                     config.proxy.connect.h2_settings,
                 ))
+                .check_service::<Http>()
                 .push_on_service(svc::MapErr::layer(Into::into))
                 .into_new_service()
                 .push_new_reconnect(config.proxy.connect.backoff)

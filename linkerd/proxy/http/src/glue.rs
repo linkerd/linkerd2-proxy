@@ -3,7 +3,7 @@ use bytes::Bytes;
 use futures::TryFuture;
 use hyper::body::HttpBody;
 use hyper::client::connect as hyper_connect;
-use linkerd_error::Error;
+use linkerd_error::{Error, Result};
 use linkerd_io::{self as io, AsyncRead, AsyncWrite};
 use linkerd_stack::{MakeConnection, Service};
 use pin_project::{pin_project, pinned_drop};
@@ -172,7 +172,7 @@ impl<C, T> HyperConnect<C, T> {
 impl<C, T> Service<hyper::Uri> for HyperConnect<C, T>
 where
     C: MakeConnection<T> + Clone + Send + Sync,
-    C::Connection: Unpin + Send + 'static,
+    C::Connection: Unpin + Send,
     C::Error: Into<Error>,
     C::Future: Unpin + Send + 'static,
     T: Clone + Send + Sync,
@@ -193,16 +193,16 @@ where
     }
 }
 
-impl<F> Future for HyperConnectFuture<F>
+impl<F, I, M> Future for HyperConnectFuture<F>
 where
-    F: TryFuture + 'static,
+    F: TryFuture<Ok = (I, M)> + 'static,
     F::Error: Into<Error>,
 {
-    type Output = Result<Connection<F::Ok>, Error>;
+    type Output = Result<Connection<I>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let transport = futures::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
+        let (transport, _meta) = futures::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
         Poll::Ready(Ok(Connection {
             transport,
             absolute_form: *this.absolute_form,
