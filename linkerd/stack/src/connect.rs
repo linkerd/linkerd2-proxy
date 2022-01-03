@@ -12,7 +12,6 @@ pub struct WithoutConnectionMetadata<S>(S);
 #[derive(Clone, Debug)]
 pub struct MakeConnectionService<S>(S);
 
-
 /// A helper trait that models a `Service` that creates client connections.
 ///
 /// Implementers should implement `Service` and not `MakeConnection`. `MakeConnection` should only
