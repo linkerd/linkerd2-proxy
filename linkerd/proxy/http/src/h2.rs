@@ -66,7 +66,6 @@ where
     C::Connection: Send + Unpin + 'static,
     C::Metadata: Send,
     C::Future: Send + 'static,
-    C::Error: Into<Error>,
     B: HttpBody + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,

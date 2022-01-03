@@ -53,7 +53,6 @@ where
     C: MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
-    C::Error: Into<Error>,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,

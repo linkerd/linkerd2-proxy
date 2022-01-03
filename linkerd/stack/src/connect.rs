@@ -53,7 +53,7 @@ pub trait MakeConnection<T> {
 impl<T, S, I, M> MakeConnection<T> for S
 where
     S: Service<T, Response = (I, M)>,
-    S::Error: Into<linkerd_error::Error>,
+    S::Error: Into<Error>,
     I: AsyncRead + AsyncWrite,
 {
     type Connection = I;
