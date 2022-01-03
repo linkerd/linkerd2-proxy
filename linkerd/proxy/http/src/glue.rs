@@ -173,7 +173,6 @@ impl<C, T> Service<hyper::Uri> for HyperConnect<C, T>
 where
     C: MakeConnection<T> + Clone + Send + Sync,
     C::Connection: Unpin + Send,
-    C::Error: Into<Error>,
     C::Future: Unpin + Send + 'static,
     T: Clone + Send + Sync,
 {
