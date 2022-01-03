@@ -4,24 +4,39 @@ use linkerd_error::Error;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
 
+/// A helper `Service` that drops metadata from a `MakeConnection`
 #[derive(Clone, Debug)]
 pub struct WithoutConnectionMetadata<S>(S);
 
+/// A helper that coerces a `MakeConnection` into a `Service`
 #[derive(Clone, Debug)]
 pub struct MakeConnectionService<S>(S);
 
+
+/// A helper trait that models a `Service` that creates client connections.
+///
+/// Implementers should implement `Service` and not `MakeConnection`. `MakeConnection` should only
+/// be used by consumers of these services.
 pub trait MakeConnection<T> {
+    /// An I/O type that represents a connection to the remote endpoint.
     type Connection: AsyncRead + AsyncWrite;
+
+    /// Metadata associated with the established connection.
     type Metadata;
+
     type Error: Into<Error>;
+
     type Future: std::future::Future<
         Output = Result<(Self::Connection, Self::Metadata), Self::Error>,
     >;
 
+    /// Determines whether the connector is ready to establish a connection.
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 
+    /// Establishes a connection.
     fn make_connection(&mut self, t: T) -> Self::Future;
 
+    /// Returns a new `Service` that drops the connection metadata from returned values.
     fn without_connection_metadata(self) -> WithoutConnectionMetadata<Self>
     where
         Self: Sized,
@@ -29,6 +44,7 @@ pub trait MakeConnection<T> {
         WithoutConnectionMetadata(self)
     }
 
+    /// Coerces a `MakeConnection` into a `Service`.
     fn into_service(self) -> MakeConnectionService<Self>
     where
         Self: Sized,
@@ -57,6 +73,8 @@ where
     }
 }
 
+// === impl MakeConnectionService ===
+
 impl<T, S> Service<T> for MakeConnectionService<S>
 where
     S: MakeConnection<T>,
@@ -75,6 +93,8 @@ where
         self.0.make_connection(t)
     }
 }
+
+// === impl WithoutConnectionMetadata ===
 
 impl<S> WithoutConnectionMetadata<S> {
     pub fn layer() -> impl layer::Layer<S, Service = Self> + Clone {
