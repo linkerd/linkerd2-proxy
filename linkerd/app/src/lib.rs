@@ -12,6 +12,7 @@ pub mod tap;
 pub use self::metrics::Metrics;
 use futures::{future, Future, FutureExt};
 use linkerd_app_admin as admin;
+use linkerd_app_health as health;
 pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
     config::ServerConfig,
@@ -54,12 +55,14 @@ pub struct Config {
     pub identity: identity::Config,
     pub dst: dst::Config,
     pub admin: admin::Config,
+    pub health: health::Config,
     pub tap: tap::Config,
     pub oc_collector: oc_collector::Config,
 }
 
 pub struct App {
     admin: admin::Task,
+    health: health::Task,
     drain: drain::Signal,
     dst: ControlAddr,
     identity: identity::Identity,
@@ -81,11 +84,12 @@ impl Config {
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub async fn build<BIn, BOut, BAdmin>(
+    pub async fn build<BIn, BOut, BAdmin, BHealth>(
         self,
         bind_in: BIn,
         bind_out: BOut,
         bind_admin: BAdmin,
+        bind_health: BHealth,
         shutdown_tx: mpsc::UnboundedSender<()>,
         log_level: trace::Handle,
     ) -> Result<App, Error>
@@ -96,9 +100,12 @@ impl Config {
         BOut::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
         BAdmin: Bind<ServerConfig> + Clone + 'static,
         BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
+        BHealth: Bind<ServerConfig> + Clone + 'static,
+        BHealth::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
     {
         let Config {
             admin,
+            health,
             dns,
             dst,
             identity,
@@ -166,6 +173,7 @@ impl Config {
                 .metrics()
                 .and_report(outbound.metrics())
                 .and_report(report);
+            let drain_rx = drain_rx.clone();
             info_span!("admin").in_scope(move || {
                 admin.build(
                     bind_admin,
@@ -176,6 +184,21 @@ impl Config {
                     log_level,
                     drain_rx,
                     shutdown_tx,
+                )
+            })?
+        };
+
+        let health = {
+            let identity = identity.receiver().server();
+            let metrics = inbound.metrics();
+            let policy = inbound_policies.clone();
+            info_span!("health").in_scope(move || {
+                health.build(
+                    bind_health,
+                    policy,
+                    identity,
+                    metrics,
+                    drain_rx,
                 )
             })?
         };
@@ -231,6 +254,7 @@ impl Config {
 
         Ok(App {
             admin,
+            health,
             dst: dst_addr,
             drain: drain_tx,
             identity,
@@ -261,6 +285,10 @@ impl Config {
 impl App {
     pub fn admin_addr(&self) -> Local<ServerAddr> {
         self.admin.listen_addr
+    }
+
+    pub fn health_addr(&self) -> Local<ServerAddr> {
+        self.health.listen_addr
     }
 
     pub fn inbound_addr(&self) -> Local<ServerAddr> {
@@ -300,6 +328,7 @@ impl App {
     pub fn spawn(self) -> drain::Signal {
         let App {
             admin,
+            health,
             drain,
             identity,
             oc_collector,
@@ -333,6 +362,13 @@ impl App {
                                 .instrument(info_span!("admin", listen.addr = %admin.listen_addr)),
                         );
 
+                        // Start the health server
+                        tokio::spawn(
+                            health
+                                .serve
+                                .instrument(info_span!("health", listen.addr = %health.listen_addr)),
+                        );
+
                         // Kick off the identity so that the process can become ready.
                         let local = identity.receiver();
                         let local_id = local.name().clone();
@@ -343,11 +379,13 @@ impl App {
                                 .instrument(info_span!("identity").or_current()),
                         );
 
-                        let latch = admin.latch;
+                        let admin_latch = admin.latch;
+                        let health_latch = health.latch;
                         tokio::spawn(
                             ready
                                 .map(move |()| {
-                                    latch.release();
+                                    admin_latch.release();
+                                    health_latch.release();
                                     info!(id = %local_id, "Certified identity");
                                 })
                                 .instrument(info_span!("identity").or_current()),

@@ -48,7 +48,7 @@ fn main() {
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
         let bind = BindTcp::with_orig_dst();
         let app = match config
-            .build(bind, bind, BindTcp::default(), shutdown_tx, trace)
+            .build(bind, bind, BindTcp::default(), BindTcp::default(), shutdown_tx, trace)
             .await
         {
             Ok(app) => app,
@@ -59,6 +59,7 @@ fn main() {
         };
 
         info!("Admin interface on {}", app.admin_addr());
+        info!("Health interface on {}", app.health_addr());
         info!("Inbound interface on {}", app.inbound_addr());
         info!("Outbound interface on {}", app.outbound_addr());
 
