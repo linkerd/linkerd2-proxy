@@ -17,7 +17,7 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
-    transport::{ClientAddr, OrigDstAddr, Remote, Local},
+    transport::{ClientAddr, Local, OrigDstAddr, Remote},
     transport_header::SessionProtocol,
     Error, Infallible, NameAddr, NameMatch,
 };

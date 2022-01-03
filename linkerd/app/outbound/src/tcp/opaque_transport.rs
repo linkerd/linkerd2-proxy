@@ -202,9 +202,9 @@ mod test {
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 let io = tokio_test::io::Builder::new()
-                        .write(&buf[..])
-                        .write(b"hello")
-                        .build();
+                    .write(&buf[..])
+                    .write(b"hello")
+                    .build();
                 let meta = tls::ConnectMeta {
                     socket: Local(ClientAddr(([0, 0, 0, 0], 0).into())),
                     tls: Conditional::Some(Some(tls::NegotiatedProtocolRef(PROTOCOL).into())),
@@ -242,9 +242,9 @@ mod test {
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 let io = tokio_test::io::Builder::new()
-                        .write(&buf[..])
-                        .write(b"hello")
-                        .build();
+                    .write(&buf[..])
+                    .write(b"hello")
+                    .build();
                 let meta = tls::ConnectMeta {
                     socket: Local(ClientAddr(([0, 0, 0, 0], 0).into())),
                     tls: Conditional::Some(Some(tls::NegotiatedProtocolRef(PROTOCOL).into())),

@@ -2,9 +2,7 @@ use crate::creds::CredsRx;
 use linkerd_identity::Name;
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
-use linkerd_tls::{
-    client::AlpnProtocols, ClientTls, NegotiatedProtocolRef, ServerId,
-};
+use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef, ServerId};
 use std::{future::Future, pin::Pin, sync::Arc, task::Context};
 use tracing::debug;
 

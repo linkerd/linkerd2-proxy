@@ -1,4 +1,4 @@
-use crate::{NegotiatedProtocol};
+use crate::NegotiatedProtocol;
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_identity as id;
@@ -102,14 +102,13 @@ where
     C::Connection: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Metadata: Send + Unpin,
     C::Future: Send + 'static,
-    H: Service<C::Connection, Response = (I, Option<NegotiatedProtocol>), Error = io::Error> + Send + 'static,
+    H: Service<C::Connection, Response = (I, Option<NegotiatedProtocol>), Error = io::Error>
+        + Send
+        + 'static,
     H::Future: Send + 'static,
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
 {
-    type Response = (
-        io::EitherIo<C::Connection, I>,
-        ConnectMeta<C::Metadata>,
-    );
+    type Response = (io::EitherIo<C::Connection, I>, ConnectMeta<C::Metadata>);
     type Error = io::Error;
     type Future = Connect<C::Future, C::Connection, H, C::Metadata>;
 

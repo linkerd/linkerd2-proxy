@@ -2,9 +2,7 @@ use futures::prelude::*;
 use linkerd_identity::{LocalId, Name};
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
-use linkerd_tls::{
-    ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls,
-};
+use linkerd_tls::{ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls};
 use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
 use thiserror::Error;
 use tokio::sync::watch;
