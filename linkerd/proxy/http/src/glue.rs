@@ -187,7 +187,7 @@ where
 
     fn call(&mut self, _dst: hyper::Uri) -> Self::Future {
         HyperConnectFuture {
-            inner: self.connect.make_connection(self.target.clone()),
+            inner: self.connect.connect(self.target.clone()),
             absolute_form: self.absolute_form,
         }
     }
@@ -202,7 +202,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let (transport, _meta) = futures::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
+        let (transport, _) = futures::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
         Poll::Ready(Ok(Connection {
             transport,
             absolute_form: *this.absolute_form,

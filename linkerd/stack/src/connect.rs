@@ -25,15 +25,13 @@ pub trait MakeConnection<T> {
 
     type Error: Into<Error>;
 
-    type Future: std::future::Future<
-        Output = Result<(Self::Connection, Self::Metadata), Self::Error>,
-    >;
+    type Future: Future<Output = Result<(Self::Connection, Self::Metadata), Self::Error>>;
 
     /// Determines whether the connector is ready to establish a connection.
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 
     /// Establishes a connection.
-    fn make_connection(&mut self, t: T) -> Self::Future;
+    fn connect(&mut self, t: T) -> Self::Future;
 
     /// Returns a new `Service` that drops the connection metadata from returned values.
     fn without_connection_metadata(self) -> WithoutConnectionMetadata<Self>
@@ -56,7 +54,7 @@ impl<T, S, I, M> MakeConnection<T> for S
 where
     S: Service<T, Response = (I, M)>,
     S::Error: Into<linkerd_error::Error>,
-    I: tokio::io::AsyncRead + tokio::io::AsyncWrite,
+    I: AsyncRead + AsyncWrite,
 {
     type Connection = I;
     type Metadata = M;
@@ -69,7 +67,7 @@ where
     }
 
     #[inline]
-    fn make_connection(&mut self, t: T) -> Self::Future {
+    fn connect(&mut self, t: T) -> Self::Future {
         Service::call(self, t)
     }
 }
@@ -91,7 +89,7 @@ where
 
     #[inline]
     fn call(&mut self, t: T) -> Self::Future {
-        self.0.make_connection(t)
+        self.0.connect(t)
     }
 }
 
@@ -119,6 +117,6 @@ where
 
     #[inline]
     fn call(&mut self, t: T) -> Self::Future {
-        self.0.make_connection(t).map_ok(|(conn, _)| conn)
+        self.0.connect(t).map_ok(|(conn, _)| conn)
     }
 }

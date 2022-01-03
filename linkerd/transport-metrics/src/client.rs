@@ -50,7 +50,7 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let metrics = self.params.extract_param(&target);
-        let inner = self.inner.make_connection(target);
+        let inner = self.inner.connect(target);
         ConnectFuture {
             metrics: Some(metrics),
             inner,

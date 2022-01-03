@@ -72,7 +72,7 @@ where
                 addr: ep.param(),
                 tls,
             };
-            return Box::pin(self.inner.make_connection(target).err_into::<Error>());
+            return Box::pin(self.inner.connect(target).err_into::<Error>());
         }
 
         // Configure the target port from the endpoint. In opaque cases, this is
@@ -110,7 +110,7 @@ where
 
         let protocol: Option<SessionProtocol> = ep.param();
 
-        let connect = self.inner.make_connection(Connect {
+        let connect = self.inner.connect(Connect {
             addr: Remote(ServerAddr((addr.ip(), connect_port).into())),
             tls,
         });

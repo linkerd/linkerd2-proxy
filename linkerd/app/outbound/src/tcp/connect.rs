@@ -51,10 +51,8 @@ impl<C> Outbound<C> {
             + svc::Param<Option<http::AuthorityOverride>>
             + svc::Param<Option<SessionProtocol>>
             + svc::Param<transport::labels::Key>,
-        C: svc::MakeConnection<Connect, Metadata = Local<ClientAddr>, Error = io::Error>
-            + Clone
-            + Send
-            + 'static,
+        C: svc::MakeConnection<Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+        C: Clone + Send + 'static,
         C::Connection: Send + Unpin,
         C::Metadata: Send + Unpin,
         C::Future: Send + 'static,

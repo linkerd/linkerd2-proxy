@@ -89,7 +89,7 @@ where
 
         let connect = self
             .connect
-            .make_connection(target)
+            .connect(target)
             .instrument(trace_span!("connect"));
 
         Box::pin(

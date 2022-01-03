@@ -60,10 +60,11 @@ pub struct Client<L, C> {
 #[derive(Debug)]
 pub enum Connect<F, I, H: Service<I>, M> {
     Connect(#[pin] F, Option<Conditional<H, NoClientTls>>),
-    Handshake(
-        #[pin] Oneshot<H, I>,
-        Option<(Conditional<(), NoClientTls>, M)>,
-    ),
+    Handshake {
+        #[pin]
+        inner: Oneshot<H, I>,
+        state: Option<(Conditional<(), NoClientTls>, M)>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -126,7 +127,7 @@ where
             }
         };
 
-        let connect = self.inner.make_connection(target);
+        let connect = self.inner.connect(target);
         Connect::Connect(connect, Some(handshake))
     }
 }
@@ -144,10 +145,10 @@ where
                 ConnectProj::Connect(fut, tls) => {
                     let (io, socket) = futures::ready!(fut.try_poll(cx))?;
                     match tls.take().expect("tls handshake must be set") {
-                        Conditional::Some(tls) => {
-                            let meta = (Conditional::Some(()), socket);
-                            self.set(Connect::Handshake(tls.oneshot(io), Some(meta)))
-                        }
+                        Conditional::Some(tls) => self.set(Connect::Handshake {
+                            inner: tls.oneshot(io),
+                            state: Some((Conditional::Some(()), socket)),
+                        }),
                         Conditional::None(reason) => {
                             let meta = ConnectMeta {
                                 socket,
@@ -157,15 +158,15 @@ where
                         }
                     }
                 }
-                ConnectProj::Handshake(fut, meta) => {
-                    let (io, alpn) = futures::ready!(fut.try_poll(cx))?;
+                ConnectProj::Handshake { inner, state } => {
+                    let (io, alpn) = futures::ready!(inner.try_poll(cx))?;
                     debug!(
                         alpn = alpn
                             .as_ref()
                             .and_then(|NegotiatedProtocol(ref p)| std::str::from_utf8(p).ok())
                             .map(tracing::field::display)
                     );
-                    let (tls, socket) = meta.take().expect("metadata must be set");
+                    let (tls, socket) = state.take().expect("metadata must be set");
                     let meta = ConnectMeta {
                         socket,
                         tls: tls.map(move |()| alpn),

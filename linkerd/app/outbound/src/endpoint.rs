@@ -209,12 +209,8 @@ impl<S> Outbound<S> {
     pub fn push_endpoint<I>(self) -> Outbound<svc::ArcNewTcp<tcp::Endpoint, I>>
     where
         Self: Clone + 'static,
-        S: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>
-            + Clone
-            + Send
-            + Sync
-            + Unpin
-            + 'static,
+        S: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+        S: Clone + Send + Sync + Unpin + 'static,
         S::Connection: Send + Unpin + 'static,
         S::Future: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
