@@ -63,10 +63,12 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Service::poll_ready(self, cx)
     }
 
+    #[inline]
     fn make_connection(&mut self, t: T) -> Self::Future {
         Service::call(self, t)
     }
