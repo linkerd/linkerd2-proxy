@@ -1351,7 +1351,7 @@ async fn retry_reconnect_errors() {
         .await;
     let proxy = proxy::new().inbound(srv).run().await;
     let client = client::http2(proxy.inbound, "transparency.example.com");
-    let metrics = client::http1(proxy.metrics, "localhost");
+    let metrics = client::http1(proxy.admin, "localhost");
 
     let fut = client.request(client.request_builder("/").version(http::Version::HTTP_2));
 

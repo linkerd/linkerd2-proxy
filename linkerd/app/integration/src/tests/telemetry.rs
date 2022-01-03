@@ -49,7 +49,7 @@ impl Fixture {
             .inbound(srv)
             .run()
             .await;
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
         let tcp_dst_labels = metrics::labels().label("direction", "inbound");
@@ -83,7 +83,7 @@ impl Fixture {
             .outbound(srv)
             .run()
             .await;
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
         let tcp_labels = metrics::labels()
@@ -137,7 +137,7 @@ impl TcpFixture {
             .await;
 
         let client = client::tcp(proxy.inbound);
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         let src_labels = metrics::labels()
             .label("direction", "inbound")
@@ -175,7 +175,7 @@ impl TcpFixture {
             .await;
 
         let client = client::tcp(proxy.outbound);
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         let src_labels = metrics::labels()
             .label("direction", "outbound")
@@ -530,7 +530,7 @@ mod outbound_dst_labels {
             .outbound(srv)
             .run()
             .await;
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         let client = client::new(proxy.outbound, dest);
         let tcp_labels = metrics::labels()
@@ -852,7 +852,7 @@ async fn metrics_have_no_double_commas() {
         .run()
         .await;
     let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
-    let metrics = client::http1(proxy.metrics, "localhost");
+    let metrics = client::http1(proxy.admin, "localhost");
 
     let scrape = metrics.get("/metrics").await;
     assert!(!scrape.contains(",,"));

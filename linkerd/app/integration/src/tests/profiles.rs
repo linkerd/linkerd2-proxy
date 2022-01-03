@@ -119,7 +119,7 @@ macro_rules! profile_test {
 
         let client = client::$http(proxy.outbound, host);
 
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         // Poll metrics until we recognize the profile is loaded...
         loop {
