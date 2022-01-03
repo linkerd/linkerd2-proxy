@@ -3,7 +3,9 @@ pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
 use linkerd_app_core::{
     io, profiles,
     proxy::{api_resolve::Metadata, core::Resolve},
-    svc, tls, Addr, Error,
+    svc,
+    transport::{ClientAddr, Local},
+    Addr, Error,
 };
 pub use profiles::LogicalAddr;
 use std::fmt;
@@ -118,9 +120,8 @@ impl<C> Outbound<C> {
     where
         Self: Clone + 'static,
         C: Clone + Send + Sync + Unpin + 'static,
-        C: svc::Service<tcp::Connect, Error = io::Error>,
-        C::Response:
-            tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+        C::Connection: Send + Unpin,
         C::Future: Send + Unpin,
         R: Clone + Send + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Sync,

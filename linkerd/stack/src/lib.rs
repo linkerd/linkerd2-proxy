@@ -6,6 +6,7 @@
 mod arc_new_service;
 mod box_future;
 mod box_service;
+mod connect;
 mod either;
 mod fail;
 mod fail_on_error;
@@ -29,6 +30,7 @@ pub use self::{
     arc_new_service::ArcNewService,
     box_future::BoxFuture,
     box_service::{BoxService, BoxServiceLayer},
+    connect::{MakeConnection, WithoutConnectionMetadata},
     either::{Either, NewEither},
     fail::Fail,
     fail_on_error::FailOnError,

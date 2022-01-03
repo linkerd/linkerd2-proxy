@@ -1,6 +1,6 @@
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
-use linkerd_tls::{ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef};
+use linkerd_tls::{ClientTls, NegotiatedProtocol};
 use std::{
     future::Future,
     pin::Pin,
@@ -91,7 +91,7 @@ impl<I> Service<I> for Connect
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
 {
-    type Response = ClientIo<I>;
+    type Response = (ClientIo<I>, Option<NegotiatedProtocol>);
     type Error = io::Error;
     type Future = ConnectFuture<I>;
 
@@ -103,6 +103,7 @@ where
 
             #[cfg(feature = "rustls")]
             Self::Rustls(connect) => <rustls::Connect as Service<I>>::poll_ready(connect, cx),
+
             #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(cx),
         }
@@ -116,6 +117,7 @@ where
 
             #[cfg(feature = "rustls")]
             Self::Rustls(connect) => ConnectFuture::Rustls(connect.call(io)),
+
             #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(io),
         }
@@ -128,7 +130,7 @@ impl<I> Future for ConnectFuture<I>
 where
     I: io::AsyncRead + io::AsyncWrite + Unpin,
 {
-    type Output = io::Result<ClientIo<I>>;
+    type Output = io::Result<(ClientIo<I>, Option<NegotiatedProtocol>)>;
 
     #[inline]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -136,14 +138,21 @@ where
             #[cfg(feature = "boring")]
             ConnectFutureProj::Boring(f) => {
                 let res = futures::ready!(f.poll(cx));
-                Poll::Ready(res.map(ClientIo::Boring))
+                Poll::Ready(res.map(|io| {
+                    let np = io.negotiated_protocol().map(|np| np.to_owned());
+                    (ClientIo::Boring(io), np)
+                }))
             }
 
             #[cfg(feature = "rustls")]
             ConnectFutureProj::Rustls(f) => {
                 let res = futures::ready!(f.poll(cx));
-                Poll::Ready(res.map(ClientIo::Rustls))
+                Poll::Ready(res.map(|io| {
+                    let np = io.negotiated_protocol().map(|np| np.to_owned());
+                    (ClientIo::Rustls(io), np)
+                }))
             }
+
             #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(cx),
         }
@@ -236,21 +245,6 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
 
             #[cfg(feature = "rustls")]
             Self::Rustls(io) => io.is_write_vectored(),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(),
-        }
-    }
-}
-
-impl<I> HasNegotiatedProtocol for ClientIo<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(io) => io.negotiated_protocol(),
-
-            #[cfg(feature = "rustls")]
-            Self::Rustls(io) => io.negotiated_protocol(),
             #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(),
         }

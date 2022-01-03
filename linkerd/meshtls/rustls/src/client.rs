@@ -1,7 +1,7 @@
 use futures::prelude::*;
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
-use linkerd_tls::{client::AlpnProtocols, ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef};
+use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef};
 use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
 use tokio::sync::watch;
 use tokio_rustls::rustls::{self, ClientConfig};
@@ -139,9 +139,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
     }
 }
 
-impl<I> HasNegotiatedProtocol for ClientIo<I> {
+impl<I> ClientIo<I> {
     #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+    pub fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
         self.0
             .get_ref()
             .1

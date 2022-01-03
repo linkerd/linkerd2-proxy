@@ -245,7 +245,7 @@ where
                         })
                         .expect("send result");
                 }
-                Ok(conn) => {
+                Ok((conn, _)) => {
                     let result = client(conn).instrument(tracing::info_span!("client")).await;
                     sender
                         .send(Transported { tls, result })

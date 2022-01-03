@@ -2,9 +2,7 @@ use futures::prelude::*;
 use linkerd_identity::{LocalId, Name};
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
-use linkerd_tls::{
-    ClientId, HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls,
-};
+use linkerd_tls::{ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls};
 use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
 use thiserror::Error;
 use tokio::sync::watch;
@@ -190,9 +188,9 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
     }
 }
 
-impl<I> HasNegotiatedProtocol for ServerIo<I> {
+impl<I> ServerIo<I> {
     #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+    pub fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
         self.0
             .get_ref()
             .1
