@@ -37,7 +37,7 @@ pub struct Listening {
     pub tap: Option<SocketAddr>,
     pub inbound: SocketAddr,
     pub outbound: SocketAddr,
-    pub metrics: SocketAddr,
+    pub admin: SocketAddr,
 
     pub outbound_server: Option<server::Listening>,
     pub inbound_server: Option<server::Listening>,
@@ -402,7 +402,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         })
         .expect("spawn");
 
-    let (tap_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
+    let (tap_addr, identity_addr, inbound_addr, outbound_addr, admin_addr) =
         running_rx.await.unwrap();
 
     tracing::info!(
@@ -412,14 +412,14 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         inbound.orig_dst = ?inbound,
         outbound.addr = ?outbound_addr,
         outbound.orig_dst = ?outbound,
-        metrics.addr = ?metrics_addr,
+        metrics.addr = ?admin_addr,
     );
 
     Listening {
         tap: tap_addr.map(Into::into),
         inbound: inbound_addr.into(),
         outbound: outbound_addr.into(),
-        metrics: metrics_addr.into(),
+        admin: admin_addr.into(),
 
         outbound_server: proxy.outbound_server,
         inbound_server: proxy.inbound_server,
