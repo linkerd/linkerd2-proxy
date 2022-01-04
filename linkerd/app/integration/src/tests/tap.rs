@@ -123,7 +123,7 @@ async fn inbound_http1() {
         .await;
 
     // Wait for the server proxy to become ready
-    let client = client::http1(srv_proxy.metrics, "localhost");
+    let client = client::http1(srv_proxy.admin, "localhost");
     let ready = || async {
         client
             .request(client.request_builder("/ready").method("GET"))
@@ -214,7 +214,7 @@ async fn grpc_headers_end() {
         .await;
 
     // Wait for the server proxy to become ready
-    let client = client::http2(srv_proxy.metrics, "localhost");
+    let client = client::http2(srv_proxy.admin, "localhost");
     let ready = || async {
         client
             .request(client.request_builder("/ready").method("GET"))
