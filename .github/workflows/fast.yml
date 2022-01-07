@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.56.1-buster
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup component add clippy
@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.56.1-buster
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup component add rustfmt
@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.56.1-buster
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: |
@@ -56,7 +56,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.56.1-buster
     steps:
       - run: apt update && apt install -y cmake clang golang # for boring
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
@@ -90,7 +90,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.0-buster
+      image: docker://rust:1.56.1-buster
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: |
