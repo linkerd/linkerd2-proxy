@@ -1,14 +1,15 @@
 {
 	"name": "linkerd2-proxy",
-	"dockerFile": "./Dockerfile",
 	"context": "${localWorkspaceFolder}",
-	"build": {
-		"args": {
-			"USER": "code",
-			//"USER_UID": "${localEnv:UID}",
-			//"USER_GID": "${localEnv:GID}"
-		},
-	},
+	"image": "ghcr.io/linkerd/dev-proxy:v1",
+	// "dockerFile": "./Dockerfile",
+	// "build": {
+	// 	"args": {
+	// 		"USER": "code",
+	// 		//"USER_UID": "${localEnv:UID}",
+	// 		//"USER_GID": "${localEnv:GID}"
+	// 	},
+	// },
 	"settings": {},
 	"extensions": [
 		"DavidAnson.vscode-markdownlint",
