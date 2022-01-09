@@ -1,7 +1,7 @@
 {
 	"name": "linkerd2-proxy",
 	"context": "${localWorkspaceFolder}",
-	"image": "ghcr.io/linkerd/dev-proxy:v1",
+	"image": "ghcr.io/linkerd/dev-proxy:v2",
 	// "dockerFile": "./Dockerfile",
 	// "build": {
 	// 	"args": {
@@ -25,15 +25,15 @@
 	// Support docker + debugger
 	"runArgs": [
 		"--init",
+		// Use the host network so we can access k3d, etc.
+		"--net=host",
+		// For lldb
 		"--cap-add=SYS_PTRACE",
-		"--privileged",
-		"--security-opt",
-		"seccomp=unconfined"
+		"--security-opt=seccomp=unconfined"
 	],
 	"overrideCommand": false,
 	"remoteUser": "code",
 	"mounts": [
-		// Retain containers across rebuilds
-		"source=l2-proxy-dind,target=/var/lib/docker,type=volume"
+		"source=/var/run/docker.sock,target=/var/run/docker-host.sock,type=bind"
 	]
 }
