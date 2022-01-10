@@ -17,7 +17,7 @@ bytes = "1"
 futures = { version = "0.3", default-features = false }
 http = "0.2"
 http-body = "0.4"
-indexmap = "1.7"
+indexmap = "1.8"
 linkerd-addr = { path = "../addr" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
