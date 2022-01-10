@@ -1,4 +1,4 @@
-FROM rust:1.56.1-bullseye
+FROM docker.io/rust:1.56.1-bullseye
 
 ARG USER=code
 ARG USER_UID=1000
@@ -44,5 +44,4 @@ RUN curl -sL https://run.linkerd.io/install-edge | sh \
     &&  ln -s $(readlink ~/.linkerd2/bin/linkerd) ~/bin/linkerd
 
 ENTRYPOINT ["/usr/local/share/docker-init.sh"]
-VOLUME ["/var/lib/docker"]
 CMD ["sleep", "infinity"]
