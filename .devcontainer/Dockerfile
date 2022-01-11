@@ -1,7 +1,7 @@
 FROM docker.io/rust:1.56.1-bullseye
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update
+RUN apt update && apt upgrade -y
 RUN apt install -y \
     clang \
     cmake \
@@ -10,9 +10,6 @@ RUN apt install -y \
     lsb-release \
     sudo \
     time
-RUN curl -Lo /usr/local/bin/kubectl "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
-    && chmod 755 /usr/local/bin/kubectl
-RUN curl -s https://raw.githubusercontent.com/rancher/k3d/main/install.sh | bash
 
 ARG USER=code
 ARG USER_UID=1000
@@ -31,6 +28,12 @@ RUN curl -vsL https://raw.githubusercontent.com/microsoft/vscode-dev-containers/
 USER $USER
 ENV HOME=/home/$USER
 RUN mkdir -p $HOME/bin
+ENV PATH=$HOME/bin:$PATH
+
+RUN curl -Lo $HOME/kubectl "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && chmod 755 $HOME/kubectl
+RUN curl -svL https://raw.githubusercontent.com/rancher/k3d/main/install.sh \
+    | USE_SUDO=false K3D_INSTALL_DIR=$HOME/bin bash
 
 RUN rustup component add clippy rustfmt
 RUN mkdir /tmp/cargo-deny && cd /tmp/cargo-deny && \

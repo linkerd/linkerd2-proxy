@@ -1,15 +1,7 @@
 {
 	"name": "linkerd2-proxy",
-	"image": "ghcr.io/linkerd/dev-proxy:v2",
-	// "dockerFile": "./Dockerfile",
-	// "build": {
-	// 	"args": {
-	// 		"USER": "code",
-	// 		//"USER_UID": "${localEnv:UID}",
-	// 		//"USER_GID": "${localEnv:GID}"
-	// 	},
-	// },
-	"settings": {},
+	"image": "ghcr.io/linkerd/dev-proxy:v3",
+	//"dockerFile": "./Dockerfile",
 	"extensions": [
 		"DavidAnson.vscode-markdownlint",
 		"matklad.rust-analyzer",
@@ -20,7 +12,6 @@
 		"vadimcn.vscode-lldb",
 		"zxh404.vscode-proto3"
 	],
-	"forwardPorts": [],
 	// Support docker + debugger
 	"runArgs": [
 		"--init",
