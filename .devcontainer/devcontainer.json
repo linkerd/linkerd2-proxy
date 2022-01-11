@@ -1,6 +1,5 @@
 {
 	"name": "linkerd2-proxy",
-	"context": "${localWorkspaceFolder}",
 	"image": "ghcr.io/linkerd/dev-proxy:v2",
 	// "dockerFile": "./Dockerfile",
 	// "build": {
