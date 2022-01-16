@@ -1,6 +1,7 @@
 use super::{discover::Discover, DefaultPolicy, ServerPolicy, Store};
+use ahash::AHashMap as HashMap;
 use linkerd_app_core::{control, dns, identity, metrics, svc::NewService};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Configures inbound policies.
 ///

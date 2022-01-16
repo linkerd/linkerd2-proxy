@@ -10,6 +10,7 @@ Configures and runs the inbound proxy
 """
 
 [dependencies]
+ahash = "0.7"
 bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }

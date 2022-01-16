@@ -1,9 +1,10 @@
 use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
+use ahash::{AHashMap as HashMap, AHashSet as HashSet};
 use futures::prelude::*;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
-    collections::{hash_map, HashMap, HashSet},
+    collections::hash_map,
     task::{Context, Poll},
 };
 use tracing::{debug, trace};

@@ -15,6 +15,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aae1277d39aeec15cb388266ecc24b11c80469deae6067e17a1a7aa9e5c1f234"
 
 [[package]]
+name = "ahash"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"
+dependencies = [
+ "getrandom",
+ "once_cell",
+ "version_check",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "0.7.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -859,6 +870,7 @@ dependencies = [
 name = "linkerd-app-inbound"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "arbitrary",
  "bytes",
  "futures",
@@ -917,6 +929,7 @@ dependencies = [
 name = "linkerd-app-outbound"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "bytes",
  "futures",
  "http",
@@ -966,6 +979,7 @@ dependencies = [
 name = "linkerd-cache"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "futures",
  "linkerd-error",
  "linkerd-stack",
@@ -1088,6 +1102,7 @@ dependencies = [
 name = "linkerd-http-metrics"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "bytes",
  "futures",
  "http",
@@ -1206,6 +1221,7 @@ dependencies = [
 name = "linkerd-metrics"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "deflate",
  "hdrhistogram",
  "http",
@@ -1456,6 +1472,7 @@ dependencies = [
 name = "linkerd-service-profiles"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "bytes",
  "futures",
  "http",
@@ -1510,6 +1527,7 @@ dependencies = [
 name = "linkerd-stack-metrics"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "linkerd-metrics",
  "parking_lot",
  "tokio",
@@ -1630,6 +1648,7 @@ dependencies = [
 name = "linkerd-transport-metrics"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "futures",
  "linkerd-errno",
  "linkerd-io",

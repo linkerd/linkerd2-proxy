@@ -1,10 +1,11 @@
 use crate::policy::{AllowPolicy, Permit};
+use ahash::AHashMap as HashMap;
 use linkerd_app_core::{
     metrics::{metrics, AuthzLabels, Counter, FmtMetrics, ServerLabel, TargetAddr, TlsAccept},
     tls,
 };
 use parking_lot::Mutex;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 metrics! {
     inbound_http_authz_allow_total: Counter {

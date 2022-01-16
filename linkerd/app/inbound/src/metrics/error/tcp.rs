@@ -1,4 +1,5 @@
 use super::ErrorKind;
+use ahash::AHashMap as HashMap;
 use linkerd_app_core::{
     metrics::{metrics, Counter, FmtMetrics},
     svc::{self, stack::NewMonitor},
@@ -6,7 +7,7 @@ use linkerd_app_core::{
     Error,
 };
 use parking_lot::Mutex;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 metrics! {
     inbound_tcp_errors_total: Counter {

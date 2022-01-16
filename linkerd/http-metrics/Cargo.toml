@@ -7,6 +7,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+ahash = "0.7"
 bytes = "1"
 futures = { version = "0.3", default-features = false }
 http = "0.2"

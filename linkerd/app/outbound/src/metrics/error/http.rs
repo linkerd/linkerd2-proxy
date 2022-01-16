@@ -1,10 +1,11 @@
 use super::ErrorKind;
+use ahash::AHashMap as HashMap;
 use linkerd_app_core::{
     metrics::{metrics, Counter, FmtMetrics},
     svc, Error,
 };
 use parking_lot::RwLock;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 metrics! {
     outbound_http_errors_total: Counter {

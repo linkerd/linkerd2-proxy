@@ -7,6 +7,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+ahash = "0.7"
 linkerd-metrics = { path = "../../metrics" }
 parking_lot = "0.11"
 tower = { version = "0.4.11", default-features = false }

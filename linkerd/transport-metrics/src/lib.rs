@@ -12,11 +12,11 @@ pub use self::{
     sensor::{Sensor, SensorIo},
     server::NewServer,
 };
+use ahash::AHashMap as HashMap;
 use linkerd_errno::Errno;
 use linkerd_metrics::{metrics, Counter, FmtLabels, Gauge, LastUpdate, Store};
 use parking_lot::Mutex;
 use std::{
-    collections::HashMap,
     fmt,
     hash::Hash,
     sync::Arc,

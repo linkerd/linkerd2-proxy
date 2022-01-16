@@ -8,6 +8,7 @@ publish = false
 description = """Transport-level metrics"""
 
 [dependencies]
+ahash = "0.7"
 futures = { version = "0.3", default-features = false }
 linkerd-errno = { path = "../errno" }
 linkerd-io = { path = "../io" }

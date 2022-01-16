@@ -1,10 +1,11 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
+use ahash::AHashMap as HashMap;
 use linkerd_stack::{layer, NewService};
 use parking_lot::RwLock;
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::hash_map::Entry,
     hash::Hash,
     sync::{Arc, Weak},
     task::{Context, Poll},

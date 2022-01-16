@@ -1,5 +1,6 @@
 use super::prom::FmtLabels;
-use std::{collections::HashMap, hash::Hash};
+use ahash::AHashMap as HashMap;
+use std::hash::Hash;
 
 /// Holds an `S`-typed scope for each `L`-typed label set.
 ///

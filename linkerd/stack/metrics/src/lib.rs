@@ -6,9 +6,10 @@ mod service;
 
 pub use self::layer::TrackServiceLayer;
 pub use self::service::TrackService;
+use ahash::AHashMap as HashMap;
 use linkerd_metrics::{metrics, Counter, FmtLabels, FmtMetrics};
 use parking_lot::Mutex;
-use std::{collections::HashMap, fmt, hash::Hash, sync::Arc};
+use std::{fmt, hash::Hash, sync::Arc};
 
 metrics! {
     stack_create_total: Counter { "Total number of services created" },

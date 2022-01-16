@@ -1,13 +1,7 @@
 use crate::{FmtLabels, FmtMetric, Metric};
+use ahash::AHashMap as HashMap;
 use parking_lot::Mutex;
-use std::{
-    borrow::Borrow,
-    collections::hash_map::{self, HashMap},
-    fmt,
-    hash::Hash,
-    sync::Arc,
-    time::Instant,
-};
+use std::{borrow::Borrow, collections::hash_map, fmt, hash::Hash, sync::Arc, time::Instant};
 
 pub trait LastUpdate {
     fn last_update(&self) -> Instant;
