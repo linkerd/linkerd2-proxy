@@ -1,10 +1,10 @@
-use std::{fmt, io::Write, path::PathBuf, sync::Arc};
+use std::{fmt, sync::Arc};
 use tracing::{field, span, Id, Level, Metadata, Subscriber};
-use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     field::RecordFields,
     filter::{Directive, FilterFn, Filtered},
-    fmt::{format, FormatFields, FormattedFields, MakeWriter},
+    fmt::{format, FormatFields, FormattedFields},
     layer::{Context, Layer},
     registry::LookupSpan,
 };
@@ -19,7 +19,6 @@ pub struct Guard(Arc<WorkerGuard>);
 pub(super) type AccessLogLayer<S> = Filtered<Writer, FilterFn, S>;
 
 pub(super) struct Writer<F = ApacheCommon> {
-    make_writer: NonBlocking,
     formatter: F,
 }
 
@@ -33,33 +32,15 @@ struct ApacheCommonVisitor<'writer> {
     writer: format::Writer<'writer>,
 }
 
-pub(super) fn build<S>() -> Option<(AccessLogLayer<S>, Guard, Directive)>
+pub(super) fn build<S>() -> Option<(AccessLogLayer<S>, Directive)>
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
 {
-    // Create the access log file, or open it in append-only mode if
-    // it already exists.
-    let file = {
-        let path = {
-            let p = std::env::var(ENV_ACCESS_LOG).ok()?;
-            p.parse::<PathBuf>()
-                .map_err(|e| eprintln!("{} is not a valid path: {}", p, e))
-                .ok()?
-        };
+    // Is access logging enabled?
+    let _ = std::env::var(ENV_ACCESS_LOG).ok()?;
 
-        std::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(&path)
-            .map_err(|e| eprintln!("Failed to open file {}: {}", path.display(), e,))
-            .ok()?
-    };
-
-    // If we successfully created or opened the access log file,
-    // build the access log layer.
-    eprintln!("Writing access log to {:?}", file);
-    let (non_blocking, guard) = tracing_appender::non_blocking(file);
-    let writer = Writer::new(non_blocking).with_filter(
+    // If access logging is enabled, build the access log layer.
+    let writer = Writer::new().with_filter(
         FilterFn::new(
             (|meta| meta.level() == &Level::INFO && meta.target().starts_with(TRACE_TARGET))
                 as fn(&Metadata<'_>) -> bool,
@@ -73,15 +54,14 @@ where
         .parse()
         .expect("access logging filter directive must parse");
 
-    Some((writer, Guard(guard.into()), directive))
+    Some((writer, directive))
 }
 
 // === impl Writer ===
 
 impl Writer {
-    pub fn new(make_writer: NonBlocking) -> Self {
+    pub fn new() -> Self {
         Self {
-            make_writer,
             formatter: Default::default(),
         }
     }
@@ -129,8 +109,7 @@ where
     fn on_close(&self, id: Id, ctx: Context<'_, S>) {
         if let Some(span) = ctx.span(&id) {
             if let Some(fields) = span.extensions().get::<FormattedFields<F>>() {
-                let mut writer = self.make_writer.make_writer();
-                let _ = writeln!(&mut writer, "{}", fields.fields);
+                eprintln!("{}", fields.fields);
             }
         }
     }

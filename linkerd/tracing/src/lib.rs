@@ -32,13 +32,7 @@ pub struct Settings {
 }
 
 #[derive(Clone)]
-pub struct Handle(Option<Inner>);
-
-#[derive(Clone)]
-struct Inner {
-    level: level::Handle,
-    _guard: Option<access_log::Guard>,
-}
+pub struct Handle(Option<level::Handle>);
 
 /// Initialize tracing and logging with the value of the `ENV_LOG`
 /// environment variable as the verbosity-level filter.
@@ -154,13 +148,14 @@ impl Settings {
         let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
 
         let mut filter = EnvFilter::new(log_level);
-        let (access_log, _guard) = match access_log::build() {
-            Some((access_log, guard, directive)) => {
+        let access_log = match access_log::build() {
+            Some((access_log, directive)) => {
                 filter = filter.add_directive(directive);
-                (Some(access_log), Some(guard))
+                Some(access_log)
             }
-            None => (None, None),
+            None => None,
         };
+
         let (filter, level) = reload::Layer::new(filter);
         let level = level::Handle::new(level);
 
@@ -172,7 +167,7 @@ impl Settings {
             !meta.target().starts_with(access_log::TRACE_TARGET)
         }));
 
-        let handle = Handle(Some(Inner { level, _guard }));
+        let handle = Handle(Some(level));
 
         let dispatch = tracing_subscriber::registry()
             .with(filter)
@@ -192,6 +187,6 @@ impl Handle {
     }
 
     pub fn level(&self) -> Option<&level::Handle> {
-        self.0.as_ref().map(|inner| &inner.level)
+        self.0.as_ref()
     }
 }
