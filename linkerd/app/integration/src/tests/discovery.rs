@@ -373,7 +373,7 @@ mod http2 {
             .run()
             .await;
         let client = client::http2(proxy.outbound, host);
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         assert_eq!(client.get("/").await, "hello");
 

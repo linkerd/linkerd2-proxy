@@ -1,14 +1,16 @@
 use linkerd_app_core::{
-    svc::Param,
-    transport::{Remote, ServerAddr},
+    svc::{Param, Service},
+    transport::{ClientAddr, Local, Remote, ServerAddr},
 };
-use std::collections::HashMap;
-use std::fmt;
-use std::future::Future;
-use std::net::SocketAddr;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
+use std::{
+    collections::HashMap,
+    fmt,
+    future::Future,
+    net::SocketAddr,
+    pin::Pin,
+    sync::{Arc, Mutex},
+    task::{Context, Poll},
+};
 use tracing::instrument::{Instrument, Instrumented};
 
 mod io {
@@ -16,9 +18,10 @@ mod io {
     pub use tokio_test::io::*;
 }
 
-type ConnectFn<E> = Box<dyn FnMut(E) -> ConnectFuture + Send>;
+type ConnectFn<T> = Box<dyn FnMut(T) -> ConnectFuture + Send>;
 
-pub type ConnectFuture = Pin<Box<dyn Future<Output = io::Result<io::BoxedIo>> + Send + 'static>>;
+pub type ConnectFuture =
+    Pin<Box<dyn Future<Output = io::Result<(io::BoxedIo, Local<ClientAddr>)>> + Send + 'static>>;
 
 #[derive(Clone)]
 pub struct Connect<E> {
@@ -28,11 +31,11 @@ pub struct Connect<E> {
 #[derive(Clone)]
 pub struct NoRawTcp;
 
-impl<E> tower::Service<E> for Connect<E>
+impl<T> Service<T> for Connect<T>
 where
-    E: Clone + fmt::Debug + Param<Remote<ServerAddr>>,
+    T: Clone + fmt::Debug + Param<Remote<ServerAddr>>,
 {
-    type Response = io::BoxedIo;
+    type Response = (io::BoxedIo, Local<ClientAddr>);
     type Future = Instrumented<ConnectFuture>;
     type Error = io::Error;
 
@@ -40,14 +43,14 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, endpoint: E) -> Self::Future {
-        let Remote(ServerAddr(addr)) = endpoint.param();
+    fn call(&mut self, target: T) -> Self::Future {
+        let Remote(ServerAddr(addr)) = target.param();
         let span = tracing::info_span!("connect", %addr);
         let f = span.in_scope(|| {
             tracing::trace!("connecting...");
             let mut endpoints = self.endpoints.lock().unwrap();
             match endpoints.get_mut(&addr) {
-                Some(f) => (f)(endpoint),
+                Some(f) => (f)(target),
                 None => panic!(
                     "did not expect to connect to the endpoint {} not in {:?}",
                     addr,
@@ -60,7 +63,7 @@ where
 }
 
 impl<E: fmt::Debug> tower::Service<E> for NoRawTcp {
-    type Response = io::BoxedIo;
+    type Response = (io::BoxedIo, Local<ClientAddr>);
     type Future = Instrumented<ConnectFuture>;
     type Error = io::Error;
 
@@ -106,7 +109,8 @@ impl<E: fmt::Debug> Connect<E> {
             endpoint.into(),
             Box::new(move |endpoint| {
                 let conn = on_connect(endpoint);
-                Box::pin(async move { conn })
+                let local = Local(ClientAddr(([0, 0, 0, 0], 0).into()));
+                Box::pin(async move { conn.map(move |c| (c, local)) })
             }),
         );
         self

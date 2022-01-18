@@ -5,17 +5,11 @@ pub mod client;
 pub mod server;
 
 pub use linkerd_identity::LocalId;
-use linkerd_io as io;
 
 pub use self::{
-    client::{Client, ClientTls, ConditionalClientTls, NoClientTls, ServerId},
+    client::{Client, ClientTls, ConditionalClientTls, ConnectMeta, NoClientTls, ServerId},
     server::{ClientId, ConditionalServerTls, NewDetectTls, NoServerTls, ServerTls},
 };
-
-/// A trait implemented by transport streams to indicate its negotiated protocol.
-pub trait HasNegotiatedProtocol {
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>>;
-}
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct NegotiatedProtocol(pub Vec<u8>);
@@ -54,41 +48,5 @@ impl std::fmt::Debug for NegotiatedProtocolRef<'_> {
             Ok(s) => s.fmt(f),
             Err(_) => self.0.fmt(f),
         }
-    }
-}
-
-impl HasNegotiatedProtocol for tokio::net::TcpStream {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        None
-    }
-}
-
-impl<I: HasNegotiatedProtocol> HasNegotiatedProtocol for io::ScopedIo<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        self.get_ref().negotiated_protocol()
-    }
-}
-
-impl<L, R> HasNegotiatedProtocol for io::EitherIo<L, R>
-where
-    L: HasNegotiatedProtocol,
-    R: HasNegotiatedProtocol,
-{
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        match self {
-            io::EitherIo::Left(l) => l.negotiated_protocol(),
-            io::EitherIo::Right(r) => r.negotiated_protocol(),
-        }
-    }
-}
-
-/// Needed for tests.
-impl HasNegotiatedProtocol for io::BoxedIo {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        None
     }
 }

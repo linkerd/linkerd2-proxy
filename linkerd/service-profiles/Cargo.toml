@@ -17,7 +17,7 @@ bytes = "1"
 futures = { version = "0.3", default-features = false }
 http = "0.2"
 http-body = "0.4"
-indexmap = "1.7"
+indexmap = "1.8"
 linkerd-addr = { path = "../addr" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
@@ -31,7 +31,7 @@ regex = "1.5.4"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { version = "0.6", default-features = false }
-tower = { version = "0.4.10", features = [ "ready-cache", "retry", "util"] }
+tower = { version = "0.4.11", features = [ "ready-cache", "retry", "util"] }
 thiserror = "1"
 tracing = "0.1.29"
 pin-project = "1"

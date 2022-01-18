@@ -6,22 +6,15 @@ license = "Apache-2.0"
 edition = "2021"
 publish = false
 description = """
-Proxy integration tests
-
-The test utilities can be very costly to compile, so they are extracted into
-a dedicated crate to help the compiler cache dependencies properly.
+Proxy test helpers
 """
-
-[features]
-# Disable to skip certain tests that should not be run on CI.
-flaky_tests = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.14", features = ["http1", "http2"] }
+hyper = { version = "0.14.16", features = ["http1", "http2"] }
 linkerd-app-core = { path = "../core" }
 linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
@@ -29,7 +22,7 @@ regex = "1"
 tokio = { version = "1", features = ["io-util", "net", "rt", "sync"]}
 tokio-test = "0.4"
 tokio-stream = { version = "0.1.8", features = ["sync"] }
-tower = { version = "0.4.10", default-features = false}
+tower = { version = "0.4.11", default-features = false}
 tracing = "0.1.29"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "std"], default-features = false }
 thiserror = "1"

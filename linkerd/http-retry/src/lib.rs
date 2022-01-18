@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::type_complexity)]
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;

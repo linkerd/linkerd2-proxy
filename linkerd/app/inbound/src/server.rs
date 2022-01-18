@@ -3,7 +3,7 @@ use futures::Stream;
 use linkerd_app_core::{
     dns, io, metrics, profiles, serve, svc,
     transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Error,
+    Error, Result,
 };
 use std::fmt::Debug;
 use tracing::debug_span;
@@ -30,7 +30,7 @@ impl Inbound<()> {
     pub async fn serve<A, I, G, GSvc, P>(
         self,
         addr: Local<ServerAddr>,
-        listen: impl Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
+        listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
         policies: impl policy::CheckPolicy + Clone + Send + Sync + 'static,
         profiles: P,
         gateway: G,
@@ -60,15 +60,26 @@ impl Inbound<()> {
             .into_inner();
 
         // Handles connections that target the inbound proxy port.
-        let direct = self
-            .clone()
-            .into_tcp_connect(addr.port())
-            .push_tcp_forward()
-            .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
-            .push_direct(policies.clone(), gateway)
-            .into_stack()
-            .instrument(|_: &_| debug_span!("direct"))
-            .into_inner();
+        let direct = {
+            // Handles opaque connections that specify an HTTP session protocol.
+            // This is identical to the primary HTTP stack (below), but it uses different
+            // target & I/O types.
+            let http = self
+                .clone()
+                .into_tcp_connect(addr.port())
+                .push_http_router(profiles.clone())
+                .push_http_server()
+                .into_inner();
+
+            self.clone()
+                .into_tcp_connect(addr.port())
+                .push_tcp_forward()
+                .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
+                .push_direct(policies.clone(), gateway, http)
+                .into_stack()
+                .instrument(|_: &_| debug_span!("direct"))
+                .into_inner()
+        };
 
         // Handles HTTP connections.
         let http = self

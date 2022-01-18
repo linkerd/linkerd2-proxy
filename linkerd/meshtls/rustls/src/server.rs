@@ -2,13 +2,11 @@ use futures::prelude::*;
 use linkerd_identity::{LocalId, Name};
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
-use linkerd_tls::{
-    ClientId, HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls,
-};
-use std::{pin::Pin, sync::Arc, task};
+use linkerd_tls::{ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls};
+use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
 use thiserror::Error;
 use tokio::sync::watch;
-use tokio_rustls::rustls::{Certificate, ServerConfig, Session};
+use tokio_rustls::rustls::{Certificate, ServerConfig};
 use tracing::debug;
 
 /// A Service that terminates TLS connections using a dynamically updated server configuration.
@@ -99,8 +97,8 @@ where
     type Future = TerminateFuture<I>;
 
     #[inline]
-    fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> task::Poll<Result<(), Self::Error>> {
-        task::Poll::Ready(Ok(()))
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> io::Poll<()> {
+        io::Poll::Ready(Ok(()))
     }
 
     #[inline]
@@ -114,7 +112,7 @@ where
                 let negotiated_protocol = io
                     .get_ref()
                     .1
-                    .get_alpn_protocol()
+                    .alpn_protocol()
                     .map(|b| NegotiatedProtocol(b.into()));
 
                 debug!(client.id = ?client_id, alpn = ?negotiated_protocol, "Accepted TLS connection");
@@ -129,17 +127,17 @@ where
 
 fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<ClientId> {
     let (_io, session) = tls.get_ref();
-    let certs = session.get_peer_certificates()?;
+    let certs = session.peer_certificates()?;
     let c = certs.first().map(Certificate::as_ref)?;
-    let end_cert = webpki::EndEntityCert::from(c).ok()?;
+    let end_cert = webpki::EndEntityCert::try_from(c).ok()?;
     let dns_names = end_cert.dns_names().ok()?;
 
     match dns_names.first()? {
-        webpki::GeneralDNSNameRef::DNSName(n) => {
+        webpki::GeneralDnsNameRef::DnsName(n) => {
             let s: &str = (*n).into();
             s.parse().ok().map(ClientId)
         }
-        webpki::GeneralDNSNameRef::Wildcard(_) => {
+        webpki::GeneralDnsNameRef::Wildcard(_) => {
             // Wildcards can perhaps be handled in a future path...
             None
         }
@@ -152,7 +150,7 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ServerIo<I> {
     #[inline]
     fn poll_read(
         mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> io::Poll<()> {
         Pin::new(&mut self.0).poll_read(cx, buf)
@@ -161,30 +159,26 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ServerIo<I> {
 
 impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
     #[inline]
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> io::Poll<()> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
         Pin::new(&mut self.0).poll_flush(cx)
     }
 
     #[inline]
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> io::Poll<()> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
         Pin::new(&mut self.0).poll_shutdown(cx)
     }
 
     #[inline]
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> io::Poll<usize> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
         Pin::new(&mut self.0).poll_write(cx, buf)
     }
 
     #[inline]
     fn poll_write_vectored(
         mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
+    ) -> io::Poll<usize> {
         Pin::new(&mut self.0).poll_write_vectored(cx, bufs)
     }
 
@@ -194,13 +188,13 @@ impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
     }
 }
 
-impl<I> HasNegotiatedProtocol for ServerIo<I> {
+impl<I> ServerIo<I> {
     #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+    pub fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
         self.0
             .get_ref()
             .1
-            .get_alpn_protocol()
+            .alpn_protocol()
             .map(NegotiatedProtocolRef)
     }
 }

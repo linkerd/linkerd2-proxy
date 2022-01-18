@@ -1,8 +1,9 @@
 use super::*;
-use app_core::transport::OrigDstAddr;
 use linkerd_app_core::{
     svc::Param,
+    transport::OrigDstAddr,
     transport::{listen, orig_dst, Keepalive, ListenAddr},
+    Result,
 };
 use std::{fmt, future::Future, net::SocketAddr, pin::Pin, task::Poll, thread};
 use tokio::net::TcpStream;
@@ -36,7 +37,7 @@ pub struct Listening {
     pub tap: Option<SocketAddr>,
     pub inbound: SocketAddr,
     pub outbound: SocketAddr,
-    pub metrics: SocketAddr,
+    pub admin: SocketAddr,
 
     pub outbound_server: Option<server::Listening>,
     pub inbound_server: Option<server::Listening>,
@@ -65,11 +66,10 @@ where
 {
     type Addrs = orig_dst::Addrs;
     type Io = tokio::net::TcpStream;
-    type Incoming = Pin<
-        Box<dyn Stream<Item = io::Result<(orig_dst::Addrs, TcpStream)>> + Send + Sync + 'static>,
-    >;
+    type Incoming =
+        Pin<Box<dyn Stream<Item = Result<(orig_dst::Addrs, TcpStream)>> + Send + Sync + 'static>>;
 
-    fn bind(self, params: &T) -> io::Result<listen::Bound<Self::Incoming>> {
+    fn bind(self, params: &T) -> Result<listen::Bound<Self::Incoming>> {
         let (bound, incoming) = listen::BindTcp::default().bind(params)?;
         let incoming = Box::pin(incoming.map(move |res| {
             let (inner, tcp) = res?;
@@ -77,10 +77,7 @@ where
                 Self::Addr(addr) => OrigDstAddr(addr),
                 Self::Direct => OrigDstAddr(inner.server.into()),
                 Self::None => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "No mocked SO_ORIG_DST",
-                    ))
+                    return Err("No mocked SO_ORIG_DST".into());
                 }
             };
             let addrs = orig_dst::Addrs { inner, orig_dst };
@@ -414,7 +411,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         })
         .expect("spawn");
 
-    let (tap_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
+    let (tap_addr, identity_addr, inbound_addr, outbound_addr, admin_addr) =
         running_rx.await.unwrap();
 
     tracing::info!(
@@ -424,14 +421,14 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         inbound.orig_dst = ?inbound,
         outbound.addr = ?outbound_addr,
         outbound.orig_dst = ?outbound,
-        metrics.addr = ?metrics_addr,
+        metrics.addr = ?admin_addr,
     );
 
     Listening {
         tap: tap_addr.map(Into::into),
         inbound: inbound_addr.into(),
         outbound: outbound_addr.into(),
-        metrics: metrics_addr.into(),
+        admin: admin_addr.into(),
 
         outbound_server: proxy.outbound_server,
         inbound_server: proxy.inbound_server,

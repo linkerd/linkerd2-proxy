@@ -3,6 +3,7 @@ mod endpoint;
 pub mod logical;
 mod proxy_connection_close;
 mod require_id_header;
+mod retry;
 mod server;
 mod strip_proxy_error;
 
@@ -14,7 +15,7 @@ pub(crate) use self::{require_id_header::IdentityRequired, server::ServerRescue}
 use crate::tcp;
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
-    dst,
+    classify, metrics,
     profiles::{self, LogicalAddr},
     proxy::{api_resolve::ProtocolHint, tap},
     svc::Param,
@@ -28,6 +29,12 @@ pub type Accept = crate::Accept<Version>;
 pub type Logical = crate::logical::Logical<Version>;
 pub type Concrete = crate::logical::Concrete<Version>;
 pub type Endpoint = crate::endpoint::Endpoint<Version>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Route {
+    logical: Logical,
+    route: profiles::http::Route,
+}
 
 #[derive(Clone, Debug)]
 pub struct CanonicalDstHeader(pub Addr);
@@ -81,17 +88,6 @@ impl Param<CanonicalDstHeader> for Logical {
 impl Param<Version> for Logical {
     fn param(&self) -> Version {
         self.protocol
-    }
-}
-
-impl Logical {
-    pub fn mk_route((route, logical): (profiles::http::Route, Self)) -> dst::Route {
-        use linkerd_app_core::metrics::Direction;
-        dst::Route {
-            route,
-            addr: logical.logical_addr,
-            direction: Direction::Out,
-        }
     }
 }
 
@@ -189,11 +185,39 @@ impl tap::Inspect for Endpoint {
 
     fn route_labels<B>(&self, req: &Request<B>) -> Option<tap::Labels> {
         req.extensions()
-            .get::<dst::Route>()
-            .map(|r| r.route.labels().clone())
+            .get::<profiles::http::Route>()
+            .map(|r| r.labels().clone())
     }
 
     fn is_outbound<B>(&self, _: &Request<B>) -> bool {
         true
+    }
+}
+
+// === impl Route ===
+
+impl Param<profiles::http::Route> for Route {
+    fn param(&self) -> profiles::http::Route {
+        self.route.clone()
+    }
+}
+
+impl Param<metrics::RouteLabels> for Route {
+    fn param(&self) -> metrics::RouteLabels {
+        metrics::RouteLabels::outbound(self.logical.logical_addr.clone(), &self.route)
+    }
+}
+
+impl Param<ResponseTimeout> for Route {
+    fn param(&self) -> ResponseTimeout {
+        ResponseTimeout(self.route.timeout())
+    }
+}
+
+impl classify::CanClassify for Route {
+    type Classify = classify::Request;
+
+    fn classify(&self) -> classify::Request {
+        self.route.response_classes().clone().into()
     }
 }

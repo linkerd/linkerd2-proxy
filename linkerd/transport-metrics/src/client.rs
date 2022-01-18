@@ -1,6 +1,6 @@
 use super::{Metrics, Sensor, SensorIo};
 use futures::{ready, TryFuture};
-use linkerd_stack::{layer, ExtractParam, Service};
+use linkerd_stack::{layer, ExtractParam, MakeConnection, Service};
 use pin_project::pin_project;
 use std::{
     future::Future,
@@ -17,7 +17,7 @@ pub struct Client<P, S> {
 }
 
 #[pin_project]
-pub struct Connect<F> {
+pub struct ConnectFuture<F> {
     #[pin]
     inner: F,
     metrics: Option<Arc<Metrics>>,
@@ -37,11 +37,11 @@ impl<P: Clone, S> Client<P, S> {
 impl<T, P, S> Service<T> for Client<P, S>
 where
     P: ExtractParam<Arc<Metrics>, T>,
-    S: Service<T>,
+    S: MakeConnection<T>,
 {
-    type Response = SensorIo<S::Response>;
+    type Response = (SensorIo<S::Connection>, S::Metadata);
     type Error = S::Error;
-    type Future = Connect<S::Future>;
+    type Future = ConnectFuture<S::Future>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -50,29 +50,29 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let metrics = self.params.extract_param(&target);
-        let inner = self.inner.call(target);
-        Connect {
+        let inner = self.inner.connect(target);
+        ConnectFuture {
             metrics: Some(metrics),
             inner,
         }
     }
 }
 
-// === impl Connect ===
+// === impl ConnectFuture ===
 
-impl<F: TryFuture> Future for Connect<F> {
-    type Output = Result<SensorIo<F::Ok>, F::Error>;
+impl<I, M, F: TryFuture<Ok = (I, M)>> Future for ConnectFuture<F> {
+    type Output = Result<(SensorIo<I>, M), F::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let io = ready!(this.inner.try_poll(cx))?;
+        let (io, meta) = ready!(this.inner.try_poll(cx))?;
         debug!("client connection open");
 
         let metrics = this
             .metrics
             .take()
             .expect("future must not be polled after ready");
-        let t = SensorIo::new(io, Sensor::open(metrics));
-        Poll::Ready(Ok(t))
+        let io = SensorIo::new(io, Sensor::open(metrics));
+        Poll::Ready(Ok((io, meta)))
     }
 }

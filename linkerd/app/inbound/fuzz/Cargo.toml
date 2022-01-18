@@ -17,6 +17,7 @@ libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
 linkerd-app-core = { path = "../../core" }
 linkerd-app-inbound = { path = ".." }
 linkerd-app-test = { path = "../../test" }
+linkerd-meshtls = { path = "../../../meshtls", features = ["rustls"] }
 linkerd-meshtls-rustls = { path = "../../../meshtls/rustls", features = ["test-util"] }
 linkerd-tracing = { path = "../../../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["full"] }
@@ -34,4 +35,4 @@ test = true
 doc = false
 
 [patch.crates-io]
-webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21"}
+webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.22"}

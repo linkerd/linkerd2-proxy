@@ -6,6 +6,7 @@
 mod arc_new_service;
 mod box_future;
 mod box_service;
+mod connect;
 mod either;
 mod fail;
 mod fail_on_error;
@@ -29,6 +30,7 @@ pub use self::{
     arc_new_service::ArcNewService,
     box_future::BoxFuture,
     box_service::{BoxService, BoxServiceLayer},
+    connect::{MakeConnection, WithoutConnectionMetadata},
     either::{Either, NewEither},
     fail::Fail,
     fail_on_error::FailOnError,
@@ -40,7 +42,7 @@ pub use self::{
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
     new_service::NewService,
     on_service::{OnService, OnServiceLayer},
-    proxy::{Proxy, ProxyService},
+    proxy::Proxy,
     result::ResultService,
     router::{NewRouter, RecognizeRoute},
     switch_ready::{NewSwitchReady, SwitchReady},
@@ -49,7 +51,7 @@ pub use self::{
 };
 pub use tower::{
     service_fn,
-    util::{future_service, FutureService, Oneshot, ServiceExt},
+    util::{future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},
     Service,
 };
 

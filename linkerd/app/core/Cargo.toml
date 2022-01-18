@@ -12,16 +12,12 @@ This crate conglomerates proxy configuration, runtime administration, etc,
 independently of the inbound and outbound proxy logic.
 """
 
-[features]
-default = ["meshtls-rustls"]
-meshtls-rustls = ["linkerd-meshtls/rustls"]
-
 [dependencies]
 bytes = "1"
 drain = { version = "0.1.0", features = ["retain"] }
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.14", features = ["http1", "http2"] }
+hyper = { version = "0.14.16", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.3"
 linkerd-addr = { path = "../../addr" }
@@ -36,7 +32,6 @@ linkerd-error-respond = { path = "../../error-respond" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-metrics = { path = "../../http-metrics" }
-linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-meshtls = { path = "../../meshtls", default-features = false }
@@ -53,7 +48,6 @@ linkerd-proxy-tap = { path = "../../proxy/tap" }
 linkerd-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-reconnect = { path = "../../reconnect" }
-linkerd-retry = { path = "../../retry" }
 linkerd-service-profiles = { path = "../../service-profiles" }
 linkerd-stack = { path = "../../stack" }
 linkerd-stack-metrics = { path = "../../stack/metrics" }
@@ -74,7 +68,7 @@ parking_lot = "0.11"
 pin-project = "1"
 
 [dependencies.tower]
-version = "0.4.10"
+version = "0.4.11"
 default-features = false
 features = [
     "buffer",

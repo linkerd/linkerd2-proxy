@@ -155,9 +155,10 @@ impl Inbound<()> {
         self,
         proxy_port: u16,
     ) -> Inbound<
-        impl svc::Service<
+        impl svc::MakeConnection<
                 T,
-                Response = impl io::AsyncRead + io::AsyncWrite + Send,
+                Connection = impl Send + Unpin,
+                Metadata = impl Send + Unpin,
                 Error = Error,
                 Future = impl Send,
             > + Clone,
@@ -214,9 +215,9 @@ impl<S> Inbound<S> {
         T: svc::Param<transport::labels::Key> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite,
         I: Debug + Send + Unpin + 'static,
-        S: svc::Service<T> + Clone + Send + Sync + Unpin + 'static,
-        S::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-        S::Error: Into<Error>,
+        S: svc::MakeConnection<T> + Clone + Send + Sync + Unpin + 'static,
+        S::Connection: Send + Unpin,
+        S::Metadata: Send + Unpin,
         S::Future: Send,
     {
         self.map_stack(|_, rt, connect| {
@@ -224,6 +225,7 @@ impl<S> Inbound<S> {
                 .push(transport::metrics::Client::layer(
                     rt.metrics.proxy.transport.clone(),
                 ))
+                .push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
                 .push_on_service(
                     svc::layers()

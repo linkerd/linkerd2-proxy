@@ -6,7 +6,6 @@ use linkerd_app_core::{
     svc::{self, ExtractParam},
     tls, Error, Result, CANONICAL_DST_HEADER,
 };
-use tokio::io;
 
 #[derive(Copy, Clone, Debug)]
 struct ClientRescue {
@@ -24,9 +23,9 @@ impl<C> Outbound<C> {
             + tap::Inspect,
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        C: svc::Service<T> + Clone + Send + Sync + Unpin + 'static,
-        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
-        C::Error: Into<Error>,
+        C: svc::MakeConnection<T> + Clone + Send + Sync + Unpin + 'static,
+        C::Connection: Send + Unpin,
+        C::Metadata: Send + Unpin,
         C::Future: Send + Unpin + 'static,
     {
         self.map_stack(|config, rt, connect| {
@@ -317,7 +316,6 @@ mod test {
 
     /// Helper server that reads the l5d-orig-proto header on requests and uses it to set the header
     /// value in `WAS_ORIG_PROTO`.
-    #[allow(clippy::unnecessary_wraps)]
     fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
         let svc = hyper::service::service_fn(move |req: http::Request<_>| {
             tracing::debug!(?req);

@@ -18,16 +18,12 @@ linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 linkerd-tls-test-util = { path = "../../tls/test-util", optional = true }
 ring = { version = "0.16.19", features = ["std"] }
+rustls-pemfile = "0.2"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
-tokio-rustls = "0.22"
+tokio-rustls = { version = "0.23.2", features = ["dangerous_configuration"] }
 tracing = "0.1"
-webpki = "0.21"
+webpki = "0.22"
 
 [dev-dependencies]
-linkerd-conditional = { path = "../../conditional" }
-linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-tls-test-util = { path = "../../tls/test-util" }
-linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-tower = { version = "0.4.10", default-features = false, features = ["util"] }

@@ -32,6 +32,7 @@ members = [
     "linkerd/identity",
     "linkerd/io",
     "linkerd/meshtls",
+    "linkerd/meshtls/boring",
     "linkerd/meshtls/rustls",
     "linkerd/metrics",
     "linkerd/opencensus",
@@ -76,4 +77,4 @@ debug = false
 lto = true
 
 [patch.crates-io]
-webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21" }
+webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.22" }
