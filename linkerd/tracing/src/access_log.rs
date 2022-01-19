@@ -9,8 +9,6 @@ use tracing_subscriber::{
     registry::LookupSpan,
 };
 
-const ENV_ACCESS_LOG: &str = "LINKERD2_PROXY_ACCESS_LOG";
-
 pub const TRACE_TARGET: &str = "_access_log";
 
 #[derive(Clone, Debug)]
@@ -32,14 +30,10 @@ struct ApacheCommonVisitor<'writer> {
     writer: format::Writer<'writer>,
 }
 
-pub(super) fn build<S>() -> Option<(AccessLogLayer<S>, Directive)>
+pub(super) fn build<S>() -> (AccessLogLayer<S>, Directive)
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
 {
-    // Is access logging enabled?
-    let _ = std::env::var(ENV_ACCESS_LOG).ok()?;
-
-    // If access logging is enabled, build the access log layer.
     let writer = Writer::new().with_filter(
         FilterFn::new(
             (|meta| meta.level() == &Level::INFO && meta.target().starts_with(TRACE_TARGET))
@@ -54,7 +48,7 @@ where
         .parse()
         .expect("access logging filter directive must parse");
 
-    Some((writer, directive))
+    (writer, directive)
 }
 
 // === impl Writer ===

@@ -20,6 +20,7 @@ use tracing_subscriber::{
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
+const ENV_ACCESS_LOG: &str = "LINKERD2_PROXY_ACCESS_LOG";
 
 const DEFAULT_LOG_LEVEL: &str = "warn,linkerd=info";
 const DEFAULT_LOG_FORMAT: &str = "PLAIN";
@@ -28,6 +29,7 @@ const DEFAULT_LOG_FORMAT: &str = "PLAIN";
 pub struct Settings {
     filter: Option<String>,
     format: Option<String>,
+    access_log: bool,
     is_test: bool,
 }
 
@@ -79,6 +81,7 @@ impl Settings {
         Some(Self {
             filter,
             format: std::env::var(ENV_LOG_FORMAT).ok(),
+            access_log: std::env::var(ENV_ACCESS_LOG).is_ok(),
             is_test: false,
         })
     }
@@ -87,6 +90,7 @@ impl Settings {
         Self {
             filter: Some(filter),
             format: Some(format),
+            access_log: false,
             is_test: true,
         }
     }
@@ -148,12 +152,14 @@ impl Settings {
         let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
 
         let mut filter = EnvFilter::new(log_level);
-        let access_log = match access_log::build() {
-            Some((access_log, directive)) => {
-                filter = filter.add_directive(directive);
-                Some(access_log)
-            }
-            None => None,
+
+        // If access logging is enabled, build the access log layer.
+        let access_log = if self.access_log {
+            let (access_log, directive) = access_log::build();
+            filter = filter.add_directive(directive);
+            Some(access_log)
+        } else {
+            None
         };
 
         let (filter, level) = reload::Layer::new(filter);
