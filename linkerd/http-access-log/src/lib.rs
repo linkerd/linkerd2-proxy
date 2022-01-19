@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
-use futures::TryFuture;
+use futures_core::TryFuture;
 use linkerd_identity as identity;
 use linkerd_proxy_transport::{ClientAddr, Remote};
 use linkerd_stack as svc;
