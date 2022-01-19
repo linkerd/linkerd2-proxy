@@ -1,6 +1,5 @@
-use std::{fmt, sync::Arc};
+use std::fmt;
 use tracing::{field, span, Id, Level, Metadata, Subscriber};
-use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     field::RecordFields,
     filter::{Directive, FilterFn, Filtered},
@@ -10,9 +9,6 @@ use tracing_subscriber::{
 };
 
 pub const TRACE_TARGET: &str = "_access_log";
-
-#[derive(Clone, Debug)]
-pub struct Guard(Arc<WorkerGuard>);
 
 pub(super) type AccessLogLayer<S> = Filtered<Writer, FilterFn, S>;
 
