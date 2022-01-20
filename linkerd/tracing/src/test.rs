@@ -1,4 +1,5 @@
 use super::*;
+use std::env;
 
 /// By default, disable logging in modules that are expected to error in tests.
 pub const DEFAULT_LOG: &str = "warn,\
@@ -17,11 +18,13 @@ pub fn trace_subscriber(default: impl ToString) -> (Dispatch, Handle) {
     Settings::for_test(log_level, log_format).build()
 }
 
-pub fn with_default_filter(default: impl ToString) -> tracing::dispatcher::DefaultGuard {
-    let (d, _) = trace_subscriber(default);
-    tracing::dispatcher::set_default(&d)
+pub fn with_default_filter(
+    default: impl ToString,
+) -> (tracing::dispatcher::DefaultGuard, crate::Handle) {
+    let (d, handle) = trace_subscriber(default);
+    (tracing::dispatcher::set_default(&d), handle)
 }
 
-pub fn trace_init() -> tracing::dispatcher::DefaultGuard {
+pub fn trace_init() -> (tracing::dispatcher::DefaultGuard, crate::Handle) {
     with_default_filter(DEFAULT_LOG)
 }

@@ -14,6 +14,7 @@ bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
+linkerd-http-access-log = { path = "../../http-access-log" }
 linkerd-server-policy = { path = "../../server-policy" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 linkerd2-proxy-api = { version = "0.3", features = ["client", "inbound"] }

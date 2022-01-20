@@ -24,6 +24,7 @@ members = [
     "linkerd/errno",
     "linkerd/error-respond",
     "linkerd/exp-backoff",
+    "linkerd/http-access-log",
     "linkerd/http-box",
     "linkerd/http-classify",
     "linkerd/http-metrics",

@@ -18,5 +18,6 @@ tracing-log = "0.1.2"
 
 [dependencies.tracing-subscriber]
 version = "0.3"
-features = ["env-filter","smallvec", "tracing-log", "json", "parking_lot"]
+default-features = false
+features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot", "registry"]
 

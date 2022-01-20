@@ -1,0 +1,19 @@
+[package]
+name = "linkerd-http-access-log"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2018"
+publish = false
+
+[dependencies]
+futures-core = "0.3"
+http = "0.2"
+humantime = "2"
+pin-project = "1"
+linkerd-stack = { path = "../stack" }
+linkerd-identity = { path = "../identity" }
+linkerd-tls = { path = "../tls" }
+linkerd-proxy-transport = { path = "../proxy/transport" }
+linkerd-tracing = { path = "../tracing" }
+tracing = "0.1.19"

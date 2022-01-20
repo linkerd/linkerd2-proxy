@@ -1,18 +1,26 @@
 #![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
 #![forbid(unsafe_code)]
 
+pub mod access_log;
 pub mod level;
 pub mod test;
 mod uptime;
 
 use self::uptime::Uptime;
 use linkerd_error::Error;
-use std::{env, str};
+use std::str;
 use tracing::{Dispatch, Subscriber};
-use tracing_subscriber::{fmt::format, prelude::*, registry::LookupSpan, reload, EnvFilter, Layer};
+use tracing_subscriber::{
+    filter::{EnvFilter, FilterFn},
+    fmt::format,
+    prelude::*,
+    registry::LookupSpan,
+    reload, Layer,
+};
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
+const ENV_ACCESS_LOG: &str = "LINKERD2_PROXY_ACCESS_LOG";
 
 const DEFAULT_LOG_LEVEL: &str = "warn,linkerd=info";
 const DEFAULT_LOG_FORMAT: &str = "PLAIN";
@@ -21,6 +29,7 @@ const DEFAULT_LOG_FORMAT: &str = "PLAIN";
 pub struct Settings {
     filter: Option<String>,
     format: Option<String>,
+    access_log: bool,
     is_test: bool,
 }
 
@@ -72,6 +81,7 @@ impl Settings {
         Some(Self {
             filter,
             format: std::env::var(ENV_LOG_FORMAT).ok(),
+            access_log: std::env::var(ENV_ACCESS_LOG).is_ok(),
             is_test: false,
         })
     }
@@ -80,6 +90,7 @@ impl Settings {
         Self {
             filter: Some(filter),
             format: Some(format),
+            access_log: false,
             is_test: true,
         }
     }
@@ -139,23 +150,40 @@ impl Settings {
 
     pub fn build(self) -> (Dispatch, Handle) {
         let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
-        let (filter, level) = reload::Layer::new(EnvFilter::new(log_level));
+
+        let mut filter = EnvFilter::new(log_level);
+
+        // If access logging is enabled, build the access log layer.
+        let access_log = if self.access_log {
+            let (access_log, directive) = access_log::build();
+            filter = filter.add_directive(directive);
+            Some(access_log)
+        } else {
+            None
+        };
+
+        let (filter, level) = reload::Layer::new(filter);
         let level = level::Handle::new(level);
 
         let logger = match self.format().as_ref() {
             "JSON" => self.mk_json(),
             _ => self.mk_plain(),
         };
+        let logger = logger.with_filter(FilterFn::new(|meta| {
+            !meta.target().starts_with(access_log::TRACE_TARGET)
+        }));
+
+        let handle = Handle(Some(level));
 
         let dispatch = tracing_subscriber::registry()
             .with(filter)
+            .with(access_log)
             .with(logger)
             .into();
 
-        (dispatch, Handle(Some(level)))
+        (dispatch, handle)
     }
 }
-
 // === impl Handle ===
 
 impl Handle {

@@ -11,9 +11,10 @@ use linkerd_app_core::{
     proxy::http,
     svc::{self, ExtractParam, Param},
     tls,
-    transport::OrigDstAddr,
+    transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
+use linkerd_http_access_log::NewAccessLog;
 use tracing::debug_span;
 
 #[derive(Copy, Clone, Debug)]
@@ -26,7 +27,8 @@ impl<H> Inbound<H> {
             + Param<http::normalize_uri::DefaultAuthority>
             + Param<tls::ConditionalServerTls>
             + Param<ServerLabel>
-            + Param<OrigDstAddr>,
+            + Param<OrigDstAddr>
+            + Param<Remote<ClientAddr>>,
         T: Clone + Send + Unpin + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -79,6 +81,7 @@ impl<H> Inbound<H> {
                         .push(http::BoxResponse::layer()),
                 )
                 .check_new_service::<T, http::Request<_>>()
+                .push(NewAccessLog::layer())
                 .instrument(|t: &T| debug_span!("http", v = %Param::<Version>::param(t)))
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
                 .push_on_service(svc::BoxService::layer())
