@@ -1,6 +1,6 @@
 //! Shared infrastructure for integration tests
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
 #![forbid(unsafe_code)]
 
 mod test_env;

@@ -11,7 +11,6 @@ pub fn trace_subscriber(default: impl ToString) -> (Dispatch, Handle) {
         .or_else(|_| env::var("RUST_LOG"))
         .unwrap_or_else(|_| default.to_string());
     let log_format = env::var("LINKERD2_PROXY_LOG_FORMAT").unwrap_or_else(|_| "PLAIN".to_string());
-    env::set_var("LINKERD2_PROXY_LOG_FORMAT", &log_format);
     // This may fail, since the global log compat layer may have been
     // initialized by another test.
     let _ = init_log_compat();
