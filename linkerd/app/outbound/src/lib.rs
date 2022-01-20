@@ -2,7 +2,7 @@
 //!
 //! The outbound proxy is responsible for routing traffic from the local application to other hosts.
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
 #![forbid(unsafe_code)]
 
 mod discover;

@@ -1,1 +1,8 @@
 type-complexity-threshold = 500
+disallowed-methods = [
+    # mutating environment variables in a multi-threaded context can
+    # cause data races.
+    # see https://github.com/rust-lang/rust/issues/90308 for details.
+    "std::env::set_var",
+    "std::env::remove_var",
+]
