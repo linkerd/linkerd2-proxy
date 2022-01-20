@@ -1,4 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
 #![forbid(unsafe_code)]
 use linkerd_dns_name::Name;
 use std::{
