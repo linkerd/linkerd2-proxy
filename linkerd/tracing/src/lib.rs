@@ -88,11 +88,11 @@ impl Settings {
         })
     }
 
-    fn for_test(filter: String, format: String) -> Self {
+    fn for_test(filter: String, format: String, access_log: Option<String>) -> Self {
         Self {
             filter: Some(filter),
             format: Some(format),
-            access_log: None,
+            access_log: access_log.and_then(|env| env.parse().ok()),
             is_test: true,
         }
     }

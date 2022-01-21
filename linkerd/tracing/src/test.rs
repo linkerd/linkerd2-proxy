@@ -15,7 +15,12 @@ pub fn trace_subscriber(default: impl ToString) -> (Dispatch, Handle) {
     // This may fail, since the global log compat layer may have been
     // initialized by another test.
     let _ = init_log_compat();
-    Settings::for_test(log_level, log_format).build()
+    Settings::for_test(
+        log_level,
+        log_format,
+        env::var("LINKERD2_PROXY_ACCESS_LOG").ok(),
+    )
+    .build()
 }
 
 pub fn with_default_filter(
