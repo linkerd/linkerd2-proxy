@@ -81,19 +81,16 @@ impl Settings {
         Some(Self {
             filter,
             format: std::env::var(ENV_LOG_FORMAT).ok(),
-            access_log: std::env::var(ENV_ACCESS_LOG).ok().map(|env| {
-                env.parse()
-                    .expect("parsing access log format is infallible")
-            }),
+            access_log: Self::access_log_format(),
             is_test: false,
         })
     }
 
-    fn for_test(filter: String, format: String, access_log: Option<String>) -> Self {
+    fn for_test(filter: String, format: String) -> Self {
         Self {
             filter: Some(filter),
             format: Some(format),
-            access_log: access_log.and_then(|env| env.parse().ok()),
+            access_log: Self::access_log_format(),
             is_test: true,
         }
     }
@@ -103,6 +100,17 @@ impl Settings {
             .as_deref()
             .unwrap_or(DEFAULT_LOG_FORMAT)
             .to_uppercase()
+    }
+
+    fn access_log_format() -> Option<access_log::Format> {
+        let env = std::env::var(ENV_ACCESS_LOG).ok()?;
+        match env.parse() {
+            Ok(format) => Some(format),
+            Err(err) => {
+                eprintln!("Invalid {}={:?}: {}", ENV_ACCESS_LOG, env, err);
+                None
+            }
+        }
     }
 
     fn mk_json<S>(&self) -> Box<dyn Layer<S> + Send + Sync + 'static>

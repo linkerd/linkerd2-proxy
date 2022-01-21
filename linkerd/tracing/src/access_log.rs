@@ -163,13 +163,12 @@ impl field::Visit for ApacheCommonVisitor<'_> {
 // === impl Format ===
 
 impl std::str::FromStr for Format {
-    type Err = std::convert::Infallible;
+    type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             s if s.eq_ignore_ascii_case("json") => Ok(Self::Json),
-            // Default to the Apache Common Log Format if another format isn't
-            // specified.
-            _ => Ok(Self::Apache),
+            s if s.eq_ignore_ascii_case("apache") => Ok(Self::Apache),
+            _ => Err("expected either 'apache' or 'json'"),
         }
     }
 }
