@@ -10,8 +10,10 @@ use tracing_subscriber::{
 
 pub const TRACE_TARGET: &str = "_access_log";
 
-pub(super) type AccessLogLayer<S> = Filtered<Writer, FilterFn, S>;
+pub(super) type AccessLogLayer<S> =
+    Filtered<Box<dyn Layer<S> + Send + Sync + 'static>, FilterFn, S>;
 
+#[derive(Default)]
 pub(super) struct Writer<F = ApacheCommon> {
     formatter: F,
 }
@@ -21,16 +23,27 @@ pub(super) struct ApacheCommon {
     _p: (),
 }
 
+#[derive(Copy, Clone, Debug)]
+pub(super) enum Format {
+    Apache,
+    Json,
+}
+
 struct ApacheCommonVisitor<'writer> {
     res: fmt::Result,
     writer: format::Writer<'writer>,
 }
 
-pub(super) fn build<S>() -> (AccessLogLayer<S>, Directive)
+pub(super) fn build<S>(format: Format) -> (AccessLogLayer<S>, Directive)
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
 {
-    let writer = Writer::new().with_filter(
+    let writer: Box<dyn Layer<S> + Send + Sync + 'static> = match format {
+        Format::Apache => Box::new(Writer::<ApacheCommon>::default()),
+        Format::Json => Box::new(Writer::<format::JsonFields>::default()),
+    };
+
+    let writer = writer.with_filter(
         FilterFn::new(
             (|meta| meta.level() == &Level::INFO && meta.target().starts_with(TRACE_TARGET))
                 as fn(&Metadata<'_>) -> bool,
@@ -48,14 +61,6 @@ where
 }
 
 // === impl Writer ===
-
-impl Writer {
-    pub fn new() -> Self {
-        Self {
-            formatter: Default::default(),
-        }
-    }
-}
 
 impl<S, F> Layer<S> for Writer<F>
 where
@@ -151,6 +156,19 @@ impl field::Visit for ApacheCommonVisitor<'_> {
             "method" => write!(&mut self.writer, " \"{:?}", val),
             "version" => write!(&mut self.writer, " {:?}\"", val),
             _ => write!(&mut self.writer, " {:?}", val),
+        }
+    }
+}
+
+// === impl Format ===
+
+impl std::str::FromStr for Format {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            s if s.eq_ignore_ascii_case("json") => Ok(Self::Json),
+            s if s.eq_ignore_ascii_case("apache") => Ok(Self::Apache),
+            _ => Err("expected either 'apache' or 'json'"),
         }
     }
 }
