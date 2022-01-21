@@ -11,12 +11,12 @@ bytes = "1"
 futures = { version = "0.3", default-features = false }
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.14", features = ["http1", "http2"] }
+hyper = { version = "0.14.16", features = ["http1", "http2"] }
 linkerd-error = { path = "../error" }
 linkerd-http-classify = { path = "../http-classify" }
 linkerd-metrics = { path = "../metrics", features = ["linkerd-stack"] }
 linkerd-stack = { path = "../stack" }
 parking_lot = "0.11"
 pin-project = "1"
-tower = "0.4.10"
+tower = "0.4.11"
 tracing = "0.1.29"

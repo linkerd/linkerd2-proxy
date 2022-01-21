@@ -13,7 +13,9 @@ a dedicated crate to help the compiler cache dependencies properly.
 """
 
 [features]
-flaky_tests = [] # Disable to skip certain tests that should not be run on CI.
+default = ["flakey-in-ci"]
+flakey-in-ci = ["flakey-in-coverage"]
+flakey-in-coverage = []
 rustfmt = ["linkerd2-proxy-api/rustfmt"]
 
 [dependencies]
@@ -22,7 +24,7 @@ futures = { version = "0.3", default-features = false, features = ["executor"] }
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.14", features = ["http1", "http2", "stream", "client", "server"] }
+hyper = { version = "0.14.16", features = ["http1", "http2", "stream", "client", "server"] }
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
@@ -32,14 +34,17 @@ linkerd-tracing = { path = "../../tracing" }
 regex = "1"
 socket2 = "0.4"
 tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
-tokio-stream = { version = "0.1.7", features = ["sync"] }
-tokio-rustls = "0.22"
-tower = { version = "0.4.10", default-features = false }
+tokio-stream = { version = "0.1.8", features = ["sync"] }
+tokio-rustls = "0.23.2"
+rustls-pemfile = "0.2.1"
+tower = { version = "0.4.11", default-features = false }
 tonic = { version = "0.6", default-features = false }
 tracing = "0.1.29"
-webpki = "0.21"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 
 [dev-dependencies]
 flate2 = { version = "1.0.22", default-features = false, features = ["rust_backend"] }
+# No code from this crate is actually used; only necessary to enable the Rustls
+# implementation.
+linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }

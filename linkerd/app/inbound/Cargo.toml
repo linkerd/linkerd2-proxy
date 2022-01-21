@@ -22,20 +22,21 @@ parking_lot = "0.11"
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
 tonic = { version = "0.6", default-features = false }
-tower = { version = "0.4.10", features = ["util"] }
+tower = { version = "0.4.11", features = ["util"] }
 tracing = "0.1.29"
 
 [target.'cfg(fuzzing)'.dependencies]
-hyper = { version = "0.14.14", features = ["http1", "http2"] }
+hyper = { version = "0.14.16", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 arbitrary = { version = "1", features = ["derive"] }
 libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
 
 [dev-dependencies]
-hyper = { version = "0.14.14", features = ["http1", "http2"] }
+hyper = { version = "0.14.16", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
-linkerd-proxy-identity-default = { path = "../../proxy/identity/default", features = ["test-util"] }
+linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
+linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = ["test-util"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["full", "macros"] }
 tokio-test = "0.4"

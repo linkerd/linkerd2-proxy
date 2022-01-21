@@ -1,4 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
 #![forbid(unsafe_code)]
 
 mod gateway;
@@ -17,7 +17,7 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
-    transport::{ClientAddr, OrigDstAddr, Remote},
+    transport::{ClientAddr, Local, OrigDstAddr, Remote},
     transport_header::SessionProtocol,
     Error, Infallible, NameAddr, NameMatch,
 };
@@ -70,9 +70,8 @@ pub fn stack<I, O, P, R>(
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
     O: Clone + Send + Sync + Unpin + 'static,
-    O: svc::Service<outbound::tcp::Connect, Error = io::Error>,
-    O::Response:
-        io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
+    O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+    O::Connection: Send + Unpin,
     O::Future: Send + Unpin + 'static,
     P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,

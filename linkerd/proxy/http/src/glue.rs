@@ -3,12 +3,15 @@ use bytes::Bytes;
 use futures::TryFuture;
 use hyper::body::HttpBody;
 use hyper::client::connect as hyper_connect;
-use linkerd_error::Error;
+use linkerd_error::{Error, Result};
 use linkerd_io::{self as io, AsyncRead, AsyncWrite};
+use linkerd_stack::{MakeConnection, Service};
 use pin_project::{pin_project, pinned_drop};
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
@@ -87,6 +90,11 @@ impl HttpBody for UpgradeBody {
                 e
             })
     }
+
+    #[inline]
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.body.size_hint()
+    }
 }
 
 impl Default for UpgradeBody {
@@ -161,13 +169,11 @@ impl<C, T> HyperConnect<C, T> {
     }
 }
 
-impl<C, T> tower::Service<hyper::Uri> for HyperConnect<C, T>
+impl<C, T> Service<hyper::Uri> for HyperConnect<C, T>
 where
-    C: tower::make::MakeConnection<T> + Clone + Send + Sync,
-    C::Error: Into<Error>,
-    C::Future: TryFuture<Ok = C::Connection> + Unpin + Send + 'static,
-    <C::Future as TryFuture>::Error: Into<Error>,
-    C::Connection: Unpin + Send + 'static,
+    C: MakeConnection<T> + Clone + Send + Sync,
+    C::Connection: Unpin + Send,
+    C::Future: Unpin + Send + 'static,
     T: Clone + Send + Sync,
 {
     type Response = Connection<C::Connection>;
@@ -180,22 +186,22 @@ where
 
     fn call(&mut self, _dst: hyper::Uri) -> Self::Future {
         HyperConnectFuture {
-            inner: self.connect.make_connection(self.target.clone()),
+            inner: self.connect.connect(self.target.clone()),
             absolute_form: self.absolute_form,
         }
     }
 }
 
-impl<F> Future for HyperConnectFuture<F>
+impl<F, I, M> Future for HyperConnectFuture<F>
 where
-    F: TryFuture + 'static,
+    F: TryFuture<Ok = (I, M)> + 'static,
     F::Error: Into<Error>,
 {
-    type Output = Result<Connection<F::Ok>, Error>;
+    type Output = Result<Connection<I>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let transport = futures::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
+        let (transport, _) = futures::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
         Poll::Ready(Ok(Connection {
             transport,
             absolute_form: *this.absolute_form,

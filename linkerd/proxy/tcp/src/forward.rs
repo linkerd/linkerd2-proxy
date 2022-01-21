@@ -1,6 +1,6 @@
 use futures::prelude::*;
 use linkerd_duplex::Duplex;
-use linkerd_error::Error;
+use linkerd_error::{Error, Result};
 use linkerd_stack::layer;
 use std::{
     future::Future,
@@ -35,9 +35,9 @@ where
 {
     type Response = ();
     type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Future = Pin<Box<dyn Future<Output = Result<()>> + Send + 'static>>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), self::Error>> {
         self.connect.poll_ready(cx).map_err(Into::into)
     }

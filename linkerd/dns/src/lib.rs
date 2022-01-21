@@ -1,4 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
 #![forbid(unsafe_code)]
 
 use linkerd_dns_name::NameRef;
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn test_dns_name_parsing() {
         // Make sure `dns::Name`'s validation isn't too strict. It is
-        // implemented in terms of `webpki::DNSName` which has many more tests
+        // implemented in terms of `webpki::DnsName` which has many more tests
         // at https://github.com/briansmith/webpki/blob/master/tests/dns_name_tests.rs.
 
         struct Case {

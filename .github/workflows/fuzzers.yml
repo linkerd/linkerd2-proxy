@@ -1,0 +1,39 @@
+name: fuzzers
+
+on:
+  pull_request: {}
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+permissions:
+  contents: read
+
+jobs:
+
+  # Ensure that all of the fuzzers continue to build.
+  #
+  # This is depends on the nightly toolchain, so it may break unexpectedly.
+  fuzzers-build:
+    timeout-minutes: 40
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.1-buster
+    strategy:
+      matrix:
+        dir:
+          - addr
+          - app/inbound
+          - dns
+          - proxy/http
+          - tls
+          - transport-header
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: rustup toolchain add nightly
+      - run: cargo install cargo-fuzz
+      - working-directory: linkerd/${{matrix.dir}}/fuzz
+        run: cargo +nightly fuzz build

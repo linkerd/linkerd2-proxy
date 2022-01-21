@@ -1,14 +1,10 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
 #![forbid(unsafe_code)]
 
+use futures::future;
 use linkerd_error::Error;
-use linkerd_stack::{layer, Either, NewService, Oneshot, Proxy, ProxyService, ServiceExt};
-use pin_project::pin_project;
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use linkerd_stack::{layer, Either, NewService, Oneshot, Service, ServiceExt};
+use std::task::{Context, Poll};
 pub use tower::retry::{budget::Budget, Policy};
 use tracing::trace;
 
@@ -53,18 +49,6 @@ pub struct Retry<P, S> {
     inner: S,
 }
 
-#[pin_project(project = ResponseFutureProj)]
-pub enum ResponseFuture<R, P, S, Req>
-where
-    R: tower::retry::Policy<Req, P::Response, Error> + Clone,
-    P: Proxy<Req, S> + Clone,
-    S: tower::Service<P::Request> + Clone,
-    S::Error: Into<Error>,
-{
-    Disabled(#[pin] P::Future),
-    Retry(#[pin] Oneshot<tower::retry::Retry<R, ProxyService<P, S>>, Req>),
-}
-
 // === impl NewRetry ===
 
 impl<P: Clone, N> NewRetry<P, N> {
@@ -94,52 +78,38 @@ where
 
 // === impl Retry ===
 
-impl<R, P, Req, S, E, PReq, PRsp, PFut> Proxy<Req, S> for Retry<R, P>
+impl<P, Req, S, Rsp, Fut> Service<Req> for Retry<P, S>
 where
-    R: PrepareRequest<Req, PRsp, Error> + Clone,
-    P: Proxy<Req, S, Request = PReq, Response = PRsp, Future = PFut>
-        + Proxy<R::RetryRequest, S, Request = PReq, Response = PRsp, Future = PFut>
+    P: PrepareRequest<Req, Rsp, Error> + Clone,
+    S: Service<Req, Response = Rsp, Future = Fut, Error = Error>
+        + Service<P::RetryRequest, Response = Rsp, Future = Fut, Error = Error>
         + Clone,
-    S: tower::Service<PReq, Error = E> + Clone,
-    S::Error: Into<Error>,
+    Fut: std::future::Future<Output = Result<Rsp, Error>>,
 {
-    type Request = PReq;
-    type Response = PRsp;
+    type Response = Rsp;
     type Error = Error;
-    type Future = ResponseFuture<R, P, S, R::RetryRequest>;
+    type Future = future::Either<Fut, Oneshot<tower::retry::Retry<P, S>, P::RetryRequest>>;
 
-    fn proxy(&self, svc: &mut S, req: Req) -> Self::Future {
+    #[inline]
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        <S as Service<Req>>::poll_ready(&mut self.inner, cx)
+    }
+
+    fn call(&mut self, req: Req) -> Self::Future {
         trace!(retryable = %self.policy.is_some());
 
-        if let Some(policy) = self.policy.as_ref() {
-            return match policy.prepare_request(req) {
-                Either::A(retry_req) => {
-                    let inner =
-                        Proxy::<R::RetryRequest, S>::wrap_service(self.inner.clone(), svc.clone());
-                    let retry = tower::retry::Retry::new(policy.clone(), inner);
-                    ResponseFuture::Retry(retry.oneshot(retry_req))
-                }
-                Either::B(req) => ResponseFuture::Disabled(self.inner.proxy(svc, req)),
-            };
-        }
+        let policy = match self.policy.as_ref() {
+            None => return future::Either::Left(self.inner.call(req)),
+            Some(p) => p,
+        };
 
-        ResponseFuture::Disabled(self.inner.proxy(svc, req))
-    }
-}
+        let retry_req = match policy.prepare_request(req) {
+            Either::A(retry_req) => retry_req,
+            Either::B(req) => return future::Either::Left(self.inner.call(req)),
+        };
 
-impl<R, P, S, Req> Future for ResponseFuture<R, P, S, Req>
-where
-    R: tower::retry::Policy<Req, P::Response, Error> + Clone,
-    P: Proxy<Req, S> + Clone,
-    S: tower::Service<P::Request> + Clone,
-    S::Error: Into<Error>,
-{
-    type Output = Result<P::Response, Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.project() {
-            ResponseFutureProj::Disabled(f) => f.poll(cx).map_err(Into::into),
-            ResponseFutureProj::Retry(f) => f.poll(cx).map_err(Into::into),
-        }
+        let inner = self.inner.clone();
+        let retry = tower::retry::Retry::new(policy.clone(), inner);
+        future::Either::Right(retry.oneshot(retry_req))
     }
 }

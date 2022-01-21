@@ -1,11 +1,11 @@
 use super::opaque_transport::{self, OpaqueTransport};
-use crate::Outbound;
+use crate::{ConnectMeta, Outbound};
 use futures::future;
 use linkerd_app_core::{
     io,
     proxy::http,
     svc, tls,
-    transport::{self, ConnectTcp, Remote, ServerAddr},
+    transport::{self, ClientAddr, ConnectTcp, Local, Remote, ServerAddr},
     transport_header::SessionProtocol,
     Error,
 };
@@ -36,9 +36,10 @@ impl<C> Outbound<C> {
     pub fn push_tcp_endpoint<T>(
         self,
     ) -> Outbound<
-        impl svc::Service<
+        impl svc::MakeConnection<
                 T,
-                Response = impl io::AsyncRead + io::AsyncWrite + Send + Unpin,
+                Connection = impl Send + Unpin,
+                Metadata = ConnectMeta,
                 Error = Error,
                 Future = impl Send,
             > + Clone,
@@ -50,9 +51,10 @@ impl<C> Outbound<C> {
             + svc::Param<Option<http::AuthorityOverride>>
             + svc::Param<Option<SessionProtocol>>
             + svc::Param<transport::labels::Key>,
-        C: svc::Service<Connect, Error = io::Error> + Clone + Send + 'static,
-        C::Response: tls::HasNegotiatedProtocol,
-        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        C: svc::MakeConnection<Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+        C: Clone + Send + 'static,
+        C::Connection: Send + Unpin,
+        C::Metadata: Send + Unpin,
         C::Future: Send + 'static,
     {
         self.map_stack(|config, rt, connect| {
@@ -85,13 +87,14 @@ impl<C> Outbound<C> {
     where
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        C: svc::Service<T> + Clone + Send + Sync + 'static,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-        C::Error: Into<Error>,
+        C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
+        C::Connection: Send + Unpin,
+        C::Metadata: Send + Unpin,
         C::Future: Send,
     {
         self.map_stack(|_, _, conn| {
-            conn.push_make_thunk()
+            conn.push(svc::stack::WithoutConnectionMetadata::layer())
+                .push_make_thunk()
                 .push_on_service(super::Forward::layer())
                 .instrument(|_: &_| debug_span!("tcp.forward"))
                 .push(svc::ArcNewService::layer())
@@ -118,7 +121,6 @@ impl<S> PreventLoopback<S> {
     #[cfg(feature = "allow-loopback")]
     // the Result is necessary to have the same type signature regardless of
     // whether or not the `allow-loopback` feature is enabled...
-    #[allow(clippy::unnecessary_wraps)]
     fn check_loopback(_: Remote<ServerAddr>) -> io::Result<()> {
         Ok(())
     }
@@ -167,6 +169,7 @@ mod tests {
     use crate::{
         svc::{self, NewService, ServiceExt},
         test_util::*,
+        transport::{ClientAddr, Local},
     };
     use std::net::SocketAddr;
 
@@ -181,7 +184,10 @@ mod tests {
                 assert_eq!(a, addr);
                 let mut io = support::io();
                 io.write(b"hello").read(b"world");
-                future::ok::<_, support::io::Error>(io.build())
+                future::ok::<_, support::io::Error>((
+                    io.build(),
+                    Local(ClientAddr(([0, 0, 0, 0], 0).into())),
+                ))
             }))
             .push_tcp_forward()
             .into_inner();

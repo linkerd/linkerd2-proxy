@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
-use futures::TryFuture;
+use futures_core::TryFuture;
 use linkerd_identity as identity;
 use linkerd_proxy_transport::{ClientAddr, Remote};
 use linkerd_stack as svc;
@@ -45,6 +45,18 @@ pub struct AccessLogFuture<F> {
 }
 
 impl<N> NewAccessLog<N> {
+    /// Returns a new `NewAccessLog` layer that wraps an inner service with
+    /// access logging middleware.
+    ///
+    /// The access log is recorded by adding a `tracing` span to the service's
+    /// future. If access logging is not enabled by the `tracing` subscriber,
+    /// this span will never be enabled, and it can be skipped cheaply. When
+    /// access logging *is* enabled, additional data will be recorded when the
+    /// response future completes.
+    ///
+    /// Recording the access log will introduce additional overhead in the
+    /// request path, but this is largely avoided when access logging is not
+    /// enabled.
     #[inline]
     pub fn layer() -> impl svc::layer::Layer<N, Service = Self> {
         svc::layer::mk(|inner| NewAccessLog { inner })
@@ -122,6 +134,9 @@ where
             host = get_header(http::header::HOST),
         );
 
+        // The access log span is only enabled by the `tracing` subscriber if
+        // access logs are being recorded. If it's disabled, we can skip
+        // recording additional data in the response future.
         if span.is_disabled() {
             return AccessLogFuture {
                 data: None,

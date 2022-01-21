@@ -1,6 +1,5 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
 #![forbid(unsafe_code)]
-#![recursion_limit = "512"]
 
 use linkerd2_proxy_api as api;
 use linkerd_addr::NameAddr;

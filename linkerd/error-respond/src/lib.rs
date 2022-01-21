@@ -1,6 +1,6 @@
 //! Layer to map service errors into responses.
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
 #![forbid(unsafe_code)]
 
 use futures::{ready, TryFuture};

@@ -7,7 +7,7 @@
 //! - Tap
 //! - Metric labeling
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
 #![forbid(unsafe_code)]
 
 pub use drain;
@@ -22,7 +22,6 @@ pub use linkerd_exp_backoff as exp_backoff;
 pub use linkerd_http_metrics as http_metrics;
 pub use linkerd_io as io;
 pub use linkerd_opencensus as opencensus;
-pub use linkerd_proxy_identity_default as identity;
 pub use linkerd_service_profiles as profiles;
 pub use linkerd_stack_metrics as stack_metrics;
 pub use linkerd_stack_tracing as stack_tracing;
@@ -37,18 +36,22 @@ pub mod classify;
 pub mod config;
 pub mod control;
 pub mod dns;
-pub mod dst;
 pub mod errors;
 pub mod http_tracing;
 pub mod metrics;
 pub mod proxy;
-pub mod retry;
 pub mod serve;
 pub mod svc;
 pub mod telemetry;
 pub mod transport;
 
 pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
+
+pub mod identity {
+    pub use linkerd_identity::*;
+    pub use linkerd_meshtls::*;
+    pub use linkerd_proxy_identity_client as client;
+}
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";
 

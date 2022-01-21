@@ -11,23 +11,22 @@ rustfmt = ["linkerd2-proxy-api/rustfmt"]
 
 [dependencies]
 http = "0.2"
-hyper = { version = "0.14.14", features = ["http1", "http2"] }
+hyper = { version = "0.14.16", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.3"
 linkerd2-proxy-api = { version = "0.3", features = ["tap", "server"] }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-error = { path = "../../error" }
-linkerd-identity = { path = "../../identity" }
+linkerd-meshtls = { path = "../../meshtls" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-http = { path = "../http" }
-linkerd-proxy-identity-default = { path = "../../proxy/identity/default" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 parking_lot = "0.11"
 rand = { version = "0.8" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["time"]}
-tower = { version = "0.4.10", default-features = false }
+tower = { version = "0.4.11", default-features = false }
 tonic = { version = "0.6", default-features = false }
 tracing = "0.1.29"
 pin-project = "1"

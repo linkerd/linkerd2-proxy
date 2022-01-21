@@ -1,0 +1,32 @@
+[package]
+name = "linkerd-meshtls"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2018"
+publish = false
+
+[features]
+rustls = ["linkerd-meshtls-rustls", "__has_any_tls_impls"]
+boring = ["linkerd-meshtls-boring", "__has_any_tls_impls"]
+# Enabled if *any* TLS impl is enabled.
+__has_any_tls_impls = []
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+linkerd-error = { path = "../error" }
+linkerd-identity = { path = "../identity" }
+linkerd-io = { path = "../io" }
+linkerd-meshtls-boring = { path = "boring", optional = true }
+linkerd-meshtls-rustls = { path = "rustls", optional = true }
+linkerd-stack = { path = "../stack" }
+linkerd-tls = { path = "../tls" }
+pin-project = "1"
+
+[dev-dependencies]
+linkerd-conditional = { path = "../conditional" }
+linkerd-proxy-transport = { path = "../proxy/transport" }
+linkerd-tls-test-util = { path = "../tls/test-util" }
+linkerd-tracing = { path = "../tracing", features = ["ansi"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tracing = "0.1"
