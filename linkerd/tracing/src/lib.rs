@@ -81,9 +81,10 @@ impl Settings {
         Some(Self {
             filter,
             format: std::env::var(ENV_LOG_FORMAT).ok(),
-            access_log: std::env::var(ENV_ACCESS_LOG)
-                .ok()
-                .and_then(|env| env.parse().ok()),
+            access_log: std::env::var(ENV_ACCESS_LOG).ok().map(|env| {
+                env.parse()
+                    .expect("parsing access log format is infallible")
+            }),
             is_test: false,
         })
     }

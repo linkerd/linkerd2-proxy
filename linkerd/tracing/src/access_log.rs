@@ -163,7 +163,7 @@ impl field::Visit for ApacheCommonVisitor<'_> {
 // === impl Format ===
 
 impl std::str::FromStr for Format {
-    type Err = &'static str;
+    type Err = std::convert::Infallible;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             s if s.eq_ignore_ascii_case("json") => Ok(Self::Json),
