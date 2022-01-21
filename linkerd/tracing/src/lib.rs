@@ -29,7 +29,7 @@ const DEFAULT_LOG_FORMAT: &str = "PLAIN";
 pub struct Settings {
     filter: Option<String>,
     format: Option<String>,
-    access_log: bool,
+    access_log: Option<access_log::Format>,
     is_test: bool,
 }
 
@@ -81,7 +81,9 @@ impl Settings {
         Some(Self {
             filter,
             format: std::env::var(ENV_LOG_FORMAT).ok(),
-            access_log: std::env::var(ENV_ACCESS_LOG).is_ok(),
+            access_log: std::env::var(ENV_ACCESS_LOG)
+                .ok()
+                .and_then(|env| env.parse().ok()),
             is_test: false,
         })
     }
@@ -90,7 +92,7 @@ impl Settings {
         Self {
             filter: Some(filter),
             format: Some(format),
-            access_log: false,
+            access_log: None,
             is_test: true,
         }
     }
@@ -154,8 +156,8 @@ impl Settings {
         let mut filter = EnvFilter::new(log_level);
 
         // If access logging is enabled, build the access log layer.
-        let access_log = if self.access_log {
-            let (access_log, directive) = access_log::build();
+        let access_log = if let Some(format) = self.access_log {
+            let (access_log, directive) = access_log::build(format);
             filter = filter.add_directive(directive);
             Some(access_log)
         } else {
@@ -193,6 +195,6 @@ impl Handle {
     }
 
     pub fn level(&self) -> Option<&level::Handle> {
-        self.0.as_ref().map(|inner| &inner.level)
+        self.0.as_ref()
     }
 }
