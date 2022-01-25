@@ -30,3 +30,19 @@ jobs:
             ex=$((ex + 1))
           done
           exit $ex
+
+  devcontainer-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends install jq
+      - run: |
+          image=$(sed -E '/^\s*\/\/.*/d' .devcontainer/devcontainer.json |jq -Mr .image)
+          if [ "$image" == "null" ]; then
+            echo "::error file=.devcontainer/devcontainer.json::Missing image"
+            exit 1
+          fi
+          if ! docker pull "$image" ; then
+            echo "::error file=.devcontainer/devcontainer.json::Unable to pull image: $image"
+            exit 1
+          fi
