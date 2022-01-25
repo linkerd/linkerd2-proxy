@@ -6,6 +6,7 @@ RUN apt install -y --no-install-recommends \
     clang \
     cmake \
     golang \
+    jq \
     lldb \
     lsb-release \
     sudo \
