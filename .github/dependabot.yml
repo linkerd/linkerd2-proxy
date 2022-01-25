@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: daily
+      time: "10:00"
+      timezone: "UTC"
+    allow:
+      - dependency-type: "all"
 
   - package-ecosystem: cargo
     directory: /linkerd/addr/fuzz
