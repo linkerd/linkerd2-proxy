@@ -35,7 +35,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends install jq
+      - run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update
+          sudo apt-get -y --no-install-recommends install jq
       - run: |
           image=$(sed -E '/^\s*\/\/.*/d' .devcontainer/devcontainer.json |jq -Mr .image)
           if [ "$image" == "null" ]; then

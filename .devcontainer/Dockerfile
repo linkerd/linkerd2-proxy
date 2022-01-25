@@ -2,7 +2,7 @@ FROM docker.io/rust:1.56.1-bullseye
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt update && apt upgrade -y
-RUN apt install -y \
+RUN apt install -y --no-install-recommends \
     clang \
     cmake \
     golang \
