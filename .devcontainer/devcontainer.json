@@ -1,7 +1,7 @@
 {
 	"name": "linkerd2-proxy",
-	"image": "ghcr.io/linkerd/dev-proxy:v3",
-	//"dockerFile": "./Dockerfile",
+	"image": "ghcr.io/linkerd/dev-proxy:v5",
+	// "dockerFile": "./Dockerfile",
 	"extensions": [
 		"DavidAnson.vscode-markdownlint",
 		"matklad.rust-analyzer",
