@@ -569,7 +569,7 @@ dependencies = [
  "httpdate",
  "itoa 0.4.8",
  "pin-project-lite",
- "socket2 0.4.3",
+ "socket2 0.4.4",
  "tokio",
  "tower-service",
  "tracing",
@@ -919,7 +919,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "regex",
  "rustls-pemfile",
- "socket2 0.4.3",
+ "socket2 0.4.4",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
@@ -1441,7 +1441,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
- "socket2 0.4.3",
+ "socket2 0.4.4",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -2294,9 +2294,9 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f82496b90c36d70af5fcd482edaa2e0bd16fade569de1330405fecbbdac736b"
+checksum = "66d72b759436ae32898a2af0a14218dbf55efde3feeb170eb623637db85ee1e0"
 dependencies = [
  "libc",
  "winapi",
