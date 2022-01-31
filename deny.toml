@@ -50,6 +50,9 @@ deny = [
 skip = [
     # Waiting on a hyper release that updates itoa to v1.
     { name = "itoa", version = "0.4" },
+    # Waiting on a tokio release that updates parking_lot to v0.12.
+    { name = "parking_lot", version = "0.11" },
+    { name = "parking_lot_core", version = "0.8" },
 ]
 skip-tree = [
     # Hasn't seen a new release since 2017. Pulls in an older version of nom.
