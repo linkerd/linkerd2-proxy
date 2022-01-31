@@ -13,6 +13,6 @@ linkerd-errno = { path = "../errno" }
 linkerd-io = { path = "../io" }
 linkerd-metrics = { path = "../metrics" }
 linkerd-stack = { path = "../stack" }
-parking_lot = "0.11"
+parking_lot = "0.12"
 pin-project = "1"
 tracing = "0.1.29"
