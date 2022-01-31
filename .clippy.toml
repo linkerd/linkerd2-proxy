@@ -5,4 +5,9 @@ disallowed-methods = [
     # see https://github.com/rust-lang/rust/issues/90308 for details.
     "std::env::set_var",
     "std::env::remove_var",
+
+    # Avoid instances of https://github.com/rust-lang/rust/issues/86470
+    "std::time::Instant::duration_since",
+    "std::time::Instant::elapsed",
+    "std::time::Instant::sub",
 ]

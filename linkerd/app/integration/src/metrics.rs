@@ -221,7 +221,7 @@ impl MetricMatch {
                         "{}\n  retried {} times ({:?})",
                         e,
                         MAX_RETRIES,
-                        start_t.elapsed()
+                        Instant::now().saturating_duration_since(start_t)
                     ),
                     Err(_) => {
                         tracing::trace!("waiting...");
