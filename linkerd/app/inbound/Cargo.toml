@@ -18,7 +18,7 @@ linkerd-http-access-log = { path = "../../http-access-log" }
 linkerd-server-policy = { path = "../../server-policy" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 linkerd2-proxy-api = { version = "0.3", features = ["client", "inbound"] }
-parking_lot = "0.11"
+parking_lot = "0.12"
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
 tonic = { version = "0.6", default-features = false }
