@@ -1,7 +1,8 @@
 use super::{Eos, EosMetrics, Metrics};
 use linkerd_errno::Errno;
 use linkerd_io as io;
-use std::{sync::Arc, task::Poll, time::Instant};
+use std::{sync::Arc, task::Poll};
+use tokio::time::Instant;
 
 /// Tracks the state of a single instance of `Io` throughout its lifetime.
 #[derive(Debug)]

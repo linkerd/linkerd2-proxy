@@ -1,6 +1,6 @@
 use linkerd_identity::{Credentials, DerX509};
 use linkerd_tls_test_util::*;
-use std::time::Duration;
+use tokio::time::Duration;
 
 fn load(ent: &Entity) -> crate::creds::Store {
     let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");

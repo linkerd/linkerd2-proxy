@@ -14,8 +14,8 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
-use std::time::Instant;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tonic::{self as grpc, Response};
 use tracing::{debug, trace, warn};
 

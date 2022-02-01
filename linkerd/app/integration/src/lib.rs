@@ -30,10 +30,10 @@ pub use std::net::SocketAddr;
 use std::pin::Pin;
 pub use std::sync::Arc;
 use std::task::{Context, Poll};
-pub use std::time::Duration;
 pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpListener;
 pub use tokio::sync::oneshot;
+pub use tokio::time::Duration;
 pub use tonic as grpc;
 pub use tower::Service;
 pub use tracing::*;
@@ -66,8 +66,8 @@ macro_rules! assert_eventually {
     ($cond:expr, retries: $retries:expr, $($arg:tt)+) => {
         {
             use std::{env, u64};
-            use std::time::{Instant, Duration};
             use std::str::FromStr;
+            use tokio::time::{Instant, Duration};
             use tracing::Instrument as _;
             // TODO: don't do this *every* time eventually is called (lazy_static?)
             let patience = env::var($crate::ENV_TEST_PATIENCE_MS).ok()

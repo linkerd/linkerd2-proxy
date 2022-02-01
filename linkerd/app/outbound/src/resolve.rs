@@ -5,7 +5,7 @@ use linkerd_app_core::{
     },
     svc::{layer, NewService},
 };
-use std::time::Duration;
+use tokio::time::Duration;
 
 pub fn layer<T, R, N>(
     resolve: R,

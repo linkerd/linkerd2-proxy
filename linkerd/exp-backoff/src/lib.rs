@@ -7,9 +7,9 @@ use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Duration;
 use thiserror::Error;
 use tokio::time;
+use tokio::time::Duration;
 
 /// A jittered exponential backoff strategy.
 // The raw fields are exposed so this type can be constructed statically.

@@ -17,8 +17,8 @@ pub use self::{
 };
 use linkerd_io as io;
 use socket2::TcpKeepalive;
-use std::time::Duration;
 use tokio::net::TcpStream;
+use tokio::time::Duration;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Keepalive(pub Option<Duration>);

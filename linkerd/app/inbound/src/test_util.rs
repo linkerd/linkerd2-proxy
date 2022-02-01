@@ -15,7 +15,7 @@ use linkerd_app_core::{
 };
 pub use linkerd_app_test as support;
 use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy};
-use std::time::Duration;
+use tokio::time::Duration;
 
 pub fn default_config() -> Config {
     let cluster_local = "svc.cluster.local."
@@ -53,7 +53,7 @@ pub fn default_config() -> Config {
         policy: policy::Config::Fixed {
             default: ServerPolicy {
                 protocol: Protocol::Detect {
-                    timeout: std::time::Duration::from_secs(10),
+                    timeout: tokio::time::Duration::from_secs(10),
                 },
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
@@ -73,7 +73,7 @@ pub fn default_config() -> Config {
 pub fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (drain_tx, drain) = drain::channel();
     let (tap, _) = tap::new();
-    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+    let (metrics, _) = metrics::Metrics::new(tokio::time::Duration::from_secs(10));
     let runtime = ProxyRuntime {
         identity: rustls::creds::default_for_test().1.into(),
         metrics: metrics.proxy,

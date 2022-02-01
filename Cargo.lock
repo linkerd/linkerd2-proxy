@@ -1131,6 +1131,7 @@ dependencies = [
  "linkerd-stack",
  "parking_lot 0.12.0",
  "pin-project",
+ "tokio",
  "tower",
  "tracing",
 ]
@@ -1669,6 +1670,7 @@ dependencies = [
  "linkerd-stack",
  "parking_lot 0.12.0",
  "pin-project",
+ "tokio",
  "tracing",
 ]
 

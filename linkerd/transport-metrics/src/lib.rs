@@ -20,8 +20,8 @@ use std::{
     fmt,
     hash::Hash,
     sync::Arc,
-    time::{Duration, Instant},
 };
+use tokio::time::{Duration, Instant};
 
 metrics! {
     tcp_open_total: Counter { "Total count of opened connections" },
@@ -118,7 +118,7 @@ mod tests {
     fn expiry() {
         use linkerd_metrics::FmtLabels;
         use std::fmt;
-        use std::time::{Duration, Instant};
+        use tokio::time::{Duration, Instant};
 
         #[derive(Clone, Debug, Hash, Eq, PartialEq)]
         struct Target(usize);

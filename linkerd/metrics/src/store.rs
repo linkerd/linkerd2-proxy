@@ -6,8 +6,8 @@ use std::{
     fmt,
     hash::Hash,
     sync::Arc,
-    time::Instant,
 };
+use tokio::time::Instant;
 
 pub trait LastUpdate {
     fn last_update(&self) -> Instant;

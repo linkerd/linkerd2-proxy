@@ -504,7 +504,7 @@ mod tests {
                 negotiated_protocol: None,
             }),
             policy: allow(Protocol::Detect {
-                timeout: std::time::Duration::from_secs(10),
+                timeout: tokio::time::Duration::from_secs(10),
             }),
         };
 
@@ -533,7 +533,7 @@ mod tests {
                 negotiated_protocol: None,
             }),
             policy: allow(Protocol::Detect {
-                timeout: std::time::Duration::from_secs(10),
+                timeout: tokio::time::Duration::from_secs(10),
             }),
         };
 

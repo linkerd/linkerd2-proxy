@@ -110,7 +110,7 @@ impl Tap {
 impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     #[inline]
     fn extract_param(&self, _: &T) -> tls::server::Timeout {
-        tls::server::Timeout(std::time::Duration::from_secs(1))
+        tls::server::Timeout(tokio::time::Duration::from_secs(1))
     }
 }
 

@@ -171,7 +171,7 @@ where
 #[cfg(test)]
 mod test {
     use super::FailFast;
-    use std::time::Duration;
+    use tokio::time::Duration;
     use tokio_test::{assert_pending, assert_ready, assert_ready_ok};
     use tower::layer::Layer;
     use tower_test::mock::{self, Spawn};

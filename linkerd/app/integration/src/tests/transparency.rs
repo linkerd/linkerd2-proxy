@@ -1367,7 +1367,7 @@ async fn retry_reconnect_errors() {
 
     drop(tx); // start `listen` now
               // This may be flaky on CI.
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     let res = fut.await.expect("response");
     assert_eq!(res.status(), http::StatusCode::OK);

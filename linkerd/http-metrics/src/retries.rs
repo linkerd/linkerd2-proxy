@@ -1,12 +1,8 @@
 use super::{Prefixed, Registry, Report};
 use linkerd_metrics::{Counter, FmtLabels, FmtMetric, FmtMetrics, LastUpdate, Metric};
 use parking_lot::Mutex;
-use std::{
-    fmt,
-    hash::Hash,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{fmt, hash::Hash, sync::Arc};
+use tokio::time::{Duration, Instant};
 use tracing::trace;
 
 #[derive(Debug)]

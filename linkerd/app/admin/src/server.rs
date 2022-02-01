@@ -201,7 +201,7 @@ where
 mod tests {
     use super::*;
     use http::method::Method;
-    use std::time::Duration;
+    use tokio::time::Duration;
     use tokio::{sync::mpsc, time::timeout};
     use tower::util::ServiceExt;
 
