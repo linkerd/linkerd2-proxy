@@ -21,7 +21,7 @@ impl Uptime {
 
 impl FormatTime for Uptime {
     fn format_time(&self, w: &mut format::Writer<'_>) -> fmt::Result {
-        Self::format(Instant::now() - self.start_time, w)
+        Self::format(Instant::now().saturating_duration_since(self.start_time), w)
     }
 }
 

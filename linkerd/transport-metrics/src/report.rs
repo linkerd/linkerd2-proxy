@@ -74,7 +74,7 @@ impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
         tcp_close_total.fmt_help(f)?;
         Self::fmt_eos_by(&*metrics, f, tcp_close_total, |e| &e.close_total)?;
 
-        metrics.retain_since(Instant::now() - self.retain_idle);
+        metrics.retain_since(Instant::now().saturating_duration_since(self.retain_idle));
 
         Ok(())
     }
