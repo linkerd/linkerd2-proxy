@@ -174,7 +174,7 @@ where
 
         let response: http::Response<B2> = match this.inner.try_poll(cx) {
             Poll::Pending => {
-                data.processing += Instant::now().duration_since(poll_start);
+                data.processing += Instant::now().saturating_duration_since(poll_start);
                 return Poll::Pending;
             }
             Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),

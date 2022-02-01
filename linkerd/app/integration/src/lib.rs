@@ -89,7 +89,7 @@ macro_rules! assert_eventually {
                     } else if i == $retries {
                         panic!(
                             "assertion failed after {} (retried {} times): {}",
-                            crate::HumanDuration(start_t.elapsed()),
+                            crate::HumanDuration(Instant::now().saturating_duration_since(start_t)),
                             i,
                             format_args!($($arg)+)
                         )

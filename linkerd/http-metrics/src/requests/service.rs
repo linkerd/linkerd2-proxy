@@ -343,7 +343,8 @@ where
             .entry(Some(*this.status))
             .or_insert_with(StatusMetrics::default);
 
-        status_metrics.latency.add(now - *this.stream_open_at);
+        let elapsed = now.saturating_duration_since(*this.stream_open_at);
+        status_metrics.latency.add(elapsed);
 
         *this.latency_recorded = true;
     }
