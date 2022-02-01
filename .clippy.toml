@@ -9,5 +9,5 @@ disallowed-methods = [
     # Avoid instances of https://github.com/rust-lang/rust/issues/86470
     "std::time::Instant::duration_since",
     "std::time::Instant::elapsed",
-    "std::time::Instant::sub",
+    # Clippy doesn't let us ban std::time::Instant::sub, but it knows what it did.
 ]
