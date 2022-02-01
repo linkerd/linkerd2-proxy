@@ -10,7 +10,7 @@ disallowed-methods = [
     "std::sync::Mutex",
     "std::sync::RwLock",
 
-    # Use tokio::time::Instant instead..
+    # Use tokio::time::Instant instead.
     "std::time::Instant::now",
 
     # Avoid instances of https://github.com/rust-lang/rust/issues/86470 until tokio/tokio#4461 is
