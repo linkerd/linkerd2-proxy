@@ -15,12 +15,7 @@ pub use self::{
 use linkerd_errno::Errno;
 use linkerd_metrics::{metrics, Counter, FmtLabels, Gauge, LastUpdate, Store};
 use parking_lot::Mutex;
-use std::{
-    collections::HashMap,
-    fmt,
-    hash::Hash,
-    sync::Arc,
-};
+use std::{collections::HashMap, fmt, hash::Hash, sync::Arc};
 use tokio::time::{Duration, Instant};
 
 metrics! {

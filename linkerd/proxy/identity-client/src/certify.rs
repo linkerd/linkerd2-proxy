@@ -4,9 +4,9 @@ use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient}
 use linkerd_error::{Error, Result};
 use linkerd_identity::{Credentials, DerX509};
 use linkerd_stack::NewService;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tokio::time;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tonic::{body::BoxBody, client::GrpcService};
 use tracing::{debug, error};
 
