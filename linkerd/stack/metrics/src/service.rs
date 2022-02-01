@@ -39,7 +39,7 @@ where
                 // updated even when we're "stuck" in pending.
                 let now = Instant::now();
                 if let Some(t0) = self.blocked_since.take() {
-                    let not_ready = now - t0;
+                    let not_ready = now.saturating_duration_since(t0);
                     self.metrics.poll_millis.add(not_ready.as_millis() as u64);
                 }
                 self.blocked_since = Some(now);
@@ -48,7 +48,7 @@ where
             Poll::Ready(Ok(())) => {
                 self.metrics.ready_total.incr();
                 if let Some(t0) = self.blocked_since.take() {
-                    let not_ready = Instant::now() - t0;
+                    let not_ready = Instant::now().saturating_duration_since(t0);
                     self.metrics.poll_millis.add(not_ready.as_millis() as u64);
                 }
                 Poll::Ready(Ok(()))
@@ -56,7 +56,7 @@ where
             Poll::Ready(Err(e)) => {
                 self.metrics.error_total.incr();
                 if let Some(t0) = self.blocked_since.take() {
-                    let not_ready = Instant::now() - t0;
+                    let not_ready = Instant::now().saturating_duration_since(t0);
                     self.metrics.poll_millis.add(not_ready.as_millis() as u64);
                 }
                 Poll::Ready(Err(e))
