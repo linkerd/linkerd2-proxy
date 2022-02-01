@@ -129,7 +129,7 @@ macro_rules! profile_test {
                 break;
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
 
         $with_client(client).await;

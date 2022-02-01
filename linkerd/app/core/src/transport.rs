@@ -11,7 +11,7 @@ pub use self::allow_ips::AllowIps;
 pub struct Metrics(metrics::Registry<labels::Key>);
 
 impl Metrics {
-    pub fn new(retain_idle: tokio::time::Duration) -> (Self, metrics::Report<labels::Key>) {
+    pub fn new(retain_idle: std::time::Duration) -> (Self, metrics::Report<labels::Key>) {
         let (reg, report) = metrics::new(retain_idle);
         (Self(reg), report)
     }

@@ -221,7 +221,7 @@ mod resolve {
 
 mod balance {
     use crate::proxy::http;
-    use tokio::time::Duration;
+    use std::time::Duration;
 
     const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
     const EWMA_DECAY: Duration = Duration::from_secs(10);

@@ -1,6 +1,6 @@
 use linkerd_app_core::{IpNet, Ipv4Net, Ipv6Net};
 use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
-use tokio::time::Duration;
+use std::time::Duration;
 
 pub fn all_authenticated(timeout: Duration) -> ServerPolicy {
     mk(

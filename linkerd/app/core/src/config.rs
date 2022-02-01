@@ -4,7 +4,7 @@ use crate::{
     svc::{stack::CloneParam, Param},
     transport::{Keepalive, ListenAddr},
 };
-use tokio::time::Duration;
+use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {

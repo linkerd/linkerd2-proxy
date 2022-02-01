@@ -61,7 +61,7 @@ async fn wait_for_profile_stage(client: &client::Client, metrics: &client::Clien
             break;
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 }
 

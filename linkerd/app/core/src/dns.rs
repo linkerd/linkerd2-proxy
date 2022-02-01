@@ -1,6 +1,6 @@
 pub use linkerd_dns::*;
 use std::path::PathBuf;
-use tokio::time::Duration;
+use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct Config {

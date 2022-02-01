@@ -1,7 +1,7 @@
 use linkerd_error::Error;
 use linkerd_stack::{layer, MapErr, NewService, Param, Timeout, TimeoutError};
+use std::time::Duration;
 use thiserror::Error;
-use tokio::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct ResponseTimeout(pub Option<Duration>);

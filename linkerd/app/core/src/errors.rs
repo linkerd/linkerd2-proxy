@@ -8,7 +8,7 @@ pub use tonic::Code as Grpc;
 
 #[derive(Debug, Error)]
 #[error("connect timed out after {0:?}")]
-pub struct ConnectTimeout(pub(crate) tokio::time::Duration);
+pub struct ConnectTimeout(pub(crate) std::time::Duration);
 
 /// Obtain the source error at the end of a chain of `Error`s.
 pub fn root_cause<'e>(

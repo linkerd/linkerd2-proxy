@@ -513,7 +513,7 @@ fn connect_timeout(
         Box::pin(
             async move {
                 tracing::info!("sleeping so that the proxy hits a connect timeout");
-                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                 // The proxy hits a connect timeout so we don't need to worry
                 // about returning a service here.
                 unreachable!();
