@@ -137,7 +137,7 @@ where
         metric.fmt_help(f)?;
         Self::fmt_by_class(&registry, f, metric, |s| &s.total)?;
 
-        registry.retain_since(Instant::now().saturating_duration_since(self.retain_idle));
+        registry.retain_since(Instant::now() - self.retain_idle);
 
         Ok(())
     }
