@@ -1,5 +1,10 @@
 //! Conditionally reconnects with a pluggable recovery/backoff strategy.
-#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_method,
+    clippy::disallowed_type
+)]
 #![forbid(unsafe_code)]
 
 #[cfg(test)]

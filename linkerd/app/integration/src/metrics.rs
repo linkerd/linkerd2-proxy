@@ -195,8 +195,8 @@ impl MetricMatch {
     #[track_caller]
     pub async fn assert_in(&self, client: &crate::client::Client) {
         use std::str::FromStr;
-        use std::time::{Duration, Instant};
         use std::{env, u64};
+        use tokio::time::{Duration, Instant};
         use tracing::Instrument as _;
         const MAX_RETRIES: usize = 5;
         // TODO: don't do this *every* time eventually is called (lazy_static?)

@@ -2,7 +2,13 @@
 //!
 //! Uses unsafe code to interact with socket options for SO_ORIGINAL_DST.
 
-#![deny(warnings, rust_2018_idioms, unsafe_code)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_method,
+    clippy::disallowed_type,
+    unsafe_code
+)]
 
 pub mod addrs;
 mod connect;

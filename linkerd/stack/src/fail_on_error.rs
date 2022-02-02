@@ -1,8 +1,9 @@
 use linkerd_error::{is_error, Error};
+use parking_lot::RwLock;
 use std::{
     future::Future,
     pin::Pin,
-    sync::{Arc, RwLock},
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -40,10 +41,8 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         futures::ready!(self.inner.poll_ready(cx).map_err(Into::into))?;
-        if let Ok(e) = self.error.read() {
-            if let Some(e) = &*e {
-                return Poll::Ready(Err(e.clone().into()));
-            }
+        if let Some(e) = &*self.error.read() {
+            return Poll::Ready(Err(e.clone().into()));
         }
         Poll::Ready(Ok(()))
     }
@@ -58,9 +57,7 @@ where
                     let e = e.into();
                     if is_error::<E>(&*e) {
                         let e = SharedError(Arc::new(e));
-                        if let Ok(mut error) = error.write() {
-                            *error = Some(e.clone());
-                        }
+                        *error.write() = Some(e.clone());
                         Err(e.into())
                     } else {
                         Err(e)

@@ -1,4 +1,9 @@
-#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_method,
+    clippy::disallowed_type
+)]
 #![forbid(unsafe_code)]
 
 mod client;
@@ -15,13 +20,8 @@ pub use self::{
 use linkerd_errno::Errno;
 use linkerd_metrics::{metrics, Counter, FmtLabels, Gauge, LastUpdate, Store};
 use parking_lot::Mutex;
-use std::{
-    collections::HashMap,
-    fmt,
-    hash::Hash,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, fmt, hash::Hash, sync::Arc};
+use tokio::time::{Duration, Instant};
 
 metrics! {
     tcp_open_total: Counter { "Total count of opened connections" },
@@ -118,7 +118,7 @@ mod tests {
     fn expiry() {
         use linkerd_metrics::FmtLabels;
         use std::fmt;
-        use std::time::{Duration, Instant};
+        use tokio::time::{Duration, Instant};
 
         #[derive(Clone, Debug, Hash, Eq, PartialEq)]
         struct Target(usize);

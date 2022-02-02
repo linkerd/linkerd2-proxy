@@ -2,7 +2,13 @@
 //!
 //! This module uses unsafe code to implement [`BufMut`].
 
-#![deny(warnings, rust_2018_idioms, unsafe_code)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_method,
+    clippy::disallowed_type,
+    unsafe_code
+)]
 
 use bytes::{Buf, BufMut};
 use futures::ready;

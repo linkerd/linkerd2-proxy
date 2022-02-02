@@ -1,6 +1,11 @@
 //! Shared infrastructure for integration tests
 
-#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_method,
+    clippy::disallowed_type
+)]
 #![forbid(unsafe_code)]
 
 mod test_env;
@@ -66,8 +71,8 @@ macro_rules! assert_eventually {
     ($cond:expr, retries: $retries:expr, $($arg:tt)+) => {
         {
             use std::{env, u64};
-            use std::time::{Instant, Duration};
             use std::str::FromStr;
+            use tokio::time::{Instant, Duration};
             use tracing::Instrument as _;
             // TODO: don't do this *every* time eventually is called (lazy_static?)
             let patience = env::var($crate::ENV_TEST_PATIENCE_MS).ok()

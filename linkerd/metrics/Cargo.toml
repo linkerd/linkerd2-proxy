@@ -8,7 +8,7 @@ publish = false
 
 [features]
 default = []
-summary = ["hdrhistogram", "tokio"]
+summary = ["hdrhistogram"]
 test_util = []
 
 [dependencies]
@@ -18,7 +18,7 @@ http = "0.2"
 hyper = { version = "0.14.16", features = ["http1", "http2"] }
 linkerd-stack = { path = "../stack", optional = true }
 parking_lot = "0.12"
-tokio = { version = "1", features = ["time"], optional = true }
+tokio = { version = "1", features = ["time"] }
 tracing = "0.1.29"
 
 [dev-dependencies]

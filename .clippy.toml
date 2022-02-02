@@ -1,13 +1,22 @@
 type-complexity-threshold = 500
 disallowed-methods = [
-    # mutating environment variables in a multi-threaded context can
+    # Mutating environment variables in a multi-threaded context can
     # cause data races.
     # see https://github.com/rust-lang/rust/issues/90308 for details.
     "std::env::set_var",
     "std::env::remove_var",
 
-    # Avoid instances of https://github.com/rust-lang/rust/issues/86470
-    "std::time::Instant::duration_since",
-    "std::time::Instant::elapsed",
-    # Clippy doesn't let us ban std::time::Instant::sub, but it knows what it did.
+    # Avoid instances of https://github.com/rust-lang/rust/issues/86470 until tokio/tokio#4461 is
+    # available.
+    "tokio::time::Instant::duration_since",
+    "tokio::time::Instant::elapsed",
+    # Clippy doesn't let us ban tokio::time::Instant::sub, but it knows what it did.
+]
+disallowed-types = [
+    # Use parking_lot instead.
+    "std::sync::Mutex",
+    "std::sync::RwLock",
+
+    # Use tokio::time::Instant instead.
+    "std::time::Instant",
 ]

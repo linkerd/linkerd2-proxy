@@ -1,10 +1,8 @@
 use super::*;
 use linkerd_app_core::proxy::http::trace;
+use parking_lot::Mutex;
 use std::io;
-use std::{
-    convert::TryFrom,
-    sync::{Arc, Mutex},
-};
+use std::{convert::TryFrom, sync::Arc};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -315,7 +313,6 @@ impl tower::Service<hyper::Uri> for Conn {
         let running = self
             .running
             .lock()
-            .unwrap()
             .take()
             .expect("test client cannot connect twice");
         Box::pin(async move {

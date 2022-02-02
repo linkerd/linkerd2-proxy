@@ -8,10 +8,8 @@ use hyper::{
     client::conn::{Builder as ClientBuilder, SendRequest},
     Body, Request, Response,
 };
-use std::{
-    future::Future,
-    sync::{Arc, Mutex},
-};
+use parking_lot::Mutex;
+use std::{future::Future, sync::Arc};
 use tokio::task::JoinHandle;
 use tower::{util::ServiceExt, Service};
 use tracing::Instrument;
@@ -162,7 +160,7 @@ impl Server {
                 let f = f.clone();
                 async move {
                     tracing::info!(?request);
-                    f.lock().unwrap()(request)
+                    f.lock()(request)
                 }
             });
             tokio::spawn(settings.serve_connection(server_io, svc).in_current_span());
