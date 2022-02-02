@@ -229,51 +229,51 @@ impl pb::destination_server::Destination for Controller {
         tracing::debug!(request = ?req.get_ref(), "received");
 
         let mut calls = self.expect_dst_calls.lock();
-            if self.unordered {
-                let mut calls_next: VecDeque<Dst> = VecDeque::new();
-                if calls.is_empty() {
-                    tracing::warn!("calls exhausted");
-                }
-                while let Some(call) = calls.pop_front() {
-                    if let Dst::Call(dst, updates) = call {
-                        tracing::debug!(?dst, "checking");
-                        if &dst == req.get_ref() {
-                            tracing::info!(?dst, ?updates, "found request");
-                            calls_next.extend(calls.drain(..));
-                            *calls = calls_next;
-                            return updates.map(grpc::Response::new);
-                        }
-
-                        calls_next.push_back(Dst::Call(dst, updates));
-                    }
-                }
-
-                tracing::warn!(remaining = calls_next.len(), "missed");
-                *calls = calls_next;
-                return Err(grpc_unexpected_request());
+        if self.unordered {
+            let mut calls_next: VecDeque<Dst> = VecDeque::new();
+            if calls.is_empty() {
+                tracing::warn!("calls exhausted");
             }
-
-            match calls.pop_front() {
-                Some(Dst::Call(dst, updates)) => {
-                    tracing::debug!(?dst, "checking next call");
+            while let Some(call) = calls.pop_front() {
+                if let Dst::Call(dst, updates) = call {
+                    tracing::debug!(?dst, "checking");
                     if &dst == req.get_ref() {
                         tracing::info!(?dst, ?updates, "found request");
+                        calls_next.extend(calls.drain(..));
+                        *calls = calls_next;
                         return updates.map(grpc::Response::new);
                     }
 
-                    tracing::warn!(?dst, ?updates, "request does not match");
-                    let msg = format!(
-                        "expected get call for {:?} but got get call for {:?}",
-                        dst, req
-                    );
-                    calls.push_front(Dst::Call(dst, updates));
-                    return Err(grpc::Status::new(grpc::Code::Unavailable, msg));
+                    calls_next.push_back(Dst::Call(dst, updates));
                 }
-                Some(Dst::Done) => {
-                    panic!("unit test controller expects no more Destination.Get calls")
-                }
-                _ => {}
             }
+
+            tracing::warn!(remaining = calls_next.len(), "missed");
+            *calls = calls_next;
+            return Err(grpc_unexpected_request());
+        }
+
+        match calls.pop_front() {
+            Some(Dst::Call(dst, updates)) => {
+                tracing::debug!(?dst, "checking next call");
+                if &dst == req.get_ref() {
+                    tracing::info!(?dst, ?updates, "found request");
+                    return updates.map(grpc::Response::new);
+                }
+
+                tracing::warn!(?dst, ?updates, "request does not match");
+                let msg = format!(
+                    "expected get call for {:?} but got get call for {:?}",
+                    dst, req
+                );
+                calls.push_front(Dst::Call(dst, updates));
+                return Err(grpc::Status::new(grpc::Code::Unavailable, msg));
+            }
+            Some(Dst::Done) => {
+                panic!("unit test controller expects no more Destination.Get calls")
+            }
+            _ => {}
+        }
 
         Err(grpc_no_results())
     }
@@ -292,16 +292,16 @@ impl pb::destination_server::Destination for Controller {
         let _e = span.enter();
         tracing::debug!(request = ?req.get_ref(), "received");
         let mut calls = self.expect_profile_calls.lock();
-            if let Some((dst, profile)) = calls.pop_front() {
-                tracing::debug!(?dst, "checking next call");
-                if &dst == req.get_ref() {
-                    tracing::info!(?dst, ?profile, "found request");
-                    return Ok(grpc::Response::new(Box::pin(profile)));
-                }
+        if let Some((dst, profile)) = calls.pop_front() {
+            tracing::debug!(?dst, "checking next call");
+            if &dst == req.get_ref() {
+                tracing::info!(?dst, ?profile, "found request");
+                return Ok(grpc::Response::new(Box::pin(profile)));
+            }
 
-                tracing::warn!(?dst, ?profile, "request does not match");
-                calls.push_front((dst, profile));
-                return Err(grpc_unexpected_request());
+            tracing::warn!(?dst, ?profile, "request does not match");
+            calls.push_front((dst, profile));
+            return Err(grpc_unexpected_request());
         }
 
         Err(grpc_no_results())
