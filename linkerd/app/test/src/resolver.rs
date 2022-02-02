@@ -9,11 +9,12 @@ use linkerd_app_core::{
     svc::Param,
     Addr, Error, NameAddr,
 };
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc,
 };
 use std::task::{Context, Poll};
 use tokio::sync::{mpsc, watch};
@@ -100,7 +101,6 @@ impl<E> Dst<E> {
         self.state
             .endpoints
             .lock()
-            .unwrap()
             .insert(addr.into(), UnboundedReceiverStream::new(rx));
         DstSender(tx)
     }
@@ -130,7 +130,6 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
             .state
             .endpoints
             .lock()
-            .unwrap()
             .remove(&addr)
             .map(|x| {
                 tracing::trace!("found endpoint for target");
@@ -157,28 +156,22 @@ impl Profiles {
         self.state
             .endpoints
             .lock()
-            .unwrap()
             .insert(addr.into(), Some(rx.into()));
         tx
     }
 
     pub fn profile(self, addr: impl Into<Addr>, profile: Profile) -> Self {
         let (tx, rx) = watch::channel(profile);
-        self.state.unused_senders.lock().unwrap().push(Box::new(tx));
+        self.state.unused_senders.lock().push(Box::new(tx));
         self.state
             .endpoints
             .lock()
-            .unwrap()
             .insert(addr.into(), Some(rx.into()));
         self
     }
 
     pub fn no_profile(self, addr: impl Into<Addr>) -> Self {
-        self.state
-            .endpoints
-            .lock()
-            .unwrap()
-            .insert(addr.into(), None);
+        self.state.endpoints.lock().insert(addr.into(), None);
         self
     }
 }
@@ -201,7 +194,6 @@ impl<T: Param<profiles::LookupAddr>> tower::Service<T> for Profiles {
             .state
             .endpoints
             .lock()
-            .unwrap()
             .remove(&addr)
             .map(|x| {
                 tracing::trace!("found endpoint for addr");
@@ -259,7 +251,7 @@ impl<E> DstSender<E> {
 impl<A, E> Handle<A, E> {
     /// Returns `true` if all configured endpoints were resolved exactly once.
     pub fn is_empty(&self) -> bool {
-        self.0.endpoints.lock().unwrap().is_empty()
+        self.0.endpoints.lock().is_empty()
     }
 
     /// Returns `true` if only the configured endpoints were resolved.

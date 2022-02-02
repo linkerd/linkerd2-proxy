@@ -14,8 +14,8 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
-    time::Instant,
 };
+use tokio::time::Instant;
 
 /// Wraps services to record metrics.
 pub type NewHttpMetrics<N, K, C, Class, S> =

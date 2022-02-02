@@ -3,7 +3,12 @@
 //! The inbound proxy is responsible for terminating traffic from other network
 //! endpoints inbound to the local application.
 
-#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_method,
+    clippy::disallowed_type
+)]
 #![forbid(unsafe_code)]
 
 mod accept;

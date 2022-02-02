@@ -6,12 +6,8 @@ use super::Report;
 use linkerd_http_classify::ClassifyResponse;
 use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram, LastUpdate, NewMetrics};
 use linkerd_stack::{self as svc, layer};
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    hash::Hash,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, fmt::Debug, hash::Hash};
+use tokio::time::{Duration, Instant};
 
 type Registry<T, C> = super::Registry<T, Metrics<C>>;
 
@@ -115,7 +111,7 @@ mod tests {
     fn expiry() {
         use linkerd_metrics::FmtLabels;
         use std::fmt;
-        use std::time::{Duration, Instant};
+        use tokio::time::{Duration, Instant};
 
         #[derive(Clone, Debug, Hash, Eq, PartialEq)]
         struct Target(usize);

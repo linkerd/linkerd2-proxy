@@ -1,4 +1,5 @@
-#![cfg(test)]
+#![deny(warnings, clippy::disallowed_method, clippy::disallowed_type)]
+#![forbid(unsafe_code)]
 
 // These are basically integration tests for the `connection` submodule, but
 // they cannot be "real" integration tests because `connection` isn't a public

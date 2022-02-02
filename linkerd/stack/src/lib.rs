@@ -1,6 +1,11 @@
 //! Utilities for composing Tower Services.
 
-#![deny(warnings, rust_2018_idioms, clippy::disallowed_method)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_method,
+    clippy::disallowed_type
+)]
 #![forbid(unsafe_code)]
 
 mod arc_new_service;

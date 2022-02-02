@@ -64,7 +64,8 @@ async fn h2_exercise_goaways_connections() {
 
 #[tokio::test]
 async fn http1_closes_idle_connections() {
-    use std::sync::{Arc, Mutex};
+    use parking_lot::Mutex;
+    use std::sync::Arc;
     let _trace = trace_init();
 
     let (shdn, rx) = shutdown_signal();
@@ -77,11 +78,7 @@ async fn http1_closes_idle_connections() {
         .route_fn("/", move |_req| {
             // Trigger a shutdown signal while the request is made
             // but a response isn't returned yet.
-            shdn.lock()
-                .unwrap()
-                .take()
-                .expect("only 1 request")
-                .signal();
+            shdn.lock().take().expect("only 1 request").signal();
             Response::builder().body(body.clone()).unwrap()
         })
         .run()

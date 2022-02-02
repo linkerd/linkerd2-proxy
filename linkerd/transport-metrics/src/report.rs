@@ -4,12 +4,8 @@ use super::{
 };
 use linkerd_metrics::{FmtLabels, FmtMetric, FmtMetrics, Metric};
 use parking_lot::Mutex;
-use std::{
-    fmt,
-    hash::Hash,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{fmt, hash::Hash, sync::Arc};
+use tokio::time::{Duration, Instant};
 
 /// Implements `FmtMetrics` to render prometheus-formatted metrics for all transports.
 #[derive(Clone, Debug)]
