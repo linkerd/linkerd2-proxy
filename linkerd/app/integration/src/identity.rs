@@ -1,9 +1,10 @@
 use super::*;
+use parking_lot::Mutex;
 use std::{
     collections::VecDeque,
     fs, io,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -206,7 +207,7 @@ impl Controller {
                 .map_err(|e| grpc::Status::new(grpc::Code::Internal, format!("{}", e)));
             Box::pin(fut)
         });
-        self.expect_calls.lock().unwrap().push_back(func);
+        self.expect_calls.lock().push_back(func);
         self
     }
 
@@ -230,7 +231,6 @@ impl pb::identity_server::Identity for Controller {
         let f = self
             .expect_calls
             .lock()
-            .unwrap()
             .pop_front()
             .map(|mut f| f(req.into_inner()));
         if let Some(f) = f {

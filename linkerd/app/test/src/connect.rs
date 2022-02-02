@@ -2,13 +2,14 @@ use linkerd_app_core::{
     svc::{Param, Service},
     transport::{ClientAddr, Local, Remote, ServerAddr},
 };
+use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     fmt,
     future::Future,
     net::SocketAddr,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
     task::{Context, Poll},
 };
 use tracing::instrument::{Instrument, Instrumented};
@@ -48,7 +49,7 @@ where
         let span = tracing::info_span!("connect", %addr);
         let f = span.in_scope(|| {
             tracing::trace!("connecting...");
-            let mut endpoints = self.endpoints.lock().unwrap();
+            let mut endpoints = self.endpoints.lock();
             match endpoints.get_mut(&addr) {
                 Some(f) => (f)(target),
                 None => panic!(
@@ -95,7 +96,6 @@ impl<E: fmt::Debug> Connect<E> {
     ) -> Self {
         self.endpoints
             .lock()
-            .unwrap()
             .insert(endpoint.into(), on_connect.into());
         self
     }
@@ -105,7 +105,7 @@ impl<E: fmt::Debug> Connect<E> {
         endpoint: impl Into<SocketAddr>,
         mut on_connect: impl (FnMut(E) -> io::Result<io::BoxedIo>) + Send + 'static,
     ) -> Self {
-        self.endpoints.lock().unwrap().insert(
+        self.endpoints.lock().insert(
             endpoint.into(),
             Box::new(move |endpoint| {
                 let conn = on_connect(endpoint);

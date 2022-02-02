@@ -917,6 +917,7 @@ dependencies = [
  "linkerd-metrics",
  "linkerd-tracing",
  "linkerd2-proxy-api",
+ "parking_lot 0.12.0",
  "regex",
  "rustls-pemfile",
  "socket2 0.4.4",
@@ -968,6 +969,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-identity",
  "linkerd-io",
+ "parking_lot 0.12.0",
  "regex",
  "thiserror",
  "tokio",
@@ -1090,6 +1092,7 @@ dependencies = [
  "linkerd-tls",
  "linkerd-tracing",
  "pin-project",
+ "tokio",
  "tracing",
 ]
 
@@ -1530,6 +1533,7 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-tracing",
+ "parking_lot 0.12.0",
  "pin-project",
  "thiserror",
  "tokio",

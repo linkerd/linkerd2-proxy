@@ -3,10 +3,11 @@ use super::*;
 use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
 use linkerd_app_core::proxy::http::trace;
+use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::ops::{Bound, RangeBounds};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic as grpc;
@@ -86,7 +87,6 @@ impl Controller {
         };
         self.expect_dst_calls
             .lock()
-            .unwrap()
             .push_back(Dst::Call(dst, Ok(rx)));
         DstSender(tx)
     }
@@ -108,12 +108,11 @@ impl Controller {
         };
         self.expect_dst_calls
             .lock()
-            .unwrap()
             .push_back(Dst::Call(dst, Err(status)));
     }
 
     pub fn no_more_destinations(&self) {
-        self.expect_dst_calls.lock().unwrap().push_back(Dst::Done);
+        self.expect_dst_calls.lock().push_back(Dst::Done);
     }
 
     pub async fn delay_listen<F>(self, f: F) -> Listening
@@ -148,10 +147,7 @@ impl Controller {
             path,
             ..Default::default()
         };
-        self.expect_profile_calls
-            .lock()
-            .unwrap()
-            .push_back((dst, rx));
+        self.expect_profile_calls.lock().push_back((dst, rx));
         ProfileSender(tx)
     }
 
@@ -232,7 +228,7 @@ impl pb::destination_server::Destination for Controller {
         let _e = span.enter();
         tracing::debug!(request = ?req.get_ref(), "received");
 
-        if let Ok(mut calls) = self.expect_dst_calls.lock() {
+        let mut calls = self.expect_dst_calls.lock();
             if self.unordered {
                 let mut calls_next: VecDeque<Dst> = VecDeque::new();
                 if calls.is_empty() {
@@ -278,7 +274,6 @@ impl pb::destination_server::Destination for Controller {
                 }
                 _ => {}
             }
-        }
 
         Err(grpc_no_results())
     }
@@ -296,7 +291,7 @@ impl pb::destination_server::Destination for Controller {
         );
         let _e = span.enter();
         tracing::debug!(request = ?req.get_ref(), "received");
-        if let Ok(mut calls) = self.expect_profile_calls.lock() {
+        let mut calls = self.expect_profile_calls.lock();
             if let Some((dst, profile)) = calls.pop_front() {
                 tracing::debug!(?dst, "checking next call");
                 if &dst == req.get_ref() {
@@ -307,7 +302,6 @@ impl pb::destination_server::Destination for Controller {
                 tracing::warn!(?dst, ?profile, "request does not match");
                 calls.push_front((dst, profile));
                 return Err(grpc_unexpected_request());
-            }
         }
 
         Err(grpc_no_results())

@@ -16,4 +16,5 @@ linkerd-identity = { path = "../identity" }
 linkerd-tls = { path = "../tls" }
 linkerd-proxy-transport = { path = "../proxy/transport" }
 linkerd-tracing = { path = "../tracing" }
+tokio = { version = "1", features = ["time"] }
 tracing = "0.1.19"

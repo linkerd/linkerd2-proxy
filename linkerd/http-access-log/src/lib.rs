@@ -1,4 +1,9 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_method,
+    clippy::disallowed_type
+)]
 #![forbid(unsafe_code)]
 
 use futures_core::TryFuture;
@@ -13,9 +18,10 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
 use svc::{NewService, Param};
+use tokio::time::Instant;
 use tracing::{field, span, Level, Span};
 
 #[derive(Clone, Debug)]
@@ -182,8 +188,9 @@ where
         };
 
         let now = Instant::now();
-        let total_ns = now.duration_since(data.start).as_nanos();
-        let processing_ns = (now.duration_since(poll_start) + data.processing).as_nanos();
+        let total_ns = now.saturating_duration_since(data.start).as_nanos();
+        let processing_ns =
+            (now.saturating_duration_since(poll_start) + data.processing).as_nanos();
 
         let span = &data.span;
 
