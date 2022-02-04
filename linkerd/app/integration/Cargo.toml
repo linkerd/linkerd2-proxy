@@ -37,7 +37,7 @@ tokio-stream = { version = "0.1.8", features = ["sync"] }
 tokio-rustls = "0.22"
 tower = { version = "0.4.11", default-features = false }
 tonic = { version = "0.6", default-features = false }
-tracing = "0.1.29"
+tracing = "0.1"
 webpki = "0.21"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 

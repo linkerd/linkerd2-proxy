@@ -19,8 +19,8 @@ linkerd-stack = { path = "../stack" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "time"] }
 tokio-rustls = "0.22"
-tower = "0.4.9"
-tracing = "0.1.29"
+tower = "0.4"
+tracing = "0.1"
 webpki = "0.21"
 untrusted = "0.7"
 
