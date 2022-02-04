@@ -63,7 +63,7 @@ thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}
 tokio-stream = { version = "0.1.8", features = ["time"] }
 tonic = { version = "0.6", default-features = false, features = ["prost"] }
-tracing = "0.1.29"
+tracing = "0.1.30"
 parking_lot = "0.12"
 pin-project = "1"
 

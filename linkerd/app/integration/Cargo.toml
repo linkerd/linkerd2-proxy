@@ -40,7 +40,7 @@ tokio-rustls = "0.23.2"
 rustls-pemfile = "0.2.1"
 tower = { version = "0.4.11", default-features = false }
 tonic = { version = "0.6", default-features = false }
-tracing = "0.1.29"
+tracing = "0.1.30"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 
 [dev-dependencies]
