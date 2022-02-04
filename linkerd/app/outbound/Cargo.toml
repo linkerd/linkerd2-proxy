@@ -27,7 +27,7 @@ parking_lot = "0.12"
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
 tower = { version = "0.4.11", features = ["util"] }
-tracing = "0.1.29"
+tracing = "0.1.30"
 pin-project = "1"
 
 [dev-dependencies]

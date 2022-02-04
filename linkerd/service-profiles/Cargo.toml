@@ -33,7 +33,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { version = "0.6", default-features = false }
 tower = { version = "0.4.11", features = [ "ready-cache", "retry", "util"] }
 thiserror = "1"
-tracing = "0.1.29"
+tracing = "0.1.30"
 pin-project = "1"
 
 [dev-dependencies]

@@ -13,7 +13,7 @@ http-body = "0.4"
 http = "0.2"
 linkerd-error = { path = "../error" }
 parking_lot = "0.12"
-tracing = "0.1.29"
+tracing = "0.1.30"
 thiserror = "1"
 
 [dev-dependencies]
