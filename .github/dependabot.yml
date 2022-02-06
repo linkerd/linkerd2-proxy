@@ -10,6 +10,16 @@ updates:
       timezone: "UTC"
     allow:
       - dependency-type: "all"
+    ignore:
+      - dependency-name: "futures-channel"
+      - dependency-name: "futures-core"
+      - dependency-name: "futures-io"
+      - dependency-name: "futures-sink"
+      - dependency-name: "futures-task"
+      - dependency-name: "futures-util"
+      - dependency-name: "prost-derive"
+      - dependency-name: "tracing-attributes"
+      - dependency-name: "tracing-core"
 
   - package-ecosystem: cargo
     directory: /linkerd/addr/fuzz
