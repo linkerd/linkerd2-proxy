@@ -19,7 +19,7 @@ futures = { version = "0.3", default-features = false }
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
-httparse = "1.5"
+httparse = "1.6"
 hyper = { version = "0.14.16", features = ["client", "http1", "http2", "server", "stream", "runtime"] }
 hyper-balance = { path = "../../../hyper-balance" }
 linkerd-detect = { path = "../../detect" }
