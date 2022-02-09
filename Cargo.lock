@@ -569,7 +569,7 @@ dependencies = [
  "httpdate",
  "itoa 0.4.8",
  "pin-project-lite",
- "socket2 0.4.4",
+ "socket2",
  "tokio",
  "tower-service",
  "tracing",
@@ -633,11 +633,11 @@ dependencies = [
 
 [[package]]
 name = "ipconfig"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7e2f18aece9709094573a9f24f483c4f65caa4298e2f7ae1b71cc65d853fad7"
+checksum = "723519edce41262b05d4143ceb95050e4c614f483e78e9fd9e39a8275a84ad98"
 dependencies = [
- "socket2 0.3.19",
+ "socket2",
  "widestring",
  "winapi",
  "winreg",
@@ -920,7 +920,7 @@ dependencies = [
  "parking_lot 0.12.0",
  "regex",
  "rustls-pemfile",
- "socket2 0.4.4",
+ "socket2",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
@@ -1445,7 +1445,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
- "socket2 0.4.4",
+ "socket2",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -2312,17 +2312,6 @@ checksum = "f2dd574626839106c320a323308629dcb1acfc96e32a8cba364ddc61ac23ee83"
 
 [[package]]
 name = "socket2"
-version = "0.3.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "122e570113d28d773067fab24266b66753f6ea915758651696b6e35e49f88d6e"
-dependencies = [
- "cfg-if",
- "libc",
- "winapi",
-]
-
-[[package]]
-name = "socket2"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66d72b759436ae32898a2af0a14218dbf55efde3feeb170eb623637db85ee1e0"
@@ -2686,9 +2675,9 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-proto"
-version = "0.21.0-alpha.4"
+version = "0.21.0-alpha.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2e43c627e8301d45629cdfaf63e2e0c57305a07e9f1ea48208fd262ba2d87eb"
+checksum = "df4689a56fb36e79b76d13f52056c116f1f014afb1bd330162f2d9dc08ef5405"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -2711,9 +2700,9 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-resolver"
-version = "0.21.0-alpha.4"
+version = "0.21.0-alpha.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3aec2bf8a00c7dc8afbf61e7e7fc1f419c58af67d29c5857eb93fe089a1fe089"
+checksum = "8f2ce3a81fcddc72de8da5852c4ea0a5507bd129c0aa20a2354a1b1e51d6813a"
 dependencies = [
  "cfg-if",
  "futures-util",
@@ -2721,7 +2710,7 @@ dependencies = [
  "lazy_static",
  "log",
  "lru-cache",
- "parking_lot 0.11.2",
+ "parking_lot 0.12.0",
  "resolv-conf",
  "smallvec",
  "thiserror",
@@ -2894,9 +2883,9 @@ dependencies = [
 
 [[package]]
 name = "widestring"
-version = "0.4.3"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c168940144dd21fd8046987c16a46a33d5fc84eec29ef9dcddc2ac9e31526b7c"
+checksum = "17882f045410753661207383517a6f62ec3dbeb6a4ed2acce01f0728238d1983"
 
 [[package]]
 name = "winapi"
@@ -2965,9 +2954,9 @@ checksum = "11d95421d9ed3672c280884da53201a5c46b7b2765ca6faf34b0d71cf34a3561"
 
 [[package]]
 name = "winreg"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2986deb581c4fe11b621998a5e53361efe6b48a151178d0cd9eeffa4dc6acc9"
+checksum = "0120db82e8a1e0b9fb3345a539c478767c0048d842860994d96113d5b667bd69"
 dependencies = [
  "winapi",
 ]
