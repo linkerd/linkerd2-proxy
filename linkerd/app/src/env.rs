@@ -547,10 +547,23 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 Some(addr) => {
                     // If the inbound is proxy is configured to discover policies, then load the set
                     // of all known inbound ports to be discovered during initialization.
-                    let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
-                        Some(ports) => ports,
+                    let mut ports = match strings.get(ENV_INBOUND_PORTS)? {
+                        Some(s) => {
+                            if s.is_empty() {
+                                warn!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
+                                Default::default()
+                            } else {
+                                parse_port_set(&s).map_err(|parse_error| {
+                                    error!(
+                                        "{}={:?} is not valid: {:?}",
+                                        ENV_INBOUND_PORTS, s, parse_error
+                                    );
+                                    EnvError::InvalidEnvVar
+                                })?
+                            }
+                        }
                         None => {
-                            error!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
+                            warn!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
                             Default::default()
                         }
                     };
