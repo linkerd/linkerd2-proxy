@@ -1,4 +1,23 @@
-FROM docker.io/rust:1.56.1-bullseye
+ARG RUST_VERSION=1.56.1
+
+FROM docker.io/rust:${RUST_VERSION}-bullseye as kubectl
+ARG KUBECTL_VERSION=v1.23.2
+RUN curl --proto '=https' --tlsv1.3 -vsSfLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+    && chmod 755 /usr/local/bin/kubectl
+
+FROM docker.io/rust:${RUST_VERSION}-bullseye as k3d
+RUN curl --proto '=https' --tlsv1.3 -vsSfL https://raw.githubusercontent.com/rancher/k3d/main/install.sh  | bash
+
+FROM docker.io/rust:${RUST_VERSION}-bullseye as cargo-deny
+ARG CARGO_DENY_VERSION=0.11.1
+RUN curl --proto '=https' --tlsv1.3 -vsSfL "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    | tar zvxf - --strip-components=1 -C /usr/local/bin "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
+
+#
+# Main image
+#
+FROM docker.io/rust:${RUST_VERSION}-bullseye
+RUN rustup component add clippy rustfmt rust-analysis rust-std
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt update && apt upgrade -y
@@ -6,11 +25,14 @@ RUN apt install -y --no-install-recommends \
     clang \
     cmake \
     golang \
+    jo \
     jq \
-    lldb \
+    locales \
     lsb-release \
     sudo \
     time
+
+RUN sed -i 's/^# *\(en_US.UTF-8\)/\1/' /etc/locale.gen && locale-gen
 
 ARG USER=code
 ARG USER_UID=1000
@@ -28,23 +50,13 @@ RUN curl --proto '=https' --tlsv1.3 -vsSfL https://raw.githubusercontent.com/mic
 
 USER $USER
 ENV HOME=/home/$USER
-RUN mkdir -p $HOME/bin
-ENV PATH=$HOME/bin:$PATH
 
-ARG KUBECTL_VERSION=v1.23.2
-RUN curl --proto '=https' --tlsv1.3 -vsSfLo $HOME/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
-    && chmod 755 $HOME/bin/kubectl
-RUN curl --proto '=https' --tlsv1.3 -vsSfL https://raw.githubusercontent.com/rancher/k3d/main/install.sh \
-    | USE_SUDO=false K3D_INSTALL_DIR=$HOME/bin bash
+RUN curl --proto '=https' --tlsv1.3 -vsSfL https://run.linkerd.io/install-edge | sh
+ENV PATH=$HOME/.linkerd2/bin:$PATH
 
-RUN rustup component add clippy rustfmt
-
-ARG CARGO_DENY_VERSION=0.11.0
-RUN curl --proto '=https' --tlsv1.3 -vsSfL "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-    | tar zvxf - --strip-components=1 -C $HOME/bin "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
-
-RUN curl --proto '=https' --tlsv1.3 -vsSfL https://run.linkerd.io/install-edge | sh \
-    && ln -s $(readlink ~/.linkerd2/bin/linkerd) ~/bin/linkerd
+COPY --from=cargo-deny /usr/local/bin/cargo-deny /usr/local/bin/cargo-deny
+COPY --from=k3d /usr/local/bin/k3d /usr/local/bin/k3d
+COPY --from=kubectl /usr/local/bin/kubectl /usr/local/bin/kubectl
 
 ENTRYPOINT ["/usr/local/share/docker-init.sh"]
 CMD ["sleep", "infinity"]
