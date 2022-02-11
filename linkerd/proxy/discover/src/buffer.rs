@@ -136,7 +136,7 @@ where
             // The watchdog bounds the amount of time that the send buffer stays
             // full. This is designed to release the `discover` resources, i.e.
             // if we expect that the receiver has leaked.
-            match this.tx.poll_send_done(cx) {
+            match this.tx.poll_reserve(cx) {
                 Poll::Ready(Ok(())) => {
                     this.watchdog.as_mut().set(None);
                 }
@@ -181,7 +181,7 @@ where
                 }
             };
 
-            this.tx.start_send(up).ok().expect("sender must be ready");
+            this.tx.send_item(up).ok().expect("sender must be ready");
         }
     }
 }
