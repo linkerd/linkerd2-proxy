@@ -13,6 +13,11 @@ ARG CARGO_DENY_VERSION=0.11.1
 RUN curl --proto '=https' --tlsv1.3 -vsSfL "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
     | tar zvxf - --strip-components=1 -C /usr/local/bin "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
 
+FROM docker.io/rust:${RUST_VERSION}-bullseye as yq
+ARG YQ_VERSION=v4.2.0
+RUN curl --proto '=https' --tlsv1.3 -vsSfLo /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+    && chmod +x /usr/local/bin/yq
+
 #
 # Main image
 #
@@ -57,6 +62,7 @@ ENV PATH=$HOME/.linkerd2/bin:$PATH
 COPY --from=cargo-deny /usr/local/bin/cargo-deny /usr/local/bin/cargo-deny
 COPY --from=k3d /usr/local/bin/k3d /usr/local/bin/k3d
 COPY --from=kubectl /usr/local/bin/kubectl /usr/local/bin/kubectl
+COPY --from=yq /usr/local/bin/yq /usr/local/bin/yq
 
 ENTRYPOINT ["/usr/local/share/docker-init.sh"]
 CMD ["sleep", "infinity"]
