@@ -1,0 +1,52 @@
+# Each job should typically run in under 5 minutes.
+name: lint
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - "**/*.rs"
+      - .github/workflows/lint.yml
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  clippy:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.1-buster
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: rustup component add clippy
+      - run: cargo clippy --all --exclude=linkerd-meshtls-boring
+
+  fmt:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.1-buster
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: rustup component add rustfmt
+      - run: make check-fmt
+
+  docs:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.1-buster
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: |
+          cargo doc --all --no-deps \
+            --exclude=linkerd-meshtls \
+            --exclude=linkerd-meshtls-boring \
+            --exclude=linkerd-meshtls-rustls
+
