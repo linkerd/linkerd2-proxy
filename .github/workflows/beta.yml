@@ -1,0 +1,31 @@
+# Builds the proxy on the beta toolchain to help catch Rust regressions before they bite us hit stable.
+name: beta
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/beta.yml
+  schedule:
+    # Run weekly on wednesday @ midnightish Pacific-time.
+    - cron: "30 7 * * 3"
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.1-buster
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: rustup toolchain install --profile=minimal beta
+      - run: cargo +beta build --release -p linkerd2-proxy
