@@ -1,0 +1,59 @@
+# Check each crate independently. Helps to catch dependency issues.
+#
+# Code changes are exercised via the `test` and `lint` workflows. This workflow just checks that
+# each crate's `Cargo.toml` is configured sufficiently so that each crate can be compiled on its
+# own.
+name: check-each
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - .github/workflows/check-each.yml
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  DEBIAN_FRONTEND: noninteractive
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  enumerate:
+    timeout-minutes: 3
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.1-buster
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: apt update && apt install -y jq
+      - run: cargo fetch
+      - name: list crates
+        id: list-crates
+        run: |
+          crates=$(cargo metadata --frozen --format-version=1 \
+            | jq -cr "[.packages[] | select(.manifest_path | startswith(\"$PWD\")) | .name]")
+          echo "::set-output name=crates::$crates"
+    outputs:
+        crates: ${{ steps.list-crates.outputs.crates }}`
+
+  check:
+    needs: enumerate
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.1-buster
+    strategy:
+      matrix:
+        crate: ${{ fromJson(needs.enumerate.outputs.crates) }}
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: cargo fetch
+      - name: install meshtls-boring build deps
+        if: matrix.crate == 'linkerd-meshtls-boring'
+        run: apt update && apt install -y clang cmake
+      - run: cargo check -p ${{ matrix.crate }} --frozen --all-targets
+

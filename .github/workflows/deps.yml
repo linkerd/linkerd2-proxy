@@ -1,0 +1,41 @@
+# Audits dependencies with cargo-deny
+name: deps
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - .github/workflows/deps.yml
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  # Check for security advisories.
+  #
+  # Failures are not fatal, since issues are opened in the linkerd2 repo via rustsecbot.
+  advisories:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+    - uses: EmbarkStudios/cargo-deny-action@4340bbf5bc9e7034fae7c4857e9ab87cab35c905
+      with:
+        command: check advisories
+
+  # Audit licenses, unreleased crates, and unexpected duplicate versions.
+  bans:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+    - uses: EmbarkStudios/cargo-deny-action@4340bbf5bc9e7034fae7c4857e9ab87cab35c905
+      with:
+        command: check bans licenses sources

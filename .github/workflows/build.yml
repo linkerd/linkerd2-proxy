@@ -1,0 +1,30 @@
+# Builds the proxy as if it were a release.
+name: build
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      # We don't run this workflow on dependency changes. It's mainly intended to determine how long
+      # a release build takes given Linkerd changes. We don't really need to run this on every
+      # dependabot change, though.
+      - "**/*.rs"
+      - .github/workflows/build.yml
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  release:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - env:
+          CARGO_RELEASE: "1"
+        run: make build

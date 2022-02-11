@@ -40,9 +40,9 @@ checksum = "94a45b455c14666b85fc40a019e8ab9eb75e3a124e05494f5397122bc9eb06e0"
 
 [[package]]
 name = "arbitrary"
-version = "1.0.3"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "510c76ecefdceada737ea728f4f9a84bd2e1ef29f1ba555e560940fe279954de"
+checksum = "c38b6b6b79f671c25e1a3e785b7b82d7562ffc9cd3efdc98627e5668a2472490"
 dependencies = [
  "derive_arbitrary",
 ]
@@ -225,9 +225,9 @@ dependencies = [
 
 [[package]]
 name = "derive_arbitrary"
-version = "1.0.2"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b24629208e87a2d8b396ff43b15c4afb0a69cea3fbbaa9ed9b92b7c02f0aed73"
+checksum = "98e23c06c035dac87bd802d98f368df73a7f2cb05a66ffbd1f377e821fac4af9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -457,7 +457,7 @@ dependencies = [
  "indexmap",
  "slab",
  "tokio",
- "tokio-util",
+ "tokio-util 0.6.9",
  "tracing",
 ]
 
@@ -520,7 +520,7 @@ checksum = "31f4c6746584866f0feabcc69893c5b51beef3831656a968ed7ae254cdc4fd03"
 dependencies = [
  "bytes",
  "fnv",
- "itoa 1.0.1",
+ "itoa",
 ]
 
 [[package]]
@@ -554,9 +554,9 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "hyper"
-version = "0.14.16"
+version = "0.14.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7ec3e62bdc98a2f0393a5048e4c30ef659440ea6e0e572965103e72bd836f55"
+checksum = "043f0e083e9901b6cc658a77d1eb86f4fc650bbb977a4337dd63192826aa85dd"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -567,7 +567,7 @@ dependencies = [
  "http-body",
  "httparse",
  "httpdate",
- "itoa 0.4.8",
+ "itoa",
  "pin-project-lite",
  "socket2",
  "tokio",
@@ -657,12 +657,6 @@ checksum = "a9a9d19fa1e79b6215ff29b9d6880b706147f16e9b1dbb1e4e5947b5b02bc5e3"
 dependencies = [
  "either",
 ]
-
-[[package]]
-name = "itoa"
-version = "0.4.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b71991ff56294aa922b450139ee08b3bfc70982c6b2c7562771375cf73542dd4"
 
 [[package]]
 name = "itoa"
@@ -1175,7 +1169,7 @@ dependencies = [
  "pin-project",
  "tokio",
  "tokio-test",
- "tokio-util",
+ "tokio-util 0.7.0",
 ]
 
 [[package]]
@@ -1310,7 +1304,7 @@ dependencies = [
  "linkerd-stack",
  "pin-project",
  "tokio",
- "tokio-util",
+ "tokio-util 0.7.0",
  "tower",
  "tracing",
 ]
@@ -1826,9 +1820,9 @@ dependencies = [
 
 [[package]]
 name = "ntapi"
-version = "0.3.6"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f6bb902e437b6d86e03cce10a7e2af662292c5dfef23b65899ea3ac9354ad44"
+checksum = "c28774a7fd2fbb4f0babd8237ce554b73af68021b5f695a3cebd6c59bac0980f"
 dependencies = [
  "winapi",
 ]
@@ -2269,7 +2263,7 @@ version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d23c1ba4cf0efd44be32017709280b32d1cea5c3f1275c3b6d9e8bc54f758085"
 dependencies = [
- "itoa 1.0.1",
+ "itoa",
  "ryu",
  "serde",
 ]
@@ -2466,7 +2460,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
- "tokio-util",
+ "tokio-util 0.6.9",
 ]
 
 [[package]]
@@ -2487,6 +2481,20 @@ name = "tokio-util"
 version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e99e1983e5d376cd8eb4b66604d2e99e79f5bd988c3055891dcd8c9e2604cc0"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "futures-sink",
+ "log",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-util"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64910e1b9c1901aaf5375561e35b9c057d95ff41a44ede043a03e09279eabaf1"
 dependencies = [
  "bytes",
  "futures-core",
@@ -2519,7 +2527,7 @@ dependencies = [
  "prost-derive",
  "tokio",
  "tokio-stream",
- "tokio-util",
+ "tokio-util 0.6.9",
  "tower",
  "tower-layer",
  "tower-service",
@@ -2554,7 +2562,7 @@ dependencies = [
  "slab",
  "tokio",
  "tokio-stream",
- "tokio-util",
+ "tokio-util 0.6.9",
  "tower-layer",
  "tower-service",
  "tracing",

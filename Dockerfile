@@ -17,11 +17,12 @@
 #     :; docker buildx build . --load
 
 # Please make changes via update-rust-version.sh
-ARG RUST_IMAGE=rust:1.56.1-buster
+ARG RUST_VERSION=1.56.1
+ARG RUST_IMAGE=rust:${RUST_VERSION}-buster
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
-ARG RUNTIME_IMAGE=ghcr.io/linkerd/proxy:edge-21.4.5
+ARG RUNTIME_IMAGE=ghcr.io/linkerd/proxy:edge-22.2.1
 
 # Build the proxy, leveraging (new, experimental) cache mounting.
 #

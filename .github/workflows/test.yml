@@ -1,58 +1,27 @@
-# Each job should typically run in under 5 minutes.
-name: fast
-
-on:
-  pull_request: {}
-
-env:
-  CARGO_INCREMENTAL: 0
-  CARGO_NET_RETRY: 10
-  RUST_BACKTRACE: short
-  RUSTUP_MAX_RETRIES: 10
+# Runs tests that complete relatively quickly.
+name: test
 
 permissions:
   contents: read
 
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - "**/Cargo.toml"
+      - "**/*.rs"
+      - .github/workflows/test.yml
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  DEBIAN_FRONTEND: noninteractive
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
 jobs:
-
-  # Linting
-  check-clippy:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.56.1-buster
-    steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: rustup component add clippy
-      - run: cargo clippy --all --exclude=linkerd-meshtls-boring
-
-  # Enforce automated formatting.
-  check-fmt:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.56.1-buster
-    steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: rustup component add rustfmt
-      - run: make check-fmt
-
-  # Generate docs.
-  check-docs:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.56.1-buster
-    steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: |
-          cargo doc --all --no-deps \
-            --exclude=linkerd-meshtls \
-            --exclude=linkerd-meshtls-boring \
-            --exclude=linkerd-meshtls-rustls
-
   # Test the meshtls backends.
-  test-meshtls:
+  meshtls:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
@@ -86,7 +55,7 @@ jobs:
         run: cargo clippy --features=boring --all-targets
 
   # Run non-integration tests. This should be quick.
-  test-unit:
+  unit:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
@@ -121,27 +90,3 @@ jobs:
             --exclude=linkerd-meshtls-boring \
             --exclude=linkerd-meshtls-rustls \
             --exclude=linkerd2-proxy
-
-  # Check for security advisories.
-  #
-  # TODO(ver): This should open issues against the linkerd2 repo (and be run in a cron).
-  deps-advisories:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    # Prevent sudden announcement of a new advisory from failing Ci.
-    continue-on-error: true
-    steps:
-    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-    - uses: EmbarkStudios/cargo-deny-action@2a55392931cddc0ae1d7397515fd0951d39ebaf2
-      with:
-        command: check advisories
-
-  # Audit licenses, unreleased crates, and unexpected duplicate versions.
-  deps-bans:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-    - uses: EmbarkStudios/cargo-deny-action@2a55392931cddc0ae1d7397515fd0951d39ebaf2
-      with:
-        command: check bans licenses sources

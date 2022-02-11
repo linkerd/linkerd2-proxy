@@ -31,7 +31,7 @@ tracing = "0.1.30"
 pin-project = "1"
 
 [dev-dependencies]
-hyper = { version = "0.14.16", features = ["http1", "http2"] }
+hyper = { version = "0.14.17", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }

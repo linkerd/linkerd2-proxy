@@ -1,4 +1,4 @@
-name: Release
+name: release
 
 on:
   push:
@@ -68,7 +68,6 @@ jobs:
 
   release:
     needs: [package]
-    name: GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -91,7 +90,7 @@ jobs:
       - name: display structure of downloaded files
         run: ls -R artifacts
 
-      - name: release
+      - name: publish
         uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
