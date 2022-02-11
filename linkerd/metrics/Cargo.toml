@@ -15,7 +15,7 @@ test_util = []
 deflate = { version = "1.0.0", features = ["gzip"] }
 hdrhistogram = { version = "7.4", default-features = false, optional = true }
 http = "0.2"
-hyper = { version = "0.14.16", features = ["http1", "http2"] }
+hyper = { version = "0.14.17", features = ["http1", "http2"] }
 linkerd-stack = { path = "../stack", optional = true }
 parking_lot = "0.12"
 tokio = { version = "1", features = ["time"] }
