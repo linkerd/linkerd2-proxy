@@ -1,0 +1,54 @@
+# Check each crate independently. Helps to catch dependency issues.
+name: check-each
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - "**/*.rs"
+      - "**/Cargo.toml"
+      - .github/workflows/check-each.yml
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  enumerate:
+    timeout-minutes: 3
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.1-buster
+    env:
+        DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: apt update && apt install -y jq
+      - run: cargo fetch
+      - name: list crates
+        id: list-crates
+        run: |
+          echo "::set-output name=crates::$(cargo metadata --frozen --format-version=1 \
+            | jq -cr "[.packages[] | select(.manifest_path | startswith(\"$PWD\")) | .name | select(. != \"linkerd-meshtls-boring\")]")"
+    outputs:
+        crates: ${{ steps.list-crates.outputs.crates }}`
+
+  check:
+    needs: enumerate
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.1-buster
+    strategy:
+      matrix:
+        crate: ${{ fromJson(needs.enumerate.outputs.crates) }}
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - run: cargo fetch
+      - run: cargo check -p ${{ matrix.crate }} --frozen --all-targets
+
