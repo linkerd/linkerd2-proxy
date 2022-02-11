@@ -26,13 +26,13 @@ tower = { version = "0.4.11", features = ["util"] }
 tracing = "0.1.30"
 
 [target.'cfg(fuzzing)'.dependencies]
-hyper = { version = "0.14.16", features = ["http1", "http2"] }
+hyper = { version = "0.14.17", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 arbitrary = { version = "1", features = ["derive"] }
 libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
 
 [dev-dependencies]
-hyper = { version = "0.14.16", features = ["http1", "http2"] }
+hyper = { version = "0.14.17", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
