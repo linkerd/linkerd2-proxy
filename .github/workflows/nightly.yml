@@ -1,6 +1,5 @@
-# Builds the proxy on the nightly toolchain to help catch Rust regressions before they bite us hit
-# stable.
-name: nightly
+# Builds the proxy on the nightly toolchain to help catch Rust regressions before they hit beta.
+name: rust-nightly
 
 on:
   pull_request:

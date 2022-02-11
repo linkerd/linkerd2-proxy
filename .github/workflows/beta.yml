@@ -1,5 +1,5 @@
-# Builds the proxy on the beta toolchain to help catch Rust regressions before they bite us hit stable.
-name: beta
+# Builds the proxy on the beta toolchain to help catch Rust regressions before they hit stable.
+name: rust-beta
 
 on:
   pull_request:
