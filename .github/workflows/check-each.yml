@@ -27,8 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.1-buster
-    env:
-        DEBIAN_FRONTEND: noninteractive
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: apt update && apt install -y jq
