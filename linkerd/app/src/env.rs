@@ -935,8 +935,10 @@ fn parse_addr(s: &str) -> Result<Addr, ParseError> {
 
 fn parse_port_set(s: &str) -> Result<HashSet<u16>, ParseError> {
     let mut set = HashSet::new();
-    for num in s.split(',') {
-        set.insert(parse_number::<u16>(num)?);
+    if !s.is_empty() {
+        for num in s.split(',') {
+            set.insert(parse_number::<u16>(num)?);
+        }
     }
     Ok(set)
 }
