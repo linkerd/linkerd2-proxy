@@ -39,7 +39,7 @@ jobs:
             | jq -cr "[.packages[] | select(.manifest_path | startswith(\"$PWD\")) | .name]")
           echo "::set-output name=crates::$crates"
     outputs:
-        crates: ${{ steps.list-crates.outputs.crates }}`
+        crates: ${{ steps.list-crates.outputs.crates }}
 
   check:
     needs: enumerate
