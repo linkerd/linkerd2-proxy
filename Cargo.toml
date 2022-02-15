@@ -78,3 +78,7 @@ lto = true
 
 [patch.crates-io]
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.22" }
+tokio = { git = "https://github.com/tokio-rs/tokio" }
+tower = { git = "https://github.com/tower-rs/tower" }
+tower-layer = { git = "https://github.com/tower-rs/tower" }
+tower-service = { git = "https://github.com/tower-rs/tower" }

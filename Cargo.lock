@@ -1775,9 +1775,9 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "0.7.14"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8067b404fe97c70829f082dec8bcf4f71225d7eaea1d8645349cb76fa06205cc"
+checksum = "ba272f85fa0b41fc91872be579b3bbe0f56b792aa361a380eb669469f68dafb2"
 dependencies = [
  "libc",
  "log",
@@ -2382,8 +2382,7 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 [[package]]
 name = "tokio"
 version = "1.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c27a64b625de6d309e8c57716ba93021dccf1b3b5c97edd6d3dd2d2135afc0a"
+source = "git+https://github.com/tokio-rs/tokio#8fb15da8f83278a51deb5514f998062dd3d21afe"
 dependencies = [
  "bytes",
  "libc",
@@ -2391,9 +2390,10 @@ dependencies = [
  "mio",
  "num_cpus",
  "once_cell",
- "parking_lot 0.11.2",
+ "parking_lot 0.12.0",
  "pin-project-lite",
  "signal-hook-registry",
+ "socket2",
  "tokio-macros",
  "winapi",
 ]
@@ -2422,8 +2422,7 @@ dependencies = [
 [[package]]
 name = "tokio-macros"
 version = "1.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b557f72f448c511a979e2564e55d74e6c4432fc96ff4f6241bc6bded342643b7"
+source = "git+https://github.com/tokio-rs/tokio#8fb15da8f83278a51deb5514f998062dd3d21afe"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2540,8 +2539,7 @@ dependencies = [
 [[package]]
 name = "tower"
 version = "0.4.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5651b5f6860a99bd1adb59dbfe1db8beb433e73709d9032b413a77e2fb7c066a"
+source = "git+https://github.com/tower-rs/tower#386de64ab4deb23d7d38c359edf8875cf551b697"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -2551,8 +2549,7 @@ dependencies = [
  "rand",
  "slab",
  "tokio",
- "tokio-stream",
- "tokio-util 0.6.9",
+ "tokio-util 0.7.0",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -2561,14 +2558,12 @@ dependencies = [
 [[package]]
 name = "tower-layer"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "343bc9466d3fe6b0f960ef45960509f84480bf4fd96f92901afe7ff3df9d3a62"
+source = "git+https://github.com/tower-rs/tower#386de64ab4deb23d7d38c359edf8875cf551b697"
 
 [[package]]
 name = "tower-service"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "360dfd1d6d30e05fda32ace2c8c70e9c0a9da713275777f5a4dbb8a1893930c6"
+source = "git+https://github.com/tower-rs/tower#386de64ab4deb23d7d38c359edf8875cf551b697"
 
 [[package]]
 name = "tower-test"
