@@ -61,7 +61,16 @@ RUN --mount=type=cache,target=target \
 ## Install the proxy binary into the base runtime image.
 FROM $RUNTIME_IMAGE as runtime
 
+# When set, causes the proxy to remove the identity wrapper responsible for
+# CSR and key generation.
+ARG SKIP_IDENTITY_WRAPPER
+
 WORKDIR /linkerd
 COPY --from=build /out/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
 ENV LINKERD2_PROXY_LOG=warn,linkerd=info
+RUN \
+  if [ -n "$SKIP_IDENTITY_WRAPPER" ] ; then \
+    rm -f /usr/bin/linkerd2-proxy-run && \
+    ln /usr/lib/linkerd/linkerd2-proxy /usr/bin/linkerd2-proxy-run ; \
+  fi
 # Inherits the ENTRYPOINT from the runtime image.
