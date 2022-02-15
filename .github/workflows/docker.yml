@@ -16,4 +16,4 @@ jobs:
       DOCKER_BUILDKIT: "1"
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
-      - run: docker build .
+      - run: docker build . --build-arg PROXY_UNOPTIMIZED=1
