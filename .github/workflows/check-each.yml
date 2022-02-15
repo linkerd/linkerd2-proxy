@@ -23,7 +23,7 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
-  enumerate:
+  list-changed-crates:
     timeout-minutes: 3
     runs-on: ubuntu-latest
     container:
@@ -32,24 +32,60 @@ jobs:
       - run: apt update && apt install -y jq
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: cargo fetch
-      - name: list crates
-        id: list-crates
+      - uses: tj-actions/changed-files@b3b79dbb9cf4fd390105963b48346e14b4842cc1
+        id: changed-files
+        with:
+          files: |
+            - Cargo.toml
+            - "**/Cargo.toml"
+            - "**/*.rs"
+            - .github/workflows/check-each.yml
+      - name: list changed crates
+        id: list-changed
         run: |
+          files="${{ steps.changed-files.outputs.all_changed_files }}"
+          # Find the nearest Cargo.toml (except the root).
+          find_manifest() {
+            p=$(dirname "$1")
+            if [ -f "$p/Cargo.toml" ]; then
+              realpath "$p/Cargo.toml"
+            else
+              find_manifest "$p"
+            fi
+          }
+          # Build an expression to match all changed manifests.
+          manifest_expr() {
+            expr="false"
+            for file in $(echo $*) ; do
+              # If the workflow changes or root Cargo.toml changes, run checks for all crates in the repo.
+              if [ "$file" = .github/workflows/check-each.yml ] || [ "$file" = "$PWD/Cargo.toml" ]; then
+                expr="startswith(\"$PWD\")"
+                break
+              fi
+              # Otherwise, only run checks for changes to subcrates (and not the top-level crate).
+              m=$(find_manifest "$file")
+              if [ "$m" != "$PWD/Cargo.toml" ]; then
+                expr="$expr or (. == \"$m\")"
+              fi
+            done
+            echo "$expr"
+          }
+          # Get the crate names for all changed manifest direcotires
           crates=$(cargo metadata --frozen --format-version=1 \
-            | jq -cr "[.packages[] | select(.manifest_path | startswith(\"$PWD\")) | .name]")
+            | jq -cr "[.packages[] | select(.manifest_path | $(manifest_expr $files)) | .name]")
           echo "::set-output name=crates::$crates"
     outputs:
-        crates: ${{ steps.list-crates.outputs.crates }}
+      crates: ${{ steps.list-changed.outputs.crates }}
 
   check:
-    needs: enumerate
+    needs: list-changed-crates
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.1-buster
     strategy:
       matrix:
-        crate: ${{ fromJson(needs.enumerate.outputs.crates) }}
+        crate: ${{ fromJson(needs.list-changed-crates.outputs.crates) }}
     steps:
       - run: |
           curl --proto =https --tlsv1.3 -vsSfLo /usr/local/bin/cargo-action-fmt "https://github.com/olix0r/cargo-action-fmt/releases/download/release%2F${CARGO_ACTION_FMT_VERSION}/cargo-action-fmt-x86_64-unknown-linux-gnu"
