@@ -1,7 +1,16 @@
 name: fuzzers
 
 on:
-  pull_request: {}
+  # Only run on PRs that touch fuzzed crates
+  pull_request:
+    paths:
+      - 'linkerd/addr/**'
+      - 'linkerd/app/inbound/**'
+      - 'linkerd/dns/**'
+      - 'linkerd/proxy/http/**'
+      - 'linkerd/tls/**'
+      - 'linkerd/transport-header/**'
+      - .github/workflows/fuzzers.yml
 
 env:
   CARGO_INCREMENTAL: 0
@@ -13,27 +22,72 @@ permissions:
   contents: read
 
 jobs:
+  list-changed:
+    timeout-minutes: 3
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.56.1-buster
+    steps:
+      - run: apt update && apt install -y jo
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - uses: tj-actions/changed-files@b3b79dbb9cf4fd390105963b48346e14b4842cc1
+        id: changed-files
+      - name: list changed crates
+        id: list-changed
+        run: |
+          files="${{ steps.changed-files.outputs.all_changed_files }}"
+          # Find the nearest fuzzer crate, or nothing.
+          find_fuzz_dir() {
+            d=$(dirname "$1")
+            if [ "$d" = . ]; then
+              return
+            elif [ -d "$d" ] && [[ "$d" = /fuzz$ ]]; then
+              echo "$d"
+            elif [ -f "$d/fuzz/Cargo.toml" ]; then
+              echo "$d/fuzz"
+            else
+              find_fuzz_dir "$d"
+            fi
+          }
+          list_dirs() {
+            dirs=""
+            for file in $(echo $*) ; do
+              if [ "$file" = .github/workflows/fuzzers.yml ]; then
+                dirs=$(find . -type d -name fuzz)
+                break
+              fi
+              d=$(find_fuzz_dir "$file")
+              if [ -n "$d" ]; then
+                if [ -z "$dirs" ]; then
+                  dirs="$d"
+                else
+                  dirs="$dirs $d"
+                fi
+              fi
+            done
+            echo "${dirs}" | tr ' ' "\n" | sort -u
+          }
+          dirs=$(list_dirs $files)
+          echo "$dirs"
+          echo "::set-output name=dirs::$(echo "$dirs" | jo -a)"
+    outputs:
+      dirs: ${{ steps.list-changed.outputs.dirs }}
 
-  # Ensure that all of the fuzzers continue to build.
-  #
-  # This is depends on the nightly toolchain, so it may break unexpectedly.
-  fuzzers-build:
+  # Build fuzzers for any changed crates.
+  build:
+    needs: [list-changed]
     timeout-minutes: 40
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.56.1-buster
     strategy:
       matrix:
-        dir:
-          - addr
-          - app/inbound
-          - dns
-          - proxy/http
-          - tls
-          - transport-header
+        dir: ${{ fromJson(needs.list-changed.outputs.dirs) }}
     steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz
-      - working-directory: linkerd/${{matrix.dir}}/fuzz
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - working-directory: ${{matrix.dir}}
+        run: cargo +nightly fetch
+      - working-directory: ${{matrix.dir}}
         run: cargo +nightly fuzz build
