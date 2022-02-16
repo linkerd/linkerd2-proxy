@@ -10,5 +10,5 @@ publish = false
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
-tower = { version = "0.4.11", default-features = false, features = ["retry"] }
+tower = { version = "0.4.12", default-features = false, features = ["retry"] }
 tracing = "0.1.30"

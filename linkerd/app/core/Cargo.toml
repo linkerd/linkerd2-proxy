@@ -68,7 +68,7 @@ parking_lot = "0.12"
 pin-project = "1"
 
 [dependencies.tower]
-version = "0.4.11"
+version = "0.4.12"
 default-features = false
 features = [
     "buffer",
