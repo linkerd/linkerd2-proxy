@@ -25,8 +25,8 @@ linkerd-tls = { path = "../../tls" }
 parking_lot = "0.12"
 rand = { version = "0.8" }
 thiserror = "1.0"
-tokio = { version = "1", features = ["time"]}
-tower = { version = "0.4.12", default-features = false }
+tokio = { version = "1", features = ["time"] }
+tower = { version = "0.4", default-features = false }
 tonic = { version = "0.6", default-features = false }
 tracing = "0.1.30"
 pin-project = "1"

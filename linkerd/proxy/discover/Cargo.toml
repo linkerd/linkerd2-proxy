@@ -17,11 +17,11 @@ linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 tokio-util = "0.7"
-tower = { version = "0.4.12", features = ["discover"] }
+tower = { version = "0.4", features = ["discover"] }
 tracing = "0.1.30"
 pin-project = "1"
 
 [dev-dependencies]
 async-stream = "0.3"
 tokio = { version = "1", features = ["macros"] }
-tower = { version = "0.4.12", default-features = false, features = ["discover", "util"]}
+tower = { version = "0.4", default-features = false, features = ["discover", "util"]}
