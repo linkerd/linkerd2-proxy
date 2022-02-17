@@ -48,7 +48,7 @@ deny = [
     { name = "rustls", wrappers = ["tokio-rustls"] },
 ]
 skip = [
-    # Waiting on a tokio release that updates parking_lot to v0.12.
+    # waiting on tracing-subscriber
     { name = "parking_lot", version = "0.11" },
     { name = "parking_lot_core", version = "0.8" },
     # waiting on `h2` and `tower` releases that update h2 to v0.7
@@ -67,6 +67,4 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 [sources.allow-org]
 github = [
     "linkerd",
-    "tokio-rs",
-    "tower-rs",
 ]
