@@ -28,5 +28,5 @@ thiserror = "1.0"
 tokio = { version = "1", features = ["rt"] }
 tokio-stream = { version = "0.1.8", features = ["time", "sync"] }
 tonic = { version = "0.6", default-features = false, features = ["prost"] }
-tower = "0.4.11"
+tower = "0.4"
 tracing = "0.1.30"

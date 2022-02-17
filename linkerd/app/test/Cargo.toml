@@ -30,7 +30,7 @@ regex = "1"
 tokio = { version = "1", features = ["io-util", "net", "rt", "sync"] }
 tokio-test = "0.4"
 tokio-stream = { version = "0.1.8", features = ["sync"] }
-tower = { version = "0.4.11", default-features = false }
+tower = { version = "0.4", default-features = false }
 tracing = "0.1.30"
 thiserror = "1"
 

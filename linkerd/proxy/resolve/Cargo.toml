@@ -14,6 +14,6 @@ futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
 linkerd-proxy-core = { path = "../core" }
 thiserror = "1.0"
-tower = "0.4.11"
+tower = "0.4"
 tracing = "0.1"
 pin-project = "1"

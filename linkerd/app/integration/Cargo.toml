@@ -35,7 +35,7 @@ socket2 = "0.4"
 tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
 tokio-stream = { version = "0.1.8", features = ["sync"] }
 tokio-rustls = "0.22"
-tower = { version = "0.4.11", default-features = false }
+tower = { version = "0.4", default-features = false }
 tonic = { version = "0.6", default-features = false }
 tracing = "0.1"
 webpki = "0.21"
