@@ -17,10 +17,10 @@ linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
 pin-project = "1"
-thiserror = "1.0"
+thiserror = "1"
 tokio = { version = "1", features = ["macros", "time"] }
 tower = "0.4"
-tracing = "0.1.30"
+tracing = "0.1"
 untrusted = "0.7"
 
 [dev-dependencies]

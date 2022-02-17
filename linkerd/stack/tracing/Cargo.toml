@@ -11,4 +11,4 @@ futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
 linkerd-stack = { path = ".." }
 tower = "0.4"
-tracing = "0.1.30"
+tracing = "0.1"

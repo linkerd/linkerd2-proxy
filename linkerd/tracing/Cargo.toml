@@ -13,11 +13,10 @@ ansi = ["tracing-subscriber/ansi"]
 [dependencies]
 linkerd-error = { path = "../error" }
 tokio = { version = "1", features = ["time"] }
-tracing = "0.1.30"
-tracing-log = "0.1.2"
+tracing = "0.1"
+tracing-log = "0.1"
 
 [dependencies.tracing-subscriber]
 version = "0.3"
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot", "registry"]
-
