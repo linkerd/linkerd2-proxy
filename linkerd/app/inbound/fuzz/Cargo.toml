@@ -10,11 +10,10 @@ edition = "2021"
 cargo-fuzz = true
 
 [target.'cfg(fuzzing)'.dependencies]
-arbitrary = { version = "1",  features = ["derive"] }
-libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
-tokio = { version = "1", features = ["full"] }
-hyper = { version = "0.14.9", features = ["http1", "http2"] }
+arbitrary = { version = "1", features = ["derive"] }
+hyper = { version = "0.14", features = ["http1", "http2"] }
 http = "0.2"
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 linkerd-app-core = { path = "../../core" }
 linkerd-app-inbound = { path = ".." }
 linkerd-app-test = { path = "../../test" }
@@ -34,4 +33,4 @@ test = true
 doc = false
 
 [patch.crates-io]
-webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21"}
+webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21" }

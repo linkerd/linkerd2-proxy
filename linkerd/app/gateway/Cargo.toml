@@ -12,10 +12,10 @@ futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-app-inbound = { path = "../inbound" }
 linkerd-app-outbound = { path = "../outbound" }
-thiserror = "1.0"
+thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
 tower = { version = "0.4", default-features = false }
-tracing = "0.1.30"
+tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

@@ -17,7 +17,7 @@ bytes = "1"
 futures = { version = "0.3", default-features = false }
 http = "0.2"
 http-body = "0.4"
-indexmap = "1.8"
+indexmap = "1"
 linkerd-addr = { path = "../addr" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
@@ -27,13 +27,13 @@ linkerd-stack = { path = "../stack" }
 linkerd-tonic-watch = { path = "../tonic-watch" }
 linkerd2-proxy-api = { version = "0.3", features = ["destination", "client"] }
 rand = { version = "0.8", features = ["small_rng"] }
-regex = "1.5.4"
+regex = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { version = "0.6", default-features = false }
-tower = { version = "0.4", features = [ "ready-cache", "retry", "util"] }
+tower = { version = "0.4", features = ["ready-cache", "retry", "util"] }
 thiserror = "1"
-tracing = "0.1.30"
+tracing = "0.1"
 pin-project = "1"
 
 [dev-dependencies]

@@ -18,20 +18,20 @@ linkerd-server-policy = { path = "../../server-policy" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 linkerd2-proxy-api = { version = "0.3", features = ["client", "inbound"] }
 parking_lot = "0.12"
-thiserror = "1.0"
+thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
 tonic = { version = "0.6", default-features = false }
 tower = { version = "0.4", features = ["util"] }
-tracing = "0.1.30"
+tracing = "0.1"
 
 [target.'cfg(fuzzing)'.dependencies]
-hyper = { version = "0.14.17", features = ["http1", "http2"] }
+hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 arbitrary = { version = "1", features = ["derive"] }
-libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 
 [dev-dependencies]
-hyper = { version = "0.14.17", features = ["http1", "http2"] }
+hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 tokio = { version = "1", features = ["full", "macros"] }

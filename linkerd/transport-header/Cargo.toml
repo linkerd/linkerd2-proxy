@@ -16,14 +16,14 @@ linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
 prost = "0.9"
 tokio = { version = "1", features = ["time"] }
-tracing = "0.1.30"
+tracing = "0.1"
 
 [build-dependencies]
 prost-build = { version = "0.9", default-features = false }
 
 [target.'cfg(fuzzing)'.dependencies]
-arbitrary = { version = "1",  features = ["derive"] }
-libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }

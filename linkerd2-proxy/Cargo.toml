@@ -17,7 +17,7 @@ num_cpus = { version = "1", optional = true }
 linkerd-app = { path = "../linkerd/app" }
 linkerd-signal = { path = "../linkerd/signal" }
 tokio = { version = "1", features = ["rt", "time", "net"] }
-tracing = "0.1.30"
+tracing = "0.1"
 
 [target.x86_64-unknown-linux-gnu.dependencies]
 jemallocator = { version = "0.3" }
