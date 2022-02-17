@@ -13,7 +13,7 @@ linkerd-stack = { path = "../stack" }
 parking_lot = "0.12"
 tokio = { version = "1", default-features = false, features = ["macros", "rt", "sync", "time"] }
 tower = { version = "0.4", default-features = false, features = ["util"] }
-tracing = "0.1.30"
+tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["test-util", "time"] }

@@ -15,6 +15,6 @@ http = "0.2"
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 rand = "0.8"
-thiserror = "1.0"
-tower = { version = "0.4.7", default-features = false, features = ["util"] }
-tracing = "0.1.2"
+thiserror = "1"
+tower = { version = "0.4", default-features = false, features = ["util"] }
+tracing = "0.1"

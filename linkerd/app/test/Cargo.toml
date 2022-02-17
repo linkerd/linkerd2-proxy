@@ -14,7 +14,7 @@ futures = { version = "0.3", default-features = false }
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.17", features = ["http1", "http2"] }
+hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-app-core = { path = "../core" }
 linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
@@ -22,9 +22,9 @@ parking_lot = "0.12"
 regex = "1"
 tokio = { version = "1", features = ["io-util", "net", "rt", "sync"] }
 tokio-test = "0.4"
-tokio-stream = { version = "0.1.8", features = ["sync"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 tower = { version = "0.4", default-features = false }
-tracing = "0.1.30"
+tracing = "0.1"
 thiserror = "1"
 
 [dependencies.tracing-subscriber]

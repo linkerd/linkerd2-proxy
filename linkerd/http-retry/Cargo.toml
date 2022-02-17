@@ -13,11 +13,10 @@ http-body = "0.4"
 http = "0.2"
 linkerd-error = { path = "../error" }
 parking_lot = "0.12"
-tracing = "0.1.30"
+tracing = "0.1"
 thiserror = "1"
 
 [dev-dependencies]
 hyper = "0.14"
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }
-tokio = { version = "1", features = ["macros", "rt"]}
-
+tokio = { version = "1", features = ["macros", "rt"] }

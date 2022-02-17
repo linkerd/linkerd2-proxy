@@ -77,7 +77,7 @@ jobs:
     outputs:
       crates: ${{ steps.list-changed.outputs.crates }}
 
-  check:
+  check-each:
     needs: list-changed-crates
     timeout-minutes: 20
     runs-on: ubuntu-latest
