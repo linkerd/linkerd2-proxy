@@ -1,8 +1,8 @@
 #![deny(
     warnings,
     rust_2018_idioms,
-    clippy::disallowed_method,
-    clippy::disallowed_type
+    clippy::disallowed_methods,
+    clippy::disallowed_types
 )]
 #![forbid(unsafe_code)]
 
@@ -120,7 +120,7 @@ impl Resolver {
     fn srv_to_socket_addr(srv: rdata::SRV) -> Result<net::SocketAddr, InvalidSrv> {
         if let Some(first_label) = srv.target().iter().next() {
             if let Ok(utf8) = std::str::from_utf8(first_label) {
-                if let Ok(ip) = utf8.replace("-", ".").parse::<std::net::IpAddr>() {
+                if let Ok(ip) = utf8.replace('-', ".").parse::<std::net::IpAddr>() {
                     return Ok(net::SocketAddr::new(ip, srv.port()));
                 }
             }

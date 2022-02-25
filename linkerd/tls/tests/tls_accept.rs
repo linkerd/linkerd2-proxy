@@ -1,4 +1,4 @@
-#![deny(warnings, clippy::disallowed_method, clippy::disallowed_type)]
+#![deny(warnings, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
 // These are basically integration tests for the `connection` submodule, but
