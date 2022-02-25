@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 3
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.1-buster
+      image: docker://rust:1.59.0-buster
     steps:
       - run: apt update && apt install -y jq
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
@@ -82,7 +82,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.1-buster
+      image: docker://rust:1.59.0-buster
     strategy:
       matrix:
         crate: ${{ fromJson(needs.list-changed-crates.outputs.crates) }}

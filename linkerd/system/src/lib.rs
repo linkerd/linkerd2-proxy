@@ -4,7 +4,7 @@
     warnings,
     rust_2018_idioms,
     rust_2018_idioms,
-    clippy::disallowed_method,
+    clippy::disallowed_methods,
     unsafe_code
 )]
 

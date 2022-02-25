@@ -1,4 +1,4 @@
-#![deny(warnings, clippy::disallowed_method, clippy::disallowed_type)]
+#![deny(warnings, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
 use futures::prelude::*;

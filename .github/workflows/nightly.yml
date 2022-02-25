@@ -23,7 +23,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.56.1-buster
+      image: docker://rust:1.59.0-buster
     timeout-minutes: 20
     continue-on-error: true
     steps:
