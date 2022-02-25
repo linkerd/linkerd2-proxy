@@ -395,7 +395,7 @@ impl tap::Inspect for Logical {
         req.extensions()
             .get::<tls::ConditionalServerTls>()
             .cloned()
-            .unwrap_or_else(|| tls::ConditionalServerTls::None(tls::NoServerTls::Disabled))
+            .unwrap_or(tls::ConditionalServerTls::None(tls::NoServerTls::Disabled))
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {

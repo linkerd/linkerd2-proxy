@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
-      image: docker://rust:1.56.1-buster
+      image: docker://rust:1.59.0-buster
       options: --security-opt seccomp=unconfined # 🤷
     steps:
       - run: apt update && apt install -y cmake clang golang # for boring
