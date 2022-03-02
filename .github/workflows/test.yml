@@ -28,7 +28,7 @@ jobs:
       image: docker://rust:1.59.0-buster
     steps:
       - run: apt update && apt install -y cmake clang golang # for boring
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
       - working-directory: ./linkerd/meshtls
         run: cargo test --all-features --no-run
       - working-directory: ./linkerd/meshtls
@@ -61,7 +61,7 @@ jobs:
     container:
       image: docker://rust:1.59.0-buster
     steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
       - run: |
           cargo test --all --no-run \
             --exclude=linkerd-app \
