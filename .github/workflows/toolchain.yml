@@ -18,7 +18,7 @@ jobs:
   dockerfiles:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
       - run: |
           VERSION="$(cat rust-toolchain)"
           ex=0
@@ -38,7 +38,7 @@ jobs:
   workflows:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579
+      - uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
       - run: |
           curl --proto '=https' --tlsv1.3 -vsSfLo /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
             && chmod +x /usr/local/bin/yq
