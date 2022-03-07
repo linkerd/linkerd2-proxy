@@ -13,7 +13,7 @@ rustfmt = ["linkerd2-proxy-api/rustfmt"]
 http = "0.2"
 hyper = { version = "0.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
-ipnet = "2.3"
+ipnet = "2.4"
 linkerd2-proxy-api = { version = "0.3", features = ["tap", "server"] }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-error = { path = "../../error" }
