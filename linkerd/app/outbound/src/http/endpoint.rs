@@ -1,15 +1,24 @@
 use super::{NewRequireIdentity, NewStripProxyError, ProxyConnectionClose};
-use crate::Outbound;
+use crate::{tcp::opaque_transport, Outbound};
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
     proxy::{http, tap},
     svc::{self, ExtractParam},
-    tls, Error, Result, CANONICAL_DST_HEADER,
+    tls,
+    transport::{self, Remote, ServerAddr},
+    transport_header::SessionProtocol,
+    Error, Result, CANONICAL_DST_HEADER,
 };
 
 #[derive(Copy, Clone, Debug)]
 struct ClientRescue {
     emit_headers: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct Connect<T> {
+    version: http::Version,
+    inner: T,
 }
 
 impl<C> Outbound<C> {
@@ -23,7 +32,7 @@ impl<C> Outbound<C> {
             + tap::Inspect,
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        C: svc::MakeConnection<T> + Clone + Send + Sync + Unpin + 'static,
+        C: svc::MakeConnection<Connect<T>> + Clone + Send + Sync + Unpin + 'static,
         C::Connection: Send + Unpin,
         C::Metadata: Send + Unpin,
         C::Future: Send + Unpin + 'static,
@@ -39,7 +48,9 @@ impl<C> Outbound<C> {
             // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
             // is typically used (i.e. when communicating with other proxies); though
             // HTTP/1.x fallback is supported as needed.
-            connect
+            svc::stack(connect.into_inner().into_service())
+                .check_service::<Connect<T>>()
+                .push_map_target(|(version, inner)| Connect { version, inner })
                 .push(http::client::layer(h1_settings, h2_settings))
                 .push_on_service(svc::MapErr::layer(Into::<Error>::into))
                 .check_service::<T>()
@@ -129,6 +140,53 @@ impl errors::HttpRescue<Error> for ClientRescue {
         }
 
         Err(error)
+    }
+}
+
+// === impl Connect ===
+
+impl<T> svc::Param<Option<SessionProtocol>> for Connect<T> {
+    fn param(&self) -> Option<SessionProtocol> {
+        match self.version {
+            http::Version::Http1 => Some(SessionProtocol::Http1),
+            http::Version::H2 => Some(SessionProtocol::Http2),
+        }
+    }
+}
+
+impl<T: svc::Param<Remote<ServerAddr>>> svc::Param<Remote<ServerAddr>> for Connect<T> {
+    fn param(&self) -> Remote<ServerAddr> {
+        self.inner.param()
+    }
+}
+
+impl<T: svc::Param<tls::ConditionalClientTls>> svc::Param<tls::ConditionalClientTls>
+    for Connect<T>
+{
+    fn param(&self) -> tls::ConditionalClientTls {
+        self.inner.param()
+    }
+}
+
+impl<T: svc::Param<Option<opaque_transport::PortOverride>>>
+    svc::Param<Option<opaque_transport::PortOverride>> for Connect<T>
+{
+    fn param(&self) -> Option<opaque_transport::PortOverride> {
+        self.inner.param()
+    }
+}
+
+impl<T: svc::Param<Option<http::AuthorityOverride>>> svc::Param<Option<http::AuthorityOverride>>
+    for Connect<T>
+{
+    fn param(&self) -> Option<http::AuthorityOverride> {
+        self.inner.param()
+    }
+}
+
+impl<T: svc::Param<transport::labels::Key>> svc::Param<transport::labels::Key> for Connect<T> {
+    fn param(&self) -> transport::labels::Key {
+        self.inner.param()
     }
 }
 

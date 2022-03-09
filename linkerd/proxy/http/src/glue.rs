@@ -163,15 +163,15 @@ impl<C, T> HyperConnect<C, T> {
     pub(super) fn new(connect: C, target: T, absolute_form: bool) -> Self {
         HyperConnect {
             connect,
-            absolute_form,
             target,
+            absolute_form,
         }
     }
 }
 
 impl<C, T> Service<hyper::Uri> for HyperConnect<C, T>
 where
-    C: MakeConnection<T> + Clone + Send + Sync,
+    C: MakeConnection<(crate::Version, T)> + Clone + Send + Sync,
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
     T: Clone + Send + Sync,
@@ -186,7 +186,9 @@ where
 
     fn call(&mut self, _dst: hyper::Uri) -> Self::Future {
         HyperConnectFuture {
-            inner: self.connect.connect(self.target.clone()),
+            inner: self
+                .connect
+                .connect((crate::Version::Http1, self.target.clone())),
             absolute_form: self.absolute_form,
         }
     }

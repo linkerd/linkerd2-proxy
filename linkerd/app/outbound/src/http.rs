@@ -19,9 +19,7 @@ use linkerd_app_core::{
     profiles::{self, LogicalAddr},
     proxy::{api_resolve::ProtocolHint, tap},
     svc::Param,
-    tls,
-    transport_header::SessionProtocol,
-    Addr, Conditional, CANONICAL_DST_HEADER,
+    tls, Addr, Conditional, CANONICAL_DST_HEADER,
 };
 use std::{net::SocketAddr, str::FromStr};
 
@@ -29,6 +27,8 @@ pub type Accept = crate::Accept<Version>;
 pub type Logical = crate::logical::Logical<Version>;
 pub type Concrete = crate::logical::Concrete<Version>;
 pub type Endpoint = crate::endpoint::Endpoint<Version>;
+
+pub type Connect = self::endpoint::Connect<Endpoint>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Route {
@@ -145,18 +145,6 @@ impl Param<client::Settings> for Endpoint {
             Version::Http1 => match self.metadata.protocol_hint() {
                 ProtocolHint::Unknown => client::Settings::Http1,
                 ProtocolHint::Http2 => client::Settings::OrigProtoUpgrade,
-            },
-        }
-    }
-}
-
-impl Param<Option<SessionProtocol>> for Endpoint {
-    fn param(&self) -> Option<SessionProtocol> {
-        match self.protocol {
-            Version::H2 => Some(SessionProtocol::Http2),
-            Version::Http1 => match self.metadata.protocol_hint() {
-                ProtocolHint::Http2 => Some(SessionProtocol::Http2),
-                ProtocolHint::Unknown => Some(SessionProtocol::Http1),
             },
         }
     }
