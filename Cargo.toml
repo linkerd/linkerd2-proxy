@@ -77,4 +77,5 @@ debug = false
 lto = true
 
 [patch.crates-io]
+h2 = { git = "https://github.com/hyperium/h2", branch = "master" }
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.22" }
