@@ -67,7 +67,7 @@ impl<C, T, B> tower::Service<T> for MakeClient<C, B>
 where
     T: Clone + Send + Sync + 'static,
     T: Param<Settings>,
-    C: MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
+    C: MakeConnection<(crate::Version, T)> + Clone + Unpin + Send + Sync + 'static,
     C::Connection: Unpin + Send,
     C::Metadata: Send,
     C::Future: Unpin + Send + 'static,
@@ -133,7 +133,7 @@ type RspFuture = Pin<Box<dyn Future<Output = Result<http::Response<BoxBody>>> + 
 impl<C, T, B> Service<http::Request<B>> for Client<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
-    C: MakeConnection<T> + Clone + Send + Sync + 'static,
+    C: MakeConnection<(crate::Version, T)> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
