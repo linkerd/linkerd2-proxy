@@ -193,7 +193,7 @@ impl<T: svc::Param<transport::labels::Key>> svc::Param<transport::labels::Key> f
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{http, test_util::*, transport::addrs::*};
+    use crate::{http, test_util::*};
     use linkerd_app_core::{
         io,
         proxy::api_resolve::Metadata,
@@ -212,7 +212,7 @@ mod test {
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 
         let connect = support::connect()
-            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_11));
+            .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_11));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
@@ -249,7 +249,7 @@ mod test {
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2042);
 
         let connect = support::connect()
-            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_2));
+            .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_2));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
@@ -288,7 +288,7 @@ mod test {
 
         // Pretend the upstream is a proxy that supports proto upgrades...
         let connect = support::connect()
-            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_2));
+            .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_2));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
@@ -337,7 +337,7 @@ mod test {
 
         // Pretend the upstream is a proxy that supports proto upgrades...
         let connect = support::connect()
-            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_2));
+            .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_2));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
