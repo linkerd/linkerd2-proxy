@@ -146,6 +146,7 @@ impl errors::HttpRescue<Error> for ClientRescue {
 // === impl Connect ===
 
 impl<T> svc::Param<Option<SessionProtocol>> for Connect<T> {
+    #[inline]
     fn param(&self) -> Option<SessionProtocol> {
         match self.version {
             http::Version::Http1 => Some(SessionProtocol::Http1),
@@ -155,6 +156,7 @@ impl<T> svc::Param<Option<SessionProtocol>> for Connect<T> {
 }
 
 impl<T: svc::Param<Remote<ServerAddr>>> svc::Param<Remote<ServerAddr>> for Connect<T> {
+    #[inline]
     fn param(&self) -> Remote<ServerAddr> {
         self.inner.param()
     }
@@ -163,6 +165,7 @@ impl<T: svc::Param<Remote<ServerAddr>>> svc::Param<Remote<ServerAddr>> for Conne
 impl<T: svc::Param<tls::ConditionalClientTls>> svc::Param<tls::ConditionalClientTls>
     for Connect<T>
 {
+    #[inline]
     fn param(&self) -> tls::ConditionalClientTls {
         self.inner.param()
     }
@@ -171,6 +174,7 @@ impl<T: svc::Param<tls::ConditionalClientTls>> svc::Param<tls::ConditionalClient
 impl<T: svc::Param<Option<opaque_transport::PortOverride>>>
     svc::Param<Option<opaque_transport::PortOverride>> for Connect<T>
 {
+    #[inline]
     fn param(&self) -> Option<opaque_transport::PortOverride> {
         self.inner.param()
     }
@@ -179,12 +183,14 @@ impl<T: svc::Param<Option<opaque_transport::PortOverride>>>
 impl<T: svc::Param<Option<http::AuthorityOverride>>> svc::Param<Option<http::AuthorityOverride>>
     for Connect<T>
 {
+    #[inline]
     fn param(&self) -> Option<http::AuthorityOverride> {
         self.inner.param()
     }
 }
 
 impl<T: svc::Param<transport::labels::Key>> svc::Param<transport::labels::Key> for Connect<T> {
+    #[inline]
     fn param(&self) -> transport::labels::Key {
         self.inner.param()
     }
