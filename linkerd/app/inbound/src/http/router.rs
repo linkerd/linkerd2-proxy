@@ -96,6 +96,8 @@ impl<C> Inbound<C> {
             let http = connect
                 .push(svc::stack::BoxFuture::layer())
                 .push(transport::metrics::Client::layer(rt.metrics.proxy.transport.clone()))
+                .check_service::<Http>()
+                .push_map_target(|(_version, target)| target)
                 .push(http::client::layer(
                     config.proxy.connect.h1_settings,
                     config.proxy.connect.h2_settings,

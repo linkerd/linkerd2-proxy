@@ -224,7 +224,7 @@ impl<S> Outbound<S> {
     {
         let http = self
             .clone()
-            .push_tcp_endpoint::<http::Endpoint>()
+            .push_tcp_endpoint::<http::Connect>()
             .push_http_endpoint()
             .push_http_server()
             .into_inner();

@@ -36,5 +36,5 @@ linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 parking_lot = "0.12"
-tokio = { version = "1", features = ["time", "macros"] }
+tokio = { version = "1", features = ["macros", "sync", "time"] }
 tokio-test = "0.4"

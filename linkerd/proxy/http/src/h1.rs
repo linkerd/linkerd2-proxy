@@ -65,7 +65,7 @@ type RspFuture = Pin<Box<dyn Future<Output = Result<http::Response<BoxBody>>> + 
 impl<C, T, B> Client<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
-    C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C: tower::make::MakeConnection<(crate::Version, T)> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,

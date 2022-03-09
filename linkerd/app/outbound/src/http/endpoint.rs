@@ -1,16 +1,25 @@
 use super::{NewRequireIdentity, NewStripProxyError, ProxyConnectionClose};
-use crate::Outbound;
+use crate::{tcp::opaque_transport, Outbound};
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
     proxy::{http, tap},
     svc::{self, ExtractParam},
-    tls, Error, Result, CANONICAL_DST_HEADER,
+    tls,
+    transport::{self, Remote, ServerAddr},
+    transport_header::SessionProtocol,
+    Error, Result, CANONICAL_DST_HEADER,
 };
 use tokio::io;
 
 #[derive(Copy, Clone, Debug)]
 struct ClientRescue {
     emit_headers: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct Connect<T> {
+    version: http::Version,
+    inner: T,
 }
 
 impl<C> Outbound<C> {
@@ -24,7 +33,7 @@ impl<C> Outbound<C> {
             + tap::Inspect,
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        C: svc::Service<T> + Clone + Send + Sync + Unpin + 'static,
+        C: svc::Service<Connect<T>> + Clone + Send + Sync + Unpin + 'static,
         C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
         C::Error: Into<Error>,
         C::Future: Send + Unpin + 'static,
@@ -40,7 +49,9 @@ impl<C> Outbound<C> {
             // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
             // is typically used (i.e. when communicating with other proxies); though
             // HTTP/1.x fallback is supported as needed.
-            connect
+            svc::stack(connect.into_inner())
+                .check_service::<Connect<T>>()
+                .push_map_target(|(version, inner)| Connect { version, inner })
                 .push(http::client::layer(h1_settings, h2_settings))
                 .push_on_service(svc::MapErr::layer(Into::<Error>::into))
                 .check_service::<T>()
@@ -133,10 +144,64 @@ impl errors::HttpRescue<Error> for ClientRescue {
     }
 }
 
+// === impl Connect ===
+
+impl<T> svc::Param<Option<SessionProtocol>> for Connect<T> {
+    #[inline]
+    fn param(&self) -> Option<SessionProtocol> {
+        match self.version {
+            http::Version::Http1 => Some(SessionProtocol::Http1),
+            http::Version::H2 => Some(SessionProtocol::Http2),
+        }
+    }
+}
+
+impl<T: svc::Param<Remote<ServerAddr>>> svc::Param<Remote<ServerAddr>> for Connect<T> {
+    #[inline]
+    fn param(&self) -> Remote<ServerAddr> {
+        self.inner.param()
+    }
+}
+
+impl<T: svc::Param<tls::ConditionalClientTls>> svc::Param<tls::ConditionalClientTls>
+    for Connect<T>
+{
+    #[inline]
+    fn param(&self) -> tls::ConditionalClientTls {
+        self.inner.param()
+    }
+}
+
+impl<T: svc::Param<Option<opaque_transport::PortOverride>>>
+    svc::Param<Option<opaque_transport::PortOverride>> for Connect<T>
+{
+    #[inline]
+    fn param(&self) -> Option<opaque_transport::PortOverride> {
+        self.inner.param()
+    }
+}
+
+impl<T: svc::Param<Option<http::AuthorityOverride>>> svc::Param<Option<http::AuthorityOverride>>
+    for Connect<T>
+{
+    #[inline]
+    fn param(&self) -> Option<http::AuthorityOverride> {
+        self.inner.param()
+    }
+}
+
+impl<T: svc::Param<transport::labels::Key>> svc::Param<transport::labels::Key> for Connect<T> {
+    #[inline]
+    fn param(&self) -> transport::labels::Key {
+        self.inner.param()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{http, test_util::*, transport::addrs::*};
+    use crate::{http, test_util::*};
+    use ::http::header::{CONNECTION, UPGRADE};
     use linkerd_app_core::{
         io,
         proxy::api_resolve::Metadata,
@@ -144,6 +209,7 @@ mod test {
         Infallible,
     };
     use std::net::SocketAddr;
+    use support::resolver::ProtocolHint;
 
     static WAS_ORIG_PROTO: &str = "request-orig-proto";
 
@@ -155,7 +221,7 @@ mod test {
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 
         let connect = support::connect()
-            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_11));
+            .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_11));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
@@ -192,7 +258,7 @@ mod test {
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2042);
 
         let connect = support::connect()
-            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_2));
+            .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_2));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
@@ -231,7 +297,7 @@ mod test {
 
         // Pretend the upstream is a proxy that supports proto upgrades...
         let connect = support::connect()
-            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_2));
+            .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_2));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
@@ -246,13 +312,7 @@ mod test {
             logical_addr: None,
             opaque_protocol: false,
             tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
-            metadata: Metadata::new(
-                None,
-                support::resolver::ProtocolHint::Http2,
-                None,
-                None,
-                None,
-            ),
+            metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
         });
 
         let req = http::Request::builder()
@@ -271,6 +331,63 @@ mod test {
         );
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn orig_proto_skipped_on_http_upgrade() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
+
+        // Pretend the upstream is a proxy that supports proto upgrades. The service needs to
+        // support both HTTP/1 and HTTP/2 because an HTTP/2 connection is maintained by default and
+        // HTTP/1 connections are created as-needed.
+        let connect = support::connect().endpoint_fn_boxed(addr, |c: http::Connect| {
+            serve(match svc::Param::param(&c) {
+                Some(SessionProtocol::Http1) => ::http::Version::HTTP_11,
+                Some(SessionProtocol::Http2) => ::http::Version::HTTP_2,
+                None => unreachable!(),
+            })
+        });
+
+        // Build the outbound server
+        let (rt, _shutdown) = runtime();
+        let drain = rt.drain.clone();
+        let stack = Outbound::new(default_config(), rt)
+            .with_stack(connect)
+            .push_http_endpoint::<_, http::BoxBody>()
+            .into_stack()
+            .push_on_service(http::BoxRequest::layer())
+            // We need the server-side upgrade layer to annotate the request so that the client
+            // knows that an HTTP upgrade is in progress.
+            .push_on_service(svc::layer::mk(|svc| {
+                http::upgrade::Service::new(svc, drain.clone())
+            }))
+            .into_inner();
+
+        let svc = stack.new_service(http::Endpoint {
+            addr: Remote(ServerAddr(addr)),
+            protocol: http::Version::Http1,
+            logical_addr: None,
+            opaque_protocol: false,
+            tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
+            metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
+        });
+
+        let req = http::Request::builder()
+            .version(::http::Version::HTTP_11)
+            .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
+            // The request has upgrade headers
+            .header(CONNECTION, "upgrade")
+            .header(UPGRADE, "linkerdrocks")
+            .body(hyper::Body::default())
+            .unwrap();
+        let rsp = svc.oneshot(req).await.unwrap();
+        assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
+        // The request did NOT get a linkerd upgrade header.
+        assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
+        assert_eq!(rsp.version(), ::http::Version::HTTP_11);
+    }
+
     /// Tests that the the HTTP endpoint stack ignores protocol upgrade hinting for HTTP/2 traffic.
     #[tokio::test(flavor = "current_thread")]
     async fn orig_proto_http2_noop() {
@@ -280,7 +397,7 @@ mod test {
 
         // Pretend the upstream is a proxy that supports proto upgrades...
         let connect = support::connect()
-            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_2));
+            .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_2));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
@@ -295,13 +412,7 @@ mod test {
             logical_addr: None,
             opaque_protocol: false,
             tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
-            metadata: Metadata::new(
-                None,
-                support::resolver::ProtocolHint::Http2,
-                None,
-                None,
-                None,
-            ),
+            metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
         });
 
         let req = http::Request::builder()
