@@ -194,6 +194,7 @@ impl<T: svc::Param<transport::labels::Key>> svc::Param<transport::labels::Key> f
 mod test {
     use super::*;
     use crate::{http, test_util::*};
+    use ::http::header::{CONNECTION, UPGRADE};
     use linkerd_app_core::{
         io,
         proxy::api_resolve::Metadata,
@@ -201,6 +202,7 @@ mod test {
         Infallible,
     };
     use std::net::SocketAddr;
+    use support::resolver::ProtocolHint;
 
     static WAS_ORIG_PROTO: &str = "request-orig-proto";
 
@@ -303,13 +305,7 @@ mod test {
             logical_addr: None,
             opaque_protocol: false,
             tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
-            metadata: Metadata::new(
-                None,
-                support::resolver::ProtocolHint::Http2,
-                None,
-                None,
-                None,
-            ),
+            metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
         });
 
         let req = http::Request::builder()
@@ -326,6 +322,63 @@ mod test {
                 .and_then(|v| v.to_str().ok()),
             Some("HTTP/1.1")
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn orig_proto_skipped_on_http_upgrade() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
+
+        // Pretend the upstream is a proxy that supports proto upgrades. The service needs to
+        // support both HTTP/1 and HTTP/2 because an HTTP/2 connection is maintained by default and
+        // HTTP/1 connections are created as-needed.
+        let connect = support::connect().endpoint_fn_boxed(addr, |c: http::Connect| {
+            serve(match svc::Param::param(&c) {
+                Some(SessionProtocol::Http1) => ::http::Version::HTTP_11,
+                Some(SessionProtocol::Http2) => ::http::Version::HTTP_2,
+                None => unreachable!(),
+            })
+        });
+
+        // Build the outbound server
+        let (rt, _shutdown) = runtime();
+        let drain = rt.drain.clone();
+        let stack = Outbound::new(default_config(), rt)
+            .with_stack(connect)
+            .push_http_endpoint::<_, http::BoxBody>()
+            .into_stack()
+            .push_on_service(http::BoxRequest::layer())
+            // We need the server-side upgrade layer to annotate the request so that the client
+            // knows that an HTTP upgrade is in progress.
+            .push_on_service(svc::layer::mk(|svc| {
+                http::upgrade::Service::new(svc, drain.clone())
+            }))
+            .into_inner();
+
+        let svc = stack.new_service(http::Endpoint {
+            addr: Remote(ServerAddr(addr)),
+            protocol: http::Version::Http1,
+            logical_addr: None,
+            opaque_protocol: false,
+            tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
+            metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
+        });
+
+        let req = http::Request::builder()
+            .version(::http::Version::HTTP_11)
+            .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
+            // The request has upgrade headers
+            .header(CONNECTION, "upgrade")
+            .header(UPGRADE, "linkerdrocks")
+            .body(hyper::Body::default())
+            .unwrap();
+        let rsp = svc.oneshot(req).await.unwrap();
+        assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
+        // The request did NOT get a linkerd upgrade header.
+        assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
+        assert_eq!(rsp.version(), ::http::Version::HTTP_11);
     }
 
     /// Tests that the the HTTP endpoint stack ignores protocol upgrade hinting for HTTP/2 traffic.
@@ -352,13 +405,7 @@ mod test {
             logical_addr: None,
             opaque_protocol: false,
             tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
-            metadata: Metadata::new(
-                None,
-                support::resolver::ProtocolHint::Http2,
-                None,
-                None,
-                None,
-            ),
+            metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
         });
 
         let req = http::Request::builder()
