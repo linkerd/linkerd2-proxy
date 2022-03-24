@@ -3,17 +3,12 @@ use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolic
 use std::time::Duration;
 
 pub fn all_authenticated(timeout: Duration) -> ServerPolicy {
-    mk(
-        "default:all-authenticated",
-        all_nets(),
-        authenticated(),
-        timeout,
-    )
+    mk("all-authenticated", all_nets(), authenticated(), timeout)
 }
 
 pub fn all_unauthenticated(timeout: Duration) -> ServerPolicy {
     mk(
-        "default:all-unauthenticated",
+        "all-unauthenticated",
         all_nets(),
         Authentication::Unauthenticated,
         timeout,
@@ -24,12 +19,7 @@ pub fn cluster_authenticated(
     nets: impl IntoIterator<Item = IpNet>,
     timeout: Duration,
 ) -> ServerPolicy {
-    mk(
-        "default:cluster-authenticated",
-        nets,
-        authenticated(),
-        timeout,
-    )
+    mk("cluster-authenticated", nets, authenticated(), timeout)
 }
 
 pub fn cluster_unauthenticated(
@@ -37,7 +27,7 @@ pub fn cluster_unauthenticated(
     timeout: Duration,
 ) -> ServerPolicy {
     mk(
-        "default:cluster-unauthenticated",
+        "cluster-unauthenticated",
         nets,
         Authentication::Unauthenticated,
         timeout,
@@ -46,7 +36,7 @@ pub fn cluster_unauthenticated(
 
 pub fn all_mtls_unauthenticated(timeout: Duration) -> ServerPolicy {
     mk(
-        "default:all-tls-unauthenticated",
+        "all-tls-unauthenticated",
         all_nets(),
         Authentication::TlsUnauthenticated,
         timeout,
@@ -75,8 +65,10 @@ fn mk(
         authorizations: vec![Authorization {
             networks: nets.into_iter().map(Into::into).collect(),
             authentication,
+            kind: "default".into(),
             name: name.into(),
         }],
+        kind: "default".into(),
         name: name.into(),
     }
 }

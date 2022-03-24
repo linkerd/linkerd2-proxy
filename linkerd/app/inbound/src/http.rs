@@ -216,6 +216,7 @@ pub mod fuzz {
                     authorizations: vec![policy::Authorization {
                         authentication: policy::Authentication::Unauthenticated,
                         networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
+                        kind: "server".into(),
                         name: "testsaz".into(),
                     }],
                     name: "testsrv".into(),

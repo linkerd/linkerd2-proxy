@@ -129,8 +129,10 @@ mod tests {
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![Default::default()],
+                    kind: "serverauthorization".into(),
                     name: "testsaz".into(),
                 }],
+                kind: "server".into(),
                 name: "testsrv".into(),
             },
             None,

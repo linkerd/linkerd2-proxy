@@ -85,7 +85,11 @@ where
                 })
             }
             Err(deny) => {
-                tracing::info!(server = %policy.server_label(), ?tls, %client, "Connection denied");
+                tracing::info!(
+                    server = %format_args!("{}:{}", policy.server_label().kind, policy.server_label().name),
+                    ?tls, %client,
+                    "Connection denied"
+                );
                 self.metrics.deny(&policy, tls);
                 AuthorizeTcp::Unauthorized(Unauthorized { deny })
             }
@@ -150,7 +154,7 @@ where
                     _ = policy.changed() => {
                         if let Err(denied) = policy.check_authorized(client, &tls) {
                             tracing::info!(
-                                server = %policy.server_label(),
+                                server = %policy.server_label().name,
                                 ?tls,
                                 %client,
                                 "Connection terminated due to policy change",

@@ -15,6 +15,7 @@ use std::{collections::HashSet, hash::Hash, sync::Arc, time};
 pub struct ServerPolicy {
     pub protocol: Protocol,
     pub authorizations: Vec<Authorization>,
+    pub kind: Arc<str>,
     pub name: Arc<str>,
 }
 
@@ -32,6 +33,7 @@ pub enum Protocol {
 pub struct Authorization {
     pub networks: Vec<Network>,
     pub authentication: Authentication,
+    pub kind: Arc<str>,
     pub name: Arc<str>,
 }
 

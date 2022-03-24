@@ -610,8 +610,10 @@ impl svc::Param<policy::AllowPolicy> for Target {
                 authorizations: vec![policy::Authorization {
                     authentication: policy::Authentication::Unauthenticated,
                     networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
+                    kind: "serverauthorization".into(),
                     name: "testsaz".into(),
                 }],
+                kind: "server".into(),
                 name: "testsrv".into(),
             },
         );
@@ -621,7 +623,10 @@ impl svc::Param<policy::AllowPolicy> for Target {
 
 impl svc::Param<policy::ServerLabel> for Target {
     fn param(&self) -> policy::ServerLabel {
-        policy::ServerLabel("testsrv".into())
+        policy::ServerLabel {
+            kind: "server".into(),
+            name: "testsrv".into(),
+        }
     }
 }
 

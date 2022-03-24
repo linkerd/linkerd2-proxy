@@ -70,7 +70,8 @@ impl From<DefaultPolicy> for ServerPolicy {
             DefaultPolicy::Deny => ServerPolicy {
                 protocol: Protocol::Opaque,
                 authorizations: vec![],
-                name: "default:deny".into(),
+                kind: "default".into(),
+                name: "deny".into(),
             },
         }
     }
@@ -101,7 +102,11 @@ impl AllowPolicy {
 
     #[inline]
     pub fn server_label(&self) -> ServerLabel {
-        ServerLabel(self.server.borrow().name.clone())
+        let s = self.server.borrow();
+        ServerLabel {
+            kind: s.kind.clone(),
+            name: s.name.clone(),
+        }
     }
 
     async fn changed(&mut self) {
@@ -169,8 +174,12 @@ impl Permit {
             dst,
             protocol: server.protocol,
             labels: AuthzLabels {
-                server: ServerLabel(server.name.clone()),
-                authz: authz.name.clone(),
+                kind: authz.kind.clone(),
+                name: authz.name.clone(),
+                server: ServerLabel {
+                    kind: server.kind.clone(),
+                    name: server.name.clone(),
+                },
             },
         }
     }
