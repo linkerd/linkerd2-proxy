@@ -12,7 +12,7 @@ use linkerd_server_policy::{
     Authentication, Authorization, Network, Protocol, ServerPolicy, Suffix,
 };
 use linkerd_tonic_watch::StreamWatch;
-use std::net::IpAddr;
+use std::{net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub(super) struct Discover<S> {
@@ -177,25 +177,7 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
                     authn => return Err(format!("no authentication provided: {:?}", authn).into()),
                 };
 
-                let (kind, name) = {
-                    let name = labels
-                        .get("name")
-                        .ok_or("authorization missing 'name' label")?
-                        .clone();
-
-                    let mut parts = name.splitn(2, ':');
-                    match (parts.next().unwrap(), parts.next()) {
-                        (kind, Some(name)) => (kind.into(), name.into()),
-                        (name, None) => {
-                            let kind = labels
-                                .get("kind")
-                                .cloned()
-                                .unwrap_or_else(|| "serverauthorization".to_string());
-                            (kind.into(), name.into())
-                        }
-                    }
-                };
-
+                let (kind, name) = kind_name(&labels, "serverauthorization")?;
                 Ok(Authorization {
                     networks,
                     authentication: authn,
@@ -207,32 +189,31 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
         .chain(Some(Ok(loopback)))
         .collect::<Result<Vec<_>>>()?;
 
-    let (kind, name) = {
-        let name = proto
-            .labels
-            .get("name")
-            .ok_or("server missing 'name' label")?
-            .clone();
-        let mut parts = name.splitn(2, ':');
-        match (parts.next().unwrap(), parts.next()) {
-            (kind, Some(name)) => (kind.into(), name.into()),
-            (name, None) => {
-                let kind = proto
-                    .labels
-                    .get("kind")
-                    .cloned()
-                    .unwrap_or_else(|| "server".to_string());
-                (kind.into(), name.into())
-            }
-        }
-    };
-
+    let (kind, name) = kind_name(&proto.labels, "server")?;
     Ok(ServerPolicy {
         protocol,
         authorizations,
         kind,
         name,
     })
+}
+
+fn kind_name(
+    labels: &std::collections::HashMap<String, String>,
+    default_kind: &str,
+) -> Result<(Arc<str>, Arc<str>)> {
+    let name = labels.get("name").ok_or("missing 'name' label")?.clone();
+    let mut parts = name.splitn(2, ':');
+    match (parts.next().unwrap(), parts.next()) {
+        (kind, Some(name)) => Ok((kind.into(), name.into())),
+        (name, None) => {
+            let kind = labels
+                .get("kind")
+                .cloned()
+                .unwrap_or_else(|| default_kind.to_string());
+            Ok((kind.into(), name.into()))
+        }
+    }
 }
 
 // === impl GrpcRecover ===
