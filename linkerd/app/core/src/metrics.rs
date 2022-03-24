@@ -304,7 +304,7 @@ impl FmtLabels for AuthzLabels {
         self.server.fmt_labels(f)?;
         write!(
             f,
-            "authz_kind=\"{}\",authz_name=\"{}\"",
+            ",authz_kind=\"{}\",authz_name=\"{}\"",
             self.kind, self.name
         )
     }
