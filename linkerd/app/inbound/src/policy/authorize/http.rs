@@ -105,7 +105,7 @@ where
             }
             Err(e) => {
                 tracing::info!(
-                    server = %self.policy.server_label(),
+                    server = %format_args!("{}:{}", self.policy.server_label().kind, self.policy.server_label().name),
                     tls = ?self.tls,
                     client = %self.client_addr,
                     "Request denied",

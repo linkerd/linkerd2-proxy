@@ -110,7 +110,8 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
     };
 
     let loopback = Authorization {
-        name: "default:localhost".into(),
+        kind: "default".into(),
+        name: "localhost".into(),
         authentication: Authentication::Unauthenticated,
         networks: vec![
             Network {
@@ -176,15 +177,29 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
                     authn => return Err(format!("no authentication provided: {:?}", authn).into()),
                 };
 
-                let name = labels
-                    .get("name")
-                    .ok_or("authorization missing 'name' label")?
-                    .clone()
-                    .into();
+                let (kind, name) = {
+                    let name = labels
+                        .get("name")
+                        .ok_or("authorization missing 'name' label")?
+                        .clone();
+
+                    let mut parts = name.splitn(2, ':');
+                    match (parts.next().unwrap(), parts.next()) {
+                        (kind, Some(name)) => (kind.into(), name.into()),
+                        (name, None) => {
+                            let kind = labels
+                                .get("kind")
+                                .cloned()
+                                .unwrap_or_else(|| "serverauthorization".to_string());
+                            (kind.into(), name.into())
+                        }
+                    }
+                };
 
                 Ok(Authorization {
                     networks,
                     authentication: authn,
+                    kind,
                     name,
                 })
             },
@@ -192,16 +207,30 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
         .chain(Some(Ok(loopback)))
         .collect::<Result<Vec<_>>>()?;
 
-    let name = proto
-        .labels
-        .get("name")
-        .ok_or("server missing 'name' label")?
-        .clone()
-        .into();
+    let (kind, name) = {
+        let name = proto
+            .labels
+            .get("name")
+            .ok_or("server missing 'name' label")?
+            .clone();
+        let mut parts = name.splitn(2, ':');
+        match (parts.next().unwrap(), parts.next()) {
+            (kind, Some(name)) => (kind.into(), name.into()),
+            (name, None) => {
+                let kind = proto
+                    .labels
+                    .get("kind")
+                    .cloned()
+                    .unwrap_or_else(|| "server".to_string());
+                (kind.into(), name.into())
+            }
+        }
+    };
 
     Ok(ServerPolicy {
         protocol,
         authorizations,
+        kind,
         name,
     })
 }

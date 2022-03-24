@@ -9,8 +9,10 @@ fn unauthenticated_allowed() {
         authorizations: vec![Authorization {
             authentication: Authentication::Unauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
+            kind: "serverauthorization".into(),
             name: "unauth".into(),
         }],
+        kind: "server".into(),
         name: "test".into(),
     };
 
@@ -30,8 +32,12 @@ fn unauthenticated_allowed() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: AuthzLabels {
-                server: ServerLabel("test".into()),
-                authz: "unauth".into(),
+                kind: "serverauthorization".into(),
+                name: "unauth".into(),
+                server: ServerLabel {
+                    kind: "server".into(),
+                    name: "test".into(),
+                }
             }
         }
     );
@@ -47,8 +53,10 @@ fn authenticated_identity() {
                 identities: vec![client_id().to_string()].into_iter().collect(),
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
+            kind: "serverauthorization".into(),
             name: "tls-auth".into(),
         }],
+        kind: "server".into(),
         name: "test".into(),
     };
 
@@ -71,8 +79,12 @@ fn authenticated_identity() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: AuthzLabels {
-                server: ServerLabel("test".into()),
-                authz: "tls-auth".into(),
+                kind: "serverauthorization".into(),
+                name: "tls-auth".into(),
+                server: ServerLabel {
+                    kind: "server".into(),
+                    name: "test".into()
+                },
             }
         }
     );
@@ -100,8 +112,10 @@ fn authenticated_suffix() {
                 suffixes: vec![Suffix::from(vec!["cluster".into(), "local".into()])],
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
+            kind: "serverauthorization".into(),
             name: "tls-auth".into(),
         }],
+        kind: "server".into(),
         name: "test".into(),
     };
 
@@ -123,8 +137,12 @@ fn authenticated_suffix() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: AuthzLabels {
-                server: ServerLabel("test".into()),
-                authz: "tls-auth".into(),
+                kind: "serverauthorization".into(),
+                name: "tls-auth".into(),
+                server: ServerLabel {
+                    kind: "server".into(),
+                    name: "test".into()
+                }
             }
         }
     );
@@ -149,8 +167,10 @@ fn tls_unauthenticated() {
         authorizations: vec![Authorization {
             authentication: Authentication::TlsUnauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
+            kind: "serverauthorization".into(),
             name: "tls-unauth".into(),
         }],
+        kind: "server".into(),
         name: "test".into(),
     };
 
@@ -172,8 +192,12 @@ fn tls_unauthenticated() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: AuthzLabels {
-                server: ServerLabel("test".into()),
-                authz: "tls-unauth".into(),
+                kind: "serverauthorization".into(),
+                name: "tls-unauth".into(),
+                server: ServerLabel {
+                    kind: "server".into(),
+                    name: "test".into(),
+                },
             }
         }
     );

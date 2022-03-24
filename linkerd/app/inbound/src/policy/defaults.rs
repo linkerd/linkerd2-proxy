@@ -75,8 +75,10 @@ fn mk(
         authorizations: vec![Authorization {
             networks: nets.into_iter().map(Into::into).collect(),
             authentication,
+            kind: "default".into(),
             name: name.into(),
         }],
+        kind: "default".into(),
         name: name.into(),
     }
 }

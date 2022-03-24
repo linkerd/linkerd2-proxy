@@ -253,8 +253,16 @@ where
 {
     fn from((permit, t): (policy::Permit, T)) -> Self {
         let labels = vec![
-            ("srv_name".to_string(), permit.labels.server.to_string()),
-            ("saz_name".to_string(), permit.labels.authz.to_string()),
+            (
+                "srv_kind".to_string(),
+                permit.labels.server.kind.to_string(),
+            ),
+            (
+                "srv_name".to_string(),
+                permit.labels.server.name.to_string(),
+            ),
+            ("authz_kind".to_string(), permit.labels.kind.to_string()),
+            ("authz_name".to_string(), permit.labels.name.to_string()),
         ];
 
         Self {

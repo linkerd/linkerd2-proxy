@@ -64,13 +64,17 @@ pub struct InboundEndpointLabels {
 
 /// A label referencing an inbound `Server` (i.e. for policy).
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ServerLabel(pub Arc<str>);
+pub struct ServerLabel {
+    pub kind: Arc<str>,
+    pub name: Arc<str>,
+}
 
 /// Labels referencing an inbound `ServerAuthorization.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AuthzLabels {
     pub server: ServerLabel,
-    pub authz: Arc<str>,
+    pub kind: Arc<str>,
+    pub name: Arc<str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -289,22 +293,20 @@ impl FmtLabels for InboundEndpointLabels {
     }
 }
 
-impl fmt::Display for ServerLabel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 impl FmtLabels for ServerLabel {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "srv_name=\"{}\"", self.0)
+        write!(f, "srv_kind=\"{}\",srv_name=\"{}\"", self.kind, self.name)
     }
 }
 
 impl FmtLabels for AuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.server.fmt_labels(f)?;
-        write!(f, ",saz_name=\"{}\"", self.authz)
+        write!(
+            f,
+            "authz_kind=\"{}\",authz_name=\"{}\"",
+            self.kind, self.name
+        )
     }
 }
 
