@@ -14,7 +14,7 @@ linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
-prost = "0.9"
+prost = "0.10"
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 
