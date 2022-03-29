@@ -1174,7 +1174,7 @@ dependencies = [
  "pin-project",
  "tokio",
  "tokio-test",
- "tokio-util 0.7.0",
+ "tokio-util 0.7.1",
 ]
 
 [[package]]
@@ -1309,7 +1309,7 @@ dependencies = [
  "linkerd-stack",
  "pin-project",
  "tokio",
- "tokio-util 0.7.0",
+ "tokio-util 0.7.1",
  "tower",
  "tracing",
 ]
@@ -2464,14 +2464,13 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64910e1b9c1901aaf5375561e35b9c057d95ff41a44ede043a03e09279eabaf1"
+checksum = "0edfdeb067411dba2044da6d1cb2df793dd35add7888d73c16e3381ded401764"
 dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
- "log",
  "pin-project-lite",
  "tokio",
 ]
@@ -2533,7 +2532,7 @@ dependencies = [
  "rand",
  "slab",
  "tokio",
- "tokio-util 0.7.0",
+ "tokio-util 0.7.1",
  "tower-layer",
  "tower-service",
  "tracing",
