@@ -19,7 +19,7 @@ tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 
 [build-dependencies]
-prost-build = { version = "0.9", default-features = false }
+prost-build = { version = "0.10", default-features = false }
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1", features = ["derive"] }
