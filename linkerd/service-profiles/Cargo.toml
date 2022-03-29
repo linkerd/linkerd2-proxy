@@ -38,5 +38,5 @@ pin-project = "1"
 
 [dev-dependencies]
 linkerd2-proxy-api = { version = "0.3", features = ["arbitrary"] }
-prost-types = "0.9"
+prost-types = "0.10"
 quickcheck = { version = "1", default-features = false }
