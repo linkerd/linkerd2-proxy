@@ -1,5 +1,5 @@
 use linkerd_app_core::{
-    svc::{Param},
+    svc::Param,
     transport::{Remote, ServerAddr},
 };
 use parking_lot::Mutex;
