@@ -1,0 +1,60 @@
+name: rust-toolchain
+
+on:
+  pull_request:
+    paths:
+      - rust-toolchain
+      - "**Dockerfile"
+      - ".github/workflows/*"
+      - ".github/**/Dockerfile"
+
+permissions:
+  contents: read
+
+env:
+  YQ_VERSION: v4.2.0
+
+jobs:
+  dockerfiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
+      - run: |
+          VERSION="$(cat rust-toolchain)"
+          ex=0
+          for f in $(find . -name Dockerfile -and -not -path './.github/actions/release-tag-meta/*'); do
+            versions=$(sed -nE 's/^ARG RUST_VERSION=([^ ]+)/\1/p' $f)
+            if [ -z "$versions" ]; then
+              echo "::error file=$f::$f missing 'RUST_VERSION' argument"
+              ex=$((ex + 1))
+            fi
+            for mismatch in $(echo "$version" | grep -vF "$VERSION" || true) ; do
+              echo "::error file=$f::$f uses incorrect rust version(s): $mismatch"
+              ex=$((ex + 1))
+            done
+          done
+          exit $ex
+
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
+      - run: |
+          curl --proto '=https' --tlsv1.3 -vsSfLo /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+            && chmod +x /usr/local/bin/yq
+      - run: |
+          VERSION="$(cat rust-toolchain)"
+          ex=0
+          for f in $(find .github/workflows -name '*.yml') ; do
+            echo "# $f"
+            for image in $(yq eval '.jobs[].container.image' $f) ; do
+              if [[ "$image" =~ "^docker://(docker.io/library/)?rust:" ]]; then
+                v="${${image##*rust:}%%-*}"
+                if [[ "$v" != "$VERSION" ]]; then
+                  echo "::warning file=$f::$f uses incorrect rust version: $v"
+                  ex=$((ex + 1))
+                fi
+              fi
+            done
+          done
+          exit $ex
