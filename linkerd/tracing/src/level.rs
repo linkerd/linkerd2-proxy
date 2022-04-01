@@ -1,9 +1,22 @@
 use linkerd_error::Error;
 use tracing::trace;
-use tracing_subscriber::{reload, EnvFilter, Registry};
+use tracing_subscriber::{
+    filter::{self, EnvFilter, LevelFilter},
+    reload, Registry,
+};
 
 #[derive(Clone)]
 pub struct Handle(reload::Handle<EnvFilter, Registry>);
+
+/// Returns an `EnvFilter` builder with the configuration used for parsing new
+/// filter strings.
+pub(crate) fn filter_builder() -> filter::Builder {
+    EnvFilter::builder()
+        .with_default_directive(LevelFilter::WARN.into())
+        // Disable regular expression matching for `fmt::Debug` fields, use
+        // exact string matching instead.
+        .with_regex(false)
+}
 
 impl Handle {
     pub(crate) fn new(handle: reload::Handle<EnvFilter, Registry>) -> Self {
@@ -18,7 +31,7 @@ impl Handle {
 
     pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
         let level = level.as_ref();
-        let filter = level.parse::<EnvFilter>()?;
+        let filter = filter_builder().parse(level)?;
         self.0.reload(filter)?;
         tracing::info!(%level, "set new log level");
         Ok(())

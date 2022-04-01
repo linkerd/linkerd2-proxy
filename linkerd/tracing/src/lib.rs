@@ -16,7 +16,7 @@ use linkerd_error::Error;
 use std::str;
 use tracing::{Dispatch, Subscriber};
 use tracing_subscriber::{
-    filter::{EnvFilter, FilterFn},
+    filter::{FilterFn, LevelFilter},
     fmt::format,
     prelude::*,
     registry::LookupSpan,
@@ -60,7 +60,6 @@ pub fn init() -> Result<Handle, Error> {
 
 #[inline]
 pub(crate) fn update_max_level() {
-    use tracing::level_filters::LevelFilter;
     use tracing_log::{log, AsLog};
     log::set_max_level(LevelFilter::current().as_log());
 }
@@ -167,7 +166,11 @@ impl Settings {
     pub fn build(self) -> (Dispatch, Handle) {
         let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
 
-        let mut filter = EnvFilter::new(log_level);
+        let mut filter = level::filter_builder()
+            // When parsing the initial filter configuration from the
+            // environment variable, use `parse_lossy` to skip any invalid
+            // filter directives and print an error.
+            .parse_lossy(log_level);
 
         // If access logging is enabled, build the access log layer.
         let access_log = if let Some(format) = self.access_log {
