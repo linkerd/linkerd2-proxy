@@ -9,9 +9,6 @@ description = """
 Implements client layers for Linkerd ServiceProfiles.
 """
 
-[features]
-rustfmt = ["linkerd2-proxy-api/rustfmt"]
-
 [dependencies]
 bytes = "1"
 futures = { version = "0.3", default-features = false }
@@ -25,18 +22,18 @@ linkerd-http-box = { path = "../http-box" }
 linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd-stack = { path = "../stack" }
 linkerd-tonic-watch = { path = "../tonic-watch" }
-linkerd2-proxy-api = { version = "0.3", features = ["destination", "client"] }
+linkerd2-proxy-api = { version = "0.5", features = ["destination"] }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tonic = { version = "0.6", default-features = false }
+tonic = { version = "0.7", default-features = false }
 tower = { version = "0.4", features = ["ready-cache", "retry", "util"] }
 thiserror = "1"
 tracing = "0.1"
 pin-project = "1"
 
 [dev-dependencies]
-linkerd2-proxy-api = { version = "0.3", features = ["arbitrary"] }
-prost-types = "0.9"
+linkerd2-proxy-api = { version = "0.5", features = ["arbitrary"] }
+prost-types = "0.10"
 quickcheck = { version = "1", default-features = false }

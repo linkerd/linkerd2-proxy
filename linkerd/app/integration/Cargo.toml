@@ -16,7 +16,6 @@ a dedicated crate to help the compiler cache dependencies properly.
 default = ["flakey-in-ci"]
 flakey-in-ci = ["flakey-in-coverage"]
 flakey-in-coverage = []
-rustfmt = ["linkerd2-proxy-api/rustfmt"]
 
 [dependencies]
 bytes = "1"
@@ -24,11 +23,20 @@ futures = { version = "0.3", default-features = false, features = ["executor"] }
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14", features = ["http1", "http2", "stream", "client", "server"] }
+hyper = { version = "0.14", features = [
+    "http1",
+    "http2",
+    "stream",
+    "client",
+    "server",
+] }
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { version = "0.3", features = ["destination", "arbitrary"] }
+linkerd2-proxy-api = { version = "0.5", features = [
+    "destination",
+    "arbitrary",
+] }
 linkerd-app-test = { path = "../test" }
 linkerd-tracing = { path = "../../tracing" }
 parking_lot = "0.12"
@@ -39,12 +47,17 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-rustls = "0.23"
 rustls-pemfile = "0.3"
 tower = { version = "0.4", default-features = false }
-tonic = { version = "0.6", default-features = false }
+tonic = { version = "0.7", default-features = false }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "fmt",
+    "std",
+] }
 
 [dev-dependencies]
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1", default-features = false, features = [
+    "rust_backend",
+] }
 # No code from this crate is actually used; only necessary to enable the Rustls
 # implementation.
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }

@@ -48,9 +48,6 @@ deny = [
     { name = "rustls", wrappers = ["tokio-rustls"] },
 ]
 skip = [
-    # Waiting on a prost-build release that includes
-    # https://github.com/tokio-rs/prost/pull/583
-    { name = "heck", version = "0.3" },
     # waiting on `h2` and `tower` releases that update h2 to v0.7
     { name = "tokio-util", version = "0.6" },
 ]
