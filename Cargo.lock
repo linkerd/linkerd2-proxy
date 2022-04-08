@@ -712,7 +712,7 @@ dependencies = [
  "linkerd-tracing",
  "linkerd-transport-header",
  "linkerd-transport-metrics",
- "parking_lot 0.12.0",
+ "parking_lot",
  "pin-project",
  "quickcheck",
  "regex",
@@ -760,7 +760,7 @@ dependencies = [
  "linkerd-tonic-watch",
  "linkerd-tracing",
  "linkerd2-proxy-api",
- "parking_lot 0.12.0",
+ "parking_lot",
  "thiserror",
  "tokio",
  "tokio-test",
@@ -786,7 +786,7 @@ dependencies = [
  "linkerd-metrics",
  "linkerd-tracing",
  "linkerd2-proxy-api",
- "parking_lot 0.12.0",
+ "parking_lot",
  "regex",
  "socket2",
  "tokio",
@@ -815,7 +815,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-retry",
  "linkerd-tracing",
- "parking_lot 0.12.0",
+ "parking_lot",
  "pin-project",
  "thiserror",
  "tokio",
@@ -836,7 +836,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-identity",
  "linkerd-io",
- "parking_lot 0.12.0",
+ "parking_lot",
  "regex",
  "thiserror",
  "tokio",
@@ -855,7 +855,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "linkerd-tracing",
- "parking_lot 0.12.0",
+ "parking_lot",
  "tokio",
  "tower",
  "tracing",
@@ -982,7 +982,7 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-metrics",
  "linkerd-stack",
- "parking_lot 0.12.0",
+ "parking_lot",
  "pin-project",
  "tokio",
  "tower",
@@ -1000,7 +1000,7 @@ dependencies = [
  "hyper",
  "linkerd-error",
  "linkerd-tracing",
- "parking_lot 0.12.0",
+ "parking_lot",
  "thiserror",
  "tokio",
  "tracing",
@@ -1043,7 +1043,7 @@ dependencies = [
  "http",
  "hyper",
  "linkerd-stack",
- "parking_lot 0.12.0",
+ "parking_lot",
  "quickcheck",
  "tokio",
  "tracing",
@@ -1206,7 +1206,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tls",
  "linkerd2-proxy-api",
- "parking_lot 0.12.0",
+ "parking_lot",
  "pin-project",
  "prost-types",
  "quickcheck",
@@ -1329,7 +1329,7 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-tracing",
- "parking_lot 0.12.0",
+ "parking_lot",
  "pin-project",
  "thiserror",
  "tokio",
@@ -1344,7 +1344,7 @@ name = "linkerd-stack-metrics"
 version = "0.1.0"
 dependencies = [
  "linkerd-metrics",
- "parking_lot 0.12.0",
+ "parking_lot",
  "tokio",
  "tower",
 ]
@@ -1467,7 +1467,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-stack",
- "parking_lot 0.12.0",
+ "parking_lot",
  "pin-project",
  "tokio",
  "tracing",
@@ -1650,37 +1650,12 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d17b78036a60663b797adeaee46f5c9dfebb86948d1255007a1d6be0271ff99"
-dependencies = [
- "instant",
- "lock_api",
- "parking_lot_core 0.8.5",
-]
-
-[[package]]
-name = "parking_lot"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87f5ec2493a61ac0506c0f4199f99070cbe83857b0337006a30f3e6719b8ef58"
 dependencies = [
  "lock_api",
- "parking_lot_core 0.9.1",
-]
-
-[[package]]
-name = "parking_lot_core"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d76e8e1493bcac0d2766c42737f34458f1c8c50c0d23bcb24ea953affb273216"
-dependencies = [
- "cfg-if",
- "instant",
- "libc",
- "redox_syscall",
- "smallvec",
- "winapi",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -2150,7 +2125,7 @@ dependencies = [
  "mio",
  "num_cpus",
  "once_cell",
- "parking_lot 0.12.0",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -2399,14 +2374,14 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.3.8"
+version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74786ce43333fcf51efe947aed9718fbe46d5c7328ec3f1029e818083966d9aa"
+checksum = "b9df98b037d039d03400d9dd06b0f8ce05486b5f25e9a2d7d36196e142ebbc52"
 dependencies = [
  "ansi_term",
  "lazy_static",
  "matchers",
- "parking_lot 0.11.2",
+ "parking_lot",
  "regex",
  "serde",
  "serde_json",
@@ -2456,7 +2431,7 @@ dependencies = [
  "lazy_static",
  "log",
  "lru-cache",
- "parking_lot 0.12.0",
+ "parking_lot",
  "resolv-conf",
  "smallvec",
  "thiserror",
