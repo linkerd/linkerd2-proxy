@@ -78,7 +78,7 @@ minutes to review our [code of conduct][coc].
 
 We test our code by way of fuzzing and this is described in [FUZZING.md](/docs/FUZZING.md).
 
-A third party security audit focused on fuzzing Linkerd2-proxy was performed by Ada Logics in 2021. The full report is available [here](docs/linkerd2-proxy-fuzzing-report.pdf).
+A third party security audit focused on fuzzing Linkerd2-proxy was performed by Ada Logics in 2021. The full report is available [here](/docs/reports/linkerd2-proxy-fuzzing-report.pdf).
 
 
 ## License
