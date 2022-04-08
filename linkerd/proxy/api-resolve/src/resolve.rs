@@ -28,8 +28,7 @@ impl<S> Resolve<S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::Error: Into<Error> + Send,
-    S::ResponseBody: Send + Sync,
-    <S::ResponseBody as Body>::Data: Send,
+    S::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error: Into<Error> + Send,
     S::Future: Send,
 {
@@ -52,8 +51,7 @@ where
     T: Param<ConcreteAddr>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::Error: Into<Error> + Send,
-    S::ResponseBody: Send + Sync,
-    <S::ResponseBody as Body>::Data: Send,
+    S::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as Body>::Error: Into<Error> + Send,
     S::Future: Send,
 {

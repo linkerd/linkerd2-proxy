@@ -6,12 +6,9 @@ license = "Apache-2.0"
 edition = "2021"
 publish = false
 
-[features]
-rustfmt = ["linkerd2-proxy-api/rustfmt"]
-
 [dependencies]
 futures = { version = "0.3", default-features = false }
-linkerd2-proxy-api = { version = "0.3", features = ["identity", "client"] }
+linkerd2-proxy-api = { version = "0.4", features = ["identity", "client"] }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
 linkerd-metrics = { path = "../../metrics" }
@@ -20,6 +17,6 @@ parking_lot = "0.12"
 pin-project = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["time", "sync"] }
-tonic = { version = "0.6", default-features = false }
+tonic = { version = "0.7", default-features = false }
 tracing = "0.1"
 http-body = "0.4"

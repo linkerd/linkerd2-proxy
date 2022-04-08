@@ -27,8 +27,8 @@ pub async fn export_spans<T, S>(client: T, node: Node, spans: S, metrics: Regist
 where
     T: GrpcService<BoxBody> + Clone,
     T::Error: Into<Error>,
-    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send + Sync,
-    T::ResponseBody: Send + Sync + 'static,
+    T::ResponseBody: Default + HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
+    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S: Stream<Item = Span> + Unpin,
 {
     debug!("Span exporter running");
@@ -52,8 +52,8 @@ impl<T, S> SpanExporter<T, S>
 where
     T: GrpcService<BoxBody>,
     T::Error: Into<Error>,
-    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send + Sync,
-    T::ResponseBody: Send + Sync + 'static,
+    T::ResponseBody: Default + HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
+    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S: Stream<Item = Span> + Unpin,
 {
     const MAX_BATCH_SIZE: usize = 1000;
