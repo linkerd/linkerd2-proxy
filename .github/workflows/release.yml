@@ -1,7 +1,9 @@
 name: release
 
 on:
-  pull_request: {}
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
   push:
     tags:
       - "release/*"
@@ -44,7 +46,23 @@ jobs:
         uses: ./.github/actions/release-tag-meta
         with:
           git-ref: ${{ github.ref }}
-      #- run: echo "${{ toJSON(steps.release-tag-meta) }}"
+      - run: echo "${{ toJSON(steps.release-tag-meta) }}"
+
+      # Install a pre-built `protoc` binary when it's available. Protobuf
+      # doesn't publish a binary for `arm`, so prepare to build a vendored
+      # protoc in that case.
+      - if: matrix.architecture != 'arm'
+        uses: ./.github/actions/install-protoc
+      - if: matrix.architecture == 'arm'
+        run: |
+          sudo apt update
+          sudo apt install -y clang cmake
+          sudo rm -rf /var/lib/apt/lists/*
+      - run: |
+          echo arch=${{ matrix.architecture }}
+          command -v clang || true
+          command -v cmake || true
+          command -v protoc || true
 
       - name: package
         env:
