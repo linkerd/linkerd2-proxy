@@ -219,6 +219,7 @@ pub mod fuzz {
                         kind: "server".into(),
                         name: "testsaz".into(),
                     }],
+                    kind: "server".into(),
                     name: "testsrv".into(),
                 },
             );
@@ -228,7 +229,10 @@ pub mod fuzz {
 
     impl svc::Param<policy::ServerLabel> for Target {
         fn param(&self) -> policy::ServerLabel {
-            policy::ServerLabel("testsrv".into())
+            policy::ServerLabel {
+                kind: "server".into(),
+                name: "testsrv".into(),
+            }
         }
     }
 
