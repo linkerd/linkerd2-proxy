@@ -1,7 +1,11 @@
 name: release
 
 on:
-  pull_request: {}
+  pull_request:
+    paths:
+      - .github/actions/package/*
+      - .github/actions/release-tag-meta/*
+      - .github/workflows/release.yml
   push:
     tags:
       - "release/*"
