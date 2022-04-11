@@ -24,6 +24,15 @@ RUN rustup toolchain add nightly
 FROM nightly as fuzz
 RUN cargo +nightly install cargo-fuzz
 
+FROM docker.io/rust:${RUST_VERSION}-bullseye as protoc
+ARG PROTOC_VERSION=v3.20.0
+WORKDIR /tmp
+RUN arch="$(uname -m)" ; \
+    version="$PROTOC_VERSION" ; \
+    curl --proto '=https' --tlsv1.3 -vsSfLo protoc.zip  "https://github.com/google/protobuf/releases/download/$version/protoc-${version#v}-linux-$arch.zip" && \
+    unzip protoc.zip bin/protoc && \
+    chmod 755 bin/protoc
+
 #
 # Main image
 #
@@ -71,6 +80,10 @@ COPY --from=kubectl /usr/local/bin/kubectl /usr/local/bin/kubectl
 COPY --from=yq /usr/local/bin/yq /usr/local/bin/yq
 COPY --from=nightly /usr/local/rustup/toolchains/nightly-x86_64-unknown-linux-gnu /usr/local/rustup/toolchains/nightly-x86_64-unknown-linux-gnu
 COPY --from=fuzz /usr/local/cargo/bin/cargo-fuzz /usr/local/cargo/bin/cargo-fuzz
+
+COPY --from=protoc /tmp/bin/protoc /usr/local/bin/protoc
+ENV PROTOC_NO_VENDOR=1
+ENV PROTOC=/usr/local/bin/protoc
 
 ENTRYPOINT ["/usr/local/share/docker-init.sh"]
 CMD ["sleep", "infinity"]

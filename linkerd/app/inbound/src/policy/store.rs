@@ -81,7 +81,8 @@ impl Store {
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
-        S::ResponseBody: http::HttpBody<Error = Error> + Send + Sync + 'static,
+        S::ResponseBody:
+            http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
     {
         let rxs = ports
             .into_iter()

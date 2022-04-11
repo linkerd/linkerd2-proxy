@@ -1,1 +1,3 @@
 Cargo.lock linguist-generated=false
+linkerd/transport-header/src/gen/* linguist-generated=true
+opencensus-proto/src/gen/* linguist-generated=true

@@ -13,7 +13,7 @@ http-body = "0.4"
 linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
 opencensus-proto = { path = "../../opencensus-proto" }
-tonic = { version = "0.6", default-features = false, features = ["prost", "codegen"] }
+tonic = { version = "0.7", default-features = false, features = ["prost", "codegen"] }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
