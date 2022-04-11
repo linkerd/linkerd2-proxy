@@ -21,7 +21,7 @@ use std::str::FromStr;
 use tracing::trace;
 
 mod proto {
-    include!(concat!(env!("OUT_DIR"), "/transport.l5d.io.rs"));
+    include!("gen/transport.l5d.io.rs");
 }
 
 #[derive(Clone, Debug, PartialEq, Hash)]

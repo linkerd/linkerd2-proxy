@@ -86,8 +86,7 @@ impl Daemon {
     where
         N: NewService<(), Service = S>,
         S: GrpcService<BoxBody>,
-        S::ResponseBody: Send + Sync + 'static,
-        <S::ResponseBody as Body>::Data: Send,
+        S::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
         <S::ResponseBody as Body>::Error: Into<Error> + Send,
     {
         let Self {

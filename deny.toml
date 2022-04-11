@@ -17,7 +17,6 @@ ignore = []
 unlicensed = "deny"
 allow = [
     "Apache-2.0",
-    "BSD-3-Clause",
     "ISC",
     "MIT",
 ]
@@ -48,14 +47,8 @@ deny = [
     { name = "rustls", wrappers = ["tokio-rustls"] },
 ]
 skip = [
-    # Waiting on a tokio release that updates parking_lot to v0.12.
-    { name = "parking_lot", version = "0.11" },
-    { name = "parking_lot_core", version = "0.8" },
-    # Waiting on a prost-build release that includes
-    # https://github.com/tokio-rs/prost/pull/583
-    { name = "heck", version = "0.3" },
     # waiting on `h2` and `tower` releases that update h2 to v0.7
-    { name = "tokio-util", version = "0.6" }
+    { name = "tokio-util", version = "0.6" },
 ]
 skip-tree = [
     # Hasn't seen a new release since 2017. Pulls in an older version of nom.
