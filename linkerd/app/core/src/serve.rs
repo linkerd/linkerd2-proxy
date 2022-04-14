@@ -34,7 +34,7 @@ pub async fn serve<M, S, I, A>(
                     let (addrs, io) = match conn {
                         Ok(conn) => conn,
                         Err(error) => {
-                            warn!(%error, "Server failed to accept connection");
+                            warn!(error, "Server failed to accept connection");
                             continue;
                         }
                     };
@@ -60,7 +60,7 @@ pub async fn serve<M, S, I, A>(
                                             debug!(%reason, "Connection closed")
                                         }
                                         Err(error) => {
-                                            info!(%error, client.addr = %client_addr, "Connection closed")
+                                            info!(error, client.addr = %client_addr, "Connection closed")
                                         }
                                     }
                                     // Hold the service until the connection is complete. This
@@ -69,7 +69,7 @@ pub async fn serve<M, S, I, A>(
                                     drop(accept);
                                 }
                                 Err(error) => {
-                                    warn!(%error, client.addr = %client_addr, "Server failed to become ready");
+                                    warn!(error, client.addr = %client_addr, "Server failed to become ready");
                                 }
                             }
                         }

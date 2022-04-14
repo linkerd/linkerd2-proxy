@@ -147,7 +147,7 @@ impl errors::HttpRescue<Error> for ServerRescue {
             return Err(error);
         }
 
-        tracing::warn!(%error, "Unexpected error");
+        tracing::warn!(error, "Unexpected error");
         Ok(errors::SyntheticHttpResponse::unexpected_error())
     }
 }

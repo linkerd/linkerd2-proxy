@@ -60,7 +60,7 @@ impl Config {
         let resolve_backoff = {
             let backoff = self.connect.backoff;
             move |error: Error| {
-                warn!(%error, "Failed to resolve control-plane component");
+                warn!(error, "Failed to resolve control-plane component");
                 if let Some(e) = error.downcast_ref::<dns::ResolveError>() {
                     if let dns::ResolveErrorKind::NoRecordsFound {
                         negative_ttl: Some(ttl_secs),

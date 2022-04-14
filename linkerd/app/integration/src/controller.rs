@@ -382,7 +382,10 @@ where
                 let f = async move {
                     serve
                         .await
-                        .map_err(|error| tracing::error!(%error, "serving connection failed."))?;
+                        .map_err(|error| tracing::error!(
+                            error = &error as &dyn std::error::Error,
+                            "serving connection failed."
+                        ))?;
                     Ok::<(), ()>(())
                 };
                 tokio::spawn(cancelable(drain.clone(), f).instrument(span.or_current()));

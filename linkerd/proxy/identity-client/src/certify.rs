@@ -73,7 +73,7 @@ impl Certify {
                     curr_expiry = expiry
                 }
                 Err(error) => {
-                    error!(%error, "Failed to obtain identity");
+                    error!(error, "Failed to obtain identity");
                 }
             }
 

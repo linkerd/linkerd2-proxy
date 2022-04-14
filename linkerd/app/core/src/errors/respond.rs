@@ -323,7 +323,7 @@ where
         };
 
         let rsp = info_span!("rescue", client.addr = %self.client_addr()).in_scope(|| {
-            tracing::info!(%error, "Request failed");
+            tracing::info!(error, "Request failed");
             self.rescue.rescue(error)
         })?;
 

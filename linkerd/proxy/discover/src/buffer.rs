@@ -172,7 +172,7 @@ where
                 Some(Ok(up)) => up,
                 Some(Err(e)) => {
                     let error: Error = e.into();
-                    warn!(%error, "Discovery task failed");
+                    warn!(error, "Discovery task failed");
                     return Poll::Ready(());
                 }
                 None => {
