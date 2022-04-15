@@ -1,6 +1,12 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
+use linkerd_dns_name::NameRef;
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
 use linkerd_error::Error;
 use std::{fmt, net};
@@ -59,7 +65,7 @@ impl Resolver {
     /// record lookups.
     pub async fn resolve_addrs(
         &self,
-        name: &Name,
+        name: NameRef<'_>,
         default_port: u16,
     ) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
         match self.resolve_srv(name).await {
@@ -78,24 +84,29 @@ impl Resolver {
 
     async fn resolve_a(
         &self,
-        name: &Name,
+        name: NameRef<'_>,
     ) -> Result<(Vec<net::IpAddr>, time::Sleep), ResolveError> {
         debug!(%name, "resolve_a");
-        let lookup = self.dns.lookup_ip(name.as_ref()).await?;
+        let lookup = self.dns.lookup_ip(name.as_str()).await?;
         let valid_until = Instant::from_std(lookup.valid_until());
         let ips = lookup.iter().collect::<Vec<_>>();
         Ok((ips, time::sleep_until(valid_until)))
     }
 
-    async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
+    async fn resolve_srv(
+        &self,
+        name: NameRef<'_>,
+    ) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
         debug!(%name, "resolve_srv");
-        let srv = self.dns.srv_lookup(name.as_ref()).await?;
+        let srv = self.dns.srv_lookup(name.as_str()).await?;
+
         let valid_until = Instant::from_std(srv.as_lookup().valid_until());
         let addrs = srv
             .into_iter()
             .map(Self::srv_to_socket_addr)
             .collect::<Result<_, InvalidSrv>>()?;
         debug!(ttl = ?valid_until - time::Instant::now(), ?addrs);
+
         Ok((addrs, time::sleep_until(valid_until)))
     }
 
@@ -109,7 +120,7 @@ impl Resolver {
     fn srv_to_socket_addr(srv: rdata::SRV) -> Result<net::SocketAddr, InvalidSrv> {
         if let Some(first_label) = srv.target().iter().next() {
             if let Ok(utf8) = std::str::from_utf8(first_label) {
-                if let Ok(ip) = utf8.replace("-", ".").parse::<std::net::IpAddr>() {
+                if let Ok(ip) = utf8.replace('-', ".").parse::<std::net::IpAddr>() {
                     return Ok(net::SocketAddr::new(ip, srv.port()));
                 }
             }
@@ -184,7 +195,7 @@ mod tests {
 
         for case in VALID {
             let name = Name::from_str(case.input);
-            assert_eq!(name.as_ref().map(|x| x.as_ref()), Ok(case.output));
+            assert_eq!(name.as_deref(), Ok(case.output));
         }
 
         static INVALID: &[&str] = &[
@@ -239,7 +250,7 @@ mod tests {
 #[cfg(fuzzing)]
 pub mod fuzz_logic {
     use super::*;
-    use std::str::FromStr;
+
     pub struct FuzzConfig {}
 
     // Empty config resolver that we can use.
@@ -249,11 +260,11 @@ pub mod fuzz_logic {
 
     // Test the resolvers do not panic unexpectedly.
     pub async fn fuzz_entry(fuzz_data: &str) {
-        if let Ok(name) = Name::from_str(fuzz_data) {
+        if let Ok(name) = fuzz_data.parse::<Name>() {
             let fcon = FuzzConfig {};
             let resolver = Resolver::from_system_config_with(&fcon).unwrap();
-            let _w = resolver.resolve_a(&name).await;
-            let _w2 = resolver.resolve_srv(&name).await;
+            let _w = resolver.resolve_a(name.as_ref()).await;
+            let _w2 = resolver.resolve_srv(name.as_ref()).await;
         }
     }
 }

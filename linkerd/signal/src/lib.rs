@@ -1,6 +1,11 @@
 //! Unix signal handling for the proxy binary.
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
 /// Returns a `Future` that completes when the proxy should start to shutdown.

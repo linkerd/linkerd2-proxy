@@ -39,6 +39,7 @@ where
 {
     type Service = S::Service;
 
+    #[inline]
     fn new_service(&self, target: T) -> Self::Service {
         self.inner.new_service(self.map_target.map_target(target))
     }
@@ -53,10 +54,12 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
+    #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         self.inner.call(self.map_target.map_target(target))
     }
@@ -73,6 +76,7 @@ where
     type Error = P::Error;
     type Future = P::Future;
 
+    #[inline]
     fn proxy(&self, svc: &mut S, req: T) -> Self::Future {
         self.inner.proxy(svc, self.map_target.map_target(req))
     }

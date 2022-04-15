@@ -50,7 +50,7 @@ impl<C, T, B> Upgrade<C, T, B> {
 impl<C, T, B> tower::Service<http::Request<B>> for Upgrade<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
-    C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C: tower::make::MakeConnection<(crate::Version, T)> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
@@ -217,6 +217,11 @@ impl HttpBody for UpgradeResponseBody {
         Pin::new(self.project().inner)
             .poll_trailers(cx)
             .map_err(downgrade_h2_error)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> http_body::SizeHint {
+        HttpBody::size_hint(&self.inner)
     }
 }
 

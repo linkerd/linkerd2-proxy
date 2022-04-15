@@ -48,7 +48,8 @@ macro_rules! profile_test {
                 async move {
                     // Read the entire body before responding, so that the
                     // client doesn't fail when writing it out.
-                    let _body = hyper::body::aggregate(req.into_body()).await;
+                    let _body = hyper::body::to_bytes(req.into_body()).await;
+                    tracing::debug!(body = ?_body.as_ref().map(|body| body.len()), "recieved body");
                     Ok::<_, Error>(if fail {
                         Response::builder()
                             .status(533)
@@ -118,7 +119,7 @@ macro_rules! profile_test {
 
         let client = client::$http(proxy.outbound, host);
 
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         // Poll metrics until we recognize the profile is loaded...
         loop {
@@ -223,6 +224,36 @@ async fn retry_with_small_put_body() {
 }
 
 #[tokio::test]
+async fn retry_without_content_length() {
+    profile_test! {
+        routes: [
+            controller::route()
+                .request_any()
+                .response_failure(500..600)
+                .retryable(true)
+        ],
+        budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
+        with_client: |client: client::Client| async move {
+            let (mut tx, body) = hyper::body::Body::channel();
+            let req = client.request_builder("/0.5")
+                .method("POST")
+                .body(body)
+                .unwrap();
+            let res = tokio::spawn(async move { client.request_body(req).await });
+            tx.send_data(Bytes::from_static(b"hello"))
+                .await
+                .expect("the whole body should be read");
+            tx.send_data(Bytes::from_static(b"world"))
+                .await
+                .expect("the whole body should be read");
+            drop(tx);
+            let res = res.await.unwrap();
+            assert_eq!(res.status(), 200);
+        }
+    }
+}
+
+#[tokio::test]
 async fn does_not_retry_if_request_does_not_match() {
     profile_test! {
         routes: [
@@ -280,7 +311,9 @@ async fn does_not_retry_if_body_is_too_long() {
 }
 
 #[tokio::test]
-async fn does_not_retry_if_body_lacks_known_length() {
+async fn does_not_retry_if_streaming_body_exceeds_max_length() {
+    // TODO(eliza): if we make the max length limit configurable, update this
+    // test to test the configurable max length limit...
     profile_test! {
         routes: [
             controller::route()
@@ -296,10 +329,21 @@ async fn does_not_retry_if_body_lacks_known_length() {
                 .body(body)
                 .unwrap();
             let res = tokio::spawn(async move { client.request_body(req).await });
-            let _ = tx.send_data(Bytes::from_static(b"hello"));
-            let _ = tx.send_data(Bytes::from_static(b"world"));
+            // send a 32k chunk
+            tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
+                .await
+                .expect("the whole body should be read");
+            // ...and another one...
+            tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
+                .await
+                .expect("the whole body should be read");
+            // ...and a third one (exceeding the max length limit)
+            tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
+                .await
+                .expect("the whole body should be read");
             drop(tx);
             let res = res.await.unwrap();
+
             assert_eq!(res.status(), 533);
         }
     }

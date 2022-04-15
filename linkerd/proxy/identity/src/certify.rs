@@ -86,8 +86,7 @@ impl Daemon {
     where
         N: NewService<(), Service = S>,
         S: GrpcService<BoxBody>,
-        S::ResponseBody: Send + Sync + 'static,
-        <S::ResponseBody as Body>::Data: Send,
+        S::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
         <S::ResponseBody as Body>::Error: Into<Error> + Send,
     {
         let Self {
@@ -204,7 +203,7 @@ impl LocalCrtKey {
     }
 
     pub fn name(&self) -> &id::Name {
-        self.id.as_ref()
+        &*self.id
     }
 
     pub fn client_config(&self) -> tls::client::Config {

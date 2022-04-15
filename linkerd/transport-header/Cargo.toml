@@ -3,7 +3,7 @@ name = "linkerd-transport-header"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 [dependencies]
@@ -14,17 +14,15 @@ linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
-prost = "0.8"
+prost = "0.10"
 tokio = { version = "1", features = ["time"] }
-tracing = "0.1.28"
-
-[build-dependencies]
-prost-build = { version = "0.8", default-features = false }
+tracing = "0.1"
 
 [target.'cfg(fuzzing)'.dependencies]
-arbitrary = { version = "1",  features = ["derive"] }
-libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 
 [dev-dependencies]
+prost-build = { version = "0.10", default-features = false }
 tokio = { version = "1", features = ["macros"] }
 tokio-test = "0.4"

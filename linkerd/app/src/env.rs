@@ -227,19 +227,13 @@ const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_INBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
-const DEFAULT_INBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff {
-    min: Duration::from_millis(100),
-    max: Duration::from_millis(500),
-    jitter: 0.1,
-};
+const DEFAULT_INBOUND_CONNECT_BACKOFF: ExponentialBackoff =
+    ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_millis(500), 0.1);
 const DEFAULT_OUTBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_OUTBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
-const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff {
-    min: Duration::from_millis(100),
-    max: Duration::from_millis(500),
-    jitter: 0.1,
-};
+const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff =
+    ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_millis(500), 0.1);
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
@@ -969,8 +963,10 @@ fn parse_addr(s: &str) -> Result<Addr, ParseError> {
 
 fn parse_port_set(s: &str) -> Result<HashSet<u16>, ParseError> {
     let mut set = HashSet::new();
-    for num in s.split(',') {
-        set.insert(parse_number::<u16>(num)?);
+    if !s.is_empty() {
+        for num in s.split(',') {
+            set.insert(parse_number::<u16>(num)?);
+        }
     }
     Ok(set)
 }
@@ -1098,7 +1094,7 @@ pub fn parse_backoff<S: Strings>(
     match (min?, max?, jitter?) {
         (None, None, None) => Ok(default),
         (Some(min), Some(max), jitter) => {
-            ExponentialBackoff::new(min, max, jitter.unwrap_or_default()).map_err(|error| {
+            ExponentialBackoff::try_new(min, max, jitter.unwrap_or_default()).map_err(|error| {
                 error!(message="Invalid backoff", %error, %min_env, ?min, %max_env, ?max, %jitter_env, ?jitter);
                 EnvError::InvalidEnvVar
             })

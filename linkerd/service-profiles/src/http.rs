@@ -1,3 +1,6 @@
+mod proxy;
+mod service;
+
 use regex::Regex;
 use std::{
     fmt,
@@ -8,7 +11,7 @@ use std::{
 };
 use tower::retry::budget::Budget;
 
-pub mod route_request;
+pub use self::{proxy::NewProxyRouter, service::NewServiceRouter};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {
@@ -54,6 +57,18 @@ pub struct Retries {
 
 #[derive(Clone, Default)]
 struct Labels(Arc<std::collections::BTreeMap<String, String>>);
+
+fn route_for_request<'r, B>(
+    http_routes: &'r [(RequestMatch, Route)],
+    request: &http::Request<B>,
+) -> Option<&'r Route> {
+    for (request_match, route) in http_routes {
+        if request_match.is_match(request) {
+            return Some(route);
+        }
+    }
+    None
+}
 
 // === impl Route ===
 

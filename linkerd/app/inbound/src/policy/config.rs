@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 /// The proxy usually watches dynamic policies from the control plane, though it can also use
 /// 'fixed' policies configured at startup.
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Config {
     Discover {
         control: control::Config,

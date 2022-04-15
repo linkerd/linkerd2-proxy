@@ -1,27 +1,23 @@
 use crate::ServerId;
 use linkerd_identity as id;
-use std::convert::TryFrom;
 use tracing::trace;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Incomplete;
 
-/// Determintes whether the given `input` looks like the start of a TLS
-/// connection.
+/// Determines whether the given `input` looks like the start of a TLS connection.
 ///
-/// The determination is made based on whether the input looks like (the start
-/// of) a valid ClientHello that a reasonable TLS client might send, and the
-/// SNI matches the given identity.
+/// The determination is made based on whether the input looks like (the start of) a valid
+/// ClientHello that a reasonable TLS client might send, and the SNI matches the given identity.
 ///
-/// XXX: Once the TLS record header is matched, the determination won't be
-/// made until the entire TLS record including the entire ClientHello handshake
-/// message is available.
+/// XXX: Once the TLS record header is matched, the determination won't be made until the entire TLS
+/// record including the entire ClientHello handshake message is available.
 ///
 /// TODO: Reject non-matching inputs earlier.
 ///
-/// This assumes that the ClientHello is small and is sent in a single TLS
-/// record, which is what all reasonable implementations do. (If they were not
-/// to, they wouldn't interoperate with picky servers.)
+/// This assumes that the ClientHello is small and is sent in a single TLS record, which is what all
+/// reasonable implementations do. (If they were not to, they wouldn't interoperate with picky
+/// servers.)
 pub fn parse_sni(input: &[u8]) -> Result<Option<ServerId>, Incomplete> {
     let r = untrusted::Input::from(input).read_all(untrusted::EndOfInput, |input| {
         let r = extract_sni(input);
@@ -30,11 +26,15 @@ pub fn parse_sni(input: &[u8]) -> Result<Option<ServerId>, Incomplete> {
     });
     match r {
         Ok(Some(sni)) => {
-            let sni = id::Name::try_from(sni.as_slice_less_safe())
+            let sni = match std::str::from_utf8(sni.as_slice_less_safe())
                 .ok()
-                .map(ServerId);
+                .and_then(|n| n.parse::<id::Name>().ok())
+            {
+                Some(sni) => sni,
+                None => return Ok(None),
+            };
             trace!(?sni, "parse_sni: parsed correctly up to SNI");
-            Ok(sni)
+            Ok(Some(ServerId(sni)))
         }
         Ok(None) => {
             trace!("parse_sni: failed to parse up to SNI");

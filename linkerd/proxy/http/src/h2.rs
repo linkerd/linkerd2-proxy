@@ -62,7 +62,7 @@ type ConnectFuture<B> = Pin<Box<dyn Future<Output = Result<Connection<B>>> + Sen
 
 impl<C, B, T> tower::Service<T> for Connect<C, B>
 where
-    C: tower::make::MakeConnection<T>,
+    C: tower::make::MakeConnection<(crate::Version, T)>,
     C::Future: Send + 'static,
     C::Connection: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     C::Error: Into<Error>,
@@ -88,7 +88,7 @@ where
 
         let connect = self
             .connect
-            .make_connection(target)
+            .make_connection((crate::Version::H2, target))
             .instrument(trace_span!("connect"));
 
         Box::pin(

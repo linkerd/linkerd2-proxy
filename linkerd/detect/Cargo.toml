@@ -3,7 +3,7 @@ name = "linkerd-detect"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 [dependencies]
@@ -13,6 +13,6 @@ linkerd-error = { path = "../error" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
 tokio = { version = "1", features = ["time"] }
-thiserror = "1.0"
-tower = "0.4.8"
-tracing = "0.1.28"
+thiserror = "1"
+tower = "0.4"
+tracing = "0.1"

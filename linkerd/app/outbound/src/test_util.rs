@@ -26,7 +26,7 @@ pub(crate) fn default_config() -> Config {
             connect: config::ConnectConfig {
                 keepalive: Keepalive(None),
                 timeout: Duration::from_secs(1),
-                backoff: exp_backoff::ExponentialBackoff::new(
+                backoff: exp_backoff::ExponentialBackoff::try_new(
                     Duration::from_millis(100),
                     Duration::from_millis(500),
                     0.1,

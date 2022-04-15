@@ -21,7 +21,7 @@ impl Client {
     pub async fn observe(
         &mut self,
         req: ObserveBuilder,
-    ) -> Pin<Box<dyn Stream<Item = Result<pb::TapEvent, tonic::Status>> + Send + Sync>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<pb::TapEvent, tonic::Status>> + Send>> {
         let req = tonic::Request::new(req.0);
         match self.api.observe(req).await {
             Ok(rsp) => Box::pin(rsp.into_inner()),
@@ -33,7 +33,7 @@ impl Client {
         &mut self,
         req: ObserveBuilder,
         require_id: &str,
-    ) -> Pin<Box<dyn Stream<Item = Result<pb::TapEvent, tonic::Status>> + Send + Sync>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<pb::TapEvent, tonic::Status>> + Send>> {
         let mut req = tonic::Request::new(req.0);
 
         let require_id = tonic::metadata::MetadataValue::from_str(require_id).unwrap();
@@ -192,9 +192,9 @@ type ResponseFuture =
 
 impl<B> tower::Service<http::Request<B>> for SyncSvc
 where
-    B: Body + Send + Sync + 'static,
-    B::Data: Send + Sync + 'static,
-    B::Error: Send + Sync + 'static,
+    B: Body + Send + 'static,
+    B::Data: Send + 'static,
+    B::Error: Send + 'static,
 {
     type Response = http::Response<hyper::Body>;
     type Error = String;

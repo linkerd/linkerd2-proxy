@@ -14,8 +14,8 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
-    time::Instant,
 };
+use tokio::time::Instant;
 
 /// Wraps services to record metrics.
 pub type NewHttpMetrics<N, K, C, Class, S> =
@@ -283,6 +283,7 @@ where
         self.project().inner.poll_trailers(cx)
     }
 
+    #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         self.inner.size_hint()
     }
@@ -342,7 +343,8 @@ where
             .entry(Some(*this.status))
             .or_insert_with(StatusMetrics::default);
 
-        status_metrics.latency.add(now - *this.stream_open_at);
+        let elapsed = now.saturating_duration_since(*this.stream_open_at);
+        status_metrics.latency.add(elapsed);
 
         *this.latency_recorded = true;
     }
@@ -437,6 +439,11 @@ where
         }
 
         Poll::Ready(Ok(trls))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.inner.size_hint()
     }
 }
 

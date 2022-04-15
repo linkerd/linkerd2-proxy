@@ -74,10 +74,10 @@ impl Identity {
         }
     }
 
-    pub fn metrics(&self) -> metrics::Report {
+    pub fn metrics(&self) -> Option<metrics::Report> {
         match self {
-            Identity::Disabled => metrics::Report::disabled(),
-            Identity::Enabled { ref local, .. } => local.metrics(),
+            Identity::Disabled => None,
+            Identity::Enabled { ref local, .. } => Some(local.metrics()),
         }
     }
 

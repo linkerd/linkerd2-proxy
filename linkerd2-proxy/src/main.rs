@@ -1,8 +1,12 @@
 //! The main entrypoint for the proxy.
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
-#![type_length_limit = "16289823"]
 
 use linkerd_app::{core::transport::BindTcp, trace, Config};
 use linkerd_signal as signal;

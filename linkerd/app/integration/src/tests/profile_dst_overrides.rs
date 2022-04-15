@@ -87,7 +87,7 @@ async fn add_a_dst_override() {
         .run()
         .await;
     let client = client::http1(proxy.outbound, apex_svc.authority());
-    let metrics = client::http1(proxy.metrics, "localhost");
+    let metrics = client::http1(proxy.admin, "localhost");
 
     let n = 100;
 
@@ -149,7 +149,7 @@ async fn add_multiple_dst_overrides() {
         .await;
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
-    let metrics = client::http1(proxy.metrics, "localhost");
+    let metrics = client::http1(proxy.admin, "localhost");
 
     let n = 100;
 
@@ -214,7 +214,7 @@ async fn set_a_dst_override_weight_to_zero() {
         .await;
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
-    let metrics = client::http1(proxy.metrics, "localhost");
+    let metrics = client::http1(proxy.admin, "localhost");
 
     let n = 100;
 
@@ -284,7 +284,7 @@ async fn set_all_dst_override_weights_to_zero() {
         .await;
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
-    let metrics = client::http1(proxy.metrics, "localhost");
+    let metrics = client::http1(proxy.admin, "localhost");
 
     let n = 100;
 
@@ -346,7 +346,7 @@ async fn remove_a_dst_override() {
         .await;
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
-    let metrics = client::http1(proxy.metrics, "localhost");
+    let metrics = client::http1(proxy.admin, "localhost");
 
     let n = 100;
 

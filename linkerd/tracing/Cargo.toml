@@ -3,7 +3,7 @@ name = "linkerd-tracing"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 [features]
@@ -13,11 +13,10 @@ ansi = ["tracing-subscriber/ansi"]
 [dependencies]
 linkerd-error = { path = "../error" }
 tokio = { version = "1", features = ["time"] }
-tracing = "0.1.28"
-tracing-log = "0.1.2"
+tracing = "0.1"
+tracing-log = "0.1"
 
 [dependencies.tracing-subscriber]
-version = "0.2.24"
+version = "0.3.11"
 default-features = false
-features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
-
+features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot", "registry"]

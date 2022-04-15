@@ -7,7 +7,12 @@
 //! - Tap
 //! - Metric labeling
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
 pub use drain;
@@ -37,12 +42,10 @@ pub mod classify;
 pub mod config;
 pub mod control;
 pub mod dns;
-pub mod dst;
 pub mod errors;
 pub mod http_tracing;
 pub mod metrics;
 pub mod proxy;
-pub mod retry;
 pub mod serve;
 pub mod svc;
 pub mod telemetry;

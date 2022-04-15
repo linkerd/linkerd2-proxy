@@ -3,36 +3,32 @@ name = "linkerd-proxy-tap"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
-
-[features]
-rustfmt = ["linkerd2-proxy-api/rustfmt"]
 
 [dependencies]
 http = "0.2"
-hyper = { version = "0.14.13", features = ["http1", "http2"] }
+hyper = { version = "0.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
-ipnet = "2.3"
-linkerd2-proxy-api = { version = "0.2", features = ["tap", "server"] }
+ipnet = "2.4"
+linkerd2-proxy-api = { version = "0.5", features = ["tap"] }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-http = { path = "../http" }
-linkerd-proxy-transport = { path = "../transport" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
-parking_lot = "0.11"
+parking_lot = "0.12"
 rand = { version = "0.8" }
-thiserror = "1.0"
-tokio = { version = "1", features = ["time"]}
-tower = { version = "0.4.8", default-features = false }
-tonic = { version = "0.5", default-features = false }
-tracing = "0.1.28"
+thiserror = "1"
+tokio = { version = "1", features = ["time"] }
+tower = { version = "0.4", default-features = false }
+tonic = { version = "0.7", default-features = false }
+tracing = "0.1"
 pin-project = "1"
 
 [dev-dependencies]
-linkerd2-proxy-api = { version = "0.2", features = ["arbitrary"] }
-prost-types = "0.8.0"
+linkerd2-proxy-api = { version = "0.5", features = ["arbitrary"] }
+prost-types = "0.10"
 quickcheck = { version = "1", default-features = false }

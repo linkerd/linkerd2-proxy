@@ -1,11 +1,12 @@
 //! Shared infrastructure for integration tests
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
-#![recursion_limit = "256"]
-#![type_length_limit = "16289823"]
-// It's not clear where this originates.
-#![allow(clippy::eval_order_dependence)]
 
 mod test_env;
 
@@ -70,8 +71,8 @@ macro_rules! assert_eventually {
     ($cond:expr, retries: $retries:expr, $($arg:tt)+) => {
         {
             use std::{env, u64};
-            use std::time::{Instant, Duration};
             use std::str::FromStr;
+            use tokio::time::{Instant, Duration};
             use tracing::Instrument as _;
             // TODO: don't do this *every* time eventually is called (lazy_static?)
             let patience = env::var($crate::ENV_TEST_PATIENCE_MS).ok()
@@ -93,7 +94,7 @@ macro_rules! assert_eventually {
                     } else if i == $retries {
                         panic!(
                             "assertion failed after {} (retried {} times): {}",
-                            crate::HumanDuration(start_t.elapsed()),
+                            crate::HumanDuration(Instant::now().saturating_duration_since(start_t)),
                             i,
                             format_args!($($arg)+)
                         )

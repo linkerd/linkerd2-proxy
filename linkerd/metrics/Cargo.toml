@@ -3,23 +3,23 @@ name = "linkerd-metrics"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 [features]
 default = []
-summary = ["hdrhistogram", "tokio"]
+summary = ["hdrhistogram"]
 test_util = []
 
 [dependencies]
-deflate = { version = "0.9.1", features = ["gzip"] }
-hdrhistogram = { version = "7.3", default-features = false, optional = true }
+deflate = { version = "1", features = ["gzip"] }
+hdrhistogram = { version = "7.5", default-features = false, optional = true }
 http = "0.2"
-hyper = { version = "0.14.13", features = ["http1", "http2"] }
+hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-stack = { path = "../stack", optional = true }
-parking_lot = "0.11"
-tokio = { version = "1", features = ["time"], optional = true }
-tracing = "0.1.28"
+parking_lot = "0.12"
+tokio = { version = "1", features = ["time"] }
+tracing = "0.1"
 
 [dev-dependencies]
 quickcheck = { version = "1", default-features = false }

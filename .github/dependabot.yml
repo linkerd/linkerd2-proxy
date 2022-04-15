@@ -1,41 +1,73 @@
+# Dependabot are scheduled to avoid contention with normal workday CI usage. We
+# start running updates at 10AM UTC (2AM PST).
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: daily
+      time: "10:00"
+      timezone: "UTC"
+    allow:
+      - dependency-type: "all"
+    ignore:
+      - dependency-name: "futures-channel"
+      - dependency-name: "futures-core"
+      - dependency-name: "futures-io"
+      - dependency-name: "futures-sink"
+      - dependency-name: "futures-task"
+      - dependency-name: "futures-util"
+      - dependency-name: "prost-derive"
+      - dependency-name: "tracing-attributes"
+      - dependency-name: "tracing-core"
+      - dependency-name: "tracing-serde"
+      - dependency-name: "trust-dns-proto"
 
   - package-ecosystem: cargo
     directory: /linkerd/addr/fuzz
     schedule:
       interval: daily
+      time: "10:00"
+      timezone: "UTC"
 
   - package-ecosystem: cargo
     directory: /linkerd/app/inbound/fuzz
     schedule:
       interval: daily
+      time: "10:00"
+      timezone: "UTC"
 
   - package-ecosystem: cargo
     directory: /linkerd/dns/fuzz
     schedule:
       interval: daily
+      time: "10:00"
+      timezone: "UTC"
 
   - package-ecosystem: cargo
     directory: /linkerd/proxy/http/fuzz
     schedule:
       interval: daily
+      time: "10:00"
+      timezone: "UTC"
 
   - package-ecosystem: cargo
     directory: /linkerd/tls/fuzz
     schedule:
       interval: daily
+      time: "10:00"
+      timezone: "UTC"
 
   - package-ecosystem: cargo
     directory: /linkerd/transport-header/fuzz
     schedule:
       interval: daily
+      time: "10:00"
+      timezone: "UTC"
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: daily
+      time: "10:00"
+      timezone: "UTC"

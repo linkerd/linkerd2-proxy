@@ -1,10 +1,14 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
-#![allow(clippy::type_complexity)]
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
-use http_body::Body;
+use http_body::{Body, SizeHint};
 use linkerd_error::Error;
 use parking_lot::Mutex;
 use std::{collections::VecDeque, io::IoSlice, pin::Pin, sync::Arc, task::Context, task::Poll};
@@ -70,6 +74,8 @@ struct SharedState<B> {
     /// always return `true` from `is_end_stream` even when they don't own the
     /// shared state.
     was_empty: bool,
+
+    orig_size_hint: SizeHint,
 }
 
 #[derive(Debug)]
@@ -79,7 +85,7 @@ struct BodyState<B> {
     rest: Option<B>,
     is_completed: bool,
 
-    /// Maxiumum number of bytes to buffer.
+    /// Maximum number of bytes to buffer.
     max_bytes: usize,
 }
 
@@ -88,15 +94,27 @@ struct BodyState<B> {
 impl<B: Body> ReplayBody<B> {
     /// Wraps an initial `Body` in a `ReplayBody`.
     ///
-    /// In order to prevent unbounded buffering, this takes a maximum number of
-    /// bytes to buffer as a second parameter. If more than than that number of
-    /// bytes would be buffered, the buffered data is discarded and any
-    /// subsequent clones of this body will fail. However, the *currently
-    /// active* clone of the body is allowed to continue without erroring. It
-    /// will simply stop buffering any additional data for retries.
-    pub fn new(body: B, max_bytes: usize) -> Self {
-        let was_empty = body.is_end_stream();
-        Self {
+    /// In order to prevent unbounded buffering, this takes a maximum number of bytes to buffer as a
+    /// second parameter. If more than than that number of bytes would be buffered, the buffered
+    /// data is discarded and any subsequent clones of this body will fail. However, the *currently
+    /// active* clone of the body is allowed to continue without erroring. It will simply stop
+    /// buffering any additional data for retries.
+    ///
+    /// If the body has a size hint with a lower bound greater than `max_bytes`, the original body
+    /// is returned in the error variant.
+    pub fn try_new(body: B, max_bytes: usize) -> Result<Self, B> {
+        let orig_size_hint = body.size_hint();
+        tracing::trace!(body.size_hint = %orig_size_hint.lower(), %max_bytes);
+        if orig_size_hint.lower() > max_bytes as u64 {
+            return Err(body);
+        }
+
+        Ok(Self {
+            shared: Arc::new(SharedState {
+                body: Mutex::new(None),
+                orig_size_hint,
+                was_empty: body.is_end_stream(),
+            }),
             state: Some(BodyState {
                 buf: Default::default(),
                 trailers: None,
@@ -104,14 +122,10 @@ impl<B: Body> ReplayBody<B> {
                 is_completed: false,
                 max_bytes: max_bytes + 1,
             }),
-            shared: Arc::new(SharedState {
-                body: Mutex::new(None),
-                was_empty,
-            }),
             // The initial `ReplayBody` has nothing to replay
             replay_body: false,
             replay_trailers: false,
-        }
+        })
     }
 
     /// Mutably borrows the body state if this clone currently owns it,
@@ -127,6 +141,25 @@ impl<B: Body> ReplayBody<B> {
         shared: &Mutex<Option<BodyState<B>>>,
     ) -> &'a mut BodyState<B> {
         state.get_or_insert_with(|| shared.lock().take().expect("missing body state"))
+    }
+
+    /// Returns `true` if the body previously exceeded the configured maximum
+    /// length limit.
+    ///
+    /// If this is true, the body is now empty, and the request should *not* be
+    /// retried with this body.
+    pub fn is_capped(&self) -> bool {
+        self.state
+            .as_ref()
+            .map(BodyState::is_capped)
+            .unwrap_or_else(|| {
+                self.shared
+                    .body
+                    .lock()
+                    .as_ref()
+                    .expect("if our `state` was `None`, the shared state must be `Some`")
+                    .is_capped()
+            })
     }
 }
 
@@ -151,21 +184,21 @@ where
             buf.has_remaining = state.buf.has_remaining(),
             body.is_completed = state.is_completed,
             body.max_bytes_remaining = state.max_bytes,
-            "Replay::poll_data"
+            "ReplayBody::poll_data"
         );
 
         // If we haven't replayed the buffer yet, and its not empty, return the
         // buffered data first.
         if this.replay_body {
             if state.buf.has_remaining() {
-                tracing::trace!("replaying body");
+                tracing::trace!("Replaying body");
                 // Don't return the buffered data again on the next poll.
                 this.replay_body = false;
                 return Poll::Ready(Some(Ok(Data::Replay(state.buf.clone()))));
             }
 
             if state.is_capped() {
-                tracing::trace!("cannot replay buffered body, maximum buffer length reached");
+                tracing::trace!("Cannot replay buffered body, maximum buffer length reached");
                 return Poll::Ready(Some(Err(Capped.into())));
             }
         }
@@ -180,50 +213,50 @@ where
             return Poll::Ready(None);
         }
 
-        // If there's more data in the initial body, poll that...
-        if let Some(rest) = state.rest.as_mut() {
+        // Poll the inner body for more data. If the body has ended, remember
+        // that so that future clones will not try polling it again (as
+        // described above).
+        let mut data = {
+            // Get access to the initial body. If we don't have access to the
+            // inner body, there's no more work to do.
+            let rest = match state.rest.as_mut() {
+                Some(rest) => rest,
+                None => return Poll::Ready(None),
+            };
+
             tracing::trace!("Polling initial body");
-            let opt = futures::ready!(Pin::new(rest).poll_data(cx));
-
-            // If the body has ended, remember that so that future clones will
-            // not try polling it again --- some `Body` types will panic if they
-            // are polled after returning `None`.
-            if opt.is_none() {
-                tracing::trace!("Initial body completed");
-                state.is_completed = true;
+            match futures::ready!(Pin::new(rest).poll_data(cx)) {
+                Some(Ok(data)) => data,
+                Some(Err(e)) => return Poll::Ready(Some(Err(e.into()))),
+                None => {
+                    tracing::trace!("Initial body completed");
+                    state.is_completed = true;
+                    return Poll::Ready(None);
+                }
             }
-            return Poll::Ready(opt.map(|ok| {
-                ok.map(|mut data| {
-                    // If we have buffered the maximum number of bytes, allow
-                    // *this* body to continue, but don't buffer any more.
-                    let length = data.remaining();
-                    state.max_bytes = state.max_bytes.saturating_sub(length);
-                    if state.is_capped() {
-                        // If there's data in the buffer, discard it now, since
-                        // we won't allow any clones to have a complete body.
-                        if state.buf.has_remaining() {
-                            tracing::debug!(
-                                buf.size = state.buf.remaining(),
-                                "buffered maximum capacity, discarding buffer"
-                            );
-                            state.buf = Default::default();
-                        }
-                        return Data::Initial(data.copy_to_bytes(length));
-                    }
+        };
 
-                    if state.is_capped() {
-                        return Data::Initial(data.copy_to_bytes(length));
-                    }
+        // If we have buffered the maximum number of bytes, allow *this* body to
+        // continue, but don't buffer any more.
+        let length = data.remaining();
+        state.max_bytes = state.max_bytes.saturating_sub(length);
+        let chunk = if state.is_capped() {
+            // If there's data in the buffer, discard it now, since we won't
+            // allow any clones to have a complete body.
+            if state.buf.has_remaining() {
+                tracing::debug!(
+                    buf.size = state.buf.remaining(),
+                    "Buffered maximum capacity, discarding buffer"
+                );
+                state.buf = Default::default();
+            }
+            data.copy_to_bytes(length)
+        } else {
+            // Buffer and return the bytes.
+            state.buf.push_chunk(data)
+        };
 
-                    // Buffer and return the bytes
-                    Data::Initial(state.buf.push_chunk(data))
-                })
-                .map_err(Into::into)
-            }));
-        }
-
-        // Otherwise, guess we're done!
-        Poll::Ready(None)
+        Poll::Ready(Some(Ok(Data::Initial(chunk))))
     }
 
     fn poll_trailers(
@@ -282,31 +315,30 @@ where
             && is_inner_eos
     }
 
-    fn size_hint(&self) -> http_body::SizeHint {
-        let mut hint = http_body::SizeHint::default();
-        if let Some(ref state) = self.state {
-            let rem = state.buf.remaining() as u64;
+    #[inline]
+    fn size_hint(&self) -> SizeHint {
+        // If this clone isn't holding the body, return the original size hint.
+        let state = match self.state.as_ref() {
+            Some(state) => state,
+            None => return self.shared.orig_size_hint.clone(),
+        };
 
-            // Have we read the entire body? If so, the size is exactly the size
-            // of the buffer.
-            if state.is_completed {
-                return http_body::SizeHint::with_exact(rem);
-            }
+        // Otherwise, if we're holding the state but have dropped the inner
+        // body, the entire body is buffered so we know the exact size hint.
+        let buffered = state.buf.remaining() as u64;
+        let rest_hint = match state.rest.as_ref() {
+            Some(rest) => rest.size_hint(),
+            None => return SizeHint::with_exact(buffered),
+        };
 
-            // Otherwise, the size is the size of the current buffer plus the
-            // size hint returned by the inner body.
-            let (rest_lower, rest_upper) = state
-                .rest
-                .as_ref()
-                .map(|rest| {
-                    let hint = rest.size_hint();
-                    (hint.lower(), hint.upper().unwrap_or(0))
-                })
-                .unwrap_or_default();
-            hint.set_lower(rem + rest_lower);
-            hint.set_upper(rem + rest_upper);
+        // Otherwise, add the inner body's size hint to the amount of buffered
+        // data. An upper limit is only set if the inner body has an upper
+        // limit.
+        let mut hint = SizeHint::default();
+        hint.set_lower(buffered + rest_hint.lower());
+        if let Some(rest_upper) = rest_hint.upper() {
+            hint.set_upper(buffered + rest_upper);
         }
-
         hint
     }
 }
@@ -326,7 +358,7 @@ impl<B> Clone for ReplayBody<B> {
 
 impl<B> Drop for ReplayBody<B> {
     fn drop(&mut self) {
-        // If this clone owned the shared state, put it back.`s
+        // If this clone owned the shared state, put it back.
         if let Some(state) = self.state.take() {
             *self.shared.body.lock() = Some(state);
         }
@@ -749,7 +781,8 @@ mod tests {
     fn empty_body_is_always_eos() {
         // If the initial body was empty, every clone should always return
         // `true` from `is_end_stream`.
-        let initial = ReplayBody::new(hyper::Body::empty(), 64 * 1024);
+        let initial = ReplayBody::try_new(hyper::Body::empty(), 64 * 1024)
+            .expect("empty body can't be too large");
         assert!(initial.is_end_stream());
 
         let replay = initial.clone();
@@ -763,7 +796,8 @@ mod tests {
     async fn eos_only_when_fully_replayed() {
         // Test that each clone of a body is not EOS until the data has been
         // fully replayed.
-        let mut initial = ReplayBody::new(hyper::Body::from("hello world"), 64 * 1024);
+        let mut initial = ReplayBody::try_new(hyper::Body::from("hello world"), 64 * 1024)
+            .expect("body must not be too large");
         let mut replay = initial.clone();
 
         body_to_string(&mut initial).await;
@@ -807,7 +841,7 @@ mod tests {
         let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
 
         let (mut tx, body) = hyper::Body::channel();
-        let mut initial = ReplayBody::new(body, 8);
+        let mut initial = ReplayBody::try_new(body, 8).expect("channel body must not be too large");
         let mut replay = initial.clone();
 
         // Send enough data to reach the cap
@@ -837,7 +871,7 @@ mod tests {
         let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=debug");
 
         let (mut tx, body) = hyper::Body::channel();
-        let mut initial = ReplayBody::new(body, 8);
+        let mut initial = ReplayBody::try_new(body, 8).expect("channel body must not be too large");
         let mut replay = initial.clone();
 
         // Send enough data to reach the cap
@@ -863,6 +897,34 @@ mod tests {
         assert!(err.is::<Capped>())
     }
 
+    #[test]
+    fn body_too_big() {
+        let max_size = 8;
+        let mk_body =
+            |sz: usize| -> hyper::Body { (0..sz).map(|_| "x").collect::<String>().into() };
+
+        assert!(
+            ReplayBody::try_new(hyper::Body::empty(), max_size).is_ok(),
+            "empty body is not too big"
+        );
+
+        assert!(
+            ReplayBody::try_new(mk_body(max_size), max_size).is_ok(),
+            "body at maximum capacity is not too big"
+        );
+
+        assert!(
+            ReplayBody::try_new(mk_body(max_size + 1), max_size).is_err(),
+            "over-sized body is too big"
+        );
+
+        let (_sender, body) = hyper::Body::channel();
+        assert!(
+            ReplayBody::try_new(body, max_size).is_ok(),
+            "body without size hint is not too big"
+        );
+    }
+
     struct Test {
         tx: Tx,
         initial: ReplayBody<hyper::Body>,
@@ -875,7 +937,7 @@ mod tests {
     impl Test {
         fn new() -> Self {
             let (tx, body) = hyper::Body::channel();
-            let initial = ReplayBody::new(body, 64 * 1024);
+            let initial = ReplayBody::try_new(body, 64 * 1024).expect("body too large");
             let replay = initial.clone();
             Self {
                 tx: Tx(tx),

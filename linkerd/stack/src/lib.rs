@@ -1,6 +1,11 @@
 //! Utilities for composing Tower Services.
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
 mod arc_new_service;
@@ -40,7 +45,7 @@ pub use self::{
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
     new_service::NewService,
     on_service::{OnService, OnServiceLayer},
-    proxy::{Proxy, ProxyService},
+    proxy::Proxy,
     result::ResultService,
     router::{NewRouter, RecognizeRoute},
     switch_ready::{NewSwitchReady, SwitchReady},
@@ -48,7 +53,8 @@ pub use self::{
     unwrap_or::UnwrapOr,
 };
 pub use tower::{
-    util::{future_service, FutureService, Oneshot, ServiceExt},
+    service_fn,
+    util::{future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},
     Service,
 };
 

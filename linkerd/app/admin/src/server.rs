@@ -23,7 +23,6 @@ use linkerd_app_core::{
 };
 use std::{
     future::Future,
-    net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -40,18 +39,6 @@ pub struct Admin<M> {
     tracing: trace::Handle,
     ready: Readiness,
     shutdown_tx: mpsc::UnboundedSender<()>,
-}
-
-#[derive(Clone)]
-pub struct Accept<S> {
-    service: S,
-    server: hyper::server::conn::Http,
-}
-
-#[derive(Clone)]
-pub struct Serve<S> {
-    client_addr: SocketAddr,
-    inner: S,
 }
 
 pub type ResponseFuture =
@@ -237,7 +224,7 @@ mod tests {
                     .unwrap();
                 let f = admin.clone().oneshot(r);
                 timeout(TIMEOUT, f).await.expect("timeout").expect("call")
-            };};
+            }};
         }
 
         assert_eq!(call!().status(), StatusCode::SERVICE_UNAVAILABLE);

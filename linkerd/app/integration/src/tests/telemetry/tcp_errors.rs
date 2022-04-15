@@ -90,7 +90,7 @@ impl Test {
         let proxy = proxy.identity(id_svc).run_with_test_env(env).await;
 
         // Wait for the proxy's identity to be certified.
-        let admin_client = client::http1(proxy.metrics, "localhost");
+        let admin_client = client::http1(proxy.admin, "localhost");
         assert_eventually!(
             admin_client
                 .request(admin_client.request_builder("/ready").method("GET"))

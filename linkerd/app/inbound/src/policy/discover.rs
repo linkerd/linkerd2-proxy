@@ -12,7 +12,7 @@ use linkerd_server_policy::{
     Authentication, Authorization, Network, Protocol, ServerPolicy, Suffix,
 };
 use linkerd_tonic_watch::StreamWatch;
-use std::{convert::TryInto, net::IpAddr};
+use std::net::IpAddr;
 
 #[derive(Clone, Debug)]
 pub(super) struct Discover<S> {
@@ -28,7 +28,8 @@ pub(super) type Watch<S> = StreamWatch<GrpcRecover, Discover<S>>;
 impl<S> Discover<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error> + Clone,
-    S::ResponseBody: http::HttpBody<Error = Error> + Send + Sync + 'static,
+    S::ResponseBody:
+        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
     pub(super) fn new(workload: String, client: S) -> Self {
         Self {
@@ -46,8 +47,9 @@ impl<S> Service<u16> for Discover<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
     S: Clone + Send + Sync + 'static,
+    S::ResponseBody:
+        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
     S::Future: Send + 'static,
-    S::ResponseBody: http::HttpBody<Error = Error> + Send + Sync + 'static,
 {
     type Response =
         tonic::Response<futures::stream::BoxStream<'static, Result<ServerPolicy, tonic::Status>>>;

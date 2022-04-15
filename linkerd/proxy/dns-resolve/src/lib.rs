@@ -1,4 +1,9 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
 use futures::{future, prelude::*, stream};
@@ -70,7 +75,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
     // spawn a task to drive the continued resolution.
     //
     // Note: this can't be an async_stream, due to pinniness.
-    let (addrs, expiry) = dns.resolve_addrs(na.name(), na.port()).await?;
+    let (addrs, expiry) = dns.resolve_addrs(na.name().as_ref(), na.port()).await?;
     debug!(?addrs, name = %na);
     let (tx, rx) = mpsc::channel(1);
     tokio::spawn(
@@ -83,7 +88,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
             expiry.await;
 
             loop {
-                match dns.resolve_addrs(na.name(), na.port()).await {
+                match dns.resolve_addrs(na.name().as_ref(), na.port()).await {
                     Ok((addrs, expiry)) => {
                         debug!(?addrs, name = %na);
                         let eps = addrs.into_iter().map(|a| (a, ())).collect();

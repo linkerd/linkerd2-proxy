@@ -3,15 +3,12 @@ name = "linkerd-proxy-identity"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
-
-[features]
-rustfmt = ["linkerd2-proxy-api/rustfmt"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-linkerd2-proxy-api = { version = "0.2", features = ["identity", "client"] }
+linkerd2-proxy-api = { version = "0.5", features = ["identity"] }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
 linkerd-metrics = { path = "../../metrics" }
@@ -19,7 +16,7 @@ linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 thiserror = "1"
 tokio = { version = "1", features = ["time", "sync"] }
-tonic = { version = "0.5", default-features = false }
-tracing = "0.1.28"
+tonic = { version = "0.7", default-features = false }
+tracing = "0.1"
 http-body = "0.4"
 pin-project = "1"

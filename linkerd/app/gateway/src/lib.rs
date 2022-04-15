@@ -1,4 +1,9 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
 mod gateway;
@@ -26,10 +31,7 @@ use linkerd_app_inbound::{
     policy, Inbound,
 };
 use linkerd_app_outbound::{self as outbound, Outbound};
-use std::{
-    convert::{TryFrom, TryInto},
-    fmt,
-};
+use std::fmt;
 use thiserror::Error;
 use tracing::debug_span;
 

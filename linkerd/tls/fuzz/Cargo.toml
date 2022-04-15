@@ -4,7 +4,7 @@ name = "linkerd-tls-fuzz"
 version = "0.0.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 publish = false
-edition = "2018"
+edition = "2021"
 
 [package.metadata]
 cargo-fuzz = true

@@ -3,12 +3,12 @@ name = "linkerd-stack-tracing"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
 linkerd-stack = { path = ".." }
-tower = "0.4.8"
-tracing = "0.1.28"
+tower = "0.4"
+tracing = "0.1"

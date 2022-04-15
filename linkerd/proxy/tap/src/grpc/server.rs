@@ -14,8 +14,8 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
-use std::time::Instant;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tonic::{self as grpc, Response};
 use tracing::{debug, trace, warn};
 
@@ -364,10 +364,10 @@ impl iface::TapResponse for TapResponse {
         } else {
             None
         };
-
+        let since_request_init = response_init_at.saturating_duration_since(self.request_init_at);
         let init = api::tap_event::http::Event::ResponseInit(api::tap_event::http::ResponseInit {
             id: Some(self.tap.id.clone()),
-            since_request_init: Some((response_init_at - self.request_init_at).into()),
+            since_request_init: Some(since_request_init.into()),
             http_status: rsp.status().as_u16().into(),
             headers,
         });
@@ -398,9 +398,10 @@ impl iface::TapResponse for TapResponse {
     fn fail<E: HasH2Reason>(self, err: &E) {
         let response_end_at = Instant::now();
         let reason = err.h2_reason();
+        let since_request_init = response_end_at.saturating_duration_since(self.request_init_at);
         let end = api::tap_event::http::Event::ResponseEnd(api::tap_event::http::ResponseEnd {
             id: Some(self.tap.id.clone()),
-            since_request_init: Some((response_end_at - self.request_init_at).into()),
+            since_request_init: Some(since_request_init.into()),
             since_response_init: None,
             response_bytes: 0,
             eos: Some(api::Eos {
@@ -464,10 +465,13 @@ impl TapResponsePayload {
         } else {
             None
         };
+
+        let since_request_init = response_end_at.saturating_duration_since(self.request_init_at);
+        let since_response_init = response_end_at.saturating_duration_since(self.response_init_at);
         let end = api::tap_event::http::ResponseEnd {
             id: Some(self.tap.id),
-            since_request_init: Some((response_end_at - self.request_init_at).into()),
-            since_response_init: Some((response_end_at - self.response_init_at).into()),
+            since_request_init: Some(since_request_init.into()),
+            since_response_init: Some(since_response_init.into()),
             response_bytes: self.response_bytes as u64,
             eos: Some(api::Eos { end }),
             trailers,

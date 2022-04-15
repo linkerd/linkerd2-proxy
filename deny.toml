@@ -17,7 +17,6 @@ ignore = []
 unlicensed = "deny"
 allow = [
     "Apache-2.0",
-    "BSD-3-Clause",
     "ISC",
     "MIT",
 ]
@@ -36,7 +35,7 @@ name = "ring"
 version = "*"
 expression = "MIT AND ISC AND OpenSSL"
 license-files = [
-    { path = "LICENSE", hash = 0xbd0eed23 }
+    { path = "LICENSE", hash = 0xbd0eed23 },
 ]
 
 [bans]
@@ -45,10 +44,16 @@ multiple-versions = "deny"
 wildcards = "allow"
 highlight = "all"
 deny = [
-    { name = "rustls", wrappers = ["tokio-rustls"] }
+    { name = "rustls", wrappers = ["tokio-rustls"] },
 ]
-skip = []
-skip-tree = []
+skip = [
+    # waiting on `h2` and `tower` releases that update h2 to v0.7
+    { name = "tokio-util", version = "0.6" },
+]
+skip-tree = [
+    # Hasn't seen a new release since 2017. Pulls in an older version of nom.
+    { name = "procinfo" },
+]
 
 [sources]
 unknown-registry = "deny"

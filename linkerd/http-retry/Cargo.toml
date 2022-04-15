@@ -3,7 +3,7 @@ name = "linkerd-http-retry"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 [dependencies]
@@ -12,13 +12,11 @@ futures = { version = "0.3", default-features = false }
 http-body = "0.4"
 http = "0.2"
 linkerd-error = { path = "../error" }
-pin-project = "1"
-parking_lot = "0.11"
-tracing = "0.1.28"
+parking_lot = "0.12"
+tracing = "0.1"
 thiserror = "1"
 
 [dev-dependencies]
 hyper = "0.14"
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }
-tokio = { version = "1", features = ["macros", "rt"]}
-
+tokio = { version = "1", features = ["macros", "rt"] }

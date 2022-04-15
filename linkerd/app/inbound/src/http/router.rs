@@ -1,6 +1,6 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, dst, errors, http_tracing, io, metrics,
+    classify, errors, http_tracing, io, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{http, tap},
     svc::{self, ExtractParam, Param},
@@ -8,7 +8,7 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, Remote, ServerAddr},
     Error, Infallible, NameAddr, Result,
 };
-use std::{borrow::Borrow, net::SocketAddr};
+use std::net::SocketAddr;
 use tracing::{debug, debug_span};
 
 /// Describes an HTTP client target.
@@ -46,6 +46,12 @@ struct Profile {
     addr: profiles::LogicalAddr,
     logical: Logical,
     profiles: profiles::Receiver,
+}
+
+#[derive(Clone, Debug)]
+struct Route {
+    profile: Profile,
+    route: profiles::http::Route,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -90,6 +96,8 @@ impl<C> Inbound<C> {
             let http = connect
                 .push(svc::stack::BoxFuture::layer())
                 .push(transport::metrics::Client::layer(rt.metrics.proxy.transport.clone()))
+                .check_service::<Http>()
+                .push_map_target(|(_version, target)| target)
                 .push(http::client::layer(
                     config.proxy.connect.h1_settings,
                     config.proxy.connect.h2_settings,
@@ -112,43 +120,42 @@ impl<C> Inbound<C> {
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
-                .push_on_service(http_tracing::client(
-                    rt.span_sink.clone(),
-                    super::trace_labels(),
-                ))
-                .push_on_service(http::BoxResponse::layer());
+                .push_on_service(
+                    svc::layers()
+                        .push(http_tracing::client(
+                            rt.span_sink.clone(),
+                            super::trace_labels(),
+                        ))
+                        .push(http::BoxResponse::layer())
+                        // This box is needed to reduce compile times on recent
+                        // (2021-10-17) nightlies, though this may be fixed by
+                        // https://github.com/rust-lang/rust/pull/89831. It should
+                        // be removed when possible.
+                        .push(svc::BoxService::layer())
+                );
 
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
             // request has not been received for `cache_max_idle_age`.
             http.clone()
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
-                // The HTTP stack doesn't use the profile resolution, so drop it.
-                .push_map_target(Logical::from)
-                .push_on_service(http::BoxResponse::layer())
-                .push(profiles::http::route_request::layer(
+                .push_map_target(|p: Profile| p.logical)
+                .push(profiles::http::NewProxyRouter::layer(
+                    // If the request matches a route, use a per-route proxy to
+                    // wrap the inner service.
                     svc::proxies()
+                        .push_map_target(|r: Route| r.profile.logical)
                         .push_on_service(http::BoxRequest::layer())
-                        // Records per-route metrics.
                         .push(
-                            rt.metrics.proxy
+                            rt.metrics
+                                .proxy
                                 .http_route
-                                .to_layer::<classify::Response, _, dst::Route>(),
+                                .to_layer::<classify::Response, _, _>(),
                         )
-                        // Sets the per-route response classifier as a request
-                        // extension.
-                        .push(classify::NewClassify::layer())
-                        // Sets the route as a request extension so that it can be used
-                        // by tap.
-                        .push_http_insert_target::<dst::Route>()
-                        .push_map_target(|(route, logical): (profiles::http::Route, Profile)| {
-                            dst::Route {
-                                route,
-                                addr: logical.addr,
-                                direction: metrics::Direction::In,
-                            }
-                        })
                         .push_on_service(http::BoxResponse::layer())
+                        .push(classify::NewClassify::layer())
+                        .push_http_insert_target::<profiles::http::Route>()
+                        .push_map_target(|(route, profile)| Route { route, profile })
                         .into_inner(),
                 ))
                 .push_switch(
@@ -157,7 +164,7 @@ impl<C> Inbound<C> {
                     // the underlying target stack directly.
                     |(rx, logical): (Option<profiles::Receiver>, Logical)| -> Result<_, Infallible> {
                         if let Some(rx) = rx {
-                            if let Some(addr) = rx.borrow().logical_addr() {
+                            if let Some(addr) = rx.logical_addr() {
                                 return Ok(svc::Either::A(Profile {
                                     addr,
                                     logical,
@@ -168,7 +175,6 @@ impl<C> Inbound<C> {
                         Ok(svc::Either::B(logical))
                     },
                     http.clone()
-                        .push_on_service(http::BoxResponse::layer())
                         .check_new_service::<Logical, http::Request<_>>()
                         .into_inner(),
                 )
@@ -190,19 +196,13 @@ impl<C> Inbound<C> {
                     Ok(profiles::LookupAddr(addr.into()))
                 }))
                 .instrument(|_: &Logical| debug_span!("profile"))
-                .push_on_service(
-                    svc::layers()
-                        .push(http::BoxResponse::layer())
-                        .push(svc::layer::mk(svc::SpawnReady::new)),
-                )
+                .push_on_service(svc::layer::mk(svc::SpawnReady::new))
                 // Skip the profile stack if it takes too long to become ready.
                 .push_when_unready(
                     config.profile_idle_timeout,
-                    http.clone()
-                        .push_on_service(svc::layer::mk(svc::SpawnReady::new))
+                    http.push_on_service(svc::layer::mk(svc::SpawnReady::new))
                         .into_inner(),
                 )
-                .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers()
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
@@ -219,11 +219,12 @@ impl<C> Inbound<C> {
                         .push(http::BoxResponse::layer()),
                 )
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
-                .instrument(|t: &Logical| match (t.http, t.logical.as_ref()) {
-                    (http::Version::H2, None) => debug_span!("http2"),
-                    (http::Version::H2, Some(name)) => debug_span!("http2", %name),
-                    (http::Version::Http1, None) => debug_span!("http1"),
-                    (http::Version::Http1, Some(name)) => debug_span!("http1", %name),
+                .instrument(|t: &Logical| {
+                    let name = t.logical.as_ref().map(tracing::field::display);
+                    match t.http {
+                        http::Version::H2 => debug_span!("http2", name),
+                        http::Version::Http1 => debug_span!("http1", name),
+                    }
                 })
                 // Routes each request to a target, obtains a service for that target, and
                 // dispatches the request. NewRouter moves the NewService into the service type, so
@@ -271,7 +272,7 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
         use linkerd_app_core::{
             http_request_authority_addr, http_request_host_addr, CANONICAL_DST_HEADER,
         };
-        use std::{convert::TryInto, str::FromStr};
+        use std::str::FromStr;
 
         // Try to read a logical named address from the request. First check the canonical-dst
         // header as set by the client proxy; otherwise fallback to the request's `:authority` or
@@ -301,6 +302,34 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
                 .expect("HTTP version must be valid"),
             labels: self.labels.clone(),
         })
+    }
+}
+
+// === impl Route ===
+
+impl Param<profiles::http::Route> for Route {
+    fn param(&self) -> profiles::http::Route {
+        self.route.clone()
+    }
+}
+
+impl Param<metrics::RouteLabels> for Route {
+    fn param(&self) -> metrics::RouteLabels {
+        metrics::RouteLabels::inbound(self.profile.addr.clone(), &self.route)
+    }
+}
+
+impl classify::CanClassify for Route {
+    type Classify = classify::Request;
+
+    fn classify(&self) -> classify::Request {
+        self.route.response_classes().clone().into()
+    }
+}
+
+impl Param<http::ResponseTimeout> for Route {
+    fn param(&self) -> http::ResponseTimeout {
+        http::ResponseTimeout(self.route.timeout())
     }
 }
 
@@ -363,7 +392,7 @@ impl tap::Inspect for Logical {
         req.extensions()
             .get::<tls::ConditionalServerTls>()
             .cloned()
-            .unwrap_or_else(|| tls::ConditionalServerTls::None(tls::NoServerTls::Disabled))
+            .unwrap_or(tls::ConditionalServerTls::None(tls::NoServerTls::Disabled))
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
@@ -380,8 +409,8 @@ impl tap::Inspect for Logical {
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<tap::Labels> {
         req.extensions()
-            .get::<dst::Route>()
-            .map(|r| r.route.labels().clone())
+            .get::<profiles::http::Route>()
+            .map(|r| r.labels().clone())
     }
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {

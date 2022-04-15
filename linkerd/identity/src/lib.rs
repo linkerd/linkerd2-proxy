@@ -1,10 +1,15 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
 pub use ring::error::KeyRejected;
 use ring::rand;
 use ring::signature::EcdsaKeyPair;
-use std::{convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
+use std::{fmt, fs, io, ops::Deref, str::FromStr, sync::Arc, time::SystemTime};
 use thiserror::Error;
 use tokio_rustls::rustls;
 use tracing::{debug, warn};
@@ -137,17 +142,11 @@ impl From<linkerd_dns_name::Name> for Name {
     }
 }
 
-impl<'t> From<&'t LocalId> for webpki::DNSNameRef<'t> {
-    fn from(LocalId(ref name): &'t LocalId) -> webpki::DNSNameRef<'t> {
-        name.into()
-    }
-}
-
 impl FromStr for Name {
     type Err = InvalidName;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.as_bytes().last() == Some(&b'.') {
+        if s.ends_with('.') {
             return Err(InvalidName); // SNI hostnames are implicitly absolute.
         }
 
@@ -155,27 +154,11 @@ impl FromStr for Name {
     }
 }
 
-impl TryFrom<&[u8]> for Name {
-    type Error = InvalidName;
+impl Deref for Name {
+    type Target = linkerd_dns_name::Name;
 
-    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
-        if s.last() == Some(&b'.') {
-            return Err(InvalidName); // SNI hostnames are implicitly absolute.
-        }
-
-        linkerd_dns_name::Name::try_from(s).map(|n| Name(Arc::new(n)))
-    }
-}
-
-impl<'t> From<&'t Name> for webpki::DNSNameRef<'t> {
-    fn from(Name(ref name): &'t Name) -> webpki::DNSNameRef<'t> {
-        name.as_ref().into()
-    }
-}
-
-impl AsRef<str> for Name {
-    fn as_ref(&self) -> &str {
-        (*self.0).as_ref()
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -249,6 +232,9 @@ impl TrustAnchors {
     pub fn certify(&self, key: Key, crt: Crt) -> Result<CrtKey, InvalidCrt> {
         let mut client = self.0.as_ref().clone();
 
+        let crt_id = webpki::DNSNameRef::try_from_ascii(crt.id.as_bytes())
+            .expect("certificate ID must be a valid DNS name");
+
         // Ensure the certificate is valid for the services we terminate for
         // TLS. This assumes that server cert validation does the same or
         // more validation than client cert validation.
@@ -260,11 +246,11 @@ impl TrustAnchors {
         // XXX: Once `rustls::ServerCertVerified` is exposed in Rustls's
         // safe API, use it to pass proof to CertCertResolver::new....
         //
-        // TODO: Restrict accepted signatutre algorithms.
+        // TODO: Restrict accepted signature algorithms.
         static NO_OCSP: &[u8] = &[];
         client
             .get_verifier()
-            .verify_server_cert(&client.root_store, &crt.chain, (&crt.id).into(), NO_OCSP)
+            .verify_server_cert(&client.root_store, &crt.chain, crt_id, NO_OCSP)
             .map_err(InvalidCrt)?;
         debug!("certified {}", crt.id);
 
@@ -326,7 +312,7 @@ impl Crt {
     }
 
     pub fn name(&self) -> &Name {
-        self.id.as_ref()
+        &*self.id
     }
 }
 
@@ -340,7 +326,7 @@ impl From<&'_ Crt> for LocalId {
 
 impl CrtKey {
     pub fn name(&self) -> &Name {
-        self.id.as_ref()
+        &*self.id
     }
 
     pub fn expiry(&self) -> SystemTime {
@@ -442,8 +428,10 @@ impl From<LocalId> for Name {
     }
 }
 
-impl AsRef<Name> for LocalId {
-    fn as_ref(&self) -> &Name {
+impl Deref for LocalId {
+    type Target = Name;
+
+    fn deref(&self) -> &Name {
         &self.0
     }
 }

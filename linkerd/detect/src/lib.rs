@@ -1,4 +1,9 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
 use bytes::BytesMut;
@@ -147,7 +152,7 @@ where
             let mut buf = BytesMut::with_capacity(capacity);
             let detected = match time::timeout(timeout, detect.detect(&mut io, &mut buf)).await {
                 Ok(Ok(protocol)) => {
-                    debug!(?protocol, elapsed = ?t0.elapsed(), "DetectResult");
+                    debug!(?protocol, elapsed = ?time::Instant::now().saturating_duration_since(t0), "DetectResult");
                     Ok(protocol)
                 }
                 Err(_) => Err(DetectTimeoutError(timeout, std::marker::PhantomData)),

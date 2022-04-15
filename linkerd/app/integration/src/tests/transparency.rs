@@ -1,6 +1,3 @@
-// It's not clear where this originates.
-#![allow(clippy::redundant_closure_call)]
-
 use crate::*;
 use std::error::Error as _;
 use tokio::sync::mpsc;
@@ -345,7 +342,8 @@ macro_rules! http1_tests {
             let _trace = trace_init();
 
             let srv = server::http1().route("/", "hello h1").run().await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             assert_eq!(client.get("/").await, "hello h1");
@@ -371,7 +369,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let res = client
@@ -415,7 +414,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
             let client = client::http1(proxy.inbound, host);
 
             let res = client
@@ -450,7 +450,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
             let client = client::http1_absolute_uris(proxy.inbound, auth);
 
             let res = client
@@ -520,7 +521,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
 
             let client = client::tcp(proxy.inbound);
 
@@ -561,7 +563,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
 
             let host = "transparency.test.svc.cluster.local";
             let client = client::http1(proxy.inbound, host);
@@ -597,7 +600,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -673,7 +677,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
 
             let client = client::tcp(proxy.inbound);
 
@@ -712,7 +717,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
 
             // A TCP client is used since the HTTP client would stop these requests
             // from ever touching the network.
@@ -781,7 +787,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let req = client
@@ -816,7 +823,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let req = client
@@ -843,9 +851,7 @@ macro_rules! http1_tests {
 
             let srv = server::http1()
                 .route_fn("/", |req| {
-                    let has_body_header = req.headers().contains_key("transfer-encoding")
-                        || req.headers().contains_key("content-length");
-                    let status = if has_body_header {
+                    let status = if req.headers().contains_key(http::header::TRANSFER_ENCODING) {
                         StatusCode::BAD_REQUEST
                     } else {
                         StatusCode::OK
@@ -856,7 +862,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
@@ -893,7 +900,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
@@ -937,7 +945,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             // https://tools.ietf.org/html/rfc7230#section-3.3.3
@@ -1000,7 +1009,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let resp = client
@@ -1041,7 +1051,8 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let proxy = ($proxy)(srv).await;
+            let mk = $proxy;
+            let proxy = mk(srv).await;
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -1338,7 +1349,7 @@ async fn retry_reconnect_errors() {
         .await;
     let proxy = proxy::new().inbound(srv).run().await;
     let client = client::http2(proxy.inbound, "transparency.example.com");
-    let metrics = client::http1(proxy.metrics, "localhost");
+    let metrics = client::http1(proxy.admin, "localhost");
 
     let fut = client.request(client.request_builder("/").version(http::Version::HTTP_2));
 

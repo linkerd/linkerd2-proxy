@@ -3,7 +3,7 @@ name = "linkerd-app-outbound"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 description = """
 Configures and runs the outbound proxy
@@ -19,19 +19,22 @@ bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
+linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
-parking_lot = "0.11"
-thiserror = "1.0"
+linkerd-retry = { path = "../../retry" }
+parking_lot = "0.12"
+thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
-tower = { version = "0.4.8", features = ["util"] }
-tracing = "0.1.28"
+tower = { version = "0.4", features = ["util"] }
+tracing = "0.1"
 pin-project = "1"
 
 [dev-dependencies]
-hyper = { version = "0.14.13", features = ["http1", "http2"] }
+hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
-tokio = { version = "1", features = ["full", "macros"] }
-tokio-test = "0.4"
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
+parking_lot = "0.12"
+tokio = { version = "1", features = ["macros", "sync", "time"] }
+tokio-test = "0.4"

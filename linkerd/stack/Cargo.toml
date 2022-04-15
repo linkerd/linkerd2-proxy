@@ -3,7 +3,7 @@ name = "linkerd-stack"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 description = """
 Utilities for composing Tower services.
@@ -12,10 +12,11 @@ Utilities for composing Tower services.
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../error" }
+parking_lot = "0.12"
 pin-project = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["time"] }
-tower = { version = "0.4.8", features = ["filter", "util"] }
+tower = { version = "0.4", features = ["filter", "util"] }
 tracing = "0.1"
 
 [dev-dependencies]

@@ -4,7 +4,8 @@ use linkerd_metrics::{
     latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric, Store,
 };
 use parking_lot::Mutex;
-use std::{fmt, hash::Hash, time::Instant};
+use std::{fmt, hash::Hash};
+use tokio::time::Instant;
 use tracing::trace;
 
 #[derive(Copy, Clone)]

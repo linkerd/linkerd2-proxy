@@ -1,4 +1,9 @@
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
 mod server;
@@ -16,7 +21,7 @@ use std::str::FromStr;
 use tracing::trace;
 
 mod proto {
-    include!(concat!(env!("OUT_DIR"), "/transport.l5d.io.rs"));
+    include!("gen/transport.l5d.io.rs");
 }
 
 #[derive(Clone, Debug, PartialEq, Hash)]

@@ -31,7 +31,7 @@ impl<K, N> NewRouter<K, N> {
         }
     }
 
-    /// Creates a layer that creates that produces Routers.
+    /// Creates a layer that produces Routers.
     ///
     /// The provided `new_recognize` is expected to implement a `NewService` that
     /// produces `Recognize` implementations.

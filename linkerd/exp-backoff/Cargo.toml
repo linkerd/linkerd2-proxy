@@ -3,15 +3,15 @@ name = "linkerd-exp-backoff"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
 rand = { version = "0.8", features = ["small_rng"] }
-thiserror = "1.0"
-tokio = { version = "1", features = ["time"]}
+thiserror = "1"
+tokio = { version = "1", features = ["time"] }
 pin-project = "1"
 
 [dev-dependencies]

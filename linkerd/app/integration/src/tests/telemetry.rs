@@ -49,7 +49,7 @@ impl Fixture {
             .inbound(srv)
             .run()
             .await;
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
         let tcp_dst_labels = metrics::labels().label("direction", "inbound");
@@ -83,7 +83,7 @@ impl Fixture {
             .outbound(srv)
             .run()
             .await;
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
         let tcp_labels = metrics::labels()
@@ -137,7 +137,7 @@ impl TcpFixture {
             .await;
 
         let client = client::tcp(proxy.inbound);
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         let src_labels = metrics::labels()
             .label("direction", "inbound")
@@ -176,7 +176,7 @@ impl TcpFixture {
             .await;
 
         let client = client::tcp(proxy.outbound);
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         let src_labels = metrics::labels()
             .label("direction", "outbound")
@@ -533,7 +533,7 @@ mod outbound_dst_labels {
             .outbound(srv)
             .run()
             .await;
-        let metrics = client::http1(proxy.metrics, "localhost");
+        let metrics = client::http1(proxy.admin, "localhost");
 
         let client = client::new(proxy.outbound, dest);
         let tcp_labels = metrics::labels()
@@ -858,7 +858,7 @@ async fn metrics_have_no_double_commas() {
         .run()
         .await;
     let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
-    let metrics = client::http1(proxy.metrics, "localhost");
+    let metrics = client::http1(proxy.admin, "localhost");
 
     let scrape = metrics.get("/metrics").await;
     assert!(!scrape.contains(",,"));
@@ -1197,88 +1197,6 @@ mod transport {
     #[tokio::test]
     async fn outbound_tcp_accept() {
         test_tcp_accept(TcpFixture::outbound()).await;
-    }
-
-    #[tokio::test]
-    #[cfg(target_os = "macos")]
-    async fn inbound_tcp_connect_err() {
-        let _trace = trace_init();
-        let srv = tcp::server()
-            .accept_fut(move |sock| {
-                drop(sock);
-                future::ok(())
-            })
-            .run()
-            .await;
-        let proxy = proxy::new().inbound(srv).run().await;
-
-        let client = client::tcp(proxy.inbound);
-        let metrics = client::http1(proxy.metrics, "localhost");
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, &[]);
-        // Connection to the server should be a failure with the EXFULL error
-        metrics::metric("tcp_close_total")
-            .label("peer", "dst")
-            .label("direction", "inbound")
-            .label("tls", "disabled")
-            .label("errno", "EXFULL")
-            .value(1u64)
-            .assert_in(&metrics)
-            .await;
-
-        // Connection from the client should have closed cleanly.
-        metrics::metric("tcp_close_total")
-            .label("peer", "src")
-            .label("direction", "inbound")
-            .label("tls", "disabled")
-            .label("errno", "")
-            .value(1u64)
-            .assert_in(&metrics)
-            .await;
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn outbound_tcp_connect_err() {
-        let _trace = trace_init();
-        let srv = tcp::server()
-            .accept_fut(move |sock| {
-                drop(sock);
-                future::ok(())
-            })
-            .run()
-            .await;
-        let proxy = proxy::new().outbound(srv).run().await;
-
-        let client = client::tcp(proxy.outbound);
-        let metrics = client::http1(proxy.metrics, "localhost");
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, &[]);
-        // Connection to the server should be a failure with the EXFULL error
-        metrics::metric("tcp_close_total")
-            .label("peer", "dst")
-            .label("direction", "outbound")
-            .label("tls", "disabled")
-            .label("errno", "EXFULL")
-            .value(1u64)
-            .assert_in(&metrics)
-            .await;
-
-        // Connection from the client should have closed cleanly.
-        metrics::metric("tcp_close_total")
-            .label("peer", "src")
-            .label("direction", "outbound")
-            .label("tls", "disabled")
-            .label("errno", "")
-            .value(1u64)
-            .assert_in(&metrics)
-            .await;
     }
 
     #[tokio::test]

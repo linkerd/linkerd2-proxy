@@ -2,7 +2,12 @@
 //!
 //! The outbound proxy is responsible for routing traffic from the local application to other hosts.
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
 mod discover;
@@ -34,7 +39,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
-    AddrMatch, Error, ProxyRuntime,
+    AddrMatch, Error, ProxyRuntime, Result,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -154,7 +159,7 @@ impl<S> Outbound<S> {
 impl Outbound<()> {
     pub async fn serve<A, I, P, R>(
         self,
-        listen: impl Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
+        listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
         profiles: P,
         resolve: R,
     ) where

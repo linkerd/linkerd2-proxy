@@ -1,6 +1,11 @@
 //! Configures and executes the proxy
 
-#![deny(warnings, rust_2018_idioms)]
+#![deny(
+    warnings,
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types
+)]
 #![forbid(unsafe_code)]
 
 pub mod dst;
@@ -117,7 +122,7 @@ impl Config {
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
 
-        let report = identity.metrics().and_then(report);
+        let report = identity.metrics().and_report(report);
 
         let (drain_tx, drain_rx) = drain::channel();
 
@@ -163,8 +168,8 @@ impl Config {
             let policy = inbound_policies.clone();
             let report = inbound
                 .metrics()
-                .and_then(outbound.metrics())
-                .and_then(report);
+                .and_report(outbound.metrics())
+                .and_report(report);
             info_span!("admin").in_scope(move || {
                 admin.build(
                     bind_admin,

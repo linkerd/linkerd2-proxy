@@ -1,9 +1,23 @@
-name: Release
+name: release
 
 on:
+  pull_request:
+    paths:
+      - .github/actions/package/*
+      - .github/actions/release-tag-meta/*
+      - .github/workflows/release.yml
   push:
     tags:
       - "release/*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
 
 jobs:
   package:
@@ -27,7 +41,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: git co
-        uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f
+        uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
 
       - name: meta
         id: release-tag-meta
@@ -55,21 +69,21 @@ jobs:
           args: /linkerd/expected-checksec.json "target/${{ matrix.target }}/release/package/linkerd2-proxy-${{ steps.release-tag-meta.outputs.name }}-${{ matrix.architecture }}-checksec.json"
 
       - name: upload artifacts
-        uses: actions/upload-artifact@27121b0bdffd731efa15d66772be8dc71245d074
+        uses: actions/upload-artifact@6673cd052c4cd6fcf4b4e6e60ea986c889389535
         with:
           name: ${{ matrix.architecture }}-artifacts
           path: target/${{ matrix.target }}/release/package/*
 
   release:
+    if: startsWith(github.ref, 'refs/tags/release/')
     needs: [package]
-    name: GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     steps:
       - name: git co
-        uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f
+        uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
 
       - name: meta
         id: release-tag-meta
@@ -78,15 +92,15 @@ jobs:
           git-ref: ${{ github.ref }}
 
       - name: download artifacts
-        uses: actions/download-artifact@3be87be14a055c47b01d3bd88f8fe02320a9bb60
+        uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
         with:
           path: artifacts
 
       - name: display structure of downloaded files
         run: ls -R artifacts
 
-      - name: release
-        uses: softprops/action-gh-release@6034af24fba4e5a8e975aaa6056554efe4c794d0
+      - name: publish
+        uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

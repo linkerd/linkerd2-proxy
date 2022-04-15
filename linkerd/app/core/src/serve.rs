@@ -2,6 +2,7 @@ use crate::{
     io,
     svc::{self, Param},
     transport::{ClientAddr, Remote},
+    Result,
 };
 use futures::prelude::*;
 use linkerd_error::Error;
@@ -12,7 +13,7 @@ use tracing::{debug, debug_span, info, instrument::Instrument, warn};
 ///
 /// The task is driven until shutdown is signaled.
 pub async fn serve<M, S, I, A>(
-    listen: impl Stream<Item = std::io::Result<(A, I)>>,
+    listen: impl Stream<Item = Result<(A, I)>>,
     new_accept: M,
     shutdown: impl Future,
 ) where
@@ -39,7 +40,8 @@ pub async fn serve<M, S, I, A>(
                     };
 
                     // The local addr should be instrumented from the listener's context.
-                    let span = debug_span!("accept", client.addr = %addrs.param()).entered();
+                    let Remote(ClientAddr(client_addr)) = addrs.param();
+                    let span = debug_span!("accept", client.addr = %client_addr).entered();
                     let accept = new_accept.new_service(addrs);
 
                     // Dispatch all of the work for a given connection onto a
@@ -57,7 +59,9 @@ pub async fn serve<M, S, I, A>(
                                         Err(reason) if is_io(&*reason) => {
                                             debug!(%reason, "Connection closed")
                                         }
-                                        Err(error) => info!(%error, "Connection closed"),
+                                        Err(error) => {
+                                            info!(%error, client.addr = %client_addr, "Connection closed")
+                                        }
                                     }
                                     // Hold the service until the connection is complete. This
                                     // helps tie any inner cache lifetimes to the services they
@@ -65,7 +69,7 @@ pub async fn serve<M, S, I, A>(
                                     drop(accept);
                                 }
                                 Err(error) => {
-                                    warn!(%error, "Server failed to become ready");
+                                    warn!(%error, client.addr = %client_addr, "Server failed to become ready");
                                 }
                             }
                         }

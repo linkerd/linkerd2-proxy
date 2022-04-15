@@ -3,18 +3,18 @@ name = "linkerd-trace-context"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
-edition = "2018"
+edition = "2021"
 publish = false
 
 [dependencies]
 base64 = "0.13"
 bytes = "1"
 futures = { version = "0.3", default-features = false }
-hex = "0.3.2"
+hex = "0.4"
 http = "0.2"
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 rand = "0.8"
-thiserror = "1.0"
-tower = { version = "0.4.7", default-features = false, features = ["util"] }
-tracing = "0.1.2"
+thiserror = "1"
+tower = { version = "0.4", default-features = false, features = ["util"] }
+tracing = "0.1"
