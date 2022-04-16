@@ -296,7 +296,7 @@ impl errors::HttpRescue<Error> for Rescue {
             return Ok(errors::SyntheticHttpResponse::permission_denied(error));
         }
 
-        tracing::warn!(%error, "Unexpected error");
+        tracing::warn!(error, "Unexpected error");
         Ok(errors::SyntheticHttpResponse::unexpected_error())
     }
 }

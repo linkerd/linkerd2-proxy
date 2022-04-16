@@ -380,9 +380,12 @@ where
                 let span = tracing::debug_span!("conn", %addr);
                 let serve = http.serve_connection(sock, svc.clone());
                 let f = async move {
-                    serve
-                        .await
-                        .map_err(|error| tracing::error!(%error, "serving connection failed."))?;
+                    serve.await.map_err(|error| {
+                        tracing::error!(
+                            error = &error as &dyn std::error::Error,
+                            "serving connection failed."
+                        )
+                    })?;
                     Ok::<(), ()>(())
                 };
                 tokio::spawn(cancelable(drain.clone(), f).instrument(span.or_current()));

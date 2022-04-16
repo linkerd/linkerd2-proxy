@@ -37,7 +37,7 @@ where
         self.0.get_profile(dst).or_else(|e| {
             let error: Error = e.into();
             if crate::DiscoveryRejected::is_rejected(error.as_ref()) {
-                debug!(%error, "Handling rejected discovery");
+                debug!(error, "Handling rejected discovery");
                 return future::ok(None);
             }
 

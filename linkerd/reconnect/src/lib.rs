@@ -113,7 +113,7 @@ where
                     Err(e) => {
                         // If the service fails, try to recover.
                         let error: Error = e.into();
-                        warn!(%error, "Service failed");
+                        warn!(error, "Service failed");
                         let backoff = self.recover.recover(error)?;
                         debug!("Recovering");
                         State::Disconnected {
@@ -137,7 +137,7 @@ where
                         // If the service cannot be built, try to recover using
                         // the existing backoff.
                         let error: Error = e.into();
-                        warn!(%error, "Failed to connect");
+                        warn!(error, "Failed to connect");
                         let new_backoff = self.recover.recover(error)?;
                         debug!("Recovering");
                         State::Disconnected {

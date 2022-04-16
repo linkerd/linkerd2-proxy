@@ -169,7 +169,7 @@ where
                         let rsp = match level {
                             Some(level) => {
                                 level::serve(&level, req).await.unwrap_or_else(|error| {
-                                    tracing::error!(%error, "Failed to get/set tracing level");
+                                    tracing::error!(error, "Failed to get/set tracing level");
                                     Self::internal_error_rsp(error)
                                 })
                             }

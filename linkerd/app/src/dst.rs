@@ -70,7 +70,7 @@ impl Recover<Error> for BackoffUnlessInvalidArgument {
             return Err(error);
         }
 
-        tracing::trace!(%error, "Recovering");
+        tracing::trace!(error, "Recovering");
         Ok(self.0.stream())
     }
 }
