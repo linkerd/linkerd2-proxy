@@ -60,8 +60,10 @@ impl<N> Outbound<N> {
                     // detection and just use the TCP stack directly.
                     |target: T| -> Result<_, Infallible> {
                         if let Some(Skip) = target.param() {
+                            tracing::debug!("Skipping HTTP protocol detection");
                             return Ok(svc::Either::B(target));
                         }
+                        tracing::debug!("Attempting HTTP protocol detection");
                         Ok(svc::Either::A(target))
                     },
                     skipped,
