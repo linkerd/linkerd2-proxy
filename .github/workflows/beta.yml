@@ -23,7 +23,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.60-bullseye
+      image: docker://rust:1.60.0-bullseye
     timeout-minutes: 20
     continue-on-error: true
     steps:
