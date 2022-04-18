@@ -1,4 +1,4 @@
-ARG RUST_VERSION=1.59.0
+ARG RUST_VERSION=1.60
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as kubectl
 ARG KUBECTL_VERSION=v1.23.2

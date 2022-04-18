@@ -1,6 +1,6 @@
 {
 	"name": "linkerd2-proxy",
-	"image": "ghcr.io/linkerd/dev-proxy:v9",
+	"image": "ghcr.io/linkerd/dev-proxy:v10",
 	// "dockerFile": "./Dockerfile",
 	"extensions": [
 		"matklad.rust-analyzer",

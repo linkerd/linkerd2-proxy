@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.59.0-buster
+      image: docker://rust:1.60-bullseye
     strategy:
       matrix:
         crate: ${{ fromJson(needs.list-changed-crates.outputs.crates) }}
