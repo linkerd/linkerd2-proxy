@@ -33,13 +33,17 @@ pub struct FromMetadata {
 // === impl Endpoint ===
 
 impl Endpoint<()> {
-    pub(crate) fn forward(addr: OrigDstAddr, reason: tls::NoClientTls) -> Self {
+    pub(crate) fn forward(
+        addr: OrigDstAddr,
+        reason: tls::NoClientTls,
+        opaque_protocol: bool,
+    ) -> Self {
         Self {
             addr: Remote(ServerAddr(addr.into())),
             metadata: Metadata::default(),
             tls: Conditional::None(reason),
             logical_addr: None,
-            opaque_protocol: false,
+            opaque_protocol,
             protocol: (),
         }
     }
@@ -269,6 +273,7 @@ pub mod tests {
                 .new_service(tcp::Endpoint::forward(
                     OrigDstAddr(addr),
                     tls::NoClientTls::Disabled,
+                    false,
                 ));
 
             let (client_io, server_io) = support::io::duplex(4096);
