@@ -35,11 +35,13 @@ impl<S> Outbound<S> {
                             // If the profile provides an endpoint, then the target is single endpoint and
                             // not a logical/load-balanced service.
                             if let Some((addr, metadata)) = rx.endpoint() {
+                                let is_opaque = rx.is_opaque_protocol();
+                                tracing::debug!(%is_opaque, "Profile describes an endpoint");
                                 return Ok(svc::Either::A(Endpoint::from_metadata(
                                     addr,
                                     metadata,
                                     no_tls_reason,
-                                    rx.is_opaque_protocol(),
+                                    is_opaque,
                                     &*inbound_ips,
                                 )));
                             }
@@ -47,12 +49,14 @@ impl<S> Outbound<S> {
                             // Otherwise, if the profile provides a (named) logical address, then we build a
                             // logical stack so we apply routes, traffic splits, and load balancing.
                             if let Some(logical_addr) = rx.logical_addr() {
+                                tracing::debug!("Profile describes a logical service");
                                 return Ok(svc::Either::B(Logical::new(logical_addr, rx)));
                             }
                         }
 
                         // If there was no profile or it didn't include any useful metadata, create a bare
                         // endpoint from the original destination address.
+                        tracing::debug!("No profile; forwarding to the original destination");
                         Ok(svc::Either::A(Endpoint::forward(
                             target.param(),
                             no_tls_reason,
