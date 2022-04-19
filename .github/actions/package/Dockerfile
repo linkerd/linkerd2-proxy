@@ -11,7 +11,8 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/
 ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
 ENV CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
-# v2.1.0
-ARG CHECKSEC_SHA=04582bad41589ad479ca8b1f0170ed317475b5a5
-RUN cd /usr/local/bin && curl -vsLO "https://raw.githubusercontent.com/slimm609/checksec.sh/$CHECKSEC_SHA/checksec" && chmod 755 checksec
+ARG CHECKSEC_VERSION=2.5.0
+RUN cd /usr/local/bin && \
+    curl -vsLO "https://raw.githubusercontent.com/slimm609/checksec.sh/${CHECKSEC_VERSION}/checksec" && \
+    chmod 755 checksec
 COPY expected-checksec.json validate-checksec.sh /linkerd/
