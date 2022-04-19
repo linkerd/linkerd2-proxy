@@ -34,8 +34,8 @@ impl<S> Outbound<S> {
                         if let Some(rx) = profile {
                             let is_opaque = rx.is_opaque_protocol();
 
-                            // If the profile provides an endpoint, then the target is single endpoint and
-                            // not a logical/load-balanced service.
+                            // If the profile provides an endpoint, then the target is single
+                            // endpoint and not a logical/load-balanced service.
                             if let Some((addr, metadata)) = rx.endpoint() {
                                 tracing::debug!(%is_opaque, "Profile describes an endpoint");
                                 return Ok(svc::Either::A(Endpoint::from_metadata(
@@ -47,19 +47,18 @@ impl<S> Outbound<S> {
                                 )));
                             }
 
-                            // Otherwise, if the profile provides a (named) logical address, then we build a
+                            // If the profile provides a (named) logical address, then we build a
                             // logical stack so we apply routes, traffic splits, and load balancing.
                             if let Some(logical_addr) = rx.logical_addr() {
                                 tracing::debug!("Profile describes a logical service");
                                 return Ok(svc::Either::B(Logical::new(logical_addr, rx)));
                             }
 
-                            // If there was a profile but it didn't include an
-                            // endpoint or logical address, create a bare
-                            // endpoint from the original destination address,
-                            // using the profile-provided opaqeuness. This
-                            // mostly applies to external targets that may be
-                            // included in the default opaque list.
+                            // Otherwise, if there was a profile but it didn't include an endpoint or logical
+                            // address, create a bare endpoint from the original destination address
+                            // using the profile-provided opaqueness. This applies for targets that
+                            // aren't known by the destination controller that may target ports
+                            // included in the cluster-wide default opaque list.
                             tracing::debug!("Unknown endpoint");
                             return Ok(svc::Either::A(Endpoint::forward(
                                 target.param(),
@@ -68,8 +67,8 @@ impl<S> Outbound<S> {
                             )));
                         }
 
-                        // If there was no profile, create a bare endpoint from
-                        // the original destination address.
+                        // If there was no profile, create a bare endpoint from the original
+                        // destination address.
                         tracing::debug!("No profile");
                         Ok(svc::Either::A(Endpoint::forward(
                             target.param(),
