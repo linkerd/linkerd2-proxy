@@ -1,4 +1,4 @@
-ARG RUST_VERSION=1.59.0
+ARG RUST_VERSION=1.60.0
 FROM docker.io/library/rust:${RUST_VERSION}-bullseye
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt update && \

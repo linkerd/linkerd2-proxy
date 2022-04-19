@@ -36,6 +36,9 @@ jobs:
           - architecture: arm
             target: armv7-unknown-linux-gnueabihf
             strip: arm-linux-gnueabihf-strip
+    # If we're not actually building on a release tag, don't short-circuit on
+    # errors. This helps us know whether a failure is platform-specific.
+    continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/release/') }}
     name: Package (${{ matrix.architecture }})
     runs-on: ubuntu-latest
     timeout-minutes: 40

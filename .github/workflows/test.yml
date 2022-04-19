@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.59.0-buster
+      image: docker://rust:1.60.0-bullseye
     steps:
       - run: apt update && apt install -y cmake clang golang # for boring
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
@@ -59,7 +59,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.59.0-buster
+      image: docker://rust:1.60.0-bullseye
     steps:
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
       - uses: ./.github/actions/install-protoc

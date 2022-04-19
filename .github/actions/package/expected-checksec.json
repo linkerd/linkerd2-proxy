@@ -1,6 +1,6 @@
 {
   "canary": "yes",
-  "fortify_source": "yes",
+  "fortify_source": "no",
   "nx": "yes",
   "pie": "yes",
   "relro": "full",
