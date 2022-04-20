@@ -35,7 +35,7 @@ pub fn to_addr_meta(
         }
 
         if let Some(OpaqueTransport { inbound_port }) = hint.opaque_transport {
-            if inbound_port > 0 && inbound_port < std::u16::MAX as u32 {
+            if inbound_port > 0 && inbound_port < u16::MAX as u32 {
                 opaque_transport_port = Some(inbound_port as u16);
             }
         }

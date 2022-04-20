@@ -133,7 +133,7 @@ impl Stream for ExponentialBackoffStream {
                 *this.iterations += 1;
                 return Poll::Ready(Some(()));
             }
-            if *this.iterations == std::u32::MAX {
+            if *this.iterations == u32::MAX {
                 return Poll::Ready(None);
             }
 

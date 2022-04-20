@@ -70,7 +70,7 @@ impl TransportHeader {
     pub fn encode_prefaced(&self, buf: &mut BytesMut) -> Result<(), Error> {
         let header = self.to_proto();
         let header_len = header.encoded_len();
-        if header_len > std::u32::MAX as usize {
+        if header_len > u32::MAX as usize {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Message length exceeds capacity",
@@ -176,7 +176,7 @@ impl TransportHeader {
             Some(n)
         };
 
-        if h.port <= 0 || h.port > std::u16::MAX as i32 {
+        if h.port <= 0 || h.port > u16::MAX as i32 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid port value",

@@ -257,8 +257,8 @@ const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(5);
 // use, as doing so can severely impact CPU utilization for applications with
 // many concurrent requests. It's generally preferable to use the MAX_IDLE_AGE
 // limitations to quickly drop idle connections.
-const DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = std::usize::MAX;
-const DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = std::usize::MAX;
+const DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = usize::MAX;
+const DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = usize::MAX;
 
 // These settings limit the number of requests that have not received responses,
 // including those buffered in the proxy and dispatched to the destination

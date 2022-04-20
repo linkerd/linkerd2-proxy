@@ -281,7 +281,6 @@ mod tests {
 
     use quickcheck::quickcheck;
     use std::collections::HashMap;
-    use std::u64;
 
     static BOUNDS: &Bounds = &Bounds(&[
         Bucket::Le(0.010),
