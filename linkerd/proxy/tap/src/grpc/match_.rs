@@ -182,7 +182,7 @@ impl TryFrom<observe_request::r#match::Tcp> for TcpMatch {
                     debug_assert!(min == 0 && max == 0);
                     return Err(InvalidMatch::Empty);
                 }
-                if min > u32::from(::std::u16::MAX) || max > u32::from(::std::u16::MAX) {
+                if min > u32::from(u16::MAX) || max > u32::from(u16::MAX) {
                     return Err(InvalidMatch::InvalidPort);
                 }
                 if min > max {
@@ -219,7 +219,7 @@ impl TryFrom<observe_request::r#match::tcp::Netmask> for NetMatch {
     fn try_from(m: observe_request::r#match::tcp::Netmask) -> Result<Self, InvalidMatch> {
         let mask = if m.mask == 0 {
             return Err(InvalidMatch::Empty);
-        } else if m.mask > u32::from(::std::u8::MAX) {
+        } else if m.mask > u32::from(u8::MAX) {
             return Err(InvalidMatch::InvalidNetwork);
         } else {
             m.mask as u8
@@ -365,7 +365,7 @@ mod tests {
                                 Some(InvalidMatch::Empty)
                             } else if ps.min > ps.max && ps.max != 0 {
                                 Some(InvalidMatch::InvalidPort)
-                            } else if ps.min > u32::from(::std::u16::MAX) || ps.max > u32::from(::std::u16::MAX) {
+                            } else if ps.min > u32::from(u16::MAX) || ps.max > u32::from(u16::MAX) {
                                 Some(InvalidMatch::InvalidPort)
                             } else { None }
                         }

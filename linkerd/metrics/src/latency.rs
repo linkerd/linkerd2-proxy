@@ -47,7 +47,7 @@ impl From<Us> for u64 {
         us.as_micros().try_into().unwrap_or_else(|_| {
             // These measurements should never be long enough to overflow
             tracing::warn!("Duration::as_micros would overflow u64");
-            std::u64::MAX
+            u64::MAX
         })
     }
 }

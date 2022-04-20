@@ -168,7 +168,7 @@ fn convert_rsp_match(orig: api::ResponseMatch) -> Option<http::ResponseMatch> {
 }
 
 fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
-    let min_retries = if orig.min_retries_per_second <= ::std::i32::MAX as u32 {
+    let min_retries = if orig.min_retries_per_second <= i32::MAX as u32 {
         orig.min_retries_per_second
     } else {
         warn!(
