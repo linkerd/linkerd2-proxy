@@ -70,7 +70,7 @@ impl Resolver {
     ) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
         match self.resolve_srv(name).await {
             Ok(res) => Ok(res),
-            Err(e) if e.is::<InvalidSrv>() => {
+            Err(e) if e.is::<ResolveError>() => {
                 let (ips, delay) = self.resolve_a(name).await?;
                 let addrs = ips
                     .into_iter()
