@@ -8,6 +8,7 @@
 
 pub mod access_log;
 pub mod level;
+pub mod stream;
 pub mod test;
 mod uptime;
 

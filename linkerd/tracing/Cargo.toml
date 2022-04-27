@@ -15,6 +15,7 @@ linkerd-error = { path = "../error" }
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 tracing-log = "0.1"
+thingbuf = { git = "https://github.com/hawkw/thingbuf", rev = "c444e50b8d2ca98745ae451100a4b01f84d054d5", features = ["std"] }
 
 [dependencies.tracing-subscriber]
 version = "0.3.11"
