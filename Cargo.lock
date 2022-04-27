@@ -1615,6 +1615,7 @@ name = "linkerd-tracing"
 version = "0.1.0"
 dependencies = [
  "linkerd-error",
+ "thingbuf",
  "tokio",
  "tracing",
  "tracing-log",
@@ -2304,6 +2305,16 @@ dependencies = [
  "redox_syscall",
  "remove_dir_all",
  "winapi",
+]
+
+[[package]]
+name = "thingbuf"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4e3eae2220a6d68b0ea3a5c65e75cd896853d38822a7f83e47245e78a84f862"
+dependencies = [
+ "parking_lot 0.12.0",
+ "pin-project",
 ]
 
 [[package]]
