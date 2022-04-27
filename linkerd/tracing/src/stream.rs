@@ -1,14 +1,20 @@
 use std::{
     io,
-    sync::{Arc, Weak, atomic::{AtomicUsize, Ordering}},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Weak,
+    },
 };
 use thingbuf::{
     mpsc::{self, SendRef},
-    recycle::WithCapacity,
+    recycling::WithCapacity,
 };
+use tracing::{Event, Subscriber};
 use tracing_subscriber::{
-    filter::{Filtered, EnvFilter,
-    fmt::{format, time::SystemTime, writer::MakeWriter, Layer},
+    filter::{EnvFilter, Filtered},
+    fmt::{self, format, time::SystemTime, writer::MakeWriter},
+    layer::{Context, Layer},
+    registry::LookupSpan,
 };
 
 #[derive(Debug)]
@@ -17,6 +23,7 @@ pub struct StreamLayer<S> {
     writers: Vec<FmtLayer<S>>,
 }
 
+#[derive(Debug)]
 pub struct StreamFilter {
     filters: Vec<Weak<EnvFilter>>,
 }
@@ -26,15 +33,18 @@ pub struct Reader {
     shared: Arc<Shared>,
 }
 
-type FmtLayer<S> = Layer<S, format::JsonFields, format::Format<format::Json, SystemTime>, Writer>;
+type FmtLayer<S> =
+    fmt::Layer<S, format::JsonFields, format::Format<format::Json, SystemTime>, Writer>;
 
+#[derive(Debug)]
 struct Writer {
-    tx: mpsc::Sender<String, WithCapacity>,
+    tx: mpsc::Sender<Vec<u8>, WithCapacity>,
     shared: Arc<Shared>,
 }
 
-struct Line<'a>(Option<SendRef<'a, String>>);
+struct Line<'a>(Option<SendRef<'a, Vec<u8>>>);
 
+#[derive(Debug)]
 struct Shared {
     dropped_logs: AtomicUsize,
 }
@@ -43,11 +53,15 @@ struct Shared {
 
 impl<'a> io::Write for Line<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if let Some(ref mut ine) = self.0 {
-            return line.write(buf);
+        if let Some(ref mut line) = self.0 {
+            line.copy_from_slice(buf);
         }
         // no channel capacity; drop the line, but pretend it succeeded
         Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -68,6 +82,10 @@ impl<'a> MakeWriter<'a> for Writer {
 }
 
 impl<S> Layer<S> for StreamLayer<S>
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
 {
-
+    fn on_event(&self, event: &tracing::Event<'_>, ctx: Context<'_, S>) {
+        todo!("eliz")
+    }
 }

@@ -2313,7 +2313,7 @@ version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4e3eae2220a6d68b0ea3a5c65e75cd896853d38822a7f83e47245e78a84f862"
 dependencies = [
- "parking_lot 0.12.0",
+ "parking_lot",
  "pin-project",
 ]
 
