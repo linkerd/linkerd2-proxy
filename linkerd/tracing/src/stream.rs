@@ -1,17 +1,24 @@
 use std::{
     io,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{Arc, Weak, atomic::{AtomicUsize, Ordering}},
 };
 use thingbuf::{
     mpsc::{self, SendRef},
     recycle::WithCapacity,
 };
-use tracing_subscriber::fmt::writer::MakeWriter;
+use tracing_subscriber::{
+    filter::{Filtered, EnvFilter,
+    fmt::{format, time::SystemTime, writer::MakeWriter, Layer},
+};
 
+#[derive(Debug)]
+pub struct StreamLayer<S> {
+    filters: Vec<Arc<EnvFilter>>,
+    writers: Vec<FmtLayer<S>>,
+}
 
-pub struct Writer {
-    tx: mpsc::Sender<String, WithCapacity>,
-    shared: Arc<Shared>,
+pub struct StreamFilter {
+    filters: Vec<Weak<EnvFilter>>,
 }
 
 pub struct Reader {
@@ -19,9 +26,14 @@ pub struct Reader {
     shared: Arc<Shared>,
 }
 
-pub struct Line<'a>(Option<SendRef<'a, String>>);
+type FmtLayer<S> = Layer<S, format::JsonFields, format::Format<format::Json, SystemTime>, Writer>;
 
-pub struct Writers
+struct Writer {
+    tx: mpsc::Sender<String, WithCapacity>,
+    shared: Arc<Shared>,
+}
+
+struct Line<'a>(Option<SendRef<'a, String>>);
 
 struct Shared {
     dropped_logs: AtomicUsize,
@@ -53,4 +65,9 @@ impl<'a> MakeWriter<'a> for Writer {
             }
         }
     }
+}
+
+impl<S> Layer<S> for StreamLayer<S>
+{
+
 }
