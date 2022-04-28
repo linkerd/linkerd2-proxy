@@ -9,6 +9,18 @@ use linkerd_app_core::{
 };
 use std::io;
 
+macro_rules! recover {
+    ($thing:expr, $msg:literal, $status:expr $(,)?) => {
+        match $thing {
+            Ok(val) => val,
+            Err(error) => {
+                tracing::warn!(%error, status = %$status, message = %$msg);
+                return Ok(mk_rsp($status, format!("{}", error).into()));
+            }
+        }
+    }
+}
+
 pub(super) async fn serve_level<B>(
     level: &level::Handle,
     req: http::Request<B>,
@@ -27,14 +39,12 @@ where
             let body = hyper::body::aggregate(req.into_body())
                 .await
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            match level.set_from(body.chunk()) {
-                Ok(()) => mk_rsp(http::StatusCode::NO_CONTENT, Body::empty()),
-                Err(error) => recover(
-                    "Setting log level failed",
-                    http::StatusCode::BAD_REQUEST,
-                    error,
-                ),
-            }
+            recover!(
+                level.set_from(body.chunk()),
+                "Setting log level failed",
+                http::StatusCode::BAD_REQUEST
+            );
+            mk_rsp(http::StatusCode::NO_CONTENT, Body::empty())
         }
 
         _ => http::Response::builder()
@@ -65,52 +75,32 @@ where
             .expect("builder with known status code must not fail"));
     }
 
-    let body = match hyper::body::aggregate(req.into_body())
-        .await
-        .map_err(Into::into)
-    {
-        Ok(body) => body,
-        Err(error) => {
-            return Ok(recover(
-                "Reading log stream request body",
-                http::StatusCode::BAD_REQUEST,
-                error,
-            ))
-        }
-    };
-    let body = match std::str::from_utf8(body.chunk()) {
-        Ok(body) => body,
-        Err(error) => {
-            return Ok(recover(
-                "Parsing log stream filter",
-                http::StatusCode::BAD_REQUEST,
-                error,
-            ))
-        }
-    };
+    let body = recover!(
+        hyper::body::aggregate(req.into_body())
+            .await
+            .map_err(Into::into),
+        "Reading log stream request body",
+        http::StatusCode::BAD_REQUEST
+    );
+
+    let body = recover!(
+        std::str::from_utf8(body.chunk()),
+        "Parsing log stream filter",
+        http::StatusCode::BAD_REQUEST,
+    );
     tracing::trace!(req.body = ?body);
 
-    let filter = match EnvFilter::builder().with_regex(false).parse(body) {
-        Ok(filter) => filter,
-        Err(error) => {
-            return Ok(recover(
-                "Parsing log stream filter",
-                http::StatusCode::BAD_REQUEST,
-                error,
-            ))
-        }
-    };
+    let filter = recover!(
+        EnvFilter::builder().with_regex(false).parse(body),
+        "Parsing log stream filter",
+        http::StatusCode::BAD_REQUEST,
+    );
 
-    let rx = match handle.add_stream(filter) {
-        Ok(rx) => rx,
-        Err(error) => {
-            return Ok(recover(
-                "Starting log stream",
-                http::StatusCode::INTERNAL_SERVER_ERROR,
-                error,
-            ))
-        }
-    };
+    let rx = recover!(
+        handle.add_stream(filter),
+        "Starting log stream",
+        http::StatusCode::INTERNAL_SERVER_ERROR
+    );
     let (mut tx, body) = Body::channel();
 
     tokio::spawn(
@@ -132,15 +122,6 @@ where
         .header(http::header::TRANSFER_ENCODING, "application/json")
         .body(body)
         .expect("builder with known status code must not fail"))
-}
-
-fn recover(
-    doing_what: &str,
-    status: http::StatusCode,
-    error: impl std::fmt::Display,
-) -> http::Response<Body> {
-    tracing::warn!(%error, %status, "{} failed", doing_what);
-    mk_rsp(status, format!("{}", error).into())
 }
 
 fn mk_rsp(status: http::StatusCode, body: Body) -> http::Response<Body> {
