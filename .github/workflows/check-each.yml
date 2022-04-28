@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - uses: tj-actions/changed-files@a59f800cbb60ed483623848e31be67659a2940f8
+      - uses: tj-actions/changed-files@a6d456f542692915c5289ea834fb89bc07c11208
         id: changed-files
         with:
           files: |
