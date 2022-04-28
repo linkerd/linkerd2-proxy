@@ -21,6 +21,7 @@ use tracing_subscriber::{
     reload,
 };
 
+/// The receiver end of a log stream.
 #[derive(Debug)]
 pub struct Reader {
     rx: mpsc::Receiver<Vec<u8>, WithCapacity>,
@@ -30,6 +31,7 @@ pub struct Reader {
 
 pub(crate) type StreamLayer<S> = Filtered<WriterLayer<S>, StreamFilter, S>;
 
+/// A handle for starting new log streams.
 #[derive(Debug)]
 
 pub struct StreamHandle<S> {
@@ -40,6 +42,13 @@ pub struct StreamHandle<S> {
 
 #[derive(Debug)]
 pub(crate) struct WriterLayer<S> {
+    // XXX(eliza): having to duplicate the filters here and in the
+    // `StreamFilter` type is quite unfortunate. Ideally, we would just have a
+    // single `Vec` of `Filtered` layers, but this doesn't play nice with filter
+    // reloading (see https://github.com/tokio-rs/tracing/issues/1629).
+    //
+    // It's possible this will be easier in the future:
+    // https://github.com/tokio-rs/tracing/issues/2101
     filters: Vec<Arc<EnvFilter>>,
     writers: Vec<FmtLayer<S>>,
 }
