@@ -62,3 +62,4 @@ flate2 = { version = "1", default-features = false, features = [
 # implementation.
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
+serde_json = "1"

@@ -8,6 +8,7 @@
 
 pub mod access_log;
 pub mod level;
+#[cfg(feature = "stream")]
 pub mod stream;
 pub mod test;
 mod uptime;
@@ -15,14 +16,17 @@ mod uptime;
 use self::uptime::Uptime;
 use linkerd_error::Error;
 use std::str;
-use tracing::{Dispatch, Subscriber};
+use tracing::Dispatch;
+pub use tracing::Subscriber;
 use tracing_subscriber::{
-    filter::{FilterFn, LevelFilter},
+    filter::LevelFilter,
     fmt::format,
+    layer::{Layer, Layered},
     prelude::*,
-    registry::LookupSpan,
-    reload, Layer,
+    registry::{LookupSpan, Registry},
+    reload,
 };
+pub use tracing_subscriber::{registry, EnvFilter};
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
@@ -40,14 +44,36 @@ pub struct Settings {
 }
 
 #[derive(Clone)]
-pub struct Handle(Option<level::Handle>);
+pub struct Handle {
+    level: Option<level::Handle>,
+    #[cfg(feature = "stream")]
+    stream: stream::StreamHandle<LogStack>,
+}
 
 /// Initialize tracing and logging with the value of the `ENV_LOG`
 /// environment variable as the verbosity-level filter.
 pub fn init() -> Result<Handle, Error> {
     let (dispatch, handle) = match Settings::from_env() {
         Some(s) => s.build(),
-        None => return Ok(Handle(None)),
+        // logging is disabled, but log streaming might still be enabled later
+        #[cfg(feature = "stream")]
+        None => {
+            #[cfg(feature = "stream")]
+            let stream = {
+                let (handle, layer) = stream::StreamHandle::new();
+                tracing::dispatcher::set_global_default(
+                    tracing_subscriber::registry().with(None).with(layer).into(),
+                )?;
+                handle
+            };
+
+            return Ok(Handle {
+                level: None,
+
+                #[cfg(feature = "stream")]
+                stream,
+            });
+        }
     };
 
     // Set the default subscriber.
@@ -167,52 +193,64 @@ impl Settings {
     pub fn build(self) -> (Dispatch, Handle) {
         let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
 
-        let mut filter = level::filter_builder()
+        let filter = level::filter_builder()
             // When parsing the initial filter configuration from the
             // environment variable, use `parse_lossy` to skip any invalid
             // filter directives and print an error.
             .parse_lossy(log_level);
 
         // If access logging is enabled, build the access log layer.
-        let access_log = if let Some(format) = self.access_log {
-            let (access_log, directive) = access_log::build(format);
-            filter = filter.add_directive(directive);
-            Some(access_log)
-        } else {
-            None
-        };
-
-        let (filter, level) = reload::Layer::new(filter);
-        let level = level::Handle::new(level);
+        let access_log = self.access_log.map(access_log::build);
 
         let logger = match self.format().as_ref() {
             "JSON" => self.mk_json(),
             _ => self.mk_plain(),
         };
-        let logger = logger.with_filter(FilterFn::new(|meta| {
-            !meta.target().starts_with(access_log::TRACE_TARGET)
-        }));
+        let logger = logger.with_filter(filter);
+        let (logger, level) = reload::Layer::new(logger);
+        let level = level::Handle::new(level);
 
-        let handle = Handle(Some(level));
+        #[cfg(feature = "stream")]
+        let (stream, stream_layer) = stream::StreamHandle::new();
 
-        let dispatch = tracing_subscriber::registry()
-            .with(filter)
-            .with(access_log)
-            .with(logger)
-            .into();
+        let handle = Handle {
+            level: Some(level),
+            #[cfg(feature = "stream")]
+            stream,
+        };
+
+        let registry = tracing_subscriber::registry().with(Some(logger));
+        #[cfg(feature = "stream")]
+        let registry = registry.with(stream_layer);
+
+        let dispatch = registry.with(access_log).into();
 
         (dispatch, handle)
     }
 }
+
+// TODO(eliza): when `tracing-subscriber` fixes the `reload::Handle` type
+// parameter mess, this is going to get a lot awful...
+type LogStack = Layered<Option<reload::Layer<level::Inner, Registry>>, Registry>;
+
 // === impl Handle ===
 
 impl Handle {
     /// Returns a new `handle` with tracing disabled.
     pub fn disabled() -> Self {
-        Self(None)
+        Self {
+            level: None,
+            #[cfg(feature = "stream")]
+            stream: stream::StreamHandle::new().0,
+        }
     }
 
     pub fn level(&self) -> Option<&level::Handle> {
-        self.0.as_ref()
+        self.level.as_ref()
+    }
+
+    #[cfg(feature = "stream")]
+    pub fn stream(&self) -> &stream::StreamHandle<LogStack> {
+        &self.stream
     }
 }

@@ -28,7 +28,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 
-mod level;
+mod log;
 mod readiness;
 
 pub use self::readiness::{Latch, Readiness};
@@ -163,23 +163,31 @@ where
                 Box::pin(future::ok(rsp))
             }
             "/proxy-log-level" => {
-                if Self::client_is_localhost(&req) {
-                    let level = self.tracing.level().cloned();
-                    Box::pin(async move {
-                        let rsp = match level {
-                            Some(level) => {
-                                level::serve(&level, req).await.unwrap_or_else(|error| {
-                                    tracing::error!(error, "Failed to get/set tracing level");
-                                    Self::internal_error_rsp(error)
-                                })
-                            }
-                            None => Self::not_found(),
-                        };
-                        Ok(rsp)
-                    })
-                } else {
-                    Box::pin(future::ok(Self::forbidden_not_localhost()))
+                if !Self::client_is_localhost(&req) {
+                    return Box::pin(future::ok(Self::forbidden_not_localhost()));
                 }
+
+                let level = self.tracing.level().cloned();
+                Box::pin(async move {
+                    let rsp = match level {
+                        Some(level) => {
+                            log::serve_level(&level, req).await.unwrap_or_else(|error| {
+                                tracing::error!(error, "Failed to get/set tracing level");
+                                Self::internal_error_rsp(error)
+                            })
+                        }
+                        None => Self::not_found(),
+                    };
+                    Ok(rsp)
+                })
+            }
+            "/logs" => {
+                if !Self::client_is_localhost(&req) {
+                    return Box::pin(future::ok(Self::forbidden_not_localhost()));
+                }
+
+                let stream = self.tracing.stream().clone();
+                Box::pin(log::serve_stream(stream, req))
             }
             "/shutdown" => {
                 if req.method() == http::Method::POST {

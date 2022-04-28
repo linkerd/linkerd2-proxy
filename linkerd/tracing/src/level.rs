@@ -1,12 +1,15 @@
 use linkerd_error::Error;
 use tracing::trace;
 use tracing_subscriber::{
-    filter::{self, EnvFilter, LevelFilter},
-    reload, Registry,
+    filter::{self, EnvFilter, Filtered, LevelFilter},
+    reload, Layer, Registry,
 };
 
 #[derive(Clone)]
-pub struct Handle(reload::Handle<EnvFilter, Registry>);
+pub struct Handle(reload::Handle<Inner, Registry>);
+
+pub(crate) type Inner =
+    Filtered<Box<dyn Layer<Registry> + Send + Sync + 'static>, EnvFilter, Registry>;
 
 /// Returns an `EnvFilter` builder with the configuration used for parsing new
 /// filter strings.
@@ -19,7 +22,7 @@ pub(crate) fn filter_builder() -> filter::Builder {
 }
 
 impl Handle {
-    pub(crate) fn new(handle: reload::Handle<EnvFilter, Registry>) -> Self {
+    pub(crate) fn new(handle: reload::Handle<Inner, Registry>) -> Self {
         Self(handle)
     }
 
@@ -32,14 +35,16 @@ impl Handle {
     pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
         let level = level.as_ref();
         let filter = filter_builder().parse(level)?;
-        self.0.reload(filter)?;
+        self.0.modify(|layer| {
+            *layer.filter_mut() = filter;
+        })?;
         tracing::info!(%level, "set new log level");
         Ok(())
     }
 
     pub fn current(&self) -> Result<String, Error> {
         self.0
-            .with_current(|f| format!("{}", f))
+            .with_current(|f| format!("{}", f.filter()))
             .map_err(Into::into)
     }
 }
