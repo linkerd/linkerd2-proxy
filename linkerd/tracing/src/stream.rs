@@ -124,6 +124,15 @@ impl<S> Clone for StreamHandle<S> {
         }
     }
 }
+
+// === impl Reader ===
+
+impl Reader {
+    pub async fn next_line(&self) -> Option<RecvRef<'_, Vec<u8>>> {
+        self.rx.recv_ref().await
+    }
+}
+
 // === impl Line ===
 
 impl<'a> io::Write for Line<'a> {
@@ -255,13 +264,5 @@ impl<S: Subscriber> Filter<S> for StreamFilter {
         for filter in self.filters() {
             filter.on_close(id.clone(), ctx.clone())
         }
-    }
-}
-
-// === impl Reader ===
-
-impl Reader {
-    pub async fn next_line(&self) -> Option<RecvRef<'_, Vec<u8>>> {
-        self.rx.recv_ref().await
     }
 }
