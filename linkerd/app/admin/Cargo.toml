@@ -19,6 +19,7 @@ linkerd-tracing = { path = "../../tracing", features = ["stream"] }
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}
 tracing = "0.1"
+serde-json = "1"
 
 [dependencies.tower]
 version = "0.4"

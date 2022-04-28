@@ -131,6 +131,14 @@ impl Reader {
     pub async fn next_line(&self) -> Option<RecvRef<'_, Vec<u8>>> {
         self.rx.recv_ref().await
     }
+
+    /// Returns the number of log lines that were dropped since the last time
+    /// this method was called.
+    ///
+    /// Calling this method resets the counter.
+    pub fn take_dropped_count(&self) -> usize {
+        self.shared.dropped_logs.swap(0, Ordering::Acquire)
+    }
 }
 
 // === impl Line ===

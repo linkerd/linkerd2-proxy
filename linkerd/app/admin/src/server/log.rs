@@ -109,6 +109,13 @@ where
             while let Some(line) = rx.next_line().await {
                 tx.send_data(Bytes::copy_from_slice(&*line.as_ref()))
                     .await?;
+
+                // if any log events were dropped, report that to the client
+                let dropped = rx.take_dropped_count();
+                if dropped > 0 {
+                    let json = serde_json::to_vec(serde_json::json!({ "dropped_events": dropped }));
+                    tx.send_data(Bytes::from(json)).await?;
+                }
             }
 
             Ok(())
