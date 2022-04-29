@@ -101,6 +101,15 @@ where
         "Starting log stream",
         http::StatusCode::INTERNAL_SERVER_ERROR
     );
+
+    // TODO(eliza): it's currently a bit sad that we have to use `Body::channel`
+    // and spawn a worker task to poll from the log stream and write to the
+    // request body using `Bytes::copy_from_slice` --- this allocates and
+    // `memcpy`s the buffer, which is unfortunate.
+    //
+    // https://github.com/hawkw/thingbuf/issues/62 would allow us to avoid the
+    // copy by passing the channel's pooled buffer directly to hyper, and
+    // returning it to the channel to be reused when hyper is done with it.
     let (mut tx, body) = Body::channel();
 
     tokio::spawn(
