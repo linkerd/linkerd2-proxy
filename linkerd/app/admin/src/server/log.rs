@@ -9,18 +9,6 @@ use linkerd_app_core::{
 };
 use std::io;
 
-macro_rules! recover {
-    ($thing:expr, $msg:literal, $status:expr $(,)?) => {
-        match $thing {
-            Ok(val) => val,
-            Err(error) => {
-                tracing::warn!(%error, status = %$status, message = %$msg);
-                return Ok(mk_rsp($status, format!("{}", error).into()));
-            }
-        }
-    }
-}
-
 pub(super) async fn serve_level<B>(
     level: &level::Handle,
     req: http::Request<B>,
@@ -29,6 +17,13 @@ where
     B: HttpBody,
     B::Error: Into<Error>,
 {
+    fn mk_rsp(status: http::StatusCode, body: Body) -> http::Response<Body> {
+        http::Response::builder()
+            .status(status)
+            .body(body)
+            .expect("builder with known status code must not fail")
+    }
+
     let rsp = match *req.method() {
         http::Method::GET => {
             let level = level.current()?;
@@ -39,12 +34,13 @@ where
             let body = hyper::body::aggregate(req.into_body())
                 .await
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            recover!(
-                level.set_from(body.chunk()),
-                "Setting log level failed",
-                http::StatusCode::BAD_REQUEST
-            );
-            mk_rsp(http::StatusCode::NO_CONTENT, Body::empty())
+            match level.set_from(body.chunk()) {
+                Ok(_) => mk_rsp(http::StatusCode::NO_CONTENT, Body::empty()),
+                Err(error) => {
+                    tracing::warn!(%error, "Setting log level failed");
+                    mk_rsp(http::StatusCode::BAD_REQUEST, format!("{}", error).into())
+                }
+            }
         }
 
         _ => http::Response::builder()
@@ -67,6 +63,27 @@ where
     B: HttpBody,
     B::Error: Into<Error>,
 {
+    macro_rules! recover {
+        ($thing:expr, $msg:literal, $status:expr $(,)?) => {
+            match $thing {
+                Ok(val) => val,
+                Err(error) => {
+                    tracing::warn!(%error, status = %$status, message = %$msg);
+                    let json = serde_json::to_vec(&serde_json::json!({
+                        "error": error.to_string(),
+                        "status": $status.as_u16(),
+                    }))?;
+                    return Ok(http::Response::builder()
+                        .status($status)
+                        .header(http::header::TRANSFER_ENCODING, "application/json")
+                        .body(json.into())
+                        .expect("builder with known status code must not fail")
+                    );
+                }
+            }
+        }
+    }
+
     if req.method() != http::Method::GET {
         return Ok(http::Response::builder()
             .status(http::StatusCode::METHOD_NOT_ALLOWED)
@@ -122,7 +139,8 @@ where
                 // if any log events were dropped, report that to the client
                 let dropped = rx.take_dropped_count();
                 if dropped > 0 {
-                    let json = serde_json::to_vec(serde_json::json!({ "dropped_events": dropped }));
+                    let json =
+                        serde_json::to_vec(&serde_json::json!({ "dropped_events": dropped }))?;
                     tx.send_data(Bytes::from(json)).await?;
                 }
             }
@@ -139,11 +157,4 @@ where
         .header(http::header::TRANSFER_ENCODING, "application/json")
         .body(body)
         .expect("builder with known status code must not fail"))
-}
-
-fn mk_rsp(status: http::StatusCode, body: Body) -> http::Response<Body> {
-    http::Response::builder()
-        .status(status)
-        .body(body)
-        .expect("builder with known status code must not fail")
 }
