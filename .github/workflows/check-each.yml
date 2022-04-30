@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 3
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - uses: tj-actions/changed-files@a6d456f542692915c5289ea834fb89bc07c11208
         id: changed-files
         with:
@@ -62,7 +62,7 @@ jobs:
       - name: Install meshtls-boring build deps
         if: matrix.crate == 'linkerd-meshtls-boring'
         run: apt update && apt install -y clang cmake
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - name: Install protoc
         if: matrix.crate == 'linkerd-transport-header' || matrix.crate == 'opencensus-proto'
         uses: ./.github/actions/install-protoc
