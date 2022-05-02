@@ -1,3 +1,4 @@
+use slab::Slab;
 use std::{
     io,
     sync::{
@@ -23,15 +24,24 @@ use tracing_subscriber::{
 
 /// The receiver end of a log stream.
 #[derive(Debug)]
-pub struct Reader {
+pub struct Reader<S: Subscriber + for<'a> LookupSpan<'a>> {
     rx: mpsc::Receiver<Vec<u8>, WithCapacity>,
-    #[allow(dead_code)] // TODO(eliza): use this
     shared: Arc<Shared>,
+
+    /// Index in the slab of writers on the tx side of the stream.
+    ///
+    /// This is used to remove the stream when the reader is dropped.
+    idx: usize,
+
+    /// The handle for modifying the log stream layer.
+    ///
+    /// This is used to remove the stream when the reader is dropped.
+    handle: StreamHandle<S>,
 }
 
 pub(crate) type StreamLayer<S> = Filtered<WriterLayer<S>, StreamFilter, S>;
 
-/// A handle for starting new log streams.
+/// A handle for starting new log streams, and removing old ones.
 #[derive(Debug)]
 
 pub struct StreamHandle<S> {
@@ -42,6 +52,11 @@ pub struct StreamHandle<S> {
 
 #[derive(Debug)]
 pub(crate) struct WriterLayer<S> {
+    writers: Slab<Writer<S>>,
+}
+
+#[derive(Debug)]
+struct Writer<S> {
     // XXX(eliza): having to duplicate the filters here and in the
     // `StreamFilter` type is quite unfortunate. Ideally, we would just have a
     // single `Vec` of `Filtered` layers, but this doesn't play nice with filter
@@ -49,8 +64,8 @@ pub(crate) struct WriterLayer<S> {
     //
     // It's possible this will be easier in the future:
     // https://github.com/tokio-rs/tracing/issues/2101
-    filters: Vec<Arc<EnvFilter>>,
-    writers: Vec<FmtLayer<S>>,
+    filter: Arc<EnvFilter>,
+    writer: FmtLayer<S>,
 }
 
 #[derive(Debug, Default)]
@@ -58,11 +73,10 @@ pub(crate) struct StreamFilter {
     filters: Vec<Weak<EnvFilter>>,
 }
 
-type FmtLayer<S> =
-    fmt::Layer<S, format::JsonFields, format::Format<format::Json, SystemTime>, Writer>;
+type FmtLayer<S> = fmt::Layer<S, format::JsonFields, format::Format<format::Json, SystemTime>, Tx>;
 
 #[derive(Debug)]
-struct Writer {
+struct Tx {
     tx: mpsc::Sender<Vec<u8>, WithCapacity>,
     shared: Arc<Shared>,
 }
@@ -82,8 +96,7 @@ where
 {
     pub(crate) fn new() -> (Self, reload::Layer<StreamLayer<S>, S>) {
         let layer = WriterLayer {
-            filters: Vec::new(),
-            writers: Vec::new(),
+            writers: Slab::new(),
         };
         let layer = layer.with_filter(StreamFilter::default());
         let (layer, handle) = reload::Layer::new(layer);
@@ -101,17 +114,37 @@ where
     pub fn add_stream(
         &self,
         filter: EnvFilter,
-    ) -> Result<Reader, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Reader<S>, Box<dyn std::error::Error + Send + Sync>> {
         let filter = Arc::new(filter);
         let (tx, rx) = mpsc::with_recycle(self.channel_capacity, self.channel_settings.clone());
         let shared = Arc::new(Shared::default());
+        let mut idx = 0;
         self.handle.modify(|layer| {
             let shared = shared.clone();
             layer.filter_mut().filters.push(Arc::downgrade(&filter));
-            layer.inner_mut().add_stream(filter, Writer { tx, shared });
+            idx = layer.inner_mut().add_stream(filter, Tx { tx, shared });
         })?;
 
-        Ok(Reader { rx, shared })
+        Ok(Reader {
+            rx,
+            shared,
+            idx,
+            handle: self.clone(),
+        })
+    }
+
+    fn remove_stream(&self, idx: usize) {
+        tracing::trace!(idx, "Removing log stream...");
+        // XXX(eliza): would be nice if `modify` could return a value...`
+        let mut did_remove = false;
+        let removed = self
+            .handle
+            .modify(|layer| {
+                did_remove = layer.inner_mut().writers.try_remove(idx).is_some();
+                layer.filter_mut().filters.retain(|f| f.upgrade().is_some())
+            })
+            .map(|_| did_remove);
+        tracing::trace!(idx, ?removed, "Removed log stream");
     }
 }
 
@@ -127,7 +160,10 @@ impl<S> Clone for StreamHandle<S> {
 
 // === impl Reader ===
 
-impl Reader {
+impl<S> Reader<S>
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+{
     pub async fn next_line(&self) -> Option<RecvRef<'_, Vec<u8>>> {
         self.rx.recv_ref().await
     }
@@ -138,6 +174,15 @@ impl Reader {
     /// Calling this method resets the counter.
     pub fn take_dropped_count(&self) -> usize {
         self.shared.dropped_logs.swap(0, Ordering::Acquire)
+    }
+}
+
+impl<S> Drop for Reader<S>
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+{
+    fn drop(&mut self) {
+        self.handle.remove_stream(self.idx)
     }
 }
 
@@ -159,7 +204,7 @@ impl<'a> io::Write for Line<'a> {
 
 // === impl Writer ===
 
-impl<'a> MakeWriter<'a> for Writer {
+impl<'a> MakeWriter<'a> for Tx {
     type Writer = Line<'a>;
 
     fn make_writer(&'a self) -> Line<'a> {
@@ -176,20 +221,18 @@ impl<'a> MakeWriter<'a> for Writer {
 // === impl WriterLayer ===
 
 impl<S> WriterLayer<S> {
-    fn add_stream(&mut self, filter: Arc<EnvFilter>, tx: Writer) {
-        debug_assert_eq!(
-            self.filters.len(),
-            self.writers.len(),
-            "writer and filter must have the same index"
-        );
-        self.filters.push(filter);
+    fn add_stream(&mut self, filter: Arc<EnvFilter>, tx: Tx) -> usize {
         let fmt = fmt::layer()
             .json()
             .with_current_span(false)
             .with_span_list(true)
             .with_thread_ids(true)
             .with_writer(tx);
-        self.writers.push(fmt);
+
+        self.writers.insert(Writer {
+            filter,
+            writer: fmt,
+        })
     }
 
     fn writers_for<'a>(
@@ -197,10 +240,11 @@ impl<S> WriterLayer<S> {
         meta: &'a tracing::Metadata<'_>,
         ctx: &'a Context<'_, S>,
     ) -> impl Iterator<Item = &'a FmtLayer<S>> + 'a {
-        self.filters
+        self.writers
             .iter()
-            .zip(self.writers.iter())
-            .filter_map(|(filter, writer)| filter.enabled(meta, ctx.clone()).then(|| writer))
+            .filter_map(|(_, Writer { filter, writer })| {
+                filter.enabled(meta, ctx.clone()).then(|| writer)
+            })
     }
 }
 

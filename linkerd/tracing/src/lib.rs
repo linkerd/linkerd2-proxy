@@ -56,7 +56,6 @@ pub fn init() -> Result<Handle, Error> {
     let (dispatch, handle) = match Settings::from_env() {
         Some(s) => s.build(),
         // logging is disabled, but log streaming might still be enabled later
-        #[cfg(feature = "stream")]
         None => {
             #[cfg(feature = "stream")]
             let stream = {

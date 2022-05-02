@@ -1618,6 +1618,7 @@ name = "linkerd-tracing"
 version = "0.1.0"
 dependencies = [
  "linkerd-error",
+ "slab",
  "thingbuf",
  "tokio",
  "tracing",
