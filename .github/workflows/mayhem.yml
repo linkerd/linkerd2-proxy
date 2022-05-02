@@ -51,6 +51,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          file: Dockerfile_mayhem
 
       - name: Start analysis for addr
         uses: ForAllSecure/mcode-action@v1
