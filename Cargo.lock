@@ -891,6 +891,7 @@ dependencies = [
  "http-body",
  "hyper",
  "linkerd-app",
+ "linkerd-app-admin",
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-meshtls",

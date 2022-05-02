@@ -13,6 +13,7 @@ This is used by tests and the executable.
 
 [features]
 allow-loopback = ["linkerd-app-outbound/allow-loopback"]
+log-streaming = ["linkerd-app-admin/log-streaming"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }

@@ -63,3 +63,5 @@ flate2 = { version = "1", default-features = false, features = [
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 serde_json = "1"
+# enable log streaming for testing it
+linkerd-app-admin = { path = "../admin", features = ["log-streaming"] }

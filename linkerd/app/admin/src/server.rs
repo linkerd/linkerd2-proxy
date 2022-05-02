@@ -10,7 +10,7 @@
 //!   tracing configuration).
 //! * `POST /shutdown` -- shuts down the proxy.
 
-use futures::future;
+use futures::future::{self, TryFutureExt};
 use http::StatusCode;
 use hyper::{
     body::{Body, HttpBody},
@@ -162,33 +162,34 @@ where
                 });
                 Box::pin(future::ok(rsp))
             }
+
             "/proxy-log-level" => {
                 if !Self::client_is_localhost(&req) {
                     return Box::pin(future::ok(Self::forbidden_not_localhost()));
                 }
 
-                let level = self.tracing.level().cloned();
-                Box::pin(async move {
-                    let rsp = match level {
-                        Some(level) => {
-                            log::serve_level(&level, req).await.unwrap_or_else(|error| {
-                                tracing::error!(error, "Failed to get/set tracing level");
-                                Self::internal_error_rsp(error)
-                            })
-                        }
-                        None => Self::not_found(),
-                    };
-                    Ok(rsp)
-                })
+                match self.tracing.level() {
+                    Some(level) => {
+                        Box::pin(log::serve_level(level.clone(), req).or_else(|error| {
+                            tracing::error!(error, "Failed to get/set tracing level");
+                            future::ok(Self::internal_error_rsp(error))
+                        }))
+                    }
+                    None => Box::pin(future::ok(Self::not_found())),
+                }
             }
+
             "/logs" => {
                 if !Self::client_is_localhost(&req) {
                     return Box::pin(future::ok(Self::forbidden_not_localhost()));
                 }
 
-                let stream = self.tracing.stream().clone();
-                Box::pin(log::serve_stream(stream, req))
+                Box::pin(log::serve_stream(&self.tracing, req).or_else(|error| {
+                    tracing::error!(error, "Failed to stream logs");
+                    future::ok(Self::internal_error_rsp(error))
+                }))
             }
+
             "/shutdown" => {
                 if req.method() == http::Method::POST {
                     if Self::client_is_localhost(&req) {
