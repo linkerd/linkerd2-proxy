@@ -38,6 +38,7 @@ pub struct Listening {
     pub inbound: SocketAddr,
     pub outbound: SocketAddr,
     pub admin: SocketAddr,
+    pub health: SocketAddr,
 
     pub outbound_server: Option<server::Listening>,
     pub inbound_server: Option<server::Listening>,
@@ -279,6 +280,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
         env.put(app::env::ENV_CONTROL_LISTEN_ADDR, "127.0.0.1:0".to_owned());
         env.put(app::env::ENV_ADMIN_LISTEN_ADDR, "127.0.0.1:0".to_owned());
+        env.put(app::env::ENV_HEALTH_LISTEN_ADDR, "127.0.0.1:0".to_owned());
     } else {
         let local_inbound = env
             .get(app::env::ENV_INBOUND_LISTEN_ADDR)
@@ -365,9 +367,10 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                         let bind_in = inbound;
                         let bind_out = outbound;
                         let bind_adm = listen::BindTcp::default();
+                        let bind_health = listen::BindTcp::default();
                         let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
                         let main = config
-                            .build(bind_in, bind_out, bind_adm, shutdown_tx, trace_handle)
+                            .build(bind_in, bind_out, bind_adm, bind_health, shutdown_tx, trace_handle)
                             .await
                             .expect("config");
 
@@ -380,6 +383,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             main.inbound_addr(),
                             main.outbound_addr(),
                             main.admin_addr(),
+                            main.health_addr(),
                         );
                         let mut running = Some((running_tx, addrs));
                         let on_shutdown = futures::future::poll_fn::<(), _>(move |cx| {
@@ -411,7 +415,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         })
         .expect("spawn");
 
-    let (tap_addr, identity_addr, inbound_addr, outbound_addr, admin_addr) =
+    let (tap_addr, identity_addr, inbound_addr, outbound_addr, admin_addr, health_addr) =
         running_rx.await.unwrap();
 
     tracing::info!(
@@ -429,6 +433,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         inbound: inbound_addr.into(),
         outbound: outbound_addr.into(),
         admin: admin_addr.into(),
+        health: health_addr.into(),
 
         outbound_server: proxy.outbound_server,
         inbound_server: proxy.inbound_server,

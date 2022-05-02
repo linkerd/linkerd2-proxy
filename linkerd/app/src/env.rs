@@ -91,6 +91,7 @@ pub const ENV_OUTBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_OUTBOUND_LISTEN_ADDR"
 pub const ENV_INBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_INBOUND_LISTEN_ADDR";
 pub const ENV_CONTROL_LISTEN_ADDR: &str = "LINKERD2_PROXY_CONTROL_LISTEN_ADDR";
 pub const ENV_ADMIN_LISTEN_ADDR: &str = "LINKERD2_PROXY_ADMIN_LISTEN_ADDR";
+pub const ENV_HEALTH_LISTEN_ADDR: &str = "LINKERD2_PROXY_HEALTH_LISTEN_ADDR";
 
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 
@@ -223,6 +224,7 @@ const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "127.0.0.1:4140";
 pub const DEFAULT_INBOUND_LISTEN_ADDR: &str = "0.0.0.0:4143";
 pub const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
 const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
+const DEFAULT_HEALTH_LISTEN_ADDR: &str = "0.0.0.0:4192";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_INBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -292,6 +294,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTEN_ADDR, parse_socket_addr);
     let inbound_listener_addr = parse(strings, ENV_INBOUND_LISTEN_ADDR, parse_socket_addr);
     let admin_listener_addr = parse(strings, ENV_ADMIN_LISTEN_ADDR, parse_socket_addr);
+    let health_listener_addr = parse(strings, ENV_HEALTH_LISTEN_ADDR, parse_socket_addr);
 
     let inbound_detect_timeout = parse(strings, ENV_INBOUND_DETECT_TIMEOUT, parse_duration);
     let inbound_dispatch_timeout = parse(strings, ENV_INBOUND_DISPATCH_TIMEOUT, parse_duration);
@@ -473,6 +476,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let admin_listener_addr = admin_listener_addr?
         .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap());
+
+
+    let health_listener_addr = health_listener_addr?
+        .unwrap_or_else(|| parse_socket_addr(DEFAULT_HEALTH_LISTEN_ADDR).unwrap());
 
     let inbound = {
         let addr = ListenAddr(
@@ -711,9 +718,18 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     };
 
     let admin = super::admin::Config {
-        metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
+        metrics_retain_idle: metrics_retain_idle.clone()?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
         server: ServerConfig {
             addr: ListenAddr(admin_listener_addr),
+            keepalive: inbound.proxy.server.keepalive,
+            h2_settings,
+        },
+    };
+
+    let health = super::health::Config {
+        metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
+        server: ServerConfig {
+            addr: ListenAddr(health_listener_addr),
             keepalive: inbound.proxy.server.keepalive,
             h2_settings,
         },
@@ -787,6 +803,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     Ok(super::Config {
         admin,
+        health,
         dns,
         dst,
         tap,

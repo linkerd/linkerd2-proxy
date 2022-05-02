@@ -740,6 +740,7 @@ dependencies = [
  "linkerd-app-admin",
  "linkerd-app-core",
  "linkerd-app-gateway",
+ "linkerd-app-health",
  "linkerd-app-inbound",
  "linkerd-app-outbound",
  "linkerd-error",
@@ -845,6 +846,21 @@ dependencies = [
  "tokio-test",
  "tower",
  "tower-test",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-app-health"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "hyper",
+ "linkerd-app-core",
+ "linkerd-app-inbound",
+ "thiserror",
+ "tokio",
+ "tower",
  "tracing",
 ]
 
