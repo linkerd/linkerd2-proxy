@@ -29,7 +29,7 @@ members = ["."]
 resolver = "2"
 
 [[bin]]
-name = "fuzz_target_1"
+name = "inbound_fuzz_target_1"
 path = "fuzz_targets/fuzz_target_1.rs"
 test = true
 doc = false

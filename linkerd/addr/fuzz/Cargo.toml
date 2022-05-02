@@ -20,5 +20,5 @@ members = ["."]
 resolver = "2"
 
 [[bin]]
-name = "fuzz_target_1"
+name = "addr_fuzz_target_1"
 path = "fuzz_targets/fuzz_target_1.rs"

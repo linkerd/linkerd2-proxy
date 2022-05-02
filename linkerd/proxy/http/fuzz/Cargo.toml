@@ -21,7 +21,7 @@ members = ["."]
 resolver = "2"
 
 [[bin]]
-name = "fuzz_target_1"
+name = "http_fuzz_target_1"
 path = "fuzz_targets/fuzz_target_1.rs"
 test = false
 doc = false

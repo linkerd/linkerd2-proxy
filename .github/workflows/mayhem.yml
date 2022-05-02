@@ -1,0 +1,108 @@
+name: Mayhem
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  ADDR_MAYHEMFILE: Mayhem/addr.mayhemfile
+  DNS_MAYHEMFILE: Mayhem/dns.mayhemfile
+  RAW_MAYHEMFILE: Mayhem/fuzz_target_raw.mayhemfile
+  STRUCTURED_MAYHEMFILE: Mayhem/fuzz_target_structured.mayhemfile
+  HTTP_MAYHEMFILE: Mayhem/http.mayhemfile
+  INBOUND_MAYHEMFILE: Mayhem/inbound.mayhemfile
+  TLS_MAYHEMFILE: Mayhem/tls.mayhemfile
+  
+jobs:
+  build:
+    name: '${{ matrix.os }} shared=${{ matrix.shared }} ${{ matrix.build_type }}'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        shared: [false]
+        build_type: [Release]
+        include:
+          - os: ubuntu-latest
+            triplet: x64-linux
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Start analysis for addr
+        uses: ForAllSecure/mcode-action@v1
+        with:
+          mayhem-token: ${{ secrets.MAYHEM_TOKEN }}
+          args: --image ${{ steps.meta.outputs.tags }} --file ${{ env.ADDR_MAYHEMFILE }}
+          sarif-output: sarif
+
+      - name: Start analysis for dns
+        uses: ForAllSecure/mcode-action@v1
+        with:
+          mayhem-token: ${{ secrets.MAYHEM_TOKEN }}
+          args: --image ${{ steps.meta.outputs.tags }} --file ${{ env.DNS_MAYHEMFILE }}
+          sarif-output: sarif
+
+      - name: Start analysis for raw
+        uses: ForAllSecure/mcode-action@v1
+        with:
+          mayhem-token: ${{ secrets.MAYHEM_TOKEN }}
+          args: --image ${{ steps.meta.outputs.tags }} --file ${{ env.RAW_MAYHEMFILE }}
+          sarif-output: sarif
+
+      - name: Start analysis for structured
+        uses: ForAllSecure/mcode-action@v1
+        with:
+          mayhem-token: ${{ secrets.MAYHEM_TOKEN }}
+          args: --image ${{ steps.meta.outputs.tags }} --file ${{ env.STRUCTURED_MAYHEMFILE }}
+          sarif-output: sarif
+
+      - name: Start analysis for http
+        uses: ForAllSecure/mcode-action@v1
+        with:
+          mayhem-token: ${{ secrets.MAYHEM_TOKEN }}
+          args: --image ${{ steps.meta.outputs.tags }} --file ${{ env.HTTP_MAYHEMFILE }}
+          sarif-output: sarif
+
+      - name: Start analysis for inbound
+        uses: ForAllSecure/mcode-action@v1
+        with:
+          mayhem-token: ${{ secrets.MAYHEM_TOKEN }}
+          args: --image ${{ steps.meta.outputs.tags }} --file ${{ env.INBOUND_MAYHEMFILE }}
+          sarif-output: sarif
+
+      - name: Start analysis for tls
+        uses: ForAllSecure/mcode-action@v1
+        with:
+          mayhem-token: ${{ secrets.MAYHEM_TOKEN }}
+          args: --image ${{ steps.meta.outputs.tags }} --file ${{ env.TLS_MAYHEMFILE }}
+          sarif-output: sarif
+
+
+      - name: Upload SARIF file(s)
+        uses: github/codeql-action/upload-sarif@v1
+        with:
+          sarif_file: sarif
