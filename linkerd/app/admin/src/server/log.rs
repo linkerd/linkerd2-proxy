@@ -17,17 +17,17 @@ where
     B: HttpBody,
     B::Error: Into<Error>,
 {
-    fn mk_rsp(status: http::StatusCode, body: Body) -> http::Response<Body> {
+    fn mk_rsp(status: http::StatusCode, body: impl Into<Body>) -> http::Response<Body> {
         http::Response::builder()
             .status(status)
-            .body(body)
+            .body(body.into())
             .expect("builder with known status code must not fail")
     }
 
     let rsp = match *req.method() {
         http::Method::GET => {
             let level = level.current()?;
-            mk_rsp(http::StatusCode::OK, level.into())
+            mk_rsp(http::StatusCode::OK, level)
         }
 
         http::Method::PUT => {
@@ -38,7 +38,7 @@ where
                 Ok(_) => mk_rsp(http::StatusCode::NO_CONTENT, Body::empty()),
                 Err(error) => {
                     tracing::warn!(%error, "Setting log level failed");
-                    mk_rsp(http::StatusCode::BAD_REQUEST, format!("{}", error).into())
+                    mk_rsp(http::StatusCode::BAD_REQUEST, error)
                 }
             }
         }
