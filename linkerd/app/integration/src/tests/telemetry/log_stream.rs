@@ -13,7 +13,7 @@ async fn is_valid_json() {
         ..
     } = Fixture::outbound().await;
 
-    let (logs, done) = stream_logs(metrics, "info,linkerd=debug").await;
+    let (logs, done) = get_log_stream(metrics, "info,linkerd=debug").await;
 
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
@@ -31,6 +31,33 @@ async fn is_valid_json() {
 }
 
 #[tokio::test]
+async fn query_is_valid_json() {
+    let Fixture {
+        client,
+        metrics,
+        proxy: _proxy,
+        _profile,
+        dst_tx: _dst_tx,
+        ..
+    } = Fixture::outbound().await;
+
+    let (logs, done) = query_log_stream(metrics, "info,linkerd=debug").await;
+
+    info!("client.get(/)");
+    assert_eq!(client.get("/").await, "hello");
+
+    // finish streaming logs so we don't loop forever
+    let _ = done.send(());
+
+    let json = logs.await.unwrap();
+    assert!(!json.is_empty());
+
+    for obj in json {
+        println!("{}\n", obj);
+    }
+}
+
+#[tokio::test]
 async fn valid_get_does_not_error() {
     let Fixture {
         metrics,
@@ -40,13 +67,41 @@ async fn valid_get_does_not_error() {
         ..
     } = Fixture::outbound().await;
 
-    let (logs, done) = stream_logs(metrics, "info,linkerd=debug").await;
+    let (logs, done) = get_log_stream(metrics, "info,linkerd=debug").await;
 
     // finish streaming logs so we don't loop forever
     let _ = done.send(());
 
     let json = logs.await.unwrap();
     for obj in json {
+        println!("{}\n", obj);
+        if obj.get("error").is_some() {
+            panic!(
+                "expected the log stream to contain no error responses!\njson = {}",
+                obj
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn valid_query_does_not_error() {
+    let Fixture {
+        metrics,
+        proxy: _proxy,
+        _profile,
+        dst_tx: _dst_tx,
+        ..
+    } = Fixture::outbound().await;
+
+    let (logs, done) = query_log_stream(metrics, "info,linkerd=debug").await;
+
+    // finish streaming logs so we don't loop forever
+    let _ = done.send(());
+
+    let json = logs.await.unwrap();
+    for obj in json {
+        println!("{}\n", obj);
         if obj.get("error").is_some() {
             panic!(
                 "expected the log stream to contain no error responses!\njson = {}",
@@ -68,9 +123,9 @@ async fn multi_filter() {
     } = Fixture::outbound().await;
 
     // start streaming the logs
-    let (debug_logs, debug_done) = stream_logs(metrics, "debug").await;
+    let (debug_logs, debug_done) = get_log_stream(metrics, "debug").await;
     let (hyper_logs, hyper_done) =
-        stream_logs(client::http1(proxy.admin, "localhost"), "hyper=trace").await;
+        get_log_stream(client::http1(proxy.admin, "localhost"), "hyper=trace").await;
 
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
@@ -107,7 +162,10 @@ async fn multi_filter() {
     }
 }
 
-async fn stream_logs(
+const PATH: &str = "/logs";
+
+/// Start a log stream with a GET request
+async fn get_log_stream(
     client: client::Client,
     filter: impl ToString,
 ) -> (JoinHandle<Vec<serde_json::Value>>, oneshot::Sender<()>) {
@@ -117,16 +175,44 @@ async fn stream_logs(
     let req = client
         .request_body(
             client
-                .request_builder(&format!("/logs?{}", filter))
+                .request_builder(&format!("{}?{}", PATH, filter))
                 .method(http::Method::GET)
                 .body(hyper::Body::from(filter))
                 .unwrap(),
         )
         .await;
     assert_eq!(req.status(), http::StatusCode::OK);
-    let mut body = req.into_body();
-
     // spawn a task to collect and parse all the logs
+    collect_logs(req.into_body())
+}
+
+/// Start a log stream with a QUERY request
+async fn query_log_stream(
+    client: client::Client,
+    filter: impl ToString,
+) -> (JoinHandle<Vec<serde_json::Value>>, oneshot::Sender<()>) {
+    let filter = filter.to_string();
+
+    // start the request
+    let req = client
+        .request_body(
+            client
+                .request_builder(PATH)
+                .method("QUERY")
+                .body(hyper::Body::from(filter))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(req.status(), http::StatusCode::OK);
+    // spawn a task to collect and parse all the logs
+    collect_logs(req.into_body())
+}
+
+/// Spawns a task to collect all the logs in a streaming body and parse them as
+/// JSON.
+fn collect_logs(
+    mut body: hyper::Body,
+) -> (JoinHandle<Vec<serde_json::Value>>, oneshot::Sender<()>) {
     let (done_tx, done_rx) = oneshot::channel();
     let result = tokio::spawn(async move {
         let mut result = Vec::new();
