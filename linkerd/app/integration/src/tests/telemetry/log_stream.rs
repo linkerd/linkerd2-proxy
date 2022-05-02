@@ -117,7 +117,7 @@ async fn stream_logs(
     let req = client
         .request_body(
             client
-                .request_builder("/logs")
+                .request_builder(&format!("/logs?{}", filter))
                 .method(http::Method::GET)
                 .body(hyper::Body::from(filter))
                 .unwrap(),
