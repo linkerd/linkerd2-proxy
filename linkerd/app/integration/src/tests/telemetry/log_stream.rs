@@ -22,8 +22,37 @@ async fn is_valid_json() {
     let _ = done.send(());
 
     let json = logs.await.unwrap();
+
+    assert!(!json.is_empty());
+
     for obj in json {
         println!("{}\n", obj);
+    }
+}
+
+#[tokio::test]
+async fn valid_get_does_not_error() {
+    let Fixture {
+        metrics,
+        proxy: _proxy,
+        _profile,
+        dst_tx: _dst_tx,
+        ..
+    } = Fixture::outbound().await;
+
+    let (logs, done) = stream_logs(metrics, "info,linkerd=debug").await;
+
+    // finish streaming logs so we don't loop forever
+    let _ = done.send(());
+
+    let json = logs.await.unwrap();
+    for obj in json {
+        if obj.get("error").is_some() {
+            panic!(
+                "expected the log stream to contain no error responses!\njson = {}",
+                obj
+            );
+        }
     }
 }
 
@@ -85,7 +114,7 @@ async fn stream_logs(
     let filter = filter.to_string();
 
     // start the request
-    let mut body = client
+    let req = client
         .request_body(
             client
                 .request_builder("/logs")
@@ -93,8 +122,9 @@ async fn stream_logs(
                 .body(hyper::Body::from(filter))
                 .unwrap(),
         )
-        .await
-        .into_body();
+        .await;
+    assert_eq!(req.status(), http::StatusCode::OK);
+    let mut body = req.into_body();
 
     // spawn a task to collect and parse all the logs
     let (done_tx, done_rx) = oneshot::channel();
