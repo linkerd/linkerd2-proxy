@@ -162,7 +162,7 @@ async fn multi_filter() {
     }
 }
 
-const PATH: &str = "/logs";
+const PATH: &str = "/logs.json";
 
 /// Start a log stream with a GET request
 async fn get_log_stream(

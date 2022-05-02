@@ -179,7 +179,7 @@ where
                 }
             }
 
-            "/logs" => {
+            "/logs.json" => {
                 if !Self::client_is_localhost(&req) {
                     return Box::pin(future::ok(Self::forbidden_not_localhost()));
                 }
