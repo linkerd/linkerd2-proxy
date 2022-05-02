@@ -1,4 +1,5 @@
 use futures::future::FutureExt;
+use http::{header, StatusCode};
 use hyper::{
     body::{Buf, Bytes, HttpBody},
     Body,
@@ -17,7 +18,7 @@ where
     B: HttpBody,
     B::Error: Into<Error>,
 {
-    fn mk_rsp(status: http::StatusCode, body: impl Into<Body>) -> http::Response<Body> {
+    fn mk_rsp(status: StatusCode, body: impl Into<Body>) -> http::Response<Body> {
         http::Response::builder()
             .status(status)
             .body(body.into())
@@ -27,7 +28,7 @@ where
     let rsp = match *req.method() {
         http::Method::GET => {
             let level = level.current()?;
-            mk_rsp(http::StatusCode::OK, level)
+            mk_rsp(StatusCode::OK, level)
         }
 
         http::Method::PUT => {
@@ -35,18 +36,18 @@ where
                 .await
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             match level.set_from(body.chunk()) {
-                Ok(_) => mk_rsp(http::StatusCode::NO_CONTENT, Body::empty()),
+                Ok(_) => mk_rsp(StatusCode::NO_CONTENT, Body::empty()),
                 Err(error) => {
                     tracing::warn!(%error, "Setting log level failed");
-                    mk_rsp(http::StatusCode::BAD_REQUEST, error)
+                    mk_rsp(StatusCode::BAD_REQUEST, error)
                 }
             }
         }
 
         _ => http::Response::builder()
-            .status(http::StatusCode::METHOD_NOT_ALLOWED)
-            .header("allow", "GET")
-            .header("allow", "PUT")
+            .status(StatusCode::METHOD_NOT_ALLOWED)
+            .header(header::ALLOW, "GET")
+            .header(header::ALLOW, "PUT")
             .body(Body::empty())
             .expect("builder with known status code must not fail"),
     };
@@ -63,6 +64,23 @@ where
     B: HttpBody,
     B::Error: Into<Error>,
 {
+    static JSON_MIME: &str = "application/json";
+    static JSON_HEADER_VAL: http::HeaderValue = http::HeaderValue::from_static(JSON_MIME);
+
+    fn mk_rsp(status: StatusCode, body: impl Into<Body>) -> http::Response<Body> {
+        http::Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, JSON_HEADER_VAL.clone())
+            .body(body.into())
+            .expect("builder with known status code must not fail")
+    }
+
+    fn parse_filter(filter_str: &str) -> Result<EnvFilter, impl std::error::Error> {
+        let filter = EnvFilter::builder().with_regex(false).parse(filter_str);
+        tracing::trace!(?filter, ?filter_str);
+        filter
+    }
+
     macro_rules! recover {
         ($thing:expr, $msg:literal, $status:expr $(,)?) => {
             match $thing {
@@ -73,50 +91,77 @@ where
                         "error": error.to_string(),
                         "status": $status.as_u16(),
                     }))?;
-                    return Ok(http::Response::builder()
-                        .status($status)
-                        .header(http::header::TRANSFER_ENCODING, "application/json")
-                        .body(json.into())
-                        .expect("builder with known status code must not fail")
-                    );
+                    return Ok(mk_rsp($status, json));
                 }
             }
         }
     }
-
-    if req.method() != http::Method::GET {
-        return Ok(http::Response::builder()
-            .status(http::StatusCode::METHOD_NOT_ALLOWED)
-            .header("allow", "GET")
-            .body(Body::empty())
-            .expect("builder with known status code must not fail"));
+    if let Some(accept) = req.headers().get(header::ACCEPT) {
+        let accept = recover!(
+            std::str::from_utf8(accept.as_bytes()),
+            "Accept header should be UTF-8",
+            StatusCode::BAD_REQUEST
+        );
+        let will_accept_json = accept.contains(JSON_MIME)
+            || accept.contains("application/*")
+            || accept.contains("*/*");
+        if !will_accept_json {
+            tracing::warn!(?accept, "Accept header will not accept 'application/json'");
+            return Ok(mk_rsp(StatusCode::NOT_ACCEPTABLE, "application/json"));
+        }
     }
 
-    let body = recover!(
-        hyper::body::aggregate(req.into_body())
-            .await
-            .map_err(Into::into),
-        "Reading log stream request body",
-        http::StatusCode::BAD_REQUEST
-    );
+    let try_filter = match req.method() {
+        // If the request is a GET, use the query string as the requested log filter.
+        &http::Method::GET => {
+            let query = req
+                .uri()
+                .query()
+                .ok_or("Missing query string for log-streaming filter");
+            tracing::trace!(req.query = ?query);
+            let query = recover!(query, "Missing query string", StatusCode::BAD_REQUEST);
+            parse_filter(query)
+        }
+        // If the request is a QUERY, use the request body
+        method if method.as_str() == "QUERY" => {
+            // TODO(eliza): validate that the request has a content-length...
+            let body = recover!(
+                hyper::body::aggregate(req.into_body())
+                    .await
+                    .map_err(Into::into),
+                "Reading log stream request body",
+                StatusCode::BAD_REQUEST
+            );
 
-    let body = recover!(
-        std::str::from_utf8(body.chunk()),
-        "Parsing log stream filter",
-        http::StatusCode::BAD_REQUEST,
-    );
-    tracing::trace!(req.body = ?body);
+            let body_str = recover!(
+                std::str::from_utf8(body.chunk()),
+                "Parsing log stream filter",
+                StatusCode::BAD_REQUEST,
+            );
+
+            parse_filter(body_str)
+        }
+        method => {
+            tracing::warn!(?method, "Unsupported method");
+            return Ok(http::Response::builder()
+                .status(StatusCode::METHOD_NOT_ALLOWED)
+                .header(header::ALLOW, "GET")
+                .header(header::ALLOW, "QUERY")
+                .body(Body::empty())
+                .expect("builder with known status code must not fail"));
+        }
+    };
 
     let filter = recover!(
-        EnvFilter::builder().with_regex(false).parse(body),
+        try_filter,
         "Parsing log stream filter",
-        http::StatusCode::BAD_REQUEST,
+        StatusCode::BAD_REQUEST,
     );
 
     let rx = recover!(
         handle.add_stream(filter),
         "Starting log stream",
-        http::StatusCode::INTERNAL_SERVER_ERROR
+        StatusCode::INTERNAL_SERVER_ERROR
     );
 
     // TODO(eliza): it's currently a bit sad that we have to use `Body::channel`
@@ -152,9 +197,5 @@ where
         }),
     );
 
-    Ok(http::Response::builder()
-        .status(http::StatusCode::OK)
-        .header(http::header::TRANSFER_ENCODING, "application/json")
-        .body(body)
-        .expect("builder with known status code must not fail"))
+    Ok(mk_rsp(StatusCode::OK, body))
 }
