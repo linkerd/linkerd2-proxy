@@ -17,15 +17,13 @@ use self::uptime::Uptime;
 use linkerd_error::Error;
 use std::str;
 use tracing::Dispatch;
-pub use tracing::Subscriber;
 use tracing_subscriber::{
-    filter::LevelFilter,
-    fmt::format,
-    layer::{Layer, Layered},
-    prelude::*,
-    registry::{LookupSpan, Registry},
-    reload,
+    filter::LevelFilter, fmt::format, prelude::*, registry::LookupSpan, reload, Layer,
 };
+#[cfg(feature = "stream")]
+use tracing_subscriber::{layer::Layered, Registry};
+
+pub use tracing::Subscriber;
 pub use tracing_subscriber::{registry, EnvFilter};
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
@@ -230,6 +228,7 @@ impl Settings {
 
 // TODO(eliza): when `tracing-subscriber` fixes the `reload::Handle` type
 // parameter mess, this is going to get a lot awful...
+#[cfg(feature = "stream")]
 type LogStack = Layered<Option<reload::Layer<level::Inner, Registry>>, Registry>;
 
 // === impl Handle ===
