@@ -10,7 +10,7 @@ pub use linkerd_stack::{
     ExtractParam, Fail, FailFast, Filter, InsertParam, MakeConnection, MapErr, MapTargetLayer,
     NewRouter, NewService, Param, Predicate, UnwrapOr,
 };
-pub use linkerd_stack_tracing::{NewInstrument, NewInstrumentLayer};
+pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use std::{
     task::{Context, Poll},
     time::Duration,
@@ -258,6 +258,14 @@ impl<S> Stack<S> {
     where
         S: NewService<T>,
         S::Service: Service<Req>,
+    {
+        self
+    }
+
+    pub fn check_new_accept<T, I>(self) -> Self
+    where
+        S: NewService<T>,
+        S::Service: Service<I, Response = ()>,
     {
         self
     }

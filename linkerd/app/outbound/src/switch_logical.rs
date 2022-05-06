@@ -196,7 +196,6 @@ mod tests {
 
         let endpoint_addr = SocketAddr::new([192, 0, 2, 20].into(), 2020);
         let endpoint = {
-            let endpoint_addr = endpoint_addr.clone();
             move |ep: tcp::Endpoint| {
                 assert_eq!(ep.addr.as_ref(), &endpoint_addr);
                 assert!(ep.opaque_protocol, "protocol must be marked opaque");
