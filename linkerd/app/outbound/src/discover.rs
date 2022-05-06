@@ -41,13 +41,13 @@ impl<N> Outbound<N> {
                         debug!("Allowing profile lookup");
                         return Ok(profiles::LookupAddr(addr.into()));
                     }
-                    tracing::debug!(
+                    debug!(
                         %addr,
                         networks = %allow.nets(),
-                        "Profile discovery not in configured search networks",
+                        "Address is not in discoverable networks",
                     );
                     Err(profiles::DiscoveryRejected::new(
-                        "not in configured search networks",
+                        "not in discoverable networks",
                     ))
                 }))
                 .push_on_service(

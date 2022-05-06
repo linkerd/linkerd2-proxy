@@ -12,7 +12,7 @@ use linkerd_app_core::{
     AddrMatch, Error, Infallible, NameAddr,
 };
 use thiserror::Error;
-use tracing::{debug_span, info_span};
+use tracing::{debug, debug_span, info_span};
 
 #[derive(Clone)]
 struct AllowHttpProfile(AddrMatch);
@@ -124,13 +124,13 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                 return Ok(profiles::LookupAddr(h.target.into()));
                             }
 
-                            tracing::debug!(
+                            debug!(
                                 dst = %h.target,
                                 domains = %profile_domains,
-                                "Address not in a configured domain",
+                                "Address not in discoverable domains",
                             );
                             Err(profiles::DiscoveryRejected::new(
-                                "not in configured ingress search addresses",
+                                "not in discoverable domains",
                             ))
                         },
                     ))
@@ -255,10 +255,9 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                         |(http, t): (Option<http::Version>, T)| -> Result<_, Infallible> {
                             let accept = tcp::Accept::from(t.param());
                             if let Some(version) = http {
-                                Ok(svc::Either::A(http::Accept::from((version, accept))))
-                            } else {
-                                Ok(svc::Either::B(accept))
+                                return Ok(svc::Either::A(http::Accept::from((version, accept))));
                             }
+                            Ok(svc::Either::B(accept))
                         },
                         fallback,
                     )

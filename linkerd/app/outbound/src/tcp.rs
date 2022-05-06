@@ -40,6 +40,7 @@ impl svc::Param<Option<SessionProtocol>> for Endpoint {
 }
 
 impl<N> Outbound<N> {
+    /// Wraps a TCP accept stack with tracing and metrics instrumentation.
     pub fn push_tcp_instrument<T, I, G, NSvc>(self, mk_span: G) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         T: svc::Param<OrigDstAddr> + Clone + Send + 'static,

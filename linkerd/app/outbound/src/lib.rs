@@ -47,7 +47,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tracing::info;
+use tracing::{info, info_span};
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -201,7 +201,7 @@ impl Outbound<()> {
         endpoint
             .push_switch_logical(logical.into_inner())
             .push_discover(profiles)
-            .push_tcp_instrument(|t: &T| tracing::info_span!("proxy", addr = %t.param()))
+            .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }
 
@@ -239,7 +239,7 @@ impl Outbound<()> {
             .push_tcp_endpoint()
             .push_http_endpoint()
             .push_ingress(profiles, resolve, fallback)
-            .push_tcp_instrument(|t: &T| tracing::info_span!("ingress", addr = %t.param()))
+            .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
             .into_inner()
     }
 }
