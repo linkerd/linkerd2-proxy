@@ -1,4 +1,4 @@
-use linkerd_metrics::{metrics, FmtMetrics, Gauge};
+use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge, MillisAsSeconds};
 use std::fmt;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -6,12 +6,24 @@ use std::time::{SystemTime, UNIX_EPOCH};
 metrics! {
     process_start_time_seconds: Gauge {
         "Time that the process started (in seconds since the UNIX epoch)"
+    },
+
+    process_uptime_seconds_total: Counter<MillisAsSeconds> {
+        "Total time since the process started (in seconds)"
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct Report {
-    start_time: Arc<Gauge>,
+    /// The process's start time in seconds since the Unix epoch.
+    ///
+    /// This is used to generate the `pprocess_start_time_seconds` gauge. This
+    /// could be calculated from `start_time`, but the value will never change,
+    /// so we may as well pre-calculate it once.
+    start_time_from_epoch: u64,
+
+    /// The process's start time as a `SystemTime`, used for calculating the uptime.
+    start_time: SystemTime,
 
     #[cfg(target_os = "linux")]
     system: linux::System,
@@ -19,7 +31,7 @@ pub struct Report {
 
 impl Report {
     pub fn new(start_time: SystemTime) -> Self {
-        let t0 = start_time
+        let start_time_from_epoch = start_time
             .duration_since(UNIX_EPOCH)
             .expect("process start time")
             .as_secs();
@@ -27,8 +39,8 @@ impl Report {
         #[cfg(not(target_os = "linux"))]
         tracing::info!("System-level metrics are only supported on Linux");
         Self {
-            start_time: Arc::new(t0.into()),
-
+            start_time_from_epoch,
+            start_time,
             #[cfg(target_os = "linux")]
             system: linux::System::new(),
         }
@@ -38,7 +50,12 @@ impl Report {
 impl FmtMetrics for Report {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         process_start_time_seconds.fmt_help(f)?;
-        process_start_time_seconds.fmt_metric(f, self.start_time.as_ref())?;
+        process_start_time_seconds.fmt_metric(f, &Gauge::from(self.start_time_from_epoch))?;
+
+        let uptime = self.start_time.elapsed().map_err(|_| fmt::Error)?;
+        let uptime_millis = uptime.as_millis();
+        process_uptime_seconds_total.fmt_help(f)?;
+        process_uptime_seconds_total.fmt_metric(f, &Counter::from(uptime_millis as u64))?;
 
         #[cfg(target_os = "linux")]
         self.system.fmt_metrics(f)?;
