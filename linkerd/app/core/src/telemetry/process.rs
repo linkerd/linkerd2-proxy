@@ -1,7 +1,7 @@
 use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge, MillisAsSeconds};
 use std::fmt;
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::time::Instant;
 
 metrics! {
     process_start_time_seconds: Gauge {
@@ -13,25 +13,38 @@ metrics! {
     }
 }
 
+/// The process' start time, consisting of both a `SystemTime` *and* an
+/// `Instant`.
+///
+/// The `SystemTime` represents the Unix timestamp when the process
+/// started, while the `Instant` is anchored against that unix timestamp and is
+/// used to calculate elapsed time more efficiently than by taking system timestamps.
+#[derive(Copy, Clone, Debug)]
+pub struct StartTime {
+    sys: SystemTime,
+    instant: Instant,
+}
+
 #[derive(Clone, Debug)]
 pub struct Report {
     /// The process's start time in seconds since the Unix epoch.
     ///
     /// This is used to generate the `pprocess_start_time_seconds` gauge. This
-    /// could be calculated from `start_time`, but the value will never change,
+    /// could be calculated from the `SystemTime``, but the value will never change,
     /// so we may as well pre-calculate it once.
     start_time_from_epoch: u64,
 
-    /// The process's start time as a `SystemTime`, used for calculating the uptime.
-    start_time: SystemTime,
+    /// The process's start time as an `Instant`, used for calculating the uptime.
+    start_instant: Instant,
 
     #[cfg(target_os = "linux")]
     system: linux::System,
 }
 
 impl Report {
-    pub fn new(start_time: SystemTime) -> Self {
+    pub fn new(start_time: StartTime) -> Self {
         let start_time_from_epoch = start_time
+            .sys
             .duration_since(UNIX_EPOCH)
             .expect("process start time")
             .as_secs();
@@ -40,7 +53,7 @@ impl Report {
         tracing::info!("System-level metrics are only supported on Linux");
         Self {
             start_time_from_epoch,
-            start_time,
+            start_instant: start_time.instant,
             #[cfg(target_os = "linux")]
             system: linux::System::new(),
         }
@@ -52,7 +65,9 @@ impl FmtMetrics for Report {
         process_start_time_seconds.fmt_help(f)?;
         process_start_time_seconds.fmt_metric(f, &Gauge::from(self.start_time_from_epoch))?;
 
-        let uptime = self.start_time.elapsed().map_err(|_| fmt::Error)?;
+        //  Use `staturating_duration_since` rather than `elapsed` to avoid
+        //  possible panics in the event of clock non-monotonicity.
+        let uptime = Instant::now().saturating_duration_since(self.start_instant);
         let uptime_millis = uptime.as_millis();
         process_uptime_seconds_total.fmt_help(f)?;
         process_uptime_seconds_total.fmt_metric(f, &Counter::from(uptime_millis as u64))?;
@@ -61,6 +76,27 @@ impl FmtMetrics for Report {
         self.system.fmt_metrics(f)?;
 
         Ok(())
+    }
+}
+
+impl StartTime {
+    pub fn now() -> Self {
+        Self {
+            sys: SystemTime::now(),
+            instant: Instant::now(),
+        }
+    }
+}
+
+impl From<StartTime> for Instant {
+    fn from(StartTime { instant, .. }: StartTime) -> Instant {
+        instant
+    }
+}
+
+impl Default for StartTime {
+    fn default() -> Self {
+        Self::now()
     }
 }
 

@@ -75,7 +75,8 @@ pub fn default_config() -> Config {
 pub fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (drain_tx, drain) = drain::channel();
     let (tap, _) = tap::new();
-    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+    let (metrics, _) =
+        metrics::Metrics::new(std::time::Duration::from_secs(10), Default::default());
     let runtime = ProxyRuntime {
         identity: rustls::creds::default_for_test().1.into(),
         metrics: metrics.proxy,
