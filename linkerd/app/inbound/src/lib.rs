@@ -23,7 +23,9 @@ use linkerd_app_core::{
     http_tracing::OpenCensusSink,
     identity, io,
     proxy::{tap, tcp},
-    svc, Error, NameMatch, ProxyRuntime,
+    svc,
+    transport::{self, Remote, ServerAddr},
+    Error, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, time::Duration};
 use thiserror::Error;
