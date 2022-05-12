@@ -1,7 +1,6 @@
 //! Configures and executes the proxy
 
 #![deny(
-    warnings,
     rust_2018_idioms,
     clippy::disallowed_methods,
     clippy::disallowed_types

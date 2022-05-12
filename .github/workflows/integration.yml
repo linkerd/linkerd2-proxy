@@ -17,6 +17,7 @@ env:
   CARGO_NET_RETRY: 10
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
+  RUSTFLAGS: "-D warnings -A deprecated"
 
 # Run only the app-level tests. These may take longer to compile (usually due to very large stack
 # types) and have the potential to be flakey as they depend on opening sockets and may have timing

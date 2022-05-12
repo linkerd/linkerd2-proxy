@@ -1,6 +1,5 @@
 #![cfg(feature = "rustls")]
 #![deny(
-    warnings,
     rust_2018_idioms,
     clippy::disallowed_methods,
     clippy::disallowed_types

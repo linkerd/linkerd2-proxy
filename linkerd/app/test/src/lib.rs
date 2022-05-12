@@ -1,7 +1,6 @@
 //! Shared infrastructure for integration tests
 
 #![deny(
-    warnings,
     rust_2018_idioms,
     clippy::disallowed_methods,
     clippy::disallowed_types
