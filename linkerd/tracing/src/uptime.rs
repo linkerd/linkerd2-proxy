@@ -13,6 +13,10 @@ impl Uptime {
         }
     }
 
+    pub(crate) fn starting_at(start_time: Instant) -> Self {
+        Self { start_time }
+    }
+
     fn format(d: Duration, w: &mut impl fmt::Write) -> fmt::Result {
         let micros = d.subsec_micros();
         write!(w, "[{:>6}.{:06}s]", d.as_secs(), micros)
