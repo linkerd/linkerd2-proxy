@@ -33,10 +33,7 @@ const EX_USAGE: i32 = 64;
 
 fn main() {
     let start_time = StartTime::now();
-    let trace = match trace::Settings::from_env()
-        .with_start_time(start_time.into())
-        .init()
-    {
+    let trace = match trace::Settings::from_env(start_time.into()).init() {
         Ok(t) => t,
         Err(e) => {
             eprintln!("Invalid logging configuration: {}", e);

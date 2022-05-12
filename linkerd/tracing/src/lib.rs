@@ -60,20 +60,13 @@ pub fn init_log_compat() -> Result<(), Error> {
 // === impl Settings ===
 
 impl Settings {
-    pub fn from_env() -> Self {
+    pub fn from_env(start_time: Instant) -> Self {
         Self {
             filter: std::env::var(ENV_LOG_LEVEL).ok(),
             format: std::env::var(ENV_LOG_FORMAT).ok(),
             access_log: Self::access_log_format(),
-            start_time: None,
+            start_time: Some(start_time),
             is_test: false,
-        }
-    }
-
-    pub fn with_start_time(self, start: Instant) -> Self {
-        Self {
-            start_time: Some(start),
-            ..self
         }
     }
 
