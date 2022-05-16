@@ -19,3 +19,16 @@ pub fn root_cause<'e>(
     }
     error
 }
+
+/// Determines if the provided error was caused by an `E` typed error.
+pub fn caused_by<'e, E: std::error::Error + 'static>(
+    mut error: &'e (dyn std::error::Error + 'static),
+) -> Option<&'e E> {
+    while let Some(src) = error.source() {
+        if let Some(e) = src.downcast_ref::<E>() {
+            return Some(e);
+        }
+        error = src;
+    }
+    None
+}
