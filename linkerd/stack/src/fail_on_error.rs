@@ -1,4 +1,4 @@
-use linkerd_error::{is_error, Error};
+use linkerd_error::{is_caused_by, Error};
 use parking_lot::RwLock;
 use std::{
     future::Future,
@@ -55,7 +55,7 @@ where
                 Ok(rsp) => Ok(rsp),
                 Err(e) => {
                     let e = e.into();
-                    if is_error::<E>(&*e) {
+                    if is_caused_by::<E>(&*e) {
                         let e = SharedError(Arc::new(e));
                         *error.write() = Some(e.clone());
                         Err(e.into())
