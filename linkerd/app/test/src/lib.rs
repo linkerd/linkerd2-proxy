@@ -1,11 +1,6 @@
 //! Shared infrastructure for integration tests
 
-#![deny(
-    warnings,
-    rust_2018_idioms,
-    clippy::disallowed_methods,
-    clippy::disallowed_types
-)]
+#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
