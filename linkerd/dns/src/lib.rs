@@ -3,17 +3,13 @@
 
 use linkerd_dns_name::NameRef;
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
-use linkerd_error::Error;
 use std::{fmt, net};
 use thiserror::Error;
 use tokio::time::{self, Instant};
 use tracing::{debug, trace};
+pub use trust_dns_resolver::config::ResolverOpts;
 use trust_dns_resolver::{
-    config::ResolverConfig, proto::rr::rdata, system_conf, AsyncResolver, TokioAsyncResolver,
-};
-pub use trust_dns_resolver::{
-    config::ResolverOpts,
-    error::{ResolveError, ResolveErrorKind},
+    config::ResolverConfig, error, proto::rr::rdata, system_conf, AsyncResolver, TokioAsyncResolver,
 };
 
 #[derive(Clone)]
@@ -29,6 +25,26 @@ pub trait ConfigureResolver {
 #[error("invalid SRV record {:?}", self.0)]
 struct InvalidSrv(rdata::SRV);
 
+#[derive(Debug, Error)]
+#[error("failed to resolve A record: {0}")]
+struct ARecordError(#[from] error::ResolveError);
+
+#[derive(Debug, Error)]
+enum SrvRecordError {
+    #[error(transparent)]
+    Invalid(#[from] InvalidSrv),
+    #[error("failed to resolve SRV record: {0}")]
+    Resolve(#[from] error::ResolveError),
+}
+
+#[derive(Debug, Error)]
+#[error("failed SRV and A record lookups: {srv_error}; {a_error}")]
+pub struct ResolveError {
+    #[source]
+    a_error: ARecordError,
+    srv_error: SrvRecordError,
+}
+
 impl Resolver {
     /// Construct a new `Resolver` from environment variables and system
     /// configuration.
@@ -39,7 +55,7 @@ impl Resolver {
     /// could not be parsed.
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
-    pub fn from_system_config_with<C: ConfigureResolver>(c: &C) -> Result<Self, ResolveError> {
+    pub fn from_system_config_with<C: ConfigureResolver>(c: &C) -> std::io::Result<Self> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
@@ -62,26 +78,32 @@ impl Resolver {
         &self,
         name: NameRef<'_>,
         default_port: u16,
-    ) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
+    ) -> Result<(Vec<net::SocketAddr>, time::Sleep), ResolveError> {
         match self.resolve_srv(name).await {
             Ok(res) => Ok(res),
-            Err(e) if e.is::<InvalidSrv>() => {
-                let (ips, delay) = self.resolve_a(name).await?;
+            Err(srv_error) => {
+                // If the SRV lookup failed for any reason, fall back to A
+                // record resolution.
+                debug!(srv.error = %srv_error, "Falling back to A record lookup");
+                let (ips, delay) = match self.resolve_a(name).await {
+                    Ok(res) => res,
+                    Err(a_error) => return Err(ResolveError { a_error, srv_error }),
+                };
                 let addrs = ips
                     .into_iter()
                     .map(|ip| net::SocketAddr::new(ip, default_port))
                     .collect();
                 Ok((addrs, delay))
             }
-            Err(e) => Err(e),
         }
     }
 
     async fn resolve_a(
         &self,
         name: NameRef<'_>,
-    ) -> Result<(Vec<net::IpAddr>, time::Sleep), ResolveError> {
-        debug!(%name, "resolve_a");
+    ) -> Result<(Vec<net::IpAddr>, time::Sleep), ARecordError> {
+        // TODO(ver) we should attempt AAAA lookups as well (for IPv6).
+        debug!(%name, "Resolving an A record");
         let lookup = self.dns.lookup_ip(name.as_str()).await?;
         let valid_until = Instant::from_std(lookup.valid_until());
         let ips = lookup.iter().collect::<Vec<_>>();
@@ -91,8 +113,8 @@ impl Resolver {
     async fn resolve_srv(
         &self,
         name: NameRef<'_>,
-    ) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
-        debug!(%name, "resolve_srv");
+    ) -> Result<(Vec<net::SocketAddr>, time::Sleep), SrvRecordError> {
+        debug!(%name, "Resolving a SRV record");
         let srv = self.dns.srv_lookup(name.as_str()).await?;
 
         let valid_until = Instant::from_std(srv.as_lookup().valid_until());
@@ -131,6 +153,34 @@ impl fmt::Debug for Resolver {
         f.debug_struct("Resolver")
             .field("resolver", &"...")
             .finish()
+    }
+}
+
+// === impl ResolveError ===
+
+impl ResolveError {
+    /// Returns the amount of time that the resolver should wait before
+    /// retrying.
+    pub fn negative_ttl(&self) -> Option<time::Duration> {
+        if let error::ResolveErrorKind::NoRecordsFound {
+            negative_ttl: Some(ttl_secs),
+            ..
+        } = self.a_error.0.kind()
+        {
+            return Some(time::Duration::from_secs(*ttl_secs as u64));
+        }
+
+        if let SrvRecordError::Resolve(error) = &self.srv_error {
+            if let error::ResolveErrorKind::NoRecordsFound {
+                negative_ttl: Some(ttl_secs),
+                ..
+            } = error.kind()
+            {
+                return Some(time::Duration::from_secs(*ttl_secs as u64));
+            }
+        }
+
+        None
     }
 }
 

@@ -291,9 +291,8 @@ impl<T: Param<tls::ConditionalServerTls>> ExtractParam<errors::respond::EmitHead
 
 impl errors::HttpRescue<Error> for Rescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        let cause = errors::root_cause(&*error);
-        if cause.is::<inbound::policy::DeniedUnauthorized>() {
-            return Ok(errors::SyntheticHttpResponse::permission_denied(error));
+        if let Some(cause) = errors::cause_ref::<inbound::policy::DeniedUnauthorized>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::permission_denied(cause));
         }
 
         tracing::warn!(error, "Unexpected error");

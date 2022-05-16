@@ -104,18 +104,17 @@ impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
 
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        let cause = errors::root_cause(&*error);
-        if cause.is::<http::ResponseTimeoutError>() {
+        if let Some(cause) = errors::cause_ref::<http::ResponseTimeoutError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
-        if cause.is::<IdentityRequired>() {
+        if let Some(cause) = errors::cause_ref::<IdentityRequired>(&*error) {
             return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
         }
-        if cause.is::<errors::FailFastError>() {
+        if let Some(cause) = errors::cause_ref::<errors::FailFastError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
 
-        if cause.is::<errors::H2Error>() {
+        if errors::is_caused_by::<errors::H2Error>(&*error) {
             return Err(error);
         }
 

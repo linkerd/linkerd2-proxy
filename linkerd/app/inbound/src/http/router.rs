@@ -494,11 +494,10 @@ impl ExtractParam<errors::respond::EmitHeaders, Logical> for ClientRescue {
 
 impl errors::HttpRescue<Error> for ClientRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        let cause = errors::root_cause(&*error);
-        if cause.is::<std::io::Error>() {
+        if let Some(cause) = errors::cause_ref::<std::io::Error>(&*error) {
             return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
         }
-        if cause.is::<errors::ConnectTimeout>() {
+        if let Some(cause) = errors::cause_ref::<errors::ConnectTimeout>(&*error) {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
 

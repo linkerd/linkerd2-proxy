@@ -367,7 +367,14 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                         let bind_adm = listen::BindTcp::default();
                         let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
                         let main = config
-                            .build(bind_in, bind_out, bind_adm, shutdown_tx, trace_handle)
+                            .build(
+                                bind_in,
+                                bind_out,
+                                bind_adm,
+                                shutdown_tx,
+                                trace_handle,
+                                Default::default(),
+                            )
                             .await
                             .expect("config");
 

@@ -61,13 +61,8 @@ impl Config {
             let backoff = self.connect.backoff;
             move |error: Error| {
                 warn!(error, "Failed to resolve control-plane component");
-                if let Some(e) = error.downcast_ref::<dns::ResolveError>() {
-                    if let dns::ResolveErrorKind::NoRecordsFound {
-                        negative_ttl: Some(ttl_secs),
-                        ..
-                    } = e.kind()
-                    {
-                        let ttl = time::Duration::from_secs(*ttl_secs as u64);
+                if let Some(e) = crate::errors::cause_ref::<dns::ResolveError>(&*error) {
+                    if let Some(ttl) = e.negative_ttl() {
                         return Ok(Either::Left(
                             IntervalStream::new(time::interval(ttl)).map(|_| ()),
                         ));

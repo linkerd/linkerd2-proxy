@@ -10,7 +10,10 @@ compile_error!(
     "at least one of the following TLS implementations must be enabled: 'meshtls-boring', 'meshtls-rustls'"
 );
 
-use linkerd_app::{core::transport::BindTcp, trace, Config};
+use linkerd_app::{
+    core::{telemetry::StartTime, transport::BindTcp},
+    trace, Config,
+};
 use linkerd_signal as signal;
 use tokio::sync::mpsc;
 pub use tracing::{debug, error, info, warn};
@@ -24,7 +27,8 @@ mod rt;
 const EX_USAGE: i32 = 64;
 
 fn main() {
-    let trace = match trace::init() {
+    let start_time = StartTime::now();
+    let trace = match trace::Settings::from_env(start_time.into()).init() {
         Ok(t) => t,
         Err(e) => {
             eprintln!("Invalid logging configuration: {}", e);
@@ -48,7 +52,14 @@ fn main() {
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
         let bind = BindTcp::with_orig_dst();
         let app = match config
-            .build(bind, bind, BindTcp::default(), shutdown_tx, trace)
+            .build(
+                bind,
+                bind,
+                BindTcp::default(),
+                shutdown_tx,
+                trace,
+                start_time,
+            )
             .await
         {
             Ok(app) => app,
