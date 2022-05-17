@@ -67,7 +67,6 @@ pub(crate) struct WriterLayer<S> {
     writers: Slab<Writer<S>>,
 }
 
-
 /// A per-layer filter for a log streaming layer.
 ///
 /// This type is used to interact with `tracing-subscriber`'s [per-layer
