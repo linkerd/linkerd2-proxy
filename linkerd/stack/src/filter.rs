@@ -1,7 +1,7 @@
 //! A `Service` middleware that applies arbitrary-user provided logic to each
 //! target before it is issued to an inner service.
 
-pub use tower::filter::{AsyncFilter, AsyncPredicate, Filter, FilterLayer, Predicate};
+pub use tower::filter::{Filter, FilterLayer, Predicate};
 
 impl<T, P, S> super::NewService<T> for Filter<S, P>
 where

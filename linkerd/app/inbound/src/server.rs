@@ -20,7 +20,7 @@ impl Inbound<()> {
         &self,
         dns: dns::Resolver,
         control_metrics: metrics::ControlHttp,
-    ) -> policy::Store {
+    ) -> impl policy::CheckPolicy + Clone + Send + Sync + 'static {
         self.config
             .policy
             .clone()

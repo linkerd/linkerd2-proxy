@@ -110,7 +110,7 @@ impl svc::Param<AllowPolicy> for Accept {
 mod tests {
     use super::*;
     use crate::{
-        policy::{DefaultPolicy, Store},
+        policy::{store, DefaultPolicy},
         test_util,
     };
     use futures::future;
@@ -123,7 +123,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn default_allow() {
         let (io, _) = io::duplex(1);
-        let (policies, _tx) = Store::fixed(
+        let (policies, _tx) = store::Fixed::new(
             ServerPolicy {
                 protocol: linkerd_server_policy::Protocol::Opaque,
                 authorizations: vec![Authorization {
@@ -149,7 +149,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn default_deny() {
-        let (policies, _tx) = Store::fixed(DefaultPolicy::Deny, None);
+        let (policies, _tx) = store::Fixed::new(DefaultPolicy::Deny, None);
         let (io, _) = io::duplex(1);
         inbound()
             .with_stack(new_ok())
@@ -163,7 +163,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn direct() {
-        let (policies, _tx) = Store::fixed(DefaultPolicy::Deny, None);
+        let (policies, _tx) = store::Fixed::new(DefaultPolicy::Deny, None);
         let (io, _) = io::duplex(1);
         inbound()
             .with_stack(new_panic("detect stack must not be built"))

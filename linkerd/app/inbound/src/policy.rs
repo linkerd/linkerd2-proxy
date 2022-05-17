@@ -2,7 +2,7 @@ mod api;
 mod authorize;
 mod config;
 pub mod defaults;
-mod store;
+pub(crate) mod store;
 #[cfg(test)]
 mod tests;
 

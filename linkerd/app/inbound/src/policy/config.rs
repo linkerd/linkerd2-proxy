@@ -1,4 +1,4 @@
-use super::{api::Api, DefaultPolicy, ServerPolicy, Store};
+use super::{api::Api, CheckPolicy, DefaultPolicy, ServerPolicy, Store};
 use linkerd_app_core::{control, dns, identity, metrics, svc::NewService};
 use std::collections::{HashMap, HashSet};
 
@@ -29,7 +29,7 @@ impl Config {
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: identity::NewClient,
-    ) -> Store {
+    ) -> impl CheckPolicy + Clone + Send + Sync + 'static {
         match self {
             Self::Fixed { default, ports } => {
                 let (store, tx) = Store::fixed(default, ports);
@@ -40,6 +40,7 @@ impl Config {
                 }
                 store
             }
+
             Self::Discover {
                 control,
                 ports,

@@ -16,7 +16,7 @@ fn unauthenticated_allowed() {
         name: "test".into(),
     };
 
-    let (policies, _tx) = Store::fixed(policy.clone(), None);
+    let (policies, _tx) = store::Fixed::new(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
@@ -60,7 +60,7 @@ fn authenticated_identity() {
         name: "test".into(),
     };
 
-    let (policies, _tx) = Store::fixed(policy.clone(), None);
+    let (policies, _tx) = store::Fixed::new(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
@@ -119,7 +119,7 @@ fn authenticated_suffix() {
         name: "test".into(),
     };
 
-    let (policies, _tx) = Store::fixed(policy.clone(), None);
+    let (policies, _tx) = store::Fixed::new(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
@@ -174,7 +174,7 @@ fn tls_unauthenticated() {
         name: "test".into(),
     };
 
-    let (policies, _tx) = Store::fixed(policy.clone(), None);
+    let (policies, _tx) = store::Fixed::new(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
