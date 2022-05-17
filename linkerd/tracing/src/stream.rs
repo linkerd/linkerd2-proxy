@@ -25,7 +25,13 @@ use tracing_subscriber::{
 /// The receiver end of a log stream.
 #[derive(Debug)]
 pub struct Reader<S: Subscriber + for<'a> LookupSpan<'a>> {
+    /// The channel reciever of log messages.
     rx: mpsc::Receiver<Vec<u8>, WithCapacity>,
+
+    /// Shared state for this stream.
+    ///
+    /// Currently, the shared state contains a counter of how many messages have
+    /// been dropped because the channel was at capacity.
     shared: Arc<Shared>,
 
     /// Index in the slab of writers on the tx side of the stream.
@@ -50,11 +56,51 @@ pub struct StreamHandle<S> {
     channel_settings: WithCapacity,
 }
 
+/// A layer that formats spans and events and writes them to the currently
+/// active log streams.
+///
+/// This consists of a `Slab` of `Writer`s, so that the storage for `Writer`s
+/// can be efficiently reused as log streaming requests end and new requests are
+/// initiated.
 #[derive(Debug)]
 pub(crate) struct WriterLayer<S> {
     writers: Slab<Writer<S>>,
 }
 
+
+/// A per-layer filter for a log streaming layer.
+///
+/// This type is used to interact with `tracing-subscriber`'s [per-layer
+/// filtering] system.In an ideal world, we wouldn't need this type. Instead,
+/// we would simply have a `Vec` of `Filtered<WriterLayer>`s. However, this
+/// isn't currently possible due to limitations in how `tracing`'s per-layer
+/// filtering works (see [#2101] and [#1629]): because of how filter IDs are
+/// currently generated, layers with per-layer filters cannot easily be added
+/// and removed dynamically.
+///
+/// We work around this limitation by implementing a single per-layer filter
+/// and a single formatting layer, which consist of a `Vec` of filters and a
+/// `Vec` of filters and formatters, respectively. The filter layer will enable
+/// a span or event if *any* of the currently active log streams care about it,
+/// and when that span or event is recorded, the `Arc` clone of that filter in
+/// the formatter layer is used to determine whether it should actually be
+/// recorded by that stream.
+///
+/// This design is kind of unfortunate, so it can hopefully be removed once
+/// these issues are resolved upstream.
+///
+/// [per-layer filtering]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/layer/index.html#per-layer-filtering
+/// [#2101]: https://github.com/tokio-rs/tracing/issues/2101
+/// [#1629]: https://github.com/tokio-rs/tracing/issues/1692
+#[derive(Debug, Default)]
+pub(crate) struct StreamFilter {
+    filters: Vec<Weak<EnvFilter>>,
+}
+
+/// A writer for an individual log stream.
+///
+/// The `WriterLayer` type consists of a `Slab` containing a `Writer` for each
+/// currently active log streaming request.
 #[derive(Debug)]
 struct Writer<S> {
     // XXX(eliza): having to duplicate the filters here and in the
@@ -68,19 +114,19 @@ struct Writer<S> {
     writer: FmtLayer<S>,
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct StreamFilter {
-    filters: Vec<Weak<EnvFilter>>,
-}
-
 type FmtLayer<S> = fmt::Layer<S, format::JsonFields, format::Format<format::Json, SystemTime>, Tx>;
 
+/// The sender side of a log streaming channel.
 #[derive(Debug)]
 struct Tx {
     tx: mpsc::Sender<Vec<u8>, WithCapacity>,
     shared: Arc<Shared>,
 }
 
+/// A log line currently in the process of being written.
+///
+/// When this is dropped, the log line is sent to the receiver side of the
+/// channel.
 struct Line<'a>(Option<SendRef<'a, Vec<u8>>>);
 
 #[derive(Debug, Default)]
