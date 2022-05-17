@@ -1,7 +1,7 @@
+mod api;
 mod authorize;
 mod config;
 pub mod defaults;
-mod discover;
 mod store;
 #[cfg(test)]
 mod tests;

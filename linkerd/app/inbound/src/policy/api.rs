@@ -1,6 +1,6 @@
 use futures::prelude::*;
 use linkerd2_proxy_api::inbound::{
-    self as api, inbound_server_policies_client::InboundServerPoliciesClient as ApiClient,
+    self as api, inbound_server_policies_client::InboundServerPoliciesClient as Client,
 };
 use linkerd_app_core::{
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
@@ -15,17 +15,17 @@ use linkerd_tonic_watch::StreamWatch;
 use std::{net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug)]
-pub(super) struct Discover<S> {
+pub(super) struct Api<S> {
     workload: String,
-    client: ApiClient<S>,
+    client: Client<S>,
 }
 
 #[derive(Clone)]
 pub(super) struct GrpcRecover(ExponentialBackoff);
 
-pub(super) type Watch<S> = StreamWatch<GrpcRecover, Discover<S>>;
+pub(super) type Watch<S> = StreamWatch<GrpcRecover, Api<S>>;
 
-impl<S> Discover<S>
+impl<S> Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error> + Clone,
     S::ResponseBody:
@@ -34,7 +34,7 @@ where
     pub(super) fn new(workload: String, client: S) -> Self {
         Self {
             workload,
-            client: ApiClient::new(client),
+            client: Client::new(client),
         }
     }
 
@@ -43,7 +43,7 @@ where
     }
 }
 
-impl<S> Service<u16> for Discover<S>
+impl<S> Service<u16> for Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
     S: Clone + Send + Sync + 'static,

@@ -1,4 +1,4 @@
-use super::{discover, AllowPolicy, CheckPolicy, DefaultPolicy, DeniedUnknownPort};
+use super::{api, AllowPolicy, CheckPolicy, DefaultPolicy, DeniedUnknownPort};
 use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error, Result};
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use std::{
@@ -75,7 +75,7 @@ impl Store {
     pub(super) fn spawn_discover<S>(
         default: DefaultPolicy,
         ports: HashSet<u16>,
-        discover: discover::Watch<S>,
+        watch: api::Watch<S>,
     ) -> Self
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
@@ -87,10 +87,10 @@ impl Store {
         let rxs = ports
             .into_iter()
             .map(|port| {
-                let discover = discover.clone();
+                let watch = watch.clone();
                 let default = default.clone();
                 let rx = info_span!("watch", %port)
-                    .in_scope(|| discover.spawn_with_init(port, default.into()));
+                    .in_scope(|| watch.spawn_with_init(port, default.into()));
                 (port, rx)
             })
             .collect::<PortMap<_>>();
