@@ -3,7 +3,6 @@
 //! Uses unsafe code to interact with socket options for SO_ORIGINAL_DST.
 
 #![deny(
-    warnings,
     rust_2018_idioms,
     clippy::disallowed_methods,
     clippy::disallowed_types,

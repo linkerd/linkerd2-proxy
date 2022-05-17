@@ -28,7 +28,7 @@ jobs:
       image: docker://rust:1.60.0-bullseye
     steps:
       - run: apt update && apt install -y cmake clang golang # for boring
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - working-directory: ./linkerd/meshtls
         run: cargo test --all-features --no-run
       - working-directory: ./linkerd/meshtls
@@ -61,7 +61,7 @@ jobs:
     container:
       image: docker://rust:1.60.0-bullseye
     steps:
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - uses: ./.github/actions/install-protoc
       - run: |
           cargo test --all --no-run \

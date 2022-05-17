@@ -1,11 +1,6 @@
 //! Configures and executes the proxy
 
-#![deny(
-    warnings,
-    rust_2018_idioms,
-    clippy::disallowed_methods,
-    clippy::disallowed_types
-)]
+#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
 pub mod dst;
@@ -24,6 +19,7 @@ use linkerd_app_core::{
     dns, drain,
     metrics::FmtMetrics,
     svc::Param,
+    telemetry,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, ProxyRuntime,
 };
@@ -93,6 +89,7 @@ impl Config {
         bind_admin: BAdmin,
         shutdown_tx: mpsc::UnboundedSender<()>,
         log_level: trace::Handle,
+        start_time: telemetry::StartTime,
     ) -> Result<App, Error>
     where
         BIn: Bind<ServerConfig> + 'static,
@@ -114,7 +111,7 @@ impl Config {
             tap,
         } = self;
         debug!("building app");
-        let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
+        let (metrics, report) = Metrics::new(admin.metrics_retain_idle, start_time);
 
         let dns = dns.build();
 

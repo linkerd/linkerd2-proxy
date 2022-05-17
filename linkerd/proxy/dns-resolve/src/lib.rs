@@ -1,9 +1,4 @@
-#![deny(
-    warnings,
-    rust_2018_idioms,
-    clippy::disallowed_methods,
-    clippy::disallowed_types
-)]
+#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
 use futures::{future, prelude::*, stream};
@@ -98,9 +93,9 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
                         }
                         expiry.await;
                     }
-                    Err(e) => {
-                        debug!(error = %e);
-                        let _ = tx.send(Err(e)).await;
+                    Err(error) => {
+                        debug!(%error);
+                        let _ = tx.send(Err(error.into())).await;
                         trace!("Closed");
                         return;
                     }

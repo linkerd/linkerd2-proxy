@@ -12,7 +12,7 @@ use std::{
     fmt::{self, Write},
     net::SocketAddr,
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 pub type ControlHttp = http_metrics::Requests<ControlLabels, Class>;
@@ -124,8 +124,11 @@ where
 // === impl Metrics ===
 
 impl Metrics {
-    pub fn new(retain_idle: Duration) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
-        let process = telemetry::process::Report::new(SystemTime::now());
+    pub fn new(
+        retain_idle: Duration,
+        start_time: telemetry::StartTime,
+    ) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
+        let process = telemetry::process::Report::new(start_time);
 
         let build_info = telemetry::build_info::Report::new();
 

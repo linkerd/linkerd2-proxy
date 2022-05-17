@@ -17,20 +17,20 @@ on:
       - .github/workflows/check-each.yml
 
 env:
-  CARGO_ACTION_FMT_VERSION: v0.1.3
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   DEBIAN_FRONTEND: noninteractive
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
+  RUSTFLAGS: "-D warnings -A deprecated"
 
 jobs:
   list-changed-crates:
     timeout-minutes: 3
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - uses: tj-actions/changed-files@a59f800cbb60ed483623848e31be67659a2940f8
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - uses: tj-actions/changed-files@581eef0495dd5b75a3dd93047ff9f0d42dc09370
         id: changed-files
         with:
           files: |
@@ -56,13 +56,11 @@ jobs:
       matrix:
         crate: ${{ fromJson(needs.list-changed-crates.outputs.crates) }}
     steps:
-      - run: |
-          curl --proto =https --tlsv1.3 -vsSfLo /usr/local/bin/cargo-action-fmt "https://github.com/olix0r/cargo-action-fmt/releases/download/release%2F${CARGO_ACTION_FMT_VERSION}/cargo-action-fmt-x86_64-unknown-linux-gnu"
-          chmod 755 /usr/local/bin/cargo-action-fmt
+      - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
       - name: Install meshtls-boring build deps
         if: matrix.crate == 'linkerd-meshtls-boring'
         run: apt update && apt install -y clang cmake
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - name: Install protoc
         if: matrix.crate == 'linkerd-transport-header' || matrix.crate == 'opencensus-proto'
         uses: ./.github/actions/install-protoc

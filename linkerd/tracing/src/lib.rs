@@ -1,9 +1,4 @@
-#![deny(
-    warnings,
-    rust_2018_idioms,
-    clippy::disallowed_methods,
-    clippy::disallowed_types
-)]
+#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
 pub mod access_log;
@@ -16,6 +11,7 @@ mod uptime;
 use self::uptime::Uptime;
 use linkerd_error::Error;
 use std::str;
+use tokio::time::Instant;
 use tracing::Dispatch;
 use tracing_subscriber::{
     filter::LevelFilter, fmt::format, prelude::*, registry::LookupSpan, reload, Layer,
@@ -34,9 +30,11 @@ const DEFAULT_LOG_LEVEL: &str = "warn,linkerd=info";
 const DEFAULT_LOG_FORMAT: &str = "PLAIN";
 
 #[derive(Debug, Default)]
+#[must_use]
 pub struct Settings {
     filter: Option<String>,
     format: Option<String>,
+    start_time: Option<Instant>,
     access_log: Option<access_log::Format>,
     is_test: bool,
 }
@@ -46,40 +44,6 @@ pub struct Handle {
     level: Option<level::Handle>,
     #[cfg(feature = "stream")]
     stream: stream::StreamHandle<LogStack>,
-}
-
-/// Initialize tracing and logging with the value of the `ENV_LOG`
-/// environment variable as the verbosity-level filter.
-pub fn init() -> Result<Handle, Error> {
-    let (dispatch, handle) = match Settings::from_env() {
-        Some(s) => s.build(),
-        // logging is disabled, but log streaming might still be enabled later
-        None => {
-            #[cfg(feature = "stream")]
-            let stream = {
-                let (handle, layer) = stream::StreamHandle::new();
-                tracing::dispatcher::set_global_default(
-                    tracing_subscriber::registry().with(None).with(layer).into(),
-                )?;
-                handle
-            };
-
-            return Ok(Handle {
-                level: None,
-
-                #[cfg(feature = "stream")]
-                stream,
-            });
-        }
-    };
-
-    // Set the default subscriber.
-    tracing::dispatcher::set_global_default(dispatch)?;
-
-    // Set up log compatibility.
-    init_log_compat()?;
-
-    Ok(handle)
 }
 
 #[inline]
@@ -98,26 +62,21 @@ pub fn init_log_compat() -> Result<(), Error> {
 // === impl Settings ===
 
 impl Settings {
-    pub fn from_env() -> Option<Self> {
-        let filter = std::env::var(ENV_LOG_LEVEL).ok();
-        if let Some(level) = filter.as_ref() {
-            if level.to_uppercase().trim() == "OFF" {
-                return None;
-            }
-        }
-
-        Some(Self {
-            filter,
+    pub fn from_env(start_time: Instant) -> Self {
+        Self {
+            filter: std::env::var(ENV_LOG_LEVEL).ok(),
             format: std::env::var(ENV_LOG_FORMAT).ok(),
             access_log: Self::access_log_format(),
+            start_time: Some(start_time),
             is_test: false,
-        })
+        }
     }
 
     fn for_test(filter: String, format: String) -> Self {
         Self {
             filter: Some(filter),
             format: Some(format),
+            start_time: None,
             access_log: Self::access_log_format(),
             is_test: true,
         }
@@ -141,13 +100,19 @@ impl Settings {
         }
     }
 
+    fn timer(&self) -> Uptime {
+        self.start_time
+            .map(Uptime::starting_at)
+            .unwrap_or_else(Uptime::starting_now)
+    }
+
     fn mk_json<S>(&self) -> Box<dyn Layer<S> + Send + Sync + 'static>
     where
         S: Subscriber + for<'span> LookupSpan<'span>,
         S: Send + Sync,
     {
         let fmt = tracing_subscriber::fmt::format()
-            .with_timer(Uptime::starting_now())
+            .with_timer(self.timer())
             .with_thread_ids(!self.is_test)
             // Configure the formatter to output JSON logs.
             .json()
@@ -177,7 +142,7 @@ impl Settings {
         S: Send + Sync,
     {
         let fmt = tracing_subscriber::fmt::format()
-            .with_timer(Uptime::starting_now())
+            .with_timer(self.timer())
             .with_thread_ids(!self.is_test);
         let fmt = tracing_subscriber::fmt::layer().event_format(fmt);
         if self.is_test {
@@ -185,6 +150,40 @@ impl Settings {
         } else {
             Box::new(fmt)
         }
+    }
+
+    /// Initialize tracing and logging with the value of the `ENV_LOG`
+    /// environment variable as the verbosity-level filter.
+    pub fn init(self) -> Result<Handle, Error> {
+        let (dispatch, handle) = match self.filter.as_deref() {
+            Some(filter) if filter.trim().eq_ignore_ascii_case("off") => {
+                // logging is disabled, but log streaming might still be enabled later
+                #[cfg(feature = "stream")]
+                let stream = {
+                    let (handle, layer) = stream::StreamHandle::new();
+                    tracing::dispatcher::set_global_default(
+                        tracing_subscriber::registry().with(None).with(layer).into(),
+                    )?;
+                    handle
+                };
+
+                return Ok(Handle {
+                    level: None,
+
+                    #[cfg(feature = "stream")]
+                    stream,
+                });
+            }
+            _ => self.build(),
+        };
+
+        // Set the default subscriber.
+        tracing::dispatcher::set_global_default(dispatch)?;
+
+        // Set up log compatibility.
+        init_log_compat()?;
+
+        Ok(handle)
     }
 
     pub fn build(self) -> (Dispatch, Handle) {

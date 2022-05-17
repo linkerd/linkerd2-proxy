@@ -7,12 +7,7 @@
 //! - Tap
 //! - Metric labeling
 
-#![deny(
-    warnings,
-    rust_2018_idioms,
-    clippy::disallowed_methods,
-    clippy::disallowed_types
-)]
+#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
 pub use drain;
@@ -22,7 +17,7 @@ pub use linkerd_cache as cache;
 pub use linkerd_conditional::Conditional;
 pub use linkerd_detect as detect;
 pub use linkerd_dns;
-pub use linkerd_error::{is_error, Error, Infallible, Recover, Result};
+pub use linkerd_error::{cause_ref, is_caused_by, Error, Infallible, Recover, Result};
 pub use linkerd_exp_backoff as exp_backoff;
 pub use linkerd_http_metrics as http_metrics;
 pub use linkerd_io as io;

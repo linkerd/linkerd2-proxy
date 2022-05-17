@@ -25,8 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-    - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-    - uses: EmbarkStudios/cargo-deny-action@ccfac4e084d1dedad50125be4550f87a21ba181e
+    - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+    - uses: EmbarkStudios/cargo-deny-action@3481b77dfd7b1d3c62bebdbfb57695131cd59c8f
       with:
         command: check advisories
 
@@ -35,7 +35,29 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-    - uses: EmbarkStudios/cargo-deny-action@ccfac4e084d1dedad50125be4550f87a21ba181e
+    - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+    - uses: EmbarkStudios/cargo-deny-action@3481b77dfd7b1d3c62bebdbfb57695131cd59c8f
       with:
         command: check bans licenses sources
+
+  # Check for upstream deprecations
+  deprecated:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.60.0-bullseye
+    steps:
+      - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - uses: ./.github/actions/install-protoc
+      - run: cargo fetch
+      - name: cargo check (deny deprecations)
+        env:
+          RUSTFLAGS: "-D deprecated"
+        run: |
+          cargo check --frozen \
+            --workspace \
+            --all-targets \
+            --exclude=linkerd-meshtls-boring \
+            --message-format=json | cargo-action-fmt
+

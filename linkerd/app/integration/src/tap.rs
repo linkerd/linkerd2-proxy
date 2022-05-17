@@ -36,7 +36,7 @@ impl Client {
     ) -> Pin<Box<dyn Stream<Item = Result<pb::TapEvent, tonic::Status>> + Send>> {
         let mut req = tonic::Request::new(req.0);
 
-        let require_id = tonic::metadata::MetadataValue::from_str(require_id).unwrap();
+        let require_id = tonic::metadata::MetadataValue::try_from(require_id).unwrap();
         req.metadata_mut().insert("l5d-require-id", require_id);
 
         match self.api.observe(req).await {

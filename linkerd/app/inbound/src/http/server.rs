@@ -127,23 +127,23 @@ impl<T: Param<tls::ConditionalServerTls>> ExtractParam<errors::respond::EmitHead
 
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        let cause = errors::root_cause(&*error);
-        if cause.is::<crate::policy::DeniedUnauthorized>() {
+        if let Some(cause) = errors::cause_ref::<crate::policy::DeniedUnauthorized>(&*error) {
             return Ok(errors::SyntheticHttpResponse::permission_denied(cause));
         }
-        if cause.is::<crate::GatewayDomainInvalid>() {
+        if let Some(cause) = errors::cause_ref::<crate::GatewayDomainInvalid>(&*error) {
             return Ok(errors::SyntheticHttpResponse::not_found(cause));
         }
-        if cause.is::<crate::GatewayIdentityRequired>() {
+        if let Some(cause) = errors::cause_ref::<crate::GatewayIdentityRequired>(&*error) {
             return Ok(errors::SyntheticHttpResponse::unauthenticated(cause));
         }
-        if cause.is::<crate::GatewayLoop>() {
+        if let Some(cause) = errors::cause_ref::<crate::GatewayLoop>(&*error) {
             return Ok(errors::SyntheticHttpResponse::loop_detected(cause));
         }
-        if cause.is::<errors::FailFastError>() {
+        if let Some(cause) = errors::cause_ref::<errors::FailFastError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
-        if cause.is::<errors::H2Error>() {
+
+        if errors::is_caused_by::<errors::H2Error>(&*error) {
             return Err(error);
         }
 

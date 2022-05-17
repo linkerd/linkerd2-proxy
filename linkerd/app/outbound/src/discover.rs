@@ -1,12 +1,11 @@
-use crate::{tcp, Outbound};
+use crate::Outbound;
 use linkerd_app_core::{
     io, profiles,
     svc::{self, stack::Param},
-    transport::{self, metrics::SensorIo, OrigDstAddr},
+    transport::OrigDstAddr,
     Error,
 };
-use std::convert::TryFrom;
-use tracing::{debug, debug_span, info_span};
+use tracing::debug;
 
 impl<N> Outbound<N> {
     /// Discovers the profile for a TCP endpoint.
@@ -23,41 +22,34 @@ impl<N> Outbound<N> {
     >
     where
         T: Param<OrigDstAddr>,
+        T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        N: svc::NewService<(Option<profiles::Receiver>, tcp::Accept), Service = NSvc>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        NSvc: svc::Service<SensorIo<I>, Response = (), Error = Error> + Send + 'static,
+        N: svc::NewService<(Option<profiles::Receiver>, T), Service = NSvc>,
+        N: Clone + Send + Sync + 'static,
+        NSvc: svc::Service<I, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
         P::Error: Send,
     {
-        self.map_stack(|config, rt, accept| {
+        self.map_stack(|config, rt, inner| {
             let allow = config.allow_discovery.clone();
-            accept
-                .push(profiles::discover::layer(
-                    profiles,
-                    move |a: tcp::Accept| {
-                        let OrigDstAddr(addr) = a.orig_dst;
-                        if allow.matches_ip(addr.ip()) {
-                            debug!("Allowing profile lookup");
-                            Ok(profiles::LookupAddr(addr.into()))
-                        } else {
-                            tracing::debug!(
-                                %addr,
-                                networks = %allow.nets(),
-                                "Profile discovery not in configured search networks",
-                            );
-                            Err(profiles::DiscoveryRejected::new(
-                                "not in configured search networks",
-                            ))
-                        }
-                    },
-                ))
-                .instrument(|_: &_| debug_span!("profile"))
+            inner
+                .push(profiles::discover::layer(profiles, move |t: T| {
+                    let OrigDstAddr(addr) = t.param();
+                    if allow.matches_ip(addr.ip()) {
+                        debug!("Allowing profile lookup");
+                        return Ok(profiles::LookupAddr(addr.into()));
+                    }
+                    debug!(
+                        %addr,
+                        networks = %allow.nets(),
+                        "Address is not in discoverable networks",
+                    );
+                    Err(profiles::DiscoveryRejected::new(
+                        "not in discoverable networks",
+                    ))
+                }))
                 .push_on_service(
                     svc::layers()
                         // If the traffic split is empty/unavailable, eagerly fail
@@ -77,13 +69,7 @@ impl<N> Outbound<N> {
                         ))
                         .push_spawn_buffer(config.proxy.buffer_capacity),
                 )
-                .push(transport::metrics::NewServer::layer(
-                    rt.metrics.proxy.transport.clone(),
-                ))
                 .push_cache(config.proxy.cache_max_idle_age)
-                .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
-                .push_request_filter(|t: T| tcp::Accept::try_from(t.param()))
-                .push(rt.metrics.tcp_errors.to_layer())
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })
@@ -93,7 +79,7 @@ impl<N> Outbound<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::*;
+    use crate::{tcp, test_util::*};
     use linkerd_app_core::{
         svc::{NewService, Service, ServiceExt},
         AddrMatch, IpNet,
@@ -122,7 +108,7 @@ mod tests {
             let new_count = new_count.clone();
             support::track::new_service(move |_| {
                 new_count.fetch_add(1, Ordering::SeqCst);
-                svc::mk(move |_: SensorIo<io::DuplexStream>| {
+                svc::mk(move |_: io::DuplexStream| {
                     future::err::<(), Error>(
                         io::Error::from(io::ErrorKind::ConnectionRefused).into(),
                     )
@@ -193,7 +179,7 @@ mod tests {
             let new_count = new_count.clone();
             support::track::new_service(move |_| {
                 new_count.fetch_add(1, Ordering::SeqCst);
-                svc::mk(move |_: SensorIo<io::DuplexStream>| future::pending::<Result<(), Error>>())
+                svc::mk(move |_: io::DuplexStream| future::pending::<Result<(), Error>>())
             })
         };
 
@@ -313,7 +299,7 @@ mod tests {
         // Mock an inner stack with a service that asserts that no profile is built.
         let stack = |(profile, _): (Option<profiles::Receiver>, _)| {
             assert!(profile.is_none(), "profile must not resolve");
-            svc::mk(move |_: SensorIo<io::DuplexStream>| future::ok::<(), Error>(()))
+            svc::mk(move |_: io::DuplexStream| future::ok::<(), Error>(()))
         };
 
         // Create a profile stack that uses the tracked inner stack, configured to never actually do

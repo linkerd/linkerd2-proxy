@@ -1,5 +1,5 @@
 use crate::{
-    io,
+    io, is_caused_by,
     svc::{self, Param},
     transport::{ClientAddr, Remote},
     Result,
@@ -56,7 +56,7 @@ pub async fn serve<M, S, I, A>(
                                         .await
                                     {
                                         Ok(()) => debug!("Connection closed"),
-                                        Err(reason) if is_io(&*reason) => {
+                                        Err(reason) if is_caused_by::<std::io::Error>(&*reason) => {
                                             debug!(%reason, "Connection closed")
                                         }
                                         Err(error) => {
@@ -88,8 +88,4 @@ pub async fn serve<M, S, I, A>(
         res = accept => { res }
         _ = shutdown => {}
     }
-}
-
-fn is_io(e: &(dyn std::error::Error + 'static)) -> bool {
-    e.is::<io::Error>() || e.source().map(is_io).unwrap_or(false)
 }

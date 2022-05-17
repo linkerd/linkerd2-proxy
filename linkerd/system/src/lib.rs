@@ -1,7 +1,6 @@
 //! Unsafe code for accessing system-level counters for memory & CPU usage.
 
 #![deny(
-    warnings,
     rust_2018_idioms,
     rust_2018_idioms,
     clippy::disallowed_methods,

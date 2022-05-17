@@ -3,7 +3,6 @@
 //! This module uses unsafe code to implement [`BufMut`].
 
 #![deny(
-    warnings,
     rust_2018_idioms,
     clippy::disallowed_methods,
     clippy::disallowed_types,

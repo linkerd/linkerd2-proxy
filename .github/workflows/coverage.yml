@@ -29,7 +29,7 @@ jobs:
       options: --security-opt seccomp=unconfined # 🤷
     steps:
       - run: apt update && apt install -y cmake clang golang # for boring
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - name: install cargo-tarpaulin ${{ env.CARGO_TARPAULIN_VERSION }}
         run: |
           cd "${CARGO_HOME}/bin"
@@ -42,4 +42,4 @@ jobs:
       #- run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-app-integration --skip-clean --ignore-tests --no-fail-fast --out=Xml
       - run: cargo tarpaulin --locked --packages=linkerd-app-integration --no-default-features --skip-clean --no-run
       - run: cargo tarpaulin --locked --packages=linkerd-app-integration --no-default-features --skip-clean --ignore-tests --no-fail-fast --out=Xml
-      - uses: codecov/codecov-action@e3c560433a6cc60aec8812599b7844a7b4fa0d71
+      - uses: codecov/codecov-action@81cd2dc8148241f03f5839d295e000b8f761e378
