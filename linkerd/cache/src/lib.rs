@@ -4,8 +4,11 @@
 use parking_lot::RwLock;
 use std::{
     borrow::Borrow,
-    collections::{hash_map::{Entry, RandomState}, HashMap},
-    hash::{BuildHasher, Hash, BuildHasherDefault},
+    collections::{
+        hash_map::{Entry, RandomState},
+        HashMap,
+    },
+    hash::{BuildHasher, BuildHasherDefault, Hash},
     ops::{Deref, DerefMut},
     sync::{Arc, Weak},
     task::{Context, Poll},
@@ -50,7 +53,7 @@ impl<K, V, S> Cache<K, V, BuildHasherDefault<S>>
 where
     K: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
     V: Send + Sync + 'static,
-    BuildHasherDefault<S>: BuildHasher  + Send + Sync + 'static,
+    BuildHasherDefault<S>: BuildHasher + Send + Sync + 'static,
 {
     pub fn from_iter(idle: time::Duration, iter: impl IntoIterator<Item = (K, V)>) -> Self
     where
@@ -59,11 +62,11 @@ where
     {
         let iter = iter.into_iter();
         let (lower_bound, _) = iter.size_hint();
-        let inner = Arc::new(RwLock::new(HashMap::with_capacity_and_hasher(lower_bound, BuildHasherDefault::default())));
-        let this = Self {
-            inner,
-            idle,   
-        };
+        let inner = Arc::new(RwLock::new(HashMap::with_capacity_and_hasher(
+            lower_bound,
+            BuildHasherDefault::default(),
+        )));
+        let this = Self { inner, idle };
         // XXX(eliza): having to go through `get_or_insert_with` rather than
         // building a map directly is a shame, but `spawn_idle` requires a ref
         // the map, so...
@@ -80,15 +83,10 @@ where
     V: Send + Sync + 'static,
     S: BuildHasher + Send + Sync + 'static,
 {
-
     pub fn with_hasher(idle: time::Duration, hasher: S) -> Self {
         let inner = Arc::new(RwLock::new(HashMap::with_hasher(hasher)));
-        Self {
-            inner,
-            idle
-        }
+        Self { inner, idle }
     }
-
 
     pub fn get<'a, Q: ?Sized>(&self, key: &Q) -> Option<Cached<V>>
     where
@@ -172,7 +170,12 @@ where
     }
 
     #[instrument(level = "debug", skip(idle, reset, cache))]
-    async fn evict(key: K, idle: time::Duration, mut reset: Arc<Notify>, cache: Weak<Inner<K, V, S>>) {
+    async fn evict(
+        key: K,
+        idle: time::Duration,
+        mut reset: Arc<Notify>,
+        cache: Weak<Inner<K, V, S>>,
+    ) {
         // Wait for the handle to be notified before starting to track idleness.
         reset.notified().await;
         debug!("Awaiting idleness");

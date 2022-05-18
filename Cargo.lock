@@ -860,6 +860,7 @@ dependencies = [
  "libfuzzer-sys",
  "linkerd-app-core",
  "linkerd-app-test",
+ "linkerd-cache",
  "linkerd-http-access-log",
  "linkerd-io",
  "linkerd-meshtls",
