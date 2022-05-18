@@ -1,11 +1,10 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use parking_lot::{ RwLock
-};
+use parking_lot::RwLock;
 use std::{
     borrow::Borrow,
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     hash::Hash,
     ops::Deref,
     sync::{Arc, Weak},
@@ -30,7 +29,7 @@ where
 pub struct Cached<V> {
     inner: V,
     // Notifies entry's eviction task that a drop has occurred.
-    handle: Arc<Notify>,
+    handle: Option<Arc<Notify>>,
 }
 
 type Inner<K, V> = RwLock<HashMap<K, (V, Weak<Notify>)>>;
@@ -60,7 +59,7 @@ where
         trace!("Using cached value");
         Some(Cached {
             inner: value.clone(),
-            handle,
+            handle: Some(handle),
         })
     }
 
@@ -83,23 +82,32 @@ where
                 match weak.upgrade() {
                     Some(handle) => {
                         trace!(?key, "Using cached value");
-                        Cached { inner: value.clone(), handle }
+                        Cached {
+                            inner: value.clone(),
+                            handle: Some(handle),
+                        }
                     }
                     None => {
                         debug!(?key, "Replacing defunct value");
                         let handle = self.spawn_idle(key.clone());
                         let inner = f(key);
                         entry.insert((inner.clone(), Arc::downgrade(&handle)));
-                        Cached { inner, handle }
+                        Cached {
+                            inner,
+                            handle: Some(handle),
+                        }
                     }
                 }
-            },
+            }
             Entry::Vacant(entry) => {
                 debug!(?key, "Caching new value");
                 let handle = self.spawn_idle(key.clone());
                 let inner = f(key);
                 entry.insert((inner.clone(), Arc::downgrade(&handle)));
-                Cached { inner, handle }
+                Cached {
+                    inner,
+                    handle: Some(handle),
+                }
             }
         }
     }
@@ -164,6 +172,24 @@ where
 
 // === impl Cached ===
 
+impl<V> Cached<V> {
+    /// Returns a new `Cached` handle wrapping the provided value, but *not*
+    /// associated with a cache.
+    ///
+    /// This is intended for use in cases where most values returned by a
+    /// function are stored in a cache, but some may instead be fixed, uncached
+    /// values.
+    ///
+    /// The uncached `Cached` instance will never be evicted, since it didn't
+    /// come from a cache.
+    pub fn uncached(inner: V) -> Self {
+        Self {
+            inner,
+            handle: None,
+        }
+    }
+}
+
 impl<Req, S> tower::Service<Req> for Cached<S>
 where
     S: tower::Service<Req> + Send + Sync + 'static,
@@ -192,10 +218,11 @@ impl<V> Deref for Cached<V> {
 
 impl<V> Drop for Cached<V> {
     fn drop(&mut self) {
-        self.handle.notify_one();
+        if let Some(handle) = self.handle.take() {
+            handle.notify_one();
+        }
     }
 }
-
 
 #[cfg(test)]
 #[tokio::test(flavor = "current_thread")]
@@ -208,8 +235,10 @@ async fn test_idle_retain() {
     let handle = cache.spawn_idle(());
     let weak = Arc::downgrade(&handle);
     cache.inner.write().insert((), ((), weak.clone()));
-    let c0 = Cached { inner: (), handle };
-
+    let c0 = Cached {
+        inner: (),
+        handle: Some(handle),
+    };
 
     // Let an idle timeout elapse and ensured the held service has not been
     // evicted.
@@ -229,7 +258,7 @@ async fn test_idle_retain() {
     let c1 = Cached {
         inner: (),
         // Retain the handle from the first instance.
-        handle: weak.upgrade().unwrap(),
+        handle: Some(weak.upgrade().unwrap()),
     };
 
     // Drop the new cache instance. Wait the remainder of the first idle timeout
