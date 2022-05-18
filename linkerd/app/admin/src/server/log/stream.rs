@@ -38,7 +38,7 @@ where
     B: hyper::body::HttpBody,
     B::Error: Into<Error>,
 {
-    let handle = handle.to_stream();
+    let handle = handle.into_stream();
 
     if let Some(accept) = req.headers().get(header::ACCEPT) {
         let accept = recover!(

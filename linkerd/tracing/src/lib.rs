@@ -247,7 +247,7 @@ impl Handle {
     }
 
     #[cfg(feature = "stream")]
-    pub fn to_stream(self) -> stream::StreamHandle<LogStack> {
+    pub fn into_stream(self) -> stream::StreamHandle<LogStack> {
         self.stream
     }
 }
