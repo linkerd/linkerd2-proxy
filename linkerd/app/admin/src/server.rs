@@ -168,26 +168,29 @@ where
                     return Box::pin(future::ok(Self::forbidden_not_localhost()));
                 }
 
-                match self.tracing.level() {
-                    Some(level) => {
-                        Box::pin(log::serve_level(level.clone(), req).or_else(|error| {
-                            tracing::error!(error, "Failed to get/set tracing level");
-                            future::ok(Self::internal_error_rsp(error))
-                        }))
-                    }
-                    None => Box::pin(future::ok(Self::not_found())),
-                }
+                let level = match self.tracing.level() {
+                    Some(level) => level.clone(),
+                    None => return Box::pin(future::ok(Self::not_found())),
+                };
+
+                Box::pin(log::level::serve(level, req).or_else(|error| {
+                    tracing::error!(error, "Failed to get/set tracing level");
+                    future::ok(Self::internal_error_rsp(error))
+                }))
             }
 
+            #[cfg(feature = "log-streaming")]
             "/logs.json" => {
                 if !Self::client_is_localhost(&req) {
                     return Box::pin(future::ok(Self::forbidden_not_localhost()));
                 }
 
-                Box::pin(log::serve_stream(&self.tracing, req).or_else(|error| {
-                    tracing::error!(error, "Failed to stream logs");
-                    future::ok(Self::internal_error_rsp(error))
-                }))
+                Box::pin(
+                    log::stream::serve(self.tracing.clone(), req).or_else(|error| {
+                        tracing::error!(error, "Failed to stream logs");
+                        future::ok(Self::internal_error_rsp(error))
+                    }),
+                )
             }
 
             "/shutdown" => {
@@ -201,6 +204,7 @@ where
                     Box::pin(future::ok(Self::method_not_allowed()))
                 }
             }
+
             _ => Box::pin(future::ok(Self::not_found())),
         }
     }
