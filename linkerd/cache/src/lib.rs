@@ -1,12 +1,11 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use parking_lot::{
-    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+use parking_lot::{ RwLock
 };
 use std::{
     borrow::Borrow,
-    collections::{HashMap},
+    collections::{HashMap, hash_map::Entry},
     hash::Hash,
     ops::Deref,
     sync::{Arc, Weak},
@@ -31,15 +30,10 @@ where
 pub struct Cached<V> {
     inner: V,
     // Notifies entry's eviction task that a drop has occurred.
-    handle: Option<Arc<Notify>>,
+    handle: Arc<Notify>,
 }
 
 type Inner<K, V> = RwLock<HashMap<K, (V, Weak<Notify>)>>;
-
-pub enum Ref<'a, V> {
-    Read(MappedRwLockReadGuard<'a, V>),
-    Inserted(MappedRwLockWriteGuard<'a, (V, Weak<Notify>)>),
-}
 
 // === impl Cache ===
 
@@ -53,72 +47,60 @@ where
         Self { inner, idle }
     }
 
-    pub fn get<'a, Q: ?Sized>(&'a self, key: &Q) -> Option<Cached<Ref<'a, V>>>
+    pub fn get<'a, Q: ?Sized>(&self, key: &Q) -> Option<Cached<V>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq,
+        V: Clone,
     {
-        let mut handle = None;
-        let value = RwLockReadGuard::try_map(self.inner.read(), |inner| {
-            let (value, weak) = inner.get(&key)?;
-            handle = Some(weak.upgrade()?);
-            Some(value)
-        })
-        .ok()?;
+        let lock = self.inner.read();
+        let (value, weak) = lock.get(&key)?;
+        let handle = weak.upgrade()?;
 
         trace!("Using cached value");
         Some(Cached {
-            inner: Ref::Read(value),
+            inner: value.clone(),
             handle,
         })
     }
 
-    pub fn get_or_insert_with(&self, key: K, f: impl FnOnce(K) -> V) -> Cached<Ref<'_, V>> {
+    pub fn get_or_insert_with(&self, key: K, f: impl FnOnce(K) -> V) -> Cached<V>
+    where
+        V: Clone,
+    {
         // We expect the item to be available in most cases, so initially obtain
         // only a read lock.
         if let Some(val) = self.get(&key) {
             return val;
         }
 
-        let mut f = Some(f);
-
         // Otherwise, obtain a write lock to insert a new value.
-        let mut handle = None;
-        let value = RwLockWriteGuard::map(self.inner.write(), |inner| {
-            inner
-                .entry(key.clone())
-                .and_modify(|(value, weak)| {
-                    // Another thread raced us to create a value for this target.
-                    // Try to use it.
-                    match weak.upgrade() {
-                        Some(h) => {
-                            trace!(?key, "Using cached value");
-                            handle = Some(h);
-                        }
-                        None => {
-                            debug!(?key, "Replacing defunct value");
-                            let new_handle = self.spawn_idle(key.clone());
-                            let f = f.take().expect("function is only called a single time");
-                            *value = f(key.clone());
-                            *weak = Arc::downgrade(&new_handle);
-                            handle = Some(new_handle);
-                        }
+        match self.inner.write().entry(key.clone()) {
+            Entry::Occupied(ref mut entry) => {
+                let (value, weak) = entry.get();
+                // Another thread raced us to create a value for this target.
+                // Try to use it.
+                match weak.upgrade() {
+                    Some(handle) => {
+                        trace!(?key, "Using cached value");
+                        Cached { inner: value.clone(), handle }
                     }
-                })
-                .or_insert_with(|| {
-                    debug!(?key, "Caching new value");
-                    let new_handle = self.spawn_idle(key.clone());
-                    let f = f.take().expect("function is only called a single time");
-                    let inner = f(key.clone());
-                    let weak = Arc::downgrade(&new_handle);
-                    handle = Some(new_handle);
-                    (inner, weak)
-                })
-        });
-
-        Cached {
-            handle,
-            inner: Ref::Inserted(value),
+                    None => {
+                        debug!(?key, "Replacing defunct value");
+                        let handle = self.spawn_idle(key.clone());
+                        let inner = f(key);
+                        entry.insert((inner.clone(), Arc::downgrade(&handle)));
+                        Cached { inner, handle }
+                    }
+                }
+            },
+            Entry::Vacant(entry) => {
+                debug!(?key, "Caching new value");
+                let handle = self.spawn_idle(key.clone());
+                let inner = f(key);
+                entry.insert((inner.clone(), Arc::downgrade(&handle)));
+                Cached { inner, handle }
+            }
         }
     }
 
@@ -201,31 +183,16 @@ where
     }
 }
 
-impl<V> Deref for Cached<Ref<'_, V>> {
+impl<V> Deref for Cached<V> {
     type Target = V;
     fn deref(&self) -> &Self::Target {
-        match self.inner {
-            Ref::Read(ref guard) => guard.deref(),
-            Ref::Inserted(ref guard) => &guard.deref().0,
-        }
-    }
-}
-
-impl<V: Clone> Cached<Ref<'_, V>> {
-    pub fn into_owned(mut self) -> Cached<V> {
-        let inner = V::clone(Deref::deref(&self));
-        Cached {
-            inner,
-            handle: self.handle.take(),
-        }
+        &self.inner
     }
 }
 
 impl<V> Drop for Cached<V> {
     fn drop(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            handle.notify_one();
-        }
+        self.handle.notify_one();
     }
 }
 
@@ -241,7 +208,7 @@ async fn test_idle_retain() {
     let handle = cache.spawn_idle(());
     let weak = Arc::downgrade(&handle);
     cache.inner.write().insert((), ((), weak.clone()));
-    let c0 = Cached { inner: (), handle: Some(handle) };
+    let c0 = Cached { inner: (), handle };
 
 
     // Let an idle timeout elapse and ensured the held service has not been
@@ -262,7 +229,7 @@ async fn test_idle_retain() {
     let c1 = Cached {
         inner: (),
         // Retain the handle from the first instance.
-        handle: Some(weak.upgrade().unwrap()),
+        handle: weak.upgrade().unwrap(),
     };
 
     // Drop the new cache instance. Wait the remainder of the first idle timeout

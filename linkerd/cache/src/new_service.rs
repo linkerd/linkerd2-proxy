@@ -1,5 +1,5 @@
-use linkerd_stack::{layer, NewService};
 use super::*;
+use linkerd_stack::{layer, NewService};
 
 #[derive(Clone)]
 pub struct NewCachedService<T, N>
@@ -22,7 +22,7 @@ where
     pub fn layer(idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |new_svc| Self {
             new_svc,
-            cache: Cache::new(idle)
+            cache: Cache::new(idle),
         })
     }
 }
@@ -36,6 +36,7 @@ where
     type Service = Cached<N::Service>;
 
     fn new_service(&self, target: T) -> Cached<N::Service> {
-        self.cache.get_or_insert_with(target, |target| self.new_svc.new_service(target)).into_owned()
+        self.cache
+            .get_or_insert_with(target, |target| self.new_svc.new_service(target))
     }
 }
