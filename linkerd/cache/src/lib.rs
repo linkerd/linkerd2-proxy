@@ -88,14 +88,14 @@ where
         Self { inner, idle }
     }
 
-    pub fn get<'a, Q: ?Sized>(&self, key: &Q) -> Option<Cached<V>>
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<Cached<V>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq,
         V: Clone,
     {
         let lock = self.inner.read();
-        let (value, weak) = lock.get(&key)?;
+        let (value, weak) = lock.get(key)?;
         let handle = weak.upgrade()?;
 
         trace!("Using cached value");
