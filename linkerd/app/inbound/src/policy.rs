@@ -16,6 +16,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
     Result,
 };
+use linkerd_cache::Cached;
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use thiserror::Error;
 use tokio::sync::watch;
@@ -44,7 +45,7 @@ pub enum DefaultPolicy {
 #[derive(Clone, Debug)]
 pub struct AllowPolicy {
     dst: OrigDstAddr,
-    server: watch::Receiver<ServerPolicy>,
+    server: Cached<watch::Receiver<ServerPolicy>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -86,6 +87,7 @@ impl AllowPolicy {
         server: ServerPolicy,
     ) -> (Self, watch::Sender<ServerPolicy>) {
         let (tx, server) = watch::channel(server);
+        let server = Cached::uncached(server);
         let p = Self { dst, server };
         (p, tx)
     }
@@ -112,6 +114,7 @@ impl AllowPolicy {
     async fn changed(&mut self) {
         if self.server.changed().await.is_err() {
             // If the sender was dropped, then there can be no further changes.
+
             futures::future::pending::<()>().await;
         }
     }

@@ -1,6 +1,7 @@
 use super::{api::Api, CheckPolicy, DefaultPolicy, ServerPolicy, Store};
 use linkerd_app_core::{control, dns, identity, metrics, svc::NewService};
 use std::collections::{HashMap, HashSet};
+use tokio::time::Duration;
 
 /// Configures inbound policies.
 ///
@@ -52,7 +53,10 @@ impl Config {
                     let c = control.build(dns, metrics, identity).new_service(());
                     Api::new(workload, c).into_watch(backoff)
                 };
-                Store::spawn_discover(default, ports, watch)
+                // TODO(eliza): should the idle timeout for policy discovery be
+                // configurable? One minute is totally arbitrary...
+                let idle_timeout = Duration::from_secs(60);
+                Store::spawn_discover(default, ports, watch, idle_timeout)
             }
         }
     }
