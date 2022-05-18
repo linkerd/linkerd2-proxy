@@ -6,7 +6,7 @@ use std::{
     borrow::Borrow,
     collections::{hash_map::{Entry, RandomState}, HashMap},
     hash::{BuildHasher, Hash, BuildHasherDefault},
-    ops::Deref,
+    ops::{Deref, DerefMut},
     sync::{Arc, Weak},
     task::{Context, Poll},
 };
@@ -257,6 +257,12 @@ impl<V> Deref for Cached<V> {
     type Target = V;
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+impl<V> DerefMut for Cached<V> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 
