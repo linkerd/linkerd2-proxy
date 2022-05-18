@@ -2295,9 +2295,9 @@ dependencies = [
 
 [[package]]
 name = "thingbuf"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4e3eae2220a6d68b0ea3a5c65e75cd896853d38822a7f83e47245e78a84f862"
+checksum = "bee2d290fe0db0225026350bc1f0bd02b2daad43b09b56780e29e549effcd54a"
 dependencies = [
  "parking_lot",
  "pin-project",
