@@ -25,18 +25,29 @@ pub struct Cache<K, V, S = RandomState>
 where
     K: Eq + Hash,
 {
-    inner: Arc<Inner<K, V, S>>,
+    /// The amount of time after which an entry is considered idle and may be
+    /// evicted.
     idle: time::Duration,
+
+    inner: Arc<InnerMap<K, V, S>>,
 }
 
+/// A handle that that holds the referenced value in the cache. When dropped,
+/// the cache may drop the value from the cache after an idle timeout.
 #[derive(Clone, Debug)]
 pub struct Cached<V> {
     inner: V,
-    // Notifies entry's eviction task that a drop has occurred.
+
+    // Notifies entry's eviction task that a drop has occurred. If no handle is
+    // set, then the entry is permanent and will not be evicted.
     handle: Option<Arc<Notify>>,
 }
 
-type Inner<K, V, S> = RwLock<HashMap<K, (V, Weak<Notify>), S>>;
+/// A locked cache map holding values and an optional handle. When the handle is
+/// unset, the entry is 'permanent' and will never be evicted from the map. When
+/// a handle is set, it is used to notify the eviction task that an entry has
+/// been dropped.
+type InnerMap<K, V, S> = RwLock<HashMap<K, (V, Option<Weak<Notify>>), S>>;
 
 // === impl Cache ===
 
@@ -56,23 +67,31 @@ where
     V: Send + Sync + 'static,
     BuildHasherDefault<S>: BuildHasher + Send + Sync + 'static,
 {
-    pub fn from_iter(idle: time::Duration, iter: impl IntoIterator<Item = (K, V)>) -> Self
+    /// Creates a new cache with an initial capacity.
+    pub fn with_capacity(idle: time::Duration, capacity: usize) -> Self {
+        Self {
+            idle,
+            inner: Arc::new(RwLock::new(HashMap::with_capacity_and_hasher(
+                capacity,
+                BuildHasherDefault::default(),
+            ))),
+        }
+    }
+
+    /// Creates a new cache with a set of permanent entries.
+    pub fn with_permanent_from_iter(
+        idle: time::Duration,
+        iter: impl IntoIterator<Item = (K, V)>,
+    ) -> Self
     where
         S: Default,
         V: Clone,
     {
         let iter = iter.into_iter();
         let (lower_bound, _) = iter.size_hint();
-        let inner = Arc::new(RwLock::new(HashMap::with_capacity_and_hasher(
-            lower_bound,
-            BuildHasherDefault::default(),
-        )));
-        let this = Self { inner, idle };
-        // XXX(eliza): having to go through `get_or_insert_with` rather than
-        // building a map directly is a shame, but `spawn_idle` requires a ref
-        // the map, so...
+        let this = Self::with_capacity(idle, lower_bound);
         for (key, value) in iter {
-            this.get_or_insert_with(key, move |_| value);
+            this.insert_permanent(key, value);
         }
         this
     }
@@ -92,21 +111,24 @@ where
     pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<Cached<V>>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + std::fmt::Debug,
         V: Clone,
     {
-        let lock = self.inner.read();
-        let (value, weak) = lock.get(key)?;
-        let handle = weak.upgrade()?;
+        let cache = self.inner.read();
 
-        trace!("Using cached value");
+        let (value, handle) = cache.get(key)?;
+        trace!(?key, "Using cached value");
+
         Some(Cached {
             inner: value.clone(),
-            handle: Some(handle),
+            handle: handle.as_ref().map(|h| {
+                h.upgrade()
+                    .expect("handles must be held as long as the entry is in the cache")
+            }),
         })
     }
 
-    pub fn get_or_insert_with(&self, key: K, f: impl FnOnce(K) -> V) -> Cached<V>
+    pub fn get_or_insert_with(&self, key: K, f: impl FnOnce(&K) -> V) -> Cached<V>
     where
         V: Clone,
     {
@@ -117,40 +139,45 @@ where
         }
 
         // Otherwise, obtain a write lock to insert a new value.
-        match self.inner.write().entry(key.clone()) {
-            Entry::Occupied(ref mut entry) => {
-                let (value, weak) = entry.get();
-                // Another thread raced us to create a value for this target.
-                // Try to use it.
-                match weak.upgrade() {
-                    Some(handle) => {
-                        trace!(?key, "Using cached value");
-                        Cached {
-                            inner: value.clone(),
-                            handle: Some(handle),
-                        }
-                    }
-                    None => {
-                        debug!(?key, "Replacing defunct value");
-                        let handle = self.spawn_idle(key.clone());
-                        let inner = f(key);
-                        entry.insert((inner.clone(), Arc::downgrade(&handle)));
-                        Cached {
-                            inner,
-                            handle: Some(handle),
-                        }
-                    }
-                }
-            }
+        let mut cache = self.inner.write();
+        match cache.entry(key) {
             Entry::Vacant(entry) => {
-                debug!(?key, "Caching new value");
-                let handle = self.spawn_idle(key.clone());
-                let inner = f(key);
-                entry.insert((inner.clone(), Arc::downgrade(&handle)));
+                debug!(key = ?entry.key(), "Caching new value");
+                let inner = f(entry.key());
+                let handle = self.spawn_idle(entry.key().clone());
+                entry.insert((inner.clone(), Some(Arc::downgrade(&handle))));
                 Cached {
                     inner,
                     handle: Some(handle),
                 }
+            }
+
+            Entry::Occupied(entry) => {
+                // Another thread raced us to create a value for this target.
+                trace!(key = ?entry.key(), "Using cached value");
+                let (inner, handle) = entry.get().clone();
+                let handle = handle.map(|h| {
+                    h.upgrade()
+                        .expect("handles must be held as long as the entry is in the cache")
+                });
+                Cached { inner, handle }
+            }
+        }
+    }
+
+    /// Adds or overwrites a value in the cache that will never be evicted from
+    /// the cache.
+    pub fn insert_permanent(&self, key: K, val: V) -> Option<V> {
+        match self.inner.write().entry(key) {
+            Entry::Vacant(entry) => {
+                debug!(key = ?entry.key(), "Permanently caching new value");
+                entry.insert((val, None));
+                None
+            }
+            Entry::Occupied(ref mut entry) => {
+                debug!(key = ?entry.key(), "Updating permanently cached value");
+                let (prior_val, _) = entry.insert((val, None));
+                Some(prior_val)
             }
         }
     }
@@ -175,68 +202,80 @@ where
         key: K,
         idle: time::Duration,
         mut reset: Arc<Notify>,
-        cache: Weak<Inner<K, V, S>>,
+        cache: Weak<InnerMap<K, V, S>>,
     ) {
         // Wait for the handle to be notified before starting to track idleness.
         reset.notified().await;
         debug!("Awaiting idleness");
 
-        // Wait for either the reset to be notified or the idle timeout to
-        // elapse.
         loop {
-            tokio::select! {
+            // Wait until the idle timeout expires to check to see if the entry
+            // should be evicted from the cache.
+            let cache = tokio::select! {
                 biased;
 
-                // If the reset was notified, restart the timer.
+                // If the reset was notified, restart the timer (and skip
+                // checking the cache).
                 _ = reset.notified() => {
                     trace!("Reset");
+                    continue;
                 }
+
+                // If the timeout expires, try to clear the key from the cache...
                 _ = time::sleep(idle) => match cache.upgrade() {
-                    Some(cache) => match Arc::try_unwrap(reset) {
-                        // If this is the last reference to the handle after the
-                        // idle timeout, remove the cache entry.
-                        Ok(_) => {
-                            let removed = cache.write().remove(&key).is_some();
-                            debug_assert!(removed, "Cache item must exist: {:?}", key);
-                            debug!("Cache entry dropped");
-                            return;
-                        }
-                        // Otherwise, another handle has been acquired, so
-                        // restore our reset reference for the next iteration.
-                        Err(r) => {
-                            trace!("The handle is still active");
-                            reset = r;
-                        }
-                    },
+                    Some(c) => c,
                     None => {
                         trace!("Cache already dropped");
                         return;
                     }
                 },
+            };
+
+            // Lock the cache before checking the handle.
+            //
+            // Otherwise, if we consume the reset handle first, it's possible
+            // for another task to update the cache entry before we lock the
+            // cache.
+            let mut cache = cache.write();
+
+            // Try to consume the reset handle to ensure no other tasks are
+            // holding a clone
+            if let Err(r) = Arc::try_unwrap(reset) {
+                // The handle is still being held elsewhere, So wait for another
+                // idle timeout to check again.
+                reset = r;
+                continue;
             }
+
+            // If this was the last handle, attempt to clear the key from the
+            // cache (unless it was replaced by a permanent value). There should
+            // be at most one task per key, so we expect the key to be in the
+            // cached.
+            let entry = cache.entry(key);
+            debug_assert!(
+                matches!(entry, Entry::Occupied(_)),
+                "Cache item must exist: {:?}",
+                entry.key()
+            );
+            if let Entry::Occupied(entry) = entry {
+                if let (_, None) = entry.get() {
+                    // The key was updated with a permanent value that cannot be
+                    // evicted.
+                    debug!(key = ?entry.key(), "Cache entry was replaced by permanent value");
+                    return;
+                }
+
+                debug!(key = ?entry.key(), "Dropping cache entry");
+                entry.remove();
+            }
+
+            // The entry no longer exists in the cache.
+            return;
         }
     }
 }
 
 // === impl Cached ===
-
-impl<V> Cached<V> {
-    /// Returns a new `Cached` handle wrapping the provided value, but *not*
-    /// associated with a cache.
-    ///
-    /// This is intended for use in cases where most values returned by a
-    /// function are stored in a cache, but some may instead be fixed, uncached
-    /// values.
-    ///
-    /// The uncached `Cached` instance will never be evicted, since it didn't
-    /// come from a cache.
-    pub fn uncached(inner: V) -> Self {
-        Self {
-            inner,
-            handle: None,
-        }
-    }
-}
 
 impl<Req, S> tower::Service<Req> for Cached<S>
 where
@@ -288,7 +327,7 @@ async fn test_idle_retain() {
 
     let handle = cache.spawn_idle(());
     let weak = Arc::downgrade(&handle);
-    cache.inner.write().insert((), ((), weak.clone()));
+    cache.inner.write().insert((), ((), Some(weak.clone())));
     let c0 = Cached {
         inner: (),
         handle: Some(handle),
