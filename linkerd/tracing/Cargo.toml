@@ -13,11 +13,11 @@ stream = ["thingbuf", "slab"]
 
 [dependencies]
 linkerd-error = { path = "../error" }
+slab = { version = "0.4", optional = true }
+thingbuf = { version = "0.1.2", features = ["std"], optional = true }
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 tracing-log = "0.1"
-thingbuf = { version = "0.1.2", features = ["std"], optional = true }
-slab = { version = "0.4", optional = true }
 
 [dependencies.tracing-subscriber]
 version = "0.3.11"
