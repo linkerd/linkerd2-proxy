@@ -1,87 +1,144 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use linkerd_stack::{layer, NewService};
-use parking_lot::RwLock;
+use parking_lot::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+};
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    borrow::Borrow,
+    collections::{HashMap},
     hash::Hash,
+    ops::Deref,
     sync::{Arc, Weak},
     task::{Context, Poll},
 };
 use tokio::{sync::Notify, time};
 use tracing::{debug, instrument, trace};
+mod new_service;
+
+pub use new_service::NewCachedService;
 
 #[derive(Clone)]
-pub struct Cache<T, N>
+pub struct Cache<K, V>
 where
-    T: Eq + Hash,
-    N: NewService<T>,
+    K: Eq + Hash,
 {
-    inner: N,
-    services: Arc<Services<T, N::Service>>,
+    inner: Arc<Inner<K, V>>,
     idle: time::Duration,
 }
 
 #[derive(Clone, Debug)]
-pub struct Cached<S>
-where
-    S: Send + Sync + 'static,
-{
-    inner: S,
+pub struct Cached<V> {
+    inner: V,
     // Notifies entry's eviction task that a drop has occurred.
-    handle: Arc<Notify>,
+    handle: Option<Arc<Notify>>,
 }
 
-type Services<T, S> = RwLock<HashMap<T, (S, Weak<Notify>)>>;
+type Inner<K, V> = RwLock<HashMap<K, (V, Weak<Notify>)>>;
+
+pub enum Ref<'a, V> {
+    Read(MappedRwLockReadGuard<'a, V>),
+    Inserted(MappedRwLockWriteGuard<'a, (V, Weak<Notify>)>),
+}
 
 // === impl Cache ===
 
-impl<T, N> Cache<T, N>
+impl<K, V> Cache<K, V>
 where
-    T: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
-    N: NewService<T> + 'static,
-    N::Service: Send + Sync + 'static,
+    K: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
+    V: Send + Sync + 'static,
 {
-    pub fn layer(idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |inner| Self::new(idle, inner))
+    pub fn new(idle: time::Duration) -> Self {
+        let inner = Arc::new(Inner::default());
+        Self { inner, idle }
     }
 
-    fn new(idle: time::Duration, inner: N) -> Self {
-        let services = Arc::new(Services::default());
-        Self {
-            inner,
-            services,
-            idle,
+    pub fn get<'a, Q: ?Sized>(&'a self, key: &Q) -> Option<Cached<Ref<'a, V>>>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        let mut handle = None;
+        let value = RwLockReadGuard::try_map(self.inner.read(), |inner| {
+            let (value, weak) = inner.get(&key)?;
+            handle = Some(weak.upgrade()?);
+            Some(value)
+        })
+        .ok()?;
+
+        trace!("Using cached value");
+        Some(Cached {
+            inner: Ref::Read(value),
+            handle,
+        })
+    }
+
+    pub fn get_or_insert_with(&self, key: K, f: impl FnOnce(K) -> V) -> Cached<Ref<'_, V>> {
+        // We expect the item to be available in most cases, so initially obtain
+        // only a read lock.
+        if let Some(val) = self.get(&key) {
+            return val;
+        }
+
+        let mut f = Some(f);
+
+        // Otherwise, obtain a write lock to insert a new value.
+        let mut handle = None;
+        let value = RwLockWriteGuard::map(self.inner.write(), |inner| {
+            inner
+                .entry(key.clone())
+                .and_modify(|(value, weak)| {
+                    // Another thread raced us to create a value for this target.
+                    // Try to use it.
+                    match weak.upgrade() {
+                        Some(h) => {
+                            trace!(?key, "Using cached value");
+                            handle = Some(h);
+                        }
+                        None => {
+                            debug!(?key, "Replacing defunct value");
+                            let new_handle = self.spawn_idle(key.clone());
+                            let f = f.take().expect("function is only called a single time");
+                            *value = f(key.clone());
+                            *weak = Arc::downgrade(&new_handle);
+                            handle = Some(new_handle);
+                        }
+                    }
+                })
+                .or_insert_with(|| {
+                    debug!(?key, "Caching new value");
+                    let new_handle = self.spawn_idle(key.clone());
+                    let f = f.take().expect("function is only called a single time");
+                    let inner = f(key.clone());
+                    let weak = Arc::downgrade(&new_handle);
+                    handle = Some(new_handle);
+                    (inner, weak)
+                })
+        });
+
+        Cached {
+            handle,
+            inner: Ref::Inserted(value),
         }
     }
 
-    fn spawn_idle(
-        target: T,
-        idle: time::Duration,
-        cache: &Arc<Services<T, N::Service>>,
-    ) -> Arc<Notify> {
+    fn spawn_idle(&self, key: K) -> Arc<Notify> {
         // Spawn a background task that holds the handle. Every time the handle
         // is notified, it resets the idle timeout. Every time teh idle timeout
         // expires, the handle is checked and the service is dropped if there
         // are no active handles.
         let handle = Arc::new(Notify::new());
         tokio::spawn(Self::evict(
-            target,
-            idle,
+            key,
+            self.idle,
             handle.clone(),
-            Arc::downgrade(cache),
+            Arc::downgrade(&self.inner),
         ));
         handle
     }
 
     #[instrument(level = "debug", skip(idle, reset, cache))]
-    async fn evict(
-        target: T,
-        idle: time::Duration,
-        mut reset: Arc<Notify>,
-        cache: Weak<Services<T, N::Service>>,
-    ) {
+    async fn evict(key: K, idle: time::Duration, mut reset: Arc<Notify>, cache: Weak<Inner<K, V>>) {
         // Wait for the handle to be notified before starting to track idleness.
         reset.notified().await;
         debug!("Awaiting idleness");
@@ -101,8 +158,8 @@ where
                         // If this is the last reference to the handle after the
                         // idle timeout, remove the cache entry.
                         Ok(_) => {
-                            let removed = cache.write().remove(&target).is_some();
-                            debug_assert!(removed, "Cache item must exist: {:?}", target);
+                            let removed = cache.write().remove(&key).is_some();
+                            debug_assert!(removed, "Cache item must exist: {:?}", key);
                             debug!("Cache entry dropped");
                             return;
                         }
@@ -118,61 +175,6 @@ where
                         return;
                     }
                 },
-            }
-        }
-    }
-}
-
-impl<T, N> NewService<T> for Cache<T, N>
-where
-    T: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
-    N: NewService<T> + 'static,
-    N::Service: Clone + Send + Sync + 'static,
-{
-    type Service = Cached<N::Service>;
-
-    fn new_service(&self, target: T) -> Cached<N::Service> {
-        // We expect the item to be available in most cases, so initially obtain
-        // only a read lock.
-        if let Some((svc, weak)) = self.services.read().get(&target) {
-            if let Some(handle) = weak.upgrade() {
-                trace!("Using cached service");
-                return Cached {
-                    inner: svc.clone(),
-                    handle,
-                };
-            }
-        }
-
-        // Otherwise, obtain a write lock to insert a new service.
-        match self.services.write().entry(target.clone()) {
-            Entry::Occupied(mut entry) => {
-                // Another thread raced us to create a service for this target.
-                // Try to use it.
-                let (svc, weak) = entry.get();
-                match weak.upgrade() {
-                    Some(handle) => {
-                        trace!(?target, "Using cached service");
-                        Cached {
-                            inner: svc.clone(),
-                            handle,
-                        }
-                    }
-                    None => {
-                        debug!(?target, "Replacing defunct service");
-                        let handle = Self::spawn_idle(target.clone(), self.idle, &self.services);
-                        let inner = self.inner.new_service(target);
-                        entry.insert((inner.clone(), Arc::downgrade(&handle)));
-                        Cached { inner, handle }
-                    }
-                }
-            }
-            Entry::Vacant(entry) => {
-                debug!(?target, "Caching new service");
-                let handle = Self::spawn_idle(target.clone(), self.idle, &self.services);
-                let inner = self.inner.new_service(target);
-                entry.insert((inner.clone(), Arc::downgrade(&handle)));
-                Cached { inner, handle }
             }
         }
     }
@@ -199,14 +201,34 @@ where
     }
 }
 
-impl<S> Drop for Cached<S>
-where
-    S: Send + Sync + 'static,
-{
-    fn drop(&mut self) {
-        self.handle.notify_one();
+impl<V> Deref for Cached<Ref<'_, V>> {
+    type Target = V;
+    fn deref(&self) -> &Self::Target {
+        match self.inner {
+            Ref::Read(ref guard) => guard.deref(),
+            Ref::Inserted(ref guard) => &guard.deref().0,
+        }
     }
 }
+
+impl<V: Clone> Cached<Ref<'_, V>> {
+    pub fn into_owned(mut self) -> Cached<V> {
+        let inner = V::clone(Deref::deref(&self));
+        Cached {
+            inner,
+            handle: self.handle.take(),
+        }
+    }
+}
+
+impl<V> Drop for Cached<V> {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.notify_one();
+        }
+    }
+}
+
 
 #[cfg(test)]
 #[tokio::test(flavor = "current_thread")]
@@ -214,45 +236,45 @@ async fn test_idle_retain() {
     time::pause();
 
     let idle = time::Duration::from_secs(10);
-    let cache = Arc::new(Services::default());
+    let cache = Cache::new(idle);
 
-    let handle = Cache::<(), fn(()) -> ()>::spawn_idle((), idle, &cache);
-    cache.write().insert((), ((), Arc::downgrade(&handle)));
-    let c0 = Cached { inner: (), handle };
+    let handle = cache.spawn_idle(());
+    let weak = Arc::downgrade(&handle);
+    cache.inner.write().insert((), ((), weak.clone()));
+    let c0 = Cached { inner: (), handle: Some(handle) };
 
-    let handle = Arc::downgrade(&c0.handle);
 
     // Let an idle timeout elapse and ensured the held service has not been
     // evicted.
     time::sleep(idle * 2).await;
-    assert!(handle.upgrade().is_some());
-    assert!(cache.read().contains_key(&()));
+    assert!(weak.upgrade().is_some());
+    assert!(cache.inner.read().contains_key(&()));
 
     // Drop the original cached instance and elapse only half of the idle
     // timeout.
     drop(c0);
     time::sleep(time::Duration::from_secs(5)).await;
-    assert!(handle.upgrade().is_some());
-    assert!(cache.read().contains_key(&()));
+    assert!(weak.upgrade().is_some());
+    assert!(cache.inner.read().contains_key(&()));
 
     // Ensure that the handle hasn't been dropped yet and revive it to create a
     // new cached instance.
     let c1 = Cached {
         inner: (),
         // Retain the handle from the first instance.
-        handle: handle.upgrade().unwrap(),
+        handle: Some(weak.upgrade().unwrap()),
     };
 
     // Drop the new cache instance. Wait the remainder of the first idle timeout
     // and esnure that the handle is still retained.
     drop(c1);
     time::sleep(time::Duration::from_secs(5)).await;
-    assert!(handle.upgrade().is_some());
-    assert!(cache.read().contains_key(&()));
+    assert!(weak.upgrade().is_some());
+    assert!(cache.inner.read().contains_key(&()));
 
     // Wait the remainder of the second idle timeout and esnure the handle has
     // been dropped.
     time::sleep(time::Duration::from_secs(5)).await;
-    assert!(handle.upgrade().is_none());
-    assert!(!cache.read().contains_key(&()));
+    assert!(weak.upgrade().is_none());
+    assert!(!cache.inner.read().contains_key(&()));
 }
