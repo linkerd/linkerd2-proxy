@@ -4,8 +4,8 @@
 use parking_lot::RwLock;
 use std::{
     borrow::Borrow,
-    collections::{hash_map::Entry, HashMap},
-    hash::Hash,
+    collections::{hash_map::{Entry, RandomState}, HashMap},
+    hash::{BuildHasher, Hash},
     ops::Deref,
     sync::{Arc, Weak},
     task::{Context, Poll},
@@ -17,11 +17,11 @@ mod new_service;
 pub use new_service::NewCachedService;
 
 #[derive(Clone)]
-pub struct Cache<K, V>
+pub struct Cache<K, V, S = RandomState>
 where
     K: Eq + Hash,
 {
-    inner: Arc<Inner<K, V>>,
+    inner: Arc<Inner<K, V, S>>,
     idle: time::Duration,
 }
 
@@ -32,7 +32,7 @@ pub struct Cached<V> {
     handle: Option<Arc<Notify>>,
 }
 
-type Inner<K, V> = RwLock<HashMap<K, (V, Weak<Notify>)>>;
+type Inner<K, V, S> = RwLock<HashMap<K, (V, Weak<Notify>), S>>;
 
 // === impl Cache ===
 
@@ -42,8 +42,22 @@ where
     V: Send + Sync + 'static,
 {
     pub fn new(idle: time::Duration) -> Self {
-        let inner = Arc::new(Inner::default());
-        Self { inner, idle }
+        Self::with_hasher(idle, Default::default())
+    }
+}
+
+impl<K, V, S> Cache<K, V, S>
+where
+    K: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
+    V: Send + Sync + 'static,
+    S: BuildHasher,
+{
+    pub fn with_hasher(idle: time::Duration, hasher: S) -> Self {
+        let inner = Arc::new(RwLock::new(HashMap::with_hasher(hasher)));
+        Self {
+            inner,
+            idle
+        }
     }
 
     pub fn get<'a, Q: ?Sized>(&self, key: &Q) -> Option<Cached<V>>
@@ -128,7 +142,7 @@ where
     }
 
     #[instrument(level = "debug", skip(idle, reset, cache))]
-    async fn evict(key: K, idle: time::Duration, mut reset: Arc<Notify>, cache: Weak<Inner<K, V>>) {
+    async fn evict(key: K, idle: time::Duration, mut reset: Arc<Notify>, cache: Weak<Inner<K, V, S>>) {
         // Wait for the handle to be notified before starting to track idleness.
         reset.notified().await;
         debug!("Awaiting idleness");
