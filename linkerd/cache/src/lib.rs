@@ -8,6 +8,7 @@ use std::{
         hash_map::{Entry, RandomState},
         HashMap,
     },
+    fmt,
     hash::{BuildHasher, BuildHasherDefault, Hash},
     ops::{Deref, DerefMut},
     sync::{Arc, Weak},
@@ -36,7 +37,13 @@ pub struct Cached<V> {
     handle: Option<Arc<Notify>>,
 }
 
-type Inner<K, V, S> = RwLock<HashMap<K, (V, Weak<Notify>), S>>;
+type Inner<K, V, S> = RwLock<HashMap<K, CacheEntry<V>, S>>;
+
+#[derive(Debug)]
+struct CacheEntry<V> {
+    value: V,
+    handle: Option<Weak<Notify>>,
+}
 
 // === impl Cache ===
 
@@ -56,25 +63,21 @@ where
     V: Send + Sync + 'static,
     BuildHasherDefault<S>: BuildHasher + Send + Sync + 'static,
 {
-    pub fn from_iter(idle: time::Duration, iter: impl IntoIterator<Item = (K, V)>) -> Self
+    /// Constructs a `Cache` from an iterator of fixed cache entries.
+    ///
+    /// These entries will never be expired from the cache. Any entries inserted
+    /// later will still expire when they become idle.
+    pub fn from_iter_fixed(idle: time::Duration, iter: impl IntoIterator<Item = (K, V)>) -> Self
     where
         S: Default,
         V: Clone,
     {
-        let iter = iter.into_iter();
-        let (lower_bound, _) = iter.size_hint();
-        let inner = Arc::new(RwLock::new(HashMap::with_capacity_and_hasher(
-            lower_bound,
-            BuildHasherDefault::default(),
-        )));
-        let this = Self { inner, idle };
-        // XXX(eliza): having to go through `get_or_insert_with` rather than
-        // building a map directly is a shame, but `spawn_idle` requires a ref
-        // the map, so...
-        for (key, value) in iter {
-            this.get_or_insert_with(key, move |_| value);
-        }
-        this
+        let entries = iter
+            .into_iter()
+            .map(|(k, v)| (k, CacheEntry::fixed(v)))
+            .collect();
+        let inner = Arc::new(RwLock::new(entries));
+        Self { inner, idle }
     }
 }
 
@@ -92,18 +95,19 @@ where
     pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<Cached<V>>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + fmt::Debug,
         V: Clone,
     {
         let lock = self.inner.read();
-        let (value, weak) = lock.get(key)?;
-        let handle = weak.upgrade()?;
+        let cache_entry = lock.get(&key)?;
+        let cached = cache_entry.cached()?;
 
-        trace!("Using cached value");
-        Some(Cached {
-            inner: value.clone(),
-            handle: Some(handle),
-        })
+        trace!(
+            ?key,
+            entry.is_expiring = cache_entry.is_expiring(),
+            "Using cached value"
+        );
+        Some(cached)
     }
 
     pub fn get_or_insert_with(&self, key: K, f: impl FnOnce(K) -> V) -> Cached<V>
@@ -119,22 +123,23 @@ where
         // Otherwise, obtain a write lock to insert a new value.
         match self.inner.write().entry(key.clone()) {
             Entry::Occupied(ref mut entry) => {
-                let (value, weak) = entry.get();
+                let cache_entry = entry.get();
                 // Another thread raced us to create a value for this target.
                 // Try to use it.
-                match weak.upgrade() {
-                    Some(handle) => {
-                        trace!(?key, "Using cached value");
-                        Cached {
-                            inner: value.clone(),
-                            handle: Some(handle),
-                        }
+                match cache_entry.cached() {
+                    Some(cached) => {
+                        trace!(
+                            ?key,
+                            entry.is_expiring = cache_entry.is_expiring(),
+                            "Using cached value"
+                        );
+                        cached
                     }
                     None => {
                         debug!(?key, "Replacing defunct value");
-                        let handle = self.spawn_idle(key.clone());
-                        let inner = f(key);
-                        entry.insert((inner.clone(), Arc::downgrade(&handle)));
+                        let inner = f(key.clone());
+                        let (handle, element) = self.expiring_entry(key, inner.clone());
+                        entry.insert(element);
                         Cached {
                             inner,
                             handle: Some(handle),
@@ -144,15 +149,39 @@ where
             }
             Entry::Vacant(entry) => {
                 debug!(?key, "Caching new value");
-                let handle = self.spawn_idle(key.clone());
-                let inner = f(key);
-                entry.insert((inner.clone(), Arc::downgrade(&handle)));
+                let inner = f(key.clone());
+                let (handle, element) = self.expiring_entry(key, inner.clone());
+                entry.insert(element);
                 Cached {
                     inner,
                     handle: Some(handle),
                 }
             }
         }
+    }
+
+    /// Inserts a fixed (non-expiring) entry into the cache.
+    ///
+    /// This entry will never be removed, and will not spawn a background
+    /// expiration task.
+    ///
+    /// # Returns
+    ///
+    /// The previous value for that key, if there was one.
+    pub fn insert_fixed(&self, key: K, value: V) -> Option<V> {
+        self.inner
+            .write()
+            .insert(key, CacheEntry::fixed(value))
+            .map(|CacheEntry { value, .. }| value)
+    }
+
+    fn expiring_entry(&self, key: K, value: V) -> (Arc<Notify>, CacheEntry<V>) {
+        let handle = self.spawn_idle(key);
+        let entry = CacheEntry {
+            value,
+            handle: Some(Arc::downgrade(&handle)),
+        };
+        (handle, entry)
     }
 
     fn spawn_idle(&self, key: K) -> Arc<Notify> {
@@ -215,6 +244,41 @@ where
                 },
             }
         }
+    }
+}
+
+impl<V> CacheEntry<V> {
+    fn fixed(value: V) -> Self {
+        Self {
+            value,
+            handle: None,
+        }
+    }
+
+    fn cached(&self) -> Option<Cached<V>>
+    where
+        V: Clone,
+    {
+        match self.handle {
+            // This is an expiring entry. See if its expiry task is still
+            // running.
+            Some(ref handle) => {
+                let handle = handle.upgrade()?;
+                Some(Cached {
+                    inner: self.value.clone(),
+                    handle: Some(handle),
+                })
+            }
+            // This is a fixed (non-expiring) entry
+            None => Some(Cached {
+                inner: self.value.clone(),
+                handle: None,
+            }),
+        }
+    }
+
+    fn is_expiring(&self) -> bool {
+        self.handle.is_some()
     }
 }
 
