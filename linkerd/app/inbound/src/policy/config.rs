@@ -15,6 +15,7 @@ pub enum Config {
         workload: String,
         default: DefaultPolicy,
         ports: HashSet<u16>,
+        cache_max_idle_age: Duration,
     },
     Fixed {
         default: DefaultPolicy,
@@ -47,16 +48,14 @@ impl Config {
                 ports,
                 workload,
                 default,
+                cache_max_idle_age,
             } => {
                 let watch = {
                     let backoff = control.connect.backoff;
                     let c = control.build(dns, metrics, identity).new_service(());
                     Api::new(workload, c).into_watch(backoff)
                 };
-                // TODO(eliza): should the idle timeout for policy discovery be
-                // configurable? One minute is totally arbitrary...
-                let idle_timeout = Duration::from_secs(60);
-                Store::spawn_discover(default, ports, watch, idle_timeout)
+                Store::spawn_discover(default, ports, watch, cache_max_idle_age)
             }
         }
     }
