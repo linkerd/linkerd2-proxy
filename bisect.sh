@@ -1,0 +1,1 @@
+ cargo bisect-rustc --start 2021-09-15 --end 2021-09-19 --test-dir=. --script=./test.sh -v --prompt

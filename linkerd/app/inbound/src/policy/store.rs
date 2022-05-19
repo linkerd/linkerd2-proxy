@@ -84,7 +84,11 @@ impl<S> Store<S> {
                 info_span!("watch", %port).in_scope(|| watch.spawn_with_init(port, default.into()));
             (port, rx)
         });
-        let ports = Cache::from_iter(idle_timeout, rxs);
+        // The initial set of default ports should never expire from the cache.
+        // dynamically discovered port policies will expire after `idle_timeout`
+        // to prevent an unbounded set of policy watches for ports that are
+        // connected to once or infrequently.
+        let ports = Cache::with_permanent_from_iter(idle_timeout, rxs);
 
         Self::Dynamic(Dynamic {
             default,
@@ -132,7 +136,7 @@ where
         let server = self.ports.get_or_insert_with(port, |port| {
             let default = self.default.clone();
             let watch = self.watch.clone();
-            info_span!("watch", %port).in_scope(|| watch.spawn_with_init(port, default.into()))
+            info_span!("watch", %port).in_scope(|| watch.spawn_with_init(*port, default.into()))
         });
         Ok(AllowPolicy { dst, server })
     }
