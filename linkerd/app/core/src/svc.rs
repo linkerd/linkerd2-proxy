@@ -202,13 +202,13 @@ impl<S> Stack<S> {
         self.push(http::insert::NewResponseInsert::layer())
     }
 
-    pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::Cache<T, S>>
+    pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::NewCachedService<T, S>>
     where
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         S: NewService<T> + 'static,
         S::Service: Send + Sync + 'static,
     {
-        self.push(cache::Cache::layer(idle))
+        self.push(cache::NewCachedService::layer(idle))
     }
 
     /// Push a service that either calls the inner service if it is ready, or
