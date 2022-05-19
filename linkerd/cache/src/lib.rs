@@ -8,6 +8,7 @@ use std::{
         hash_map::{Entry, RandomState},
         HashMap,
     },
+    fmt,
     hash::{BuildHasher, BuildHasherDefault, Hash},
     ops::{Deref, DerefMut},
     sync::{Arc, Weak},
@@ -43,11 +44,20 @@ pub struct Cached<V> {
     handle: Option<Arc<Notify>>,
 }
 
+#[derive(Debug)]
+struct CacheEntry<V> {
+    value: V,
+    /// A handle to wake the expiration task.
+    ///
+    /// If this is unset, the entry is permanent and will not be evicted.
+    handle: Option<Weak<Notify>>,
+}
+
 /// A locked cache map holding values and an optional handle. When the handle is
 /// unset, the entry is 'permanent' and will never be evicted from the map. When
 /// a handle is set, it is used to notify the eviction task that an entry has
 /// been dropped.
-type InnerMap<K, V, S> = RwLock<HashMap<K, (V, Option<Weak<Notify>>), S>>;
+type InnerMap<K, V, S> = RwLock<HashMap<K, CacheEntry<V>, S>>;
 
 // === impl Cache ===
 
@@ -87,13 +97,12 @@ where
         S: Default,
         V: Clone,
     {
-        let iter = iter.into_iter();
-        let (lower_bound, _) = iter.size_hint();
-        let this = Self::with_capacity(idle, lower_bound);
-        for (key, value) in iter {
-            this.insert_permanent(key, value);
-        }
-        this
+        let entries = iter
+            .into_iter()
+            .map(|(k, v)| (k, CacheEntry::permanent(v)))
+            .collect();
+        let inner = Arc::new(RwLock::new(entries));
+        Self { inner, idle }
     }
 }
 
@@ -111,21 +120,19 @@ where
     pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<Cached<V>>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + std::fmt::Debug,
+        Q: Hash + Eq + fmt::Debug,
         V: Clone,
     {
         let cache = self.inner.read();
+        let cache_entry = cache.get(&key)?;
+        let cached = cache_entry.cached();
 
-        let (value, handle) = cache.get(key)?;
-        trace!(?key, "Using cached value");
-
-        Some(Cached {
-            inner: value.clone(),
-            handle: handle.as_ref().map(|h| {
-                h.upgrade()
-                    .expect("handles must be held as long as the entry is in the cache")
-            }),
-        })
+        trace!(
+            ?key,
+            entry.is_permanent = cache_entry.is_permanent(),
+            "Using cached value"
+        );
+        Some(cached)
     }
 
     pub fn get_or_insert_with(&self, key: K, f: impl FnOnce(&K) -> V) -> Cached<V>
@@ -145,7 +152,10 @@ where
                 debug!(key = ?entry.key(), "Caching new value");
                 let inner = f(entry.key());
                 let handle = self.spawn_idle(entry.key().clone());
-                entry.insert((inner.clone(), Some(Arc::downgrade(&handle))));
+                entry.insert(CacheEntry {
+                    value: inner.clone(),
+                    handle: Some(Arc::downgrade(&handle)),
+                });
                 Cached {
                     inner,
                     handle: Some(handle),
@@ -155,12 +165,7 @@ where
             Entry::Occupied(entry) => {
                 // Another thread raced us to create a value for this target.
                 trace!(key = ?entry.key(), "Using cached value");
-                let (inner, handle) = entry.get().clone();
-                let handle = handle.map(|h| {
-                    h.upgrade()
-                        .expect("handles must be held as long as the entry is in the cache")
-                });
-                Cached { inner, handle }
+                entry.get().clone().cached()
             }
         }
     }
@@ -171,13 +176,13 @@ where
         match self.inner.write().entry(key) {
             Entry::Vacant(entry) => {
                 debug!(key = ?entry.key(), "Permanently caching new value");
-                entry.insert((val, None));
+                entry.insert(CacheEntry::permanent(val));
                 None
             }
             Entry::Occupied(ref mut entry) => {
                 debug!(key = ?entry.key(), "Updating permanently cached value");
-                let (prior_val, _) = entry.insert((val, None));
-                Some(prior_val)
+                let prior_entry = entry.insert(CacheEntry::permanent(val));
+                Some(prior_entry.value)
             }
         }
     }
@@ -258,7 +263,7 @@ where
                 entry.key()
             );
             if let Entry::Occupied(entry) = entry {
-                if let (_, None) = entry.get() {
+                if entry.get().is_permanent() {
                     // The key was updated with a permanent value that cannot be
                     // evicted.
                     debug!(key = ?entry.key(), "Cache entry was replaced by permanent value");
@@ -272,6 +277,34 @@ where
             // The entry no longer exists in the cache.
             return;
         }
+    }
+}
+
+impl<V> CacheEntry<V> {
+    fn permanent(value: V) -> Self {
+        Self {
+            value,
+            handle: None,
+        }
+    }
+
+    fn cached(&self) -> Cached<V>
+    where
+        V: Clone,
+    {
+        let handle = self.handle.as_ref().map(|handle| {
+            handle
+                .upgrade()
+                .expect("handles must be held as long as the entry is in the cache")
+        });
+        Cached {
+            inner: self.value.clone(),
+            handle,
+        }
+    }
+
+    fn is_permanent(&self) -> bool {
+        self.handle.is_none()
     }
 }
 
