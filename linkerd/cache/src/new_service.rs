@@ -37,6 +37,6 @@ where
 
     fn new_service(&self, target: T) -> Cached<N::Service> {
         self.cache
-            .get_or_insert_with(target, |target| self.new_svc.new_service(target))
+            .get_or_insert_with(target, |target| self.new_svc.new_service(target.clone()))
     }
 }
