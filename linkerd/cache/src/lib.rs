@@ -360,7 +360,7 @@ async fn test_idle_retain() {
 
     let handle = cache.spawn_idle(());
     let weak = Arc::downgrade(&handle);
-    cache.inner.write().insert((), ((), Some(weak.clone())));
+    cache.inner.write().insert((), CacheEntry { value: (), handle: Some(weak.clone()) });
     let c0 = Cached {
         inner: (),
         handle: Some(handle),
