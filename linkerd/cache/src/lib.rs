@@ -124,7 +124,7 @@ where
         V: Clone,
     {
         let cache = self.inner.read();
-        let cache_entry = cache.get(&key)?;
+        let cache_entry = cache.get(key)?;
         let cached = cache_entry.cached();
 
         trace!(
@@ -165,7 +165,7 @@ where
             Entry::Occupied(entry) => {
                 // Another thread raced us to create a value for this target.
                 trace!(key = ?entry.key(), "Using cached value");
-                entry.get().clone().cached()
+                entry.get().cached()
             }
         }
     }
