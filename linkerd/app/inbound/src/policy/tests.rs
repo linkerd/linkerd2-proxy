@@ -6,8 +6,8 @@ use std::collections::HashSet;
 #[derive(Clone)]
 pub(crate) struct MockSvc;
 
-#[test]
-fn unauthenticated_allowed() {
+#[tokio::test(flavor = "current_thread")]
+async fn unauthenticated_allowed() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
@@ -45,8 +45,8 @@ fn unauthenticated_allowed() {
     );
 }
 
-#[test]
-fn authenticated_identity() {
+#[tokio::test(flavor = "current_thread")]
+async fn authenticated_identity() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
@@ -102,8 +102,8 @@ fn authenticated_identity() {
         .expect_err("policy must require a client identity");
 }
 
-#[test]
-fn authenticated_suffix() {
+#[tokio::test(flavor = "current_thread")]
+async fn authenticated_suffix() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
@@ -158,8 +158,8 @@ fn authenticated_suffix() {
         .expect_err("policy must require a client identity");
 }
 
-#[test]
-fn tls_unauthenticated() {
+#[tokio::test(flavor = "current_thread")]
+async fn tls_unauthenticated() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
