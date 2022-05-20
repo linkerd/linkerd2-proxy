@@ -20,7 +20,7 @@ pub(crate) fn filter_builder() -> filter::Builder {
 }
 
 type BoxLayer = Box<dyn Layer<Registry> + Send + Sync + 'static>;
-type FilteredLayer = filter::Filtered<BoxLayer, EnvFilter, Registry>;
+pub(crate) type FilteredLayer = filter::Filtered<BoxLayer, EnvFilter, Registry>;
 
 impl Handle {
     pub(crate) fn new(handle: reload::Handle<FilteredLayer, Registry>) -> Self {

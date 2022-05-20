@@ -233,7 +233,7 @@ impl Settings {
 
 // TODO(eliza): Simplify `tracing-subscriber::reload::Handle` type parameters.
 #[cfg(feature = "stream")]
-type LogStack = Layered<Option<reload::Layer<level::Inner, Registry>>, Registry>;
+type LogStack = Layered<Option<reload::Layer<level::FilteredLayer, Registry>>, Registry>;
 
 // === impl Handle ===
 
