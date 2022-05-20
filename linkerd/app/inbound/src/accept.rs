@@ -56,8 +56,7 @@ impl<N> Inbound<N> {
                             return Ok(svc::Either::B(t));
                         }
 
-                        let policy = policies.get_policy(addr);
-                        policy.check_port_allowed()?;
+                        let policy = policies.get_policy(addr).check_port_allowed()?;
 
                         tracing::debug!(?policy, "Accepted");
                         Ok(svc::Either::A(Accept {
