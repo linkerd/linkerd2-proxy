@@ -20,7 +20,7 @@ impl Inbound<()> {
         &self,
         dns: dns::Resolver,
         control_metrics: metrics::ControlHttp,
-    ) -> impl policy::CheckPolicy + Clone + Send + Sync + 'static {
+    ) -> impl policy::GetPolicy + Clone + Send + Sync + 'static {
         self.config
             .policy
             .clone()
@@ -31,7 +31,7 @@ impl Inbound<()> {
         self,
         addr: Local<ServerAddr>,
         listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
-        policies: impl policy::CheckPolicy + Clone + Send + Sync + 'static,
+        policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
         profiles: P,
         gateway: G,
     ) where

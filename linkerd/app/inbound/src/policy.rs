@@ -2,7 +2,7 @@ mod api;
 mod authorize;
 mod config;
 pub mod defaults;
-pub(crate) mod store;
+mod store;
 #[cfg(test)]
 mod tests;
 
@@ -22,18 +22,15 @@ use thiserror::Error;
 use tokio::sync::watch;
 
 #[derive(Clone, Debug, Error)]
-#[error("unauthorized connection on unknown port {0}")]
-pub struct DeniedUnknownPort(pub u16);
-
-#[derive(Clone, Debug, Error)]
-#[error("unauthorized connection on server {server}")]
+#[error("unauthorized connection on {kind}/{name}")]
 pub struct DeniedUnauthorized {
-    server: std::sync::Arc<str>,
+    kind: std::sync::Arc<str>,
+    name: std::sync::Arc<str>,
 }
 
-pub trait CheckPolicy {
+pub trait GetPolicy {
     /// Checks that the destination address is configured to allow traffic.
-    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort>;
+    fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,11 +111,20 @@ impl AllowPolicy {
     async fn changed(&mut self) {
         if self.server.changed().await.is_err() {
             // If the sender was dropped, then there can be no further changes.
-
             futures::future::pending::<()>().await;
         }
     }
 
+    pub(crate) fn check_port_allowed(&self) -> Result<(), DeniedUnauthorized> {
+        let server = self.server.borrow();
+        if server.authorizations.is_empty() {
+            return Err(DeniedUnauthorized {
+                kind: server.kind.clone(),
+                name: server.name.clone(),
+            });
+        }
+        Ok(())
+    }
     /// Checks whether the destination port's `AllowPolicy` is authorized to accept connections
     /// given the provided TLS state.
     pub(crate) fn check_authorized(
@@ -164,7 +170,8 @@ impl AllowPolicy {
         }
 
         Err(DeniedUnauthorized {
-            server: server.name.clone(),
+            kind: server.kind.clone(),
+            name: server.name.clone(),
         })
     }
 }

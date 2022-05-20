@@ -1,44 +1,22 @@
-use super::{api, AllowPolicy, CheckPolicy, DefaultPolicy, DeniedUnknownPort};
-use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error, Result};
-use linkerd_cache::{Cache, Cached};
+use super::{api, AllowPolicy, DefaultPolicy, GetPolicy};
+use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error};
+use linkerd_cache::Cache;
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     hash::{BuildHasherDefault, Hasher},
-    sync::Arc,
 };
 use tokio::{sync::watch, time::Duration};
 use tracing::info_span;
 
 #[derive(Clone)]
-pub enum Store<S> {
-    Dynamic(Dynamic<S>),
-    Fixed(Fixed),
+pub struct Store<S> {
+    cache: Cache<u16, Rx, BuildHasherDefault<PortHasher>>,
+    default_rx: Rx,
+    discover: Option<api::Watch<S>>,
 }
 
-#[derive(Clone)]
-pub struct Dynamic<S> {
-    default: DefaultPolicy,
-    ports: Cache<u16, Rx, BuildHasherDefault<PortHasher>>,
-    watch: api::Watch<S>,
-}
-
-/// Used primarily for testing.
-///
-/// It can also be used when the policy controller is not configured on a proxy
-/// (i.e. when the proxy is configured by an older injector).
-#[derive(Clone)]
-pub struct Fixed {
-    // When None, the default policy is 'deny'.
-    default_rx: Option<Rx>,
-    ports: Arc<PortMap<Rx>>,
-}
-
-type Tx = watch::Sender<ServerPolicy>;
 type Rx = watch::Receiver<ServerPolicy>;
-
-/// A `HashMap` optimized for lookups by port number.
-type PortMap<T> = HashMap<u16, T, BuildHasherDefault<PortHasher>>;
 
 /// A hasher for ports.
 ///
@@ -50,20 +28,40 @@ struct PortHasher(u16);
 // === impl Store ===
 
 impl<S> Store<S> {
-    pub(crate) fn fixed(
-        default: impl Into<DefaultPolicy>,
+    pub(crate) fn spawn_fixed(
+        default: DefaultPolicy,
         ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
-    ) -> (Self, Option<Tx>) {
-        let (fixed, default) = Fixed::new(default, ports);
-        (Self::Fixed(fixed), default)
+    ) -> Self {
+        let cache = {
+            let rxs = ports.into_iter().map(|(p, s)| {
+                // When using a fixed policy, we don't need to watch for changes. It's
+                // safe to discard the sender, as the receiver will continue to let us
+                // borrow/clone each fixed policy.
+                let (_, rx) = watch::channel(s);
+                (p, rx)
+            });
+            Cache::with_permanent_from_iter(Duration::MAX, rxs)
+        };
+
+        let (default_tx, default_rx) = watch::channel(ServerPolicy::from(default));
+        tokio::spawn(async move {
+            default_tx.closed().await;
+        });
+
+        Self {
+            cache,
+            default_rx,
+            discover: None,
+        }
     }
 
     /// Spawns a watch for each of the given ports.
     ///
-    /// The returned future completes when a watch has been successfully created for all of the
-    /// provided ports. The store maintains these watches so that each time a policy is checked, it
-    /// may obtain the latest policy provided by the watch. An error is returned if any of the
-    /// watches cannot be established.
+    /// The returned future completes when a watch has been successfully created
+    /// for all of the provided ports. The store maintains these watches so that
+    /// each time a policy is checked, it may obtain the latest policy provided
+    /// by the watch. An error is returned if any of the watches cannot be
+    /// established.
     pub(super) fn spawn_discover(
         default: DefaultPolicy,
         ports: HashSet<u16>,
@@ -77,121 +75,57 @@ impl<S> Store<S> {
         S::ResponseBody:
             http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
     {
-        let rxs = ports.into_iter().map(|port| {
-            let watch = watch.clone();
-            let default = default.clone();
-            let rx =
-                info_span!("watch", %port).in_scope(|| watch.spawn_with_init(port, default.into()));
-            (port, rx)
+        let (default_tx, default_rx) = watch::channel(ServerPolicy::from(default));
+        tokio::spawn(async move {
+            default_tx.closed().await;
         });
-        // The initial set of default ports should never expire from the cache.
-        // dynamically discovered port policies will expire after `idle_timeout`
-        // to prevent an unbounded set of policy watches for ports that are
-        // connected to once or infrequently.
-        let ports = Cache::with_permanent_from_iter(idle_timeout, rxs);
 
-        Self::Dynamic(Dynamic {
-            default,
-            watch,
-            ports,
-        })
-    }
-}
-
-impl<S> CheckPolicy for Store<S>
-where
-    S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
-    S: Clone + Send + Sync + 'static,
-    S::Future: Send,
-    S::ResponseBody:
-        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
-{
-    #[inline]
-    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
-        match self {
-            Self::Dynamic(dynamic) => dynamic.check_policy(dst),
-            Self::Fixed(fixed) => fixed.check_policy(dst),
-        }
-    }
-}
-
-// === impl Dynamic ===
-
-impl<S> CheckPolicy for Dynamic<S>
-where
-    S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
-    S: Clone + Send + Sync + 'static,
-    S::Future: Send,
-    S::ResponseBody:
-        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
-{
-    /// Checks the policy for the given destination port.
-    ///
-    /// If the destination has not already been discovered, then we spawn a new
-    /// watch for the target port, caching the watch for the lifetime of the
-    /// process. The process's default policy is used for the initial state of
-    /// unknown watches.
-    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
-        let port = dst.port();
-        let server = self.ports.get_or_insert_with(port, |port| {
-            let default = self.default.clone();
-            let watch = self.watch.clone();
-            info_span!("watch", %port).in_scope(|| watch.spawn_with_init(*port, default.into()))
-        });
-        Ok(AllowPolicy { dst, server })
-    }
-}
-
-// === impl Fixed ===
-
-impl Fixed {
-    pub(crate) fn new(
-        default: impl Into<DefaultPolicy>,
-        ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
-    ) -> (Self, Option<Tx>) {
-        let default = default.into();
-        let rxs = ports
-            .into_iter()
-            .map(|(p, s)| {
-                // When using a fixed policy, we don't need to watch for changes. It's
-                // safe to discard the sender, as the receiver will continue to let us
-                // borrow/clone each fixed policy.
-                let (_, rx) = watch::channel(s);
-                (p, rx)
-            })
-            .collect();
-
-        let (default_tx, default_rx) = match Self::mk_default(default) {
-            Some((tx, rx)) => (Some(tx), Some(rx)),
-            None => (None, None),
+        // The initial set of documented policies never expire from the cache.
+        //
+        // Policies that are dynamically discovered at runtime will expire after
+        // `idle_timeout` to prevent holding policy watches indefinitely for
+        // ports that are generally unused.
+        let cache = {
+            let rxs = ports.into_iter().map(|port| {
+                let watch = watch.clone();
+                let default = default_rx.borrow().clone();
+                let rx =
+                    info_span!("watch", %port).in_scope(|| watch.spawn_with_init(port, default));
+                (port, rx)
+            });
+            Cache::with_permanent_from_iter(idle_timeout, rxs)
         };
 
-        let store = Self {
+        Self {
+            cache,
             default_rx,
-            ports: Arc::new(rxs),
-        };
-        (store, default_tx)
-    }
-
-    fn mk_default(default: DefaultPolicy) -> Option<(Tx, Rx)> {
-        match default {
-            DefaultPolicy::Deny => None,
-            DefaultPolicy::Allow(sp) => Some(watch::channel(sp)),
+            discover: Some(watch),
         }
     }
 }
 
-impl CheckPolicy for Fixed {
-    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
-        let port = dst.port();
-        let server = self
-            .ports
-            .get(&port)
-            .cloned()
-            .or_else(|| self.default_rx.clone())
-            .ok_or(DeniedUnknownPort(port))?;
-        let server = Cached::uncached(server);
-        Ok(AllowPolicy { dst, server })
+impl<S> GetPolicy for Store<S>
+where
+    S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+    S: Clone + Send + Sync + 'static,
+    S::Future: Send,
+    S::ResponseBody:
+        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
+{
+    fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy {
+        // Lookup the polcify for the target port in the cache. If it doesn't
+        // already exist, we spawn a watch on the API (if it is configured). If
+        // no discovery API is configured we use the default policy.
+        let server =
+            self.cache
+                .get_or_insert_with(dst.port(), |port| match self.discover.clone() {
+                    Some(disco) => info_span!("watch", %port).in_scope(|| {
+                        disco.spawn_with_init(*port, self.default_rx.borrow().clone())
+                    }),
+                    None => self.default_rx.clone(),
+                });
+
+        AllowPolicy { dst, server }
     }
 }
 

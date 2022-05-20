@@ -3,8 +3,7 @@ mod tcp;
 
 pub(crate) use self::{http::HttpErrorMetrics, tcp::TcpErrorMetrics};
 use crate::{
-    policy::{DeniedUnauthorized, DeniedUnknownPort},
-    GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop,
+    policy::DeniedUnauthorized, GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop,
 };
 use linkerd_app_core::{errors::FailFastError, metrics::FmtLabels, tls};
 use std::fmt;
@@ -12,7 +11,6 @@ use std::fmt;
 /// Inbound proxy error types.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum ErrorKind {
-    DeniedUnknown,
     FailFast,
     GatewayDomainInvalid,
     GatewayIdentityRequired,
@@ -29,8 +27,6 @@ impl ErrorKind {
         if err.is::<DeniedUnauthorized>() {
             // Unauthorized metrics are tracked separately.and are not considered to be errors.
             None
-        } else if err.is::<DeniedUnknownPort>() {
-            Some(ErrorKind::DeniedUnknown)
         } else if err.is::<FailFastError>() {
             Some(ErrorKind::FailFast)
         } else if err.is::<std::io::Error>() {
@@ -57,7 +53,6 @@ impl FmtLabels for ErrorKind {
             f,
             "error=\"{}\"",
             match self {
-                ErrorKind::DeniedUnknown => "unknown port denied",
                 ErrorKind::FailFast => "failfast",
                 ErrorKind::TlsDetectTimeout => "tls detection timeout",
                 ErrorKind::GatewayIdentityRequired => "gateway identity required",

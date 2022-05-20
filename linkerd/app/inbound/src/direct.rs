@@ -80,7 +80,7 @@ impl<N> Inbound<N> {
     ///    gateways may need to accept HTTP requests from older proxy versions
     pub(crate) fn push_direct<T, I, NSvc, G, GSvc, H, HSvc>(
         self,
-        policies: impl policy::CheckPolicy + Clone + Send + Sync + 'static,
+        policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
         gateway: G,
         http: H,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
@@ -142,7 +142,7 @@ impl<N> Inbound<N> {
                                     // target's policy to determine whether the client can access
                                     // it.
                                     let addr = (client.local_addr.ip(), port).into();
-                                    let policy = policies.check_policy(OrigDstAddr(addr))?;
+                                    let policy = policies.get_policy(OrigDstAddr(addr));
                                     let local = match protocol {
                                         None => {
                                             let tls = tls::ConditionalServerTls::Some(
@@ -182,7 +182,8 @@ impl<N> Inbound<N> {
                                     // connection is a gateway connection. We check the _gateway
                                     // address's_ policy to determine whether the client is
                                     // authorized to use this gateway.
-                                    let policy = policies.check_policy(client.local_addr)?;
+                                    let policy = policies.get_policy(client.local_addr);
+                                    policy.check_port_allowed()?;
                                     Ok(svc::Either::B(GatewayTransportHeader {
                                         target: NameAddr::from((name, port)),
                                         protocol,

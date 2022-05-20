@@ -1,5 +1,5 @@
 use crate::{
-    policy::{AllowPolicy, CheckPolicy},
+    policy::{AllowPolicy, GetPolicy},
     Inbound,
 };
 use linkerd_app_core::{
@@ -26,7 +26,7 @@ impl<N> Inbound<N> {
     pub(crate) fn push_accept<T, I, NSvc, D, DSvc>(
         self,
         proxy_port: u16,
-        policies: impl CheckPolicy + Clone + Send + Sync + 'static,
+        policies: impl GetPolicy + Clone + Send + Sync + 'static,
         direct: D,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
@@ -51,16 +51,18 @@ impl<N> Inbound<N> {
                     // proxy's inbound port. Otherwise, check that connections are allowed on the
                     // port and obtain the port's policy before processing the connection.
                     move |t: T| -> Result<_, Error> {
-                        let OrigDstAddr(addr) = t.param();
+                        let addr: OrigDstAddr = t.param();
                         if addr.port() == proxy_port {
                             return Ok(svc::Either::B(t));
                         }
-                        let orig_dst_addr = t.param();
-                        let policy = policies.check_policy(orig_dst_addr)?;
+
+                        let policy = policies.get_policy(addr);
+                        policy.check_port_allowed()?;
+
                         tracing::debug!(?policy, "Accepted");
                         Ok(svc::Either::A(Accept {
                             client_addr: t.param(),
-                            orig_dst_addr,
+                            orig_dst_addr: addr,
                             policy,
                         }))
                     },
@@ -110,7 +112,7 @@ impl svc::Param<AllowPolicy> for Accept {
 mod tests {
     use super::*;
     use crate::{
-        policy::{store, DefaultPolicy},
+        policy::{DefaultPolicy, Store},
         test_util,
     };
     use futures::future;
@@ -123,7 +125,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn default_allow() {
         let (io, _) = io::duplex(1);
-        let (policies, _tx) = store::Fixed::new(
+        let policies = Store::for_test(
             ServerPolicy {
                 protocol: linkerd_server_policy::Protocol::Opaque,
                 authorizations: vec![Authorization {
@@ -149,7 +151,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn default_deny() {
-        let (policies, _tx) = store::Fixed::new(DefaultPolicy::Deny, None);
+        let policies = Store::for_test(DefaultPolicy::Deny, None);
         let (io, _) = io::duplex(1);
         inbound()
             .with_stack(new_ok())
@@ -163,7 +165,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn direct() {
-        let (policies, _tx) = store::Fixed::new(DefaultPolicy::Deny, None);
+        let policies = Store::for_test(DefaultPolicy::Deny, None);
         let (io, _) = io::duplex(1);
         inbound()
             .with_stack(new_panic("detect stack must not be built"))

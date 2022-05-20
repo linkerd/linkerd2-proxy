@@ -73,7 +73,7 @@ impl Config {
     pub fn build<B, R>(
         self,
         bind: B,
-        policy: impl inbound::policy::CheckPolicy,
+        policy: impl inbound::policy::GetPolicy,
         identity: identity::Server,
         report: R,
         metrics: inbound::Metrics,
@@ -89,7 +89,7 @@ impl Config {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
         // Get the policy for the admin server.
-        let policy = policy.check_policy(OrigDstAddr(listen_addr.into()))?;
+        let policy = policy.get_policy(OrigDstAddr(listen_addr.into()));
 
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
