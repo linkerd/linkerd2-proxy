@@ -1,13 +1,13 @@
 use super::{api, AllowPolicy, CheckPolicy, DefaultPolicy, DeniedUnknownPort};
 use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error, Result};
+use linkerd_cache::{Cache, Cached};
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
-use parking_lot::Mutex;
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     hash::{BuildHasherDefault, Hasher},
     sync::Arc,
 };
-use tokio::sync::watch;
+use tokio::{sync::watch, time::Duration};
 use tracing::info_span;
 
 #[derive(Clone)]
@@ -19,7 +19,7 @@ pub enum Store<S> {
 #[derive(Clone)]
 pub struct Dynamic<S> {
     default: DefaultPolicy,
-    ports: Arc<Mutex<PortMap<Rx>>>,
+    ports: Cache<u16, Rx, BuildHasherDefault<PortHasher>>,
     watch: api::Watch<S>,
 }
 
@@ -68,6 +68,7 @@ impl<S> Store<S> {
         default: DefaultPolicy,
         ports: HashSet<u16>,
         watch: api::Watch<S>,
+        idle_timeout: Duration,
     ) -> Self
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
@@ -76,21 +77,23 @@ impl<S> Store<S> {
         S::ResponseBody:
             http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
     {
-        let rxs = ports
-            .into_iter()
-            .map(|port| {
-                let watch = watch.clone();
-                let default = default.clone();
-                let rx = info_span!("watch", %port)
-                    .in_scope(|| watch.spawn_with_init(port, default.into()));
-                (port, rx)
-            })
-            .collect::<PortMap<_>>();
+        let rxs = ports.into_iter().map(|port| {
+            let watch = watch.clone();
+            let default = default.clone();
+            let rx =
+                info_span!("watch", %port).in_scope(|| watch.spawn_with_init(port, default.into()));
+            (port, rx)
+        });
+        // The initial set of default ports should never expire from the cache.
+        // dynamically discovered port policies will expire after `idle_timeout`
+        // to prevent an unbounded set of policy watches for ports that are
+        // connected to once or infrequently.
+        let ports = Cache::with_permanent_from_iter(idle_timeout, rxs);
 
         Self::Dynamic(Dynamic {
             default,
             watch,
-            ports: Arc::new(Mutex::new(rxs)),
+            ports,
         })
     }
 }
@@ -130,19 +133,11 @@ where
     /// unknown watches.
     fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
         let port = dst.port();
-        let mut ports = self.ports.lock();
-        let server = match ports.entry(port) {
-            Entry::Occupied(ent) => ent.get().clone(),
-            Entry::Vacant(ent) => {
-                let default = self.default.clone();
-                let watch = self.watch.clone();
-                let rx = info_span!("watch", %port)
-                    .in_scope(|| watch.spawn_with_init(port, default.into()));
-                // TODO(ver): We should evict dynamically watched ports after an
-                // idle timeout.
-                ent.insert(rx).clone()
-            }
-        };
+        let server = self.ports.get_or_insert_with(port, |port| {
+            let default = self.default.clone();
+            let watch = self.watch.clone();
+            info_span!("watch", %port).in_scope(|| watch.spawn_with_init(*port, default.into()))
+        });
         Ok(AllowPolicy { dst, server })
     }
 }
@@ -195,6 +190,7 @@ impl CheckPolicy for Fixed {
             .cloned()
             .or_else(|| self.default_rx.clone())
             .ok_or(DeniedUnknownPort(port))?;
+        let server = Cached::uncached(server);
         Ok(AllowPolicy { dst, server })
     }
 }

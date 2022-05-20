@@ -587,6 +587,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         ports,
                         workload,
                         control,
+                        cache_max_idle_age,
                     }
                 }
 
