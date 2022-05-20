@@ -310,6 +310,25 @@ impl<V> CacheEntry<V> {
 
 // === impl Cached ===
 
+#[cfg(feature = "test-util")]
+impl<V> Cached<V> {
+    /// Returns a new `Cached` handle wrapping the provided value, but *not*
+    /// associated with a cache.
+    ///
+    /// This is intended for use in cases where most values returned by a
+    /// function are stored in a cache, but some may instead be fixed, uncached
+    /// values.
+    ///
+    /// The uncached `Cached` instance will never be evicted, since it didn't
+    /// come from a cache.
+    pub fn uncached(inner: V) -> Self {
+        Self {
+            inner,
+            handle: None,
+        }
+    }
+}
+
 impl<Req, S> tower::Service<Req> for Cached<S>
 where
     S: tower::Service<Req> + Send + Sync + 'static,

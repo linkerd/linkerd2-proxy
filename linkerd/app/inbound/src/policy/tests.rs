@@ -1,9 +1,13 @@
 use super::*;
+use linkerd_app_core::{proxy::http, Error};
 use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use std::collections::HashSet;
 
-#[test]
-fn unauthenticated_allowed() {
+#[derive(Clone)]
+pub(crate) struct MockSvc;
+
+#[tokio::test(flavor = "current_thread")]
+async fn unauthenticated_allowed() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
@@ -16,10 +20,8 @@ fn unauthenticated_allowed() {
         name: "test".into(),
     };
 
-    let (policies, _tx) = Store::fixed(policy.clone(), None);
-    let allowed = policies
-        .check_policy(orig_dst_addr())
-        .expect("port must be known");
+    let policies = Store::for_test(policy.clone(), None);
+    let allowed = policies.get_policy(orig_dst_addr());
     assert_eq!(*allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello);
@@ -43,8 +45,8 @@ fn unauthenticated_allowed() {
     );
 }
 
-#[test]
-fn authenticated_identity() {
+#[tokio::test(flavor = "current_thread")]
+async fn authenticated_identity() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
@@ -60,10 +62,8 @@ fn authenticated_identity() {
         name: "test".into(),
     };
 
-    let (policies, _tx) = Store::fixed(policy.clone(), None);
-    let allowed = policies
-        .check_policy(orig_dst_addr())
-        .expect("port must be known");
+    let policies = Store::for_test(policy.clone(), None);
+    let allowed = policies.get_policy(orig_dst_addr());
     assert_eq!(*allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
@@ -102,8 +102,8 @@ fn authenticated_identity() {
         .expect_err("policy must require a client identity");
 }
 
-#[test]
-fn authenticated_suffix() {
+#[tokio::test(flavor = "current_thread")]
+async fn authenticated_suffix() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
@@ -119,10 +119,8 @@ fn authenticated_suffix() {
         name: "test".into(),
     };
 
-    let (policies, _tx) = Store::fixed(policy.clone(), None);
-    let allowed = policies
-        .check_policy(orig_dst_addr())
-        .expect("port must be known");
+    let policies = Store::for_test(policy.clone(), None);
+    let allowed = policies.get_policy(orig_dst_addr());
     assert_eq!(*allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
@@ -160,8 +158,8 @@ fn authenticated_suffix() {
         .expect_err("policy must require a client identity");
 }
 
-#[test]
-fn tls_unauthenticated() {
+#[tokio::test(flavor = "current_thread")]
+async fn tls_unauthenticated() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
@@ -174,10 +172,8 @@ fn tls_unauthenticated() {
         name: "test".into(),
     };
 
-    let (policies, _tx) = Store::fixed(policy.clone(), None);
-    let allowed = policies
-        .check_policy(orig_dst_addr())
-        .expect("port must be known");
+    let policies = Store::for_test(policy.clone(), None);
+    let allowed = policies.get_policy(orig_dst_addr());
     assert_eq!(*allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
@@ -224,4 +220,30 @@ fn client_addr() -> Remote<ClientAddr> {
 
 fn orig_dst_addr() -> OrigDstAddr {
     OrigDstAddr(([192, 0, 2, 2], 1000).into())
+}
+
+impl tonic::client::GrpcService<tonic::body::BoxBody> for MockSvc {
+    type ResponseBody = linkerd_app_core::control::RspBody;
+    type Error = Error;
+    type Future = futures::future::Pending<Result<http::Response<Self::ResponseBody>, Self::Error>>;
+
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Error>> {
+        unreachable!()
+    }
+
+    fn call(&mut self, _req: http::Request<tonic::body::BoxBody>) -> Self::Future {
+        unreachable!()
+    }
+}
+
+impl Store<MockSvc> {
+    pub(crate) fn for_test(
+        default: impl Into<DefaultPolicy>,
+        ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
+    ) -> Self {
+        Self::spawn_fixed(default.into(), std::time::Duration::MAX, ports)
+    }
 }

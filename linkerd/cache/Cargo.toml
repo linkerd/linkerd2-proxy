@@ -6,6 +6,9 @@ license = "Apache-2.0"
 edition = "2021"
 publish = false
 
+[features]
+test-util = []
+
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../error" }

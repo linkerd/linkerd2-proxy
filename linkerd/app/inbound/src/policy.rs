@@ -1,7 +1,7 @@
+mod api;
 mod authorize;
 mod config;
 pub mod defaults;
-mod discover;
 mod store;
 #[cfg(test)]
 mod tests;
@@ -16,23 +16,21 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
     Result,
 };
+use linkerd_cache::Cached;
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use thiserror::Error;
 use tokio::sync::watch;
 
 #[derive(Clone, Debug, Error)]
-#[error("unauthorized connection on unknown port {0}")]
-pub struct DeniedUnknownPort(pub u16);
-
-#[derive(Clone, Debug, Error)]
-#[error("unauthorized connection on server {server}")]
+#[error("unauthorized connection on {kind}/{name}")]
 pub struct DeniedUnauthorized {
-    server: std::sync::Arc<str>,
+    kind: std::sync::Arc<str>,
+    name: std::sync::Arc<str>,
 }
 
-pub trait CheckPolicy {
-    /// Checks that the destination address is configured to allow traffic.
-    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort>;
+pub trait GetPolicy {
+    // Returns the traffic policy configured for the destination address.
+    fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -44,7 +42,7 @@ pub enum DefaultPolicy {
 #[derive(Clone, Debug)]
 pub struct AllowPolicy {
     dst: OrigDstAddr,
-    server: watch::Receiver<ServerPolicy>,
+    server: Cached<watch::Receiver<ServerPolicy>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -86,6 +84,7 @@ impl AllowPolicy {
         server: ServerPolicy,
     ) -> (Self, watch::Sender<ServerPolicy>) {
         let (tx, server) = watch::channel(server);
+        let server = Cached::uncached(server);
         let p = Self { dst, server };
         (p, tx)
     }
@@ -116,8 +115,23 @@ impl AllowPolicy {
         }
     }
 
-    /// Checks whether the destination port's `AllowPolicy` is authorized to accept connections
-    /// given the provided TLS state.
+    /// Checks whether the server has any authorizations at all. If it does not,
+    /// a denial error is returned.
+    pub(crate) fn check_port_allowed(&self) -> Result<(), DeniedUnauthorized> {
+        let server = self.server.borrow();
+
+        if server.authorizations.is_empty() {
+            return Err(DeniedUnauthorized {
+                kind: server.kind.clone(),
+                name: server.name.clone(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Checks whether the destination port's `AllowPolicy` is authorized to
+    /// accept connections given the provided TLS state.
     pub(crate) fn check_authorized(
         &self,
         client_addr: Remote<ClientAddr>,
@@ -161,7 +175,8 @@ impl AllowPolicy {
         }
 
         Err(DeniedUnauthorized {
-            server: server.name.clone(),
+            kind: server.kind.clone(),
+            name: server.name.clone(),
         })
     }
 }

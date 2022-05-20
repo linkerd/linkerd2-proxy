@@ -14,6 +14,7 @@ bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
+linkerd-cache = { path = "../../cache" }
 linkerd-http-access-log = { path = "../../http-access-log" }
 linkerd-server-policy = { path = "../../server-policy" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
@@ -34,6 +35,7 @@ libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 [dev-dependencies]
 hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
+linkerd-cache = { path = "../../cache", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
