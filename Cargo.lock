@@ -762,6 +762,8 @@ dependencies = [
  "hyper",
  "linkerd-app-core",
  "linkerd-app-inbound",
+ "linkerd-tracing",
+ "serde_json",
  "thiserror",
  "tokio",
  "tower",
@@ -890,6 +892,7 @@ dependencies = [
  "http-body",
  "hyper",
  "linkerd-app",
+ "linkerd-app-admin",
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-meshtls",
@@ -899,6 +902,7 @@ dependencies = [
  "parking_lot",
  "regex",
  "rustls-pemfile",
+ "serde_json",
  "socket2",
  "tokio",
  "tokio-rustls",
@@ -1617,6 +1621,8 @@ name = "linkerd-tracing"
 version = "0.1.0"
 dependencies = [
  "linkerd-error",
+ "slab",
+ "thingbuf",
  "tokio",
  "tracing",
  "tracing-log",
@@ -1814,9 +1820,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.10.0"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87f3e037eac156d1775da914196f0f37741a274155e34a0b7e427c35d2a2ecb9"
+checksum = "7b10983b38c53aebdf33f542c6275b0f58a238129d00c4ae0e6fb59738d783ca"
 
 [[package]]
 name = "opencensus-proto"
@@ -2286,6 +2292,16 @@ dependencies = [
  "redox_syscall",
  "remove_dir_all",
  "winapi",
+]
+
+[[package]]
+name = "thingbuf"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bee2d290fe0db0225026350bc1f0bd02b2daad43b09b56780e29e549effcd54a"
+dependencies = [
+ "parking_lot",
+ "pin-project",
 ]
 
 [[package]]

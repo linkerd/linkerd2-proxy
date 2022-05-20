@@ -12,6 +12,7 @@ default = ["multicore", "meshtls-rustls"]
 multicore = ["tokio/rt-multi-thread", "num_cpus"]
 meshtls-boring = ["linkerd-meshtls/boring"]
 meshtls-rustls = ["linkerd-meshtls/rustls"]
+log-streaming = ["linkerd-app/log-streaming"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
