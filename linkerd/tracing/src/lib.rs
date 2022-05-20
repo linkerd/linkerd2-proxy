@@ -32,8 +32,8 @@ const DEFAULT_LOG_FORMAT: &str = "PLAIN";
 #[derive(Debug, Default)]
 #[must_use]
 pub struct Settings {
-    filter: Option<String>,
-    format: Option<String>,
+    filter: String,
+    format: String,
     start_time: Option<Instant>,
     access_log: Option<access_log::Format>,
     is_test: bool,
@@ -64,8 +64,12 @@ pub fn init_log_compat() -> Result<(), Error> {
 impl Settings {
     pub fn from_env(start_time: Instant) -> Self {
         Self {
-            filter: std::env::var(ENV_LOG_LEVEL).ok(),
-            format: std::env::var(ENV_LOG_FORMAT).ok(),
+            filter: std::env::var(ENV_LOG_LEVEL)
+                .ok()
+                .unwrap_or_else(|| DEFAULT_LOG_LEVEL.to_string()),
+            format: std::env::var(ENV_LOG_FORMAT)
+                .ok()
+                .unwrap_or_else(|| DEFAULT_LOG_FORMAT.to_string()),
             access_log: Self::access_log_format(),
             start_time: Some(start_time),
             is_test: false,
@@ -74,19 +78,12 @@ impl Settings {
 
     fn for_test(filter: String, format: String) -> Self {
         Self {
-            filter: Some(filter),
-            format: Some(format),
+            filter,
+            format,
             start_time: None,
             access_log: Self::access_log_format(),
             is_test: true,
         }
-    }
-
-    fn format(&self) -> String {
-        self.format
-            .as_deref()
-            .unwrap_or(DEFAULT_LOG_FORMAT)
-            .to_uppercase()
     }
 
     fn access_log_format() -> Option<access_log::Format> {
@@ -155,28 +152,23 @@ impl Settings {
     /// Initialize tracing and logging with the value of the `ENV_LOG`
     /// environment variable as the verbosity-level filter.
     pub fn init(self) -> Result<Handle, Error> {
-        let (dispatch, handle) = match self.filter.as_deref() {
-            Some(filter) if filter.trim().eq_ignore_ascii_case("off") => {
+        if self.filter.trim().eq_ignore_ascii_case("off") {
+            return Ok(Handle {
+                level: None,
+
                 // logging is disabled, but log streaming might still be enabled later
                 #[cfg(feature = "stream")]
-                let stream = {
+                stream: {
                     let (handle, layer) = stream::StreamHandle::new();
                     tracing::dispatcher::set_global_default(
                         tracing_subscriber::registry().with(None).with(layer).into(),
                     )?;
                     handle
-                };
+                },
+            });
+        }
 
-                return Ok(Handle {
-                    level: None,
-
-                    #[cfg(feature = "stream")]
-                    stream,
-                });
-            }
-            _ => self.build(),
-        };
-
+        let (dispatch, handle) = self.build();
         // Set the default subscriber.
         tracing::dispatcher::set_global_default(dispatch)?;
 
@@ -186,47 +178,60 @@ impl Settings {
         Ok(handle)
     }
 
+    /// Builds a tracing subscriber dispatcher and a handle that can control
+    /// logging behavior at runtime (e.g., from an admin server).
+    ///
+    /// The log dispatcher handles:
+    ///
+    /// - process diagnostic logging to stdout;
+    /// - optional access logging to stderr;
+    /// - if the `stream` feature is enabled, on-demand log streaming via the
+    ///   returned `Handle`
     pub fn build(self) -> (Dispatch, Handle) {
-        let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
+        let registry = tracing_subscriber::registry();
 
-        let filter = level::filter_builder()
-            // When parsing the initial filter configuration from the
-            // environment variable, use `parse_lossy` to skip any invalid
-            // filter directives and print an error.
-            .parse_lossy(log_level);
+        // Build the default stdout logger.
+        let (registry, level) = {
+            // Make a formatted logging layer configured to write to stdout.
+            let stdout = if self.format.trim().eq_ignore_ascii_case("json") {
+                self.mk_json()
+            } else {
+                self.mk_plain()
+            };
 
-        // If access logging is enabled, build the access log layer.
-        let access_log = self.access_log.map(access_log::build);
+            // Parse the initial filter. If the filter includes invalid
+            // directives, an error is printed sto stderr.
+            let filter = level::filter_builder().parse_lossy(self.filter);
 
-        let logger = match self.format().as_ref() {
-            "JSON" => self.mk_json(),
-            _ => self.mk_plain(),
+            // Make the level dynamic and register the layer.
+            let (layer, level) = reload::Layer::new(stdout.with_filter(filter));
+            (registry.with(Some(layer)), level)
         };
-        let logger = logger.with_filter(filter);
-        let (logger, level) = reload::Layer::new(logger);
-        let level = level::Handle::new(level);
 
+        // Log streaming (via the admin API) is currently feature-gated. When it
+        // is enabled, the admin handle can use the stream handle to register
+        // new subscribers dynamically.
         #[cfg(feature = "stream")]
-        let (stream, stream_layer) = stream::StreamHandle::new();
+        let (registry, stream) = {
+            let (handle, layer) = stream::StreamHandle::new();
+            (registry.with(layer), handle)
+        };
 
+        // Access logging is optionally enabled process-wide.
+        let registry = registry.with(self.access_log.map(access_log::build));
+
+        // The handle controls the logging system at runtime.
         let handle = Handle {
-            level: Some(level),
+            level: Some(level::Handle::new(level)),
             #[cfg(feature = "stream")]
             stream,
         };
 
-        let registry = tracing_subscriber::registry().with(Some(logger));
-        #[cfg(feature = "stream")]
-        let registry = registry.with(stream_layer);
-
-        let dispatch = registry.with(access_log).into();
-
-        (dispatch, handle)
+        (registry.into(), handle)
     }
 }
 
-// TODO(eliza): when `tracing-subscriber` fixes the `reload::Handle` type
-// parameter mess, this is going to get a lot awful...
+// TODO(eliza): Simplify `tracing-subscriber::reload::Handle` type parameters.
 #[cfg(feature = "stream")]
 type LogStack = Layered<Option<reload::Layer<level::Inner, Registry>>, Registry>;
 
