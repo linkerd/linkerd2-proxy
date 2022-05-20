@@ -193,7 +193,7 @@ impl Settings {
         // Build the default stdout logger.
         let (registry, level) = {
             // Make a formatted logging layer configured to write to stdout.
-            let stdout = if self.format.eq_ignore_ascii_case("json") {
+            let stdout = if self.format.trim().eq_ignore_ascii_case("json") {
                 self.mk_json()
             } else {
                 self.mk_plain()
