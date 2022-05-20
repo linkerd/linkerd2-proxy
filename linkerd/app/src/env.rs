@@ -665,6 +665,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
                     inbound::policy::Config::Fixed {
                         default,
+                        cache_max_idle_age,
                         ports: require_identity_ports
                             .into_iter()
                             .chain(require_tls_ports)

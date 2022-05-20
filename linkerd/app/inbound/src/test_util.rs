@@ -51,6 +51,7 @@ pub fn default_config() -> Config {
             detect_protocol_timeout: Duration::from_secs(10),
         },
         policy: policy::Config::Fixed {
+            cache_max_idle_age: Duration::from_secs(20),
             default: ServerPolicy {
                 protocol: Protocol::Detect {
                     timeout: std::time::Duration::from_secs(10),

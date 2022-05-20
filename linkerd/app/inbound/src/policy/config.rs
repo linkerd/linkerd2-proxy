@@ -14,11 +14,12 @@ pub enum Config {
         control: control::Config,
         workload: String,
         default: DefaultPolicy,
-        ports: HashSet<u16>,
         cache_max_idle_age: Duration,
+        ports: HashSet<u16>,
     },
     Fixed {
         default: DefaultPolicy,
+        cache_max_idle_age: Duration,
         ports: HashMap<u16, ServerPolicy>,
     },
 }
@@ -33,7 +34,11 @@ impl Config {
         identity: identity::NewClient,
     ) -> impl GetPolicy + Clone + Send + Sync + 'static {
         match self {
-            Self::Fixed { default, ports } => Store::spawn_fixed(default, ports),
+            Self::Fixed {
+                default,
+                ports,
+                cache_max_idle_age,
+            } => Store::spawn_fixed(default, cache_max_idle_age, ports),
 
             Self::Discover {
                 control,
@@ -47,7 +52,7 @@ impl Config {
                     let c = control.build(dns, metrics, identity).new_service(());
                     Api::new(workload, c).into_watch(backoff)
                 };
-                Store::spawn_discover(default, ports, watch, cache_max_idle_age)
+                Store::spawn_discover(default, cache_max_idle_age, watch, ports)
             }
         }
     }

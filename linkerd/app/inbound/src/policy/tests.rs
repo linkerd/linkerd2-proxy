@@ -244,6 +244,6 @@ impl Store<MockSvc> {
         default: impl Into<DefaultPolicy>,
         ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
     ) -> Self {
-        Self::spawn_fixed(default.into(), ports)
+        Self::spawn_fixed(default.into(), std::time::Duration::MAX, ports)
     }
 }

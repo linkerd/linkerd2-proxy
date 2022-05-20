@@ -29,7 +29,7 @@ pub struct DeniedUnauthorized {
 }
 
 pub trait GetPolicy {
-    /// Checks that the destination address is configured to allow traffic.
+    // Returns the traffic policy configured for the destination address.
     fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy;
 }
 
