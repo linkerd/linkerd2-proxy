@@ -50,7 +50,25 @@ pub struct Reader<S: Subscriber + for<'a> LookupSpan<'a>> {
 
 pub struct StreamHandle<S> {
     handle: reload::Handle<StreamLayer<S>, S>,
+
+    /// The total capacity of the channel.
+    ///
+    /// This determines how many events can be buffered before new events are
+    /// dropped.
     channel_capacity: usize,
+
+    /// Configuration for the [reuse of individual buffers][recycle].
+    ///
+    /// This determines the initial size of new buffers in the log channel, and
+    /// the maximum size of "idle" (unused) buffers. To minimize reallocations,
+    /// buffers are typically cleared in place when reused, retaining any
+    /// allocated capacity from previous log events. However, to avoid unbounded
+    /// memory use, we place an upper bound on "idle" capacity. If a buffer
+    /// grows past that upper bound while a log event is being formatted to it,
+    /// it will be shrank back to the upper bound capacity when returned to the
+    /// channel.
+    ///
+    /// [recycle]: https://docs.rs/thingbuf/latest/thingbuf/recycling/struct.WithCapacity.html
     channel_settings: WithCapacity,
 }
 
