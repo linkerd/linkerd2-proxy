@@ -9,14 +9,19 @@ description = """
 The linkerd proxy's admin server.
 """
 
+[features]
+log-streaming = ["linkerd-tracing/stream"]
+
 [dependencies]
 http = "0.2"
 hyper = { version = "0.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-app-inbound = { path = "../inbound" }
+linkerd-tracing = { path = "../../tracing" }
+serde_json = "1"
 thiserror = "1"
-tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}
+tokio = { version = "1", features = ["macros", "sync", "parking_lot"] }
 tracing = "0.1"
 
 [dependencies.tower]
@@ -29,4 +34,3 @@ features = [
     "timeout",
     "util",
 ]
-

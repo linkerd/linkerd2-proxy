@@ -2,7 +2,7 @@ use std::fmt;
 use tracing::{field, span, Id, Level, Metadata, Subscriber};
 use tracing_subscriber::{
     field::RecordFields,
-    filter::{Directive, FilterFn, Filtered},
+    filter::{FilterFn, Filtered},
     fmt::{format, FormatFields, FormattedFields},
     layer::{Context, Layer},
     registry::LookupSpan,
@@ -34,7 +34,7 @@ struct ApacheCommonVisitor<'writer> {
     writer: format::Writer<'writer>,
 }
 
-pub(super) fn build<S>(format: Format) -> (AccessLogLayer<S>, Directive)
+pub(super) fn build<S>(format: Format) -> AccessLogLayer<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
 {
@@ -43,21 +43,13 @@ where
         Format::Json => Box::new(Writer::<format::JsonFields>::default()),
     };
 
-    let writer = writer.with_filter(
+    writer.with_filter(
         FilterFn::new(
             (|meta| meta.level() == &Level::INFO && meta.target().starts_with(TRACE_TARGET))
                 as fn(&Metadata<'_>) -> bool,
         )
         .with_max_level_hint(Level::INFO),
-    );
-
-    // Also, ensure that the `tracing` filter configuration will
-    // always enable the access log spans.
-    let directive = format!("{}=info", TRACE_TARGET)
-        .parse()
-        .expect("access logging filter directive must parse");
-
-    (writer, directive)
+    )
 }
 
 // === impl Writer ===

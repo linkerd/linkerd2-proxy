@@ -9,9 +9,12 @@ publish = false
 [features]
 default = []
 ansi = ["tracing-subscriber/ansi"]
+stream = ["thingbuf", "slab"]
 
 [dependencies]
 linkerd-error = { path = "../error" }
+slab = { version = "0.4", optional = true }
+thingbuf = { version = "0.1.2", features = ["std"], optional = true }
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 tracing-log = "0.1"

@@ -10,7 +10,7 @@
 //!   tracing configuration).
 //! * `POST /shutdown` -- shuts down the proxy.
 
-use futures::future;
+use futures::future::{self, TryFutureExt};
 use http::StatusCode;
 use hyper::{
     body::{Body, HttpBody},
@@ -28,7 +28,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 
-mod level;
+mod log;
 mod readiness;
 
 pub use self::readiness::{Latch, Readiness};
@@ -162,25 +162,37 @@ where
                 });
                 Box::pin(future::ok(rsp))
             }
+
             "/proxy-log-level" => {
-                if Self::client_is_localhost(&req) {
-                    let level = self.tracing.level().cloned();
-                    Box::pin(async move {
-                        let rsp = match level {
-                            Some(level) => {
-                                level::serve(&level, req).await.unwrap_or_else(|error| {
-                                    tracing::error!(error, "Failed to get/set tracing level");
-                                    Self::internal_error_rsp(error)
-                                })
-                            }
-                            None => Self::not_found(),
-                        };
-                        Ok(rsp)
-                    })
-                } else {
-                    Box::pin(future::ok(Self::forbidden_not_localhost()))
+                if !Self::client_is_localhost(&req) {
+                    return Box::pin(future::ok(Self::forbidden_not_localhost()));
                 }
+
+                let level = match self.tracing.level() {
+                    Some(level) => level.clone(),
+                    None => return Box::pin(future::ok(Self::not_found())),
+                };
+
+                Box::pin(log::level::serve(level, req).or_else(|error| {
+                    tracing::error!(error, "Failed to get/set tracing level");
+                    future::ok(Self::internal_error_rsp(error))
+                }))
             }
+
+            #[cfg(feature = "log-streaming")]
+            "/logs.json" => {
+                if !Self::client_is_localhost(&req) {
+                    return Box::pin(future::ok(Self::forbidden_not_localhost()));
+                }
+
+                Box::pin(
+                    log::stream::serve(self.tracing.clone(), req).or_else(|error| {
+                        tracing::error!(error, "Failed to stream logs");
+                        future::ok(Self::internal_error_rsp(error))
+                    }),
+                )
+            }
+
             "/shutdown" => {
                 if req.method() == http::Method::POST {
                     if Self::client_is_localhost(&req) {
@@ -192,6 +204,7 @@ where
                     Box::pin(future::ok(Self::method_not_allowed()))
                 }
             }
+
             _ => Box::pin(future::ok(Self::not_found())),
         }
     }
