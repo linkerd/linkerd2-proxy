@@ -1,15 +1,13 @@
 use linkerd_error::Error;
 use tracing::trace;
 use tracing_subscriber::{
-    filter::{self, EnvFilter, Filtered, LevelFilter},
+    filter::{self, EnvFilter, LevelFilter},
     reload, Layer, Registry,
 };
 
+/// Gets and sets the log level of a tracing subscriber.
 #[derive(Clone)]
-pub struct Handle(reload::Handle<Inner, Registry>);
-
-pub(crate) type Inner =
-    Filtered<Box<dyn Layer<Registry> + Send + Sync + 'static>, EnvFilter, Registry>;
+pub struct Handle(reload::Handle<FilteredLayer, Registry>);
 
 /// Returns an `EnvFilter` builder with the configuration used for parsing new
 /// filter strings.
@@ -21,8 +19,11 @@ pub(crate) fn filter_builder() -> filter::Builder {
         .with_regex(false)
 }
 
+type BoxLayer = Box<dyn Layer<Registry> + Send + Sync + 'static>;
+type FilteredLayer = filter::Filtered<BoxLayer, EnvFilter, Registry>;
+
 impl Handle {
-    pub(crate) fn new(handle: reload::Handle<Inner, Registry>) -> Self {
+    pub(crate) fn new(handle: reload::Handle<FilteredLayer, Registry>) -> Self {
         Self(handle)
     }
 

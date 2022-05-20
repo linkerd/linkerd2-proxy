@@ -45,8 +45,6 @@ pub struct Reader<S: Subscriber + for<'a> LookupSpan<'a>> {
     handle: StreamHandle<S>,
 }
 
-pub(crate) type StreamLayer<S> = Filtered<WriterLayer<S>, StreamFilter, S>;
-
 /// A handle for starting new log streams, and removing old ones.
 #[derive(Debug)]
 
@@ -70,7 +68,7 @@ pub(crate) struct WriterLayer<S> {
 /// A per-layer filter for a log streaming layer.
 ///
 /// This type is used to interact with `tracing-subscriber`'s [per-layer
-/// filtering] system.In an ideal world, we wouldn't need this type. Instead,
+/// filtering] system. In an ideal world, we wouldn't need this type. Instead,
 /// we would simply have a `Vec` of `Filtered<WriterLayer>`s. However, this
 /// isn't currently possible due to limitations in how `tracing`'s per-layer
 /// filtering works (see [#2101] and [#1629]): because of how filter IDs are
@@ -95,6 +93,8 @@ pub(crate) struct WriterLayer<S> {
 pub(crate) struct StreamFilter {
     filters: Vec<Weak<EnvFilter>>,
 }
+
+type StreamLayer<S> = Filtered<WriterLayer<S>, StreamFilter, S>;
 
 /// A writer for an individual log stream.
 ///
