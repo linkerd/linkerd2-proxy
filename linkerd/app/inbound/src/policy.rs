@@ -117,7 +117,7 @@ impl AllowPolicy {
 
     /// Checks whether the server has any authorizations at all. If it does not,
     /// a denial error is returned.
-    pub(crate) fn check_port_allowed(&self) -> Result<(), DeniedUnauthorized> {
+    pub(crate) fn check_port_allowed(self) -> Result<Self, DeniedUnauthorized> {
         let server = self.server.borrow();
 
         if server.authorizations.is_empty() {
@@ -126,8 +126,9 @@ impl AllowPolicy {
                 name: server.name.clone(),
             });
         }
+        drop(server);
 
-        Ok(())
+        Ok(self)
     }
 
     /// Checks whether the destination port's `AllowPolicy` is authorized to

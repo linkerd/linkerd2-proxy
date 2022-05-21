@@ -182,8 +182,9 @@ impl<N> Inbound<N> {
                                     // connection is a gateway connection. We check the _gateway
                                     // address's_ policy to determine whether the client is
                                     // authorized to use this gateway.
-                                    let policy = policies.get_policy(client.local_addr);
-                                    policy.check_port_allowed()?;
+                                    let policy = policies
+                                        .get_policy(client.local_addr)
+                                        .check_port_allowed()?;
                                     Ok(svc::Either::B(GatewayTransportHeader {
                                         target: NameAddr::from((name, port)),
                                         protocol,
