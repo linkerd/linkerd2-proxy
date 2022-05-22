@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - Dockerfile
+      - rust-toolchain
+      - .github/workflows/docker.yml
 
 permissions:
   contents: read
@@ -15,5 +17,6 @@ jobs:
     env:
       DOCKER_BUILDKIT: "1"
     steps:
+      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - run: docker build . --build-arg PROXY_UNOPTIMIZED=1
+      - run: just docker

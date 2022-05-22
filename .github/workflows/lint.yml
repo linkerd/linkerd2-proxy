@@ -23,11 +23,12 @@ jobs:
     container:
       image: docker://rust:1.60.0-bullseye
     steps:
+      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
       - run: rustup component add clippy
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - run: cargo fetch
-      - run: cargo clippy --all --exclude=linkerd-meshtls-boring --message-format=json | cargo-action-fmt
+      - run: just fetch
+      - run: just clippy
 
   fmt:
     timeout-minutes: 10
@@ -36,8 +37,9 @@ jobs:
       image: docker://rust:1.60.0-bullseye
     steps:
       - run: rustup component add rustfmt
+      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - run: make check-fmt
+      - run: just check-fmt
 
   docs:
     timeout-minutes: 10
@@ -45,13 +47,9 @@ jobs:
     container:
       image: docker://rust:1.60.0-bullseye
     steps:
+      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - run: cargo fetch
-      - run: |
-          cargo doc --all --no-deps \
-            --exclude=linkerd-meshtls \
-            --exclude=linkerd-meshtls-boring \
-            --exclude=linkerd-meshtls-rustls \
-            --message-format=json | cargo-action-fmt
+      - run: just doc
 

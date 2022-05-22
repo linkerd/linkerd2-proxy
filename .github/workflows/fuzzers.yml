@@ -34,6 +34,7 @@ jobs:
         id: changed-files
       - name: list changed crates
         id: list-changed
+        shell: bash
         run: |
           files="${{ steps.changed-files.outputs.all_changed_files }}"
           # Find the nearest fuzzer crate, or nothing.
@@ -41,7 +42,7 @@ jobs:
             d=$(dirname "$1")
             if [ "$d" = . ]; then
               return
-            elif [ -d "$d" ] && [[ "$d" = /fuzz$ ]]; then
+            elif [ -d "$d" ] && [[ "$d" = */fuzz ]]; then
               echo "$d"
             elif [ -f "$d/fuzz/Cargo.toml" ]; then
               echo "$d/fuzz"
