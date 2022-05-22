@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - .github/actions/package/*
-      - .github/actions/release-tag-meta/*
       - .github/workflows/release.yml
   push:
     tags:
@@ -20,92 +19,67 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
+  meta:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        shell: bash
+        run: |
+          shopt -s extglob
+          ref="${{ github.ref }}"
+          if [[ "$ref" == refs/tags/release/* ]]; then
+            ver="${ref##refs/tags/release/}"
+            if [[ "$ver" != v+([0-9]).+([0-9]).+([0-9])?(-+([a-z0-9-])) ]]; then
+              echo "Invalid version: $ver" >&2
+              exit 1
+            fi
+            echo ::set-output name=publish::true
+            echo ::set-output name=version::"$ver"
+          else
+            sha="${{ github.sha }}"
+            echo ::set-output name=version::"test-${sha:0:7}"
+          fi
+    outputs:
+      publish: ${{ steps.meta.outputs.publish }}
+      version: ${{ steps.meta.outputs.version }}
+
   package:
-    permissions:
-      contents: write
+    needs: [meta]
     strategy:
       matrix:
-        architecture: [amd64, arm64, arm]
-        include:
-          - architecture: amd64
-            target: x86_64-unknown-linux-gnu
-            strip: strip
-          - architecture: arm64
-            target: aarch64-unknown-linux-gnu
-            strip: aarch64-linux-gnu-strip
-          - architecture: arm
-            target: armv7-unknown-linux-gnueabihf
-            strip: arm-linux-gnueabihf-strip
+        arch: [amd64, arm64, arm]
     # If we're not actually building on a release tag, don't short-circuit on
     # errors. This helps us know whether a failure is platform-specific.
-    continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/release/') }}
-    name: Package (${{ matrix.architecture }})
+    continue-on-error: ${{ !needs.meta.outputs.publish }}
+    name: Package (${{ matrix.arch }})
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - name: git co
-        uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-
-      - name: meta
-        id: release-tag-meta
-        uses: ./.github/actions/release-tag-meta
-        with:
-          git-ref: ${{ github.ref }}
-      #- run: echo "${{ toJSON(steps.release-tag-meta) }}"
-
-      - name: package
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - name: Package
+        uses: ./.github/actions/package
         env:
-          CARGO_RELEASE: "1"
-          PACKAGE_VERSION: ${{ steps.release-tag-meta.outputs.name }}
-          CARGO_TARGET: ${{ matrix.target }}
-          STRIP: ${{ matrix.strip }}
-          ARCH: ${{ matrix.architecture }}
-        uses: ./.github/actions/package
-        with:
-          entrypoint: make
-          args: package
-
-      - name: checksec
-        uses: ./.github/actions/package
-        with:
-          entrypoint: /linkerd/validate-checksec.sh
-          args: /linkerd/expected-checksec.json "target/${{ matrix.target }}/release/package/linkerd2-proxy-${{ steps.release-tag-meta.outputs.name }}-${{ matrix.architecture }}-checksec.json"
-
-      - name: upload artifacts
+          ARCH: ${{ matrix.arch }}
+          PACKAGE_VERSION: ${{ needs.meta.outputs.version }}
+      - if: needs.meta.outputs.publish
         uses: actions/upload-artifact@6673cd052c4cd6fcf4b4e6e60ea986c889389535
         with:
-          name: ${{ matrix.architecture }}-artifacts
+          name: ${{ matrix.arch }}-artifacts
           path: target/${{ matrix.target }}/release/package/*
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/release/')
-    needs: [package]
+  publish:
+    needs: [meta, package]
+    if: needs.meta.outputs.publish
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: write
     steps:
-      - name: git co
-        uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-
-      - name: meta
-        id: release-tag-meta
-        uses: ./.github/actions/release-tag-meta
-        with:
-          git-ref: ${{ github.ref }}
-
-      - name: download artifacts
-        uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
+      - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
         with:
           path: artifacts
-
-      - name: display structure of downloaded files
-        run: ls -R artifacts
-
-      - name: publish
-        uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: ls -R artifacts
+      - uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
         with:
-          name: ${{ steps.release-tag-meta.outputs.name }}
+          name: ${{ needs.meta.outputs.version }}
           files: artifacts/**/*
+          generate_releae_notes: true
