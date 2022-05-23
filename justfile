@@ -6,8 +6,9 @@
 
 export RUST_BACKTRACE := "short"
 export RUSTFLAGS := env_var_or_default("RUSTFLAGS", "-D warnings -A deprecated")
+export PROTOC_NO_VENDOR := "1"
 
-export DOCKER_BUILDKIT := '1'
+export DOCKER_BUILDKIT := "1"
 
 # By default we compile in development mode mode because it's faster.
 build_type := if env_var_or_default("RELEASE", "") == "" { "debug" } else { "release" }
@@ -82,53 +83,38 @@ shellcheck:
     echo shellcheck $files
     shellcheck $files
 
-check:
-    {{ cargo }} check --workspace --all-targets --frozen \
-        --exclude=linkerd-meshtls-boring \
-        {{ _fmt }}
+check *flags:
+    {{ cargo }} check --workspace --all-targets --frozen {{ flags }} {{ _fmt }}
 
-clippy:
-    {{ cargo }} clippy --workspace --all-targets --frozen \
-        --exclude=linkerd-meshtls-boring \
-        {{ _fmt }}
+check-crate crate *flags:
+    {{ cargo }} check --package={{ crate }} --all-targets --frozen {{ flags }} {{ _fmt }}
 
-doc:
-    {{ cargo }} doc --workspace --no-deps --frozen \
-        --exclude=linkerd-meshtls-boring \
-        {{ _fmt }}
+clippy *flags:
+    {{ cargo }} clippy --workspace --all-targets --frozen {{ flags }} {{ _fmt }}
 
-# Build all tests
-build-test:
-    {{ cargo }} test --no-run --workspace --frozen \
-        --exclude=linkerd-meshtls-boring \
-        {{ if build_type == "release" { "--release" } else { "" } }} \
-        {{ _fmt }}
+clippy-crate crate *flags:
+    {{ cargo }} clippy --package={{ crate }} --all-targets --frozen {{ flags }} {{ _fmt }}
+
+doc *flags:
+    {{ cargo }} doc --no-deps --workspace --frozen {{ flags }} {{ _fmt }}
+
+doc-crate crate *flags:
+    {{ cargo }} doc --package={{ crate }} --all-targets --frozen {{ flags }} {{ _fmt }}
 
 # Run all tests
-test: build-test
+test *flags:
     {{ cargo }} test --workspace --frozen \
-        --exclude=linkerd-meshtls-boring \
-        --target={{ cargo_target }} \
-        {{ if build_type == "release" { "--release" } else { "" } }}
-    {{ cargo }} test --doc --workspace --frozen  \
-        --exclude=linkerd-meshtls-boring \
-        --exclude=opencensus-proto \
-        --target={{ cargo_target }} \
-        {{ if build_type == "release" { "--release" } else { "" } }}
+        {{ if build_type == "release" { "--release" } else { "" } }} \
+        {{ flags }}
+
+test-crate crate *flags:
+    {{ cargo }} test --package={{ crate }} --all-targets --frozen {{ flags }} {{ _fmt }}
 
 # Build the proxy
 build:
-    {{ cargo }} build --frozen \
-        --package=linkerd2-proxy \
-        --target={{ cargo_target }} \
+    {{ cargo }} build --frozen --package=linkerd2-proxy --target={{ cargo_target }} \
         {{ if build_type == "release" { "--release" } else { "" } }} \
         {{ _fmt }}
-
-check-crate crate:
-    {{ cargo }} check --package={{ crate }} --all-targets --frozen {{ _fmt }}
-
-test-crate crate:
-    {{ cargo }} test --package={{ crate }} --all-targets --frozen {{ _fmt }}
 
 # Build a package (i.e. for a release)
 package: build
@@ -150,16 +136,16 @@ package: build
 fuzzers:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ "{{ cargo }}" != "cargo" ]; then
-        echo "fuzzers must be run with nightly"
-        exit 0
+    if [ "{{ toolchain }}" != "nightly" ]; then
+        echo "fuzzers must be run with nightly" >&2
+        exit 1
     fi
 
     for dir in $(find . -type d -name fuzz); do
-        echo "cd $dir && cargo +nightly fuzz build"
+        echo "cd $dir && {{ cargo }} fuzz build"
         (
             cd $dir
-            cargo +nightly fuzz build --target={{ cargo_target }} \
+            {{ cargo }} fuzz build --target={{ cargo_target }} \
                 {{ if build_type == "release" { "--release" } else { "" } }}
         )
     done

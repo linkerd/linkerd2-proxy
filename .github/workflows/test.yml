@@ -28,31 +28,23 @@ jobs:
       image: docker://rust:1.60.0-bullseye
     steps:
       - run: apt update && apt install -y cmake clang golang # for boring
+      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - working-directory: ./linkerd/meshtls
-        run: cargo test --all-features --no-run
-      - working-directory: ./linkerd/meshtls
-        run: cargo test --all-features
-      - working-directory: ./linkerd/meshtls
-        run: |
-          cargo test --no-run \
+      - run: just fetch
+      - run: |
+          just test-crate linkerd-meshtls --all-features --no-run \
             --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
-      - working-directory: ./linkerd/meshtls
-        run: |
-          cargo test \
-            --package=linkerd-meshtls-boring \
-            --package=linkerd-meshtls-rustls
-      - working-directory: linkerd/meshtls
-        run: |
-          cargo doc --all-features --no-deps \
-            --package=linkerd-meshtls \
+      - run: |
+          just test-crate linkerd-meshtls --all-features \
             --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
       # Run clippy on the boring components while we have the dependencies installed.
       - run: rustup component add clippy
-      - working-directory: linkerd/meshtls
-        run: cargo clippy --features=boring --all-targets
+      - run: |
+          just clippy-crate linkerd-meshtls --features=boring \
+            --package=linkerd-meshtls-boring
+      - run: just clippy-crate linkerd-meshtls --all-features
 
   # Run non-integration tests. This should be quick.
   unit:
@@ -61,10 +53,12 @@ jobs:
     container:
       image: docker://rust:1.60.0-bullseye
     steps:
+      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - uses: ./.github/actions/install-protoc
+      - run: just fetch
       - run: |
-          cargo test --all --no-run \
+          just test --no-run \
             --exclude=linkerd-app \
             --exclude=linkerd-app-admin \
             --exclude=linkerd-app-core \
@@ -78,7 +72,7 @@ jobs:
             --exclude=linkerd-meshtls-rustls \
             --exclude=linkerd2-proxy
       - run: |
-          cargo test --all \
+          just test \
             --exclude=linkerd-app \
             --exclude=linkerd-app-admin \
             --exclude=linkerd-app-core \

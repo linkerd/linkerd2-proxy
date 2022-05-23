@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - uses: ./.github/actions/install-protoc
       - run: just fetch
-      - run: just clippy
+      - run: just clippy --exclude=linkerd-meshtls-boring
 
   fmt:
     timeout-minutes: 10
@@ -51,6 +51,6 @@ jobs:
       - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - run: cargo fetch
-      - run: just doc
+      - run: just fetch
+      - run: just doc --exclude=linkerd-meshtls-boring
 
