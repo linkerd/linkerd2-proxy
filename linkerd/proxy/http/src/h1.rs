@@ -4,7 +4,7 @@ use crate::{
 };
 use futures::prelude::*;
 use http::{
-    header::{CONNECTION, HOST, UPGRADE},
+    header::{CONNECTION, CONTENT_LENGTH, HOST, TRANSFER_ENCODING, UPGRADE},
     uri::{Authority, Parts, Scheme, Uri},
 };
 use linkerd_error::{Error, Result};
@@ -140,6 +140,16 @@ where
                     "Upgrade extension must be set on CONNECT requests"
                 );
                 rsp.extensions_mut().insert(HttpConnect);
+
+                // Strip headers that may not be transmitted to the server, per
+                // https://tools.ietf.org/html/rfc7231#section-4.3.6:
+                //
+                // A client MUST ignore any Content-Length or Transfer-Encoding
+                // header fields received in a successful response to CONNECT.
+                if rsp.status().is_success() {
+                    rsp.headers_mut().remove(CONTENT_LENGTH);
+                    rsp.headers_mut().remove(TRANSFER_ENCODING);
+                }
             }
 
             if is_upgrade(&rsp) {
