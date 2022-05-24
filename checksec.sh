@@ -18,7 +18,7 @@ if [ $# -ne 1 ]; then
     exit 64
 fi
 
-path="$1"
+path=$1
 if [ ! -x "$path" ]; then
     echo "Executable not found: $path" >&2
     exit 1

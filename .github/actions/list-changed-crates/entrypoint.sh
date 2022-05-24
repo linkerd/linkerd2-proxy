@@ -9,7 +9,7 @@ fi
 
 # Find the nearest Cargo.toml (except the root).
 find_manifest() {
-    p=$(dirname "$1")
+    p=${1%/*}
     if [ -f "$p/Cargo.toml" ]; then
         realpath "$p/Cargo.toml"
     else
@@ -19,7 +19,7 @@ find_manifest() {
 
 # Build an expression to match all changed manifests.
 manifest_expr() {
-    expr="false"
+    expr=false
 
     for file in "$@" ; do
         # If the workflow changes or root Cargo.toml changes, run checks for all crates in the repo.
@@ -38,9 +38,9 @@ manifest_expr() {
     echo "$expr"
 }
 
-files="$1"
+files=$1
 if [ -z "$files" ]; then
-    echo "No files specified" >&2
+    echo 'No files specified' >&2
     exit 1
 fi
 
