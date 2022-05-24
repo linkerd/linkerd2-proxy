@@ -140,16 +140,7 @@ impl TestBuilder {
 
         let metrics = client::http1(proxy.admin, "localhost");
 
-        // Poll metrics until we recognize the profile is loaded...
-        loop {
-            assert_eq!(client.get("/load-profile").await, "");
-            let m = metrics.get("/metrics").await;
-            if m.contains("rt_load_profile=\"test\"") {
-                break;
-            }
-
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        }
+        load_profile(&client, &metrics).await;
 
         Test {
             metrics,
@@ -563,5 +554,180 @@ mod http2 {
         // hang since the retried failure would have leaked the 100k window
         // capacity, preventing the successful response from being read.
         assert_eq!(test.client.get("/0.5/100KB").await, "retried")
+    }
+}
+
+#[tokio::test]
+async fn grpc_retry_with_failure_in_headers() {
+    use http::header::HeaderValue;
+    const GRPC_STATUS: &str = "grpc-status";
+    const GRPC_STATUS_OK: &str = "0";
+    const GRPC_STATUS_UNAVAILABLE: &str = "14";
+
+    let _trace = trace_init();
+    let host = "profiles.test.svc.cluster.local";
+
+    let retries = Arc::new(AtomicUsize::new(0));
+
+    let srv = server::http2()
+        // This route is just called by the test setup, to trigger the proxy
+        // to start fetching the ServiceProfile.
+        .route_fn("/load-profile", |_| {
+            Response::builder().status(201).body("".into()).unwrap()
+        })
+        .route_async("/retry", move |_| {
+            let success = retries.fetch_add(1, Ordering::Relaxed) > 0;
+            async move {
+                let header = if success {
+                    HeaderValue::from_static(GRPC_STATUS_OK)
+                } else {
+                    HeaderValue::from_static(GRPC_STATUS_UNAVAILABLE)
+                };
+                let rsp = Response::builder()
+                    .header(GRPC_STATUS, header)
+                    .status(200)
+                    .body(hyper::Body::empty())
+                    .unwrap();
+                tracing::debug!(headers = ?rsp.headers());
+                Ok::<_, Error>(rsp)
+            }
+        })
+        .run()
+        .await;
+    let port = srv.addr.port();
+    let ctrl = controller::new();
+
+    let dst_tx = ctrl.destination_tx(&format!("{}:{}", host, port));
+    dst_tx.send_addr(srv.addr);
+
+    let profile_tx = ctrl.profile_tx(srv.addr.to_string());
+    let routes = vec![
+        // This route is used to get the proxy to start fetching the`
+        // ServiceProfile. We'll keep GETting this route and checking
+        // the metrics for the labels, to know that the other route
+        // rules are now in place and the test can proceed.
+        controller::route()
+            .request_path("/load-profile")
+            .label("load_profile", "test"),
+        controller::route().request_path("/retry").retryable(true),
+    ];
+    profile_tx.send(controller::profile(
+        routes,
+        Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
+        vec![],
+        host,
+    ));
+
+    let ctrl = ctrl.run().await;
+    let proxy = proxy::new().controller(ctrl).outbound(srv).run().await;
+
+    let client = client::http2(proxy.outbound, host);
+
+    let metrics = client::http1(proxy.admin, "localhost");
+
+    load_profile(&client, &metrics).await;
+
+    let res = client
+        .request(client.request_builder("/retry"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    assert_eq!(
+        res.headers().get(GRPC_STATUS),
+        Some(&HeaderValue::from_static(GRPC_STATUS_OK))
+    );
+}
+
+#[tokio::test]
+async fn grpc_retry_with_failure_in_trailers() {
+    use http::header::{HeaderMap, HeaderValue};
+    const GRPC_STATUS: &str = "grpc-status";
+    const GRPC_STATUS_OK: &str = "0";
+    const GRPC_STATUS_UNAVAILABLE: &str = "14";
+
+    let _trace = trace_init();
+    let host = "profiles.test.svc.cluster.local";
+
+    let retries = Arc::new(AtomicUsize::new(0));
+
+    let srv = server::http2()
+        // This route is just called by the test setup, to trigger the proxy
+        // to start fetching the ServiceProfile.
+        .route_fn("/load-profile", |_| {
+            Response::builder().status(201).body("".into()).unwrap()
+        })
+        .route_async("/retry", move |_| {
+            let success = retries.fetch_add(1, Ordering::Relaxed) > 0;
+            async move {
+                let mut trailers = HeaderMap::with_capacity(1);
+                if success {
+                    trailers.insert(GRPC_STATUS, HeaderValue::from_static(GRPC_STATUS_OK));
+                } else {
+                    trailers.insert(
+                        GRPC_STATUS,
+                        HeaderValue::from_static(GRPC_STATUS_UNAVAILABLE),
+                    );
+                }
+                tracing::debug!(?trailers);
+                let (mut tx, body) = hyper::body::Body::channel();
+                tx.send_trailers(trailers).await.unwrap();
+                Ok::<_, Error>(Response::builder().status(200).body(body).unwrap())
+            }
+        })
+        .run()
+        .await;
+    let port = srv.addr.port();
+    let ctrl = controller::new();
+
+    let dst_tx = ctrl.destination_tx(&format!("{}:{}", host, port));
+    dst_tx.send_addr(srv.addr);
+
+    let profile_tx = ctrl.profile_tx(srv.addr.to_string());
+    let routes = vec![
+        // This route is used to get the proxy to start fetching the`
+        // ServiceProfile. We'll keep GETting this route and checking
+        // the metrics for the labels, to know that the other route
+        // rules are now in place and the test can proceed.
+        controller::route()
+            .request_path("/load-profile")
+            .label("load_profile", "test"),
+        controller::route().request_path("/retry").retryable(true),
+    ];
+    profile_tx.send(controller::profile(
+        routes,
+        Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
+        vec![],
+        host,
+    ));
+
+    let ctrl = ctrl.run().await;
+    let proxy = proxy::new().controller(ctrl).outbound(srv).run().await;
+
+    let client = client::http2(proxy.outbound, host);
+
+    let metrics = client::http1(proxy.admin, "localhost");
+
+    load_profile(&client, &metrics).await;
+    let res = client
+        .request(client.request_builder("/retry"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    assert_eq!(
+        res.headers().get(GRPC_STATUS),
+        Some(&HeaderValue::from_static(GRPC_STATUS_OK))
+    );
+}
+
+async fn load_profile(client: &client::Client, metrics: &client::Client) {
+    // Poll metrics until we recognize the profile is loaded...
+    loop {
+        assert_eq!(client.get("/load-profile").await, "");
+        let m = metrics.get("/metrics").await;
+        if m.contains("rt_load_profile=\"test\"") {
+            break;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 }
