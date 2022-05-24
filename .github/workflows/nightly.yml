@@ -1,10 +1,8 @@
-# Builds the proxy on the nightly toolchain to help catch Rust regressions before they hit beta.
-name: rust-nightly
+# Builds the proxy on the nightly/beta toolchains to help catch Rust regressions before they hit beta.
+name: nightly
 
 on:
-  pull_request:
-    paths:
-      - .github/workflows/nightly.yml
+  pull_request: {}
   schedule:
     # Run daily @ midnightish Pacific-time.
     - cron: "0 8 * * *"
@@ -20,16 +18,34 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - uses: tj-actions/changed-files@205450238e81d3da0e0ec2d776f58c12846fddfb
+        id: changed-files
+        with:
+          files: |
+            .github/workflows/nightly.yml
+    outputs:
+      changed: ${{ steps.changed-files.outputs.any_changed == 'true' && 'true'  || '' }}
+
   build:
+    needs: [changes]
+    if: needs.changes.outputs.changed || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.60.0-bullseye
     timeout-minutes: 20
     continue-on-error: true
+    strategy:
+      matrix:
+        toolchain: [nightly, beta]
     steps:
       - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
-      - run: rustup toolchain install --profile=minimal nightly
+      - run: rustup toolchain install --profile=minimal ${{ matrix.toolchain }}
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - run: just toolchain=nightly fetch
-      - run: just toolchain=nightly build_type=release build
+      - run: just toolchain=${{ matrix.toolchain }} fetch
+      - run: just toolchain=${{ matrix.toolchain }} build_type=release build

@@ -1,10 +1,7 @@
 name: release
 
 on:
-  pull_request:
-    paths:
-      - .github/actions/package/*
-      - .github/workflows/release.yml
+  pull_request: {}
   push:
     tags:
       - "release/*"
@@ -20,6 +17,20 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
+  changes:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - uses: tj-actions/changed-files@205450238e81d3da0e0ec2d776f58c12846fddfb
+        id: changed-files
+        with:
+          files: |
+            .github/actions/package/*
+            .github/workflows/release.yml
+    outputs:
+      changed: ${{ steps.changed-files.outputs.any_changed == 'true' && 'true'  || '' }}
+
   meta:
     timeout-minutes: 5
     runs-on: ubuntu-latest
@@ -46,7 +57,8 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
 
   package:
-    needs: [meta]
+    needs: [changes, meta]
+    if: needs.changes.outputs.changed || needs.meta.outputs.publish
     strategy:
       matrix:
         arch: [amd64, arm64, arm]
@@ -87,7 +99,8 @@ jobs:
           path: target/package/*
 
   publish:
-    needs: [meta, package]
+    needs: [changes, meta, package]
+    if: needs.changes.outputs.changed || needs.meta.outputs.publish
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

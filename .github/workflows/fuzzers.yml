@@ -1,16 +1,6 @@
 name: fuzzers
 
-on:
-  # Only run on PRs that touch fuzzed crates
-  pull_request:
-    paths:
-      - 'linkerd/addr/**'
-      - 'linkerd/app/inbound/**'
-      - 'linkerd/dns/**'
-      - 'linkerd/proxy/http/**'
-      - 'linkerd/tls/**'
-      - 'linkerd/transport-header/**'
-      - .github/workflows/fuzzers.yml
+on: [pull_request]
 
 env:
   CARGO_INCREMENTAL: 0
@@ -22,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  list-changed:
+  changes:
     timeout-minutes: 3
     runs-on: ubuntu-latest
     container:
@@ -32,6 +22,15 @@ jobs:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - uses: tj-actions/changed-files@205450238e81d3da0e0ec2d776f58c12846fddfb
         id: changed-files
+        with:
+          files: |
+            linkerd/addr/**
+            linkerd/app/inbound/**
+            linkerd/dns/**
+            linkerd/proxy/http/**
+            linkerd/tls/**
+            linkerd/transport-header/**
+            .github/workflows/fuzzers.yml
       - name: list changed crates
         id: list-changed
         shell: bash
@@ -72,18 +71,20 @@ jobs:
           echo "$dirs"
           echo "::set-output name=dirs::$(echo "$dirs" | jo -a)"
     outputs:
+      changed: ${{ steps.changed-files.outputs.any_changed == 'true' && 'true'  || '' }}
       dirs: ${{ steps.list-changed.outputs.dirs }}
 
   # Build fuzzers for any changed crates.
   build:
-    needs: [list-changed]
+    needs: [changes]
+    if: needs.changes.outputs.changed
     timeout-minutes: 40
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.60.0-bullseye
     strategy:
       matrix:
-        dir: ${{ fromJson(needs.list-changed.outputs.dirs) }}
+        dir: ${{ fromJson(needs.changes.outputs.dirs) }}
     steps:
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz

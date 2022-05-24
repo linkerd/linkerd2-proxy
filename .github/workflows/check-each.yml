@@ -8,13 +8,7 @@ name: check-each
 permissions:
   contents: read
 
-on:
-  pull_request:
-    paths:
-      - "**/Cargo.toml"
-      - "**/*.rs"
-      - .github/actions/list-changed-crates/*
-      - .github/workflows/check-each.yml
+on: [pull_request]
 
 env:
   CARGO_INCREMENTAL: 0
@@ -22,7 +16,6 @@ env:
   DEBIAN_FRONTEND: noninteractive
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
-  RUSTFLAGS: "-D warnings -A deprecated"
 
 jobs:
   list-changed-crates:

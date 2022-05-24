@@ -4,13 +4,7 @@ name: test
 permissions:
   contents: read
 
-on:
-  pull_request:
-    paths:
-      - Cargo.lock
-      - "**/Cargo.toml"
-      - "**/*.rs"
-      - .github/workflows/test.yml
+on: [pull_request]
 
 env:
   CARGO_INCREMENTAL: 0
@@ -20,8 +14,28 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
+  changes:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.60.0-bullseye
+    steps:
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - uses: tj-actions/changed-files@205450238e81d3da0e0ec2d776f58c12846fddfb
+        id: changed-files
+        with:
+          files: |
+            Cargo.lock
+            **/Cargo.toml
+            **/*.rs
+            .github/workflows/test.yml
+    outputs:
+      changed: ${{ steps.changed-files.outputs.any_changed == 'true' && 'true'  || '' }}
+
   # Test the meshtls backends.
   meshtls:
+    needs: [changes]
+    if: needs.changes.outputs.changed
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
@@ -48,6 +62,8 @@ jobs:
 
   # Run non-integration tests. This should be quick.
   unit:
+    needs: [changes]
+    if: needs.changes.outputs.changed
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:

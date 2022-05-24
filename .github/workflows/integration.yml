@@ -4,13 +4,7 @@ name: integration
 permissions:
   contents: read
 
-on:
-  pull_request:
-    paths:
-      - Cargo.lock
-      - "**/*.rs"
-      - "**/*.toml"
-      - .github/workflows/integration.yml
+on: [pull_request]
 
 env:
   CARGO_INCREMENTAL: 0
@@ -23,6 +17,22 @@ env:
 # types) and have the potential to be flakey as they depend on opening sockets and may have timing
 # sensitivity.
 jobs:
+  changes:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - uses: tj-actions/changed-files@205450238e81d3da0e0ec2d776f58c12846fddfb
+        id: changed-files
+        with:
+          files: |
+            Cargo.lock
+            **/*.rs
+            **/*.toml
+            .github/workflows/integration.yml
+    outputs:
+      changed: ${{ steps.changed-files.outputs.any_changed == 'true' && 'true'  || '' }}
+
   test:
     timeout-minutes: 20
     runs-on: ubuntu-latest
