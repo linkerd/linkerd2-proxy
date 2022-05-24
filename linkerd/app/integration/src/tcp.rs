@@ -243,5 +243,6 @@ async fn run_server(tcp: TcpServer) -> server::Listening {
         drain: drain_tx,
         conn_count,
         task: Some(task),
+        http_version: None,
     }
 }
