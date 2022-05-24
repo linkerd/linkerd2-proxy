@@ -478,15 +478,15 @@ async fn identity_header_stripping() {
 
     let srv = server::http1()
         .route("/ready", "Ready")
-        .route_fn("/check-identity", |req| -> Response<Bytes> {
+        .route_fn("/check-identity", |req| -> Response<hyper::Body> {
             return match req.headers().get("l5d-client-id") {
                 Some(_) => Response::builder()
                     .status(http::StatusCode::BAD_REQUEST)
-                    .body(Bytes::new())
+                    .body(hyper::Body::empty())
                     .unwrap(),
                 None => Response::builder()
                     .status(http::StatusCode::OK)
-                    .body(Bytes::new())
+                    .body(hyper::Body::empty())
                     .unwrap(),
             };
         })

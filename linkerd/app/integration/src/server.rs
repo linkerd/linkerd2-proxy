@@ -1,6 +1,7 @@
 use super::*;
 use futures::TryFuture;
 use http::Response;
+use hyper::body::Body;
 use linkerd_app_core::proxy::http::trace;
 use std::collections::HashMap;
 use std::future::Future;
@@ -131,7 +132,7 @@ impl Server {
     /// to send back.
     pub fn route_fn<F>(self, path: &str, cb: F) -> Self
     where
-        F: Fn(Request<hyper::Body>) -> Response<Bytes> + Send + Sync + 'static,
+        F: Fn(Request<hyper::Body>) -> Response<hyper::Body> + Send + Sync + 'static,
     {
         self.route_async(path, move |req| {
             let res = cb(req);
@@ -144,14 +145,15 @@ impl Server {
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
         F: Fn(Request<hyper::Body>) -> U + Send + Sync + 'static,
-        U: TryFuture<Ok = Response<Bytes>> + Send + Sync + 'static,
+        U: TryFuture<Ok = Response<hyper::Body>> + Send + Sync + 'static,
         U::Error: Into<BoxError> + Send + 'static,
     {
         let func = move |req| {
-            Box::pin(cb(req).map_err(Into::into))
+            let future = cb(req).map_err(Into::into);
+            Box::pin(future)
                 as Pin<
                     Box<
-                        dyn Future<Output = Result<Response<Bytes>, BoxError>>
+                        dyn Future<Output = Result<Response<Body>, BoxError>>
                             + Send
                             + Sync
                             + 'static,
@@ -171,7 +173,7 @@ impl Server {
                 Ok::<_, BoxError>(
                     http::Response::builder()
                         .status(200)
-                        .body(resp.clone())
+                        .body(hyper::Body::from(resp.clone()))
                         .unwrap(),
                 )
             }
@@ -284,8 +286,9 @@ pub(super) enum Run {
 
 struct Route(Box<dyn Fn(Request<hyper::Body>) -> RspFuture + Send + Sync>);
 
-type RspFuture =
-    Pin<Box<dyn Future<Output = Result<http::Response<Bytes>, BoxError>> + Send + Sync + 'static>>;
+type RspFuture = Pin<
+    Box<dyn Future<Output = Result<http::Response<hyper::Body>, BoxError>> + Send + Sync + 'static>,
+>;
 
 impl Route {
     fn string(body: &str) -> Route {
@@ -294,7 +297,7 @@ impl Route {
             Box::pin(future::ok(
                 http::Response::builder()
                     .status(200)
-                    .body(body.clone())
+                    .body(hyper::Body::from(body.clone()))
                     .unwrap(),
             ))
         }))
@@ -316,8 +319,9 @@ impl Svc {
     fn route(
         &mut self,
         req: Request<hyper::Body>,
-    ) -> Pin<Box<dyn Future<Output = Result<Response<Bytes>, BoxError>> + Send + Sync + 'static>>
-    {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Response<hyper::Body>, BoxError>> + Send + Sync + 'static>,
+    > {
         match self.0.get(req.uri().path()) {
             Some(Route(ref func)) => {
                 tracing::trace!(path = %req.uri().path(), "found route for path");
@@ -348,7 +352,7 @@ impl tower::Service<Request<hyper::Body>> for Svc {
     }
 
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
-        Box::pin(self.route(req).map_ok(|res| res.map(hyper::Body::from)))
+        Box::pin(self.route(req))
     }
 }
 
