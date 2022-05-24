@@ -11,7 +11,7 @@ struct TestBuilder {
 struct Test {
     metrics: client::Client,
     client: client::Client,
-    proxy: proxy::Listening,
+    _proxy: proxy::Listening,
     port: u16,
     // stuff that tests currently never use, but we can't drop while the test is running
     _guards: (
@@ -50,13 +50,6 @@ impl TestBuilder {
         let mut routes = self.routes;
         routes.push(route);
         Self { routes, ..self }
-    }
-
-    fn no_default_routes(self) -> Self {
-        Self {
-            default_routes: false,
-            ..self
-        }
     }
 
     async fn run(self) -> Test {
@@ -161,483 +154,407 @@ impl TestBuilder {
         Test {
             metrics,
             client,
-            proxy,
+            _proxy: proxy,
             port,
             _guards: (dst_tx, profile_tx, trace),
         }
     }
 }
 
-async fn test_retry_if_profile_allows(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                // use default classifier
-                .retryable(true),
-        )
-        .run()
-        .await;
+mod cross_version {
+    use super::*;
 
-    assert_eq!(test.client.get("/0.5").await, "retried");
+    pub(super) async fn retry_if_profile_allows(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    // use default classifier
+                    .retryable(true),
+            )
+            .run()
+            .await;
+
+        assert_eq!(test.client.get("/0.5").await, "retried");
+    }
+
+    pub(super) async fn retry_uses_budget(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .run()
+            .await;
+        let client = &test.client;
+
+        assert_eq!(client.get("/0.5").await, "retried");
+        let res = client
+            .request(client.request_builder("/0.5"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 533);
+        assert_eq!(client.get("/0.5").await, "retried");
+
+        metrics::metric("route_retryable_total")
+            .label("direction", "outbound")
+            .label(
+                "dst",
+                format_args!("profiles.test.svc.cluster.local:{}", test.port),
+            )
+            .label("skipped", "no_budget")
+            .value(1u64)
+            .assert_in(&test.metrics)
+            .await;
+    }
+
+    pub(super) async fn retry_with_small_post_body(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .run()
+            .await;
+
+        let client = &test.client;
+        let req = client
+            .request_builder("/0.5")
+            .method(http::Method::POST)
+            .body("req has a body".into())
+            .unwrap();
+        let res = client.request_body(req).await;
+        assert_eq!(res.status(), 200);
+    }
+
+    pub(super) async fn retry_with_small_put_body(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .run()
+            .await;
+
+        let client = &test.client;
+        let req = client
+            .request_builder("/0.5")
+            .method(http::Method::PUT)
+            .body("req has a body".into())
+            .unwrap();
+        let res = client.request_body(req).await;
+        assert_eq!(res.status(), 200);
+    }
+
+    pub(super) async fn retry_without_content_length(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .run()
+            .await;
+
+        let client = test.client;
+        let (mut tx, body) = hyper::body::Body::channel();
+        let req = client
+            .request_builder("/0.5")
+            .method("POST")
+            .body(body)
+            .unwrap();
+        let res = tokio::spawn(async move { client.request_body(req).await });
+        tx.send_data(Bytes::from_static(b"hello"))
+            .await
+            .expect("the whole body should be read");
+        tx.send_data(Bytes::from_static(b"world"))
+            .await
+            .expect("the whole body should be read");
+        drop(tx);
+        let res = res.await.unwrap();
+        assert_eq!(res.status(), 200);
+    }
+
+    pub(super) async fn does_not_retry_if_request_does_not_match(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_path("/wont/match/anything")
+                    .response_failure(..)
+                    .retryable(true),
+            )
+            .run()
+            .await;
+
+        let client = &test.client;
+        let res = client
+            .request(client.request_builder("/0.5"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 533);
+    }
+
+    pub(super) async fn does_not_retry_if_earlier_response_class_is_success(
+        version: server::Server,
+    ) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    // prevent 533s from being retried
+                    .response_success(533..534)
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .run()
+            .await;
+
+        let client = &test.client;
+        let res = client
+            .request(client.request_builder("/0.5"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 533);
+    }
+
+    pub(super) async fn does_not_retry_if_body_is_too_long(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    // prevent 533s from being retried
+                    .response_success(533..534)
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .run()
+            .await;
+
+        let client = &test.client;
+        let req = client
+            .request_builder("/0.5")
+            .method("POST")
+            .body(hyper::Body::from(&[1u8; 64 * 1024 + 1][..]))
+            .unwrap();
+        let res = client.request_body(req).await;
+        assert_eq!(res.status(), 533);
+    }
+
+    pub(super) async fn does_not_retry_if_streaming_body_exceeds_max_length(
+        version: server::Server,
+    ) {
+        // TODO(eliza): if we make the max length limit configurable, update this
+        // test to test the configurable max length limit...
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .run()
+            .await;
+
+        let client = test.client;
+        let (mut tx, body) = hyper::body::Body::channel();
+        let req = client
+            .request_builder("/0.5")
+            .method("POST")
+            .body(body)
+            .unwrap();
+        let res = tokio::spawn(async move { client.request_body(req).await });
+        // send a 32k chunk
+        tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
+            .await
+            .expect("the whole body should be read");
+        // ...and another one...
+        tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
+            .await
+            .expect("the whole body should be read");
+        // ...and a third one (exceeding the max length limit)
+        tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
+            .await
+            .expect("the whole body should be read");
+        drop(tx);
+        let res = res.await.unwrap();
+
+        assert_eq!(res.status(), 533);
+    }
+
+    pub(super) async fn does_not_retry_if_missing_retry_budget(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .with_budget(None)
+            .run()
+            .await;
+
+        let client = &test.client;
+        let res = client
+            .request(client.request_builder("/0.5"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 533);
+    }
+
+    pub(super) async fn ignores_invalid_retry_budget_ttl(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .with_budget(controller::retry_budget(Duration::from_secs(1000), 0.1, 1))
+            .run()
+            .await;
+
+        let client = &test.client;
+        let res = client
+            .request(client.request_builder("/0.5"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 533);
+    }
+
+    pub(super) async fn ignores_invalid_retry_budget_ratio(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .with_budget(controller::retry_budget(
+                Duration::from_secs(10),
+                10_000.0,
+                1,
+            ))
+            .run()
+            .await;
+
+        let client = &test.client;
+        let res = client
+            .request(client.request_builder("/0.5"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 533);
+    }
+
+    pub(super) async fn ignores_invalid_retry_budget_negative_ratio(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .with_budget(controller::retry_budget(Duration::from_secs(10), -1.0, 1))
+            .run()
+            .await;
+
+        let client = &test.client;
+        let res = client
+            .request(client.request_builder("/0.5"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 533);
+    }
+
+    pub(super) async fn timeout(version: server::Server) {
+        let test = TestBuilder::new(version)
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .timeout(Duration::from_millis(100)),
+            )
+            .with_budget(None)
+            .run()
+            .await;
+
+        let client = &test.client;
+        let res = client
+            .request(client.request_builder("/1.0/sleep"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 504);
+
+        metrics::metric("route_response_total")
+            .label("direction", "outbound")
+            .label(
+                "dst",
+                format_args!("profiles.test.svc.cluster.local:{}", test.port),
+            )
+            .label("classification", "failure")
+            .label("error", "timeout")
+            .value(1u64)
+            .assert_in(&test.metrics)
+            .await;
+    }
 }
 
-async fn test_retry_uses_budget(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .run()
-        .await;
-    let client = &test.client;
-
-    assert_eq!(client.get("/0.5").await, "retried");
-    let res = client
-        .request(client.request_builder("/0.5"))
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 533);
-    assert_eq!(client.get("/0.5").await, "retried");
-
-    metrics::metric("route_retryable_total")
-        .label("direction", "outbound")
-        .label(
-            "dst",
-            format_args!("profiles.test.svc.cluster.local:{}", test.port),
-        )
-        .label("skipped", "no_budget")
-        .value(1u64)
-        .assert_in(&test.metrics)
-        .await;
+macro_rules! cross_version {
+    ($version:expr => $($test:ident),+ $(,)?) => {
+        $(
+            #[tokio::test]
+            async fn $test() {
+                cross_version::$test($version).await
+            }
+        )+
+    };
 }
-
-async fn test_retry_with_small_post_body(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .run()
-        .await;
-
-    let client = &test.client;
-    let req = client
-        .request_builder("/0.5")
-        .method(http::Method::POST)
-        .body("req has a body".into())
-        .unwrap();
-    let res = client.request_body(req).await;
-    assert_eq!(res.status(), 200);
-}
-
-async fn test_retry_with_small_put_body(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .run()
-        .await;
-
-    let client = &test.client;
-    let req = client
-        .request_builder("/0.5")
-        .method(http::Method::PUT)
-        .body("req has a body".into())
-        .unwrap();
-    let res = client.request_body(req).await;
-    assert_eq!(res.status(), 200);
-}
-
-async fn test_retry_without_content_length(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .run()
-        .await;
-
-    let client = test.client;
-    let (mut tx, body) = hyper::body::Body::channel();
-    let req = client
-        .request_builder("/0.5")
-        .method("POST")
-        .body(body)
-        .unwrap();
-    let res = tokio::spawn(async move { client.request_body(req).await });
-    tx.send_data(Bytes::from_static(b"hello"))
-        .await
-        .expect("the whole body should be read");
-    tx.send_data(Bytes::from_static(b"world"))
-        .await
-        .expect("the whole body should be read");
-    drop(tx);
-    let res = res.await.unwrap();
-    assert_eq!(res.status(), 200);
-}
-
-async fn test_does_not_retry_if_request_does_not_match(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_path("/wont/match/anything")
-                .response_failure(..)
-                .retryable(true),
-        )
-        .run()
-        .await;
-
-    let client = &test.client;
-    let res = client
-        .request(client.request_builder("/0.5"))
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 533);
-}
-
-async fn test_does_not_retry_if_earlier_response_class_is_success(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                // prevent 533s from being retried
-                .response_success(533..534)
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .run()
-        .await;
-
-    let client = &test.client;
-    let res = client
-        .request(client.request_builder("/0.5"))
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 533);
-}
-
-async fn test_does_not_retry_if_body_is_too_long(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                // prevent 533s from being retried
-                .response_success(533..534)
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .run()
-        .await;
-
-    let client = &test.client;
-    let req = client
-        .request_builder("/0.5")
-        .method("POST")
-        .body(hyper::Body::from(&[1u8; 64 * 1024 + 1][..]))
-        .unwrap();
-    let res = client.request_body(req).await;
-    assert_eq!(res.status(), 533);
-}
-
-async fn test_does_not_retry_if_streaming_body_exceeds_max_length(version: server::Server) {
-    // TODO(eliza): if we make the max length limit configurable, update this
-    // test to test the configurable max length limit...
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .run()
-        .await;
-
-    let client = test.client;
-    let (mut tx, body) = hyper::body::Body::channel();
-    let req = client
-        .request_builder("/0.5")
-        .method("POST")
-        .body(body)
-        .unwrap();
-    let res = tokio::spawn(async move { client.request_body(req).await });
-    // send a 32k chunk
-    tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
-        .await
-        .expect("the whole body should be read");
-    // ...and another one...
-    tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
-        .await
-        .expect("the whole body should be read");
-    // ...and a third one (exceeding the max length limit)
-    tx.send_data(Bytes::from(&[1u8; 32 * 1024][..]))
-        .await
-        .expect("the whole body should be read");
-    drop(tx);
-    let res = res.await.unwrap();
-
-    assert_eq!(res.status(), 533);
-}
-
-async fn test_does_not_retry_if_missing_retry_budget(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .with_budget(None)
-        .run()
-        .await;
-
-    let client = &test.client;
-    let res = client
-        .request(client.request_builder("/0.5"))
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 533);
-}
-
-async fn test_ignores_invalid_retry_budget_ttl(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .with_budget(controller::retry_budget(Duration::from_secs(1000), 0.1, 1))
-        .run()
-        .await;
-
-    let client = &test.client;
-    let res = client
-        .request(client.request_builder("/0.5"))
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 533);
-}
-
-async fn test_ignores_invalid_retry_budget_ratio(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .with_budget(controller::retry_budget(
-            Duration::from_secs(10),
-            10_000.0,
-            1,
-        ))
-        .run()
-        .await;
-
-    let client = &test.client;
-    let res = client
-        .request(client.request_builder("/0.5"))
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 533);
-}
-
-async fn ignores_invalid_retry_budget_negative_ratio(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .with_budget(controller::retry_budget(Duration::from_secs(10), -1.0, 1))
-        .run()
-        .await;
-
-    let client = &test.client;
-    let res = client
-        .request(client.request_builder("/0.5"))
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 533);
-}
-
-async fn test_timeout(version: server::Server) {
-    let test = TestBuilder::new(version)
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .timeout(Duration::from_millis(100)),
-        )
-        .with_budget(None)
-        .run()
-        .await;
-
-    let client = &test.client;
-    let res = client
-        .request(client.request_builder("/1.0/sleep"))
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 504);
-
-    metrics::metric("route_response_total")
-        .label("direction", "outbound")
-        .label(
-            "dst",
-            format_args!("profiles.test.svc.cluster.local:{}", test.port),
-        )
-        .label("classification", "failure")
-        .label("error", "timeout")
-        .value(1u64)
-        .assert_in(&test.metrics)
-        .await;
-}
-
 mod http1 {
     use super::*;
 
-    #[tokio::test]
-    async fn retry_if_profile_allows() {
-        test_retry_if_profile_allows(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn retry_uses_budget() {
-        test_retry_uses_budget(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn retry_with_small_post_body() {
-        test_retry_with_small_post_body(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn retry_with_small_put_body() {
-        test_retry_with_small_put_body(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn retry_without_content_length() {
-        test_retry_without_content_length(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn does_not_retry_if_request_does_not_match() {
-        test_does_not_retry_if_request_does_not_match(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn does_not_retry_if_earlier_response_class_is_success() {
-        test_does_not_retry_if_earlier_response_class_is_success(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn does_not_retry_if_body_is_too_long() {
-        test_does_not_retry_if_body_is_too_long(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn does_not_retry_if_streaming_body_exceeds_max_length() {
-        test_does_not_retry_if_streaming_body_exceeds_max_length(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn does_not_retry_if_missing_retry_budget() {
-        test_does_not_retry_if_missing_retry_budget(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn ignores_invalid_retry_budget_ttl() {
-        test_ignores_invalid_retry_budget_ttl(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn ignores_invalid_retry_budget_ratio() {
-        test_ignores_invalid_retry_budget_ratio(server::http1()).await
-    }
-
-    #[tokio::test]
-    async fn timeout() {
-        test_timeout(server::http1()).await
+    cross_version! {
+        server::http1() =>
+        retry_if_profile_allows,
+        retry_uses_budget,
+        retry_with_small_post_body,
+        retry_with_small_put_body,
+        retry_without_content_length,
+        does_not_retry_if_request_does_not_match,
+        does_not_retry_if_earlier_response_class_is_success,
+        does_not_retry_if_body_is_too_long,
+        does_not_retry_if_streaming_body_exceeds_max_length,
+        does_not_retry_if_missing_retry_budget,
+        ignores_invalid_retry_budget_ttl,
+        ignores_invalid_retry_budget_ratio,
+        ignores_invalid_retry_budget_negative_ratio,
+        timeout,
     }
 }
 
 mod http2 {
     use super::*;
 
-    #[tokio::test]
-    async fn retry_if_profile_allows() {
-        test_retry_if_profile_allows(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn retry_uses_budget() {
-        test_retry_uses_budget(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn retry_with_small_post_body() {
-        test_retry_with_small_post_body(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn retry_with_small_put_body() {
-        test_retry_with_small_put_body(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn retry_without_content_length() {
-        test_retry_without_content_length(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn does_not_retry_if_request_does_not_match() {
-        test_does_not_retry_if_request_does_not_match(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn does_not_retry_if_earlier_response_class_is_success() {
-        test_does_not_retry_if_earlier_response_class_is_success(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn does_not_retry_if_body_is_too_long() {
-        test_does_not_retry_if_body_is_too_long(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn does_not_retry_if_streaming_body_exceeds_max_length() {
-        test_does_not_retry_if_streaming_body_exceeds_max_length(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn does_not_retry_if_missing_retry_budget() {
-        test_does_not_retry_if_missing_retry_budget(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn ignores_invalid_retry_budget_ttl() {
-        test_ignores_invalid_retry_budget_ttl(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn ignores_invalid_retry_budget_ratio() {
-        test_ignores_invalid_retry_budget_ratio(server::http2()).await
-    }
-
-    #[tokio::test]
-    async fn timeout() {
-        test_timeout(server::http2()).await
+    cross_version! {
+        server::http1() =>
+        retry_if_profile_allows,
+        retry_uses_budget,
+        retry_with_small_post_body,
+        retry_with_small_put_body,
+        retry_without_content_length,
+        does_not_retry_if_request_does_not_match,
+        does_not_retry_if_earlier_response_class_is_success,
+        does_not_retry_if_body_is_too_long,
+        does_not_retry_if_streaming_body_exceeds_max_length,
+        does_not_retry_if_missing_retry_budget,
+        ignores_invalid_retry_budget_ttl,
+        ignores_invalid_retry_budget_ratio,
+        ignores_invalid_retry_budget_negative_ratio,
+        timeout,
     }
 
     #[tokio::test]
