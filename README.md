@@ -32,25 +32,23 @@ The Linkerd project is hosted by the Cloud Native Computing Foundation
 
 ## Building the project
 
-A `Makefile` is provided to automate most build tasks. It provides the
-following targets:
+A [`justfile`](./justfile) is provided to automate most build tasks. It provides
+the following recipes:
 
-* `make build` -- Compiles the proxy on your local system using `cargo`
-* `make clean` -- Cleans the build target on the local system using `cargo clean`
-* `make test` -- Runs unit and integration tests on your local system using `cargo`
-* `make test-flakey` -- Runs _all_ tests, including those that may fail spuriously
-* `make package` -- Builds a tarball at
-  `target/release/linkerd2-proxy-${PACKAGE_VERSION}.tar.gz`. If
-  `PACKAGE_VERSION` is not set in the environment, the local git SHA is used.
-* `make docker` -- Builds a Docker container image that can be used for testing.
-   If the `DOCKER_TAG` environment variable is set, the image is given this
-   name. Otherwise, the image is not named.
+* `just build` -- Compiles the proxy on your local system using `cargo`
+* `just test` -- Runs unit and integration tests on your local system using `cargo`
+* `just docker` -- Builds a Docker container image that can be used for testing.
 
 ### Cargo
 
 Usually, [Cargo][cargo], Rust's package manager, is used to build and test this
 project. If you don't have Cargo installed, we suggest getting it via
 https://rustup.rs/.
+
+### Devcontainer
+
+A Devcontainer is provided for use with Visual Studio Code. It includes all of
+the tooling needed to build and test the proxy.
 
 ### Repository Structure
 
