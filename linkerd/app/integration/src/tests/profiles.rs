@@ -593,6 +593,8 @@ mod grpc_retry {
     static GRPC_STATUS_OK: HeaderValue = HeaderValue::from_static("0");
     static GRPC_STATUS_UNAVAILABLE: HeaderValue = HeaderValue::from_static("14");
 
+    /// Tests that a gRPC request is retried when a `grpc-status` code other
+    /// than `OK` is sent in the response headers.
     #[tokio::test]
     async fn retries_failure_in_headers() {
         let retries = Arc::new(AtomicUsize::new(0));
@@ -633,6 +635,10 @@ mod grpc_retry {
         assert_eq!(retries.load(Ordering::Relaxed), 1);
     }
 
+    /// Tests that a gRPC request is retried when a `grpc-status` code other
+    /// than `OK` is sent in the response's trailers.
+    ///
+    /// Reproduces https://github.com/linkerd/linkerd2/issues/7701.
     #[tokio::test]
     async fn retries_failure_in_trailers() {
         let _trace = trace_init();
