@@ -168,9 +168,8 @@ impl TestBuilder {
     }
 }
 
-#[tokio::test]
-async fn retry_if_profile_allows() {
-    let test = TestBuilder::new(server::http1())
+async fn test_retry_if_profile_allows(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -183,9 +182,8 @@ async fn retry_if_profile_allows() {
     assert_eq!(test.client.get("/0.5").await, "retried");
 }
 
-#[tokio::test]
-async fn retry_uses_budget() {
-    let test = TestBuilder::new(server::http1())
+async fn test_retry_uses_budget(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -216,9 +214,8 @@ async fn retry_uses_budget() {
         .await;
 }
 
-#[tokio::test]
-async fn retry_with_small_post_body() {
-    let test = TestBuilder::new(server::http1())
+async fn test_retry_with_small_post_body(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -238,9 +235,8 @@ async fn retry_with_small_post_body() {
     assert_eq!(res.status(), 200);
 }
 
-#[tokio::test]
-async fn retry_with_small_put_body() {
-    let test = TestBuilder::new(server::http1())
+async fn test_retry_with_small_put_body(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -260,9 +256,8 @@ async fn retry_with_small_put_body() {
     assert_eq!(res.status(), 200);
 }
 
-#[tokio::test]
-async fn retry_without_content_length() {
-    let test = TestBuilder::new(server::http1())
+async fn test_retry_without_content_length(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -291,9 +286,8 @@ async fn retry_without_content_length() {
     assert_eq!(res.status(), 200);
 }
 
-#[tokio::test]
-async fn does_not_retry_if_request_does_not_match() {
-    let test = TestBuilder::new(server::http1())
+async fn test_does_not_retry_if_request_does_not_match(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_path("/wont/match/anything")
@@ -311,9 +305,8 @@ async fn does_not_retry_if_request_does_not_match() {
     assert_eq!(res.status(), 533);
 }
 
-#[tokio::test]
-async fn does_not_retry_if_earlier_response_class_is_success() {
-    let test = TestBuilder::new(server::http1())
+async fn test_does_not_retry_if_earlier_response_class_is_success(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -333,9 +326,8 @@ async fn does_not_retry_if_earlier_response_class_is_success() {
     assert_eq!(res.status(), 533);
 }
 
-#[tokio::test]
-async fn does_not_retry_if_body_is_too_long() {
-    let test = TestBuilder::new(server::http1())
+async fn test_does_not_retry_if_body_is_too_long(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -357,11 +349,10 @@ async fn does_not_retry_if_body_is_too_long() {
     assert_eq!(res.status(), 533);
 }
 
-#[tokio::test]
-async fn does_not_retry_if_streaming_body_exceeds_max_length() {
+async fn test_does_not_retry_if_streaming_body_exceeds_max_length(version: server::Server) {
     // TODO(eliza): if we make the max length limit configurable, update this
     // test to test the configurable max length limit...
-    let test = TestBuilder::new(server::http1())
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -397,9 +388,8 @@ async fn does_not_retry_if_streaming_body_exceeds_max_length() {
     assert_eq!(res.status(), 533);
 }
 
-#[tokio::test]
-async fn does_not_retry_if_missing_retry_budget() {
-    let test = TestBuilder::new(server::http1())
+async fn test_does_not_retry_if_missing_retry_budget(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -418,9 +408,8 @@ async fn does_not_retry_if_missing_retry_budget() {
     assert_eq!(res.status(), 533);
 }
 
-#[tokio::test]
-async fn ignores_invalid_retry_budget_ttl() {
-    let test = TestBuilder::new(server::http1())
+async fn test_ignores_invalid_retry_budget_ttl(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -439,9 +428,8 @@ async fn ignores_invalid_retry_budget_ttl() {
     assert_eq!(res.status(), 533);
 }
 
-#[tokio::test]
-async fn ignores_invalid_retry_budget_ratio() {
-    let test = TestBuilder::new(server::http1())
+async fn test_ignores_invalid_retry_budget_ratio(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -464,9 +452,8 @@ async fn ignores_invalid_retry_budget_ratio() {
     assert_eq!(res.status(), 533);
 }
 
-#[tokio::test]
-async fn ignores_invalid_retry_budget_negative_ratio() {
-    let test = TestBuilder::new(server::http1())
+async fn ignores_invalid_retry_budget_negative_ratio(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -485,27 +472,8 @@ async fn ignores_invalid_retry_budget_negative_ratio() {
     assert_eq!(res.status(), 533);
 }
 
-#[tokio::test]
-async fn http2_failures_dont_leak_connection_window() {
-    let test = TestBuilder::new(server::http2())
-        .with_profile_route(
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true),
-        )
-        .run()
-        .await;
-
-    // Before https://github.com/carllerche/h2/pull/334, this would
-    // hang since the retried failure would have leaked the 100k window
-    // capacity, preventing the successful response from being read.
-    assert_eq!(test.client.get("/0.5/100KB").await, "retried")
-}
-
-#[tokio::test]
-async fn timeout() {
-    let test = TestBuilder::new(server::http1())
+async fn test_timeout(version: server::Server) {
+    let test = TestBuilder::new(version)
         .with_profile_route(
             controller::route()
                 .request_any()
@@ -532,4 +500,161 @@ async fn timeout() {
         .label("error", "timeout")
         .value(1u64)
         .assert_in(&test.metrics)
+        .await;
+}
+
+mod http1 {
+    use super::*;
+
+    #[tokio::test]
+    async fn retry_if_profile_allows() {
+        test_retry_if_profile_allows(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn retry_uses_budget() {
+        test_retry_uses_budget(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn retry_with_small_post_body() {
+        test_retry_with_small_post_body(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn retry_with_small_put_body() {
+        test_retry_with_small_put_body(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn retry_without_content_length() {
+        test_retry_without_content_length(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_if_request_does_not_match() {
+        test_does_not_retry_if_request_does_not_match(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_if_earlier_response_class_is_success() {
+        test_does_not_retry_if_earlier_response_class_is_success(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_if_body_is_too_long() {
+        test_does_not_retry_if_body_is_too_long(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_if_streaming_body_exceeds_max_length() {
+        test_does_not_retry_if_streaming_body_exceeds_max_length(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_if_missing_retry_budget() {
+        test_does_not_retry_if_missing_retry_budget(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn ignores_invalid_retry_budget_ttl() {
+        test_ignores_invalid_retry_budget_ttl(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn ignores_invalid_retry_budget_ratio() {
+        test_ignores_invalid_retry_budget_ratio(server::http1()).await
+    }
+
+    #[tokio::test]
+    async fn timeout() {
+        test_timeout(server::http1()).await
+    }
+}
+
+mod http2 {
+    use super::*;
+
+    #[tokio::test]
+    async fn retry_if_profile_allows() {
+        test_retry_if_profile_allows(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn retry_uses_budget() {
+        test_retry_uses_budget(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn retry_with_small_post_body() {
+        test_retry_with_small_post_body(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn retry_with_small_put_body() {
+        test_retry_with_small_put_body(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn retry_without_content_length() {
+        test_retry_without_content_length(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_if_request_does_not_match() {
+        test_does_not_retry_if_request_does_not_match(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_if_earlier_response_class_is_success() {
+        test_does_not_retry_if_earlier_response_class_is_success(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_if_body_is_too_long() {
+        test_does_not_retry_if_body_is_too_long(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_if_streaming_body_exceeds_max_length() {
+        test_does_not_retry_if_streaming_body_exceeds_max_length(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_if_missing_retry_budget() {
+        test_does_not_retry_if_missing_retry_budget(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn ignores_invalid_retry_budget_ttl() {
+        test_ignores_invalid_retry_budget_ttl(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn ignores_invalid_retry_budget_ratio() {
+        test_ignores_invalid_retry_budget_ratio(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn timeout() {
+        test_timeout(server::http2()).await
+    }
+
+    #[tokio::test]
+    async fn http2_failures_dont_leak_connection_window() {
+        let test = TestBuilder::new(server::http2())
+            .with_profile_route(
+                controller::route()
+                    .request_any()
+                    .response_failure(500..600)
+                    .retryable(true),
+            )
+            .run()
+            .await;
+
+        // Before https://github.com/carllerche/h2/pull/334, this would
+        // hang since the retried failure would have leaked the 100k window
+        // capacity, preventing the successful response from being read.
+        assert_eq!(test.client.get("/0.5/100KB").await, "retried")
+    }
 }
