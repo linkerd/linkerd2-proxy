@@ -48,8 +48,8 @@ ee() {
   mv "${ee}.csr" "${ee}/csr.pem"
 }
 
-ca "Cluster-local CA 1" ca1
-ca "Cluster-local CA 1" ca2 # Same name, different key pair.
+ca 'Cluster-local CA 1' ca1
+ca 'Cluster-local CA 1' ca2 # Same name, different key pair.
 
 # The controller itself.
 ee ca1 controller linkerd linkerd
