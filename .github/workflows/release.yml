@@ -15,6 +15,7 @@ permissions:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
+  CHECKSEC_VERSION: 2.5.0
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
 
@@ -55,31 +56,48 @@ jobs:
     name: Package (${{ matrix.arch }})
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    container:
+      image: docker://rust:1.60.0-bullseye
     steps:
+      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
+      - run: apt update
+      - run: apt install -y jq
+      - name: Install checksec
+        run: |
+          cd /usr/local/bin && \
+          curl -vsLO "https://raw.githubusercontent.com/slimm609/checksec.sh/${CHECKSEC_VERSION}/checksec" && \
+          chmod 755 checksec
+      - if: matrix.arch == 'arm64'
+        name: Setup arm64
+        run: |
+          rustup target add aarch64-unknown-linux-gnu
+          apt-get install -y --no-install-recommends g++-aarch64-linux-gnu libc6-dev-arm64-cross
+      - if: matrix.arch == 'arm'
+        name: Setup arm
+        run: |
+          rustup target add armv7-unknown-linux-gnueabihf
+          apt-get install -y --no-install-recommends g++-arm-linux-gnueabihf libc6-dev-armhf-cross
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - name: Package
-        uses: ./.github/actions/package
-        env:
-          ARCH: ${{ matrix.arch }}
-          PACKAGE_VERSION: ${{ needs.meta.outputs.version }}
-      - if: needs.meta.outputs.publish
-        uses: actions/upload-artifact@3cea5372237819ed00197afe530f5a7ea3e805c8
+      - run: just fetch
+      - name: Run just package
+        run: just build_type=release package_arch=${{ matrix.arch }}  package_version=${{ needs.meta.outputs.version }} package
+      - uses: actions/upload-artifact@3cea5372237819ed00197afe530f5a7ea3e805c8
         with:
           name: ${{ matrix.arch }}-artifacts
-          path: target/${{ matrix.target }}/release/package/*
+          path: target/package/*
 
   publish:
     needs: [meta, package]
-    if: needs.meta.outputs.publish
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
         with:
           path: artifacts
-      - run: ls -R artifacts
-      - uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
+      - run: du -h artifacts/**/*
+      - if: needs.meta.outputs.publish
+        uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
         with:
           name: ${{ needs.meta.outputs.version }}
           files: artifacts/**/*
-          generate_releae_notes: true
+          generate_release_notes: true

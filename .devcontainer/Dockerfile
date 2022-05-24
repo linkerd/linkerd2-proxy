@@ -1,26 +1,42 @@
 ARG RUST_VERSION=1.60.0
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as kubectl
-ARG KUBECTL_VERSION=v1.23.2
+ARG KUBECTL_VERSION=v1.23.6
 RUN curl --proto '=https' --tlsv1.3 -vsSfLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
     && chmod 755 /usr/local/bin/kubectl
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as k3d
-RUN curl --proto '=https' --tlsv1.3 -vsSfL https://raw.githubusercontent.com/rancher/k3d/main/install.sh  | bash
+ARG K3D_VERSION=v5.4.1
+RUN cd /usr/local/bin \
+    && curl --proto '=https' --tlsv1.3 -vsSfLO "https://github.com/k3d-io/k3d/releases/download/${K3D_VERSION}/k3d-linux-amd64" \
+    && mv k3d-linux-amd64 k3d \
+    && chmod 755 k3d
 
-FROM docker.io/rust:${RUST_VERSION}-bullseye as cargo-deny
-ARG CARGO_DENY_VERSION=0.11.1
-RUN curl --proto '=https' --tlsv1.3 -vsSfL "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-    | tar zvxf - --strip-components=1 -C /usr/local/bin "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
+FROM docker.io/rust:${RUST_VERSION}-bullseye as deny
+ARG DENY_VERSION=0.12.1
+RUN curl --proto '=https' --tlsv1.3 -vsSfL "https://github.com/EmbarkStudios/cargo-deny/releases/download/${DENY_VERSION}/cargo-deny-${DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    | tar zvxf - --strip-components=1 -C /usr/local/bin "cargo-deny-${DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as yq
-ARG YQ_VERSION=v4.2.0
+ARG YQ_VERSION=v4.25.1
 RUN curl --proto '=https' --tlsv1.3 -vsSfLo /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
     && chmod +x /usr/local/bin/yq
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as checksec
 ARG CHECKSEC_VERSION=2.5.0
-RUN cd /usr/local/bin && curl -vsLO "https://raw.githubusercontent.com/slimm609/checksec.sh/${CHECKSEC_VERSION}/checksec" && chmod 755 checksec
+RUN cd /usr/local/bin \
+    && curl --proto '=https' --tlsv1.3 -vsSfLO "https://raw.githubusercontent.com/slimm609/checksec.sh/${CHECKSEC_VERSION}/checksec" \
+    && chmod 755 checksec
+
+FROM docker.io/rust:${RUST_VERSION}-bullseye as just
+ARG JUST_VERSION=1.1.3
+RUN curl --proto '=https' --tlsv1.3 -vsSfL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    | tar zvxf - -C /usr/local/bin just
+
+FROM docker.io/rust:${RUST_VERSION}-bullseye as nextest
+ARG NEXTEST_VERSION=0.9.14
+RUN curl --proto '=https' --tlsv1.3 -vsSfL "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/cargo-nextest-${NEXTEST_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+    | tar zvxf - -C /usr/local/bin cargo-nextest
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as nightly
 RUN rustup toolchain add nightly
@@ -29,7 +45,7 @@ FROM nightly as fuzz
 RUN cargo +nightly install cargo-fuzz
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as protoc
-ARG PROTOC_VERSION=v3.20.0
+ARG PROTOC_VERSION=v3.20.1
 WORKDIR /tmp
 RUN arch="$(uname -m)" ; \
     version="$PROTOC_VERSION" ; \
@@ -53,6 +69,7 @@ RUN apt install -y --no-install-recommends \
     jq \
     locales \
     lsb-release \
+    shellcheck \
     sudo \
     time
 
@@ -78,13 +95,15 @@ ENV HOME=/home/$USER
 RUN curl --proto '=https' --tlsv1.3 -vsSfL https://run.linkerd.io/install-edge | sh
 ENV PATH=$HOME/.linkerd2/bin:$PATH
 
-COPY --from=cargo-deny /usr/local/bin/cargo-deny /usr/local/bin/cargo-deny
+COPY --from=deny /usr/local/bin/cargo-deny /usr/local/bin/cargo-deny
 COPY --from=k3d /usr/local/bin/k3d /usr/local/bin/k3d
 COPY --from=kubectl /usr/local/bin/kubectl /usr/local/bin/kubectl
 COPY --from=yq /usr/local/bin/yq /usr/local/bin/yq
 COPY --from=checksec /usr/local/bin/checksec /usr/local/bin/checksec
 COPY --from=nightly /usr/local/rustup/toolchains/nightly-x86_64-unknown-linux-gnu /usr/local/rustup/toolchains/nightly-x86_64-unknown-linux-gnu
 COPY --from=fuzz /usr/local/cargo/bin/cargo-fuzz /usr/local/cargo/bin/cargo-fuzz
+COPY --from=just /usr/local/bin/just /usr/local/bin/just
+COPY --from=nextest /usr/local/bin/cargo-nextest /usr/local/bin/cargo-nextest
 
 COPY --from=protoc /tmp/bin/protoc /usr/local/bin/protoc
 ENV PROTOC_NO_VENDOR=1

@@ -29,33 +29,27 @@ jobs:
     container:
       image: docker://rust:1.60.0-bullseye
     steps:
+      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - uses: ./.github/actions/install-protoc
+      - run: just fetch
       - run: |
-          cargo test --no-run \
-            --package=linkerd-app \
-            --package=linkerd-app-admin \
+          just test-crate linkerd-app --no-run \
             --package=linkerd-app-core \
             --package=linkerd-app-gateway \
             --package=linkerd-app-inbound \
             --package=linkerd-app-outbound \
             --package=linkerd-app-test
       - run: |
-          cargo test \
-            --package=linkerd-app \
-            --package=linkerd-app-admin \
+          just test-crate linkerd-app \
             --package=linkerd-app-core \
             --package=linkerd-app-gateway \
             --package=linkerd-app-inbound \
             --package=linkerd-app-outbound \
             --package=linkerd-app-test
-
-      # Integration: enable tests that are flakey in coverage, but disable tests
-      # that can be flakey in CI...
       - run: |
-          cargo test --no-run \
-            --package=linkerd-app-integration \
+          just test-crate linkerd-app-integration --no-run \
             --no-default-features --features=flakey-in-coverage
       - run: |
-          cargo test \
-            --package=linkerd-app-integration \
+          just test-crate linkerd-app-integration \
             --no-default-features --features=flakey-in-coverage
