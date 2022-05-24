@@ -632,7 +632,7 @@ mod grpc_retry {
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers().get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
 
-        assert_eq!(retries.load(Ordering::Relaxed), 1);
+        assert_eq!(retries.load(Ordering::Relaxed), 2);
     }
 
     /// Tests that a gRPC request is retried when a `grpc-status` code other
@@ -686,6 +686,6 @@ mod grpc_retry {
             .expect("trailers future should not fail")
             .expect("response should have trailers");
         assert_eq!(trailers.get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
-        assert_eq!(retries.load(Ordering::Relaxed), 1);
+        assert_eq!(retries.load(Ordering::Relaxed), 2);
     }
 }
