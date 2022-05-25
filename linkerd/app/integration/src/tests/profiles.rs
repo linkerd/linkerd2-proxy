@@ -504,7 +504,7 @@ mod cross_version {
     }
 }
 
-macro_rules! cross_version {
+macro_rules! version_tests {
     ($version:expr => $($test:ident),+ $(,)?) => {
         $(
             #[tokio::test]
@@ -517,7 +517,7 @@ macro_rules! cross_version {
 mod http1 {
     use super::*;
 
-    cross_version! {
+    version_tests! {
         server::http1() =>
         retry_if_profile_allows,
         retry_uses_budget,
@@ -539,8 +539,8 @@ mod http1 {
 mod http2 {
     use super::*;
 
-    cross_version! {
-        server::http1() =>
+    version_tests! {
+        server::http2() =>
         retry_if_profile_allows,
         retry_uses_budget,
         retry_with_small_post_body,
