@@ -190,6 +190,30 @@ impl Proxy {
 }
 
 impl Listening {
+    pub fn outbound_http_client(&self, auth: impl Into<String>) -> client::Client {
+        let version = self
+            .outbound_server
+            .as_ref()
+            .and_then(|outbound| outbound.http_version)
+            .expect("proxy does not have an outbound server, or the outbound server is not HTTP");
+        match version {
+            server::Run::Http1 => client::http1(self.outbound, auth),
+            server::Run::Http2 => client::http2(self.outbound, auth),
+        }
+    }
+
+    pub fn inbound_http_client(&self, auth: impl Into<String>) -> client::Client {
+        let version = self
+            .inbound_server
+            .as_ref()
+            .and_then(|inbound| inbound.http_version)
+            .expect("proxy does not have an inbound server, or the inbound server is not HTTP");
+        match version {
+            server::Run::Http1 => client::http1(self.inbound, auth),
+            server::Run::Http2 => client::http2(self.inbound, auth),
+        }
+    }
+
     pub async fn join_servers(self) {
         let Self {
             inbound_server,

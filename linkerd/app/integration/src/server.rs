@@ -51,22 +51,20 @@ pub struct Listening {
     pub(super) drain: drain::Signal,
     pub(super) conn_count: Arc<AtomicUsize>,
     pub(super) task: Option<JoinHandle<Result<(), io::Error>>>,
-}
-
-pub fn mock_listening(a: SocketAddr) -> Listening {
-    let (tx, _rx) = drain::channel();
-    let conn_count = Arc::new(AtomicUsize::from(0));
-    Listening {
-        addr: a,
-        drain: tx,
-        conn_count,
-        task: Some(tokio::spawn(async { Ok(()) })),
-    }
+    pub(super) http_version: Option<Run>,
 }
 
 impl Listening {
     pub fn connections(&self) -> usize {
         self.conn_count.load(Ordering::Acquire)
+    }
+
+    pub fn http_client(&self, auth: impl Into<String>) -> client::Client {
+        match self.http_version.as_ref() {
+            Some(Run::Http1) => client::http1(self.addr, auth),
+            Some(Run::Http2) => client::http2(self.addr, auth),
+            None => panic!("unknown HTTP version, server is configured for raw TCP"),
+        }
     }
 
     /// Wait for the server task to join, and propagate panics.
@@ -273,12 +271,13 @@ impl Server {
             drain: drain_signal,
             conn_count,
             task: Some(task),
+            http_version: Some(version),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Run {
+pub(super) enum Run {
     Http1,
     Http2,
 }
