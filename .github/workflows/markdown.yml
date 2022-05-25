@@ -6,7 +6,7 @@ permissions:
 on:
   pull_request:
     paths:
-      - '*.md'
+      - '**/*.md'
       - .github/workflows/markdown.yml
 
 jobs:
