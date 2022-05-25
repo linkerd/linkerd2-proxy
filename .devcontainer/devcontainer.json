@@ -3,6 +3,7 @@
 	"image": "ghcr.io/linkerd/dev-proxy:v11",
 	// "dockerFile": "./Dockerfile",
 	"extensions": [
+		"DavidAnson.vscode-markdownlint",
 		"NathanRidley.autotrim",
 		"rust-lang.rust-analyzer",
 		"samverschueren.final-newline",

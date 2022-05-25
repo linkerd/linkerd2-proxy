@@ -1,3 +1,5 @@
+# The Linkerd Proxy
+
 ![linkerd2][logo]
 
 <!-- TODO [![Build Status][ci-badge]][ci] -->
@@ -29,28 +31,25 @@ The proxy supports service discovery via DNS and the [linkerd2
 The Linkerd project is hosted by the Cloud Native Computing Foundation
 ([CNCF][cncf]).
 
-
 ## Building the project
 
-A `Makefile` is provided to automate most build tasks. It provides the
-following targets:
+A [`justfile`](./justfile) is provided to automate most build tasks. It provides
+the following recipes:
 
-* `make build` -- Compiles the proxy on your local system using `cargo`
-* `make clean` -- Cleans the build target on the local system using `cargo clean`
-* `make test` -- Runs unit and integration tests on your local system using `cargo`
-* `make test-flakey` -- Runs _all_ tests, including those that may fail spuriously
-* `make package` -- Builds a tarball at
-  `target/release/linkerd2-proxy-${PACKAGE_VERSION}.tar.gz`. If
-  `PACKAGE_VERSION` is not set in the environment, the local git SHA is used.
-* `make docker` -- Builds a Docker container image that can be used for testing.
-   If the `DOCKER_TAG` environment variable is set, the image is given this
-   name. Otherwise, the image is not named.
+* `just build` -- Compiles the proxy on your local system using `cargo`
+* `just test` -- Runs unit and integration tests on your local system using `cargo`
+* `just docker` -- Builds a Docker container image that can be used for testing.
 
 ### Cargo
 
 Usually, [Cargo][cargo], Rust's package manager, is used to build and test this
 project. If you don't have Cargo installed, we suggest getting it via
-https://rustup.rs/.
+<https://rustup.rs/>.
+
+### Devcontainer
+
+A Devcontainer is provided for use with Visual Studio Code. It includes all of
+the tooling needed to build and test the proxy.
 
 ### Repository Structure
 
@@ -60,7 +59,9 @@ targets are especially important:
 
 * [`linkerd2-proxy`] contains the proxy executable;
 * [`linkerd2-app-integration`] contains the proxy's integration tests;
-* [`linkerd2-app`] bundles the [`linkerd2-app-inbound`] and [`linkerd2-app-outbound`] crates so that they may be run by the executable or integration tests.
+* [`linkerd2-app`] bundles the [`linkerd2-app-inbound`] and
+  [`linkerd2-app-outbound`] crates so that they may be run by the executable or
+  integration tests.
 
 [`linkerd2-proxy`]: linkerd2-proxy
 [`linkerd2-app`]: linkerd/app
@@ -73,13 +74,13 @@ targets are especially important:
 This project is for everyone. We ask that our users and contributors take a few
 minutes to review our [code of conduct][coc].
 
-
 ## Security
 
 We test our code by way of fuzzing and this is described in [FUZZING.md](/docs/FUZZING.md).
 
-A third party security audit focused on fuzzing Linkerd2-proxy was performed by Ada Logics in 2021. The full report is available [here](/docs/reports/linkerd2-proxy-fuzzing-report.pdf).
-
+A third party security audit focused on fuzzing Linkerd2-proxy was performed by
+Ada Logics in 2021. The full report is available
+[here](/docs/reports/linkerd2-proxy-fuzzing-report.pdf).
 
 ## License
 
@@ -95,7 +96,6 @@ Unless required by applicable law or agreed to in writing, software distributed
 under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied. See the License for the
 specific language governing permissions and limitations under the License.
-
 
 <!-- refs -->
 [cargo]: https://github.com/rust-lang/cargo/
