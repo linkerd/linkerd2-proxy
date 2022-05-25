@@ -1,3 +1,5 @@
+# The Linkerd Proxy
+
 ![linkerd2][logo]
 
 <!-- TODO [![Build Status][ci-badge]][ci] -->
@@ -29,7 +31,6 @@ The proxy supports service discovery via DNS and the [linkerd2
 The Linkerd project is hosted by the Cloud Native Computing Foundation
 ([CNCF][cncf]).
 
-
 ## Building the project
 
 A `Makefile` is provided to automate most build tasks. It provides the
@@ -50,7 +51,7 @@ following targets:
 
 Usually, [Cargo][cargo], Rust's package manager, is used to build and test this
 project. If you don't have Cargo installed, we suggest getting it via
-https://rustup.rs/.
+<https://rustup.rs/>.
 
 ### Repository Structure
 
@@ -60,7 +61,9 @@ targets are especially important:
 
 * [`linkerd2-proxy`] contains the proxy executable;
 * [`linkerd2-app-integration`] contains the proxy's integration tests;
-* [`linkerd2-app`] bundles the [`linkerd2-app-inbound`] and [`linkerd2-app-outbound`] crates so that they may be run by the executable or integration tests.
+* [`linkerd2-app`] bundles the [`linkerd2-app-inbound`] and
+  [`linkerd2-app-outbound`] crates so that they may be run by the executable or
+  integration tests.
 
 [`linkerd2-proxy`]: linkerd2-proxy
 [`linkerd2-app`]: linkerd/app
@@ -73,13 +76,13 @@ targets are especially important:
 This project is for everyone. We ask that our users and contributors take a few
 minutes to review our [code of conduct][coc].
 
-
 ## Security
 
 We test our code by way of fuzzing and this is described in [FUZZING.md](/docs/FUZZING.md).
 
-A third party security audit focused on fuzzing Linkerd2-proxy was performed by Ada Logics in 2021. The full report is available [here](/docs/reports/linkerd2-proxy-fuzzing-report.pdf).
-
+A third party security audit focused on fuzzing Linkerd2-proxy was performed by
+Ada Logics in 2021. The full report is available
+[here](/docs/reports/linkerd2-proxy-fuzzing-report.pdf).
 
 ## License
 
@@ -95,7 +98,6 @@ Unless required by applicable law or agreed to in writing, software distributed
 under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied. See the License for the
 specific language governing permissions and limitations under the License.
-
 
 <!-- refs -->
 [cargo]: https://github.com/rust-lang/cargo/
