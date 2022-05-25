@@ -50,9 +50,7 @@ mod cross_version {
             .await;
 
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(srv.addr, HOST);
-        let dest = ctrl.destination_tx(format!("{}:{}", HOST, srv.addr.port()));
-        dest.send_addr(srv.addr);
+        let _txs = send_default_dst(&ctrl, &srv);
 
         let proxy = proxy::new()
             .controller(ctrl.run().await)
@@ -76,9 +74,7 @@ mod cross_version {
         let srv = test.srv.route("/", "hello").run().await;
 
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(srv.addr, HOST);
-        let dest = ctrl.destination_tx(format!("{}:{}", HOST, srv.addr.port()));
-        dest.send_addr(srv.addr);
+        let _txs = send_default_dst(&ctrl, &srv);
         ctrl.no_more_destinations();
 
         let proxy = proxy::new()
@@ -106,9 +102,9 @@ mod cross_version {
         let srv = test.srv.route("/recon", "nect").run().await;
 
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(srv.addr, HOST);
-        drop(ctrl.destination_tx(format!("{}:{}", HOST, srv.addr.port())));
-        let dest = ctrl.destination_tx(format!("{}:{}", HOST, srv.addr.port()));
+        let (_profile, dest) = send_default_dst(&ctrl, &srv);
+        drop(dest);
+        let dest = ctrl.destination_tx(default_dst_name(&srv));
         dest.send_addr(srv.addr);
 
         let proxy = proxy::new()
@@ -147,7 +143,7 @@ mod cross_version {
 
         let ctrl = controller::new();
         let _profile = ctrl.profile_tx_default(srv.addr, HOST);
-        let dest = ctrl.destination_tx(format!("{}:{}", HOST, srv.addr.port()));
+        let dest = ctrl.destination_tx(default_dst_name(&srv));
         dest.send(up);
 
         let proxy = proxy::new()
@@ -247,7 +243,7 @@ mod cross_version {
 
     async fn outbound_destinations_reset_on_reconnect(up: pb::destination::Update, test: Test) {
         let _trace = trace_init();
-        let env = TestEnv::default();
+
         let srv = test.srv.route("/", "hello").run().await;
         let ctrl = controller::new();
         let _profile = ctrl.profile_tx_default(srv.addr, "initially-exists.ns.svc.cluster.local");
@@ -266,7 +262,7 @@ mod cross_version {
         let proxy = proxy::new()
             .controller(ctrl.run().await)
             .outbound(srv)
-            .run_with_test_env(env)
+            .run()
             .await;
 
         let initially_exists = (test.mk_client)(&proxy, "initially-exists.ns.svc.cluster.local");
@@ -290,7 +286,6 @@ mod cross_version {
 
     pub(super) async fn outbound_times_out(test: Test) {
         let _t = trace_init();
-        let env = TestEnv::default();
 
         let srv = test.srv.route("/hi", "hello").run().await;
         let ctrl = controller::new();
@@ -298,12 +293,12 @@ mod cross_version {
         let _profile = ctrl.profile_tx_default(srv.addr, HOST);
 
         // when the proxy requests the destination, don't respond.
-        let _dst_tx = ctrl.destination_tx(format!("{}:{}", HOST, srv.addr.port()));
+        let _dst_tx = ctrl.destination_tx(default_dst_name(&srv));
 
         let proxy = proxy::new()
             .controller(ctrl.run().await)
             .outbound(srv)
-            .run_with_test_env(env)
+            .run()
             .await;
 
         let client = (test.mk_client)(&proxy, HOST);
@@ -325,11 +320,8 @@ mod cross_version {
         let (tx, rx) = oneshot::channel::<()>();
 
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(srv.addr, HOST);
-
-        let dst_tx = ctrl.destination_tx(format!("{}:{}", HOST, srv.addr.port()));
-        dst_tx.send_addr(srv.addr);
         // but don't drop, to not trigger stream closing reconnects
+        let _txs = send_default_dst(&ctrl, &srv);
 
         let proxy = proxy::new()
             .controller(
@@ -357,6 +349,20 @@ mod cross_version {
         // Ensure panics are propagated.
         srv.join().await;
     }
+}
+
+fn default_dst_name(srv: &server::Listening) -> String {
+    format!("{}:{}", HOST, srv.addr.port())
+}
+
+fn send_default_dst(
+    ctrl: &controller::Controller,
+    srv: &server::Listening,
+) -> (controller::ProfileSender, controller::DstSender) {
+    let profile = ctrl.profile_tx_default(srv.addr, HOST);
+    let dest = ctrl.destination_tx(default_dst_name(srv));
+    dest.send_addr(srv.addr);
+    (profile, dest)
 }
 
 mod http2 {
@@ -393,12 +399,12 @@ mod http2 {
             .route("/bye", "bye")
             .run()
             .await;
-        let port = srv1.addr.port();
+        let srv1_auth = default_dst_name(&srv1);
+
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(srv1.addr, HOST);
-        let dst = ctrl.destination_tx(&format!("{}:{}", HOST, port));
+
         // Start by "knowing" the first server...
-        dst.send_addr(srv1.addr);
+        let (_profile, dst) = send_default_dst(&ctrl, &srv1);
 
         let proxy = proxy::new()
             .outbound_ip(srv1.addr)
@@ -419,7 +425,7 @@ mod http2 {
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("authority", format_args!("{}:{}", HOST, port))
+            .label("authority", srv1_auth)
             .value(1u64)
             .assert_in(&metrics)
             .await;
