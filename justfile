@@ -152,7 +152,7 @@ fuzzers:
 
 # Build a docker image (FOR TESTING ONLY)
 docker tag='' mode='load':
-    docker build . \
+    docker buildx build . \
         {{ if build_type != 'release' { "--build-arg PROXY_UNOPTIMIZED=1" } else { "" } }} \
         {{ if tag != "" { "--tag=" + tag + " " + (if mode == "push" { "--push" } else { "--load" }) } else { "" } }}
 
