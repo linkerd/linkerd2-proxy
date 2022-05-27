@@ -20,7 +20,7 @@ cargo := "cargo" + if toolchain != "" { " +" + toolchain } else { "" }
 package_version := `git rev-parse --short HEAD`
 
 # Default docker tag name
-default_docker_tag := "gchr.io/linkerd-io/proxy:" + env_var_or_default("USER", "dev") + "-" + package_version
+default_docker_tag := env_var_or_default("USER", "dev") + "/l2-proxy:" + package_version
 
 # The architecture name to use for packages. Either 'amd64', 'arm64', or 'arm'.
 package_arch := "amd64"
