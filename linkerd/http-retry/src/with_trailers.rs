@@ -118,7 +118,27 @@ where
         Pin::new(&mut this.inner).poll_trailers(cx)
     }
 
+    #[inline]
     fn is_end_stream(&self) -> bool {
         self.first_data.is_none() && self.trailers.is_none() && self.inner.is_end_stream()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> http_body::SizeHint {
+        use bytes::Buf;
+
+        let mut hint = self.inner.size_hint();
+        // If we're holding onto a chunk of data, add its length to the inner
+        // `Body`'s size hint.
+        if let Some(chunk) = self.first_data.as_ref() {
+            let buffered = chunk.remaining() as u64;
+
+            hint.set_lower(hint.lower() + buffered);
+            if let Some(upper) = hint.upper() {
+                hint.set_upper(upper + buffered);
+            }
+        }
+
+        hint
     }
 }
