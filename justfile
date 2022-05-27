@@ -22,7 +22,7 @@ features := ""
 package_version := `git rev-parse --short HEAD`
 
 # Docker image name & tag.
-docker_repo := "localhost/linked/proxy"
+docker_repo := "localhost/linkerd/proxy"
 docker_tag := `git rev-parse --abbrev-ref HEAD | sed 's|/|.|'` + "." + `git rev-parse --short HEAD`
 docker_image := docker_repo + ":" + docker_tag
 
