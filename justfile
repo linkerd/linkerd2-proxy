@@ -154,7 +154,7 @@ fuzzers:
     done
 
 # Build a docker image (FOR TESTING ONLY)
-docker tag='' mode='load':
+docker tag=default_docker_tag mode='load':
     docker buildx build . \
         {{ if build_type != 'release' { "--build-arg PROXY_UNOPTIMIZED=1" } else { "" } }} \
         {{ if tag != "" { "--tag=" + tag + " " + (if mode == "push" { "--push" } else { "--load" }) } else { "" } }}
