@@ -3,7 +3,10 @@
 
 use futures::future;
 use linkerd_error::Error;
-use linkerd_stack::{layer, Either, NewService, Oneshot, Service, ServiceExt};
+use linkerd_stack::{
+    layer::{self, Layer},
+    Either, NewService, Oneshot, Service, ServiceExt,
+};
 use std::task::{Context, Poll};
 pub use tower::retry::{budget::Budget, Policy};
 use tracing::trace;
@@ -38,57 +41,65 @@ pub trait PrepareRequest<Req, Res, E>: tower::retry::Policy<Self::RetryRequest, 
 
 /// Applies per-target retry policies.
 #[derive(Clone, Debug)]
-pub struct NewRetry<P, N> {
+pub struct NewRetry<P, N, R> {
     new_policy: P,
+    on_response: R,
     inner: N,
 }
 
 #[derive(Clone, Debug)]
-pub struct Retry<P, S> {
+pub struct Retry<P, S, R> {
     policy: Option<P>,
     inner: S,
+    on_response: R,
 }
 
 // === impl NewRetry ===
 
-impl<P: Clone, N> NewRetry<P, N> {
-    pub fn layer(new_policy: P) -> impl layer::Layer<N, Service = Self> + Clone {
+impl<P: Clone, N, R: Clone> NewRetry<P, N, R> {
+    pub fn layer(new_policy: P, on_response: R) -> impl Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
             new_policy: new_policy.clone(),
+            on_response: on_response.clone(),
         })
     }
 }
 
-impl<T, N, P> NewService<T> for NewRetry<P, N>
+impl<T, N, P, R> NewService<T> for NewRetry<P, N, R>
 where
     N: NewService<T>,
     P: NewPolicy<T>,
+    R: Layer<N::Service> + Clone,
 {
-    type Service = Retry<P::Policy, N::Service>;
+    type Service = Retry<P::Policy, N::Service, R>;
 
     fn new_service(&self, target: T) -> Self::Service {
         // Determine if there is a retry policy for the given target.
         let policy = self.new_policy.new_policy(&target);
 
         let inner = self.inner.new_service(target);
-        Retry { policy, inner }
+        Retry {
+            policy,
+            inner,
+            on_response: self.on_response.clone(),
+        }
     }
 }
 
 // === impl Retry ===
 
-impl<P, Req, S, Rsp, Fut> Service<Req> for Retry<P, S>
+impl<P, Req, S, Rsp, Fut, R> Service<Req> for Retry<P, S, R>
 where
     P: PrepareRequest<Req, Rsp, Error> + Clone,
-    S: Service<Req, Response = Rsp, Future = Fut, Error = Error>
-        + Service<P::RetryRequest, Response = Rsp, Future = Fut, Error = Error>
-        + Clone,
+    S: Service<Req, Response = Rsp, Future = Fut, Error = Error> + Clone,
+    R::Service: Service<P::RetryRequest, Response = Rsp, Future = Fut, Error = Error> + Clone,
+    R: Layer<S>,
     Fut: std::future::Future<Output = Result<Rsp, Error>>,
 {
     type Response = Rsp;
     type Error = Error;
-    type Future = future::Either<Fut, Oneshot<tower::retry::Retry<P, S>, P::RetryRequest>>;
+    type Future = future::Either<Fut, Oneshot<tower::retry::Retry<P, R::Service>, P::RetryRequest>>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -109,7 +120,7 @@ where
         };
 
         let inner = self.inner.clone();
-        let retry = tower::retry::Retry::new(policy.clone(), inner);
+        let retry = tower::retry::Retry::new(policy.clone(), self.on_response.layer(inner));
         future::Either::Right(retry.oneshot(retry_req))
     }
 }
