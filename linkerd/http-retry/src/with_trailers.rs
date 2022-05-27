@@ -1,32 +1,48 @@
-use http_body::Body;
+use http_body::Body as HttpBody;
 use linkerd_error::Error;
-use linkerd_stack::Service;
+use linkerd_stack as svc;
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
 
-pub struct WithTrailersSvc<S> {
+#[derive(Clone)]
+pub struct WithTrailers<S> {
     inner: S,
 }
-
-pub struct WithTrailersBody<B: Body> {
+pub struct Body<B: HttpBody> {
     inner: B,
     first_data: Option<B::Data>,
     trailers: Option<http::HeaderMap>,
 }
 
-impl<S, Req, RspBody> Service<Req> for WithTrailersSvc<S>
+/// This has its own `Layer` type (rather than using `layer::Mk`) so that the
+/// layer type doesn't include the service type's name.
+#[derive(Clone, Debug, Default)]
+pub struct Layer(());
+
+// === impl Layer ===
+
+impl<S> svc::layer::Layer<S> for Layer {
+    type Service = WithTrailers<S>;
+    fn layer(&self, inner: S) -> Self::Service {
+        WithTrailers { inner }
+    }
+}
+
+// === impl WithTrailers ===
+
+impl<S, Req, RspBody> svc::Service<Req> for WithTrailers<S>
 where
-    S: Service<Req, Response = http::Response<RspBody>>,
+    S: svc::Service<Req, Response = http::Response<RspBody>>,
     S::Future: Send + 'static,
     S::Error: Into<Error>,
-    RspBody: Body + Send + Unpin,
+    RspBody: HttpBody + Send + Unpin,
     RspBody::Error: Into<Error>,
     RspBody::Data: Send + Unpin,
 {
-    type Response = http::Response<WithTrailersBody<RspBody>>;
+    type Response = http::Response<Body<RspBody>>;
     type Error = Error;
     type Future =
         Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
@@ -39,7 +55,7 @@ where
         let rsp = self.inner.call(req);
         Box::pin(async move {
             let (parts, body) = rsp.await.map_err(Into::into)?.into_parts();
-            let mut body = WithTrailersBody {
+            let mut body = Body {
                 inner: body,
                 first_data: None,
                 trailers: None,
@@ -64,15 +80,15 @@ where
 
 // === impl WithTrailersBody ===
 
-impl<B: Body> WithTrailersBody<B> {
+impl<B: HttpBody> Body<B> {
     pub fn trailers(&self) -> Option<&http::HeaderMap> {
         self.trailers.as_ref()
     }
 }
 
-impl<B> Body for WithTrailersBody<B>
+impl<B> HttpBody for Body<B>
 where
-    B: Body + Unpin,
+    B: HttpBody + Unpin,
     B::Data: Unpin,
 {
     type Data = B::Data;

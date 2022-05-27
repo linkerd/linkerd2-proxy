@@ -4,19 +4,23 @@ use linkerd_app_core::{
     classify,
     http_metrics::retries::Handle,
     metrics, profiles,
-    proxy::http::{ClientHandle, HttpBody},
-    svc::{layer, Either, Param},
+    proxy::http::{ClientHandle, HttpBody, BoxBody},
+    svc::{layer, Either, Param}
     Error,
 };
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
-use linkerd_http_retry::ReplayBody;
+use linkerd_http_retry::{with_trailers, ReplayBody};
 use linkerd_retry as retry;
 use std::sync::Arc;
 
-pub fn layer<N>(
+pub fn layer<N, R>(
     metrics: metrics::HttpRouteRetry,
-) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N>> + Clone {
-    retry::NewRetry::<_, N>::layer(NewRetryPolicy::new(metrics))
+) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N, with_trailers::Layer, R>> + Clone
+{
+    retry::NewRetry::<_, N, _, R, _>::layer(
+        NewRetryPolicy::new(metrics),
+        with_trailers::Layer::default(),
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -59,17 +63,19 @@ impl retry::NewPolicy<Route> for NewRetryPolicy {
 
 // === impl Retry ===
 
-impl<A, B, E> retry::Policy<http::Request<ReplayBody<A>>, http::Response<B>, E> for RetryPolicy
+impl<A, B, E> retry::Policy<http::Request<ReplayBody<A>>, http::Response<with_trailers::Body<B>>, E>
+    for RetryPolicy
 where
     A: HttpBody + Unpin,
     A::Error: Into<Error>,
+    B: HttpBody + Unpin,
 {
     type Future = future::Ready<Self>;
 
     fn retry(
         &self,
         req: &http::Request<ReplayBody<A>>,
-        result: Result<&http::Response<B>, &E>,
+        result: Result<&http::Response<with_trailers::Body<B>>, &E>,
     ) -> Option<Self::Future> {
         let retryable = match result {
             Err(_) => false,
@@ -78,7 +84,7 @@ where
                 let is_failure = classify::Request::from(self.response_classes.clone())
                     .classify(req)
                     .start(rsp)
-                    .eos(None)
+                    .eos(rsp.body().trailers())
                     .is_failure();
                 // did the body exceed the maximum length limit?
                 let exceeded_max_len = req.body().is_capped();
@@ -124,10 +130,12 @@ where
     }
 }
 
-impl<A, B, E> retry::PrepareRequest<http::Request<A>, http::Response<B>, E> for RetryPolicy
+impl<A, B, E> retry::PrepareRequest<http::Request<A>, http::Response<with_trailers::Body<B>>, E>
+    for RetryPolicy
 where
     A: HttpBody + Unpin,
     A::Error: Into<Error>,
+    B: HttpBody + Unpin,
 {
     type RetryRequest = http::Request<ReplayBody<A>>;
 
@@ -151,4 +159,13 @@ where
         // `ReplayBody` handles this gracefully.
         Either::A(http::Request::from_parts(head, replay_body))
     }
+}
+
+fn box_body<B>(rsp: http::Response<B>) -> http::Response<BoxBody>
+where
+    B: HttpBody + Send + 'static,
+    B::Data: Send + 'static,
+    B::Error: Into<Error>,
+{
+    rsp.map(BoxBody::new)
 }

@@ -1,13 +1,16 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use futures::future;
+use futures::{future, TryFutureExt};
 use linkerd_error::Error;
 use linkerd_stack::{
     layer::{self, Layer},
     Either, NewService, Oneshot, Service, ServiceExt,
 };
-use std::task::{Context, Poll};
+use std::{
+    marker::PhantomData,
+    task::{Context, Poll},
+};
 pub use tower::retry::{budget::Budget, Policy};
 use tracing::trace;
 
@@ -20,7 +23,7 @@ pub trait NewPolicy<T> {
 
 /// An extension to [`tower::retry::Policy`] that adds a method to prepare a
 /// request to be retried, possibly changing its type.
-pub trait PrepareRequest<Req, Res, E>: tower::retry::Policy<Self::RetryRequest, Res, E> {
+pub trait PrepareRequest<Req, Rsp, E>: tower::retry::Policy<Self::RetryRequest, Rsp, E> {
     /// A request type that can be retried.
     ///
     /// This *may* be the same as the `Req` type parameter, but it can also be a
@@ -40,39 +43,51 @@ pub trait PrepareRequest<Req, Res, E>: tower::retry::Policy<Self::RetryRequest, 
 }
 
 /// Applies per-target retry policies.
-#[derive(Clone, Debug)]
-pub struct NewRetry<P, N, R> {
+#[derive(Debug)]
+pub struct NewRetry<P, N, R, RReq, F> {
     new_policy: P,
-    on_response: R,
+    on_retry: R,
     inner: N,
+    on_response: F,
+    _r_req: PhantomData<fn(RReq)>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Retry<P, S, R> {
+#[derive(Debug)]
+pub struct Retry<P, S, R, RReq, F> {
     policy: Option<P>,
     inner: S,
-    on_response: R,
+    on_retry: R,
+    on_response: F,
+    _r_req: PhantomData<fn(RReq)>,
 }
 
 // === impl NewRetry ===
 
-impl<P: Clone, N, R: Clone> NewRetry<P, N, R> {
-    pub fn layer(new_policy: P, on_response: R) -> impl Layer<N, Service = Self> + Clone {
+impl<P: Clone, N, R: Clone, RReq, F: Clone> NewRetry<P, N, R, RReq, F> {
+    pub fn layer(
+        new_policy: P,
+        on_retry: R,
+        on_response: F,
+    ) -> impl Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
             new_policy: new_policy.clone(),
+            on_retry: on_retry.clone(),
             on_response: on_response.clone(),
+            _r_req: PhantomData,
         })
     }
 }
 
-impl<T, N, P, R> NewService<T> for NewRetry<P, N, R>
+impl<T, N, P, R, RReq, F> NewService<T> for NewRetry<P, N, R, RReq, F>
 where
     N: NewService<T>,
     P: NewPolicy<T>,
     R: Layer<N::Service> + Clone,
+    R::Service: Service<RReq>,
+    F: Clone,
 {
-    type Service = Retry<P::Policy, N::Service, R>;
+    type Service = Retry<P::Policy, N::Service, R, RReq, F>;
 
     fn new_service(&self, target: T) -> Self::Service {
         // Determine if there is a retry policy for the given target.
@@ -82,24 +97,43 @@ where
         Retry {
             policy,
             inner,
+            on_retry: self.on_retry.clone(),
             on_response: self.on_response.clone(),
+            _r_req: PhantomData,
+        }
+    }
+}
+
+impl<P: Clone, N: Clone, R: Clone, RReq, F: Clone> Clone for NewRetry<P, N, R, RReq, F> {
+    fn clone(&self) -> Self {
+        Self {
+            new_policy: self.new_policy.clone(),
+            on_retry: self.on_retry.clone(),
+            inner: self.inner.clone(),
+            on_response: self.on_response.clone(),
+            _r_req: PhantomData,
         }
     }
 }
 
 // === impl Retry ===
 
-impl<P, Req, S, Rsp, Fut, R> Service<Req> for Retry<P, S, R>
+impl<P, Req, S, Rsp, RReq, Fut, R, F> Service<Req> for Retry<P, S, R, RReq, F>
 where
-    P: PrepareRequest<Req, Rsp, Error> + Clone,
-    S: Service<Req, Response = Rsp, Future = Fut, Error = Error> + Clone,
-    R::Service: Service<P::RetryRequest, Response = Rsp, Future = Fut, Error = Error> + Clone,
+    P: PrepareRequest<Req, <R::Service as Service<RReq>>::Response, Error, RetryRequest = RReq>
+        + Clone,
+    S: Service<Req, Future = Fut, Error = Error> + Clone,
+    R::Service: Service<RReq, Error = Error> + Clone,
     R: Layer<S>,
-    Fut: std::future::Future<Output = Result<Rsp, Error>>,
+    Fut: std::future::Future<Output = Result<S::Response, Error>>,
+    F: (Fn(<R::Service as Service<RReq>>::Response) -> Rsp) + (Fn(S::Response) -> Rsp) + Clone,
 {
     type Response = Rsp;
     type Error = Error;
-    type Future = future::Either<Fut, Oneshot<tower::retry::Retry<P, R::Service>, P::RetryRequest>>;
+    type Future = future::Either<
+        future::MapOk<Fut, F>,
+        future::MapOk<Oneshot<tower::retry::Retry<P, R::Service>, P::RetryRequest>, F>,
+    >;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -110,17 +144,33 @@ where
         trace!(retryable = %self.policy.is_some());
 
         let policy = match self.policy.as_ref() {
-            None => return future::Either::Left(self.inner.call(req)),
+            None => {
+                return future::Either::Left(self.inner.call(req).map_ok(self.on_response.clone()))
+            }
             Some(p) => p,
         };
 
         let retry_req = match policy.prepare_request(req) {
             Either::A(retry_req) => retry_req,
-            Either::B(req) => return future::Either::Left(self.inner.call(req)),
+            Either::B(req) => {
+                return future::Either::Left(self.inner.call(req).map_ok(self.on_response.clone()))
+            }
         };
 
         let inner = self.inner.clone();
-        let retry = tower::retry::Retry::new(policy.clone(), self.on_response.layer(inner));
-        future::Either::Right(retry.oneshot(retry_req))
+        let retry = tower::retry::Retry::new(policy.clone(), self.on_retry.layer(inner));
+        future::Either::Right(retry.oneshot(retry_req).map_ok(self.on_response.clone()))
+    }
+}
+
+impl<P: Clone, S: Clone, R: Clone, RReq, F: Clone> Clone for Retry<P, S, R, RReq, F> {
+    fn clone(&self) -> Self {
+        Self {
+            policy: self.policy.clone(),
+            on_retry: self.on_retry.clone(),
+            inner: self.inner.clone(),
+            on_response: self.on_response.clone(),
+            _r_req: PhantomData,
+        }
     }
 }

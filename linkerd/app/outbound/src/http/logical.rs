@@ -149,7 +149,7 @@ impl<E> Outbound<E> {
                         // Depending on whether or not the request can be
                         // retried, it may have one of two `Body` types. This
                         // layer unifies any `Body` type into `BoxBody`.
-                        .push_on_service(http::BoxRequest::erased())
+                        .push_on_service(svc::layers().push(http::BoxRequest::erased()).push(http::BoxResponse::erased()))
                         .push_http_insert_target::<profiles::http::Route>()
                         // Sets an optional retry policy.
                         .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
