@@ -144,11 +144,10 @@ where
         // `Body`'s size hint.
         if let Some(chunk) = self.first_data.as_ref() {
             let buffered = chunk.remaining() as u64;
-
-            hint.set_lower(hint.lower() + buffered);
             if let Some(upper) = hint.upper() {
                 hint.set_upper(upper + buffered);
             }
+            hint.set_lower(hint.lower() + buffered);
         }
 
         hint
