@@ -4,8 +4,8 @@ use linkerd_app_core::{
     classify,
     http_metrics::retries::Handle,
     metrics, profiles,
-    proxy::http::{ClientHandle, HttpBody, BoxBody},
-    svc::{layer, Either, Param}
+    proxy::http::{BoxBody, ClientHandle, HttpBody},
+    svc::{layer, Either, Param},
     Error,
 };
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};

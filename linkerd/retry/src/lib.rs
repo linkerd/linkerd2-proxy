@@ -5,7 +5,8 @@ use futures::{future, TryFutureExt};
 use linkerd_error::Error;
 use linkerd_stack::{
     layer::{self, Layer},
-    Either, NewService, Oneshot, Service, ServiceExt,
+    proxy::{self, Proxy},
+    Either, NewService, Service, ServiceExt,
 };
 use std::{
     marker::PhantomData,
@@ -118,21 +119,30 @@ impl<P: Clone, N: Clone, R: Clone, RReq, F: Clone> Clone for NewRetry<P, N, R, R
 
 // === impl Retry ===
 
-impl<P, Req, S, Rsp, RReq, Fut, R, F> Service<Req> for Retry<P, S, R, RReq, F>
+impl<P, Req, S, RReq, Fut, R, F> Service<Req> for Retry<P, S, R, RReq, F>
 where
     P: PrepareRequest<Req, <R::Service as Service<RReq>>::Response, Error, RetryRequest = RReq>
-        + Clone,
+        + Clone
+        + Policy<R::Service, <R::Service as Service<RReq>>::Response, Error>,
     S: Service<Req, Future = Fut, Error = Error> + Clone,
     R::Service: Service<RReq, Error = Error> + Clone,
     R: Layer<S>,
     Fut: std::future::Future<Output = Result<S::Response, Error>>,
-    F: (Fn(<R::Service as Service<RReq>>::Response) -> Rsp) + (Fn(S::Response) -> Rsp) + Clone,
+    F: Proxy<Req, S, Request = Req, Error = Error>,
+    F: Proxy<
+        RReq,
+        tower::retry::Retry<P, R::Service>,
+        Request = RReq,
+        Response = <F as Proxy<Req, S>>::Response,
+        Error = Error,
+    >,
+    F: Clone,
 {
-    type Response = Rsp;
+    type Response = <F as Proxy<Req, S>>::Response;
     type Error = Error;
     type Future = future::Either<
-        future::MapOk<Fut, F>,
-        future::MapOk<Oneshot<tower::retry::Retry<P, R::Service>, P::RetryRequest>, F>,
+        <F as Proxy<Req, S>>::Future,
+        proxy::Oneshot<F, tower::retry::Retry<P, R::Service>, RReq>,
     >;
 
     #[inline]
@@ -144,22 +154,20 @@ where
         trace!(retryable = %self.policy.is_some());
 
         let policy = match self.policy.as_ref() {
-            None => {
-                return future::Either::Left(self.inner.call(req).map_ok(self.on_response.clone()))
-            }
+            None => return future::Either::Left(self.on_response.proxy(&mut self.inner, req)),
             Some(p) => p,
         };
 
         let retry_req = match policy.prepare_request(req) {
             Either::A(retry_req) => retry_req,
             Either::B(req) => {
-                return future::Either::Left(self.inner.call(req).map_ok(self.on_response.clone()))
+                return future::Either::Left(self.on_response.proxy(&mut self.inner, req))
             }
         };
 
         let inner = self.inner.clone();
         let retry = tower::retry::Retry::new(policy.clone(), self.on_retry.layer(inner));
-        future::Either::Right(retry.oneshot(retry_req).map_ok(self.on_response.clone()))
+        future::Either::Right(self.on_response.clone().proxy_oneshot(retry, retry_req))
     }
 }
 
