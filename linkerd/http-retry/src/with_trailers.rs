@@ -1,3 +1,4 @@
+use futures::FutureExt;
 use http_body::Body as HttpBody;
 use linkerd_error::Error;
 use linkerd_stack as svc;
@@ -70,10 +71,14 @@ where
 
             if let Some(data) = body.inner.data().await {
                 // body has data; stop waiting for trailers
-                // TODO(eliza): we could maybe do a last-gasp "is the next frame
-                // trailers"? check here, but that would add additional
-                // latency...
                 body.first_data = Some(data?);
+
+                // peek to see if there's immediately a trailers frame, and grab
+                // it if so. otherwise, bail.
+                if let Some(trailers) = body.inner.trailers().now_or_never() {
+                    body.trailers = trailers?;
+                }
+
                 return Ok(http::Response::from_parts(parts, body));
             }
 
