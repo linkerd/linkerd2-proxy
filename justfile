@@ -16,8 +16,15 @@ build_type := if env_var_or_default("RELEASE", "") == "" { "debug" } else { "rel
 toolchain := ""
 cargo := "cargo" + if toolchain != "" { " +" + toolchain } else { "" }
 
+features := ""
+
 # The version name to use for packages.
 package_version := `git rev-parse --short HEAD`
+
+# Docker image name & tag.
+docker_repo := "localhost/linkerd/proxy"
+docker_tag := `git rev-parse --abbrev-ref HEAD | sed 's|/|.|'` + "." + `git rev-parse --short HEAD`
+docker_image := docker_repo + ":" + docker_tag
 
 # The architecture name to use for packages. Either 'amd64', 'arm64', or 'arm'.
 package_arch := "amd64"
@@ -53,6 +60,8 @@ _fmt := if env_var_or_default("GITHUB_ACTIONS", "") != "true" { "" } else {
     ```
 }
 
+_features := if features != "" { "--no-default-features --features=" + features } else { "" }
+
 #
 # Recipes
 #
@@ -87,34 +96,34 @@ check *flags:
     {{ cargo }} check --workspace --all-targets --frozen {{ flags }} {{ _fmt }}
 
 check-crate crate *flags:
-    {{ cargo }} check --package={{ crate }} --all-targets --frozen {{ flags }} {{ _fmt }}
+    {{ cargo }} check --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
 clippy *flags:
-    {{ cargo }} clippy --workspace --all-targets --frozen {{ flags }} {{ _fmt }}
+    {{ cargo }} clippy --workspace --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
 clippy-crate crate *flags:
-    {{ cargo }} clippy --package={{ crate }} --all-targets --frozen {{ flags }} {{ _fmt }}
+    {{ cargo }} clippy --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
 doc *flags:
-    {{ cargo }} doc --no-deps --workspace --frozen {{ flags }} {{ _fmt }}
+    {{ cargo }} doc --no-deps --workspace --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
 doc-crate crate *flags:
-    {{ cargo }} doc --package={{ crate }} --all-targets --frozen {{ flags }} {{ _fmt }}
+    {{ cargo }} doc --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
 # Run all tests
 test *flags:
-    {{ cargo }} test --workspace --frozen \
+    {{ cargo }} test --workspace --frozen {{ _features }} \
         {{ if build_type == "release" { "--release" } else { "" } }} \
         {{ flags }}
 
 test-crate crate *flags:
-    {{ cargo }} test --package={{ crate }} --all-targets --frozen {{ flags }} {{ _fmt }}
+    {{ cargo }} test --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
 # Build the proxy
 build:
     {{ cargo }} build --frozen --package=linkerd2-proxy --target={{ cargo_target }} \
         {{ if build_type == "release" { "--release" } else { "" } }} \
-        {{ _fmt }}
+        {{ _features }} {{ _fmt }}
 
 # Build a package (i.e. for a release)
 package: build
@@ -151,10 +160,12 @@ fuzzers:
     done
 
 # Build a docker image (FOR TESTING ONLY)
-docker tag='' mode='load':
+docker mode='load':
     docker buildx build . \
+        --tag={{ docker_image }} \
         {{ if build_type != 'release' { "--build-arg PROXY_UNOPTIMIZED=1" } else { "" } }} \
-        {{ if tag != "" { "--tag=" + tag + " " + (if mode == "push" { "--push" } else { "--load" }) } else { "" } }}
+        {{ if features != "" { "--build-arg PROXY_FEATURES=" + features } else { "" } }} \
+        {{ if mode == 'push' { "--push" } else { "--load" } }}
 
 # Display the git history minus dependabot updates
 history *paths='.':
