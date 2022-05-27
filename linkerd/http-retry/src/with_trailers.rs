@@ -7,10 +7,18 @@ use std::{
     task::{Context, Poll},
 };
 
+/// A service that wraps HTTP responses to allow peeking at the stream's
+/// trailers, if the first frame in the response stream is a `TRAILERS` frame.
 #[derive(Clone)]
 pub struct WithTrailers<S> {
     inner: S,
 }
+
+/// An HTTP body that allows inspecting the body's trailers, if a `TRAILERS`
+/// frame was the first frame after the initial headers frame.
+///
+/// If the first frame of the body stream was *not* a `TRAILERS` frame, this
+/// behaves identically to a normal body.
 pub struct Body<B: HttpBody> {
     inner: B,
     first_data: Option<B::Data>,
