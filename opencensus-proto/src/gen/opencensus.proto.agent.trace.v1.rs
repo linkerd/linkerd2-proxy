@@ -106,9 +106,9 @@ pub mod trace_service_client {
                 Message = super::CurrentLibraryConfig,
             >,
         ) -> Result<
-                tonic::Response<tonic::codec::Streaming<super::UpdatedLibraryConfig>>,
-                tonic::Status,
-            > {
+            tonic::Response<tonic::codec::Streaming<super::UpdatedLibraryConfig>>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -132,11 +132,9 @@ pub mod trace_service_client {
                 Message = super::ExportTraceServiceRequest,
             >,
         ) -> Result<
-                tonic::Response<
-                    tonic::codec::Streaming<super::ExportTraceServiceResponse>,
-                >,
-                tonic::Status,
-            > {
+            tonic::Response<tonic::codec::Streaming<super::ExportTraceServiceResponse>>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
