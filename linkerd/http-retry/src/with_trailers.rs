@@ -119,6 +119,6 @@ where
     }
 
     fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
+        self.first_data.is_none() && self.trailers.is_none() && self.inner.is_end_stream()
     }
 }
