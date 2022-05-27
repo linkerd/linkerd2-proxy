@@ -45,10 +45,9 @@ impl<S, Req, RspBody> svc::Service<Req> for WithTrailers<S>
 where
     S: svc::Service<Req, Response = http::Response<RspBody>>,
     S::Future: Send + 'static,
-    S::Error: Into<Error>,
     RspBody: HttpBody + Send + Unpin,
-    RspBody::Error: Into<Error>,
     RspBody::Data: Send + Unpin,
+    Error: From<S::Error> + From<RspBody::Error>,
 {
     type Response = http::Response<Body<RspBody>>;
     type Error = Error;
@@ -62,7 +61,7 @@ where
     fn call(&mut self, req: Req) -> Self::Future {
         let rsp = self.inner.call(req);
         Box::pin(async move {
-            let (parts, body) = rsp.await.map_err(Into::into)?.into_parts();
+            let (parts, body) = rsp.await?.into_parts();
             let mut body = Body {
                 inner: body,
                 first_data: None,
@@ -74,12 +73,12 @@ where
                 // TODO(eliza): we could maybe do a last-gasp "is the next frame
                 // trailers"? check here, but that would add additional
                 // latency...
-                body.first_data = Some(data.map_err(Into::into)?);
+                body.first_data = Some(data?);
                 return Ok(http::Response::from_parts(parts, body));
             }
 
             // okay, let's see if there's trailers...
-            body.trailers = body.inner.trailers().await.map_err(Into::into)?;
+            body.trailers = body.inner.trailers().await?;
 
             Ok(http::Response::from_parts(parts, body))
         })
