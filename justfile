@@ -19,8 +19,8 @@ cargo := "cargo" + if toolchain != "" { " +" + toolchain } else { "" }
 # The version name to use for packages.
 package_version := `git rev-parse --short HEAD`
 
-# Default docker tag name
-default_docker_tag := env_var_or_default("USER", "dev") + "/l2-proxy:" + package_version
+# Docker tag
+docker_tag := env_var_or_default("USER", "dev") + "/l2-proxy:" + package_version
 
 # The architecture name to use for packages. Either 'amd64', 'arm64', or 'arm'.
 package_arch := "amd64"
@@ -154,10 +154,11 @@ fuzzers:
     done
 
 # Build a docker image (FOR TESTING ONLY)
-docker tag=default_docker_tag mode='load':
+docker mode='load':
     docker buildx build . \
+        --tag={{ tag }} \
         {{ if build_type != 'release' { "--build-arg PROXY_UNOPTIMIZED=1" } else { "" } }} \
-        {{ if tag != "" { "--tag=" + tag + " " + (if mode == "push" { "--push" } else { "--load" }) } else { "" } }}
+        {{ if mode == "push" { "--push" } else { "--load" } }}
 
 # Display the git history minus dependabot updates
 history *paths='.':
