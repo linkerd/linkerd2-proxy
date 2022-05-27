@@ -24,7 +24,7 @@ where
     S::Error: Into<Error>,
     RspBody: Body + Send + Unpin,
     RspBody::Error: Into<Error>,
-    RspBody::Data: Send,
+    RspBody::Data: Send + Unpin,
 {
     type Response = http::Response<WithTrailersBody<RspBody>>;
     type Error = Error;
@@ -59,5 +59,50 @@ where
 
             Ok(http::Response::from_parts(parts, body))
         })
+    }
+}
+
+// === impl WithTrailersBody ===
+
+impl<B: Body> WithTrailersBody<B> {
+    pub fn trailers(&self) -> Option<&http::HeaderMap> {
+        self.trailers.as_ref()
+    }
+}
+
+impl<B> Body for WithTrailersBody<B>
+where
+    B: Body + Unpin,
+    B::Data: Unpin,
+{
+    type Data = B::Data;
+    type Error = B::Error;
+
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        let this = self.get_mut();
+        if let Some(first_data) = this.first_data.take() {
+            return Poll::Ready(Some(Ok(first_data)));
+        }
+
+        Pin::new(&mut this.inner).poll_data(cx)
+    }
+
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+        let this = self.get_mut();
+        if let Some(trailers) = this.trailers.take() {
+            return Poll::Ready(Ok(Some(trailers)));
+        }
+
+        Pin::new(&mut this.inner).poll_trailers(cx)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
     }
 }
