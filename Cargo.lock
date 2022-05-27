@@ -1131,6 +1131,7 @@ dependencies = [
  "http-body",
  "hyper",
  "linkerd-error",
+ "linkerd-stack",
  "linkerd-tracing",
  "parking_lot",
  "thiserror",
