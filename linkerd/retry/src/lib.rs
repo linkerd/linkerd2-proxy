@@ -1,12 +1,12 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use futures::{future, TryFutureExt};
+use futures::future;
 use linkerd_error::Error;
 use linkerd_stack::{
     layer::{self, Layer},
     proxy::{self, Proxy},
-    Either, NewService, Service, ServiceExt,
+    Either, NewService, Service,
 };
 use std::{
     marker::PhantomData,
@@ -45,30 +45,30 @@ pub trait PrepareRequest<Req, Rsp, E>: tower::retry::Policy<Self::RetryRequest, 
 
 /// Applies per-target retry policies.
 #[derive(Debug)]
-pub struct NewRetry<P, N, R, RReq, F> {
+pub struct NewRetry<P, N, R, RReq, O> {
     new_policy: P,
     on_retry: R,
     inner: N,
-    on_response: F,
+    on_response: O,
     _r_req: PhantomData<fn(RReq)>,
 }
 
 #[derive(Debug)]
-pub struct Retry<P, S, R, RReq, F> {
+pub struct Retry<P, S, R, RReq, O> {
     policy: Option<P>,
     inner: S,
     on_retry: R,
-    on_response: F,
+    on_response: O,
     _r_req: PhantomData<fn(RReq)>,
 }
 
 // === impl NewRetry ===
 
-impl<P: Clone, N, R: Clone, RReq, F: Clone> NewRetry<P, N, R, RReq, F> {
+impl<P: Clone, N, R: Clone, RReq, O: Clone> NewRetry<P, N, R, RReq, O> {
     pub fn layer(
         new_policy: P,
         on_retry: R,
-        on_response: F,
+        on_response: O,
     ) -> impl Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
@@ -80,15 +80,15 @@ impl<P: Clone, N, R: Clone, RReq, F: Clone> NewRetry<P, N, R, RReq, F> {
     }
 }
 
-impl<T, N, P, R, RReq, F> NewService<T> for NewRetry<P, N, R, RReq, F>
+impl<T, N, P, R, RReq, O> NewService<T> for NewRetry<P, N, R, RReq, O>
 where
     N: NewService<T>,
     P: NewPolicy<T>,
     R: Layer<N::Service> + Clone,
     R::Service: Service<RReq>,
-    F: Clone,
+    O: Clone,
 {
-    type Service = Retry<P::Policy, N::Service, R, RReq, F>;
+    type Service = Retry<P::Policy, N::Service, R, RReq, O>;
 
     fn new_service(&self, target: T) -> Self::Service {
         // Determine if there is a retry policy for the given target.
@@ -105,7 +105,7 @@ where
     }
 }
 
-impl<P: Clone, N: Clone, R: Clone, RReq, F: Clone> Clone for NewRetry<P, N, R, RReq, F> {
+impl<P: Clone, N: Clone, R: Clone, RReq, O: Clone> Clone for NewRetry<P, N, R, RReq, O> {
     fn clone(&self) -> Self {
         Self {
             new_policy: self.new_policy.clone(),
@@ -119,30 +119,30 @@ impl<P: Clone, N: Clone, R: Clone, RReq, F: Clone> Clone for NewRetry<P, N, R, R
 
 // === impl Retry ===
 
-impl<P, Req, S, RReq, Fut, R, F> Service<Req> for Retry<P, S, R, RReq, F>
+impl<P, Req, S, RReq, Fut, R, O> Service<Req> for Retry<P, S, R, RReq, O>
 where
     P: PrepareRequest<Req, <R::Service as Service<RReq>>::Response, Error, RetryRequest = RReq>
         + Clone
-        + Policy<R::Service, <R::Service as Service<RReq>>::Response, Error>,
+        + Policy<RReq, <R::Service as Service<RReq>>::Response, Error>,
     S: Service<Req, Future = Fut, Error = Error> + Clone,
     R::Service: Service<RReq, Error = Error> + Clone,
     R: Layer<S>,
     Fut: std::future::Future<Output = Result<S::Response, Error>>,
-    F: Proxy<Req, S, Request = Req, Error = Error>,
-    F: Proxy<
+    O: Proxy<Req, S, Request = Req, Error = Error>,
+    O: Proxy<
         RReq,
         tower::retry::Retry<P, R::Service>,
         Request = RReq,
-        Response = <F as Proxy<Req, S>>::Response,
+        Response = <O as Proxy<Req, S>>::Response,
         Error = Error,
     >,
-    F: Clone,
+    O: Clone,
 {
-    type Response = <F as Proxy<Req, S>>::Response;
+    type Response = <O as Proxy<Req, S>>::Response;
     type Error = Error;
     type Future = future::Either<
-        <F as Proxy<Req, S>>::Future,
-        proxy::Oneshot<F, tower::retry::Retry<P, R::Service>, RReq>,
+        <O as Proxy<Req, S>>::Future,
+        proxy::Oneshot<O, tower::retry::Retry<P, R::Service>, RReq>,
     >;
 
     #[inline]
@@ -171,7 +171,7 @@ where
     }
 }
 
-impl<P: Clone, S: Clone, R: Clone, RReq, F: Clone> Clone for Retry<P, S, R, RReq, F> {
+impl<P: Clone, S: Clone, R: Clone, RReq, O: Clone> Clone for Retry<P, S, R, RReq, O> {
     fn clone(&self) -> Self {
         Self {
             policy: self.policy.clone(),

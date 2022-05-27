@@ -4,7 +4,7 @@ use linkerd_app_core::{
     classify,
     http_metrics::retries::Handle,
     metrics, profiles,
-    proxy::http::{BoxBody, ClientHandle, HttpBody},
+    proxy::http::{ClientHandle, EraseResponse, HttpBody},
     svc::{layer, Either, Param},
     Error,
 };
@@ -15,11 +15,14 @@ use std::sync::Arc;
 
 pub fn layer<N, R>(
     metrics: metrics::HttpRouteRetry,
-) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N, with_trailers::Layer, R>> + Clone
-{
+) -> impl layer::Layer<
+    N,
+    Service = retry::NewRetry<NewRetryPolicy, N, with_trailers::Layer, R, EraseResponse<()>>,
+> + Clone {
     retry::NewRetry::<_, N, _, R, _>::layer(
         NewRetryPolicy::new(metrics),
         with_trailers::Layer::default(),
+        EraseResponse::new(()),
     )
 }
 
@@ -159,13 +162,4 @@ where
         // `ReplayBody` handles this gracefully.
         Either::A(http::Request::from_parts(head, replay_body))
     }
-}
-
-fn box_body<B>(rsp: http::Response<B>) -> http::Response<BoxBody>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send + 'static,
-    B::Error: Into<Error>,
-{
-    rsp.map(BoxBody::new)
 }
