@@ -45,7 +45,7 @@ pub trait PrepareRequest<Req, Rsp, E>: tower::retry::Policy<Self::RetryRequest, 
 
 /// Applies per-target retry policies.
 #[derive(Debug)]
-pub struct NewRetry<P, N, R, RReq, O> {
+pub struct NewRetry<P, N, R, O, RReq> {
     new_policy: P,
     on_retry: R,
     inner: N,
@@ -54,7 +54,7 @@ pub struct NewRetry<P, N, R, RReq, O> {
 }
 
 #[derive(Debug)]
-pub struct Retry<P, S, R, RReq, O> {
+pub struct Retry<P, S, R, O, RReq> {
     policy: Option<P>,
     inner: S,
     on_retry: R,
@@ -64,7 +64,7 @@ pub struct Retry<P, S, R, RReq, O> {
 
 // === impl NewRetry ===
 
-impl<P: Clone, N, R: Clone, RReq, O: Clone> NewRetry<P, N, R, RReq, O> {
+impl<P: Clone, N, R: Clone, O: Clone, RReq> NewRetry<P, N, R, O, RReq> {
     pub fn layer(
         new_policy: P,
         on_retry: R,
@@ -80,7 +80,7 @@ impl<P: Clone, N, R: Clone, RReq, O: Clone> NewRetry<P, N, R, RReq, O> {
     }
 }
 
-impl<T, N, P, R, RReq, O> NewService<T> for NewRetry<P, N, R, RReq, O>
+impl<T, N, P, R, O, RReq> NewService<T> for NewRetry<P, N, R, O, RReq>
 where
     N: NewService<T>,
     P: NewPolicy<T>,
@@ -88,7 +88,7 @@ where
     R::Service: Service<RReq>,
     O: Clone,
 {
-    type Service = Retry<P::Policy, N::Service, R, RReq, O>;
+    type Service = Retry<P::Policy, N::Service, R, O, RReq>;
 
     fn new_service(&self, target: T) -> Self::Service {
         // Determine if there is a retry policy for the given target.
@@ -105,7 +105,7 @@ where
     }
 }
 
-impl<P: Clone, N: Clone, R: Clone, RReq, O: Clone> Clone for NewRetry<P, N, R, RReq, O> {
+impl<P: Clone, N: Clone, R: Clone, O: Clone, RReq> Clone for NewRetry<P, N, R, O, RReq> {
     fn clone(&self) -> Self {
         Self {
             new_policy: self.new_policy.clone(),
@@ -119,7 +119,7 @@ impl<P: Clone, N: Clone, R: Clone, RReq, O: Clone> Clone for NewRetry<P, N, R, R
 
 // === impl Retry ===
 
-impl<P, Req, S, RReq, Fut, R, O> Service<Req> for Retry<P, S, R, RReq, O>
+impl<P, S, R, O, Req, RReq, Fut> Service<Req> for Retry<P, S, R, O, RReq>
 where
     P: PrepareRequest<Req, <R::Service as Service<RReq>>::Response, Error, RetryRequest = RReq>
         + Clone
@@ -171,7 +171,7 @@ where
     }
 }
 
-impl<P: Clone, S: Clone, R: Clone, RReq, O: Clone> Clone for Retry<P, S, R, RReq, O> {
+impl<P: Clone, S: Clone, R: Clone, O: Clone, RReq> Clone for Retry<P, S, R, O, RReq> {
     fn clone(&self) -> Self {
         Self {
             policy: self.policy.clone(),
