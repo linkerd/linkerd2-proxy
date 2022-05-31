@@ -17,13 +17,18 @@ pub fn layer<N, R>(
     metrics: metrics::HttpRouteRetry,
 ) -> impl layer::Layer<
     N,
-    Service = retry::NewRetry<NewRetryPolicy, N, with_trailers::Layer, R, EraseResponse<()>>,
+    Service = retry::NewRetry<NewRetryPolicy, N, with_trailers::Layer, EraseResponse<()>, R>,
 > + Clone {
-    retry::NewRetry::<_, N, _, R, _>::layer(
-        NewRetryPolicy::new(metrics),
-        with_trailers::Layer::default(),
-        EraseResponse::new(()),
-    )
+    retry::layer(NewRetryPolicy::new(metrics))
+        // When a retry occurs, add middleware for buffering an HTTP/2 TRAILERS
+        // frame if the response body is immediately terminated by trailers.
+        // This allows retrying failed gRPC requests when `grpc-status` is sent
+        // in a TRAILERS frame.
+        .layer_on_retry(with_trailers::Layer::default())
+        // Because we wrap the response body type on retries, we must include a
+        // `Proxy` middleware for unifying the response body types of the retry
+        // and non-retry services.
+        .proxy_on_response(EraseResponse::new(()))
 }
 
 #[derive(Clone, Debug)]

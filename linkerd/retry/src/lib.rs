@@ -62,6 +62,84 @@ pub struct Retry<P, S, R, O, RReq> {
     _r_req: PhantomData<fn(RReq)>,
 }
 
+#[derive(Debug)]
+pub struct NewRetryLayer<P, RReq, R = layer::util::Identity, O = ()> {
+    new_policy: P,
+    on_retry: R,
+    on_response: O,
+    _r_req: PhantomData<fn(RReq)>,
+}
+
+// === impl NewRetryLayer ===
+pub fn layer<P, RReq>(new_policy: P) -> NewRetryLayer<P, RReq> {
+    NewRetryLayer {
+        new_policy,
+        on_retry: layer::util::Identity::default(),
+        on_response: (),
+        _r_req: PhantomData,
+    }
+}
+
+impl<P, R, O, N, RReq> Layer<N> for NewRetryLayer<P, RReq, R, O>
+where
+    P: Clone,
+    R: Clone,
+    O: Clone,
+{
+    type Service = NewRetry<P, N, R, O, RReq>;
+    fn layer(&self, inner: N) -> Self::Service {
+        NewRetry {
+            inner,
+            new_policy: self.new_policy.clone(),
+            on_retry: self.on_retry.clone(),
+            on_response: self.on_response.clone(),
+            _r_req: PhantomData,
+        }
+    }
+}
+
+impl<P, RReq, O> NewRetryLayer<P, RReq, layer::util::Identity, O> {
+    /// Adds a [`Layer`] that will be applied to the retry service.
+    ///
+    /// By default, this is the identity layer, and does nothing. This method
+    /// can be used to apply additional middleware to the service in the case of
+    /// a retry.
+    pub fn layer_on_retry<R>(self, on_retry: R) -> NewRetryLayer<P, RReq, R, O> {
+        NewRetryLayer {
+            new_policy: self.new_policy,
+            on_retry,
+            on_response: self.on_response,
+            _r_req: PhantomData,
+        }
+    }
+}
+
+impl<P, RReq, R> NewRetryLayer<P, RReq, R, ()> {
+    /// Adds a [`Proxy`] that will be applied to both the inner service and the
+    /// retry service.
+    ///
+    /// By default, this is the identity proxy, and does nothing.
+    pub fn proxy_on_response<O>(self, on_response: O) -> NewRetryLayer<P, RReq, R, O> {
+        NewRetryLayer {
+            new_policy: self.new_policy,
+            on_retry: self.on_retry,
+            on_response,
+            _r_req: PhantomData,
+        }
+    }
+}
+
+impl<P: Clone, R: Clone, O: Clone, RReq> Clone for NewRetryLayer<P, RReq, R, O> {
+    fn clone(&self) -> Self {
+        Self {
+            new_policy: self.new_policy.clone(),
+            on_retry: self.on_retry.clone(),
+            on_response: self.on_response.clone(),
+            _r_req: PhantomData,
+        }
+    }
+}
+
 // === impl NewRetry ===
 
 impl<P: Clone, N, R: Clone, O: Clone, RReq> NewRetry<P, N, R, O, RReq> {
