@@ -197,15 +197,14 @@ impl<P: Clone, N: Clone, R: Clone, O: Clone, RReq> Clone for NewRetry<P, N, R, O
 
 // === impl Retry ===
 
-impl<P, S, R, O, Req, RReq, Fut> Service<Req> for Retry<P, S, R, O, RReq>
+impl<P, S, R, O, Req, RReq> Service<Req> for Retry<P, S, R, O, RReq>
 where
     P: PrepareRequest<Req, <R::Service as Service<RReq>>::Response, Error, RetryRequest = RReq>
         + Clone
         + Policy<RReq, <R::Service as Service<RReq>>::Response, Error>,
-    S: Service<Req, Future = Fut, Error = Error> + Clone,
+    S: Service<Req, Error = Error> + Clone,
     R::Service: Service<RReq, Error = Error> + Clone,
     R: Layer<S>,
-    Fut: std::future::Future<Output = Result<S::Response, Error>>,
     O: Proxy<Req, S, Request = Req, Error = Error>,
     O: Proxy<
         RReq,
