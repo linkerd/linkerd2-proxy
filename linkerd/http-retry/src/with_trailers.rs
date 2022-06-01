@@ -8,10 +8,11 @@ use std::{
     task::{Context, Poll},
 };
 
-/// A service that wraps HTTP responses to allow peeking at the stream's
-/// trailers, if the first frame in the response stream is a `TRAILERS` frame.
+/// A [`Service`] or [`Proxy`] that wraps HTTP responses to allow peeking at the
+/// stream's trailers, if the first frame in the response stream is a `TRAILERS`
+/// frame.
 #[derive(Clone)]
-pub struct WithTrailers<S> {
+pub struct WithTrailers<S = ()> {
     inner: S,
 }
 
@@ -42,18 +43,26 @@ impl<S> svc::layer::Layer<S> for Layer {
 
 // === impl WithTrailers ===
 
+impl WithTrailers {
+    pub fn proxy() -> Self {
+        Self { inner: () }
+    }
+}
+
 impl<S, Req, RspBody> svc::Service<Req> for WithTrailers<S>
 where
     S: svc::Service<Req, Response = http::Response<RspBody>>,
     S::Future: Send + 'static,
-    RspBody: HttpBody + Send + Unpin,
+    RspBody: HttpBody + Send + Unpin + 'static,
     RspBody::Data: Send + Unpin,
     Error: From<S::Error> + From<RspBody::Error>,
+    S::Error: 'static,
 {
     type Response = http::Response<Body<RspBody>>;
     type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Future = Pin<
+        Box<dyn Future<Output = Result<http::Response<Body<RspBody>>, Error>> + Send + 'static>,
+    >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx).map_err(Into::into)
@@ -61,33 +70,63 @@ where
 
     fn call(&mut self, req: Req) -> Self::Future {
         let rsp = self.inner.call(req);
-        Box::pin(async move {
-            let (parts, body) = rsp.await?.into_parts();
-            let mut body = Body {
-                inner: body,
-                first_data: None,
-                trailers: None,
-            };
-
-            if let Some(data) = body.inner.data().await {
-                // body has data; stop waiting for trailers
-                body.first_data = Some(data?);
-
-                // peek to see if there's immediately a trailers frame, and grab
-                // it if so. otherwise, bail.
-                if let Some(trailers) = body.inner.trailers().now_or_never() {
-                    body.trailers = trailers?;
-                }
-
-                return Ok(http::Response::from_parts(parts, body));
-            }
-
-            // okay, let's see if there's trailers...
-            body.trailers = body.inner.trailers().await?;
-
-            Ok(http::Response::from_parts(parts, body))
-        })
+        Box::pin(wrap_body(rsp))
     }
+}
+
+impl<S, Req, RspBody> svc::Proxy<Req, S> for WithTrailers
+where
+    S: svc::Service<Req, Response = http::Response<RspBody>>,
+    S::Future: Send + 'static,
+    RspBody: HttpBody + Send + Unpin + 'static,
+    RspBody::Data: Send + Unpin,
+    Error: From<S::Error> + From<RspBody::Error>,
+    S::Error: 'static,
+{
+    type Request = Req;
+    type Response = http::Response<Body<RspBody>>;
+    type Error = Error;
+    type Future = Pin<
+        Box<dyn Future<Output = Result<http::Response<Body<RspBody>>, Error>> + Send + 'static>,
+    >;
+
+    fn proxy(&self, inner: &mut S, req: Req) -> Self::Future {
+        let rsp = inner.call(req);
+        Box::pin(wrap_body(rsp))
+    }
+}
+
+async fn wrap_body<F, RspBody, E>(rsp: F) -> Result<http::Response<Body<RspBody>>, Error>
+where
+    F: Future<Output = Result<http::Response<RspBody>, E>> + Send + 'static,
+    RspBody: HttpBody + Send + Unpin,
+    RspBody::Data: Send + Unpin,
+    Error: From<E> + From<RspBody::Error>,
+{
+    let (parts, body) = rsp.await?.into_parts();
+    let mut body = Body {
+        inner: body,
+        first_data: None,
+        trailers: None,
+    };
+
+    if let Some(data) = body.inner.data().await {
+        // body has data; stop waiting for trailers
+        body.first_data = Some(data?);
+
+        // peek to see if there's immediately a trailers frame, and grab
+        // it if so. otherwise, bail.
+        if let Some(trailers) = body.inner.trailers().now_or_never() {
+            body.trailers = trailers?;
+        }
+
+        return Ok(http::Response::from_parts(parts, body));
+    }
+
+    // okay, let's see if there's trailers...
+    body.trailers = body.inner.trailers().await?;
+
+    Ok(http::Response::from_parts(parts, body))
 }
 
 // === impl WithTrailersBody ===
