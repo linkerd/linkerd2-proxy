@@ -2,9 +2,16 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
 use http_body::{Body, SizeHint};
 use linkerd_error::Error;
+use linkerd_stack as svc;
 use parking_lot::Mutex;
 use std::{collections::VecDeque, io::IoSlice, pin::Pin, sync::Arc, task::Context, task::Poll};
 use thiserror::Error;
+
+/// A [`Proxy`] that wraps request bodies in [`ReplayBody`].
+#[derive(Debug, Default)]
+pub struct WithReplay {
+    max_buffered_bytes: usize,
+}
 
 /// Wraps an HTTP body type and lazily buffers data as it is read from the inner
 /// body.
@@ -79,6 +86,45 @@ struct BodyState<B> {
 
     /// Maximum number of bytes to buffer.
     max_bytes: usize,
+}
+
+// === impl WithReplay ===
+
+impl<S, B> svc::Proxy<http::Request<B>, S> for WithReplay
+where
+    S: svc::Service<http::Request<B>, Error = Error>,
+    S: svc::Service<
+        http::Request<ReplayBody<B>>,
+        Response = <S as svc::Service<http::Request<B>>>::Response,
+        Future = <S as svc::Service<http::Request<B>>>::Future,
+        Error = Error,
+    >,
+    B: Body + Unpin,
+    B::Error: Into<Error>,
+{
+    type Request = http::Request<ReplayBody<B>>;
+    type Response = <S as svc::Service<http::Request<B>>>::Response;
+    type Error = <S as svc::Service<http::Request<B>>>::Error;
+    type Future = <S as svc::Service<http::Request<B>>>::Future;
+
+    fn proxy(&self, inner: &mut S, req: http::Request<B>) -> Self::Future {
+        let (head, body) = req.into_parts();
+        let replay_body = match ReplayBody::try_new(body, self.max_buffered_bytes) {
+            Ok(body) => body,
+            Err(body) => {
+                tracing::debug!(
+                    size = body.size_hint().lower(),
+                    "Body is too large to buffer"
+                );
+                return Either::B(http::Request::from_parts(head, body));
+            }
+        };
+
+        // The body may still be too large to be buffered if the body's length was not known.
+        // `ReplayBody` handles this gracefully.
+        Either::A(http::Request::from_parts(head, replay_body))
+        inner.call(req);
+    }
 }
 
 // === impl ReplayBody ===
