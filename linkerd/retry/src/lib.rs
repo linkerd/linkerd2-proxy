@@ -5,8 +5,8 @@ use futures::future;
 use linkerd_error::Error;
 use linkerd_stack::{
     layer::{self, Layer},
-    proxy::{self, Proxy},
-    Either, NewService, Service,
+    proxy::{Proxy, ProxyService},
+    Either, NewService, Oneshot, Service, ServiceExt,
 };
 use std::{
     marker::PhantomData,
@@ -220,7 +220,7 @@ where
     type Error = Error;
     type Future = future::Either<
         <O as Proxy<Req, S>>::Future,
-        proxy::Oneshot<O, tower::retry::Retry<P, R::Service>, RReq>,
+        Oneshot<ProxyService<O, tower::retry::Retry<P, R::Service>>, RReq>,
     >;
 
     #[inline]
@@ -245,7 +245,8 @@ where
 
         let inner = self.inner.clone();
         let retry = tower::retry::Retry::new(policy.clone(), self.on_retry.layer(inner));
-        future::Either::Right(self.on_response.clone().proxy_oneshot(retry, retry_req))
+        let retry = self.on_response.clone().into_service(retry);
+        future::Either::Right(retry.oneshot(retry_req))
     }
 }
 
