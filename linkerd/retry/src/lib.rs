@@ -26,7 +26,7 @@ pub trait NewPolicy<T> {
 
 /// An extension to [`tower::retry::Policy`] that adds a method to prepare a
 /// request to be retried, possibly changing its type.
-pub trait PrepareRequest<Req, Rsp, E>:
+pub trait PrepareRetry<Req, Rsp, E>:
     tower::retry::Policy<Self::RetryRequest, Self::RetryResponse, E>
 {
     /// A request type that can be retried.
@@ -40,6 +40,11 @@ pub trait PrepareRequest<Req, Rsp, E>:
     /// This *may* be the same as the `Rsp` type parameter, but it can also be a
     /// different type, if retries can only be attempted for a specific response type.
     type RetryResponse;
+
+    /// The response future.
+    ///
+    /// If this retry policy doesn't need to asynchronously modify the response
+    /// type, this can be `futures::future::Ready`;
     type ResponseFuture: Future<Output = Result<Self::RetryResponse, E>>;
 
     /// Prepare an initial request for a potential retry.
@@ -53,6 +58,13 @@ pub trait PrepareRequest<Req, Rsp, E>:
     /// of that type.
     fn prepare_request(&self, req: Req) -> Either<Self::RetryRequest, Req>;
 
+    /// Prepare a response for a potential retry.
+    ///
+    /// Whether or not the response is retryable is determined by the
+    /// [`tower::retry::Policy`] implementation for this type. This method will
+    /// be called *prior* to the [`Policy::retry`] method, and provides the
+    /// opportunity to (asynchronously) transform the response type prior to
+    /// checking if it is retry-able.
     fn prepare_response(rsp: Rsp) -> Self::ResponseFuture;
 }
 
@@ -179,7 +191,7 @@ impl<P: Clone, N: Clone, O: Clone, RReq> Clone for NewRetry<P, N, O, RReq> {
 
 impl<P, S, O, Req, Fut, RReq, RRsp, Rsp> Service<Req> for Retry<P, S, O, RReq>
 where
-    P: PrepareRequest<Req, Rsp, Error, RetryRequest = RReq, RetryResponse = RRsp>,
+    P: PrepareRetry<Req, Rsp, Error, RetryRequest = RReq, RetryResponse = RRsp>,
     P: Policy<RReq, RRsp, Error> + Clone,
     S: Service<Req, Response = Rsp, Future = Fut, Error = Error>
         + Service<RReq, Response = Rsp, Future = Fut, Error = Error>

@@ -131,7 +131,7 @@ where
     }
 }
 
-impl<A, B, E> retry::PrepareRequest<http::Request<A>, http::Response<B>, E> for RetryPolicy
+impl<A, B, E> retry::PrepareRetry<http::Request<A>, http::Response<B>, E> for RetryPolicy
 where
     A: HttpBody + Unpin,
     A::Error: Into<Error>,
@@ -164,6 +164,8 @@ where
         Either::A(http::Request::from_parts(head, replay_body))
     }
 
+    /// If the response is HTTP/2, return a future that checks for a `TRAILERS`
+    /// frame immediately after the first frame of the response.
     fn prepare_response(rsp: http::Response<B>) -> Self::ResponseFuture {
         Box::pin(with_trailers::Body::map_response(rsp))
     }
