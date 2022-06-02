@@ -1,4 +1,7 @@
-use futures::{future::Either, FutureExt};
+use futures::{
+    future::{self, Either},
+    FutureExt,
+};
 use http_body::Body;
 use std::{
     future::Future,
@@ -36,22 +39,24 @@ impl<B: Body> WithTrailers<B> {
         E: From<B::Error> + 'static,
     {
         use http::Version;
-        match rsp.version() {
-            Version::HTTP_09 | Version::HTTP_10 | Version::HTTP_11 => {
-                // The response is not an HTTP version with trailers, skip all
-                // the trailers stuff.
-                let rsp = rsp.map(|inner| Self {
-                    inner,
-                    first_data: None,
-                    trailers: None,
-                });
-                Either::Left(futures::future::ready(Ok(rsp)))
-            }
-            _ => Either::Right(Box::pin(Self::map_response2(rsp))),
+
+        // If the response isn't an HTTP version that has trailers, skip trying
+        // to read a trailers frame.
+        if let Version::HTTP_09 | Version::HTTP_10 | Version::HTTP_11 = rsp.version() {
+            return Either::Left(future::ready(Ok(Self::no_trailers(rsp))));
         }
+
+        // If the response doesn't have a body stream, also skip trying to read
+        // a trailers frame.
+        if rsp.is_end_stream() {
+            return Either::Left(future::ready(Ok(Self::no_trailers(rsp))));
+        }
+
+        // Otherwise, return a future that tries to read the next frame.
+        Either::Right(Box::pin(Self::read_response(rsp)))
     }
 
-    async fn map_response2<E>(rsp: http::Response<B>) -> Result<http::Response<Self>, E>
+    async fn read_response<E>(rsp: http::Response<B>) -> Result<http::Response<Self>, E>
     where
         B: Send + Unpin,
         B::Data: Send + Unpin,
@@ -81,6 +86,14 @@ impl<B: Body> WithTrailers<B> {
         body.trailers = body.inner.trailers().await?;
 
         Ok(http::Response::from_parts(parts, body))
+    }
+
+    fn no_trailers(rsp: http::Response<B>) -> http::Response<Self> {
+        rsp.map(|inner| Self {
+            inner,
+            first_data: None,
+            trailers: None,
+        })
     }
 }
 
