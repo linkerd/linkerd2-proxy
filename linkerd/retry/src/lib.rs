@@ -72,27 +72,27 @@ pub trait PrepareRetry<Req, Rsp, E>:
 pub struct NewRetry<P, N, O> {
     new_policy: P,
     inner: N,
-    on_response: O,
+    proxy: O,
 }
 
 #[derive(Debug)]
 pub struct Retry<P, S, O> {
     policy: Option<P>,
     inner: S,
-    on_response: O,
+    proxy: O,
 }
 
 #[derive(Debug)]
 pub struct NewRetryLayer<P, O = ()> {
     new_policy: P,
-    on_response: O,
+    proxy: O,
 }
 
 // === impl NewRetryLayer ===
 pub fn layer<P>(new_policy: P) -> NewRetryLayer<P> {
     NewRetryLayer {
         new_policy,
-        on_response: (),
+        proxy: (),
     }
 }
 
@@ -106,7 +106,7 @@ where
         NewRetry {
             inner,
             new_policy: self.new_policy.clone(),
-            on_response: self.on_response.clone(),
+            proxy: self.proxy.clone(),
         }
     }
 }
@@ -116,10 +116,10 @@ impl<P> NewRetryLayer<P, ()> {
     /// retry service.
     ///
     /// By default, this is the identity proxy, and does nothing.
-    pub fn proxy_on_response<O>(self, on_response: O) -> NewRetryLayer<P, O> {
+    pub fn with_proxy<O>(self, proxy: O) -> NewRetryLayer<P, O> {
         NewRetryLayer {
             new_policy: self.new_policy,
-            on_response,
+            proxy,
         }
     }
 }
@@ -128,7 +128,7 @@ impl<P: Clone, O: Clone> Clone for NewRetryLayer<P, O> {
     fn clone(&self) -> Self {
         Self {
             new_policy: self.new_policy.clone(),
-            on_response: self.on_response.clone(),
+            proxy: self.proxy.clone(),
         }
     }
 }
@@ -136,11 +136,11 @@ impl<P: Clone, O: Clone> Clone for NewRetryLayer<P, O> {
 // === impl NewRetry ===
 
 impl<P: Clone, N, O: Clone> NewRetry<P, N, O> {
-    pub fn layer(new_policy: P, on_response: O) -> impl Layer<N, Service = Self> + Clone {
+    pub fn layer(new_policy: P, proxy: O) -> impl Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
             new_policy: new_policy.clone(),
-            on_response: on_response.clone(),
+            proxy: proxy.clone(),
         })
     }
 }
@@ -161,7 +161,7 @@ where
         Retry {
             policy,
             inner,
-            on_response: self.on_response.clone(),
+            proxy: self.proxy.clone(),
         }
     }
 }
@@ -171,7 +171,7 @@ impl<P: Clone, N: Clone, O: Clone> Clone for NewRetry<P, N, O> {
         Self {
             new_policy: self.new_policy.clone(),
             inner: self.inner.clone(),
-            on_response: self.on_response.clone(),
+            proxy: self.proxy.clone(),
         }
     }
 }
@@ -223,15 +223,13 @@ where
         trace!(retryable = %self.policy.is_some());
 
         let policy = match self.policy.as_ref() {
-            None => return future::Either::Left(self.on_response.proxy(&mut self.inner, req)),
+            None => return future::Either::Left(self.proxy.proxy(&mut self.inner, req)),
             Some(p) => p,
         };
 
         let retry_req = match policy.prepare_request(req) {
             Either::A(retry_req) => retry_req,
-            Either::B(req) => {
-                return future::Either::Left(self.on_response.proxy(&mut self.inner, req))
-            }
+            Either::B(req) => return future::Either::Left(self.proxy.proxy(&mut self.inner, req)),
         };
 
         let inner = AndThen::new(
@@ -239,7 +237,7 @@ where
             P::prepare_response as fn(Rsp) -> P::ResponseFuture,
         );
         let retry = tower::retry::Retry::new(policy.clone(), inner);
-        let retry = self.on_response.clone().into_service(retry);
+        let retry = self.proxy.clone().into_service(retry);
         future::Either::Right(retry.oneshot(retry_req))
     }
 }
@@ -249,7 +247,7 @@ impl<P: Clone, S: Clone, O: Clone> Clone for Retry<P, S, O> {
         Self {
             policy: self.policy.clone(),
             inner: self.inner.clone(),
-            on_response: self.on_response.clone(),
+            proxy: self.proxy.clone(),
         }
     }
 }

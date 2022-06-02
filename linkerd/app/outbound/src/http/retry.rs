@@ -23,7 +23,7 @@ pub fn layer<N>(
         // Because we wrap the response body type on retries, we must include a
         // `Proxy` middleware for unifying the response body types of the retry
         // and non-retry services.
-        .proxy_on_response(EraseResponse::new(()))
+        .with_proxy(EraseResponse::new(()))
 }
 
 #[derive(Clone, Debug)]
