@@ -153,7 +153,6 @@ impl<E> Outbound<E> {
                         .push_http_insert_target::<profiles::http::Route>()
                         // Sets an optional retry policy.
                         .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
-                        .check_new_service()
                         // Sets an optional request timeout.
                         .push(http::NewTimeout::layer())
                         // Records per-route metrics.

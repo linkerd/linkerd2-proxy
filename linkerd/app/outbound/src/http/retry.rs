@@ -16,10 +16,9 @@ use linkerd_http_retry::{
 use linkerd_retry as retry;
 use std::sync::Arc;
 
-pub fn layer<N, R>(
+pub fn layer<N>(
     metrics: metrics::HttpRouteRetry,
-) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N, EraseResponse<()>, R>> + Clone
-{
+) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N, EraseResponse<()>>> + Clone {
     retry::layer(NewRetryPolicy::new(metrics))
         // Because we wrap the response body type on retries, we must include a
         // `Proxy` middleware for unifying the response body types of the retry

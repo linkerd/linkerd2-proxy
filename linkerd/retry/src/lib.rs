@@ -11,7 +11,6 @@ use linkerd_stack::{
 };
 use std::{
     future::Future,
-    marker::PhantomData,
     task::{Context, Poll},
 };
 pub use tower::retry::{budget::Budget, Policy};
@@ -70,97 +69,89 @@ pub trait PrepareRetry<Req, Rsp, E>:
 
 /// Applies per-target retry policies.
 #[derive(Debug)]
-pub struct NewRetry<P, N, O, RReq> {
+pub struct NewRetry<P, N, O> {
     new_policy: P,
     inner: N,
     on_response: O,
-    _r_req: PhantomData<fn(RReq)>,
 }
 
 #[derive(Debug)]
-pub struct Retry<P, S, O, RReq> {
+pub struct Retry<P, S, O> {
     policy: Option<P>,
     inner: S,
     on_response: O,
-    _r_req: PhantomData<fn(RReq)>,
 }
 
 #[derive(Debug)]
-pub struct NewRetryLayer<P, RReq, O = ()> {
+pub struct NewRetryLayer<P, O = ()> {
     new_policy: P,
     on_response: O,
-    _r_req: PhantomData<fn(RReq)>,
 }
 
 // === impl NewRetryLayer ===
-pub fn layer<P, RReq>(new_policy: P) -> NewRetryLayer<P, RReq> {
+pub fn layer<P>(new_policy: P) -> NewRetryLayer<P> {
     NewRetryLayer {
         new_policy,
         on_response: (),
-        _r_req: PhantomData,
     }
 }
 
-impl<P, O, N, RReq> Layer<N> for NewRetryLayer<P, RReq, O>
+impl<P, O, N> Layer<N> for NewRetryLayer<P, O>
 where
     P: Clone,
     O: Clone,
 {
-    type Service = NewRetry<P, N, O, RReq>;
+    type Service = NewRetry<P, N, O>;
     fn layer(&self, inner: N) -> Self::Service {
         NewRetry {
             inner,
             new_policy: self.new_policy.clone(),
             on_response: self.on_response.clone(),
-            _r_req: PhantomData,
         }
     }
 }
 
-impl<P, RReq> NewRetryLayer<P, RReq, ()> {
+impl<P> NewRetryLayer<P, ()> {
     /// Adds a [`Proxy`] that will be applied to both the inner service and the
     /// retry service.
     ///
     /// By default, this is the identity proxy, and does nothing.
-    pub fn proxy_on_response<O>(self, on_response: O) -> NewRetryLayer<P, RReq, O> {
+    pub fn proxy_on_response<O>(self, on_response: O) -> NewRetryLayer<P, O> {
         NewRetryLayer {
             new_policy: self.new_policy,
             on_response,
-            _r_req: PhantomData,
         }
     }
 }
 
-impl<P: Clone, O: Clone, RReq> Clone for NewRetryLayer<P, RReq, O> {
+impl<P: Clone, O: Clone> Clone for NewRetryLayer<P, O> {
     fn clone(&self) -> Self {
         Self {
             new_policy: self.new_policy.clone(),
             on_response: self.on_response.clone(),
-            _r_req: PhantomData,
         }
     }
 }
 
 // === impl NewRetry ===
 
-impl<P: Clone, N, O: Clone, RReq> NewRetry<P, N, O, RReq> {
+impl<P: Clone, N, O: Clone> NewRetry<P, N, O> {
     pub fn layer(new_policy: P, on_response: O) -> impl Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
             new_policy: new_policy.clone(),
             on_response: on_response.clone(),
-            _r_req: PhantomData,
         })
     }
 }
 
-impl<T, N, P, O, RReq> NewService<T> for NewRetry<P, N, O, RReq>
+impl<T, N, P, O> NewService<T> for NewRetry<P, N, O>
 where
     N: NewService<T>,
     P: NewPolicy<T>,
     O: Clone,
 {
-    type Service = Retry<P::Policy, N::Service, O, RReq>;
+    type Service = Retry<P::Policy, N::Service, O>;
 
     fn new_service(&self, target: T) -> Self::Service {
         // Determine if there is a retry policy for the given target.
@@ -171,37 +162,37 @@ where
             policy,
             inner,
             on_response: self.on_response.clone(),
-            _r_req: PhantomData,
         }
     }
 }
 
-impl<P: Clone, N: Clone, O: Clone, RReq> Clone for NewRetry<P, N, O, RReq> {
+impl<P: Clone, N: Clone, O: Clone> Clone for NewRetry<P, N, O> {
     fn clone(&self) -> Self {
         Self {
             new_policy: self.new_policy.clone(),
             inner: self.inner.clone(),
             on_response: self.on_response.clone(),
-            _r_req: PhantomData,
         }
     }
 }
 
 // === impl Retry ===
 
-impl<P, S, O, Req, Fut, RReq, RRsp, Rsp> Service<Req> for Retry<P, S, O, RReq>
+impl<P, S, O, Req, Fut, Rsp> Service<Req> for Retry<P, S, O>
 where
-    P: PrepareRetry<Req, Rsp, Error, RetryRequest = RReq, RetryResponse = RRsp>,
-    P: Policy<RReq, RRsp, Error> + Clone,
-    S: Service<Req, Response = Rsp, Future = Fut, Error = Error>
-        + Service<RReq, Response = Rsp, Future = Fut, Error = Error>
-        + Clone,
+    P: PrepareRetry<Req, Rsp, Error> + Clone,
+    S: Service<Req, Response = Rsp, Future = Fut, Error = Error>,
+    S: Service<P::RetryRequest, Response = Rsp, Future = Fut, Error = Error>,
+    S: Clone,
     Fut: std::future::Future<Output = Result<Rsp, Error>>,
     O: Proxy<Req, S, Request = Req, Error = Error>,
     O: Proxy<
-        RReq,
-        tower::retry::Retry<P, AndThen<S, fn(<S as Service<RReq>>::Response) -> P::ResponseFuture>>,
-        Request = RReq,
+        P::RetryRequest,
+        tower::retry::Retry<
+            P,
+            AndThen<S, fn(<S as Service<P::RetryRequest>>::Response) -> P::ResponseFuture>,
+        >,
+        Request = P::RetryRequest,
         Response = <O as Proxy<Req, S>>::Response,
         Error = Error,
     >,
@@ -216,10 +207,10 @@ where
                 O,
                 tower::retry::Retry<
                     P,
-                    AndThen<S, fn(<S as Service<RReq>>::Response) -> P::ResponseFuture>,
+                    AndThen<S, fn(<S as Service<P::RetryRequest>>::Response) -> P::ResponseFuture>,
                 >,
             >,
-            RReq,
+            P::RetryRequest,
         >,
     >;
 
@@ -253,13 +244,12 @@ where
     }
 }
 
-impl<P: Clone, S: Clone, O: Clone, RReq> Clone for Retry<P, S, O, RReq> {
+impl<P: Clone, S: Clone, O: Clone> Clone for Retry<P, S, O> {
     fn clone(&self) -> Self {
         Self {
             policy: self.policy.clone(),
             inner: self.inner.clone(),
             on_response: self.on_response.clone(),
-            _r_req: PhantomData,
         }
     }
 }
