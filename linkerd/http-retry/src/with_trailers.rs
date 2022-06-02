@@ -70,7 +70,10 @@ where
 
     fn call(&mut self, req: Req) -> Self::Future {
         let rsp = self.inner.call(req);
-        Box::pin(wrap_body(rsp))
+        Box::pin(async move {
+            let rsp = rsp.await?;
+            Body::map_response(rsp).await
+        })
     }
 }
 
@@ -92,41 +95,11 @@ where
 
     fn proxy(&self, inner: &mut S, req: Req) -> Self::Future {
         let rsp = inner.call(req);
-        Box::pin(wrap_body(rsp))
+        Box::pin(async move {
+            let rsp = rsp.await?;
+            Body::map_response(rsp).await
+        })
     }
-}
-
-async fn wrap_body<F, RspBody, E>(rsp: F) -> Result<http::Response<Body<RspBody>>, Error>
-where
-    F: Future<Output = Result<http::Response<RspBody>, E>> + Send + 'static,
-    RspBody: HttpBody + Send + Unpin,
-    RspBody::Data: Send + Unpin,
-    Error: From<E> + From<RspBody::Error>,
-{
-    let (parts, body) = rsp.await?.into_parts();
-    let mut body = Body {
-        inner: body,
-        first_data: None,
-        trailers: None,
-    };
-
-    if let Some(data) = body.inner.data().await {
-        // body has data; stop waiting for trailers
-        body.first_data = Some(data?);
-
-        // peek to see if there's immediately a trailers frame, and grab
-        // it if so. otherwise, bail.
-        if let Some(trailers) = body.inner.trailers().now_or_never() {
-            body.trailers = trailers?;
-        }
-
-        return Ok(http::Response::from_parts(parts, body));
-    }
-
-    // okay, let's see if there's trailers...
-    body.trailers = body.inner.trailers().await?;
-
-    Ok(http::Response::from_parts(parts, body))
 }
 
 // === impl WithTrailersBody ===
@@ -134,6 +107,38 @@ where
 impl<B: HttpBody> Body<B> {
     pub fn trailers(&self) -> Option<&http::HeaderMap> {
         self.trailers.as_ref()
+    }
+
+    pub async fn map_response<E>(rsp: http::Response<B>) -> Result<http::Response<Body<B>>, E>
+    where
+        B: Send + Unpin,
+        B::Data: Send + Unpin,
+        E: From<B::Error>,
+    {
+        let (parts, body) = rsp.into_parts();
+        let mut body = Body {
+            inner: body,
+            first_data: None,
+            trailers: None,
+        };
+
+        if let Some(data) = body.inner.data().await {
+            // body has data; stop waiting for trailers
+            body.first_data = Some(data?);
+
+            // peek to see if there's immediately a trailers frame, and grab
+            // it if so. otherwise, bail.
+            if let Some(trailers) = body.inner.trailers().now_or_never() {
+                body.trailers = trailers?;
+            }
+
+            return Ok(http::Response::from_parts(parts, body));
+        }
+
+        // okay, let's see if there's trailers...
+        body.trailers = body.inner.trailers().await?;
+
+        Ok(http::Response::from_parts(parts, body))
     }
 }
 

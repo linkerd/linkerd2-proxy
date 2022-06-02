@@ -11,20 +11,13 @@ use linkerd_app_core::{
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_http_retry::{with_trailers, ReplayBody};
 use linkerd_retry as retry;
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
 pub fn layer<N, R>(
     metrics: metrics::HttpRouteRetry,
-) -> impl layer::Layer<
-    N,
-    Service = retry::NewRetry<NewRetryPolicy, N, with_trailers::Layer, EraseResponse<()>, R>,
-> + Clone {
+) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N, EraseResponse<()>, R>> + Clone
+{
     retry::layer(NewRetryPolicy::new(metrics))
-        // When a retry occurs, add middleware for buffering an HTTP/2 TRAILERS
-        // frame if the response body is immediately terminated by trailers.
-        // This allows retrying failed gRPC requests when `grpc-status` is sent
-        // in a TRAILERS frame.
-        .layer_on_retry(with_trailers::Layer::default())
         // Because we wrap the response body type on retries, we must include a
         // `Proxy` middleware for unifying the response body types of the retry
         // and non-retry services.
@@ -138,14 +131,17 @@ where
     }
 }
 
-impl<A, B, E> retry::PrepareRequest<http::Request<A>, http::Response<with_trailers::Body<B>>, E>
-    for RetryPolicy
+impl<A, B, E> retry::PrepareRequest<http::Request<A>, http::Response<B>, E> for RetryPolicy
 where
     A: HttpBody + Unpin,
     A::Error: Into<Error>,
-    B: HttpBody + Unpin,
+    B: HttpBody + Unpin + Send + 'static,
+    B::Data: Unpin + Send,
+    E: From<B::Error> + 'static,
 {
     type RetryRequest = http::Request<ReplayBody<A>>;
+    type RetryResponse = http::Response<with_trailers::Body<B>>;
+    type ResponseFuture = Pin<Box<dyn Future<Output = Result<Self::RetryResponse, E>> + Send>>;
 
     fn prepare_request(
         &self,
@@ -166,5 +162,9 @@ where
         // The body may still be too large to be buffered if the body's length was not known.
         // `ReplayBody` handles this gracefully.
         Either::A(http::Request::from_parts(head, replay_body))
+    }
+
+    fn prepare_response(rsp: http::Response<B>) -> Self::ResponseFuture {
+        Box::pin(with_trailers::Body::map_response(rsp))
     }
 }
