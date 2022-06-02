@@ -1,122 +1,64 @@
-use futures::FutureExt;
-use http_body::Body as HttpBody;
-use linkerd_error::Error;
-use linkerd_stack as svc;
+use futures::{future::Either, FutureExt};
+use http_body::Body;
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
 
-/// A [`Service`] or [`Proxy`] that wraps HTTP responses to allow peeking at the
-/// stream's trailers, if the first frame in the response stream is a `TRAILERS`
-/// frame.
-#[derive(Clone)]
-pub struct WithTrailers<S = ()> {
-    inner: S,
-}
-
 /// An HTTP body that allows inspecting the body's trailers, if a `TRAILERS`
 /// frame was the first frame after the initial headers frame.
 ///
 /// If the first frame of the body stream was *not* a `TRAILERS` frame, this
 /// behaves identically to a normal body.
-pub struct Body<B: HttpBody> {
+pub struct WithTrailers<B: Body> {
     inner: B,
     first_data: Option<B::Data>,
     trailers: Option<http::HeaderMap>,
 }
 
-/// This has its own `Layer` type (rather than using `layer::Mk`) so that the
-/// layer type doesn't include the service type's name.
-#[derive(Clone, Debug, Default)]
-pub struct Layer(());
-
-// === impl Layer ===
-
-impl<S> svc::layer::Layer<S> for Layer {
-    type Service = WithTrailers<S>;
-    fn layer(&self, inner: S) -> Self::Service {
-        WithTrailers { inner }
-    }
-}
+pub type WithTrailersFuture<B, E> = Either<
+    futures::future::Ready<Result<http::Response<WithTrailers<B>>, E>>,
+    Pin<Box<dyn Future<Output = Result<http::Response<WithTrailers<B>>, E>> + Send + 'static>>,
+>;
 
 // === impl WithTrailers ===
 
-impl WithTrailers {
-    pub fn proxy() -> Self {
-        Self { inner: () }
-    }
-}
-
-impl<S, Req, RspBody> svc::Service<Req> for WithTrailers<S>
-where
-    S: svc::Service<Req, Response = http::Response<RspBody>>,
-    S::Future: Send + 'static,
-    RspBody: HttpBody + Send + Unpin + 'static,
-    RspBody::Data: Send + Unpin,
-    Error: From<S::Error> + From<RspBody::Error>,
-    S::Error: 'static,
-{
-    type Response = http::Response<Body<RspBody>>;
-    type Error = Error;
-    type Future = Pin<
-        Box<dyn Future<Output = Result<http::Response<Body<RspBody>>, Error>> + Send + 'static>,
-    >;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx).map_err(Into::into)
-    }
-
-    fn call(&mut self, req: Req) -> Self::Future {
-        let rsp = self.inner.call(req);
-        Box::pin(async move {
-            let rsp = rsp.await?;
-            Body::map_response(rsp).await
-        })
-    }
-}
-
-impl<S, Req, RspBody> svc::Proxy<Req, S> for WithTrailers
-where
-    S: svc::Service<Req, Response = http::Response<RspBody>>,
-    S::Future: Send + 'static,
-    RspBody: HttpBody + Send + Unpin + 'static,
-    RspBody::Data: Send + Unpin,
-    Error: From<S::Error> + From<RspBody::Error>,
-    S::Error: 'static,
-{
-    type Request = Req;
-    type Response = http::Response<Body<RspBody>>;
-    type Error = Error;
-    type Future = Pin<
-        Box<dyn Future<Output = Result<http::Response<Body<RspBody>>, Error>> + Send + 'static>,
-    >;
-
-    fn proxy(&self, inner: &mut S, req: Req) -> Self::Future {
-        let rsp = inner.call(req);
-        Box::pin(async move {
-            let rsp = rsp.await?;
-            Body::map_response(rsp).await
-        })
-    }
-}
-
-// === impl WithTrailersBody ===
-
-impl<B: HttpBody> Body<B> {
+impl<B: Body> WithTrailers<B> {
     pub fn trailers(&self) -> Option<&http::HeaderMap> {
         self.trailers.as_ref()
     }
 
-    pub async fn map_response<E>(rsp: http::Response<B>) -> Result<http::Response<Body<B>>, E>
+    pub fn map_response<E>(rsp: http::Response<B>) -> WithTrailersFuture<B, E>
+    where
+        B: Send + Unpin + 'static,
+        B::Data: Send + Unpin + 'static,
+        E: From<B::Error> + 'static,
+    {
+        use http::Version;
+        match rsp.version() {
+            Version::HTTP_09 | Version::HTTP_10 | Version::HTTP_11 => {
+                // The response is not an HTTP version with trailers, skip all
+                // the trailers stuff.
+                let rsp = rsp.map(|inner| Self {
+                    inner,
+                    first_data: None,
+                    trailers: None,
+                });
+                Either::Left(futures::future::ready(Ok(rsp)))
+            }
+            _ => Either::Right(Box::pin(Self::map_response2(rsp))),
+        }
+    }
+
+    async fn map_response2<E>(rsp: http::Response<B>) -> Result<http::Response<Self>, E>
     where
         B: Send + Unpin,
         B::Data: Send + Unpin,
         E: From<B::Error>,
     {
         let (parts, body) = rsp.into_parts();
-        let mut body = Body {
+        let mut body = Self {
             inner: body,
             first_data: None,
             trailers: None,
@@ -142,9 +84,9 @@ impl<B: HttpBody> Body<B> {
     }
 }
 
-impl<B> HttpBody for Body<B>
+impl<B> Body for WithTrailers<B>
 where
-    B: HttpBody + Unpin,
+    B: Body + Unpin,
     B::Data: Unpin,
 {
     type Data = B::Data;

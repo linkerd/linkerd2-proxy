@@ -9,9 +9,12 @@ use linkerd_app_core::{
     Error,
 };
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
-use linkerd_http_retry::{with_trailers, ReplayBody};
+use linkerd_http_retry::{
+    with_trailers::{self, WithTrailers},
+    ReplayBody,
+};
 use linkerd_retry as retry;
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::sync::Arc;
 
 pub fn layer<N, R>(
     metrics: metrics::HttpRouteRetry,
@@ -64,7 +67,7 @@ impl retry::NewPolicy<Route> for NewRetryPolicy {
 
 // === impl Retry ===
 
-impl<A, B, E> retry::Policy<http::Request<ReplayBody<A>>, http::Response<with_trailers::Body<B>>, E>
+impl<A, B, E> retry::Policy<http::Request<ReplayBody<A>>, http::Response<WithTrailers<B>>, E>
     for RetryPolicy
 where
     A: HttpBody + Unpin,
@@ -76,7 +79,7 @@ where
     fn retry(
         &self,
         req: &http::Request<ReplayBody<A>>,
-        result: Result<&http::Response<with_trailers::Body<B>>, &E>,
+        result: Result<&http::Response<WithTrailers<B>>, &E>,
     ) -> Option<Self::Future> {
         let retryable = match result {
             Err(_) => false,
@@ -140,8 +143,8 @@ where
     E: From<B::Error> + 'static,
 {
     type RetryRequest = http::Request<ReplayBody<A>>;
-    type RetryResponse = http::Response<with_trailers::Body<B>>;
-    type ResponseFuture = Pin<Box<dyn Future<Output = Result<Self::RetryResponse, E>> + Send>>;
+    type RetryResponse = http::Response<WithTrailers<B>>;
+    type ResponseFuture = with_trailers::WithTrailersFuture<B, E>;
 
     fn prepare_request(
         &self,
@@ -167,6 +170,6 @@ where
     /// If the response is HTTP/2, return a future that checks for a `TRAILERS`
     /// frame immediately after the first frame of the response.
     fn prepare_response(rsp: http::Response<B>) -> Self::ResponseFuture {
-        Box::pin(with_trailers::Body::map_response(rsp))
+        WithTrailers::map_response(rsp)
     }
 }
