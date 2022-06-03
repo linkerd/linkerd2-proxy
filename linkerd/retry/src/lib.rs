@@ -68,21 +68,21 @@ pub trait PrepareRetry<Req, Rsp, E>:
 }
 
 /// Applies per-target retry policies.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NewRetry<P, N, O> {
     new_policy: P,
     inner: N,
     proxy: O,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Retry<P, S, O> {
     policy: Option<P>,
     inner: S,
     proxy: O,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NewRetryLayer<P, O = ()> {
     new_policy: P,
     proxy: O,
@@ -124,15 +124,6 @@ impl<P> NewRetryLayer<P, ()> {
     }
 }
 
-impl<P: Clone, O: Clone> Clone for NewRetryLayer<P, O> {
-    fn clone(&self) -> Self {
-        Self {
-            new_policy: self.new_policy.clone(),
-            proxy: self.proxy.clone(),
-        }
-    }
-}
-
 // === impl NewRetry ===
 
 impl<P: Clone, N, O: Clone> NewRetry<P, N, O> {
@@ -161,16 +152,6 @@ where
         Retry {
             policy,
             inner,
-            proxy: self.proxy.clone(),
-        }
-    }
-}
-
-impl<P: Clone, N: Clone, O: Clone> Clone for NewRetry<P, N, O> {
-    fn clone(&self) -> Self {
-        Self {
-            new_policy: self.new_policy.clone(),
-            inner: self.inner.clone(),
             proxy: self.proxy.clone(),
         }
     }
@@ -239,15 +220,5 @@ where
         let retry = tower::retry::Retry::new(policy.clone(), inner);
         let retry = self.proxy.clone().into_service(retry);
         future::Either::Right(retry.oneshot(retry_req))
-    }
-}
-
-impl<P: Clone, S: Clone, O: Clone> Clone for Retry<P, S, O> {
-    fn clone(&self) -> Self {
-        Self {
-            policy: self.policy.clone(),
-            inner: self.inner.clone(),
-            proxy: self.proxy.clone(),
-        }
     }
 }
