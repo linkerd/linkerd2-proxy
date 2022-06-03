@@ -25,7 +25,9 @@ pub trait Proxy<Req, S: tower::Service<Self::Request>> {
     fn proxy(&self, inner: &mut S, req: Req) -> Self::Future;
 
     /// Composes this `Proxy` with a [`Service`], returning a new [`Service`]
-    /// that calls the provided [`Service`] through this [`Proxy`].
+    /// that calls the provided [`Service`] through this `Proxy`.
+    ///
+    /// [`Service`]: tower::Service
     fn into_service(self, svc: S) -> ProxyService<Self, S>
     where
         Self: Sized,
@@ -35,6 +37,8 @@ pub trait Proxy<Req, S: tower::Service<Self::Request>> {
 }
 
 /// Composes a [`Proxy`] with a [`Service`] to create a new [`Service`].
+///
+/// [`Service`]: tower::Service
 #[derive(Clone, Debug)]
 pub struct ProxyService<P, S> {
     proxy: P,
