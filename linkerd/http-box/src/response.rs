@@ -1,6 +1,6 @@
 //! A middleware that boxes HTTP response bodies.
 
-use crate::BoxBody;
+use crate::{BoxBody, EraseResponse};
 use futures::{future, TryFutureExt};
 use linkerd_error::Error;
 use linkerd_stack::{layer, Proxy, Service};
@@ -12,6 +12,11 @@ pub struct BoxResponse<S>(S);
 impl<S> BoxResponse<S> {
     pub fn layer() -> impl layer::Layer<S, Service = Self> + Clone + Copy {
         layer::mk(Self)
+    }
+
+    /// Constructs a boxing layer that erases the inner response type with [`EraseResponse`].
+    pub fn erased() -> impl layer::Layer<S, Service = EraseResponse<S>> + Clone + Copy {
+        EraseResponse::layer()
     }
 }
 
