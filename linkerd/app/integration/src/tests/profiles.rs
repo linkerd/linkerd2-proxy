@@ -504,16 +504,6 @@ mod cross_version {
     }
 }
 
-macro_rules! version_tests {
-    ($version:expr => $($test:ident),+ $(,)?) => {
-        $(
-            #[tokio::test]
-            async fn $test() {
-                cross_version::$test($version).await
-            }
-        )+
-    };
-}
 mod http1 {
     use super::*;
 

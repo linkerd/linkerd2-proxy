@@ -6,6 +6,18 @@
 mod test_env;
 
 #[cfg(test)]
+macro_rules! version_tests {
+    ($version:expr => $($test:ident),+ $(,)?) => {
+        $(
+            #[tokio::test]
+            async fn $test() {
+                cross_version::$test($version).await
+            }
+        )+
+    };
+}
+
+#[cfg(test)]
 mod tests;
 
 pub use self::test_env::TestEnv;
