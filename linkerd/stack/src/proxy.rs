@@ -34,18 +34,6 @@ pub trait Proxy<Req, S: tower::Service<Self::Request>> {
     {
         ProxyService { proxy: self, svc }
     }
-
-    /// Like [`ServiceExt::oneshot`](tower::util::ServiceExt::oneshot), but with
-    /// a `Proxy` too.
-    fn proxy_oneshot(self, svc: S, req: Req) -> Oneshot<Self, S, Req>
-    where
-        Self: Sized,
-    {
-        Oneshot {
-            req: Some(req),
-            state: State::PollReady { proxy: self, svc },
-        }
-    }
 }
 
 /// Composes a [`Proxy`] with a [`Service`] to create a new [`Service`].
@@ -55,17 +43,6 @@ pub trait Proxy<Req, S: tower::Service<Self::Request>> {
 pub struct ProxyService<P, S> {
     proxy: P,
     svc: S,
-}
-
-#[pin_project::pin_project]
-pub struct Oneshot<P, S, R>
-where
-    P: Proxy<R, S>,
-    S: tower::Service<P::Request>,
-{
-    req: Option<R>,
-    #[pin]
-    state: State<P, S, P::Future>,
 }
 
 // === impl Proxy ===
@@ -107,38 +84,5 @@ where
     #[inline]
     fn call(&mut self, req: R) -> Self::Future {
         self.proxy.proxy(&mut self.svc, req).map_err(Into::into)
-    }
-}
-
-// === impl Oneshot ===
-
-#[pin_project::pin_project(project = StateProj)]
-enum State<P, S, F> {
-    PollReady { proxy: P, svc: S },
-    Future(#[pin] F),
-}
-
-impl<P, S, R> Future for Oneshot<P, S, R>
-where
-    P: Proxy<R, S>,
-    S: tower::Service<P::Request>,
-    P::Error: From<S::Error>,
-{
-    type Output = Result<P::Response, P::Error>;
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        let mut this = self.project();
-        loop {
-            match this.state.as_mut().project() {
-                StateProj::PollReady { proxy, svc } => {
-                    futures::ready!(svc.poll_ready(cx))?;
-                    let f = proxy.proxy(svc, this.req.take().expect("already called"));
-                    this.state.as_mut().set(State::Future(f));
-                }
-                StateProj::Future(f) => return f.poll(cx),
-            }
-        }
     }
 }
