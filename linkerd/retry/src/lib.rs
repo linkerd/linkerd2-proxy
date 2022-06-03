@@ -159,6 +159,9 @@ where
 
 // === impl Retry ===
 
+// The inner service created for requests that are retryable.
+type RetrySvc<P, S, R, F> = tower::retry::Retry<P, AndThen<S, fn(R) -> F>>;
+
 impl<P, S, O, Req, Fut, Rsp> Service<Req> for Retry<P, S, O>
 where
     P: PrepareRetry<Req, Rsp, Error> + Clone,
@@ -169,10 +172,7 @@ where
     O: Proxy<Req, S, Request = Req, Error = Error>,
     O: Proxy<
         P::RetryRequest,
-        tower::retry::Retry<
-            P,
-            AndThen<S, fn(<S as Service<P::RetryRequest>>::Response) -> P::ResponseFuture>,
-        >,
+        RetrySvc<P, S, Rsp, P::ResponseFuture>,
         Request = P::RetryRequest,
         Response = <O as Proxy<Req, S>>::Response,
         Error = Error,
@@ -183,16 +183,7 @@ where
     type Error = Error;
     type Future = future::Either<
         <O as Proxy<Req, S>>::Future,
-        Oneshot<
-            ProxyService<
-                O,
-                tower::retry::Retry<
-                    P,
-                    AndThen<S, fn(<S as Service<P::RetryRequest>>::Response) -> P::ResponseFuture>,
-                >,
-            >,
-            P::RetryRequest,
-        >,
+        Oneshot<ProxyService<O, RetrySvc<P, S, Rsp, P::ResponseFuture>>, P::RetryRequest>,
     >;
 
     #[inline]
