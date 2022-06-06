@@ -1,3 +1,11 @@
+//! This module provides most of the metrics infrastructure for both inbound &
+//! outbound proxies.
+//!
+//! This is less than ideal. Instead of having common metrics with differing
+//! labels for inbound & outbound, we should instead have distinct metrics for
+//! each case. And the metric registries should be instantiated in the
+//! inbound/outbound crates, etc.
+
 pub use crate::transport::labels::{TargetAddr, TlsAccept};
 use crate::{
     classify::{Class, SuccessOrFailure},
@@ -8,6 +16,7 @@ use crate::{
 };
 use linkerd_addr::Addr;
 pub use linkerd_metrics::*;
+use linkerd_server_policy as policy;
 use std::{
     fmt::{self, Write},
     net::SocketAddr,
@@ -59,22 +68,18 @@ pub struct InboundEndpointLabels {
     pub tls: tls::ConditionalServerTls,
     pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
-    pub policy: AuthzLabels,
+    pub policy: ServerAuthzLabels,
 }
 
 /// A label referencing an inbound `Server` (i.e. for policy).
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ServerLabel {
-    pub kind: Arc<str>,
-    pub name: Arc<str>,
-}
+pub struct ServerLabel(pub Arc<policy::Meta>);
 
 /// Labels referencing an inbound `ServerAuthorization.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct AuthzLabels {
+pub struct ServerAuthzLabels {
     pub server: ServerLabel,
-    pub kind: Arc<str>,
-    pub name: Arc<str>,
+    pub authz: Arc<policy::Meta>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -298,17 +303,21 @@ impl FmtLabels for InboundEndpointLabels {
 
 impl FmtLabels for ServerLabel {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "srv_kind=\"{}\",srv_name=\"{}\"", self.kind, self.name)
+        write!(
+            f,
+            "srv_group=\"{}\",srv_kind=\"{}\",srv_name=\"{}\"",
+            self.0.group, self.0.kind, self.0.name
+        )
     }
 }
 
-impl FmtLabels for AuthzLabels {
+impl FmtLabels for ServerAuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.server.fmt_labels(f)?;
         write!(
             f,
-            ",authz_kind=\"{}\",authz_name=\"{}\"",
-            self.kind, self.name
+            ",authz_group=\"{}\",authz_kind=\"{}\",authz_name=\"{}\"",
+            self.authz.group, self.authz.kind, self.authz.name
         )
     }
 }

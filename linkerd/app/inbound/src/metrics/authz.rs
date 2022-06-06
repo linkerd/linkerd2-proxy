@@ -1,6 +1,8 @@
-use crate::policy::{AllowPolicy, Permit};
+use crate::policy::{AllowPolicy, ServerPermit};
 use linkerd_app_core::{
-    metrics::{metrics, AuthzLabels, Counter, FmtMetrics, ServerLabel, TargetAddr, TlsAccept},
+    metrics::{
+        metrics, Counter, FmtMetrics, ServerAuthzLabels, ServerLabel, TargetAddr, TlsAccept,
+    },
     tls,
 };
 use parking_lot::Mutex;
@@ -54,14 +56,14 @@ struct SrvKey {
 #[derive(Debug, Hash, PartialEq, Eq)]
 struct AuthzKey {
     target: TargetAddr,
-    authz: AuthzLabels,
+    authz: ServerAuthzLabels,
     tls: tls::ConditionalServerTls,
 }
 
 // === impl HttpAuthzMetrics ===
 
 impl HttpAuthzMetrics {
-    pub fn allow(&self, permit: &Permit, tls: tls::ConditionalServerTls) {
+    pub fn allow(&self, permit: &ServerPermit, tls: tls::ConditionalServerTls) {
         self.0
             .allow
             .lock()
@@ -114,7 +116,7 @@ impl FmtMetrics for HttpAuthzMetrics {
 // === impl TcpAuthzMetrics ===
 
 impl TcpAuthzMetrics {
-    pub fn allow(&self, permit: &Permit, tls: tls::ConditionalServerTls) {
+    pub fn allow(&self, permit: &ServerPermit, tls: tls::ConditionalServerTls) {
         self.0
             .allow
             .lock()
@@ -201,11 +203,11 @@ impl SrvKey {
 // === impl AuthzKey ===
 
 impl AuthzKey {
-    fn new(permit: &Permit, tls: tls::ConditionalServerTls) -> Self {
+    fn new(permit: &ServerPermit, tls: tls::ConditionalServerTls) -> Self {
         Self {
+            tls,
             target: TargetAddr(permit.dst.into()),
             authz: permit.labels.clone(),
-            tls,
         }
     }
 }

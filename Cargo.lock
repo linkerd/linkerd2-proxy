@@ -807,6 +807,7 @@ dependencies = [
  "linkerd-proxy-tcp",
  "linkerd-proxy-transport",
  "linkerd-reconnect",
+ "linkerd-server-policy",
  "linkerd-service-profiles",
  "linkerd-stack",
  "linkerd-stack-metrics",
