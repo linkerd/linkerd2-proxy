@@ -1,5 +1,7 @@
 use linkerd_app_core::{IpNet, Ipv4Net, Ipv6Net};
-use linkerd_server_policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy, Suffix};
+use linkerd_server_policy::{
+    authz::Suffix, Authentication, Authorization, Meta, Protocol, ServerPolicy,
+};
 use std::{sync::Arc, time::Duration};
 
 pub fn all_authenticated(timeout: Duration) -> ServerPolicy {

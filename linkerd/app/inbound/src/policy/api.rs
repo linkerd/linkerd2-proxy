@@ -6,13 +6,10 @@ use linkerd_app_core::{
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     proxy::http,
     svc::Service,
-    Error, IpNet, Recover, Result,
+    Error, Recover, Result,
 };
-use linkerd_server_policy::{
-    Authentication, Authorization, Meta, Network, Protocol, ServerPolicy, Suffix,
-};
+use linkerd_server_policy::ServerPolicy;
 use linkerd_tonic_watch::StreamWatch;
-use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub(super) struct Api<S> {
@@ -73,172 +70,20 @@ where
             let rsp = client.watch_port(tonic::Request::new(req)).await?;
             Ok(rsp.map(|updates| {
                 updates
-                    .map(|up| match to_policy(up?) {
-                        Ok(policy) => {
-                            tracing::debug!(?policy);
-                            Ok(policy)
-                        }
-                        Err(e) => Err(tonic::Status::invalid_argument(&*format!(
-                            "received invalid policy: {}",
-                            e
-                        ))),
+                    .map(|up| {
+                        let policy = up?.try_into().map_err(|e| {
+                            tonic::Status::invalid_argument(&*format!(
+                                "received invalid policy: {}",
+                                e
+                            ))
+                        })?;
+                        tracing::debug!(?policy);
+                        Ok(policy)
                     })
                     .boxed()
             }))
         })
     }
-}
-
-fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
-    let protocol = match proto.protocol {
-        Some(api::ProxyProtocol { kind: Some(k) }) => match k {
-            api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect { timeout }) => {
-                Protocol::Detect {
-                    timeout: match timeout {
-                        Some(t) => t
-                            .try_into()
-                            .map_err(|t| format!("negative detect timeout: {:?}", t))?,
-                        None => return Err("protocol missing detect timeout".into()),
-                    },
-                }
-            }
-            api::proxy_protocol::Kind::Http1(_) => Protocol::Http1,
-            api::proxy_protocol::Kind::Http2(_) => Protocol::Http2,
-            api::proxy_protocol::Kind::Grpc(_) => Protocol::Grpc,
-            api::proxy_protocol::Kind::Opaque(_) => Protocol::Opaque,
-            api::proxy_protocol::Kind::Tls(_) => Protocol::Tls,
-        },
-        _ => return Err("proxy protocol missing".into()),
-    };
-
-    let loopback = Authorization {
-        authentication: Authentication::Unauthenticated,
-        networks: vec![
-            Network {
-                net: IpAddr::from([127, 0, 0, 1]).into(),
-                except: vec![],
-            },
-            Network {
-                net: IpAddr::from([0, 0, 0, 0, 0, 0, 0, 1]).into(),
-                except: vec![],
-            },
-        ],
-        meta: Arc::new(Meta {
-            group: "default".into(),
-            kind: "default".into(),
-            name: "localhost".into(),
-        }),
-    };
-
-    let authorizations = proto
-        .authorizations
-        .into_iter()
-        .map(
-            |api::Authz {
-                 labels,
-                 authentication,
-                 networks,
-             }| {
-                if networks.is_empty() {
-                    return Err("networks missing".into());
-                }
-                let networks = networks
-                    .into_iter()
-                    .map(|api::Network { net, except }| {
-                        let net = net.ok_or("network missing")?.try_into()?;
-                        let except = except
-                            .into_iter()
-                            .map(|net| net.try_into())
-                            .collect::<Result<Vec<IpNet>, _>>()?;
-                        Ok(Network { net, except })
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                let authn = match authentication.and_then(|api::Authn { permit }| permit) {
-                    Some(api::authn::Permit::Unauthenticated(_)) => Authentication::Unauthenticated,
-                    Some(api::authn::Permit::MeshTls(api::authn::PermitMeshTls { clients })) => {
-                        match clients {
-                            Some(api::authn::permit_mesh_tls::Clients::Unauthenticated(_)) => {
-                                Authentication::TlsUnauthenticated
-                            }
-                            Some(api::authn::permit_mesh_tls::Clients::Identities(
-                                api::authn::permit_mesh_tls::PermitClientIdentities {
-                                    identities,
-                                    suffixes,
-                                },
-                            )) => Authentication::TlsAuthenticated {
-                                identities: identities
-                                    .into_iter()
-                                    .map(|api::Identity { name }| name)
-                                    .collect(),
-                                suffixes: suffixes
-                                    .into_iter()
-                                    .map(|api::IdentitySuffix { parts }| Suffix::from(parts))
-                                    .collect(),
-                            },
-                            None => return Err("no clients permitted".into()),
-                        }
-                    }
-                    authn => return Err(format!("no authentication provided: {:?}", authn).into()),
-                };
-
-                let meta = mk_meta(&labels, "serverauthorization")?;
-                Ok(Authorization {
-                    networks,
-                    authentication: authn,
-                    meta,
-                })
-            },
-        )
-        .chain(Some(Ok(loopback)))
-        .collect::<Result<Vec<_>>>()?;
-
-    let meta = mk_meta(&proto.labels, "server")?;
-    Ok(ServerPolicy {
-        protocol,
-        authorizations,
-        meta,
-    })
-}
-
-fn mk_meta(
-    labels: &std::collections::HashMap<String, String>,
-    default_kind: &'static str,
-) -> Result<Arc<Meta>> {
-    let group = labels
-        .get("group")
-        .cloned()
-        .map(Cow::Owned)
-        // If no group is specified, we leave it blank. This is to avoid setting
-        // a group when using synthetic kinds like "default".
-        .unwrap_or(Cow::Borrowed(""));
-
-    let name = labels.get("name").ok_or("missing 'name' label")?.clone();
-    if let Some(kind) = labels.get("kind").cloned() {
-        return Ok(Arc::new(Meta {
-            group,
-            kind: kind.into(),
-            name: name.into(),
-        }));
-    }
-
-    // Older control plane versions don't set the kind label and, instead, may
-    // encode kinds in the name like `default:deny`.
-    let mut parts = name.splitn(2, ':');
-    let meta = match (parts.next().unwrap().to_owned(), parts.next()) {
-        (kind, Some(name)) => Meta {
-            group,
-            kind: kind.into(),
-            name: name.to_owned().into(),
-        },
-        (name, None) => Meta {
-            group,
-            kind: Cow::Borrowed(default_kind),
-            name: name.into(),
-        },
-    };
-
-    Ok(Arc::new(meta))
 }
 
 // === impl GrpcRecover ===

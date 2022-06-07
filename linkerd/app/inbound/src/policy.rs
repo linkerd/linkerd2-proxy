@@ -19,7 +19,7 @@ use linkerd_app_core::{
 };
 use linkerd_cache::Cached;
 pub use linkerd_server_policy::{
-    Authentication, Authorization, Meta, Protocol, ServerPolicy, Suffix,
+    authz::Suffix, Authentication, Authorization, Meta, Protocol, ServerPolicy,
 };
 use std::sync::Arc;
 use thiserror::Error;
