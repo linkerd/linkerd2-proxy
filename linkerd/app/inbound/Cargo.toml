@@ -16,7 +16,7 @@ futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-cache = { path = "../../cache" }
 linkerd-http-access-log = { path = "../../http-access-log" }
-linkerd-server-policy = { path = "../../server-policy" }
+linkerd-server-policy = { path = "../../server-policy", features = ["proto"] }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 linkerd2-proxy-api = { version = "0.5", features = ["inbound"] }
 parking_lot = "0.12"

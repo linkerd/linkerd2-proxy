@@ -1,6 +1,6 @@
 use super::*;
 use linkerd_app_core::{proxy::http, Error};
-use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
+use linkerd_server_policy::{authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy};
 use std::{collections::HashSet, sync::Arc};
 
 #[derive(Clone)]
