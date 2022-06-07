@@ -105,8 +105,8 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         let endpoint = |ep: tcp::Endpoint| {
-            assert_eq!(ep.addr.as_ref().ip(), IpAddr::from([192, 0, 2, 20]));
-            assert_eq!(ep.addr.as_ref().port(), 2020);
+            assert_eq!(ep.addr.ip(), IpAddr::from([192, 0, 2, 20]));
+            assert_eq!(ep.addr.port(), 2020);
             assert!(!ep.opaque_protocol);
             svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()))
         };
@@ -128,8 +128,8 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         let endpoint = |ep: tcp::Endpoint| {
-            assert_eq!(ep.addr.as_ref().ip(), IpAddr::from([192, 0, 2, 10]));
-            assert_eq!(ep.addr.as_ref().port(), 1010);
+            assert_eq!(ep.addr.ip(), IpAddr::from([192, 0, 2, 10]));
+            assert_eq!(ep.addr.port(), 1010);
             assert!(ep.opaque_protocol);
             svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()))
         };
@@ -197,7 +197,7 @@ mod tests {
         let endpoint_addr = SocketAddr::new([192, 0, 2, 20].into(), 2020);
         let endpoint = {
             move |ep: tcp::Endpoint| {
-                assert_eq!(ep.addr.as_ref(), &endpoint_addr);
+                assert_eq!(*ep.addr, endpoint_addr);
                 assert!(ep.opaque_protocol, "protocol must be marked opaque");
                 svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()))
             }

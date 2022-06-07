@@ -3,7 +3,7 @@ use std::{
     net::{IpAddr, SocketAddr, ToSocketAddrs},
 };
 
-/// The address of a remote client.
+/// The address of a client.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientAddr(pub SocketAddr);
 
@@ -11,7 +11,7 @@ pub struct ClientAddr(pub SocketAddr);
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ListenAddr(pub SocketAddr);
 
-/// The address of a local server.
+/// The address of a server.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerAddr(pub SocketAddr);
 
@@ -30,8 +30,10 @@ pub struct Remote<T>(pub T);
 
 // === impl ClientAddr ===
 
-impl AsRef<SocketAddr> for ClientAddr {
-    fn as_ref(&self) -> &SocketAddr {
+impl std::ops::Deref for ClientAddr {
+    type Target = SocketAddr;
+
+    fn deref(&self) -> &SocketAddr {
         &self.0
     }
 }
@@ -60,8 +62,10 @@ impl ClientAddr {
 
 // === impl ListenAddr ===
 
-impl AsRef<SocketAddr> for ListenAddr {
-    fn as_ref(&self) -> &SocketAddr {
+impl std::ops::Deref for ListenAddr {
+    type Target = SocketAddr;
+
+    fn deref(&self) -> &SocketAddr {
         &self.0
     }
 }
@@ -98,8 +102,10 @@ impl ListenAddr {
 
 // === impl ServerAddr ===
 
-impl AsRef<SocketAddr> for ServerAddr {
-    fn as_ref(&self) -> &SocketAddr {
+impl std::ops::Deref for ServerAddr {
+    type Target = SocketAddr;
+
+    fn deref(&self) -> &SocketAddr {
         &self.0
     }
 }
@@ -128,8 +134,10 @@ impl ServerAddr {
 
 // === impl OrigDstAddr ===
 
-impl AsRef<SocketAddr> for OrigDstAddr {
-    fn as_ref(&self) -> &SocketAddr {
+impl std::ops::Deref for OrigDstAddr {
+    type Target = SocketAddr;
+
+    fn deref(&self) -> &SocketAddr {
         &self.0
     }
 }
@@ -146,21 +154,13 @@ impl fmt::Display for OrigDstAddr {
     }
 }
 
-impl OrigDstAddr {
-    pub fn ip(&self) -> IpAddr {
-        self.0.ip()
-    }
-
-    pub fn port(&self) -> u16 {
-        self.0.port()
-    }
-}
-
 // === impl Local ===
 
-impl<T: AsRef<SocketAddr>> AsRef<SocketAddr> for Local<T> {
-    fn as_ref(&self) -> &SocketAddr {
-        self.0.as_ref()
+impl<T: std::ops::Deref> std::ops::Deref for Local<T> {
+    type Target = T::Target;
+
+    fn deref(&self) -> &T::Target {
+        self.0.deref()
     }
 }
 
@@ -176,21 +176,13 @@ impl<T: fmt::Display> fmt::Display for Local<T> {
     }
 }
 
-impl<T: AsRef<SocketAddr>> Local<T> {
-    pub fn ip(&self) -> IpAddr {
-        self.0.as_ref().ip()
-    }
-
-    pub fn port(&self) -> u16 {
-        self.0.as_ref().port()
-    }
-}
-
 // === impl Remote ===
 
-impl<T: AsRef<SocketAddr>> AsRef<SocketAddr> for Remote<T> {
-    fn as_ref(&self) -> &SocketAddr {
-        self.0.as_ref()
+impl<T: std::ops::Deref> std::ops::Deref for Remote<T> {
+    type Target = T::Target;
+
+    fn deref(&self) -> &T::Target {
+        self.0.deref()
     }
 }
 
@@ -203,15 +195,5 @@ impl<T: Into<SocketAddr>> From<Remote<T>> for SocketAddr {
 impl<T: fmt::Display> fmt::Display for Remote<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
-    }
-}
-
-impl<T: AsRef<SocketAddr>> Remote<T> {
-    pub fn ip(&self) -> IpAddr {
-        self.0.as_ref().ip()
-    }
-
-    pub fn port(&self) -> u16 {
-        self.0.as_ref().port()
     }
 }

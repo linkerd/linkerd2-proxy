@@ -155,7 +155,7 @@ mod tests {
         let (rt, _shutdown) = runtime();
         let stack = Outbound::new(default_config(), rt)
             .with_stack(svc::mk(move |ep: Endpoint| {
-                assert_eq!(*ep.addr.as_ref(), ep_addr);
+                assert_eq!(*ep.addr, ep_addr);
                 let mut io = support::io();
                 io.write(b"hola").read(b"mundo");
                 let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
