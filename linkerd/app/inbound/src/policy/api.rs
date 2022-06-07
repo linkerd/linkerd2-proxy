@@ -9,10 +9,10 @@ use linkerd_app_core::{
     Error, IpNet, Recover, Result,
 };
 use linkerd_server_policy::{
-    Authentication, Authorization, Network, Protocol, ServerPolicy, Suffix,
+    Authentication, Authorization, Meta, Network, Protocol, ServerPolicy, Suffix,
 };
 use linkerd_tonic_watch::StreamWatch;
-use std::{net::IpAddr, sync::Arc};
+use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub(super) struct Api<S> {
@@ -112,8 +112,6 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
     };
 
     let loopback = Authorization {
-        kind: "default".into(),
-        name: "localhost".into(),
         authentication: Authentication::Unauthenticated,
         networks: vec![
             Network {
@@ -125,6 +123,11 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
                 except: vec![],
             },
         ],
+        meta: Arc::new(Meta {
+            group: "default".into(),
+            kind: "default".into(),
+            name: "localhost".into(),
+        }),
     };
 
     let authorizations = proto
@@ -179,43 +182,63 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
                     authn => return Err(format!("no authentication provided: {:?}", authn).into()),
                 };
 
-                let (kind, name) = kind_name(&labels, "serverauthorization")?;
+                let meta = mk_meta(&labels, "serverauthorization")?;
                 Ok(Authorization {
                     networks,
                     authentication: authn,
-                    kind,
-                    name,
+                    meta,
                 })
             },
         )
         .chain(Some(Ok(loopback)))
         .collect::<Result<Vec<_>>>()?;
 
-    let (kind, name) = kind_name(&proto.labels, "server")?;
+    let meta = mk_meta(&proto.labels, "server")?;
     Ok(ServerPolicy {
         protocol,
         authorizations,
-        kind,
-        name,
+        meta,
     })
 }
 
-fn kind_name(
+fn mk_meta(
     labels: &std::collections::HashMap<String, String>,
-    default_kind: &str,
-) -> Result<(Arc<str>, Arc<str>)> {
+    default_kind: &'static str,
+) -> Result<Arc<Meta>> {
+    let group = labels
+        .get("group")
+        .cloned()
+        .map(Cow::Owned)
+        // If no group is specified, we leave it blank. This is to avoid setting
+        // a group when using synthetic kinds like "default".
+        .unwrap_or(Cow::Borrowed(""));
+
     let name = labels.get("name").ok_or("missing 'name' label")?.clone();
-    let mut parts = name.splitn(2, ':');
-    match (parts.next().unwrap(), parts.next()) {
-        (kind, Some(name)) => Ok((kind.into(), name.into())),
-        (name, None) => {
-            let kind = labels
-                .get("kind")
-                .cloned()
-                .unwrap_or_else(|| default_kind.to_string());
-            Ok((kind.into(), name.into()))
-        }
+    if let Some(kind) = labels.get("kind").cloned() {
+        return Ok(Arc::new(Meta {
+            group,
+            kind: kind.into(),
+            name: name.into(),
+        }));
     }
+
+    // Older control plane versions don't set the kind label and, instead, may
+    // encode kinds in the name like `default:deny`.
+    let mut parts = name.splitn(2, ':');
+    let meta = match (parts.next().unwrap().to_owned(), parts.next()) {
+        (kind, Some(name)) => Meta {
+            group,
+            kind: kind.into(),
+            name: name.to_owned().into(),
+        },
+        (name, None) => Meta {
+            group,
+            kind: Cow::Borrowed(default_kind),
+            name: name.into(),
+        },
+    };
+
+    Ok(Arc::new(meta))
 }
 
 // === impl GrpcRecover ===

@@ -1,4 +1,4 @@
-use super::super::{AllowPolicy, DeniedUnauthorized, Permit};
+use super::super::{AllowPolicy, DeniedUnauthorized, ServerPermit};
 use crate::metrics::authz::TcpAuthzMetrics;
 use futures::future;
 use linkerd_app_core::{
@@ -57,7 +57,7 @@ where
     T: svc::Param<AllowPolicy>
         + svc::Param<Remote<ClientAddr>>
         + svc::Param<tls::ConditionalServerTls>,
-    N: svc::NewService<(Permit, T)>,
+    N: svc::NewService<(ServerPermit, T)>,
 {
     type Service = AuthorizeTcp<N::Service>;
 
@@ -86,7 +86,9 @@ where
             }
             Err(deny) => {
                 tracing::info!(
-                    server = %format_args!("{}:{}", policy.server_label().kind, policy.server_label().name),
+                    server.group = %policy.group(),
+                    server.kind = %policy.kind(),
+                    server.name = %policy.name(),
                     ?tls, %client,
                     "Connection denied"
                 );
@@ -154,7 +156,9 @@ where
                     _ = policy.changed() => {
                         if let Err(denied) = policy.check_authorized(client, &tls) {
                             tracing::info!(
-                                server = %policy.server_label().name,
+                                server.group = %policy.group(),
+                                server.kind = %policy.kind(),
+                                server.name = %policy.name(),
                                 ?tls,
                                 %client,
                                 "Connection terminated due to policy change",

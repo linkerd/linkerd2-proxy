@@ -29,7 +29,7 @@ struct RefusedNoTarget;
 pub(crate) struct LocalTcp {
     addr: Remote<ServerAddr>,
     client_id: tls::ClientId,
-    permit: policy::Permit,
+    permit: policy::ServerPermit,
 }
 
 #[derive(Debug, Clone)]

@@ -33,7 +33,7 @@ pub mod fuzz {
     };
     pub use linkerd_app_test as support;
     use linkerd_app_test::*;
-    use std::{fmt, str};
+    use std::{fmt, str, sync::Arc};
 
     #[derive(Arbitrary)]
     pub struct HttpRequestSpec {
@@ -216,11 +216,17 @@ pub mod fuzz {
                     authorizations: vec![policy::Authorization {
                         authentication: policy::Authentication::Unauthenticated,
                         networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
-                        kind: "server".into(),
-                        name: "testsaz".into(),
+                        meta: Arc::new(policy::Meta {
+                            group: "policy.linkerd.io".into(),
+                            kind: "server".into(),
+                            name: "testsaz".into(),
+                        }),
                     }],
-                    kind: "server".into(),
-                    name: "testsrv".into(),
+                    meta: Arc::new(policy::Meta {
+                        group: "policy.linkerd.io".into(),
+                        kind: "server".into(),
+                        name: "testsrv".into(),
+                    }),
                 },
             );
             policy
@@ -229,10 +235,11 @@ pub mod fuzz {
 
     impl svc::Param<policy::ServerLabel> for Target {
         fn param(&self) -> policy::ServerLabel {
-            policy::ServerLabel {
+            policy::ServerLabel(Arc::new(policy::Meta {
+                group: "policy.linkerd.io".into(),
                 kind: "server".into(),
                 name: "testsrv".into(),
-            }
+            }))
         }
     }
 
