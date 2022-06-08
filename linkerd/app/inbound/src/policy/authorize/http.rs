@@ -1,6 +1,5 @@
-use crate::metrics::authz::HttpAuthzMetrics;
-
 use super::super::{AllowPolicy, ServerPermit};
+use crate::metrics::authz::HttpAuthzMetrics;
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     svc::{self, ServiceExt},

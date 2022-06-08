@@ -143,7 +143,7 @@ impl<E> Outbound<E> {
                         .push(
                             rt.metrics
                                 .proxy
-                                .http_route_actual
+                                .http_profile_route_actual
                                 .to_layer::<classify::Response, _, Route>(),
                         )
                         // Depending on whether or not the request can be
@@ -152,14 +152,14 @@ impl<E> Outbound<E> {
                         .push_on_service(http::BoxRequest::erased())
                         .push_http_insert_target::<profiles::http::Route>()
                         // Sets an optional retry policy.
-                        .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
+                        .push(retry::layer(rt.metrics.proxy.http_profile_route_retry.clone()))
                         // Sets an optional request timeout.
                         .push(http::NewTimeout::layer())
                         // Records per-route metrics.
                         .push(
                             rt.metrics
                                 .proxy
-                                .http_route
+                                .http_profile_route
                                 .to_layer::<classify::Response, _, _>(),
                         )
                         // Sets the per-route response classifier as a request

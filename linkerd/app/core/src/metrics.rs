@@ -28,9 +28,9 @@ pub type ControlHttp = http_metrics::Requests<ControlLabels, Class>;
 
 pub type HttpEndpoint = http_metrics::Requests<EndpointLabels, Class>;
 
-pub type HttpRoute = http_metrics::Requests<RouteLabels, Class>;
+pub type HttpProfileRoute = http_metrics::Requests<ProfileRouteLabels, Class>;
 
-pub type HttpRouteRetry = http_metrics::Retries<RouteLabels>;
+pub type HttpProfileRouteRetry = http_metrics::Retries<ProfileRouteLabels>;
 
 pub type Stack = stack_metrics::Registry<StackLabels>;
 
@@ -43,9 +43,9 @@ pub struct Metrics {
 
 #[derive(Clone, Debug)]
 pub struct Proxy {
-    pub http_route: HttpRoute,
-    pub http_route_actual: HttpRoute,
-    pub http_route_retry: HttpRouteRetry,
+    pub http_profile_route: HttpProfileRoute,
+    pub http_profile_route_actual: HttpProfileRoute,
+    pub http_profile_route_retry: HttpProfileRouteRetry,
     pub http_endpoint: HttpEndpoint,
     pub transport: transport::Metrics,
     pub stack: Stack,
@@ -98,7 +98,7 @@ pub struct StackLabels {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RouteLabels {
+pub struct ProfileRouteLabels {
     direction: Direction,
     addr: profiles::LogicalAddr,
     labels: Option<String>,
@@ -149,20 +149,20 @@ impl Metrics {
             (m, r)
         };
 
-        let (http_route, route_report) = {
-            let m = metrics::Requests::<RouteLabels, Class>::default();
+        let (http_profile_route, profile_route_report) = {
+            let m = metrics::Requests::<ProfileRouteLabels, Class>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("route");
             (m, r)
         };
 
-        let (http_route_retry, retry_report) = {
-            let m = metrics::Retries::<RouteLabels>::default();
+        let (http_profile_route_retry, retry_report) = {
+            let m = metrics::Retries::<ProfileRouteLabels>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("route");
             (m, r)
         };
 
-        let (http_route_actual, actual_report) = {
-            let m = metrics::Requests::<RouteLabels, Class>::default();
+        let (http_profile_route_actual, actual_report) = {
+            let m = metrics::Requests::<ProfileRouteLabels, Class>::default();
             let r = m
                 .clone()
                 .into_report(retain_idle)
@@ -176,9 +176,9 @@ impl Metrics {
 
         let proxy = Proxy {
             http_endpoint,
-            http_route,
-            http_route_retry,
-            http_route_actual,
+            http_profile_route,
+            http_profile_route_retry,
+            http_profile_route_actual,
             stack: stack.clone(),
             transport,
         };
@@ -192,7 +192,7 @@ impl Metrics {
         };
 
         let report = endpoint_report
-            .and_report(route_report)
+            .and_report(profile_route_report)
             .and_report(retry_report)
             .and_report(actual_report)
             .and_report(control_report)
@@ -226,9 +226,9 @@ impl FmtLabels for ControlLabels {
     }
 }
 
-// === impl RouteLabels ===
+// === impl ProfileRouteLabels ===
 
-impl RouteLabels {
+impl ProfileRouteLabels {
     pub fn inbound(addr: profiles::LogicalAddr, route: &profiles::http::Route) -> Self {
         let labels = prefix_labels("rt", route.labels().iter());
         Self {
@@ -248,7 +248,7 @@ impl RouteLabels {
     }
 }
 
-impl FmtLabels for RouteLabels {
+impl FmtLabels for ProfileRouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.direction.fmt_labels(f)?;
         write!(f, ",dst=\"{}\"", self.addr)?;
