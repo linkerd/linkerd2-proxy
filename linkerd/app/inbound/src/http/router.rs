@@ -153,7 +153,7 @@ impl<C> Inbound<C> {
                         .push(
                             rt.metrics
                                 .proxy
-                                .http_route
+                                .http_profile_route
                                 .to_layer::<classify::Response, _, _>(),
                         )
                         .push_on_service(http::BoxResponse::layer())
@@ -339,9 +339,9 @@ impl Param<profiles::http::Route> for Route {
     }
 }
 
-impl Param<metrics::RouteLabels> for Route {
-    fn param(&self) -> metrics::RouteLabels {
-        metrics::RouteLabels::inbound(self.profile.addr.clone(), &self.route)
+impl Param<metrics::ProfileRouteLabels> for Route {
+    fn param(&self) -> metrics::ProfileRouteLabels {
+        metrics::ProfileRouteLabels::inbound(self.profile.addr.clone(), &self.route)
     }
 }
 

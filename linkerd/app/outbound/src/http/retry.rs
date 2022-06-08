@@ -14,14 +14,14 @@ use linkerd_retry as retry;
 use std::sync::Arc;
 
 pub fn layer<N>(
-    metrics: metrics::HttpRouteRetry,
+    metrics: metrics::HttpProfileRouteRetry,
 ) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N>> + Clone {
     retry::NewRetry::<_, N>::layer(NewRetryPolicy::new(metrics))
 }
 
 #[derive(Clone, Debug)]
 pub struct NewRetryPolicy {
-    metrics: metrics::HttpRouteRetry,
+    metrics: metrics::HttpProfileRouteRetry,
 }
 
 #[derive(Clone, Debug)]
@@ -37,7 +37,7 @@ const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 // === impl NewRetryPolicy ===
 
 impl NewRetryPolicy {
-    pub fn new(metrics: metrics::HttpRouteRetry) -> Self {
+    pub fn new(metrics: metrics::HttpProfileRouteRetry) -> Self {
         Self { metrics }
     }
 }
