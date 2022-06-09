@@ -1,4 +1,4 @@
-use super::Route;
+use super::ProfileRoute;
 use futures::future;
 use linkerd_app_core::{
     classify,
@@ -42,10 +42,10 @@ impl NewRetryPolicy {
     }
 }
 
-impl retry::NewPolicy<Route> for NewRetryPolicy {
+impl retry::NewPolicy<ProfileRoute> for NewRetryPolicy {
     type Policy = RetryPolicy;
 
-    fn new_policy(&self, route: &Route) -> Option<Self::Policy> {
+    fn new_policy(&self, route: &ProfileRoute) -> Option<Self::Policy> {
         let retries = route.route.retries().cloned()?;
 
         let metrics = self.metrics.get_handle(route.param());
