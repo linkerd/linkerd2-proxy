@@ -49,7 +49,7 @@ struct Profile {
 }
 
 #[derive(Clone, Debug)]
-struct Route {
+struct ProfileRoute {
     profile: Profile,
     route: profiles::http::Route,
 }
@@ -148,7 +148,7 @@ impl<C> Inbound<C> {
                     // If the request matches a route, use a per-route proxy to
                     // wrap the inner service.
                     svc::proxies()
-                        .push_map_target(|r: Route| r.profile.logical)
+                        .push_map_target(|r: ProfileRoute| r.profile.logical)
                         .push_on_service(http::BoxRequest::layer())
                         .push(
                             rt.metrics
@@ -159,7 +159,7 @@ impl<C> Inbound<C> {
                         .push_on_service(http::BoxResponse::layer())
                         .push(classify::NewClassify::layer())
                         .push_http_insert_target::<profiles::http::Route>()
-                        .push_map_target(|(route, profile)| Route { route, profile })
+                        .push_map_target(|(route, profile)| ProfileRoute { route, profile })
                         .into_inner(),
                 ))
                 .push_switch(
@@ -333,19 +333,19 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
 
 // === impl Route ===
 
-impl Param<profiles::http::Route> for Route {
+impl Param<profiles::http::Route> for ProfileRoute {
     fn param(&self) -> profiles::http::Route {
         self.route.clone()
     }
 }
 
-impl Param<metrics::ProfileRouteLabels> for Route {
+impl Param<metrics::ProfileRouteLabels> for ProfileRoute {
     fn param(&self) -> metrics::ProfileRouteLabels {
         metrics::ProfileRouteLabels::inbound(self.profile.addr.clone(), &self.route)
     }
 }
 
-impl classify::CanClassify for Route {
+impl classify::CanClassify for ProfileRoute {
     type Classify = classify::Request;
 
     fn classify(&self) -> classify::Request {
@@ -353,7 +353,7 @@ impl classify::CanClassify for Route {
     }
 }
 
-impl Param<http::ResponseTimeout> for Route {
+impl Param<http::ResponseTimeout> for ProfileRoute {
     fn param(&self) -> http::ResponseTimeout {
         http::ResponseTimeout(self.route.timeout())
     }

@@ -1,4 +1,4 @@
-use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, Route};
+use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, ProfileRoute};
 use crate::{endpoint, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, config, profiles,
@@ -134,17 +134,17 @@ impl<E> Outbound<E> {
                     |(route, logical): (Option<profiles::http::Route>, Logical)| -> Result<_, Infallible> {
                         match route {
                             None => Ok(svc::Either::A(logical)),
-                            Some(route) => Ok(svc::Either::B(Route { route, logical })),
+                            Some(route) => Ok(svc::Either::B(ProfileRoute { route, logical })),
                         }
                     },
                     logical
-                        .push_map_target(|r: Route| r.logical)
+                        .push_map_target(|r: ProfileRoute| r.logical)
                         .push_on_service(http::BoxRequest::layer())
                         .push(
                             rt.metrics
                                 .proxy
                                 .http_profile_route_actual
-                                .to_layer::<classify::Response, _, Route>(),
+                                .to_layer::<classify::Response, _, ProfileRoute>(),
                         )
                         // Depending on whether or not the request can be
                         // retried, it may have one of two `Body` types. This

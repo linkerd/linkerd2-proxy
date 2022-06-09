@@ -2,18 +2,17 @@ use super::*;
 use futures::TryFuture;
 use http::Response;
 use linkerd_app_core::proxy::http::trace;
-use std::collections::HashMap;
-use std::future::Future;
-use std::io;
-use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use tokio::net::TcpStream;
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
-use tokio_rustls::rustls::ServerConfig;
-use tokio_rustls::TlsAcceptor;
+use std::{
+    collections::HashMap,
+    future::Future,
+    io,
+    pin::Pin,
+    sync::atomic::{AtomicUsize, Ordering},
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tokio::{net::TcpStream, sync::oneshot, task::JoinHandle};
+use tokio_rustls::{rustls::ServerConfig, TlsAcceptor};
 use tracing::instrument::Instrument;
 
 pub fn new() -> Server {
