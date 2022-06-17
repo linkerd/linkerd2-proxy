@@ -23,5 +23,5 @@ http-body = "0.4"
 pin-project = "1"
 prost = "0.10"
 tonic = { version = "0.7", default-features = false }
-tower = { version = "0.4", default-features = false }
+tower = { version = "0.4.13", default-features = false }
 tracing = "0.1"

@@ -23,7 +23,7 @@ parking_lot = "0.12"
 rand = { version = "0.8" }
 thiserror = "1"
 tokio = { version = "1", features = ["time"] }
-tower = { version = "0.4", default-features = false }
+tower = { version = "0.4.13", default-features = false }
 tonic = { version = "0.7", default-features = false }
 tracing = "0.1"
 pin-project = "1"
