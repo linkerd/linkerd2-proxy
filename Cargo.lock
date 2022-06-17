@@ -2482,8 +2482,7 @@ dependencies = [
 [[package]]
 name = "tower"
 version = "0.4.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a89fd63ad6adf737582df5db40d286574513c69a11dac5214dc3b5603d6713e"
+source = "git+https://github.com/tower-rs/tower?rev=dbad721b30fcbeb8339068e8bc10c20b3af97a6f#dbad721b30fcbeb8339068e8bc10c20b3af97a6f"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -2502,23 +2501,20 @@ dependencies = [
 [[package]]
 name = "tower-layer"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "343bc9466d3fe6b0f960ef45960509f84480bf4fd96f92901afe7ff3df9d3a62"
+source = "git+https://github.com/tower-rs/tower?rev=dbad721b30fcbeb8339068e8bc10c20b3af97a6f#dbad721b30fcbeb8339068e8bc10c20b3af97a6f"
 
 [[package]]
 name = "tower-service"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "360dfd1d6d30e05fda32ace2c8c70e9c0a9da713275777f5a4dbb8a1893930c6"
+source = "git+https://github.com/tower-rs/tower?rev=dbad721b30fcbeb8339068e8bc10c20b3af97a6f#dbad721b30fcbeb8339068e8bc10c20b3af97a6f"
 
 [[package]]
 name = "tower-test"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4546773ffeab9e4ea02b8872faa49bb616a80a7da66afc2f32688943f97efa7"
+source = "git+https://github.com/tower-rs/tower?rev=dbad721b30fcbeb8339068e8bc10c20b3af97a6f#dbad721b30fcbeb8339068e8bc10c20b3af97a6f"
 dependencies = [
  "futures-util",
- "pin-project",
+ "pin-project-lite",
  "tokio",
  "tokio-test",
  "tower-layer",
