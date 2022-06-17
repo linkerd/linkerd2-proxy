@@ -16,5 +16,5 @@ linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 rand = "0.8"
 thiserror = "1"
-tower = { version = "0.4.13", default-features = false, features = ["util"] }
+tower = { version = "0.4", default-features = false, features = ["util"] }
 tracing = "0.1"

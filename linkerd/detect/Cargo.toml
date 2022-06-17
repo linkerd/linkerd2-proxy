@@ -14,5 +14,5 @@ linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
 tokio = { version = "1", features = ["time"] }
 thiserror = "1"
-tower = "0.4.13"
+tower = "0.4"
 tracing = "0.1"

@@ -18,5 +18,5 @@ linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tower = "0.4.13"
+tower = "0.4"
 tracing = "0.1"
