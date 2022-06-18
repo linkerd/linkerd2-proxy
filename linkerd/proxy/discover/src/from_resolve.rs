@@ -184,11 +184,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::Discover;
-    use async_stream::stream;
     use futures::prelude::*;
     use linkerd_error::Infallible;
     use linkerd_proxy_core::resolve::Update;
     use std::net::SocketAddr;
+    use tokio_stream::wrappers::ReceiverStream;
     use tower::discover::Change;
 
     const PORT: u16 = 8080;
@@ -198,88 +198,98 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn reset() {
-        tokio::pin! {
-            let stream = stream! {
-                yield Ok::<_, Infallible>(Update::Add((1..=3).map(|n| (addr(n), n)).collect()));
-                yield Ok(Update::Reset(
-                    // Restore the original `2` value. We shouldn't see an update for it.
-                    Some((addr(2), 2))
-                        .into_iter()
-                        // Set a new value for `3`. and add a 4th as well.
-                        .chain((3..=4).map(|n| (addr(n), n + 1)))
-                        .collect()
-                ));
-            };
-        }
-        let mut disco = Discover::new(stream);
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let mut disco = Discover::new(ReceiverStream::new(rx));
 
+        // Use reset to set a new state with 3 addresses.
+        tx.try_send(Ok::<_, Infallible>(Update::Reset(
+            (1..=3).map(|n| (addr(n), n)).collect(),
+        )))
+        .expect("must send");
         for i in 1..=3 {
-            match disco.next().await.unwrap().unwrap() {
-                Change::Remove(_) => panic!("Unexpectd Remove"),
-                Change::Insert(a, n) => {
-                    assert_eq!(n, i);
-                    assert_eq!(addr(i), a);
-                }
-            }
+            assert!(matches!(
+                disco.try_next().await,
+                Ok(Some(Change::Insert(sa, n))) if sa == addr(i) && n == i
+            ));
         }
-        match disco.next().await.unwrap().unwrap() {
-            Change::Remove(a) => assert_eq!(a, addr(1)),
-            change => panic!("Unexpected change: {:?}", change),
-        }
+
+        // Reset to a new state with 3 addresses, one of which is unchanged, one of which is
+        // changed, and one of which is added.
+        tx.try_send(Ok::<_, Infallible>(Update::Reset(
+            // Restore the original `2` value. We shouldn't see an update for it.
+            Some((addr(2), 2))
+                .into_iter()
+                // Set a new value for `3`. and add a 4th as well.
+                .chain((3..=4).map(|n| (addr(n), n + 1)))
+                .collect(),
+        )))
+        .expect("must send");
+        // The first address is removed now.
+        assert!(matches!(
+            disco.try_next().await,
+            Ok(Some(Change::Remove(a))) if a == addr(1)
+        ));
+        // Then process the changed and new addresses.
         for i in 3..=4 {
-            match disco.next().await.unwrap().unwrap() {
-                Change::Remove(_) => panic!("Unexpected Remove"),
-                Change::Insert(a, n) => {
-                    assert_eq!(addr(i), a);
-                    assert_eq!(n, i + 1);
-                }
-            }
+            assert!(matches!(
+                disco.try_next().await,
+                Ok(Some(Change::Insert(sa, n))) if sa == addr(i) && n == i + 1
+            ));
         }
+
+        // No more updates.
+        drop(tx);
         assert!(disco.next().await.is_none());
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn dedupe() {
-        tokio::pin! {
-            let stream = stream! {
-                yield Ok::<_, Infallible>(Update::Add(vec![(addr(1), 1)]));
-                yield Ok(Update::Add(vec![(addr(1), 1)]));
-                yield Ok(Update::Add(vec![(addr(1), 2)]));
-                yield Ok(Update::Add(vec![(addr(1), 3)]));
-                yield Ok(Update::Add(vec![(addr(1), 3)]));
-                yield Ok(Update::Add(vec![(addr(1), 2)]));
-                yield Ok(Update::Add(vec![(addr(1), 2)]));
-                yield Ok(Update::Remove(vec![(addr(1))]));
-                yield Ok(Update::Add(vec![(addr(1), 1)]));
-            };
-        }
-        let mut disco = Discover::new(stream);
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let mut disco = Discover::new(ReceiverStream::new(rx));
 
-        match disco.next().await.unwrap().unwrap() {
-            Change::Insert(_, 1) => {}
-            change => panic!("Unexpected change: {:?}", change),
+        // The initial update is observed.
+        tx.try_send(Ok::<_, Infallible>(Update::Add(vec![(addr(1), "a")])))
+            .expect("must send");
+        assert!(matches!(
+            disco.try_next().await,
+            Ok(Some(Change::Insert(sa, "a"))) if sa == addr(1)
+        ));
+
+        // A redundant update is not.
+        tx.try_send(Ok::<_, Infallible>(Update::Add(vec![(addr(1), "a")])))
+            .expect("must send");
+        tokio::select! {
+            biased;
+            _ = disco.try_next() => panic!("must not receive"),
+            _ = futures::future::ready(()) => {}
         }
-        match disco.next().await.unwrap().unwrap() {
-            Change::Insert(_, 2) => {}
-            change => panic!("Unexpected change: {:?}", change),
-        }
-        match disco.next().await.unwrap().unwrap() {
-            Change::Insert(_, 3) => {}
-            change => panic!("Unexpected change: {:?}", change),
-        }
-        match disco.next().await.unwrap().unwrap() {
-            Change::Insert(_, 2) => {}
-            change => panic!("Unexpected change: {:?}", change),
-        }
-        match disco.next().await.unwrap().unwrap() {
-            Change::Remove(_) => {}
-            change => panic!("Unexpected change: {:?}", change),
-        }
-        assert!(disco.active.is_empty());
-        match disco.next().await.unwrap().unwrap() {
-            Change::Insert(_, 1) => {}
-            change => panic!("Unexpected change: {:?}", change),
-        }
-        assert!(disco.next().await.is_none());
+
+        // A new value for an existing address is observed.
+        tx.try_send(Ok::<_, Infallible>(Update::Add(vec![(addr(1), "b")])))
+            .expect("must send");
+        assert!(matches!(
+            disco.try_next().await,
+            Ok(Some(Change::Insert(sa, "b"))) if sa == addr(1)
+        ));
+
+        // Remove the address.
+        tx.try_send(Ok::<_, Infallible>(Update::Remove(vec![addr(1)])))
+            .expect("must send");
+        assert!(matches!(
+            disco.try_next().await,
+            Ok(Some(Change::Remove(sa))) if sa == addr(1)
+        ));
+
+        // Re-adding the address is observed.
+        tx.try_send(Ok::<_, Infallible>(Update::Add(vec![(addr(1), "c")])))
+            .expect("must send");
+        assert!(matches!(
+            disco.try_next().await,
+            Ok(Some(Change::Insert(sa, "c"))) if sa == addr(1)
+        ));
+
+        // No more updates.
+        drop(tx);
+        assert!(disco.next().await.is_none(),);
     }
 }
