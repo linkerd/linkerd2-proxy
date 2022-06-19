@@ -281,11 +281,11 @@ mod tests {
         ));
 
         // Re-adding the address is observed.
-        tx.try_send(Ok(Update::Add(vec![(addr(1), "c")])))
+        tx.try_send(Ok(Update::Add(vec![(addr(1), "b")])))
             .expect("must send");
         assert!(matches!(
             disco.try_next().await,
-            Ok(Some(Change::Insert(sa, "c"))) if sa == addr(1)
+            Ok(Some(Change::Insert(sa, "b"))) if sa == addr(1)
         ));
 
         // No more updates.
