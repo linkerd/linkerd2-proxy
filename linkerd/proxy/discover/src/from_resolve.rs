@@ -215,7 +215,7 @@ mod tests {
 
         // Reset to a new state with 3 addresses, one of which is unchanged, one of which is
         // changed, and one of which is added.
-        tx.try_send(Ok::<_, Infallible>(Update::Reset(
+        tx.try_send(Ok(Update::Reset(
             // Restore the original `2` value. We shouldn't see an update for it.
             Some((addr(2), 2))
                 .into_iter()
@@ -256,7 +256,7 @@ mod tests {
         ));
 
         // A redundant update is not.
-        tx.try_send(Ok::<_, Infallible>(Update::Add(vec![(addr(1), "a")])))
+        tx.try_send(Ok(Update::Add(vec![(addr(1), "a")])))
             .expect("must send");
         tokio::select! {
             biased;
@@ -265,7 +265,7 @@ mod tests {
         }
 
         // A new value for an existing address is observed.
-        tx.try_send(Ok::<_, Infallible>(Update::Add(vec![(addr(1), "b")])))
+        tx.try_send(Ok(Update::Add(vec![(addr(1), "b")])))
             .expect("must send");
         assert!(matches!(
             disco.try_next().await,
@@ -273,7 +273,7 @@ mod tests {
         ));
 
         // Remove the address.
-        tx.try_send(Ok::<_, Infallible>(Update::Remove(vec![addr(1)])))
+        tx.try_send(Ok(Update::Remove(vec![addr(1)])))
             .expect("must send");
         assert!(matches!(
             disco.try_next().await,
@@ -281,7 +281,7 @@ mod tests {
         ));
 
         // Re-adding the address is observed.
-        tx.try_send(Ok::<_, Infallible>(Update::Add(vec![(addr(1), "c")])))
+        tx.try_send(Ok(Update::Add(vec![(addr(1), "c")])))
             .expect("must send");
         assert!(matches!(
             disco.try_next().await,
