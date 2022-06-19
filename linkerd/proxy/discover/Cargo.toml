@@ -12,6 +12,7 @@ Utilities to implement a Discover with the core Resolve type
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
+indexmap = "1"
 linkerd-error = { path = "../../error" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }

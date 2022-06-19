@@ -1287,6 +1287,7 @@ name = "linkerd-proxy-discover"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "indexmap",
  "linkerd-error",
  "linkerd-proxy-core",
  "linkerd-stack",

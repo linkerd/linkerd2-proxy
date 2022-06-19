@@ -1,8 +1,9 @@
 use futures::{prelude::*, ready};
+use indexmap::IndexMap;
 use linkerd_proxy_core::resolve::{Resolve, Update};
 use pin_project::pin_project;
 use std::{
-    collections::{btree_map, BTreeMap, VecDeque},
+    collections::VecDeque,
     future::Future,
     net::SocketAddr,
     pin::Pin,
@@ -31,7 +32,7 @@ pub struct DiscoverFuture<F, E> {
 pub struct Discover<R: TryStream, E> {
     #[pin]
     resolution: R,
-    active: BTreeMap<SocketAddr, E>,
+    active: IndexMap<SocketAddr, E>,
     pending: VecDeque<Change<SocketAddr, E>>,
 }
 
@@ -90,7 +91,7 @@ impl<R: TryStream, E> Discover<R, E> {
     pub fn new(resolution: R) -> Self {
         Self {
             resolution,
-            active: BTreeMap::default(),
+            active: IndexMap::default(),
             pending: VecDeque::new(),
         }
     }
@@ -119,7 +120,7 @@ where
 
             match update {
                 Update::Reset(endpoints) => {
-                    let new_active = endpoints.into_iter().collect::<BTreeMap<_, _>>();
+                    let new_active = endpoints.into_iter().collect::<IndexMap<_, _>>();
                     trace!(new = ?new_active, old = ?this.active, "Reset");
 
                     for addr in this.active.keys() {
@@ -147,11 +148,11 @@ where
                     for (addr, endpoint) in endpoints.into_iter() {
                         trace!(%addr, "Scheduling addition");
                         match this.active.entry(addr) {
-                            btree_map::Entry::Vacant(entry) => {
+                            indexmap::map::Entry::Vacant(entry) => {
                                 entry.insert(endpoint.clone());
                                 this.pending.push_back(Change::Insert(addr, endpoint));
                             }
-                            btree_map::Entry::Occupied(mut entry) => {
+                            indexmap::map::Entry::Occupied(mut entry) => {
                                 if entry.get() != &endpoint {
                                     entry.insert(endpoint.clone());
                                     this.pending.push_back(Change::Insert(addr, endpoint));
@@ -173,7 +174,7 @@ where
                 Update::DoesNotExist => {
                     trace!("Scheduling removals");
                     this.pending
-                        .extend(this.active.keys().copied().map(Change::Remove));
+                        .extend(this.active.drain(..).map(|(sa, _)| Change::Remove(sa)));
                     this.active.clear();
                 }
             }
