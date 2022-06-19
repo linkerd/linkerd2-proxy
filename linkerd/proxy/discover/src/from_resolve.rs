@@ -14,7 +14,7 @@ use tracing::{debug, trace};
 #[derive(Clone, Debug)]
 pub struct FromResolve<R, E> {
     resolve: R,
-    _marker: std::marker::PhantomData<fn() -> E>,
+    _marker: std::marker::PhantomData<fn(E)>,
 }
 
 #[pin_project]
@@ -22,7 +22,7 @@ pub struct FromResolve<R, E> {
 pub struct DiscoverFuture<F, E> {
     #[pin]
     future: F,
-    _marker: std::marker::PhantomData<fn() -> E>,
+    _marker: std::marker::PhantomData<fn(E)>,
 }
 
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
