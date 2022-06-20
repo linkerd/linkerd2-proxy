@@ -5,6 +5,7 @@ on:
     paths:
       - Dockerfile
       - rust-toolchain
+      - justfile
       - .github/workflows/docker.yml
 
 permissions:

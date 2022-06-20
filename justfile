@@ -4,8 +4,7 @@
 # Configuration
 #
 
-export RUST_BACKTRACE := "short"
-export RUSTFLAGS := env_var_or_default("RUSTFLAGS", "-D warnings -A deprecated")
+export RUST_BACKTRACE := env_var_or_default("RUST_BACKTRACE", "short")
 export PROTOC_NO_VENDOR := "1"
 
 export DOCKER_BUILDKIT := "1"
@@ -60,7 +59,21 @@ _fmt := if env_var_or_default("GITHUB_ACTIONS", "") != "true" { "" } else {
     ```
 }
 
-_features := if features != "" { "--no-default-features --features=" + features } else { "" }
+_features := if features == "all" {
+        "--all-features"
+    } else if features != "" {
+        "--no-default-features --features=" + features
+    } else { "" }
+
+
+# Use nextest if it's available.
+_test := ```
+        if command -v cargo-nextest >/dev/null 2>&1; then
+            echo "nextest run"
+        else
+            echo "test"
+        fi
+    ```
 
 #
 # Recipes
@@ -72,6 +85,9 @@ default: fetch check-fmt lint test build
 # Fetch dependencies
 fetch:
     {{ cargo }} fetch --locked
+
+fmt:
+    {{ cargo }} fmt
 
 # Fails if the code does not match the expected format (via rustfmt).
 check-fmt:
@@ -104,6 +120,9 @@ clippy *flags:
 clippy-crate crate *flags:
     {{ cargo }} clippy --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
+clippy-dir dir *flags:
+    cd {{ dir }} && {{ cargo }} clippy --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
+
 doc *flags:
     {{ cargo }} doc --no-deps --workspace --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
@@ -112,12 +131,19 @@ doc-crate crate *flags:
 
 # Run all tests
 test *flags:
-    {{ cargo }} test --workspace --frozen {{ _features }} \
+    {{ cargo }} {{ _test }} --workspace --frozen {{ _features }} \
         {{ if build_type == "release" { "--release" } else { "" } }} \
         {{ flags }}
 
 test-crate crate *flags:
-    {{ cargo }} test --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
+    {{ cargo }} {{ _test }} --package={{ crate }} --frozen {{ _features }} \
+        {{ if build_type == "release" { "--release" } else { "" } }} \
+        {{ flags }}
+
+test-dir dir *flags:
+    cd {{ dir }} && {{ cargo }} {{ _test }} --frozen {{ _features }} \
+            {{ if build_type == "release" { "--release" } else { "" } }} \
+            {{ flags }}
 
 # Build the proxy
 build:
