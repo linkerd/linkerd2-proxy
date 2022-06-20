@@ -15,12 +15,11 @@ on:
       - "**/*.rs"
       - .github/actions/list-changed-crates/*
       - .github/workflows/check-each.yml
+      - justfile
 
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
-  DEBIAN_FRONTEND: noninteractive
-  RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
   RUSTFLAGS: "-D warnings -A deprecated"
 
