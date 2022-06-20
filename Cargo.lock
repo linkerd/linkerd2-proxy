@@ -1087,13 +1087,14 @@ dependencies = [
 name = "linkerd-proxy-discover"
 version = "0.1.0"
 dependencies = [
- "async-stream",
  "futures",
+ "indexmap",
  "linkerd-error",
  "linkerd-proxy-core",
  "linkerd-stack",
  "pin-project",
  "tokio",
+ "tokio-stream",
  "tokio-util 0.7.1",
  "tower",
  "tracing",
