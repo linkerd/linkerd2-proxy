@@ -11,6 +11,11 @@
 		"tamasfe.even-better-toml",
 		"zxh404.vscode-proto3"
 	],
+	"settings": {
+		"rust-analyzer.server.extraEnv": {
+			"RUSTFLAGS": "-D warnings -A deprecated"
+		}
+	},
 	// Support docker + debugger
 	"runArgs": [
 		"--init",

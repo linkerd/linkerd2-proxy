@@ -60,7 +60,21 @@ _fmt := if env_var_or_default("GITHUB_ACTIONS", "") != "true" { "" } else {
     ```
 }
 
-_features := if features != "" { "--no-default-features --features=" + features } else { "" }
+_features := if features == "all" {
+        "--all-features"
+    } else if features != "" {
+        "--no-default-features --features=" + features
+    } else { "" }
+
+
+# Use nextest if it's available.
+_test := ```
+        if command -v cargo-nextest >/dev/null 2>&1; then
+            echo "nextest run"
+        else
+            echo "test"
+        fi
+    ```
 
 #
 # Recipes
@@ -72,6 +86,9 @@ default: fetch check-fmt lint test build
 # Fetch dependencies
 fetch:
     {{ cargo }} fetch --locked
+
+fmt:
+    {{ cargo }} fmt
 
 # Fails if the code does not match the expected format (via rustfmt).
 check-fmt:
@@ -92,35 +109,45 @@ shellcheck:
     echo shellcheck $files
     shellcheck $files
 
-check *flags:
+check *flags: fmt
     {{ cargo }} check --workspace --all-targets --frozen {{ flags }} {{ _fmt }}
 
-check-crate crate *flags:
+check-crate crate *flags: fmt
     {{ cargo }} check --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
-clippy *flags:
+clippy *flags: fmt
     {{ cargo }} clippy --workspace --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
-clippy-crate crate *flags:
+clippy-crate crate *flags: fmt
     {{ cargo }} clippy --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
-doc *flags:
+clippy-dir dir *flags: fmt
+    cd {{ dir }} && {{ cargo }} clippy --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
+
+doc *flags: fmt
     {{ cargo }} doc --no-deps --workspace --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
-doc-crate crate *flags:
+doc-crate crate *flags: fmt
     {{ cargo }} doc --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
 # Run all tests
-test *flags:
-    {{ cargo }} test --workspace --frozen {{ _features }} \
+test *flags: fmt
+    {{ cargo }} {{ _test }} --workspace --frozen {{ _features }} \
         {{ if build_type == "release" { "--release" } else { "" } }} \
         {{ flags }}
 
-test-crate crate *flags:
-    {{ cargo }} test --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
+test-crate crate *flags: fmt
+    {{ cargo }} {{ _test }} --package={{ crate }} --frozen {{ _features }} \
+        {{ if build_type == "release" { "--release" } else { "" } }} \
+        {{ flags }}
+
+test-dir dir *flags: fmt
+    cd {{ dir }} && {{ cargo }} {{ _test }} --frozen {{ _features }} \
+            {{ if build_type == "release" { "--release" } else { "" } }} \
+            {{ flags }}
 
 # Build the proxy
-build:
+build: fmt
     {{ cargo }} build --frozen --package=linkerd2-proxy --target={{ cargo_target }} \
         {{ if build_type == "release" { "--release" } else { "" } }} \
         {{ _features }} {{ _fmt }}
