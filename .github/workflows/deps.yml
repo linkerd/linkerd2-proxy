@@ -7,9 +7,9 @@ permissions:
 on:
   pull_request:
     paths:
+      - justfile
       - Cargo.lock
       - .github/workflows/deps.yml
-      - justfile
 
 env:
   CARGO_INCREMENTAL: 0
@@ -53,5 +53,5 @@ jobs:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - uses: ./.github/actions/install-protoc
       - run: just fetch
-      - run: just RUSTFLAGS="-D deprecated" check --exclude=linkerd-meshtls-boring
+      - run: RUSTFLAGS="-D deprecated" just check --exclude=linkerd-meshtls-boring
 
