@@ -13,6 +13,7 @@ on:
     paths:
       - Cargo.lock
       - .github/workflows/check-all.yml
+      - justfile
 
 env:
   CARGO_INCREMENTAL: 0

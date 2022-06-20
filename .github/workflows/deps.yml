@@ -9,6 +9,7 @@ on:
     paths:
       - Cargo.lock
       - .github/workflows/deps.yml
+      - justfile
 
 env:
   CARGO_INCREMENTAL: 0

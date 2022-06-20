@@ -5,6 +5,7 @@ on:
     paths:
       - .github/actions/package/*
       - .github/workflows/release.yml
+      - justfile
   push:
     tags:
       - "release/*"

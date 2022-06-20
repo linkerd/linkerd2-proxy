@@ -4,6 +4,7 @@ name: rust-beta
 on:
   pull_request:
     paths:
+      - justfile
       - .github/workflows/beta.yml
   schedule:
     # Run weekly on wednesday @ midnightish Pacific-time.

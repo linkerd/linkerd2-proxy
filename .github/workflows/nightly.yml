@@ -4,6 +4,7 @@ name: rust-nightly
 on:
   pull_request:
     paths:
+      - justfile
       - .github/workflows/nightly.yml
   schedule:
     # Run daily @ midnightish Pacific-time.

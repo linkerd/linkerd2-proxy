@@ -15,6 +15,7 @@ on:
       - "**/*.rs"
       - .github/actions/list-changed-crates/*
       - .github/workflows/check-each.yml
+      - justfile
 
 env:
   CARGO_INCREMENTAL: 0

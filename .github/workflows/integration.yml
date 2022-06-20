@@ -10,6 +10,7 @@ on:
       - Cargo.lock
       - "**/*.rs"
       - "**/*.toml"
+      - justfile
       - .github/workflows/integration.yml
 
 env:
