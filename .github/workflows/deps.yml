@@ -13,7 +13,7 @@ on:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
-  RUST_BACKTRACE: short
+  RUSTFLAGS: "-D warnings -A deprecated"
   RUSTUP_MAX_RETRIES: 10
 
 jobs:

@@ -4,8 +4,7 @@
 # Configuration
 #
 
-export RUST_BACKTRACE := "short"
-export RUSTFLAGS := env_var_or_default("RUSTFLAGS", "-D warnings -A deprecated")
+export RUST_BACKTRACE := env_var_or_default("RUST_BACKTRACE", "short")
 export PROTOC_NO_VENDOR := "1"
 
 export DOCKER_BUILDKIT := "1"
