@@ -2,7 +2,7 @@ use http::uri::Authority;
 use linkerd_tls::client::ServerId;
 use std::collections::BTreeMap;
 
-/// Endpoint labels are lexographically ordered by key.
+/// Endpoint labels are lexigraphically ordered by key.
 pub type Labels = std::sync::Arc<BTreeMap<String, String>>;
 
 /// Metadata describing an endpoint.
