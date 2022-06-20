@@ -1,6 +1,5 @@
+use super::super::{AllowPolicy, ServerPermit};
 use crate::metrics::authz::HttpAuthzMetrics;
-
-use super::super::{AllowPolicy, Permit};
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     svc::{self, ServiceExt},
@@ -73,7 +72,7 @@ where
 impl<Req, T, N, S> svc::Service<Req> for AuthorizeHttp<T, N>
 where
     T: Clone,
-    N: svc::NewService<(Permit, T), Service = S>,
+    N: svc::NewService<(ServerPermit, T), Service = S>,
     S: svc::Service<Req>,
     S::Error: Into<Error>,
 {
@@ -105,7 +104,9 @@ where
             }
             Err(e) => {
                 tracing::info!(
-                    server = %format_args!("{}:{}", self.policy.server_label().kind, self.policy.server_label().name),
+                    server.group = %self.policy.group(),
+                    server.kind = %self.policy.kind(),
+                    server.name = %self.policy.name(),
                     tls = ?self.tls,
                     client = %self.client_addr,
                     "Request denied",

@@ -1,4 +1,4 @@
-use super::Route;
+use super::ProfileRoute;
 use futures::future;
 use linkerd_app_core::{
     classify,
@@ -17,7 +17,7 @@ use linkerd_retry as retry;
 use std::sync::Arc;
 
 pub fn layer<N>(
-    metrics: metrics::HttpRouteRetry,
+    metrics: metrics::HttpProfileRouteRetry,
 ) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N, EraseResponse<()>>> + Clone {
     retry::layer(NewRetryPolicy::new(metrics))
         // Because we wrap the response body type on retries, we must include a
@@ -28,7 +28,7 @@ pub fn layer<N>(
 
 #[derive(Clone, Debug)]
 pub struct NewRetryPolicy {
-    metrics: metrics::HttpRouteRetry,
+    metrics: metrics::HttpProfileRouteRetry,
 }
 
 #[derive(Clone, Debug)]
@@ -44,15 +44,15 @@ const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 // === impl NewRetryPolicy ===
 
 impl NewRetryPolicy {
-    pub fn new(metrics: metrics::HttpRouteRetry) -> Self {
+    pub fn new(metrics: metrics::HttpProfileRouteRetry) -> Self {
         Self { metrics }
     }
 }
 
-impl retry::NewPolicy<Route> for NewRetryPolicy {
+impl retry::NewPolicy<ProfileRoute> for NewRetryPolicy {
     type Policy = RetryPolicy;
 
-    fn new_policy(&self, route: &Route) -> Option<Self::Policy> {
+    fn new_policy(&self, route: &ProfileRoute) -> Option<Self::Policy> {
         let retries = route.route.retries().cloned()?;
 
         let metrics = self.metrics.get_handle(route.param());

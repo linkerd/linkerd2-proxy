@@ -10,22 +10,25 @@ pub use self::authorize::{NewAuthorizeHttp, NewAuthorizeTcp};
 pub use self::config::Config;
 pub(crate) use self::store::Store;
 
-pub use linkerd_app_core::metrics::{AuthzLabels, ServerLabel};
+use linkerd_app_core::metrics::ServerAuthzLabels;
+pub use linkerd_app_core::metrics::ServerLabel;
 use linkerd_app_core::{
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
     Result,
 };
 use linkerd_cache::Cached;
-pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
+pub use linkerd_server_policy::{
+    authz::Suffix, Authentication, Authorization, Meta, Protocol, ServerPolicy,
+};
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::watch;
 
 #[derive(Clone, Debug, Error)]
-#[error("unauthorized connection on {kind}/{name}")]
+#[error("unauthorized connection on {}/{}", server.kind, server.name)]
 pub struct DeniedUnauthorized {
-    kind: std::sync::Arc<str>,
-    name: std::sync::Arc<str>,
+    server: Arc<Meta>,
 }
 
 pub trait GetPolicy {
@@ -46,11 +49,11 @@ pub struct AllowPolicy {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Permit {
+pub struct ServerPermit {
     pub dst: OrigDstAddr,
     pub protocol: Protocol,
 
-    pub labels: AuthzLabels,
+    pub labels: ServerAuthzLabels,
 }
 
 // === impl DefaultPolicy ===
@@ -68,8 +71,11 @@ impl From<DefaultPolicy> for ServerPolicy {
             DefaultPolicy::Deny => ServerPolicy {
                 protocol: Protocol::Opaque,
                 authorizations: vec![],
-                kind: "default".into(),
-                name: "deny".into(),
+                meta: Arc::new(Meta {
+                    group: "default".into(),
+                    kind: "default".into(),
+                    name: "deny".into(),
+                }),
             },
         }
     }
@@ -100,12 +106,23 @@ impl AllowPolicy {
     }
 
     #[inline]
+    pub fn group(&self) -> String {
+        self.server.borrow().meta.group.to_string()
+    }
+
+    #[inline]
+    pub fn kind(&self) -> String {
+        self.server.borrow().meta.kind.to_string()
+    }
+
+    #[inline]
+    pub fn name(&self) -> String {
+        self.server.borrow().meta.name.to_string()
+    }
+
+    #[inline]
     pub fn server_label(&self) -> ServerLabel {
-        let s = self.server.borrow();
-        ServerLabel {
-            kind: s.kind.clone(),
-            name: s.name.clone(),
-        }
+        ServerLabel(self.server.borrow().meta.clone())
     }
 
     async fn changed(&mut self) {
@@ -122,8 +139,7 @@ impl AllowPolicy {
 
         if server.authorizations.is_empty() {
             return Err(DeniedUnauthorized {
-                kind: server.kind.clone(),
-                name: server.name.clone(),
+                server: server.meta.clone(),
             });
         }
         drop(server);
@@ -137,13 +153,13 @@ impl AllowPolicy {
         &self,
         client_addr: Remote<ClientAddr>,
         tls: &tls::ConditionalServerTls,
-    ) -> Result<Permit, DeniedUnauthorized> {
+    ) -> Result<ServerPermit, DeniedUnauthorized> {
         let server = self.server.borrow();
         for authz in server.authorizations.iter() {
             if authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
                 match authz.authentication {
                     Authentication::Unauthenticated => {
-                        return Ok(Permit::new(self.dst, &*server, authz));
+                        return Ok(ServerPermit::new(self.dst, &*server, authz));
                     }
 
                     Authentication::TlsUnauthenticated => {
@@ -151,7 +167,7 @@ impl AllowPolicy {
                             ..
                         }) = tls
                         {
-                            return Ok(Permit::new(self.dst, &*server, authz));
+                            return Ok(ServerPermit::new(self.dst, &*server, authz));
                         }
                     }
 
@@ -167,7 +183,7 @@ impl AllowPolicy {
                             if identities.contains(id.as_str())
                                 || suffixes.iter().any(|s| s.contains(id.as_str()))
                             {
-                                return Ok(Permit::new(self.dst, &*server, authz));
+                                return Ok(ServerPermit::new(self.dst, &*server, authz));
                             }
                         }
                     }
@@ -176,26 +192,21 @@ impl AllowPolicy {
         }
 
         Err(DeniedUnauthorized {
-            kind: server.kind.clone(),
-            name: server.name.clone(),
+            server: server.meta.clone(),
         })
     }
 }
 
-// === impl Permit ===
+// === impl ServerPermit ===
 
-impl Permit {
+impl ServerPermit {
     fn new(dst: OrigDstAddr, server: &ServerPolicy, authz: &Authorization) -> Self {
         Self {
             dst,
             protocol: server.protocol,
-            labels: AuthzLabels {
-                kind: authz.kind.clone(),
-                name: authz.name.clone(),
-                server: ServerLabel {
-                    kind: server.kind.clone(),
-                    name: server.name.clone(),
-                },
+            labels: ServerAuthzLabels {
+                authz: authz.meta.clone(),
+                server: ServerLabel(server.meta.clone()),
             },
         }
     }

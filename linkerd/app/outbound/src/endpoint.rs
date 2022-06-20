@@ -14,7 +14,7 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint<P> {
     pub addr: Remote<ServerAddr>,
     pub tls: tls::ConditionalClientTls,
@@ -137,15 +137,6 @@ impl<P> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
 impl<P> svc::Param<metrics::EndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::EndpointLabels {
         svc::Param::<metrics::OutboundEndpointLabels>::param(self).into()
-    }
-}
-
-impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.addr.hash(state);
-        self.tls.hash(state);
-        self.logical_addr.hash(state);
-        self.protocol.hash(state);
     }
 }
 

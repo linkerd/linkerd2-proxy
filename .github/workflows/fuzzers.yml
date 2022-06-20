@@ -16,6 +16,7 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUST_BACKTRACE: short
+  RUSTFLAGS: "-D warnings -A deprecated"
   RUSTUP_MAX_RETRIES: 10
 
 permissions:
@@ -30,7 +31,7 @@ jobs:
     steps:
       - run: apt update && apt install -y jo
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - uses: tj-actions/changed-files@ae90a0b602c90d598c0c027a519493c1a069543e
+      - uses: tj-actions/changed-files@fb1fe28aa9ff24afc553b37545437005a4cf2115
         id: changed-files
       - name: list changed crates
         id: list-changed

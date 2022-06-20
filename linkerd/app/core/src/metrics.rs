@@ -1,3 +1,11 @@
+//! This module provides most of the metrics infrastructure for both inbound &
+//! outbound proxies.
+//!
+//! This is less than ideal. Instead of having common metrics with differing
+//! labels for inbound & outbound, we should instead have distinct metrics for
+//! each case. And the metric registries should be instantiated in the
+//! inbound/outbound crates, etc.
+
 pub use crate::transport::labels::{TargetAddr, TlsAccept};
 use crate::{
     classify::{Class, SuccessOrFailure},
@@ -8,6 +16,7 @@ use crate::{
 };
 use linkerd_addr::Addr;
 pub use linkerd_metrics::*;
+use linkerd_server_policy as policy;
 use std::{
     fmt::{self, Write},
     net::SocketAddr,
@@ -19,9 +28,9 @@ pub type ControlHttp = http_metrics::Requests<ControlLabels, Class>;
 
 pub type HttpEndpoint = http_metrics::Requests<EndpointLabels, Class>;
 
-pub type HttpRoute = http_metrics::Requests<RouteLabels, Class>;
+pub type HttpProfileRoute = http_metrics::Requests<ProfileRouteLabels, Class>;
 
-pub type HttpRouteRetry = http_metrics::Retries<RouteLabels>;
+pub type HttpProfileRouteRetry = http_metrics::Retries<ProfileRouteLabels>;
 
 pub type Stack = stack_metrics::Registry<StackLabels>;
 
@@ -34,9 +43,9 @@ pub struct Metrics {
 
 #[derive(Clone, Debug)]
 pub struct Proxy {
-    pub http_route: HttpRoute,
-    pub http_route_actual: HttpRoute,
-    pub http_route_retry: HttpRouteRetry,
+    pub http_profile_route: HttpProfileRoute,
+    pub http_profile_route_actual: HttpProfileRoute,
+    pub http_profile_route_retry: HttpProfileRouteRetry,
     pub http_endpoint: HttpEndpoint,
     pub transport: transport::Metrics,
     pub stack: Stack,
@@ -59,22 +68,18 @@ pub struct InboundEndpointLabels {
     pub tls: tls::ConditionalServerTls,
     pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
-    pub policy: AuthzLabels,
+    pub policy: ServerAuthzLabels,
 }
 
 /// A label referencing an inbound `Server` (i.e. for policy).
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ServerLabel {
-    pub kind: Arc<str>,
-    pub name: Arc<str>,
-}
+pub struct ServerLabel(pub Arc<policy::Meta>);
 
 /// Labels referencing an inbound `ServerAuthorization.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct AuthzLabels {
+pub struct ServerAuthzLabels {
     pub server: ServerLabel,
-    pub kind: Arc<str>,
-    pub name: Arc<str>,
+    pub authz: Arc<policy::Meta>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -93,7 +98,7 @@ pub struct StackLabels {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RouteLabels {
+pub struct ProfileRouteLabels {
     direction: Direction,
     addr: profiles::LogicalAddr,
     labels: Option<String>,
@@ -144,20 +149,20 @@ impl Metrics {
             (m, r)
         };
 
-        let (http_route, route_report) = {
-            let m = metrics::Requests::<RouteLabels, Class>::default();
+        let (http_profile_route, profile_route_report) = {
+            let m = metrics::Requests::<ProfileRouteLabels, Class>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("route");
             (m, r)
         };
 
-        let (http_route_retry, retry_report) = {
-            let m = metrics::Retries::<RouteLabels>::default();
+        let (http_profile_route_retry, retry_report) = {
+            let m = metrics::Retries::<ProfileRouteLabels>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("route");
             (m, r)
         };
 
-        let (http_route_actual, actual_report) = {
-            let m = metrics::Requests::<RouteLabels, Class>::default();
+        let (http_profile_route_actual, actual_report) = {
+            let m = metrics::Requests::<ProfileRouteLabels, Class>::default();
             let r = m
                 .clone()
                 .into_report(retain_idle)
@@ -171,9 +176,9 @@ impl Metrics {
 
         let proxy = Proxy {
             http_endpoint,
-            http_route,
-            http_route_retry,
-            http_route_actual,
+            http_profile_route,
+            http_profile_route_retry,
+            http_profile_route_actual,
             stack: stack.clone(),
             transport,
         };
@@ -187,7 +192,7 @@ impl Metrics {
         };
 
         let report = endpoint_report
-            .and_report(route_report)
+            .and_report(profile_route_report)
             .and_report(retry_report)
             .and_report(actual_report)
             .and_report(control_report)
@@ -221,9 +226,9 @@ impl FmtLabels for ControlLabels {
     }
 }
 
-// === impl RouteLabels ===
+// === impl ProfileRouteLabels ===
 
-impl RouteLabels {
+impl ProfileRouteLabels {
     pub fn inbound(addr: profiles::LogicalAddr, route: &profiles::http::Route) -> Self {
         let labels = prefix_labels("rt", route.labels().iter());
         Self {
@@ -243,7 +248,7 @@ impl RouteLabels {
     }
 }
 
-impl FmtLabels for RouteLabels {
+impl FmtLabels for ProfileRouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.direction.fmt_labels(f)?;
         write!(f, ",dst=\"{}\"", self.addr)?;
@@ -298,17 +303,21 @@ impl FmtLabels for InboundEndpointLabels {
 
 impl FmtLabels for ServerLabel {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "srv_kind=\"{}\",srv_name=\"{}\"", self.kind, self.name)
+        write!(
+            f,
+            "srv_group=\"{}\",srv_kind=\"{}\",srv_name=\"{}\"",
+            self.0.group, self.0.kind, self.0.name
+        )
     }
 }
 
-impl FmtLabels for AuthzLabels {
+impl FmtLabels for ServerAuthzLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.server.fmt_labels(f)?;
         write!(
             f,
-            ",authz_kind=\"{}\",authz_name=\"{}\"",
-            self.kind, self.name
+            ",authz_group=\"{}\",authz_kind=\"{}\",authz_name=\"{}\"",
+            self.authz.group, self.authz.kind, self.authz.name
         )
     }
 }

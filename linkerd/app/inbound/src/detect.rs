@@ -1,9 +1,10 @@
 use crate::{
-    policy::{self, AllowPolicy, Permit, Protocol, ServerLabel},
+    policy::{self, AllowPolicy, Protocol, ServerPermit},
     Inbound,
 };
 use linkerd_app_core::{
     detect, identity, io,
+    metrics::ServerLabel,
     proxy::http,
     svc, tls,
     transport::{
@@ -21,7 +22,7 @@ pub(crate) struct Forward {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
     tls: tls::ConditionalServerTls,
-    permit: Permit,
+    permit: ServerPermit,
 }
 
 #[derive(Clone, Debug)]
@@ -281,8 +282,8 @@ impl<N> Inbound<N> {
 
 // === impl Forward ===
 
-impl From<(Permit, Tls)> for Forward {
-    fn from((permit, tls): (Permit, Tls)) -> Self {
+impl From<(ServerPermit, Tls)> for Forward {
+    fn from((permit, tls): (ServerPermit, Tls)) -> Self {
         Self {
             client_addr: tls.client_addr,
             orig_dst_addr: tls.orig_dst_addr,
@@ -450,12 +451,13 @@ mod tests {
     use super::*;
     use crate::test_util;
     use futures::future;
-    use io::AsyncWriteExt;
     use linkerd_app_core::{
+        io::AsyncWriteExt,
         svc::{NewService, ServiceExt},
         trace, Error,
     };
-    use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy};
+    use linkerd_server_policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
+    use std::sync::Arc;
 
     const HTTP1: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
     const HTTP2: &[u8] = b"PRI * HTTP/2.0\r\n";
@@ -469,11 +471,17 @@ mod tests {
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![client_addr().ip().into()],
-                    kind: "serverathorizationu".into(),
-                    name: "testsaz".into(),
+                    meta: Arc::new(Meta {
+                        group: "policy.linkerd.io".into(),
+                        kind: "serverathorization".into(),
+                        name: "testsaz".into(),
+                    }),
                 }],
-                kind: "server".into(),
-                name: "testsrv".into(),
+                meta: Arc::new(Meta {
+                    group: "policy.linkerd.io".into(),
+                    kind: "server".into(),
+                    name: "testsrv".into(),
+                }),
             },
         );
         allow

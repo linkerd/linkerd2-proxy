@@ -4,6 +4,7 @@ name: rust-nightly
 on:
   pull_request:
     paths:
+      - justfile
       - .github/workflows/nightly.yml
   schedule:
     # Run daily @ midnightish Pacific-time.
@@ -12,9 +13,8 @@ on:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
-  RUST_BACKTRACE: short
-  RUSTUP_MAX_RETRIES: 10
   RUSTFLAGS: "-D warnings"
+  RUSTUP_MAX_RETRIES: 10
 
 permissions:
   contents: read

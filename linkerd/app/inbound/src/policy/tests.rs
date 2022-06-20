@@ -1,7 +1,7 @@
 use super::*;
 use linkerd_app_core::{proxy::http, Error};
-use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
-use std::collections::HashSet;
+use linkerd_server_policy::{authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy};
+use std::{collections::HashSet, sync::Arc};
 
 #[derive(Clone)]
 pub(crate) struct MockSvc;
@@ -13,11 +13,17 @@ async fn unauthenticated_allowed() {
         authorizations: vec![Authorization {
             authentication: Authentication::Unauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            kind: "serverauthorization".into(),
-            name: "unauth".into(),
+            meta: Arc::new(Meta {
+                group: "policy.linkerd.io".into(),
+                kind: "serverauthorization".into(),
+                name: "unauth".into(),
+            }),
         }],
-        kind: "server".into(),
-        name: "test".into(),
+        meta: Arc::new(Meta {
+            group: "policy.linkerd.io".into(),
+            kind: "server".into(),
+            name: "test".into(),
+        }),
     };
 
     let policies = Store::for_test(policy.clone(), None);
@@ -30,17 +36,21 @@ async fn unauthenticated_allowed() {
         .expect("unauthenticated connection must be permitted");
     assert_eq!(
         permitted,
-        Permit {
+        ServerPermit {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
-            labels: AuthzLabels {
-                kind: "serverauthorization".into(),
-                name: "unauth".into(),
-                server: ServerLabel {
+            labels: ServerAuthzLabels {
+                authz: Arc::new(Meta {
+                    group: "policy.linkerd.io".into(),
+                    kind: "serverauthorization".into(),
+                    name: "unauth".into()
+                }),
+                server: ServerLabel(Arc::new(Meta {
+                    group: "policy.linkerd.io".into(),
                     kind: "server".into(),
-                    name: "test".into(),
-                }
-            }
+                    name: "test".into()
+                }))
+            },
         }
     );
 }
@@ -55,11 +65,17 @@ async fn authenticated_identity() {
                 identities: vec![client_id().to_string()].into_iter().collect(),
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            kind: "serverauthorization".into(),
-            name: "tls-auth".into(),
+            meta: Arc::new(Meta {
+                group: "policy.linkerd.io".into(),
+                kind: "serverauthorization".into(),
+                name: "tls-auth".into(),
+            }),
         }],
-        kind: "server".into(),
-        name: "test".into(),
+        meta: Arc::new(Meta {
+            group: "policy.linkerd.io".into(),
+            kind: "server".into(),
+            name: "test".into(),
+        }),
     };
 
     let policies = Store::for_test(policy.clone(), None);
@@ -75,16 +91,20 @@ async fn authenticated_identity() {
         .expect("unauthenticated connection must be permitted");
     assert_eq!(
         permitted,
-        Permit {
+        ServerPermit {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
-            labels: AuthzLabels {
-                kind: "serverauthorization".into(),
-                name: "tls-auth".into(),
-                server: ServerLabel {
+            labels: ServerAuthzLabels {
+                authz: Arc::new(Meta {
+                    group: "policy.linkerd.io".into(),
+                    kind: "serverauthorization".into(),
+                    name: "tls-auth".into()
+                }),
+                server: ServerLabel(Arc::new(Meta {
+                    group: "policy.linkerd.io".into(),
                     kind: "server".into(),
                     name: "test".into()
-                },
+                }))
             }
         }
     );
@@ -112,11 +132,17 @@ async fn authenticated_suffix() {
                 suffixes: vec![Suffix::from(vec!["cluster".into(), "local".into()])],
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            kind: "serverauthorization".into(),
-            name: "tls-auth".into(),
+            meta: Arc::new(Meta {
+                group: "policy.linkerd.io".into(),
+                kind: "serverauthorization".into(),
+                name: "tls-auth".into(),
+            }),
         }],
-        kind: "server".into(),
-        name: "test".into(),
+        meta: Arc::new(Meta {
+            group: "policy.linkerd.io".into(),
+            kind: "server".into(),
+            name: "test".into(),
+        }),
     };
 
     let policies = Store::for_test(policy.clone(), None);
@@ -131,16 +157,20 @@ async fn authenticated_suffix() {
         allowed
             .check_authorized(client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
-        Permit {
+        ServerPermit {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
-            labels: AuthzLabels {
-                kind: "serverauthorization".into(),
-                name: "tls-auth".into(),
-                server: ServerLabel {
+            labels: ServerAuthzLabels {
+                authz: Arc::new(Meta {
+                    group: "policy.linkerd.io".into(),
+                    kind: "serverauthorization".into(),
+                    name: "tls-auth".into()
+                }),
+                server: ServerLabel(Arc::new(Meta {
+                    group: "policy.linkerd.io".into(),
                     kind: "server".into(),
                     name: "test".into()
-                }
+                })),
             }
         }
     );
@@ -165,11 +195,17 @@ async fn tls_unauthenticated() {
         authorizations: vec![Authorization {
             authentication: Authentication::TlsUnauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            kind: "serverauthorization".into(),
-            name: "tls-unauth".into(),
+            meta: Arc::new(Meta {
+                group: "policy.linkerd.io".into(),
+                kind: "serverauthorization".into(),
+                name: "tls-unauth".into(),
+            }),
         }],
-        kind: "server".into(),
-        name: "test".into(),
+        meta: Arc::new(Meta {
+            group: "policy.linkerd.io".into(),
+            kind: "server".into(),
+            name: "test".into(),
+        }),
     };
 
     let policies = Store::for_test(policy.clone(), None);
@@ -184,16 +220,20 @@ async fn tls_unauthenticated() {
         allowed
             .check_authorized(client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
-        Permit {
+        ServerPermit {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
-            labels: AuthzLabels {
-                kind: "serverauthorization".into(),
-                name: "tls-unauth".into(),
-                server: ServerLabel {
+            labels: ServerAuthzLabels {
+                authz: Arc::new(Meta {
+                    group: "policy.linkerd.io".into(),
+                    kind: "serverauthorization".into(),
+                    name: "tls-unauth".into()
+                }),
+                server: ServerLabel(Arc::new(Meta {
+                    group: "policy.linkerd.io".into(),
                     kind: "server".into(),
-                    name: "test".into(),
-                },
+                    name: "test".into()
+                })),
             }
         }
     );

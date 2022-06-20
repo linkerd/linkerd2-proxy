@@ -513,7 +513,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // Ensure that connections that directly target the inbound port are secured (unless
         // identity is disabled).
         let policy = {
-            let inbound_port = server.addr.as_ref().port();
+            let inbound_port = server.addr.port();
 
             let cluster_nets = parse(strings, ENV_POLICY_CLUSTER_NETWORKS, parse_networks)?
                 .unwrap_or_else(|| {

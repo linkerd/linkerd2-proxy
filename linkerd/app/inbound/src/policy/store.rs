@@ -1,7 +1,9 @@
 use super::{api, AllowPolicy, DefaultPolicy, GetPolicy};
 use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error};
 use linkerd_cache::Cache;
-pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
+pub use linkerd_server_policy::{
+    authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
+};
 use std::{
     collections::HashSet,
     hash::{BuildHasherDefault, Hasher},

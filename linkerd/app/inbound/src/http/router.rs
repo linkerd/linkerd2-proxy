@@ -16,7 +16,7 @@ use tracing::{debug, debug_span};
 pub struct Http {
     addr: Remote<ServerAddr>,
     settings: http::client::Settings,
-    permit: policy::Permit,
+    permit: policy::ServerPermit,
 }
 
 /// Builds `Logical` targets for each HTTP request.
@@ -24,7 +24,7 @@ pub struct Http {
 struct LogicalPerRequest {
     server: Remote<ServerAddr>,
     tls: tls::ConditionalServerTls,
-    permit: policy::Permit,
+    permit: policy::ServerPermit,
     labels: tap::Labels,
 }
 
@@ -36,7 +36,7 @@ struct Logical {
     addr: Remote<ServerAddr>,
     http: http::Version,
     tls: tls::ConditionalServerTls,
-    permit: policy::Permit,
+    permit: policy::ServerPermit,
     labels: tap::Labels,
 }
 
@@ -49,7 +49,7 @@ struct Profile {
 }
 
 #[derive(Clone, Debug)]
-struct Route {
+struct ProfileRoute {
     profile: Profile,
     route: profiles::http::Route,
 }
@@ -148,18 +148,18 @@ impl<C> Inbound<C> {
                     // If the request matches a route, use a per-route proxy to
                     // wrap the inner service.
                     svc::proxies()
-                        .push_map_target(|r: Route| r.profile.logical)
+                        .push_map_target(|r: ProfileRoute| r.profile.logical)
                         .push_on_service(http::BoxRequest::layer())
                         .push(
                             rt.metrics
                                 .proxy
-                                .http_route
+                                .http_profile_route
                                 .to_layer::<classify::Response, _, _>(),
                         )
                         .push_on_service(http::BoxResponse::layer())
                         .push(classify::NewClassify::layer())
                         .push_http_insert_target::<profiles::http::Route>()
-                        .push_map_target(|(route, profile)| Route { route, profile })
+                        .push_map_target(|(route, profile)| ProfileRoute { route, profile })
                         .into_inner(),
                 ))
                 .push_switch(
@@ -246,23 +246,37 @@ impl<C> Inbound<C> {
 
 // === impl LogicalPerRequest ===
 
-impl<T> From<(policy::Permit, T)> for LogicalPerRequest
+impl<T> From<(policy::ServerPermit, T)> for LogicalPerRequest
 where
     T: Param<Remote<ServerAddr>>,
     T: Param<tls::ConditionalServerTls>,
 {
-    fn from((permit, t): (policy::Permit, T)) -> Self {
+    fn from((permit, t): (policy::ServerPermit, T)) -> Self {
         let labels = vec![
             (
+                "srv_group".to_string(),
+                permit.labels.server.0.group.to_string(),
+            ),
+            (
                 "srv_kind".to_string(),
-                permit.labels.server.kind.to_string(),
+                permit.labels.server.0.kind.to_string(),
             ),
             (
                 "srv_name".to_string(),
-                permit.labels.server.name.to_string(),
+                permit.labels.server.0.name.to_string(),
             ),
-            ("authz_kind".to_string(), permit.labels.kind.to_string()),
-            ("authz_name".to_string(), permit.labels.name.to_string()),
+            (
+                "authz_group".to_string(),
+                permit.labels.authz.group.to_string(),
+            ),
+            (
+                "authz_kind".to_string(),
+                permit.labels.authz.kind.to_string(),
+            ),
+            (
+                "authz_name".to_string(),
+                permit.labels.authz.name.to_string(),
+            ),
         ];
 
         Self {
@@ -319,19 +333,19 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
 
 // === impl Route ===
 
-impl Param<profiles::http::Route> for Route {
+impl Param<profiles::http::Route> for ProfileRoute {
     fn param(&self) -> profiles::http::Route {
         self.route.clone()
     }
 }
 
-impl Param<metrics::RouteLabels> for Route {
-    fn param(&self) -> metrics::RouteLabels {
-        metrics::RouteLabels::inbound(self.profile.addr.clone(), &self.route)
+impl Param<metrics::ProfileRouteLabels> for ProfileRoute {
+    fn param(&self) -> metrics::ProfileRouteLabels {
+        metrics::ProfileRouteLabels::inbound(self.profile.addr.clone(), &self.route)
     }
 }
 
-impl classify::CanClassify for Route {
+impl classify::CanClassify for ProfileRoute {
     type Classify = classify::Request;
 
     fn classify(&self) -> classify::Request {
@@ -339,7 +353,7 @@ impl classify::CanClassify for Route {
     }
 }
 
-impl Param<http::ResponseTimeout> for Route {
+impl Param<http::ResponseTimeout> for ProfileRoute {
     fn param(&self) -> http::ResponseTimeout {
         http::ResponseTimeout(self.route.timeout())
     }
@@ -363,7 +377,7 @@ impl From<Profile> for Logical {
 
 impl Param<u16> for Logical {
     fn param(&self) -> u16 {
-        self.addr.as_ref().port()
+        self.addr.port()
     }
 }
 
@@ -395,9 +409,7 @@ impl classify::CanClassify for Logical {
 
 impl tap::Inspect for Logical {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions()
-            .get::<Remote<ClientAddr>>()
-            .map(|a| *a.as_ref())
+        req.extensions().get::<Remote<ClientAddr>>().map(|a| **a)
     }
 
     fn src_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalServerTls {

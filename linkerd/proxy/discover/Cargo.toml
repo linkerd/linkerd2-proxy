@@ -12,6 +12,7 @@ Utilities to implement a Discover with the core Resolve type
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
+indexmap = "1"
 linkerd-error = { path = "../../error" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
@@ -22,6 +23,6 @@ tracing = "0.1"
 pin-project = "1"
 
 [dev-dependencies]
-async-stream = "0.3"
-tokio = { version = "1", features = ["macros"] }
-tower = { version = "0.4", default-features = false, features = ["discover", "util"] }
+tokio = { version = "1", features = ["macros", "test-util"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tower = { version = "0.4", default-features = false, features = ["util"] }
