@@ -108,45 +108,45 @@ shellcheck:
     echo shellcheck $files
     shellcheck $files
 
-check *flags: fmt
+check *flags:
     {{ cargo }} check --workspace --all-targets --frozen {{ flags }} {{ _fmt }}
 
-check-crate crate *flags: fmt
+check-crate crate *flags:
     {{ cargo }} check --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
-clippy *flags: fmt
+clippy *flags:
     {{ cargo }} clippy --workspace --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
-clippy-crate crate *flags: fmt
+clippy-crate crate *flags:
     {{ cargo }} clippy --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
-clippy-dir dir *flags: fmt
+clippy-dir dir *flags:
     cd {{ dir }} && {{ cargo }} clippy --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
-doc *flags: fmt
+doc *flags:
     {{ cargo }} doc --no-deps --workspace --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
-doc-crate crate *flags: fmt
+doc-crate crate *flags:
     {{ cargo }} doc --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
 
 # Run all tests
-test *flags: fmt
+test *flags:
     {{ cargo }} {{ _test }} --workspace --frozen {{ _features }} \
         {{ if build_type == "release" { "--release" } else { "" } }} \
         {{ flags }}
 
-test-crate crate *flags: fmt
+test-crate crate *flags:
     {{ cargo }} {{ _test }} --package={{ crate }} --frozen {{ _features }} \
         {{ if build_type == "release" { "--release" } else { "" } }} \
         {{ flags }}
 
-test-dir dir *flags: fmt
+test-dir dir *flags:
     cd {{ dir }} && {{ cargo }} {{ _test }} --frozen {{ _features }} \
             {{ if build_type == "release" { "--release" } else { "" } }} \
             {{ flags }}
 
 # Build the proxy
-build: fmt
+build:
     {{ cargo }} build --frozen --package=linkerd2-proxy --target={{ cargo_target }} \
         {{ if build_type == "release" { "--release" } else { "" } }} \
         {{ _features }} {{ _fmt }}
