@@ -1,5 +1,5 @@
 use futures::{prelude::*, ready};
-use indexmap::IndexMap;
+use indexmap::{map::Entry, IndexMap};
 use linkerd_proxy_core::resolve::{Resolve, Update};
 use pin_project::pin_project;
 use std::{
@@ -32,8 +32,14 @@ pub struct DiscoverFuture<F, E> {
 pub struct Discover<R: TryStream, E> {
     #[pin]
     resolution: R,
-    active: IndexMap<SocketAddr, E>,
+
+    /// Changes that have been received but not yet emitted.
     pending: VecDeque<Change<SocketAddr, E>>,
+
+    /// The current state of resolved endpoints that have been observed. This is
+    /// an `IndexMap` so that the order of observed addresses is preserved
+    /// (mostly for tests).
+    active: IndexMap<SocketAddr, E>,
 }
 
 // === impl FromResolve ===
@@ -148,11 +154,11 @@ where
                     for (addr, endpoint) in endpoints.into_iter() {
                         trace!(%addr, "Scheduling addition");
                         match this.active.entry(addr) {
-                            indexmap::map::Entry::Vacant(entry) => {
+                            Entry::Vacant(entry) => {
                                 entry.insert(endpoint.clone());
                                 this.pending.push_back(Change::Insert(addr, endpoint));
                             }
-                            indexmap::map::Entry::Occupied(mut entry) => {
+                            Entry::Occupied(mut entry) => {
                                 if entry.get() != &endpoint {
                                     entry.insert(endpoint.clone());
                                     this.pending.push_back(Change::Insert(addr, endpoint));
@@ -172,10 +178,9 @@ where
                 }
 
                 Update::DoesNotExist => {
-                    trace!("Scheduling removals");
+                    trace!("Clearing all active endpoints");
                     this.pending
                         .extend(this.active.drain(..).map(|(sa, _)| Change::Remove(sa)));
-                    this.active.clear();
                 }
             }
         }
@@ -216,14 +221,14 @@ mod tests {
 
         // Reset to a new state with 3 addresses, one of which is unchanged, one of which is
         // changed, and one of which is added.
-        tx.try_send(Ok(Update::Reset(
+        tx.try_send(Ok(Update::Reset(vec![
             // Restore the original `2` value. We shouldn't see an update for it.
-            Some((addr(2), 2))
-                .into_iter()
-                // Set a new value for `3`. and add a 4th as well.
-                .chain((3..=4).map(|n| (addr(n), n + 1)))
-                .collect(),
-        )))
+            (addr(2), 2),
+            // Set a new value for `3`.
+            (addr(3), 4),
+            // Add a new address, too.
+            (addr(4), 5),
+        ])))
         .expect("must send");
         // The first address is removed now.
         assert!(matches!(
@@ -244,7 +249,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn dedupe() {
+    async fn deduplicate_redundant() {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         let mut disco = Discover::new(ReceiverStream::new(rx));
 
@@ -259,11 +264,7 @@ mod tests {
         // A redundant update is not.
         tx.try_send(Ok(Update::Add(vec![(addr(1), "a")])))
             .expect("must send");
-        tokio::select! {
-            biased;
-            _ = disco.try_next() => panic!("must not receive"),
-            _ = futures::future::ready(()) => {}
-        }
+        assert!(disco.try_next().now_or_never().is_none());
 
         // A new value for an existing address is observed.
         tx.try_send(Ok(Update::Add(vec![(addr(1), "b")])))
