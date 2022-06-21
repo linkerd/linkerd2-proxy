@@ -221,7 +221,8 @@ pub mod fuzz {
                             kind: "server".into(),
                             name: "testsaz".into(),
                         }),
-                    }],
+                    }]
+                    .into(),
                     meta: Arc::new(policy::Meta::Resource {
                         group: "policy.linkerd.io".into(),
                         kind: "server".into(),
