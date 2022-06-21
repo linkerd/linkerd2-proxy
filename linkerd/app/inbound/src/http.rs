@@ -216,13 +216,14 @@ pub mod fuzz {
                     authorizations: vec![policy::Authorization {
                         authentication: policy::Authentication::Unauthenticated,
                         networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
-                        meta: Arc::new(policy::Meta {
+                        meta: Arc::new(policy::Meta::Resource {
                             group: "policy.linkerd.io".into(),
                             kind: "server".into(),
                             name: "testsaz".into(),
                         }),
-                    }],
-                    meta: Arc::new(policy::Meta {
+                    }]
+                    .into(),
+                    meta: Arc::new(policy::Meta::Resource {
                         group: "policy.linkerd.io".into(),
                         kind: "server".into(),
                         name: "testsrv".into(),
@@ -235,7 +236,7 @@ pub mod fuzz {
 
     impl svc::Param<policy::ServerLabel> for Target {
         fn param(&self) -> policy::ServerLabel {
-            policy::ServerLabel(Arc::new(policy::Meta {
+            policy::ServerLabel(Arc::new(policy::Meta::Resource {
                 group: "policy.linkerd.io".into(),
                 kind: "server".into(),
                 name: "testsrv".into(),

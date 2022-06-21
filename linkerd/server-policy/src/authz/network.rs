@@ -1,6 +1,6 @@
 use ipnet::IpNet;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Network {
     pub net: IpNet,
     pub except: Vec<IpNet>,
@@ -63,6 +63,35 @@ impl std::str::FromStr for Network {
             net: s.parse()?,
             except: vec![],
         })
+    }
+}
+
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use linkerd2_proxy_api::{inbound as api, net::InvalidIpNetwork};
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidNetwork {
+        #[error("invalid host match: {0}")]
+        Ip(#[from] InvalidIpNetwork),
+
+        #[error("missing network")]
+        Missing,
+    }
+
+    impl TryFrom<api::Network> for Network {
+        type Error = InvalidNetwork;
+
+        fn try_from(n: api::Network) -> Result<Self, Self::Error> {
+            let net = n.net.ok_or(InvalidNetwork::Missing)?.try_into()?;
+            let except = n
+                .except
+                .into_iter()
+                .map(|net| net.try_into())
+                .collect::<Result<Vec<IpNet>, InvalidIpNetwork>>()?;
+            Ok(Network { net, except })
+        }
     }
 }
 

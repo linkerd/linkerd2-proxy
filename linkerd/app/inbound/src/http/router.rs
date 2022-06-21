@@ -255,27 +255,27 @@ where
         let labels = vec![
             (
                 "srv_group".to_string(),
-                permit.labels.server.0.group.to_string(),
+                permit.labels.server.0.group().to_string(),
             ),
             (
                 "srv_kind".to_string(),
-                permit.labels.server.0.kind.to_string(),
+                permit.labels.server.0.kind().to_string(),
             ),
             (
                 "srv_name".to_string(),
-                permit.labels.server.0.name.to_string(),
+                permit.labels.server.0.name().to_string(),
             ),
             (
                 "authz_group".to_string(),
-                permit.labels.authz.group.to_string(),
+                permit.labels.authz.group().to_string(),
             ),
             (
                 "authz_kind".to_string(),
-                permit.labels.authz.kind.to_string(),
+                permit.labels.authz.kind().to_string(),
             ),
             (
                 "authz_name".to_string(),
-                permit.labels.authz.name.to_string(),
+                permit.labels.authz.name().to_string(),
             ),
         ];
 

@@ -59,13 +59,14 @@ pub fn default_config() -> Config {
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![Default::default()],
-                    meta: Arc::new(Meta {
+                    meta: Arc::new(Meta::Resource {
                         group: "policy.linkerd.io".into(),
                         kind: "serverauthorization".into(),
                         name: "testsaz".into(),
                     }),
-                }],
-                meta: Arc::new(Meta {
+                }]
+                .into(),
+                meta: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "server".into(),
                     name: "testsrv".into(),

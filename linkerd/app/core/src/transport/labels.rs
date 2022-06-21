@@ -199,7 +199,7 @@ mod tests {
                 negotiated_protocol: None,
             }),
             ([192, 0, 2, 4], 40000).into(),
-            PolicyServerLabel(Arc::new(Meta {
+            PolicyServerLabel(Arc::new(Meta::Resource {
                 group: "policy.linkerd.io".into(),
                 kind: "server".into(),
                 name: "testserver".into(),
