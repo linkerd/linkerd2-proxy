@@ -47,10 +47,7 @@ highlight = "all"
 deny = [
     { name = "rustls", wrappers = ["tokio-rustls"] },
 ]
-skip = [
-    # waiting on `h2` and `tower` releases that update h2 to v0.7
-    { name = "tokio-util", version = "0.6" },
-]
+skip = []
 skip-tree = [
     # Hasn't seen a new release since 2017. Pulls in an older version of nom.
     { name = "procinfo" },
