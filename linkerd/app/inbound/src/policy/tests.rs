@@ -1,7 +1,7 @@
 use super::*;
 use linkerd_app_core::{proxy::http, Error};
 use linkerd_server_policy::{authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy};
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::BTreeSet, sync::Arc};
 
 #[derive(Clone)]
 pub(crate) struct MockSvc;
@@ -13,13 +13,14 @@ async fn unauthenticated_allowed() {
         authorizations: vec![Authorization {
             authentication: Authentication::Unauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            meta: Arc::new(Meta {
+            meta: Arc::new(Meta::Resource {
                 group: "policy.linkerd.io".into(),
                 kind: "serverauthorization".into(),
                 name: "unauth".into(),
             }),
-        }],
-        meta: Arc::new(Meta {
+        }]
+        .into(),
+        meta: Arc::new(Meta::Resource {
             group: "policy.linkerd.io".into(),
             kind: "server".into(),
             name: "test".into(),
@@ -40,12 +41,12 @@ async fn unauthenticated_allowed() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: ServerAuthzLabels {
-                authz: Arc::new(Meta {
+                authz: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "serverauthorization".into(),
                     name: "unauth".into()
                 }),
-                server: ServerLabel(Arc::new(Meta {
+                server: ServerLabel(Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "server".into(),
                     name: "test".into()
@@ -65,13 +66,14 @@ async fn authenticated_identity() {
                 identities: vec![client_id().to_string()].into_iter().collect(),
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            meta: Arc::new(Meta {
+            meta: Arc::new(Meta::Resource {
                 group: "policy.linkerd.io".into(),
                 kind: "serverauthorization".into(),
                 name: "tls-auth".into(),
             }),
-        }],
-        meta: Arc::new(Meta {
+        }]
+        .into(),
+        meta: Arc::new(Meta::Resource {
             group: "policy.linkerd.io".into(),
             kind: "server".into(),
             name: "test".into(),
@@ -95,12 +97,12 @@ async fn authenticated_identity() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: ServerAuthzLabels {
-                authz: Arc::new(Meta {
+                authz: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "serverauthorization".into(),
                     name: "tls-auth".into()
                 }),
-                server: ServerLabel(Arc::new(Meta {
+                server: ServerLabel(Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "server".into(),
                     name: "test".into()
@@ -128,17 +130,18 @@ async fn authenticated_suffix() {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
             authentication: Authentication::TlsAuthenticated {
-                identities: HashSet::default(),
+                identities: BTreeSet::default(),
                 suffixes: vec![Suffix::from(vec!["cluster".into(), "local".into()])],
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            meta: Arc::new(Meta {
+            meta: Arc::new(Meta::Resource {
                 group: "policy.linkerd.io".into(),
                 kind: "serverauthorization".into(),
                 name: "tls-auth".into(),
             }),
-        }],
-        meta: Arc::new(Meta {
+        }]
+        .into(),
+        meta: Arc::new(Meta::Resource {
             group: "policy.linkerd.io".into(),
             kind: "server".into(),
             name: "test".into(),
@@ -161,12 +164,12 @@ async fn authenticated_suffix() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: ServerAuthzLabels {
-                authz: Arc::new(Meta {
+                authz: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "serverauthorization".into(),
                     name: "tls-auth".into()
                 }),
-                server: ServerLabel(Arc::new(Meta {
+                server: ServerLabel(Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "server".into(),
                     name: "test".into()
@@ -195,13 +198,14 @@ async fn tls_unauthenticated() {
         authorizations: vec![Authorization {
             authentication: Authentication::TlsUnauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            meta: Arc::new(Meta {
+            meta: Arc::new(Meta::Resource {
                 group: "policy.linkerd.io".into(),
                 kind: "serverauthorization".into(),
                 name: "tls-unauth".into(),
             }),
-        }],
-        meta: Arc::new(Meta {
+        }]
+        .into(),
+        meta: Arc::new(Meta::Resource {
             group: "policy.linkerd.io".into(),
             kind: "server".into(),
             name: "test".into(),
@@ -224,12 +228,12 @@ async fn tls_unauthenticated() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: ServerAuthzLabels {
-                authz: Arc::new(Meta {
+                authz: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "serverauthorization".into(),
                     name: "tls-unauth".into()
                 }),
-                server: ServerLabel(Arc::new(Meta {
+                server: ServerLabel(Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "server".into(),
                     name: "test".into()
