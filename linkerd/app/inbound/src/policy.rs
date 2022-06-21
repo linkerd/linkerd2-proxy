@@ -8,10 +8,14 @@ mod tcp;
 mod tests;
 
 pub(crate) use self::store::Store;
-pub use self::{config::Config, http::NewHttpPolicy, tcp::NewTcpPolicy};
+pub use self::{
+    config::Config,
+    http::{HttpRouteUnauthorized, NewHttpPolicy},
+    tcp::NewTcpPolicy,
+};
 
-use linkerd_app_core::metrics::ServerAuthzLabels;
 pub use linkerd_app_core::metrics::ServerLabel;
+use linkerd_app_core::metrics::{RouteAuthzLabels, ServerAuthzLabels};
 use linkerd_app_core::{
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
@@ -27,7 +31,7 @@ use tokio::sync::watch;
 
 #[derive(Clone, Debug, Error)]
 #[error("unauthorized connection on {}/{}", server.kind(), server.name())]
-pub struct DeniedUnauthorized {
+pub struct ServerUnauthorized {
     server: Arc<Meta>,
 }
 
@@ -52,8 +56,13 @@ pub struct AllowPolicy {
 pub struct ServerPermit {
     pub dst: OrigDstAddr,
     pub protocol: Protocol,
-
     pub labels: ServerAuthzLabels,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct RoutePermit {
+    pub dst: OrigDstAddr,
+    pub labels: RouteAuthzLabels,
 }
 
 // === impl DefaultPolicy ===
@@ -102,18 +111,8 @@ impl AllowPolicy {
     }
 
     #[inline]
-    pub fn group(&self) -> String {
-        self.server.borrow().meta.group().to_string()
-    }
-
-    #[inline]
-    pub fn kind(&self) -> String {
-        self.server.borrow().meta.kind().to_string()
-    }
-
-    #[inline]
-    pub fn name(&self) -> String {
-        self.server.borrow().meta.name().to_string()
+    pub fn meta(&self) -> Arc<Meta> {
+        self.server.borrow().meta.clone()
     }
 
     #[inline]
@@ -130,11 +129,11 @@ impl AllowPolicy {
 
     /// Checks whether the server has any authorizations at all. If it does not,
     /// a denial error is returned.
-    pub(crate) fn check_port_allowed(self) -> Result<Self, DeniedUnauthorized> {
+    pub(crate) fn check_port_allowed(self) -> Result<Self, ServerUnauthorized> {
         let server = self.server.borrow();
 
         if server.authorizations.is_empty() {
-            return Err(DeniedUnauthorized {
+            return Err(ServerUnauthorized {
                 server: server.meta.clone(),
             });
         }
@@ -149,51 +148,55 @@ impl AllowPolicy {
         &self,
         client_addr: Remote<ClientAddr>,
         tls: &tls::ConditionalServerTls,
-    ) -> Result<ServerPermit, DeniedUnauthorized> {
+    ) -> Result<ServerPermit, ServerUnauthorized> {
         let server = self.server.borrow();
         for authz in server.authorizations.iter() {
-            if authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
-                match authz.authentication {
-                    Authentication::Unauthenticated => {
-                        return Ok(ServerPermit::new(self.dst, &*server, authz));
-                    }
-
-                    Authentication::TlsUnauthenticated => {
-                        if let tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                            ..
-                        }) = tls
-                        {
-                            return Ok(ServerPermit::new(self.dst, &*server, authz));
-                        }
-                    }
-
-                    Authentication::TlsAuthenticated {
-                        ref identities,
-                        ref suffixes,
-                    } => {
-                        if let tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                            client_id: Some(tls::server::ClientId(ref id)),
-                            ..
-                        }) = tls
-                        {
-                            if identities.contains(id.as_str())
-                                || suffixes.iter().any(|s| s.contains(id.as_str()))
-                            {
-                                return Ok(ServerPermit::new(self.dst, &*server, authz));
-                            }
-                        }
-                    }
-                }
+            if is_authorized(authz, client_addr, tls) {
+                return Ok(ServerPermit::new(self.dst, &*server, authz));
             }
         }
 
-        Err(DeniedUnauthorized {
+        Err(ServerUnauthorized {
             server: server.meta.clone(),
         })
     }
 }
 
-// === impl ServerPermit ===
+fn is_authorized(
+    authz: &Authorization,
+    client_addr: Remote<ClientAddr>,
+    tls: &tls::ConditionalServerTls,
+) -> bool {
+    if !authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
+        return false;
+    }
+
+    match authz.authentication {
+        Authentication::Unauthenticated => true,
+
+        Authentication::TlsUnauthenticated => {
+            matches!(
+                tls,
+                tls::ConditionalServerTls::Some(tls::ServerTls::Established { .. })
+            )
+        }
+
+        Authentication::TlsAuthenticated {
+            ref identities,
+            ref suffixes,
+        } => match tls {
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some(tls::server::ClientId(ref id)),
+                ..
+            }) => {
+                identities.contains(id.as_str()) || suffixes.iter().any(|s| s.contains(id.as_str()))
+            }
+            _ => false,
+        },
+    }
+}
+
+// === impl Permit ===
 
 impl ServerPermit {
     fn new(dst: OrigDstAddr, server: &ServerPolicy, authz: &Authorization) -> Self {

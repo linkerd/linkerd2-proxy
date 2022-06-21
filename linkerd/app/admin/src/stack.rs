@@ -52,7 +52,7 @@ struct Http {
 
 #[derive(Clone, Debug)]
 struct Permitted {
-    permit: inbound::policy::ServerPermit,
+    permit: inbound::policy::RoutePermit,
     http: Http,
 }
 
@@ -115,7 +115,7 @@ impl Config {
                         // - If we received some unexpected SNI, the client is mostly likely
                         //   confused/stale.
                         Err(_timeout) => {
-                            let version = match tcp.tls.clone() {
+                            let version = match tcp.tls {
                                 tls::ConditionalServerTls::None(_) => http::Version::Http1,
                                 tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                                     ..
@@ -291,7 +291,7 @@ impl<T: Param<tls::ConditionalServerTls>> ExtractParam<errors::respond::EmitHead
 
 impl errors::HttpRescue<Error> for Rescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if let Some(cause) = errors::cause_ref::<inbound::policy::DeniedUnauthorized>(&*error) {
+        if let Some(cause) = errors::cause_ref::<inbound::policy::HttpRouteUnauthorized>(&*error) {
             return Ok(errors::SyntheticHttpResponse::permission_denied(cause));
         }
 
