@@ -149,10 +149,7 @@ impl Server {
         U: TryFuture<Ok = Response> + Send + Sync + 'static,
         U::Error: Into<BoxError> + Send + 'static,
     {
-        let func = move |req| {
-            let future = cb(req).map_err(Into::into);
-            Box::pin(future) as RspFuture
-        };
+        let func = move |req| Box::pin(cb(req).map_err(Into::into)) as RspFuture;
         self.routes.insert(path.into(), Route(Box::new(func)));
         self
     }
