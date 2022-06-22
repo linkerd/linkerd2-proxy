@@ -1,5 +1,5 @@
 use super::ProfileRoute;
-use futures::future;
+use futures::{future, FutureExt};
 use linkerd_app_core::{
     classify,
     http_metrics::retries::Handle,
@@ -139,11 +139,14 @@ where
     A::Error: Into<Error>,
     B: HttpBody + Unpin + Send + 'static,
     B::Data: Unpin + Send,
-    E: From<B::Error> + 'static,
+    B::Error: Unpin + Send,
 {
     type RetryRequest = http::Request<ReplayBody<A>>;
     type RetryResponse = http::Response<WithTrailers<B>>;
-    type ResponseFuture = with_trailers::WithTrailersFuture<B, E>;
+    type ResponseFuture = future::Map<
+        with_trailers::WithTrailersFuture<B>,
+        fn(http::Response<WithTrailers<B>>) -> Result<http::Response<WithTrailers<B>>, E>,
+    >;
 
     fn prepare_request(
         &self,
@@ -169,6 +172,6 @@ where
     /// If the response is HTTP/2, return a future that checks for a `TRAILERS`
     /// frame immediately after the first frame of the response.
     fn prepare_response(rsp: http::Response<B>) -> Self::ResponseFuture {
-        WithTrailers::map_response(rsp)
+        WithTrailers::map_response(rsp).map(Ok)
     }
 }
