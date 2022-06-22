@@ -70,11 +70,11 @@ impl<B: Body> WithTrailers<B> {
         };
 
         if let Some(data) = body.inner.data().await {
-            // body has data; stop waiting for trailers
+            // The body has data; stop waiting for trailers.
             body.first_data = Some(data?);
 
             // Peek to see if there's immediately a trailers frame, and grab
-            // it if so. otherwise, bail.
+            // it if so. Otherwise, bail.
             if let Some(trailers) = body.inner.trailers().now_or_never() {
                 body.trailers = trailers?;
             }
@@ -82,7 +82,7 @@ impl<B: Body> WithTrailers<B> {
             return Ok(http::Response::from_parts(parts, body));
         }
 
-        // okay, let's see if there's trailers...
+        // Okay, let's see if there's trailers...
         body.trailers = body.inner.trailers().await?;
 
         Ok(http::Response::from_parts(parts, body))
