@@ -16,7 +16,24 @@ use std::{
 /// behaves identically to a normal body.
 pub struct WithTrailers<B: Body> {
     inner: B,
+
+    /// The first DATA frame received from the inner body, or an error that
+    /// occurred while polling for data.
+    ///
+    /// If this is `None`, then the body has completed without any DATA frames.
     first_data: Option<Result<B::Data, B::Error>>,
+
+    /// The inner body's trailers, if it was terminated by a `TRAILERS` frame
+    /// after 0-1 DATA frames, or an error if polling for trailers failed.
+    ///
+    /// Yes, this is a bit of a complex type, so let's break it down:
+    /// - the outer `Option` indicates whether any trailers were received by
+    ///   `WithTrailers`; if it's `None`, then we don't *know* if the response
+    ///   had trailers, as it is not yet complete.
+    /// - the inner `Result` and `Option` are the `Result` and `Option` returned
+    ///   by `HttpBody::trailers` on the inner body. If this is `Ok(None)`, then
+    ///   the body has terminated without trailers --- it is *known* to not have
+    ///   trailers.
     trailers: Option<Result<Option<http::HeaderMap>, B::Error>>,
 }
 
