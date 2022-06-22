@@ -1,5 +1,7 @@
-use super::super::{AllowPolicy, ServerPermit};
-use crate::metrics::authz::HttpAuthzMetrics;
+use crate::{
+    metrics::authz::HttpAuthzMetrics,
+    policy::{AllowPolicy, ServerPermit},
+};
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     svc::{self, ServiceExt},
@@ -9,21 +11,21 @@ use linkerd_app_core::{
 };
 use std::task;
 
-/// A middleware that enforces policy on each HTTP request.
+/// A middleware that attaches & enforces policy on each HTTP request.
 ///
-/// This enforcement is done lazily on each request so that policy updates are honored as the
-/// connection progresses.
+/// This enforcement is done lazily on each request so that policy updates are
+/// honored as the connection progresses.
 ///
-/// The inner service is created for each request, so it's expected that this is combined with
-/// caching.
+/// The inner service is created for each request, so it's expected that this is
+/// combined with caching.
 #[derive(Clone, Debug)]
-pub struct NewAuthorizeHttp<N> {
+pub struct NewHttpPolicy<N> {
     metrics: HttpAuthzMetrics,
     inner: N,
 }
 
 #[derive(Clone, Debug)]
-pub struct AuthorizeHttp<T, N> {
+pub struct HttpPolicy<T, N> {
     target: T,
     client_addr: Remote<ClientAddr>,
     tls: tls::ConditionalServerTls,
@@ -32,9 +34,9 @@ pub struct AuthorizeHttp<T, N> {
     inner: N,
 }
 
-// === impl NewAuthorizeHttp ===
+// === impl NewHttpPolicy ===
 
-impl<N> NewAuthorizeHttp<N> {
+impl<N> NewHttpPolicy<N> {
     pub fn layer(metrics: HttpAuthzMetrics) -> impl svc::layer::Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self {
             metrics: metrics.clone(),
@@ -43,20 +45,20 @@ impl<N> NewAuthorizeHttp<N> {
     }
 }
 
-impl<T, N> svc::NewService<T> for NewAuthorizeHttp<N>
+impl<T, N> svc::NewService<T> for NewHttpPolicy<N>
 where
     T: svc::Param<AllowPolicy>
         + svc::Param<Remote<ClientAddr>>
         + svc::Param<tls::ConditionalServerTls>,
     N: Clone,
 {
-    type Service = AuthorizeHttp<T, N>;
+    type Service = HttpPolicy<T, N>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let client_addr = target.param();
         let tls = target.param();
         let policy = target.param();
-        AuthorizeHttp {
+        HttpPolicy {
             target,
             client_addr,
             tls,
@@ -67,9 +69,9 @@ where
     }
 }
 
-// === impl AuthorizeHttp ===
+// === impl HttpPolicy ===
 
-impl<Req, T, N, S> svc::Service<Req> for AuthorizeHttp<T, N>
+impl<Req, T, N, S> svc::Service<Req> for HttpPolicy<T, N>
 where
     T: Clone,
     N: svc::NewService<(ServerPermit, T), Service = S>,

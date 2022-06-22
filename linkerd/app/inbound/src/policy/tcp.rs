@@ -1,5 +1,7 @@
-use super::super::{AllowPolicy, DeniedUnauthorized, ServerPermit};
-use crate::metrics::authz::TcpAuthzMetrics;
+use crate::{
+    metrics::authz::TcpAuthzMetrics,
+    policy::{AllowPolicy, DeniedUnauthorized, ServerPermit},
+};
 use futures::future;
 use linkerd_app_core::{
     svc, tls,
@@ -8,19 +10,19 @@ use linkerd_app_core::{
 };
 use std::{future::Future, pin::Pin, task};
 
-/// A middleware that enforces policy on each TCP connection. When connection is authorized, we
-/// continue to monitor the policy for changes and, if the connection is no longer authorized, it is
-/// dropped/closed.
+/// A middleware that enforces policy on each TCP connection. When connection is
+/// authorized, we continue to monitor the policy for changes and, if the
+/// connection is no longer authorized, it is dropped/closed.
 ///
 /// Metrics are reported to the `TcpAuthzMetrics` struct.
 #[derive(Clone, Debug)]
-pub struct NewAuthorizeTcp<N> {
+pub struct NewTcpPolicy<N> {
     inner: N,
     metrics: TcpAuthzMetrics,
 }
 
 #[derive(Clone, Debug)]
-pub enum AuthorizeTcp<S> {
+pub enum TcpPolicy<S> {
     Authorized(Authorized<S>),
     Unauthorized(Unauthorized),
 }
@@ -39,9 +41,9 @@ pub struct Unauthorized {
     deny: DeniedUnauthorized,
 }
 
-// === impl NewAuthorizeTcp ===
+// === impl NewTcpPolicy ===
 
-impl<N> NewAuthorizeTcp<N> {
+impl<N> NewTcpPolicy<N> {
     pub(crate) fn layer(
         metrics: TcpAuthzMetrics,
     ) -> impl svc::layer::Layer<N, Service = Self> + Clone {
@@ -52,14 +54,14 @@ impl<N> NewAuthorizeTcp<N> {
     }
 }
 
-impl<T, N> svc::NewService<T> for NewAuthorizeTcp<N>
+impl<T, N> svc::NewService<T> for NewTcpPolicy<N>
 where
     T: svc::Param<AllowPolicy>
         + svc::Param<Remote<ClientAddr>>
         + svc::Param<tls::ConditionalServerTls>,
     N: svc::NewService<(ServerPermit, T)>,
 {
-    type Service = AuthorizeTcp<N::Service>;
+    type Service = TcpPolicy<N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let client = target.param();
@@ -76,7 +78,7 @@ where
                 self.metrics.allow(&permit, tls.clone());
 
                 let inner = self.inner.new_service((permit, target));
-                AuthorizeTcp::Authorized(Authorized {
+                TcpPolicy::Authorized(Authorized {
                     inner,
                     policy,
                     client,
@@ -93,15 +95,15 @@ where
                     "Connection denied"
                 );
                 self.metrics.deny(&policy, tls);
-                AuthorizeTcp::Unauthorized(Unauthorized { deny })
+                TcpPolicy::Unauthorized(Unauthorized { deny })
             }
         }
     }
 }
 
-// === impl AuthorizeTcp ===
+// === impl TcpPolicy ===
 
-impl<I, S> svc::Service<I> for AuthorizeTcp<S>
+impl<I, S> svc::Service<I> for TcpPolicy<S>
 where
     S: svc::Service<I, Response = ()>,
     S::Error: Into<Error>,

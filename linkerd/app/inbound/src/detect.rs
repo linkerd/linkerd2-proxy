@@ -106,7 +106,7 @@ impl<N> Inbound<N> {
         self.map_stack(|cfg, rt, detect| {
             let forward = svc::stack(forward)
                 .push_map_target(Forward::from)
-                .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()));
+                .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()));
 
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
             detect
@@ -236,7 +236,7 @@ impl<N> Inbound<N> {
                             rt.metrics.proxy.transport.clone(),
                         ))
                         .push_map_target(Forward::from)
-                        .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()))
+                        .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()))
                         .into_inner(),
                 )
                 .push(detect::NewDetectService::layer(ConfigureHttpDetect));

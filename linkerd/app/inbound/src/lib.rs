@@ -92,15 +92,15 @@ impl<S> Inbound<S> {
     /// A helper for gateways to instrument policy checks.
     pub fn authorize_http<N>(
         &self,
-    ) -> impl svc::layer::Layer<N, Service = policy::NewAuthorizeHttp<N>> + Clone {
-        policy::NewAuthorizeHttp::layer(self.runtime.metrics.http_authz.clone())
+    ) -> impl svc::layer::Layer<N, Service = policy::NewHttpPolicy<N>> + Clone {
+        policy::NewHttpPolicy::layer(self.runtime.metrics.http_authz.clone())
     }
 
     /// A helper for gateways to instrument policy checks.
     pub fn authorize_tcp<N>(
         &self,
-    ) -> impl svc::layer::Layer<N, Service = policy::NewAuthorizeTcp<N>> + Clone {
-        policy::NewAuthorizeTcp::layer(self.runtime.metrics.tcp_authz.clone())
+    ) -> impl svc::layer::Layer<N, Service = policy::NewTcpPolicy<N>> + Clone {
+        policy::NewTcpPolicy::layer(self.runtime.metrics.tcp_authz.clone())
     }
 
     pub fn into_stack(self) -> svc::Stack<S> {
