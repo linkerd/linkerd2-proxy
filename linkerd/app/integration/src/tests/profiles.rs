@@ -52,6 +52,17 @@ impl TestBuilder {
         Self { routes, ..self }
     }
 
+    /// Don't add the default routes to the test server.
+    ///
+    /// Currently, no test actually *requires* this, but we may as well not add
+    /// them when they won't be used...
+    fn no_default_routes(self) -> Self {
+        Self {
+            default_routes: false,
+            ..self
+        }
+    }
+
     async fn run(self) -> Test {
         let (trace, _) = trace_init();
         let host = "profiles.test.svc.cluster.local";
@@ -62,59 +73,9 @@ impl TestBuilder {
             .route_fn("/load-profile", |_| {
                 Response::builder().status(201).body("".into()).unwrap()
             });
+
         if self.default_routes {
-            let counter = AtomicUsize::new(0);
-            let counter2 = AtomicUsize::new(0);
-            let counter3 = AtomicUsize::new(0);
-            srv = srv
-                .route_fn("/1.0/sleep", move |_req| {
-                    ::std::thread::sleep(Duration::from_secs(1));
-                    Response::builder()
-                        .status(200)
-                        .body("slept".into())
-                        .unwrap()
-                })
-                .route_async("/0.5", move |req| {
-                    let fail = counter.fetch_add(1, Ordering::Relaxed) % 2 == 0;
-                    async move {
-                        // Read the entire body before responding, so that the
-                        // client doesn't fail when writing it out.
-                        let _body = hyper::body::to_bytes(req.into_body()).await;
-                        tracing::debug!(body = ?_body.as_ref().map(|body| body.len()), "recieved body");
-                        Ok::<_, Error>(if fail {
-                            Response::builder().status(533).body("nope".into()).unwrap()
-                        } else {
-                            Response::builder()
-                                .status(200)
-                                .body("retried".into())
-                                .unwrap()
-                        })
-                    }
-                })
-                .route_fn("/0.5/sleep", move |_req| {
-                    ::std::thread::sleep(Duration::from_secs(1));
-                    if counter2.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
-                        Response::builder().status(533).body("nope".into()).unwrap()
-                    } else {
-                        Response::builder()
-                            .status(200)
-                            .body("retried".into())
-                            .unwrap()
-                    }
-                })
-                .route_fn("/0.5/100KB", move |_req| {
-                    if counter3.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
-                        Response::builder()
-                            .status(533)
-                            .body(vec![b'x'; 1024 * 100].into())
-                            .unwrap()
-                    } else {
-                        Response::builder()
-                            .status(200)
-                            .body("retried".into())
-                            .unwrap()
-                    }
-                });
+            srv = Self::add_default_routes(srv);
         };
 
         let srv = srv.run().await;
@@ -140,6 +101,73 @@ impl TestBuilder {
 
         let metrics = client::http1(proxy.admin, "localhost");
 
+        Self::load_profile(&client, &metrics).await;
+
+        Test {
+            metrics,
+            client,
+            _proxy: proxy,
+            port,
+            _guards: (dst_tx, profile_tx, trace),
+        }
+    }
+
+    fn add_default_routes(srv: server::Server) -> server::Server {
+        let counter = AtomicUsize::new(0);
+        let counter2 = AtomicUsize::new(0);
+        let counter3 = AtomicUsize::new(0);
+
+        srv.route_fn("/1.0/sleep", move |_req| {
+            ::std::thread::sleep(Duration::from_secs(1));
+            Response::builder()
+                .status(200)
+                .body("slept".into())
+                .unwrap()
+        })
+        .route_async("/0.5", move |req| {
+            let fail = counter.fetch_add(1, Ordering::Relaxed) % 2 == 0;
+            async move {
+                // Read the entire body before responding, so that the
+                // client doesn't fail when writing it out.
+                let _body = hyper::body::to_bytes(req.into_body()).await;
+                tracing::debug!(body = ?_body.as_ref().map(|body| body.len()), "recieved body");
+                Ok::<_, Error>(if fail {
+                    Response::builder().status(533).body("nope".into()).unwrap()
+                } else {
+                    Response::builder()
+                        .status(200)
+                        .body("retried".into())
+                        .unwrap()
+                })
+            }
+        })
+        .route_fn("/0.5/sleep", move |_req| {
+            ::std::thread::sleep(Duration::from_secs(1));
+            if counter2.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
+                Response::builder().status(533).body("nope".into()).unwrap()
+            } else {
+                Response::builder()
+                    .status(200)
+                    .body("retried".into())
+                    .unwrap()
+            }
+        })
+        .route_fn("/0.5/100KB", move |_req| {
+            if counter3.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
+                Response::builder()
+                    .status(533)
+                    .body(vec![b'x'; 1024 * 100].into())
+                    .unwrap()
+            } else {
+                Response::builder()
+                    .status(200)
+                    .body("retried".into())
+                    .unwrap()
+            }
+        })
+    }
+
+    async fn load_profile(client: &client::Client, metrics: &client::Client) {
         // Poll metrics until we recognize the profile is loaded...
         loop {
             assert_eq!(client.get("/load-profile").await, "");
@@ -149,14 +177,6 @@ impl TestBuilder {
             }
 
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        }
-
-        Test {
-            metrics,
-            client,
-            _proxy: proxy,
-            port,
-            _guards: (dst_tx, profile_tx, trace),
         }
     }
 }
@@ -563,5 +583,226 @@ mod http2 {
         // hang since the retried failure would have leaked the 100k window
         // capacity, preventing the successful response from being read.
         assert_eq!(test.client.get("/0.5/100KB").await, "retried")
+    }
+}
+
+mod grpc_retry {
+    use super::*;
+    use http::header::{HeaderMap, HeaderName, HeaderValue};
+    static GRPC_STATUS: HeaderName = HeaderName::from_static("grpc-status");
+    static GRPC_STATUS_OK: HeaderValue = HeaderValue::from_static("0");
+    static GRPC_STATUS_UNAVAILABLE: HeaderValue = HeaderValue::from_static("14");
+
+    /// Tests that a gRPC request is retried when a `grpc-status` code other
+    /// than `OK` is sent in the response headers.
+    #[tokio::test]
+    async fn retries_failure_in_headers() {
+        let retries = Arc::new(AtomicUsize::new(0));
+        let srv = server::http2().route_fn("/retry", {
+            let retries = retries.clone();
+            move |_| {
+                let success = retries.fetch_add(1, Ordering::Relaxed) > 0;
+                let header = if success {
+                    GRPC_STATUS_OK.clone()
+                } else {
+                    GRPC_STATUS_UNAVAILABLE.clone()
+                };
+                let rsp = Response::builder()
+                    .header(GRPC_STATUS.clone(), header)
+                    .status(200)
+                    .body(hyper::Body::empty())
+                    .unwrap();
+                tracing::debug!(headers = ?rsp.headers());
+                rsp
+            }
+        });
+
+        let test = TestBuilder::new(srv)
+            .with_profile_route(controller::route().request_path("/retry").retryable(true))
+            .no_default_routes()
+            .run()
+            .await;
+        let client = &test.client;
+
+        let res = client
+            .request(client.request_builder("/retry"))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.headers().get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
+
+        assert_eq!(retries.load(Ordering::Relaxed), 2);
+    }
+
+    /// Tests that a gRPC request is retried when a `grpc-status` code other
+    /// than `OK` is sent in the response's trailers.
+    ///
+    /// Reproduces https://github.com/linkerd/linkerd2/issues/7701.
+    #[tokio::test]
+    async fn retries_failure_in_trailers() {
+        let _trace = trace_init();
+
+        let retries = Arc::new(AtomicUsize::new(0));
+
+        let srv = server::http2().route_async("/retry", {
+            let retries = retries.clone();
+            move |_| {
+                let success = retries.fetch_add(1, Ordering::Relaxed) > 0;
+                async move {
+                    let status = if success {
+                        GRPC_STATUS_OK.clone()
+                    } else {
+                        GRPC_STATUS_UNAVAILABLE.clone()
+                    };
+                    let mut trailers = HeaderMap::with_capacity(1);
+                    trailers.insert(GRPC_STATUS.clone(), status);
+                    tracing::debug!(?trailers);
+                    let (mut tx, body) = hyper::body::Body::channel();
+                    tx.send_trailers(trailers).await.unwrap();
+                    Ok::<_, Error>(Response::builder().status(200).body(body).unwrap())
+                }
+            }
+        });
+
+        let test = TestBuilder::new(srv)
+            .with_profile_route(controller::route().request_path("/retry").retryable(true))
+            .no_default_routes()
+            .run()
+            .await;
+        let client = &test.client;
+
+        let res = client
+            .request(client.request_builder("/retry"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.headers().get(&GRPC_STATUS), None);
+
+        let mut body = res.into_body();
+        let trailers = trailers(&mut body).await;
+        assert_eq!(trailers.get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
+        assert_eq!(retries.load(Ordering::Relaxed), 2);
+    }
+
+    /// Tests that a gRPC request is not retried when the initial request
+    /// succeeds, and that the successful response's body is not eaten.
+    #[tokio::test]
+    async fn does_not_retry_success_in_trailers() {
+        let _trace = trace_init();
+
+        let retries = Arc::new(AtomicUsize::new(0));
+
+        let srv = server::http2().route_async("/retry", {
+            let retries = retries.clone();
+            move |_| {
+                retries.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    let mut trailers = HeaderMap::with_capacity(1);
+                    trailers.insert(GRPC_STATUS.clone(), GRPC_STATUS_OK.clone());
+                    tracing::debug!(?trailers);
+                    let (mut tx, body) = hyper::body::Body::channel();
+                    tx.send_data("hello world".into()).await.unwrap();
+                    tx.send_trailers(trailers).await.unwrap();
+                    Ok::<_, Error>(Response::builder().status(200).body(body).unwrap())
+                }
+            }
+        });
+
+        let test = TestBuilder::new(srv)
+            .with_profile_route(controller::route().request_path("/retry").retryable(true))
+            .no_default_routes()
+            .run()
+            .await;
+        let client = &test.client;
+
+        let res = client
+            .request(client.request_builder("/retry"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.headers().get(&GRPC_STATUS), None);
+
+        let mut body = res.into_body();
+
+        let data = data(&mut body).await;
+        assert_eq!(data, Bytes::from("hello world"));
+
+        let trailers = trailers(&mut body).await;
+        assert_eq!(trailers.get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
+        assert_eq!(retries.load(Ordering::Relaxed), 1);
+    }
+
+    /// Tests that when waiting for the response body's trailers, we won't drop
+    /// any DATA frames after the first one.
+    #[tokio::test]
+    async fn does_not_eat_multiple_data_frame_body() {
+        let _trace = trace_init();
+
+        let retries = Arc::new(AtomicUsize::new(0));
+
+        let srv = server::http2().route_async("/retry", {
+            let retries = retries.clone();
+            move |_| {
+                retries.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    let mut trailers = HeaderMap::with_capacity(1);
+                    trailers.insert(GRPC_STATUS.clone(), GRPC_STATUS_OK.clone());
+                    tracing::debug!(?trailers);
+                    let (mut tx, body) = hyper::body::Body::channel();
+                    tokio::spawn(async move {
+                        tx.send_data("hello".into()).await.unwrap();
+                        tx.send_data("world".into()).await.unwrap();
+                        tx.send_trailers(trailers).await.unwrap();
+                    });
+                    Ok::<_, Error>(Response::builder().status(200).body(body).unwrap())
+                }
+            }
+        });
+
+        let test = TestBuilder::new(srv)
+            .with_profile_route(controller::route().request_path("/retry").retryable(true))
+            .no_default_routes()
+            .run()
+            .await;
+        let client = &test.client;
+
+        let res = client
+            .request(client.request_builder("/retry"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.headers().get(&GRPC_STATUS), None);
+
+        let mut body = res.into_body();
+
+        let frame1 = data(&mut body).await;
+        assert_eq!(frame1, Bytes::from("hello"));
+
+        let frame2 = data(&mut body).await;
+        assert_eq!(frame2, Bytes::from("world"));
+
+        let trailers = trailers(&mut body).await;
+        assert_eq!(trailers.get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
+        assert_eq!(retries.load(Ordering::Relaxed), 1);
+    }
+
+    async fn data(body: &mut hyper::Body) -> Bytes {
+        let data = body
+            .data()
+            .await
+            .expect("body data frame must not be eaten")
+            .unwrap();
+        tracing::info!(?data);
+        data
+    }
+    async fn trailers(body: &mut hyper::Body) -> http::HeaderMap {
+        let trailers = body
+            .trailers()
+            .await
+            .expect("trailers future should not fail")
+            .expect("response should have trailers");
+        tracing::info!(?trailers);
+        trailers
     }
 }

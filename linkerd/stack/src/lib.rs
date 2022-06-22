@@ -19,7 +19,7 @@ mod map_target;
 pub mod monitor;
 pub mod new_service;
 mod on_service;
-mod proxy;
+pub mod proxy;
 mod result;
 mod router;
 mod switch_ready;
@@ -51,7 +51,7 @@ pub use self::{
 };
 pub use tower::{
     service_fn,
-    util::{future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},
+    util::{self, future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},
     Service,
 };
 
