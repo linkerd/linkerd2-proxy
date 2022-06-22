@@ -30,7 +30,6 @@ fn allow(protocol: Protocol) -> AllowPolicy {
         orig_dst_addr(),
         ServerPolicy {
             protocol,
-            authorizations: authzs(),
             meta: Arc::new(Meta::Resource {
                 group: "policy.linkerd.io".into(),
                 kind: "server".into(),
@@ -50,7 +49,7 @@ async fn detect_tls_opaque() {
         .with_stack(new_panic("detect stack must not be used"))
         .push_detect_tls(new_ok())
         .into_inner()
-        .new_service(Target(allow(Protocol::Opaque)))
+        .new_service(Target(allow(Protocol::Opaque(authzs()))))
         .oneshot(io)
         .await
         .expect("should succeed");
@@ -69,6 +68,8 @@ async fn detect_http_non_http() {
         }),
         policy: allow(Protocol::Detect {
             timeout: std::time::Duration::from_secs(10),
+            http: Arc::new([linkerd_server_policy::http::default(authzs())]),
+            tcp_authorizations: authzs(),
         }),
     };
 
@@ -98,6 +99,8 @@ async fn detect_http() {
         }),
         policy: allow(Protocol::Detect {
             timeout: std::time::Duration::from_secs(10),
+            http: Arc::new([linkerd_server_policy::http::default(authzs())]),
+            tcp_authorizations: authzs(),
         }),
     };
 
@@ -124,7 +127,7 @@ async fn hinted_http1() {
             client_id: Some(client_id()),
             negotiated_protocol: None,
         }),
-        policy: allow(Protocol::Http1),
+        policy: allow(Protocol::Http1(vec![].into())),
     };
 
     let (ior, mut iow) = io::duplex(100);
@@ -150,7 +153,7 @@ async fn hinted_http1_supports_http2() {
             client_id: Some(client_id()),
             negotiated_protocol: None,
         }),
-        policy: allow(Protocol::Http1),
+        policy: allow(Protocol::Http1(vec![].into())),
     };
 
     let (ior, mut iow) = io::duplex(100);
@@ -176,7 +179,7 @@ async fn hinted_http2() {
             client_id: Some(client_id()),
             negotiated_protocol: None,
         }),
-        policy: allow(Protocol::Http2),
+        policy: allow(Protocol::Http2(vec![].into())),
     };
 
     let (ior, _) = io::duplex(100);

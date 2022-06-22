@@ -100,7 +100,6 @@ pub mod proto {
                 labels,
                 authentication,
                 networks,
-                ..
             } = proto;
 
             if networks.is_empty() {
@@ -119,7 +118,7 @@ pub mod proto {
                 .collect::<Result<Vec<_>, InvalidAuthz>>()?;
 
             let authn = {
-                let api::Authn { permit, .. } =
+                let api::Authn { permit } =
                     authentication.ok_or(InvalidAuthz::MissingAuthentications)?;
                 match permit.ok_or(InvalidAuthz::MissingAuthentications)? {
                     api::authn::Permit::Unauthenticated(_) => Authentication::Unauthenticated,

@@ -126,8 +126,7 @@ mod tests {
         let (io, _) = io::duplex(1);
         let policies = Store::for_test(
             ServerPolicy {
-                protocol: linkerd_server_policy::Protocol::Opaque,
-                authorizations: Arc::new([Authorization {
+                protocol: linkerd_server_policy::Protocol::Opaque(Arc::new([Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![Default::default()],
                     meta: Arc::new(Meta::Resource {
@@ -135,7 +134,7 @@ mod tests {
                         kind: "serverauthorization".into(),
                         name: "testsaz".into(),
                     }),
-                }]),
+                }])),
                 meta: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "server".into(),

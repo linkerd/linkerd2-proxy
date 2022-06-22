@@ -291,6 +291,10 @@ impl<T: Param<tls::ConditionalServerTls>> ExtractParam<errors::respond::EmitHead
 
 impl errors::HttpRescue<Error> for Rescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        if let Some(cause) = errors::cause_ref::<inbound::policy::HttpRouteNotFound>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::not_found(cause));
+        }
+
         if let Some(cause) = errors::cause_ref::<inbound::policy::HttpRouteUnauthorized>(&*error) {
             return Ok(errors::SyntheticHttpResponse::permission_denied(cause));
         }

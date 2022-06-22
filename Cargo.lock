@@ -1481,7 +1481,9 @@ dependencies = [
 name = "linkerd-server-policy"
 version = "0.1.0"
 dependencies = [
+ "http",
  "ipnet",
+ "linkerd-http-route",
  "linkerd2-proxy-api",
  "quickcheck",
  "thiserror",
