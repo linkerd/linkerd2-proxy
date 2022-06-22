@@ -73,7 +73,7 @@ impl<B: Body> WithTrailers<B> {
             // body has data; stop waiting for trailers
             body.first_data = Some(data?);
 
-            // peek to see if there's immediately a trailers frame, and grab
+            // Peek to see if there's immediately a trailers frame, and grab
             // it if so. otherwise, bail.
             if let Some(trailers) = body.inner.trailers().now_or_never() {
                 body.trailers = trailers?;
