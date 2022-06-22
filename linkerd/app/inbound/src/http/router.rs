@@ -235,7 +235,7 @@ impl<C> Inbound<C> {
                 // minimize it's type footprint with a Box.
                 .push(svc::ArcNewService::layer())
                 .push(svc::NewRouter::layer(LogicalPerRequest::from))
-                .push(policy::NewAuthorizeHttp::layer(rt.metrics.http_authz.clone()))
+                .push(policy::NewHttpPolicy::layer(rt.metrics.http_authz.clone()))
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()
