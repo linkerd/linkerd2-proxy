@@ -3,5 +3,5 @@
 
 pub mod replay;
 pub mod with_trailers;
-pub use self::replay::ReplayBody;
-pub use self::with_trailers::WithTrailers;
+
+pub use self::{replay::ReplayBody, with_trailers::WithTrailers};
