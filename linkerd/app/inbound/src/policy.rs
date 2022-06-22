@@ -1,14 +1,14 @@
 mod api;
-mod authorize;
 mod config;
 pub mod defaults;
+mod http;
 mod store;
+mod tcp;
 #[cfg(test)]
 mod tests;
 
-pub use self::authorize::{NewAuthorizeHttp, NewAuthorizeTcp};
-pub use self::config::Config;
 pub(crate) use self::store::Store;
+pub use self::{config::Config, http::NewHttpPolicy, tcp::NewTcpPolicy};
 
 use linkerd_app_core::metrics::ServerAuthzLabels;
 pub use linkerd_app_core::metrics::ServerLabel;
@@ -26,7 +26,7 @@ use thiserror::Error;
 use tokio::sync::watch;
 
 #[derive(Clone, Debug, Error)]
-#[error("unauthorized connection on {}/{}", server.kind, server.name)]
+#[error("unauthorized connection on {}/{}", server.kind(), server.name())]
 pub struct DeniedUnauthorized {
     server: Arc<Meta>,
 }
@@ -70,12 +70,8 @@ impl From<DefaultPolicy> for ServerPolicy {
             DefaultPolicy::Allow(p) => p,
             DefaultPolicy::Deny => ServerPolicy {
                 protocol: Protocol::Opaque,
-                authorizations: vec![],
-                meta: Arc::new(Meta {
-                    group: "default".into(),
-                    kind: "default".into(),
-                    name: "deny".into(),
-                }),
+                authorizations: vec![].into(),
+                meta: Meta::new_default("deny"),
             },
         }
     }
@@ -97,7 +93,7 @@ impl AllowPolicy {
 
     #[inline]
     pub(crate) fn protocol(&self) -> Protocol {
-        self.server.borrow().protocol
+        self.server.borrow().protocol.clone()
     }
 
     #[inline]
@@ -107,17 +103,17 @@ impl AllowPolicy {
 
     #[inline]
     pub fn group(&self) -> String {
-        self.server.borrow().meta.group.to_string()
+        self.server.borrow().meta.group().to_string()
     }
 
     #[inline]
     pub fn kind(&self) -> String {
-        self.server.borrow().meta.kind.to_string()
+        self.server.borrow().meta.kind().to_string()
     }
 
     #[inline]
     pub fn name(&self) -> String {
-        self.server.borrow().meta.name.to_string()
+        self.server.borrow().meta.name().to_string()
     }
 
     #[inline]
@@ -203,7 +199,7 @@ impl ServerPermit {
     fn new(dst: OrigDstAddr, server: &ServerPolicy, authz: &Authorization) -> Self {
         Self {
             dst,
-            protocol: server.protocol,
+            protocol: server.protocol.clone(),
             labels: ServerAuthzLabels {
                 authz: authz.meta.clone(),
                 server: ServerLabel(server.meta.clone()),

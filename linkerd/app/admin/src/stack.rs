@@ -96,7 +96,7 @@ impl Config {
         let admin = svc::stack(move |_| admin.clone())
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
             .push_map_target(|(permit, http)| Permitted { permit, http })
-            .push(inbound::policy::NewAuthorizeHttp::layer(metrics.http_authz.clone()))
+            .push(inbound::policy::NewHttpPolicy::layer(metrics.http_authz.clone()))
             .push(Rescue::layer())
             .push_on_service(http::BoxResponse::layer())
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))

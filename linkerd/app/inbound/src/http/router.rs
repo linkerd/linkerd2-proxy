@@ -235,7 +235,7 @@ impl<C> Inbound<C> {
                 // minimize it's type footprint with a Box.
                 .push(svc::ArcNewService::layer())
                 .push(svc::NewRouter::layer(LogicalPerRequest::from))
-                .push(policy::NewAuthorizeHttp::layer(rt.metrics.http_authz.clone()))
+                .push(policy::NewHttpPolicy::layer(rt.metrics.http_authz.clone()))
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()
@@ -255,27 +255,27 @@ where
         let labels = vec![
             (
                 "srv_group".to_string(),
-                permit.labels.server.0.group.to_string(),
+                permit.labels.server.0.group().to_string(),
             ),
             (
                 "srv_kind".to_string(),
-                permit.labels.server.0.kind.to_string(),
+                permit.labels.server.0.kind().to_string(),
             ),
             (
                 "srv_name".to_string(),
-                permit.labels.server.0.name.to_string(),
+                permit.labels.server.0.name().to_string(),
             ),
             (
                 "authz_group".to_string(),
-                permit.labels.authz.group.to_string(),
+                permit.labels.authz.group().to_string(),
             ),
             (
                 "authz_kind".to_string(),
-                permit.labels.authz.kind.to_string(),
+                permit.labels.authz.kind().to_string(),
             ),
             (
                 "authz_name".to_string(),
-                permit.labels.authz.name.to_string(),
+                permit.labels.authz.name().to_string(),
             ),
         ];
 
