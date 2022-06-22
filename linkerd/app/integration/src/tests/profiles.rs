@@ -680,11 +680,7 @@ mod grpc_retry {
         assert_eq!(res.headers().get(&GRPC_STATUS), None);
 
         let mut body = res.into_body();
-        let trailers = body
-            .trailers()
-            .await
-            .expect("trailers future should not fail")
-            .expect("response should have trailers");
+        let trailers = trailers(&mut body).await;
         assert_eq!(trailers.get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
         assert_eq!(retries.load(Ordering::Relaxed), 2);
     }
@@ -728,19 +724,85 @@ mod grpc_retry {
         assert_eq!(res.headers().get(&GRPC_STATUS), None);
 
         let mut body = res.into_body();
-        let chunk = body
+
+        let data = data(&mut body).await;
+        assert_eq!(data, Bytes::from("hello world"));
+
+        let trailers = trailers(&mut body).await;
+        assert_eq!(trailers.get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
+        assert_eq!(retries.load(Ordering::Relaxed), 1);
+    }
+
+    /// Tests that when waiting for the response body's trailers, we won't drop
+    /// any DATA frames after the first one.
+    #[tokio::test]
+    async fn does_not_eat_multiple_data_frame_body() {
+        let _trace = trace_init();
+
+        let retries = Arc::new(AtomicUsize::new(0));
+
+        let srv = server::http2().route_async("/retry", {
+            let retries = retries.clone();
+            move |_| {
+                retries.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    let mut trailers = HeaderMap::with_capacity(1);
+                    trailers.insert(GRPC_STATUS.clone(), GRPC_STATUS_OK.clone());
+                    tracing::debug!(?trailers);
+                    let (mut tx, body) = hyper::body::Body::channel();
+                    tokio::spawn(async move {
+                        tx.send_data("hello".into()).await.unwrap();
+                        tx.send_data("world".into()).await.unwrap();
+                        tx.send_trailers(trailers).await.unwrap();
+                    });
+                    Ok::<_, Error>(Response::builder().status(200).body(body).unwrap())
+                }
+            }
+        });
+
+        let test = TestBuilder::new(srv)
+            .with_profile_route(controller::route().request_path("/retry").retryable(true))
+            .no_default_routes()
+            .run()
+            .await;
+        let client = &test.client;
+
+        let res = client
+            .request(client.request_builder("/retry"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.headers().get(&GRPC_STATUS), None);
+
+        let mut body = res.into_body();
+
+        let frame1 = data(&mut body).await;
+        assert_eq!(frame1, Bytes::from("hello"));
+
+        let frame2 = data(&mut body).await;
+        assert_eq!(frame2, Bytes::from("world"));
+
+        let trailers = trailers(&mut body).await;
+        assert_eq!(trailers.get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
+        assert_eq!(retries.load(Ordering::Relaxed), 1);
+    }
+
+    async fn data(body: &mut hyper::Body) -> Bytes {
+        let data = body
             .data()
             .await
-            .expect("body data must not be eaten")
+            .expect("body data frame must not be eaten")
             .unwrap();
-        assert_eq!(chunk, Bytes::from("hello world"));
-
+        tracing::info!(?data);
+        data
+    }
+    async fn trailers(body: &mut hyper::Body) -> http::HeaderMap {
         let trailers = body
             .trailers()
             .await
             .expect("trailers future should not fail")
             .expect("response should have trailers");
-        assert_eq!(trailers.get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
-        assert_eq!(retries.load(Ordering::Relaxed), 1);
+        tracing::info!(?trailers);
+        trailers
     }
 }
