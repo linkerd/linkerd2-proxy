@@ -1,6 +1,6 @@
 use crate::{
     metrics::authz::TcpAuthzMetrics,
-    policy::{AllowPolicy, DeniedUnauthorized, ServerPermit},
+    policy::{AllowPolicy, ServerPermit, ServerUnauthorized},
 };
 use futures::future;
 use linkerd_app_core::{
@@ -24,7 +24,7 @@ pub struct NewTcpPolicy<N> {
 #[derive(Clone, Debug)]
 pub enum TcpPolicy<S> {
     Authorized(Authorized<S>),
-    Unauthorized(Unauthorized),
+    Unauthorized(ServerUnauthorized),
 }
 
 #[derive(Clone, Debug)]
@@ -34,11 +34,6 @@ pub struct Authorized<S> {
     client: Remote<ClientAddr>,
     tls: tls::ConditionalServerTls,
     metrics: TcpAuthzMetrics,
-}
-
-#[derive(Clone, Debug)]
-pub struct Unauthorized {
-    deny: DeniedUnauthorized,
 }
 
 // === impl NewTcpPolicy ===
@@ -87,15 +82,16 @@ where
                 })
             }
             Err(deny) => {
+                let meta = policy.meta();
                 tracing::info!(
-                    server.group = %policy.group(),
-                    server.kind = %policy.kind(),
-                    server.name = %policy.name(),
+                    server.group = %meta.group(),
+                    server.kind = %meta.kind(),
+                    server.name = %meta.name(),
                     ?tls, %client,
                     "Connection denied"
                 );
                 self.metrics.deny(&policy, tls);
-                TcpPolicy::Unauthorized(Unauthorized { deny })
+                TcpPolicy::Unauthorized(deny)
             }
         }
     }
@@ -124,9 +120,7 @@ where
             }
 
             // If connections are not authorized, fail it immediately.
-            Self::Unauthorized(Unauthorized { deny }) => {
-                task::Poll::Ready(Err(deny.clone().into()))
-            }
+            Self::Unauthorized(deny) => task::Poll::Ready(Err(deny.clone().into())),
         }
     }
 
@@ -157,10 +151,11 @@ where
                     res = &mut call => return res.map_err(Into::into),
                     _ = policy.changed() => {
                         if let Err(denied) = policy.check_authorized(client, &tls) {
+                            let meta = policy.meta();
                             tracing::info!(
-                                server.group = %policy.group(),
-                                server.kind = %policy.kind(),
-                                server.name = %policy.name(),
+                                server.group = %meta.group(),
+                                server.kind = %meta.kind(),
+                                server.name = %meta.name(),
                                 ?tls,
                                 %client,
                                 "Connection terminated due to policy change",

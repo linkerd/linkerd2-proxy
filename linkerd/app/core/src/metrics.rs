@@ -68,7 +68,7 @@ pub struct InboundEndpointLabels {
     pub tls: tls::ConditionalServerTls,
     pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
-    pub policy: ServerAuthzLabels,
+    pub policy: RouteAuthzLabels,
 }
 
 /// A label referencing an inbound `Server` (i.e. for policy).
@@ -79,6 +79,20 @@ pub struct ServerLabel(pub Arc<policy::Meta>);
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerAuthzLabels {
     pub server: ServerLabel,
+    pub authz: Arc<policy::Meta>,
+}
+
+/// Labels referencing an inbound route.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct RouteLabels {
+    pub server: ServerLabel,
+    pub route: Arc<policy::Meta>,
+}
+
+/// Labels referencing an inbound route and authorization.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct RouteAuthzLabels {
+    pub route: RouteLabels,
     pub authz: Arc<policy::Meta>,
 }
 
@@ -322,6 +336,32 @@ impl FmtLabels for ServerAuthzLabels {
             self.authz.group(),
             self.authz.kind(),
             self.authz.name()
+        )
+    }
+}
+
+impl FmtLabels for RouteLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.server.fmt_labels(f)?;
+        write!(
+            f,
+            ",route_group=\"{}\",route_kind=\"{}\",route_name=\"{}\"",
+            self.route.group(),
+            self.route.kind(),
+            self.route.name(),
+        )
+    }
+}
+
+impl FmtLabels for RouteAuthzLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.route.fmt_labels(f)?;
+        write!(
+            f,
+            ",authz_group=\"{}\",authz_kind=\"{}\",authz_name=\"{}\"",
+            self.authz.group(),
+            self.authz.kind(),
+            self.authz.name(),
         )
     }
 }
