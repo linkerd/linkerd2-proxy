@@ -45,7 +45,7 @@ struct ConnectionMeta {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("unauthorized request on route kind={:?} name={:?}", .0.kind(), .0.name())]
+#[error("unauthorized request on route {}/{}", .0.kind(), .0.name())]
 pub struct HttpRouteUnauthorized(Arc<Meta>);
 
 // === impl NewHttpPolicy ===
