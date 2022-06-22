@@ -29,7 +29,7 @@ async fn h2_exercise_goaways_connections() {
     let body = Bytes::from(vec![b'1'; RESPONSE_SIZE]);
     let srv = server::http2()
         .route_fn("/", move |_req| {
-            Response::builder().body(body.clone()).unwrap()
+            Response::builder().body(body.clone().into()).unwrap()
         })
         .run()
         .await;
@@ -79,7 +79,7 @@ async fn http1_closes_idle_connections() {
             // Trigger a shutdown signal while the request is made
             // but a response isn't returned yet.
             shdn.lock().take().expect("only 1 request").signal();
-            Response::builder().body(body.clone()).unwrap()
+            Response::builder().body(body.clone().into()).unwrap()
         })
         .run()
         .await;
