@@ -77,13 +77,18 @@ impl<B: Body> WithTrailers<B> {
 
             // Peek to see if there's immediately a trailers frame, and grab
             // it if so. Otherwise, bail.
+            // XXX(eliza): the documentation for the `http::Body` trait says
+            // that `poll_trailers` should only be called after `poll_data`
+            // returns `None`...but, in practice, I'm fairly sure that this just
+            // means that it *will not return `Ready`* until there are no data
+            // frames left, which is fine for us here, because we `now_or_never`
+            // it.
             body.trailers = body.inner.trailers().now_or_never();
-
-            return http::Response::from_parts(parts, body);
+        } else {
+            // Okay, `poll_data` has returned `None`, so there are no data
+            // frames left. Let's see if there's trailers...
+            body.trailers = Some(body.inner.trailers().await);
         }
-
-        // Okay, let's see if there's trailers...
-        body.trailers = Some(body.inner.trailers().await);
 
         http::Response::from_parts(parts, body)
     }
