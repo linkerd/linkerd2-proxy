@@ -52,6 +52,7 @@ pub struct AllowPolicy {
     server: Cached<watch::Receiver<ServerPolicy>>,
 }
 
+// Describes an authorized non-HTTP connection.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ServerPermit {
     pub dst: OrigDstAddr,
@@ -59,8 +60,9 @@ pub struct ServerPermit {
     pub labels: ServerAuthzLabels,
 }
 
+// Describes an authorized HTTP request.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RoutePermit {
+pub struct HTTPRoutePermit {
     pub dst: OrigDstAddr,
     pub labels: RouteAuthzLabels,
 }

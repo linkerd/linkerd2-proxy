@@ -52,7 +52,7 @@ struct Http {
 
 #[derive(Clone, Debug)]
 struct Permitted {
-    permit: inbound::policy::RoutePermit,
+    permit: inbound::policy::HTTPRoutePermit,
     http: Http,
 }
 
