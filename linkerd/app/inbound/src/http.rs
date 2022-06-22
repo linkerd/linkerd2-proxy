@@ -212,17 +212,17 @@ pub mod fuzz {
             let (policy, _) = policy::AllowPolicy::for_test(
                 self.param(),
                 policy::ServerPolicy {
-                    protocol: policy::Protocol::Http1,
-                    authorizations: vec![policy::Authorization {
-                        authentication: policy::Authentication::Unauthenticated,
-                        networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
-                        meta: Arc::new(policy::Meta::Resource {
-                            group: "policy.linkerd.io".into(),
-                            kind: "server".into(),
-                            name: "testsaz".into(),
-                        }),
-                    }]
-                    .into(),
+                    protocol: policy::Protocol::Http1(Arc::new([
+                        linkerd_server_policy::http::default(Arc::new([policy::Authorization {
+                            authentication: policy::Authentication::Unauthenticated,
+                            networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
+                            meta: Arc::new(policy::Meta::Resource {
+                                group: "policy.linkerd.io".into(),
+                                kind: "server".into(),
+                                name: "testsaz".into(),
+                            }),
+                        }])),
+                    ])),
                     meta: Arc::new(policy::Meta::Resource {
                         group: "policy.linkerd.io".into(),
                         kind: "server".into(),

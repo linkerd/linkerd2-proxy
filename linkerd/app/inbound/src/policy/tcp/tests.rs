@@ -10,17 +10,18 @@ pub(crate) struct MockSvc;
 #[tokio::test(flavor = "current_thread")]
 async fn unauthenticated_allowed() {
     let policy = ServerPolicy {
-        protocol: Protocol::Opaque,
-        authorizations: vec![Authorization {
-            authentication: Authentication::Unauthenticated,
-            networks: vec!["192.0.2.0/24".parse().unwrap()],
-            meta: Arc::new(Meta::Resource {
-                group: "policy.linkerd.io".into(),
-                kind: "serverauthorization".into(),
-                name: "unauth".into(),
-            }),
-        }]
-        .into(),
+        protocol: Protocol::Opaque(
+            vec![Authorization {
+                authentication: Authentication::Unauthenticated,
+                networks: vec!["192.0.2.0/24".parse().unwrap()],
+                meta: Arc::new(Meta::Resource {
+                    group: "policy.linkerd.io".into(),
+                    kind: "serverauthorization".into(),
+                    name: "unauth".into(),
+                }),
+            }]
+            .into(),
+        ),
         meta: Arc::new(Meta::Resource {
             group: "policy.linkerd.io".into(),
             kind: "server".into(),
@@ -55,20 +56,21 @@ async fn unauthenticated_allowed() {
 #[tokio::test(flavor = "current_thread")]
 async fn authenticated_identity() {
     let policy = ServerPolicy {
-        protocol: Protocol::Opaque,
-        authorizations: vec![Authorization {
-            authentication: Authentication::TlsAuthenticated {
-                suffixes: vec![],
-                identities: vec![client_id().to_string()].into_iter().collect(),
-            },
-            networks: vec!["192.0.2.0/24".parse().unwrap()],
-            meta: Arc::new(Meta::Resource {
-                group: "policy.linkerd.io".into(),
-                kind: "serverauthorization".into(),
-                name: "tls-auth".into(),
-            }),
-        }]
-        .into(),
+        protocol: Protocol::Opaque(
+            vec![Authorization {
+                authentication: Authentication::TlsAuthenticated {
+                    suffixes: vec![],
+                    identities: vec![client_id().to_string()].into_iter().collect(),
+                },
+                networks: vec!["192.0.2.0/24".parse().unwrap()],
+                meta: Arc::new(Meta::Resource {
+                    group: "policy.linkerd.io".into(),
+                    kind: "serverauthorization".into(),
+                    name: "tls-auth".into(),
+                }),
+            }]
+            .into(),
+        ),
         meta: Arc::new(Meta::Resource {
             group: "policy.linkerd.io".into(),
             kind: "server".into(),
@@ -117,20 +119,21 @@ async fn authenticated_identity() {
 #[tokio::test(flavor = "current_thread")]
 async fn authenticated_suffix() {
     let policy = ServerPolicy {
-        protocol: Protocol::Opaque,
-        authorizations: vec![Authorization {
-            authentication: Authentication::TlsAuthenticated {
-                identities: BTreeSet::default(),
-                suffixes: vec![Suffix::from(vec!["cluster".into(), "local".into()])],
-            },
-            networks: vec!["192.0.2.0/24".parse().unwrap()],
-            meta: Arc::new(Meta::Resource {
-                group: "policy.linkerd.io".into(),
-                kind: "serverauthorization".into(),
-                name: "tls-auth".into(),
-            }),
-        }]
-        .into(),
+        protocol: Protocol::Opaque(
+            vec![Authorization {
+                authentication: Authentication::TlsAuthenticated {
+                    identities: BTreeSet::default(),
+                    suffixes: vec![Suffix::from(vec!["cluster".into(), "local".into()])],
+                },
+                networks: vec!["192.0.2.0/24".parse().unwrap()],
+                meta: Arc::new(Meta::Resource {
+                    group: "policy.linkerd.io".into(),
+                    kind: "serverauthorization".into(),
+                    name: "tls-auth".into(),
+                }),
+            }]
+            .into(),
+        ),
         meta: Arc::new(Meta::Resource {
             group: "policy.linkerd.io".into(),
             kind: "server".into(),
@@ -178,17 +181,18 @@ async fn authenticated_suffix() {
 #[tokio::test(flavor = "current_thread")]
 async fn tls_unauthenticated() {
     let policy = ServerPolicy {
-        protocol: Protocol::Opaque,
-        authorizations: vec![Authorization {
-            authentication: Authentication::TlsUnauthenticated,
-            networks: vec!["192.0.2.0/24".parse().unwrap()],
-            meta: Arc::new(Meta::Resource {
-                group: "policy.linkerd.io".into(),
-                kind: "serverauthorization".into(),
-                name: "tls-unauth".into(),
-            }),
-        }]
-        .into(),
+        protocol: Protocol::Opaque(
+            vec![Authorization {
+                authentication: Authentication::TlsUnauthenticated,
+                networks: vec!["192.0.2.0/24".parse().unwrap()],
+                meta: Arc::new(Meta::Resource {
+                    group: "policy.linkerd.io".into(),
+                    kind: "serverauthorization".into(),
+                    name: "tls-unauth".into(),
+                }),
+            }]
+            .into(),
+        ),
         meta: Arc::new(Meta::Resource {
             group: "policy.linkerd.io".into(),
             kind: "server".into(),

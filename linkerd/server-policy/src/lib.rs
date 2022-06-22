@@ -1,26 +1,40 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
+use std::{borrow::Cow, hash::Hash, sync::Arc, time};
+
 pub mod authz;
+pub mod grpc;
+pub mod http;
 
 pub use self::authz::{Authentication, Authorization};
-use std::{borrow::Cow, hash::Hash, sync::Arc, time};
+pub use linkerd_http_route as route;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerPolicy {
     pub protocol: Protocol,
-    pub authorizations: Arc<[Authorization]>,
     pub meta: Arc<Meta>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Protocol {
-    Detect { timeout: time::Duration },
-    Http1,
-    Http2,
-    Grpc,
-    Opaque,
-    Tls,
+    Detect {
+        http: Arc<[http::Route]>,
+        timeout: time::Duration,
+        tcp_authorizations: Arc<[Authorization]>,
+    },
+    Http1(Arc<[http::Route]>),
+    Http2(Arc<[http::Route]>),
+    Grpc(Arc<[grpc::Route]>),
+    Tls(Arc<[Authorization]>),
+    Opaque(Arc<[Authorization]>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct RoutePolicy {
+    pub meta: Arc<Meta>,
+    pub authorizations: Arc<[Authorization]>,
+    // TODO pub filters: Vec<T>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -109,42 +123,43 @@ pub mod proto {
         type Error = InvalidServer;
 
         fn try_from(proto: api::Server) -> Result<Self, Self::Error> {
+            let authorizations = authz::proto::mk_authorizations(proto.authorizations)?;
+
+            // TODO support non-default routes
             let protocol = match proto
                 .protocol
                 .and_then(|api::ProxyProtocol { kind }| kind)
                 .ok_or(InvalidServer::MissingProxyProtocol)?
             {
-                api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect {
-                    timeout, ..
-                }) => Protocol::Detect {
-                    timeout: timeout
-                        .ok_or(InvalidServer::MissingDetectTimeout)?
-                        .try_into()
-                        .map_err(InvalidServer::NegativeDetectTimeout)?,
-                },
+                api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect { timeout }) => {
+                    Protocol::Detect {
+                        http: Arc::new([http::default(authorizations.clone())]),
+                        timeout: timeout
+                            .ok_or(InvalidServer::MissingDetectTimeout)?
+                            .try_into()
+                            .map_err(InvalidServer::NegativeDetectTimeout)?,
+                        tcp_authorizations: authorizations,
+                    }
+                }
 
                 api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { .. }) => {
-                    Protocol::Http1
+                    Protocol::Http1(Arc::new([http::default(authorizations)]))
                 }
 
                 api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 { .. }) => {
-                    Protocol::Http2
+                    Protocol::Http2(Arc::new([http::default(authorizations)]))
                 }
 
-                api::proxy_protocol::Kind::Grpc(api::proxy_protocol::Grpc { .. }) => Protocol::Grpc,
+                api::proxy_protocol::Kind::Grpc(api::proxy_protocol::Grpc { .. }) => {
+                    Protocol::Grpc(Arc::new([grpc::default(authorizations)]))
+                }
 
-                api::proxy_protocol::Kind::Tls(_) => Protocol::Tls,
-                api::proxy_protocol::Kind::Opaque(_) => Protocol::Opaque,
+                api::proxy_protocol::Kind::Tls(_) => Protocol::Tls(authorizations),
+                api::proxy_protocol::Kind::Opaque(_) => Protocol::Opaque(authorizations),
             };
 
-            let authorizations = authz::proto::mk_authorizations(proto.authorizations)?;
-
             let meta = Meta::try_new_with_default(proto.labels, "policy.linkerd.io", "server")?;
-            Ok(ServerPolicy {
-                protocol,
-                authorizations,
-                meta,
-            })
+            Ok(ServerPolicy { protocol, meta })
         }
     }
 

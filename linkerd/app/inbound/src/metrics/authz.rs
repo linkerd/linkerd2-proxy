@@ -17,6 +17,9 @@ metrics! {
     inbound_http_authz_deny_total: Counter {
         "The total number of inbound HTTP requests that could not be processed due to a proxy error."
     },
+    inbound_http_route_not_found_total: Counter {
+        "The total number of inbound HTTP requests that could not be associated with a route"
+    },
 
     inbound_tcp_authz_allow_total: Counter {
         "The total number of inbound TCP connections that were authorized"
@@ -39,6 +42,7 @@ pub(crate) struct TcpAuthzMetrics(Arc<TcpInner>);
 struct HttpInner {
     allow: Mutex<HashMap<RouteAuthzKey, Counter>>,
     deny: Mutex<HashMap<RouteKey, Counter>>,
+    route_not_found: Mutex<HashMap<ServerKey, Counter>>,
 }
 
 #[derive(Debug, Default)]
@@ -68,6 +72,20 @@ impl HttpAuthzMetrics {
             .allow
             .lock()
             .entry(RouteAuthzKey::from_permit(permit, tls))
+            .or_default()
+            .incr();
+    }
+
+    pub fn route_not_found(
+        &self,
+        labels: ServerLabel,
+        dst: OrigDstAddr,
+        tls: tls::ConditionalServerTls,
+    ) {
+        self.0
+            .route_not_found
+            .lock()
+            .entry(ServerKey::new(labels, dst, tls))
             .or_default()
             .incr();
     }
@@ -108,6 +126,19 @@ impl FmtMetrics for HttpAuthzMetrics {
             )?;
         }
         drop(deny);
+
+        let route_not_found = self.0.route_not_found.lock();
+        if !route_not_found.is_empty() {
+            inbound_http_route_not_found_total.fmt_help(f)?;
+            inbound_http_route_not_found_total.fmt_scopes(
+                f,
+                route_not_found
+                    .iter()
+                    .map(|(k, c)| ((k.target, (&k.labels, TlsAccept(&k.tls))), c)),
+                |c| c,
+            )?;
+        }
+        drop(route_not_found);
 
         Ok(())
     }
