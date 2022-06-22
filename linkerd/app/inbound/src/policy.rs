@@ -62,7 +62,7 @@ pub struct ServerPermit {
 
 // Describes an authorized HTTP request.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct HTTPRoutePermit {
+pub struct HttpRoutePermit {
     pub dst: OrigDstAddr,
     pub labels: RouteAuthzLabels,
 }

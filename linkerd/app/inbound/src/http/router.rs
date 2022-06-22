@@ -16,7 +16,7 @@ use tracing::{debug, debug_span};
 pub struct Http {
     addr: Remote<ServerAddr>,
     settings: http::client::Settings,
-    permit: policy::HTTPRoutePermit,
+    permit: policy::HttpRoutePermit,
 }
 
 /// Builds `Logical` targets for each HTTP request.
@@ -24,7 +24,7 @@ pub struct Http {
 struct LogicalPerRequest {
     server: Remote<ServerAddr>,
     tls: tls::ConditionalServerTls,
-    permit: policy::HTTPRoutePermit,
+    permit: policy::HttpRoutePermit,
     labels: tap::Labels,
 }
 
@@ -36,7 +36,7 @@ struct Logical {
     addr: Remote<ServerAddr>,
     http: http::Version,
     tls: tls::ConditionalServerTls,
-    permit: policy::HTTPRoutePermit,
+    permit: policy::HttpRoutePermit,
     labels: tap::Labels,
 }
 
@@ -246,12 +246,12 @@ impl<C> Inbound<C> {
 
 // === impl LogicalPerRequest ===
 
-impl<T> From<(policy::HTTPRoutePermit, T)> for LogicalPerRequest
+impl<T> From<(policy::HttpRoutePermit, T)> for LogicalPerRequest
 where
     T: Param<Remote<ServerAddr>>,
     T: Param<tls::ConditionalServerTls>,
 {
-    fn from((permit, t): (policy::HTTPRoutePermit, T)) -> Self {
+    fn from((permit, t): (policy::HttpRoutePermit, T)) -> Self {
         let labels = [
             ("srv", &permit.labels.route.server.0),
             ("route", &permit.labels.route.route),

@@ -1,4 +1,4 @@
-use crate::policy::{AllowPolicy, HTTPRoutePermit, ServerPermit};
+use crate::policy::{AllowPolicy, HttpRoutePermit, ServerPermit};
 use linkerd_app_core::{
     metrics::{
         metrics, Counter, FmtLabels, FmtMetrics, RouteAuthzLabels, RouteLabels, ServerAuthzLabels,
@@ -63,7 +63,7 @@ type RouteAuthzKey = Key<RouteAuthzLabels>;
 // === impl HttpAuthzMetrics ===
 
 impl HttpAuthzMetrics {
-    pub fn allow(&self, permit: &HTTPRoutePermit, tls: tls::ConditionalServerTls) {
+    pub fn allow(&self, permit: &HttpRoutePermit, tls: tls::ConditionalServerTls) {
         self.0
             .allow
             .lock()
@@ -196,7 +196,7 @@ impl ServerKey {
 }
 
 impl RouteAuthzKey {
-    fn from_permit(permit: &HTTPRoutePermit, tls: tls::ConditionalServerTls) -> Self {
+    fn from_permit(permit: &HttpRoutePermit, tls: tls::ConditionalServerTls) -> Self {
         Self::new(permit.labels.clone(), permit.dst, tls)
     }
 }
