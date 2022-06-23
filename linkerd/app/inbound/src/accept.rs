@@ -56,8 +56,7 @@ impl<N> Inbound<N> {
                             return Ok(svc::Either::B(t));
                         }
 
-                        let policy = policies.get_policy(addr).check_port_allowed()?;
-
+                        let policy = policies.get_policy(addr);
                         tracing::debug!(?policy, "Accepted");
                         Ok(svc::Either::A(Accept {
                             client_addr: t.param(),
@@ -156,6 +155,7 @@ mod tests {
             .expect("should succeed");
     }
 
+    /// Default-deny authorizations are checked by an internal stack.
     #[tokio::test(flavor = "current_thread")]
     async fn default_deny() {
         let policies = Store::for_test(DefaultPolicy::Deny, None);
@@ -167,7 +167,7 @@ mod tests {
             .new_service(Target(1000))
             .oneshot(io)
             .await
-            .expect_err("should be denied");
+            .expect("should succeed");
     }
 
     #[tokio::test(flavor = "current_thread")]

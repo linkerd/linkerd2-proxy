@@ -5,10 +5,13 @@ use crate::{
 use futures::future;
 use linkerd_app_core::{
     svc, tls,
-    transport::{ClientAddr, Remote},
+    transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
+use linkerd_server_policy::ServerPolicy;
 use std::{future::Future, pin::Pin, task};
+#[cfg(test)]
+mod tests;
 
 /// A middleware that enforces policy on each TCP connection. When connection is
 /// authorized, we continue to monitor the policy for changes and, if the
@@ -62,8 +65,12 @@ where
         let client = target.param();
         let tls = target.param();
         let policy: AllowPolicy = target.param();
-        tracing::trace!(?policy, "Authorizing connection");
-        match policy.check_authorized(client, &tls) {
+        let authorized = {
+            let p = policy.server.borrow();
+            tracing::trace!(policy = ?p, "Authorizing connection");
+            check_authorized(&*p, policy.dst, client, &tls)
+        };
+        match authorized {
             Ok(permit) => {
                 tracing::debug!(?permit, ?tls, %client, "Connection authorized");
 
@@ -150,7 +157,7 @@ where
                 tokio::select! {
                     res = &mut call => return res.map_err(Into::into),
                     _ = policy.changed() => {
-                        if let Err(denied) = policy.check_authorized(client, &tls) {
+                        if let Err(denied) = check_authorized(&*policy.server.borrow(), policy.dst, client, &tls) {
                             let meta = policy.meta();
                             tracing::info!(
                                 server.group = %meta.group(),
@@ -168,4 +175,23 @@ where
             }
         }))
     }
+}
+
+/// Checks whether the destination port's `AllowPolicy` is authorized to
+/// accept connections given the provided TLS state.
+fn check_authorized(
+    server: &ServerPolicy,
+    dst: OrigDstAddr,
+    client_addr: Remote<ClientAddr>,
+    tls: &tls::ConditionalServerTls,
+) -> Result<ServerPermit, ServerUnauthorized> {
+    for authz in &*server.authorizations {
+        if super::is_authorized(authz, client_addr, tls) {
+            return Ok(ServerPermit::new(dst, &*server, authz));
+        }
+    }
+
+    Err(ServerUnauthorized {
+        server: server.meta.clone(),
+    })
 }
