@@ -8,6 +8,7 @@ pub enum MatchPath {
     Regex(Regex),
 }
 
+/// The number of characters matched in the path.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum PathMatch {
     Exact(usize),

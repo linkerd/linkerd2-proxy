@@ -27,7 +27,9 @@ pub(crate) struct MatchRpc {
 /// Summarizes a matched gRPC endpoints.
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct RpcMatch {
+    /// The number of characters matched in the service name.
     service: usize,
+    /// The number of characters matched in the method name.
     method: usize,
 }
 
