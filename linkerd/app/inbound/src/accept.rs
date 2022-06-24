@@ -57,7 +57,7 @@ impl<N> Inbound<N> {
                         }
 
                         let policy = policies.get_policy(addr);
-                        tracing::debug!(?policy, "Accepted");
+                        tracing::debug!(policy = ?&*policy.borrow(), "Accepted");
                         Ok(svc::Either::A(Accept {
                             client_addr: t.param(),
                             orig_dst_addr: addr,
@@ -127,7 +127,7 @@ mod tests {
         let policies = Store::for_test(
             ServerPolicy {
                 protocol: linkerd_server_policy::Protocol::Opaque,
-                authorizations: vec![Authorization {
+                authorizations: Arc::new([Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![Default::default()],
                     meta: Arc::new(Meta::Resource {
@@ -135,8 +135,7 @@ mod tests {
                         kind: "serverauthorization".into(),
                         name: "testsaz".into(),
                     }),
-                }]
-                .into(),
+                }]),
                 meta: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "server".into(),
@@ -189,7 +188,7 @@ mod tests {
     }
 
     fn new_panic<T>(msg: &'static str) -> svc::ArcNewTcp<T, io::DuplexStream> {
-        svc::ArcNewService::new(move |_| panic!("{}", msg))
+        svc::ArcNewService::new(move |_| panic!("{msg}"))
     }
 
     fn new_ok<T>() -> svc::ArcNewTcp<T, io::DuplexStream> {
