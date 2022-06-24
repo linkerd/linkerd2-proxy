@@ -11,6 +11,3 @@ regex = "1"
 thiserror = "1"
 tracing = "0.1"
 url = "2"
-
-[dev-dependencies]
-maplit = "1"
