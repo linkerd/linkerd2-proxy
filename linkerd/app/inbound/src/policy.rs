@@ -4,8 +4,6 @@ pub mod defaults;
 mod http;
 mod store;
 mod tcp;
-#[cfg(test)]
-mod tests;
 
 pub(crate) use self::store::Store;
 pub use self::{
@@ -19,7 +17,6 @@ use linkerd_app_core::metrics::{RouteAuthzLabels, ServerAuthzLabels};
 use linkerd_app_core::{
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
-    Result,
 };
 use linkerd_cache::Cached;
 pub use linkerd_server_policy::{
@@ -127,40 +124,6 @@ impl AllowPolicy {
             // If the sender was dropped, then there can be no further changes.
             futures::future::pending::<()>().await;
         }
-    }
-
-    /// Checks whether the server has any authorizations at all. If it does not,
-    /// a denial error is returned.
-    pub(crate) fn check_port_allowed(self) -> Result<Self, ServerUnauthorized> {
-        let server = self.server.borrow();
-
-        if server.authorizations.is_empty() {
-            return Err(ServerUnauthorized {
-                server: server.meta.clone(),
-            });
-        }
-        drop(server);
-
-        Ok(self)
-    }
-
-    /// Checks whether the destination port's `AllowPolicy` is authorized to
-    /// accept connections given the provided TLS state.
-    pub(crate) fn check_authorized(
-        &self,
-        client_addr: Remote<ClientAddr>,
-        tls: &tls::ConditionalServerTls,
-    ) -> Result<ServerPermit, ServerUnauthorized> {
-        let server = self.server.borrow();
-        for authz in server.authorizations.iter() {
-            if is_authorized(authz, client_addr, tls) {
-                return Ok(ServerPermit::new(self.dst, &*server, authz));
-            }
-        }
-
-        Err(ServerUnauthorized {
-            server: server.meta.clone(),
-        })
     }
 }
 

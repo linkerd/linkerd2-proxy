@@ -1,4 +1,5 @@
 use super::*;
+use crate::policy::*;
 use linkerd_app_core::{proxy::http, Error};
 use linkerd_server_policy::{authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy};
 use std::{collections::BTreeSet, sync::Arc};
@@ -27,13 +28,8 @@ async fn unauthenticated_allowed() {
         }),
     };
 
-    let policies = Store::for_test(policy.clone(), None);
-    let allowed = policies.get_policy(orig_dst_addr());
-    assert_eq!(*allowed.server.borrow(), policy);
-
     let tls = tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello);
-    let permitted = allowed
-        .check_authorized(client_addr(), &tls)
+    let permitted = check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
         .expect("unauthenticated connection must be permitted");
     assert_eq!(
         permitted,
@@ -80,22 +76,17 @@ async fn authenticated_identity() {
         }),
     };
 
-    let policies = Store::for_test(policy.clone(), None);
-    let allowed = policies.get_policy(orig_dst_addr());
-    assert_eq!(*allowed.server.borrow(), policy);
-
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
         client_id: Some(client_id()),
         negotiated_protocol: None,
     });
-    let permitted = allowed
-        .check_authorized(client_addr(), &tls)
+    let permitted = check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
         .expect("unauthenticated connection must be permitted");
     assert_eq!(
         permitted,
         ServerPermit {
             dst: orig_dst_addr(),
-            protocol: policy.protocol,
+            protocol: policy.protocol.clone(),
             labels: ServerAuthzLabels {
                 authz: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
@@ -119,8 +110,7 @@ async fn authenticated_identity() {
         )),
         negotiated_protocol: None,
     });
-    allowed
-        .check_authorized(client_addr(), &tls)
+    check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
         .expect_err("policy must require a client identity");
 }
 
@@ -148,21 +138,16 @@ async fn authenticated_suffix() {
         }),
     };
 
-    let policies = Store::for_test(policy.clone(), None);
-    let allowed = policies.get_policy(orig_dst_addr());
-    assert_eq!(*allowed.server.borrow(), policy);
-
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
         client_id: Some(client_id()),
         negotiated_protocol: None,
     });
     assert_eq!(
-        allowed
-            .check_authorized(client_addr(), &tls)
+        check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
         ServerPermit {
             dst: orig_dst_addr(),
-            protocol: policy.protocol,
+            protocol: policy.protocol.clone(),
             labels: ServerAuthzLabels {
                 authz: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
@@ -186,8 +171,7 @@ async fn authenticated_suffix() {
         ),
         negotiated_protocol: None,
     });
-    allowed
-        .check_authorized(client_addr(), &tls)
+    check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
         .expect_err("policy must require a client identity");
 }
 
@@ -212,21 +196,16 @@ async fn tls_unauthenticated() {
         }),
     };
 
-    let policies = Store::for_test(policy.clone(), None);
-    let allowed = policies.get_policy(orig_dst_addr());
-    assert_eq!(*allowed.server.borrow(), policy);
-
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
         client_id: None,
         negotiated_protocol: None,
     });
     assert_eq!(
-        allowed
-            .check_authorized(client_addr(), &tls)
+        check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
         ServerPermit {
             dst: orig_dst_addr(),
-            protocol: policy.protocol,
+            protocol: policy.protocol.clone(),
             labels: ServerAuthzLabels {
                 authz: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
@@ -247,8 +226,7 @@ async fn tls_unauthenticated() {
             .parse()
             .unwrap(),
     });
-    allowed
-        .check_authorized(client_addr(), &tls)
+    check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
         .expect_err("policy must require a TLS termination identity");
 }
 
