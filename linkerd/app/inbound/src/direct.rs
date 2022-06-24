@@ -157,8 +157,7 @@ impl<N> Inbound<N> {
                                 } => {
                                     // When the transport header targets an alternate port (but does
                                     // not identify an alternate target name), we check the new
-                                    // target's policy to determine whether the client can access
-                                    // it.
+                                    // target's policy (rather than the inbound proxy's address).
                                     let addr = (client.local_addr.ip(), port).into();
                                     let policy = policies.get_policy(OrigDstAddr(addr));
                                     let local = match protocol {
@@ -189,8 +188,7 @@ impl<N> Inbound<N> {
                                 } => {
                                     // When the transport header provides an alternate target, the
                                     // connection is a gateway connection. We check the _gateway
-                                    // address's_ policy to determine whether the client is
-                                    // authorized to use this gateway.
+                                    // address's_ policy (rather than the target address).
                                     let policy = policies.get_policy(client.local_addr);
                                     Ok(svc::Either::B(GatewayTransportHeader {
                                         target: NameAddr::from((name, port)),
