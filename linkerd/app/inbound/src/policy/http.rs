@@ -1,4 +1,4 @@
-use super::Routes;
+use super::{RoutePolicy, Routes};
 use crate::{
     metrics::authz::HttpAuthzMetrics,
     policy::{AllowPolicy, HttpRoutePermit},
@@ -11,7 +11,8 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
-use std::task;
+use linkerd_server_policy::{grpc, http, route::RouteMatch, Meta as RouteMeta};
+use std::{sync::Arc, task};
 
 /// A middleware that enforces policy on each HTTP request.
 ///
@@ -45,6 +46,26 @@ struct ConnectionMeta {
 #[derive(Debug, thiserror::Error)]
 #[error("no route found for request")]
 pub struct HttpRouteNotFound(());
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid redirect: {0}")]
+pub struct HttpRouteInvalidRedirect(#[from] pub http::filter::InvalidRedirect);
+
+#[derive(Debug, thiserror::Error)]
+#[error("request redirected to {}", .0.location)]
+pub struct HttpRouteRedirect(pub http::filter::Redirection);
+
+#[derive(Debug, thiserror::Error)]
+#[error("API indicated an HTTP error response: {}: {}", .0.status, .0.message)]
+pub struct HttpRouteErrorResponse(pub http::filter::RespondWithError);
+
+#[derive(Debug, thiserror::Error)]
+#[error("API indicated an gRPC error response: {}: {}", .0.code, .0.message)]
+pub struct GrpcRouteErrorResponse(pub grpc::filter::RespondWithError);
+
+#[derive(Debug, thiserror::Error)]
+#[error("unknown filter type in route: {} {} {}", .0.group(), .0.kind(), .0.name())]
+pub struct HttpRouteUnknownFilter(Arc<RouteMeta>);
 
 #[derive(Debug, thiserror::Error)]
 #[error("unauthorized request on route")]
@@ -121,15 +142,23 @@ where
         task::Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: ::http::Request<B>) -> Self::Future {
+    fn call(&mut self, mut req: ::http::Request<B>) -> Self::Future {
         // Find an appropriate route for the request and ensure that it's
         // authorized.
         //
         // TODO Apply filters...
         let permit = match self.policy.routes() {
             None => err!(self.mk_route_not_found()),
-            Some(Routes::Http(routes)) => try_fut!(self.authorize(&routes, &req)),
-            Some(Routes::Grpc(routes)) => try_fut!(self.authorize(&routes, &req)),
+            Some(Routes::Http(routes)) => {
+                let (permit, r#match, route) = try_fut!(self.authorize(&routes, &req));
+                try_fut!(Self::apply_http_filters(r#match, route, &mut req));
+                permit
+            }
+            Some(Routes::Grpc(routes)) => {
+                let (permit, _, route) = try_fut!(self.authorize(&routes, &req));
+                try_fut!(Self::apply_grpc_filters(route, &mut req));
+                permit
+            }
         };
 
         future::Either::Left(
@@ -145,12 +174,12 @@ impl<T, N> HttpPolicyService<T, N> {
     /// Finds a matching route for the given request and checks that a
     /// sufficient authorization is present, returning a permit describing the
     /// authorization.
-    fn authorize<M: super::route::Match, B>(
+    fn authorize<'m, M: super::route::Match + 'm, P, B>(
         &self,
-        routes: &[super::route::Route<M, super::RoutePolicy>],
+        routes: &'m [super::route::Route<M, RoutePolicy<P>>],
         req: &::http::Request<B>,
-    ) -> Result<HttpRoutePermit> {
-        let (_, route) =
+    ) -> Result<(HttpRoutePermit, RouteMatch<M::Summary>, &'m RoutePolicy<P>)> {
+        let (r#match, route) =
             super::route::find(routes, req).ok_or_else(|| self.mk_route_not_found())?;
 
         let labels = RouteLabels {
@@ -208,7 +237,7 @@ impl<T, N> HttpPolicyService<T, N> {
         };
 
         self.metrics.allow(&permit, self.connection.tls.clone());
-        Ok(permit)
+        Ok((permit, r#match, route))
     }
 
     fn mk_route_not_found(&self) -> Error {
@@ -216,5 +245,66 @@ impl<T, N> HttpPolicyService<T, N> {
         self.metrics
             .route_not_found(labels, self.connection.dst, self.connection.tls.clone());
         HttpRouteNotFound(()).into()
+    }
+
+    fn apply_http_filters<B>(
+        r#match: http::RouteMatch,
+        route: &http::Policy,
+        req: &mut ::http::Request<B>,
+    ) -> Result<()> {
+        // TODO Do any metrics apply here?
+        for filter in &route.filters {
+            match filter {
+                http::Filter::RequestHeaders(rh) => {
+                    rh.apply(req.headers_mut());
+                }
+
+                http::Filter::Redirect(redir) => match redir.apply(req.uri(), &r#match) {
+                    Ok(Some(redirection)) => {
+                        return Err(HttpRouteRedirect(redirection).into());
+                    }
+
+                    Err(invalid) => {
+                        return Err(HttpRouteInvalidRedirect(invalid).into());
+                    }
+
+                    Ok(None) => {
+                        tracing::debug!("Ignoring irrelvant redirect");
+                    }
+                },
+
+                http::Filter::Error(respond) => {
+                    return Err(HttpRouteErrorResponse(respond.clone()).into());
+                }
+
+                http::Filter::Unknown => {
+                    let meta = route.meta.clone();
+                    return Err(HttpRouteUnknownFilter(meta).into());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> Result<()> {
+        for filter in &route.filters {
+            match filter {
+                grpc::Filter::RequestHeaders(rh) => {
+                    rh.apply(req.headers_mut());
+                }
+
+                grpc::Filter::Error(respond) => {
+                    return Err(GrpcRouteErrorResponse(respond.clone()).into());
+                }
+
+                grpc::Filter::Unknown => {
+                    let meta = route.meta.clone();
+                    return Err(HttpRouteUnknownFilter(meta).into());
+                }
+            }
+        }
+
+        Ok(())
     }
 }

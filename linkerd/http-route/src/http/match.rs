@@ -81,6 +81,12 @@ impl Default for RequestMatch {
 
 // === impl RequestMatch ===
 
+impl RequestMatch {
+    pub(crate) fn path(&self) -> &PathMatch {
+        &self.path_match
+    }
+}
+
 impl std::cmp::PartialOrd for RequestMatch {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))

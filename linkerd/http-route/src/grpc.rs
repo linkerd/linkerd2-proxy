@@ -1,3 +1,4 @@
+pub mod filter;
 pub mod r#match;
 
 pub use self::r#match::MatchRoute;
