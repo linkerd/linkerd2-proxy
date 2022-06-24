@@ -13,8 +13,8 @@ pub use self::{
 };
 
 pub use linkerd_app_core::metrics::ServerLabel;
-use linkerd_app_core::metrics::{RouteAuthzLabels, ServerAuthzLabels};
 use linkerd_app_core::{
+    metrics::{RouteAuthzLabels, ServerAuthzLabels},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
 };
@@ -78,7 +78,7 @@ impl From<DefaultPolicy> for ServerPolicy {
             DefaultPolicy::Allow(p) => p,
             DefaultPolicy::Deny => ServerPolicy {
                 protocol: Protocol::Opaque,
-                authorizations: vec![].into(),
+                authorizations: Arc::new([]),
                 meta: Meta::new_default("deny"),
             },
         }
@@ -97,6 +97,11 @@ impl AllowPolicy {
         let server = Cached::uncached(server);
         let p = Self { dst, server };
         (p, tx)
+    }
+
+    #[inline]
+    pub(crate) fn borrow(&self) -> tokio::sync::watch::Ref<'_, ServerPolicy> {
+        self.server.borrow()
     }
 
     #[inline]

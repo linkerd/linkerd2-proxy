@@ -120,6 +120,7 @@ where
             self.cache
                 .get_or_insert_with(dst.port(), |port| match self.discover.clone() {
                     Some(disco) => info_span!("watch", port).in_scope(|| {
+                        tracing::trace!(%port, "spawning policy discovery");
                         disco.spawn_with_init(*port, self.default_rx.borrow().clone())
                     }),
 
@@ -127,7 +128,10 @@ where
                     // default policy. Whlie it's a little wasteful to cache
                     // these results separately, this case isn't expected to be
                     // used outside of testing.
-                    None => self.default_rx.clone(),
+                    None => {
+                        tracing::trace!(%port, "using the default policy");
+                        self.default_rx.clone()
+                    }
                 });
 
         AllowPolicy { dst, server }

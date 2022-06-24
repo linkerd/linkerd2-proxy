@@ -17,6 +17,9 @@ use linkerd_app_core::{
 use std::{fmt::Debug, time};
 use tracing::info;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Forward {
     client_addr: Remote<ClientAddr>,
@@ -127,7 +130,7 @@ impl<N> Inbound<N> {
                         // been wrapped in mesh identity. In any case, we don't actually validate
                         // whether app TLS was employed, but we use this as a signal that we should
                         // not perform additional protocol detection.
-                        if protocol == Protocol::Tls {
+                        if matches!(protocol, Protocol::Tls { .. }) {
                             return Ok(svc::Either::B(tls));
                         }
 
@@ -145,11 +148,12 @@ impl<N> Inbound<N> {
                     },
                 ))
                 .push_switch(
-                    // If this port's policy indicates that authentication is not required and
-                    // detection should be skipped, use the TCP stack directly.
+                    // Check the policy for this port and check whether
+                    // detection should occur. Policy is enforced on the forward
+                    // or HTTP detection stack.
                     |t: T| -> Result<_, Infallible> {
                         let policy: AllowPolicy = t.param();
-                        if policy.protocol() == Protocol::Opaque {
+                        if matches!(policy.protocol(), Protocol::Opaque { .. }) {
                             const TLS_PORT_SKIPPED: tls::ConditionalServerTls =
                                 tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped);
                             return Ok(svc::Either::B(Tls {
@@ -187,8 +191,15 @@ impl<N> Inbound<N> {
         FSvc::Future: Send,
     {
         self.map_stack(|cfg, rt, http| {
-            let detect_timeout = cfg.proxy.detect_protocol_timeout;
+            let forward = svc::stack(forward)
+                .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
+                .push(transport::metrics::NewServer::layer(
+                    rt.metrics.proxy.transport.clone(),
+                ))
+                .push_map_target(Forward::from)
+                .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()));
 
+            let detect_timeout = cfg.proxy.detect_protocol_timeout;
             let detect = http
                 .clone()
                 .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
@@ -203,7 +214,7 @@ impl<N> Inbound<N> {
                             // When HTTP detection fails, forward the connection to the application as
                             // an opaque TCP stream.
                             Err(timeout) => match tls.policy.protocol() {
-                                Protocol::Http1 => {
+                                Protocol::Http1 { .. } => {
                                     // If the protocol was hinted to be HTTP/1.1 but detection
                                     // failed, we'll usually be handling HTTP/1, but we may actually
                                     // be handling HTTP/2 via protocol upgrade. Our options are:
@@ -230,14 +241,7 @@ impl<N> Inbound<N> {
                             },
                         }
                     },
-                    svc::stack(forward)
-                        .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
-                        .push(transport::metrics::NewServer::layer(
-                            rt.metrics.proxy.transport.clone(),
-                        ))
-                        .push_map_target(Forward::from)
-                        .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()))
-                        .into_inner(),
+                    forward.into_inner(),
                 )
                 .push(detect::NewDetectService::layer(ConfigureHttpDetect));
 
@@ -250,7 +254,7 @@ impl<N> Inbound<N> {
                     // version.
                     move |tls: Tls| -> Result<_, Infallible> {
                         let http = match tls.policy.protocol() {
-                            Protocol::Detect { timeout } => {
+                            Protocol::Detect { timeout, .. } => {
                                 return Ok(svc::Either::B(Detect { timeout, tls }));
                             }
                             // Meshed HTTP/1 services may actually be transported over HTTP/2 connections
@@ -258,7 +262,7 @@ impl<N> Inbound<N> {
                             //
                             // TODO(ver) outbound clients should hint this with ALPN so we don't
                             // have to detect this situation.
-                            Protocol::Http1 if tls.status.is_some() => {
+                            Protocol::Http1 { .. } if tls.status.is_some() => {
                                 return Ok(svc::Either::B(Detect {
                                     timeout: detect_timeout,
                                     tls,
@@ -266,8 +270,8 @@ impl<N> Inbound<N> {
                             }
                             // Unmeshed services don't use protocol upgrading, so we can use the
                             // hint without further detection.
-                            Protocol::Http1 => http::Version::Http1,
-                            Protocol::Http2 | Protocol::Grpc => http::Version::H2,
+                            Protocol::Http1 { .. } => http::Version::Http1,
+                            Protocol::Http2 { .. } | Protocol::Grpc { .. } => http::Version::H2,
                             _ => unreachable!("opaque protocols must not hit the HTTP stack"),
                         };
                         Ok(svc::Either::A(Http { http, tls }))
@@ -443,245 +447,5 @@ impl<T> svc::InsertParam<tls::ConditionalServerTls, T> for TlsParams {
     #[inline]
     fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
         (tls, target)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_util;
-    use futures::future;
-    use linkerd_app_core::{
-        io::AsyncWriteExt,
-        svc::{NewService, ServiceExt},
-        trace, Error,
-    };
-    use linkerd_server_policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
-    use std::sync::Arc;
-
-    const HTTP1: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
-    const HTTP2: &[u8] = b"PRI * HTTP/2.0\r\n";
-    const NOT_HTTP: &[u8] = b"foo\r\nbar\r\nblah\r\n";
-
-    fn allow(protocol: Protocol) -> AllowPolicy {
-        let (allow, _tx) = AllowPolicy::for_test(
-            orig_dst_addr(),
-            ServerPolicy {
-                protocol,
-                authorizations: vec![Authorization {
-                    authentication: Authentication::Unauthenticated,
-                    networks: vec![client_addr().ip().into()],
-                    meta: Arc::new(Meta::Resource {
-                        group: "policy.linkerd.io".into(),
-                        kind: "serverathorization".into(),
-                        name: "testsaz".into(),
-                    }),
-                }]
-                .into(),
-                meta: Arc::new(Meta::Resource {
-                    group: "policy.linkerd.io".into(),
-                    kind: "server".into(),
-                    name: "testsrv".into(),
-                }),
-            },
-        );
-        allow
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn detect_tls_opaque() {
-        let _trace = trace::test::trace_init();
-
-        let (io, _) = io::duplex(1);
-        inbound()
-            .with_stack(new_panic("detect stack must not be used"))
-            .push_detect_tls(new_ok())
-            .into_inner()
-            .new_service(Target(allow(Protocol::Opaque)))
-            .oneshot(io)
-            .await
-            .expect("should succeed");
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn detect_http_non_http() {
-        let _trace = trace::test::trace_init();
-
-        let target = Tls {
-            client_addr: client_addr(),
-            orig_dst_addr: orig_dst_addr(),
-            status: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                client_id: Some(client_id()),
-                negotiated_protocol: None,
-            }),
-            policy: allow(Protocol::Detect {
-                timeout: std::time::Duration::from_secs(10),
-            }),
-        };
-
-        let (ior, mut iow) = io::duplex(100);
-        iow.write_all(NOT_HTTP).await.unwrap();
-
-        inbound()
-            .with_stack(new_panic("http stack must not be used"))
-            .push_detect_http(new_ok())
-            .into_inner()
-            .new_service(target)
-            .oneshot(ior)
-            .await
-            .expect("should succeed");
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn detect_http() {
-        let _trace = trace::test::trace_init();
-
-        let target = Tls {
-            client_addr: client_addr(),
-            orig_dst_addr: orig_dst_addr(),
-            status: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                client_id: Some(client_id()),
-                negotiated_protocol: None,
-            }),
-            policy: allow(Protocol::Detect {
-                timeout: std::time::Duration::from_secs(10),
-            }),
-        };
-
-        let (ior, mut iow) = io::duplex(100);
-        iow.write_all(HTTP1).await.unwrap();
-
-        inbound()
-            .with_stack(new_ok())
-            .push_detect_http(new_panic("tcp stack must not be used"))
-            .into_inner()
-            .new_service(target)
-            .oneshot(ior)
-            .await
-            .expect("should succeed");
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn hinted_http1() {
-        let _trace = trace::test::trace_init();
-        let target = Tls {
-            client_addr: client_addr(),
-            orig_dst_addr: orig_dst_addr(),
-            status: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                client_id: Some(client_id()),
-                negotiated_protocol: None,
-            }),
-            policy: allow(Protocol::Http1),
-        };
-
-        let (ior, mut iow) = io::duplex(100);
-        iow.write_all(HTTP1).await.unwrap();
-
-        inbound()
-            .with_stack(new_ok())
-            .push_detect_http(new_panic("tcp stack must not be used"))
-            .into_inner()
-            .new_service(target)
-            .oneshot(ior)
-            .await
-            .expect("should succeed");
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn hinted_http1_supports_http2() {
-        let _trace = trace::test::trace_init();
-        let target = Tls {
-            client_addr: client_addr(),
-            orig_dst_addr: orig_dst_addr(),
-            status: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                client_id: Some(client_id()),
-                negotiated_protocol: None,
-            }),
-            policy: allow(Protocol::Http1),
-        };
-
-        let (ior, mut iow) = io::duplex(100);
-        iow.write_all(HTTP2).await.unwrap();
-
-        inbound()
-            .with_stack(new_ok())
-            .push_detect_http(new_panic("tcp stack must not be used"))
-            .into_inner()
-            .new_service(target)
-            .oneshot(ior)
-            .await
-            .expect("should succeed");
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn hinted_http2() {
-        let _trace = trace::test::trace_init();
-        let target = Tls {
-            client_addr: client_addr(),
-            orig_dst_addr: orig_dst_addr(),
-            status: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                client_id: Some(client_id()),
-                negotiated_protocol: None,
-            }),
-            policy: allow(Protocol::Http2),
-        };
-
-        let (ior, _) = io::duplex(100);
-
-        inbound()
-            .with_stack(new_ok())
-            .push_detect_http(new_panic("tcp stack must not be used"))
-            .into_inner()
-            .new_service(target)
-            .oneshot(ior)
-            .await
-            .expect("should succeed");
-    }
-
-    fn client_id() -> tls::ClientId {
-        "testsa.testns.serviceaccount.identity.linkerd.cluster.local"
-            .parse()
-            .unwrap()
-    }
-
-    fn client_addr() -> Remote<ClientAddr> {
-        Remote(ClientAddr(([192, 0, 2, 3], 54321).into()))
-    }
-
-    fn orig_dst_addr() -> OrigDstAddr {
-        OrigDstAddr(([192, 0, 2, 2], 1000).into())
-    }
-
-    fn inbound() -> Inbound<()> {
-        Inbound::new(test_util::default_config(), test_util::runtime().0)
-    }
-
-    fn new_panic<T, I: 'static>(msg: &'static str) -> svc::ArcNewTcp<T, I> {
-        svc::ArcNewService::new(move |_| -> svc::BoxTcp<I> { panic!("{}", msg) })
-    }
-
-    fn new_ok<T>() -> svc::ArcNewTcp<T, io::BoxedIo> {
-        svc::ArcNewService::new(|_| svc::BoxService::new(svc::mk(|_| future::ok::<(), Error>(()))))
-    }
-
-    #[derive(Clone, Debug)]
-    struct Target(AllowPolicy);
-
-    impl svc::Param<AllowPolicy> for Target {
-        fn param(&self) -> AllowPolicy {
-            self.0.clone()
-        }
-    }
-
-    impl svc::Param<OrigDstAddr> for Target {
-        fn param(&self) -> OrigDstAddr {
-            orig_dst_addr()
-        }
-    }
-
-    impl svc::Param<Remote<ClientAddr>> for Target {
-        fn param(&self) -> Remote<ClientAddr> {
-            client_addr()
-        }
     }
 }
