@@ -105,6 +105,10 @@ impl<N> Inbound<N> {
     {
         self.map_stack(|cfg, rt, detect| {
             let forward = svc::stack(forward)
+                .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
+                .push(transport::metrics::NewServer::layer(
+                    rt.metrics.proxy.transport.clone(),
+                ))
                 .push_map_target(Forward::from)
                 .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()));
 
