@@ -69,14 +69,8 @@ impl MatchHost {
                 }
                 let mut length = 0;
                 for sfx in suffix.iter() {
-                    if !host.ends_with(sfx) {
-                        return None;
-                    }
-                    host = &host[..host.len() - sfx.len()];
-                    if !host.ends_with('.') {
-                        return None;
-                    }
-                    host = &host[..host.len() - 1];
+                    host = host.strip_suffix(sfx)?;
+                    host = host.strip_suffix('.')?;
                     length += sfx.len() + 1;
                 }
 

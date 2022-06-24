@@ -36,7 +36,7 @@ pub struct RequestMatch {
 impl crate::Match for MatchRequest {
     type Summary = RequestMatch;
 
-    fn r#match<B>(&self, req: &http::Request<B>) -> Option<RequestMatch> {
+    fn match_request<B>(&self, req: &http::Request<B>) -> Option<RequestMatch> {
         let mut summary = RequestMatch::default();
 
         if let Some(method) = &self.method {
@@ -89,16 +89,10 @@ impl std::cmp::PartialOrd for RequestMatch {
 
 impl std::cmp::Ord for RequestMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-        match self.path_match.cmp(&other.path_match) {
-            Ordering::Equal => match self.headers.cmp(&other.headers) {
-                Ordering::Equal => match self.query_params.cmp(&other.query_params) {
-                    Ordering::Equal => self.method.cmp(&other.method),
-                    ord => ord,
-                },
-                ord => ord,
-            },
-            ord => ord,
-        }
+        self.path_match
+            .cmp(&other.path_match)
+            .then_with(|| self.headers.cmp(&other.headers))
+            .then_with(|| self.query_params.cmp(&other.query_params))
+            .then_with(|| self.method.cmp(&other.method))
     }
 }

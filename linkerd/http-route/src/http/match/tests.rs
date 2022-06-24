@@ -8,13 +8,13 @@ fn empty_match() {
     let m = MatchRequest::default();
 
     let req = http::Request::builder().body(()).unwrap();
-    assert_eq!(m.r#match(&req), Some(RequestMatch::default()));
+    assert_eq!(m.match_request(&req), Some(RequestMatch::default()));
 
     let req = http::Request::builder()
         .method(http::Method::HEAD)
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), Some(RequestMatch::default()));
+    assert_eq!(m.match_request(&req), Some(RequestMatch::default()));
 }
 
 #[test]
@@ -29,7 +29,7 @@ fn method() {
         .body(())
         .unwrap();
     assert_eq!(
-        m.r#match(&req),
+        m.match_request(&req),
         Some(RequestMatch {
             method: true,
             ..Default::default()
@@ -41,7 +41,7 @@ fn method() {
         .uri("https://example.org/")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn headers() {
         .uri("http://example.com/foo")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 
     let req = http::Request::builder()
         .uri("https://example.org/")
@@ -69,7 +69,7 @@ fn headers() {
         .header("x-baz", "zab") // invalid header value
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 
     // Regex matches apply
     let req = http::Request::builder()
@@ -79,7 +79,7 @@ fn headers() {
         .body(())
         .unwrap();
     assert_eq!(
-        m.r#match(&req),
+        m.match_request(&req),
         Some(RequestMatch {
             headers: 2,
             ..RequestMatch::default()
@@ -93,7 +93,7 @@ fn headers() {
         .header("x-baz", "quxa")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 }
 
 #[test]
@@ -107,14 +107,14 @@ fn path() {
         .uri("http://example.com/foo")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 
     let req = http::Request::builder()
         .uri("https://example.org/foo/bar")
         .body(())
         .unwrap();
     assert_eq!(
-        m.r#match(&req),
+        m.match_request(&req),
         Some(RequestMatch {
             path_match: PathMatch::Exact("/foo/bar".len()),
             ..Default::default()
@@ -140,7 +140,7 @@ fn multiple() {
         .body(())
         .unwrap();
     assert_eq!(
-        m.r#match(&req),
+        m.match_request(&req),
         Some(RequestMatch {
             path_match: PathMatch::Exact("/foo/bar".len()),
             headers: 1,
@@ -156,5 +156,5 @@ fn multiple() {
         .header("x-foo", "bar")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 }

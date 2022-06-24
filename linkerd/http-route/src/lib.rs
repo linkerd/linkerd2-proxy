@@ -50,7 +50,7 @@ pub struct RouteMatch<T> {
 pub trait Match {
     type Summary: Default + Ord;
 
-    fn r#match<B>(&self, req: &::http::Request<B>) -> Option<Self::Summary>;
+    fn match_request<B>(&self, req: &::http::Request<B>) -> Option<Self::Summary>;
 }
 
 /// Finds the best matching route policy for a request.
@@ -86,7 +86,11 @@ pub fn find<'r, M: Match + 'r, P, B>(
             // Find the best match to compare against other rules/routes
             // (if any apply). The order/precedence of matches is not
             // relevant.
-            let summary = rule.matches.iter().filter_map(|m| m.r#match(req)).max()?;
+            let summary = rule
+                .matches
+                .iter()
+                .filter_map(|m| m.match_request(req))
+                .max()?;
             trace!("matches!");
             Some((summary, &rule.policy))
         }))?;

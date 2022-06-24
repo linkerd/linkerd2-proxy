@@ -36,7 +36,7 @@ pub(crate) struct RpcMatch {
 impl crate::Match for MatchRoute {
     type Summary = RouteMatch;
 
-    fn r#match<B>(&self, req: &http::Request<B>) -> Option<RouteMatch> {
+    fn match_request<B>(&self, req: &http::Request<B>) -> Option<RouteMatch> {
         if req.method() != http::Method::POST {
             return None;
         }
@@ -64,11 +64,9 @@ impl std::cmp::PartialOrd for RouteMatch {
 
 impl std::cmp::Ord for RouteMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-        match self.rpc.cmp(&other.rpc) {
-            Ordering::Equal => self.headers.cmp(&other.headers),
-            ord => ord,
-        }
+        self.rpc
+            .cmp(&other.rpc)
+            .then_with(|| self.headers.cmp(&other.headers))
     }
 }
 
