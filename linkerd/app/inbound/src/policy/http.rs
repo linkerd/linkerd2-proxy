@@ -13,6 +13,9 @@ use linkerd_app_core::{
 };
 use std::task;
 
+#[cfg(test)]
+mod tests;
+
 /// A middleware that enforces policy on each HTTP request.
 ///
 /// This enforcement is done lazily on each request so that policy updates are
