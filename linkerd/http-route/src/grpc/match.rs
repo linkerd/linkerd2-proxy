@@ -6,8 +6,15 @@ use crate::http::MatchHeader;
 /// Matches gRPC routes.
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct MatchRoute {
-    pub(crate) rpc: MatchRpc,
-    pub(crate) headers: Vec<MatchHeader>,
+    pub rpc: MatchRpc,
+    pub headers: Vec<MatchHeader>,
+}
+
+/// Matches gRPC endpoints.
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MatchRpc {
+    pub service: Option<String>,
+    pub method: Option<String>,
 }
 
 /// Summarizes a matched gRPC route.
@@ -15,13 +22,6 @@ pub struct MatchRoute {
 pub struct RouteMatch {
     rpc: RpcMatch,
     headers: usize,
-}
-
-/// Matches gRPC endpoints.
-#[derive(Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct MatchRpc {
-    pub(crate) service: Option<String>,
-    pub(crate) method: Option<String>,
 }
 
 /// Summarizes a matched gRPC endpoints.
