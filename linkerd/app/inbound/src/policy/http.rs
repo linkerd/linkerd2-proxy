@@ -14,6 +14,9 @@ use linkerd_app_core::{
 use linkerd_server_policy::{grpc, http, route::RouteMatch, Meta as RouteMeta};
 use std::{sync::Arc, task};
 
+#[cfg(test)]
+mod tests;
+
 /// A middleware that enforces policy on each HTTP request.
 ///
 /// This enforcement is done lazily on each request so that policy updates are
