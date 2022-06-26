@@ -4,15 +4,18 @@ use linkerd_app_core::{svc::Service, Infallible};
 use std::sync::Arc;
 
 macro_rules! conn {
-    () => {{
+    ($client:expr, $dst:expr) => {{
         ConnectionMeta {
-            dst: OrigDstAddr(([192, 168, 3, 4], 8080).into()),
-            client: Remote(ClientAddr(([192, 168, 3, 3], 30120).into())),
+            dst: OrigDstAddr(($dst, 8080).into()),
+            client: Remote(ClientAddr(($client, 30120).into())),
             tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                 client_id: Some("foo.bar.bah".parse().unwrap()),
                 negotiated_protocol: None,
             }),
         }
+    }};
+    () => {{
+        conn!([192, 168, 3, 3], [192, 168, 3, 4])
     }};
 }
 
