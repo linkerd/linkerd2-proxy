@@ -154,12 +154,12 @@ where
             None => err!(self.mk_route_not_found()),
             Some(Routes::Http(routes)) => {
                 let (permit, r#match, route) = try_fut!(self.authorize(&routes, &req));
-                try_fut!(Self::apply_http_filters(r#match, route, &mut req));
+                try_fut!(apply_http_filters(r#match, route, &mut req));
                 permit
             }
             Some(Routes::Grpc(routes)) => {
                 let (permit, _, route) = try_fut!(self.authorize(&routes, &req));
-                try_fut!(Self::apply_grpc_filters(route, &mut req));
+                try_fut!(apply_grpc_filters(route, &mut req));
                 permit
             }
         };
@@ -249,65 +249,65 @@ impl<T, N> HttpPolicyService<T, N> {
             .route_not_found(labels, self.connection.dst, self.connection.tls.clone());
         HttpRouteNotFound(()).into()
     }
+}
 
-    fn apply_http_filters<B>(
-        r#match: http::RouteMatch,
-        route: &http::Policy,
-        req: &mut ::http::Request<B>,
-    ) -> Result<()> {
-        // TODO Do any metrics apply here?
-        for filter in &route.filters {
-            match filter {
-                http::Filter::RequestHeaders(rh) => {
-                    rh.apply(req.headers_mut());
+fn apply_http_filters<B>(
+    r#match: http::RouteMatch,
+    route: &http::Policy,
+    req: &mut ::http::Request<B>,
+) -> Result<()> {
+    // TODO Do any metrics apply here?
+    for filter in &route.filters {
+        match filter {
+            http::Filter::RequestHeaders(rh) => {
+                rh.apply(req.headers_mut());
+            }
+
+            http::Filter::Redirect(redir) => match redir.apply(req.uri(), &r#match) {
+                Ok(Some(redirection)) => {
+                    return Err(HttpRouteRedirect(redirection).into());
                 }
 
-                http::Filter::Redirect(redir) => match redir.apply(req.uri(), &r#match) {
-                    Ok(Some(redirection)) => {
-                        return Err(HttpRouteRedirect(redirection).into());
-                    }
-
-                    Err(invalid) => {
-                        return Err(HttpRouteInvalidRedirect(invalid).into());
-                    }
-
-                    Ok(None) => {
-                        tracing::debug!("Ignoring irrelvant redirect");
-                    }
-                },
-
-                http::Filter::Error(respond) => {
-                    return Err(HttpRouteErrorResponse(respond.clone()).into());
+                Err(invalid) => {
+                    return Err(HttpRouteInvalidRedirect(invalid).into());
                 }
 
-                http::Filter::Unknown => {
-                    let meta = route.meta.clone();
-                    return Err(HttpRouteUnknownFilter(meta).into());
+                Ok(None) => {
+                    tracing::debug!("Ignoring irrelvant redirect");
                 }
+            },
+
+            http::Filter::Error(respond) => {
+                return Err(HttpRouteErrorResponse(respond.clone()).into());
+            }
+
+            http::Filter::Unknown => {
+                let meta = route.meta.clone();
+                return Err(HttpRouteUnknownFilter(meta).into());
             }
         }
-
-        Ok(())
     }
 
-    fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> Result<()> {
-        for filter in &route.filters {
-            match filter {
-                grpc::Filter::RequestHeaders(rh) => {
-                    rh.apply(req.headers_mut());
-                }
+    Ok(())
+}
 
-                grpc::Filter::Error(respond) => {
-                    return Err(GrpcRouteErrorResponse(respond.clone()).into());
-                }
+fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> Result<()> {
+    for filter in &route.filters {
+        match filter {
+            grpc::Filter::RequestHeaders(rh) => {
+                rh.apply(req.headers_mut());
+            }
 
-                grpc::Filter::Unknown => {
-                    let meta = route.meta.clone();
-                    return Err(HttpRouteUnknownFilter(meta).into());
-                }
+            grpc::Filter::Error(respond) => {
+                return Err(GrpcRouteErrorResponse(respond.clone()).into());
+            }
+
+            grpc::Filter::Unknown => {
+                let meta = route.meta.clone();
+                return Err(HttpRouteUnknownFilter(meta).into());
             }
         }
-
-        Ok(())
     }
+
+    Ok(())
 }

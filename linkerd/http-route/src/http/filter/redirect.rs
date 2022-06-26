@@ -5,7 +5,7 @@ use http::{
     StatusCode,
 };
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct RedirectRequest {
     pub scheme: Option<Scheme>,
     pub host: Option<String>,

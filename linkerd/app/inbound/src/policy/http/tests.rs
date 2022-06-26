@@ -144,7 +144,7 @@ async fn http_route() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn http_filters_headers() {
+async fn http_filter_header() {
     use linkerd_server_policy::http::{filter, r#match::MatchRequest, Filter, Policy, Route, Rule};
 
     let rmeta = Arc::new(Meta::Resource {
@@ -152,7 +152,7 @@ async fn http_filters_headers() {
         kind: "httproute".into(),
         name: "testrt".into(),
     });
-    let (mut svc, _tx) = new_svc!(Protocol::Http1(Arc::new([Route {
+    let proto = Protocol::Http1(Arc::new([Route {
         hosts: vec![],
         rules: vec![Rule {
             matches: vec![MatchRequest {
@@ -175,10 +175,23 @@ async fn http_filters_headers() {
                 })],
                 meta: rmeta.clone(),
             },
-        },],
-    }])));
+        }],
+    }]));
+    let inner = |permit: HttpRoutePermit, req: ::http::Request<hyper::Body>| -> Result<_> {
+        assert_eq!(req.headers().len(), 1);
+        assert_eq!(
+            req.headers().get("testkey"),
+            Some(&"testval".parse().unwrap())
+        );
+        let mut rsp = ::http::Response::builder()
+            .body(hyper::Body::default())
+            .unwrap();
+        rsp.extensions_mut().insert(permit.clone());
+        Ok(rsp)
+    };
+    let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
 
-    let req = svc
+    let rsp = svc
         .call(
             ::http::Request::builder()
                 .body(hyper::Body::default())
@@ -186,16 +199,64 @@ async fn http_filters_headers() {
         )
         .await
         .expect("serves");
-    assert_eq!(req.headers().iter().collect::<Vec<_>>(), vec![]);
-    assert_eq!(
-        req.extensions()
-            .get::<HttpRoutePermit>()
-            .expect("permitted")
-            .labels
-            .route
-            .route,
-        rmeta
-    );
+    let permit = rsp
+        .extensions()
+        .get::<HttpRoutePermit>()
+        .expect("permitted");
+    assert_eq!(permit.labels.route.route, rmeta);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn http_filter_redirect() {
+    use linkerd_server_policy::http::{filter, r#match::MatchRequest, Filter, Policy, Route, Rule};
+
+    let rmeta = Arc::new(Meta::Resource {
+        group: "gateway.networking.k8s.io".into(),
+        kind: "httproute".into(),
+        name: "testrt".into(),
+    });
+    let proto = Protocol::Http1(Arc::new([Route {
+        hosts: vec![],
+        rules: vec![Rule {
+            matches: vec![MatchRequest {
+                method: Some(::http::Method::GET),
+                ..MatchRequest::default()
+            }],
+            policy: Policy {
+                authorizations: Arc::new([Authorization {
+                    authentication: Authentication::Unauthenticated,
+                    networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+                    meta: Arc::new(Meta::Resource {
+                        group: "policy.linkerd.io".into(),
+                        kind: "server".into(),
+                        name: "testsaz".into(),
+                    }),
+                }]),
+                filters: vec![Filter::Redirect(filter::RedirectRequest {
+                    path: Some(filter::ModifyPath::ReplaceFullPath(
+                        "/other/location".to_string(),
+                    )),
+                    ..filter::RedirectRequest::default()
+                })],
+                meta: rmeta.clone(),
+            },
+        }],
+    }]));
+    let inner = |_, _| -> Result<::http::Response<::hyper::Body>> {
+        unreachable!("request must not hit inner service");
+    };
+    let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
+
+    let err = svc
+        .call(
+            ::http::Request::builder()
+                .uri("http://example.com/")
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect_err("must redirect");
+    assert!(err.is::<HttpRouteRedirect>(), "{:?}", err);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -294,4 +355,79 @@ async fn grpc_route() {
         .await
         .expect_err("fails")
         .is::<HttpRouteNotFound>());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn grpc_filter_header() {
+    use linkerd_server_policy::{
+        grpc::{
+            r#match::{MatchRoute, MatchRpc},
+            Filter, Policy, Route, Rule,
+        },
+        http,
+    };
+
+    let rmeta = Arc::new(Meta::Resource {
+        group: "gateway.networking.k8s.io".into(),
+        kind: "httproute".into(),
+        name: "testrt".into(),
+    });
+    let proto = Protocol::Grpc(Arc::new([Route {
+        hosts: vec![],
+        rules: vec![Rule {
+            matches: vec![MatchRoute {
+                rpc: MatchRpc {
+                    service: Some("foo.bar.bah".to_string()),
+                    method: Some("baz".to_string()),
+                },
+                ..MatchRoute::default()
+            }],
+
+            policy: Policy {
+                authorizations: Arc::new([Authorization {
+                    authentication: Authentication::Unauthenticated,
+                    networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+                    meta: Arc::new(Meta::Resource {
+                        group: "policy.linkerd.io".into(),
+                        kind: "server".into(),
+                        name: "testsaz".into(),
+                    }),
+                }]),
+                filters: vec![Filter::RequestHeaders(http::filter::ModifyRequestHeader {
+                    add: vec![("testkey".parse().unwrap(), "testval".parse().unwrap())],
+                    ..http::filter::ModifyRequestHeader::default()
+                })],
+                meta: rmeta.clone(),
+            },
+        }],
+    }]));
+    let inner = |permit: HttpRoutePermit, req: ::http::Request<hyper::Body>| -> Result<_> {
+        assert_eq!(req.headers().len(), 1);
+        assert_eq!(
+            req.headers().get("testkey"),
+            Some(&"testval".parse().unwrap())
+        );
+        let mut rsp = ::http::Response::builder()
+            .body(hyper::Body::default())
+            .unwrap();
+        rsp.extensions_mut().insert(permit.clone());
+        Ok(rsp)
+    };
+    let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
+
+    let rsp = svc
+        .call(
+            ::http::Request::builder()
+                .uri("/foo.bar.bah/baz")
+                .method(::http::Method::POST)
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect("serves");
+    let permit = rsp
+        .extensions()
+        .get::<HttpRoutePermit>()
+        .expect("permitted");
+    assert_eq!(permit.labels.route.route, rmeta);
 }
