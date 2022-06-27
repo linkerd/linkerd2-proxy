@@ -148,8 +148,6 @@ where
     fn call(&mut self, mut req: ::http::Request<B>) -> Self::Future {
         // Find an appropriate route for the request and ensure that it's
         // authorized.
-        //
-        // TODO Apply filters...
         let permit = match self.policy.routes() {
             None => err!(self.mk_route_not_found()),
             Some(Routes::Http(routes)) => {

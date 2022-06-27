@@ -106,22 +106,19 @@ async fn http_route() {
         ],
     }])));
 
-    assert_eq!(
-        svc.call(
+    let rsp = svc
+        .call(
             ::http::Request::builder()
                 .body(hyper::Body::default())
                 .unwrap(),
         )
         .await
-        .expect("serves")
+        .expect("serves");
+    let permit = rsp
         .extensions()
         .get::<HttpRoutePermit>()
-        .expect("permitted")
-        .labels
-        .route
-        .route,
-        rmeta
-    );
+        .expect("permitted");
+    assert_eq!(permit.labels.route.route, rmeta);
 
     assert!(svc
         .call(
@@ -189,7 +186,7 @@ async fn http_filter_header() {
         let mut rsp = ::http::Response::builder()
             .body(hyper::Body::default())
             .unwrap();
-        rsp.extensions_mut().insert(permit.clone());
+        rsp.extensions_mut().insert(permit);
         Ok(rsp)
     };
     let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
@@ -316,8 +313,8 @@ async fn grpc_route() {
         ],
     }])));
 
-    assert_eq!(
-        svc.call(
+    let rsp = svc
+        .call(
             ::http::Request::builder()
                 .uri("/foo.bar.bah/baz")
                 .method(::http::Method::POST)
@@ -325,15 +322,12 @@ async fn grpc_route() {
                 .unwrap(),
         )
         .await
-        .expect("serves")
+        .expect("serves");
+    let permit = rsp
         .extensions()
         .get::<HttpRoutePermit>()
-        .expect("permitted")
-        .labels
-        .route
-        .route,
-        rmeta
-    );
+        .expect("permitted");
+    assert_eq!(permit.labels.route.route, rmeta);
 
     assert!(svc
         .call(
@@ -413,7 +407,7 @@ async fn grpc_filter_header() {
         let mut rsp = ::http::Response::builder()
             .body(hyper::Body::default())
             .unwrap();
-        rsp.extensions_mut().insert(permit.clone());
+        rsp.extensions_mut().insert(permit);
         Ok(rsp)
     };
     let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
