@@ -75,21 +75,21 @@ pub struct InboundEndpointLabels {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerLabel(pub Arc<policy::Meta>);
 
-/// Labels referencing an inbound `ServerAuthorization.
+/// Labels referencing an inbound server and authorization.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerAuthzLabels {
     pub server: ServerLabel,
     pub authz: Arc<policy::Meta>,
 }
 
-/// Labels referencing an inbound route.
+/// Labels referencing an inbound server and route.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RouteLabels {
     pub server: ServerLabel,
     pub route: Arc<policy::Meta>,
 }
 
-/// Labels referencing an inbound route and authorization.
+/// Labels referencing an inbound server, route, and authorization.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RouteAuthzLabels {
     pub route: RouteLabels,

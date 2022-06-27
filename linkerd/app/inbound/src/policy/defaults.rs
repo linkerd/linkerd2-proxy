@@ -1,6 +1,6 @@
 use linkerd_app_core::{IpNet, Ipv4Net, Ipv6Net};
 use linkerd_server_policy::{
-    authz::Suffix, Authentication, Authorization, Meta, Protocol, ServerPolicy,
+    authz::Suffix, http, Authentication, Authorization, Meta, Protocol, ServerPolicy,
 };
 use std::time::Duration;
 
@@ -62,14 +62,18 @@ fn mk(
     authentication: Authentication,
     timeout: Duration,
 ) -> ServerPolicy {
+    let authorizations = std::sync::Arc::new([Authorization {
+        networks: nets.into_iter().map(Into::into).collect(),
+        authentication,
+        meta: Meta::new_default(name),
+    }]);
+    let http = std::sync::Arc::new([http::default(authorizations.clone())]);
     ServerPolicy {
-        protocol: Protocol::Detect { timeout },
-        authorizations: vec![Authorization {
-            networks: nets.into_iter().map(Into::into).collect(),
-            authentication,
-            meta: Meta::new_default(name),
-        }]
-        .into(),
+        protocol: Protocol::Detect {
+            timeout,
+            http,
+            tcp_authorizations: authorizations,
+        },
         meta: Meta::new_default(name),
     }
 }

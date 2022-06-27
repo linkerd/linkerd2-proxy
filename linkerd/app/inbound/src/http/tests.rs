@@ -603,20 +603,21 @@ impl svc::Param<tls::ConditionalServerTls> for Target {
 
 impl svc::Param<policy::AllowPolicy> for Target {
     fn param(&self) -> policy::AllowPolicy {
+        let authorizations = Arc::new([policy::Authorization {
+            authentication: policy::Authentication::Unauthenticated,
+            networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
+            meta: Arc::new(policy::Meta::Resource {
+                group: "policy.linkerd.io".into(),
+                kind: "serverauthorization".into(),
+                name: "testsaz".into(),
+            }),
+        }]);
         let (policy, _) = policy::AllowPolicy::for_test(
             self.param(),
             policy::ServerPolicy {
-                protocol: policy::Protocol::Http1,
-                authorizations: vec![policy::Authorization {
-                    authentication: policy::Authentication::Unauthenticated,
-                    networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
-                    meta: Arc::new(policy::Meta::Resource {
-                        group: "policy.linkerd.io".into(),
-                        kind: "serverauthorization".into(),
-                        name: "testsaz".into(),
-                    }),
-                }]
-                .into(),
+                protocol: policy::Protocol::Http1(Arc::new([
+                    linkerd_server_policy::http::default(authorizations),
+                ])),
                 meta: Arc::new(policy::Meta::Resource {
                     group: "policy.linkerd.io".into(),
                     kind: "server".into(),

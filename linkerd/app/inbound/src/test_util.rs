@@ -21,6 +21,34 @@ pub fn default_config() -> Config {
     let cluster_local = "svc.cluster.local."
         .parse::<Suffix>()
         .expect("`svc.cluster.local.` suffix is definitely valid");
+
+    let authorizations = Arc::new([Authorization {
+        authentication: Authentication::Unauthenticated,
+        networks: vec![Default::default()],
+        meta: Arc::new(Meta::Resource {
+            group: "policy.linkerd.io".into(),
+            kind: "serverauthorization".into(),
+            name: "testsaz".into(),
+        }),
+    }]);
+    let policy = policy::Config::Fixed {
+        cache_max_idle_age: Duration::from_secs(20),
+        default: ServerPolicy {
+            protocol: Protocol::Detect {
+                timeout: std::time::Duration::from_secs(10),
+                http: Arc::new([linkerd_server_policy::http::default(authorizations.clone())]),
+                tcp_authorizations: authorizations,
+            },
+            meta: Arc::new(Meta::Resource {
+                group: "policy.linkerd.io".into(),
+                kind: "server".into(),
+                name: "testsrv".into(),
+            }),
+        }
+        .into(),
+        ports: Default::default(),
+    };
+
     Config {
         allow_discovery: Some(cluster_local).into_iter().collect(),
         proxy: config::ProxyConfig {
@@ -50,31 +78,7 @@ pub fn default_config() -> Config {
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(10),
         },
-        policy: policy::Config::Fixed {
-            cache_max_idle_age: Duration::from_secs(20),
-            default: ServerPolicy {
-                protocol: Protocol::Detect {
-                    timeout: std::time::Duration::from_secs(10),
-                },
-                authorizations: vec![Authorization {
-                    authentication: Authentication::Unauthenticated,
-                    networks: vec![Default::default()],
-                    meta: Arc::new(Meta::Resource {
-                        group: "policy.linkerd.io".into(),
-                        kind: "serverauthorization".into(),
-                        name: "testsaz".into(),
-                    }),
-                }]
-                .into(),
-                meta: Arc::new(Meta::Resource {
-                    group: "policy.linkerd.io".into(),
-                    kind: "server".into(),
-                    name: "testsrv".into(),
-                }),
-            }
-            .into(),
-            ports: Default::default(),
-        },
+        policy,
         profile_idle_timeout: Duration::from_millis(500),
         allowed_ips: Default::default(),
     }

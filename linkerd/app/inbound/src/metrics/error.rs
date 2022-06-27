@@ -3,7 +3,7 @@ mod tcp;
 
 pub(crate) use self::{http::HttpErrorMetrics, tcp::TcpErrorMetrics};
 use crate::{
-    policy::{HttpRouteUnauthorized, ServerUnauthorized},
+    policy::{HttpRouteNotFound, HttpRouteUnauthorized, ServerUnauthorized},
     GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop,
 };
 use linkerd_app_core::{errors::FailFastError, metrics::FmtLabels, tls};
@@ -25,10 +25,15 @@ enum ErrorKind {
 
 impl ErrorKind {
     fn mk(err: &(dyn std::error::Error + 'static)) -> Option<Self> {
-        if err.is::<ServerUnauthorized>() || err.is::<HttpRouteUnauthorized>() {
-            // Unauthorized metrics are tracked separately.and are not considered to be errors.
-            None
-        } else if err.is::<FailFastError>() {
+        // Policy-related metrics are tracked separately.
+        if err.is::<ServerUnauthorized>()
+            || err.is::<HttpRouteUnauthorized>()
+            || err.is::<HttpRouteNotFound>()
+        {
+            return None;
+        }
+
+        if err.is::<FailFastError>() {
             Some(ErrorKind::FailFast)
         } else if err.is::<std::io::Error>() {
             Some(ErrorKind::Io)

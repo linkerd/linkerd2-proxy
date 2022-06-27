@@ -646,7 +646,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                                     .or_else(|| require_tls_ports.get(&p))
                                     .cloned()
                                     .unwrap_or_else(|| default_allow.clone());
-                                sp.protocol = inbound::policy::Protocol::Opaque;
+                                sp.protocol = match sp.protocol {
+                                    inbound::policy::Protocol::Detect { tcp_authorizations, .. } => {
+                                        inbound::policy::Protocol::Opaque(tcp_authorizations)
+                                    }
+                                    _ => unreachable!("port must have been configured to detect prior to marking it opaque"),
+                                };
                                 (p, sp)
                             })
                             .collect::<HashMap<_, inbound::policy::ServerPolicy>>();

@@ -8,7 +8,7 @@ mod tcp;
 pub(crate) use self::store::Store;
 pub use self::{
     config::Config,
-    http::{HttpRouteUnauthorized, NewHttpPolicy},
+    http::{HttpRouteNotFound, HttpRouteUnauthorized, NewHttpPolicy},
     tcp::NewTcpPolicy,
 };
 
@@ -20,7 +20,8 @@ use linkerd_app_core::{
 };
 use linkerd_cache::Cached;
 pub use linkerd_server_policy::{
-    authz::Suffix, Authentication, Authorization, Meta, Protocol, ServerPolicy,
+    authz::Suffix, grpc::Route as GrpcRoute, http::Route as HttpRoute, route, Authentication,
+    Authorization, Meta, Protocol, RoutePolicy, ServerPolicy,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -64,6 +65,11 @@ pub struct HttpRoutePermit {
     pub labels: RouteAuthzLabels,
 }
 
+pub enum Routes {
+    Http(Arc<[HttpRoute]>),
+    Grpc(Arc<[GrpcRoute]>),
+}
+
 // === impl DefaultPolicy ===
 
 impl From<ServerPolicy> for DefaultPolicy {
@@ -77,8 +83,7 @@ impl From<DefaultPolicy> for ServerPolicy {
         match d {
             DefaultPolicy::Allow(p) => p,
             DefaultPolicy::Deny => ServerPolicy {
-                protocol: Protocol::Opaque,
-                authorizations: Arc::new([]),
+                protocol: Protocol::Opaque(Arc::new([])),
                 meta: Meta::new_default("deny"),
             },
         }
@@ -128,6 +133,17 @@ impl AllowPolicy {
         if self.server.changed().await.is_err() {
             // If the sender was dropped, then there can be no further changes.
             futures::future::pending::<()>().await;
+        }
+    }
+
+    fn routes(&self) -> Option<Routes> {
+        let borrow = self.server.borrow();
+        match &borrow.protocol {
+            Protocol::Detect { http, .. } | Protocol::Http1(http) | Protocol::Http2(http) => {
+                Some(Routes::Http(http.clone()))
+            }
+            Protocol::Grpc(grpc) => Some(Routes::Grpc(grpc.clone())),
+            _ => None,
         }
     }
 }

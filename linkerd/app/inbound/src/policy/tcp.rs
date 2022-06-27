@@ -8,7 +8,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
-use linkerd_server_policy::ServerPolicy;
+use linkerd_server_policy::{Protocol, ServerPolicy};
 use std::{future::Future, pin::Pin, task};
 #[cfg(test)]
 mod tests;
@@ -185,9 +185,17 @@ fn check_authorized(
     client_addr: Remote<ClientAddr>,
     tls: &tls::ConditionalServerTls,
 ) -> Result<ServerPermit, ServerUnauthorized> {
-    for authz in &*server.authorizations {
-        if super::is_authorized(authz, client_addr, tls) {
-            return Ok(ServerPermit::new(dst, &*server, authz));
+    if let Protocol::Detect {
+        tcp_authorizations: authzs,
+        ..
+    }
+    | Protocol::Tls(authzs)
+    | Protocol::Opaque(authzs) = &server.protocol
+    {
+        for authz in &**authzs {
+            if super::is_authorized(authz, client_addr, tls) {
+                return Ok(ServerPermit::new(dst, &*server, authz));
+            }
         }
     }
 
