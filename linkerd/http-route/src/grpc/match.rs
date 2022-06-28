@@ -10,13 +10,6 @@ pub struct MatchRoute {
     pub headers: Vec<MatchHeader>,
 }
 
-/// Matches gRPC endpoints.
-#[derive(Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct MatchRpc {
-    pub service: Option<String>,
-    pub method: Option<String>,
-}
-
 /// Summarizes a matched gRPC route.
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct RouteMatch {
@@ -24,10 +17,19 @@ pub struct RouteMatch {
     headers: usize,
 }
 
+/// Matches gRPC endpoints.
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MatchRpc {
+    pub service: Option<String>,
+    pub method: Option<String>,
+}
+
 /// Summarizes a matched gRPC endpoints.
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct RpcMatch {
+    /// The number of characters matched in the service name.
     service: usize,
+    /// The number of characters matched in the method name.
     method: usize,
 }
 
@@ -64,11 +66,9 @@ impl std::cmp::PartialOrd for RouteMatch {
 
 impl std::cmp::Ord for RouteMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-        match self.rpc.cmp(&other.rpc) {
-            Ordering::Equal => self.headers.cmp(&other.headers),
-            ord => ord,
-        }
+        self.rpc
+            .cmp(&other.rpc)
+            .then_with(|| self.headers.cmp(&other.headers))
     }
 }
 

@@ -55,9 +55,9 @@ fn hostname_precedence() {
     assert_eq!(*policy, Policy::Expected, "incorrect rule matched");
 }
 
+/// Given two equivalent routes, choose the longer path match.
 #[test]
 fn method_precedence() {
-    // Given two equivalent routes, choose the longer path match.
     let rts = vec![
         Route {
             rules: vec![Rule {

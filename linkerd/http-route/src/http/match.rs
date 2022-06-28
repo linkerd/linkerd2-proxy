@@ -33,6 +33,12 @@ pub struct RequestMatch {
 
 // === impl MatchRequest ===
 
+impl RequestMatch {
+    pub(crate) fn path(&self) -> &PathMatch {
+        &self.path_match
+    }
+}
+
 impl crate::Match for MatchRequest {
     type Summary = RequestMatch;
 
@@ -81,12 +87,6 @@ impl Default for RequestMatch {
 
 // === impl RequestMatch ===
 
-impl RequestMatch {
-    pub(crate) fn path(&self) -> &PathMatch {
-        &self.path_match
-    }
-}
-
 impl std::cmp::PartialOrd for RequestMatch {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -95,16 +95,10 @@ impl std::cmp::PartialOrd for RequestMatch {
 
 impl std::cmp::Ord for RequestMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-        match self.path_match.cmp(&other.path_match) {
-            Ordering::Equal => match self.headers.cmp(&other.headers) {
-                Ordering::Equal => match self.query_params.cmp(&other.query_params) {
-                    Ordering::Equal => self.method.cmp(&other.method),
-                    ord => ord,
-                },
-                ord => ord,
-            },
-            ord => ord,
-        }
+        self.path_match
+            .cmp(&other.path_match)
+            .then_with(|| self.headers.cmp(&other.headers))
+            .then_with(|| self.query_params.cmp(&other.query_params))
+            .then_with(|| self.method.cmp(&other.method))
     }
 }
