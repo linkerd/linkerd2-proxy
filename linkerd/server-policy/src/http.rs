@@ -1,9 +1,14 @@
 use linkerd_http_route::http;
-pub use linkerd_http_route::http::r#match;
+pub use linkerd_http_route::http::{filter, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy;
+pub type Policy = crate::RoutePolicy<Filter>;
 pub type Route = http::Route<Policy>;
 pub type Rule = http::Rule<Policy>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Filter {
+    RequestHeaders(http::filter::ModifyRequestHeader),
+}
 
 #[inline]
 pub fn find<'r, B>(
@@ -21,6 +26,7 @@ pub fn default(authorizations: std::sync::Arc<[crate::Authorization]>) -> Route 
             policy: Policy {
                 meta: crate::Meta::new_default("default"),
                 authorizations,
+                filters: vec![],
             },
         }],
     }

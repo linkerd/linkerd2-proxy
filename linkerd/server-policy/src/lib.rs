@@ -31,10 +31,10 @@ pub enum Protocol {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RoutePolicy {
+pub struct RoutePolicy<T> {
     pub meta: Arc<Meta>,
     pub authorizations: Arc<[Authorization]>,
-    // TODO pub filters: Vec<T>,
+    pub filters: Vec<T>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
