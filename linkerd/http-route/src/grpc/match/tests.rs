@@ -12,14 +12,14 @@ fn empty_match() {
         .uri("http://example.com/foo/bar")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), Some(RouteMatch::default()));
+    assert_eq!(m.match_request(&req), Some(RouteMatch::default()));
 
     let req = http::Request::builder()
         .method(http::Method::POST)
         .uri("http://example.com/foo")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn method() {
         .body(())
         .unwrap();
     assert_eq!(
-        m.r#match(&req),
+        m.match_request(&req),
         Some(RouteMatch {
             rpc: RpcMatch {
                 service: 0,
@@ -53,7 +53,7 @@ fn method() {
         .uri("https://example.org/foo/bah")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn headers() {
         .uri("http://example.com/foo")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 
     let req = http::Request::builder()
         .method(http::Method::POST)
@@ -83,7 +83,7 @@ fn headers() {
         .header("x-baz", "zab") // invalid header value
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 
     // Regex matches apply
     let req = http::Request::builder()
@@ -94,7 +94,7 @@ fn headers() {
         .body(())
         .unwrap();
     assert_eq!(
-        m.r#match(&req),
+        m.match_request(&req),
         Some(RouteMatch {
             headers: 2,
             ..RouteMatch::default()
@@ -109,7 +109,7 @@ fn headers() {
         .header("x-baz", "quxa")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn http_method() {
         .body(())
         .unwrap();
     assert_eq!(
-        m.r#match(&req),
+        m.match_request(&req),
         Some(RouteMatch {
             rpc: RpcMatch {
                 service: 3,
@@ -143,7 +143,7 @@ fn http_method() {
         .uri("http://example.com/foo/bar")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn multiple() {
         .body(())
         .unwrap();
     assert_eq!(
-        m.r#match(&req),
+        m.match_request(&req),
         Some(RouteMatch {
             rpc: RpcMatch {
                 service: 3,
@@ -183,5 +183,5 @@ fn multiple() {
         .header("x-foo", "bah")
         .body(())
         .unwrap();
-    assert_eq!(m.r#match(&req), None);
+    assert_eq!(m.match_request(&req), None);
 }

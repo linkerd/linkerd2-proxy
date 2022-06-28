@@ -36,7 +36,7 @@ pub struct RequestMatch {
 impl crate::Match for MatchRequest {
     type Summary = RequestMatch;
 
-    fn r#match<B>(&self, req: &http::Request<B>) -> Option<RequestMatch> {
+    fn match_request<B>(&self, req: &http::Request<B>) -> Option<RequestMatch> {
         let mut summary = RequestMatch::default();
 
         if let Some(method) = &self.method {

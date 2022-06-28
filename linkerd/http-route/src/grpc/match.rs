@@ -36,7 +36,7 @@ pub(crate) struct RpcMatch {
 impl crate::Match for MatchRoute {
     type Summary = RouteMatch;
 
-    fn r#match<B>(&self, req: &http::Request<B>) -> Option<RouteMatch> {
+    fn match_request<B>(&self, req: &http::Request<B>) -> Option<RouteMatch> {
         if req.method() != http::Method::POST {
             return None;
         }
