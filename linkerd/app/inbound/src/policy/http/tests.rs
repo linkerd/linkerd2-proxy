@@ -169,9 +169,9 @@ async fn http_filter_header() {
                         name: "testsaz".into(),
                     }),
                 }]),
-                filters: vec![Filter::RequestHeaders(filter::ModifyRequestHeader {
+                filters: vec![Filter::RequestHeaders(filter::ModifyHeader {
                     add: vec![("testkey".parse().unwrap(), "testval".parse().unwrap())],
-                    ..filter::ModifyRequestHeader::default()
+                    ..filter::ModifyHeader::default()
                 })],
                 meta: rmeta.clone(),
             },
@@ -337,9 +337,9 @@ async fn grpc_filter_header() {
                         name: "testsaz".into(),
                     }),
                 }]),
-                filters: vec![Filter::RequestHeaders(http::filter::ModifyRequestHeader {
+                filters: vec![Filter::RequestHeaders(http::filter::ModifyHeader {
                     add: vec![("testkey".parse().unwrap(), "testval".parse().unwrap())],
-                    ..http::filter::ModifyRequestHeader::default()
+                    ..http::filter::ModifyHeader::default()
                 })],
                 meta: rmeta.clone(),
             },

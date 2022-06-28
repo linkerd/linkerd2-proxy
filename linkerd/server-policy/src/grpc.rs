@@ -7,7 +7,7 @@ pub type Rule = grpc::Rule<Policy>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Filter {
-    RequestHeaders(http::filter::ModifyRequestHeader),
+    RequestHeaders(http::filter::ModifyHeader),
 }
 
 #[inline]

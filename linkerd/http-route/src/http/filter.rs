@@ -1,3 +1,3 @@
-pub mod modify_request_header;
+pub mod modify_header;
 
-pub use self::modify_request_header::ModifyRequestHeader;
+pub use self::modify_header::ModifyHeader;

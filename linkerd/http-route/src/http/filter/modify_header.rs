@@ -1,15 +1,16 @@
 use http::header::{HeaderMap, HeaderName, HeaderValue};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
-pub struct ModifyRequestHeader {
+pub struct ModifyHeader {
     pub add: Vec<(HeaderName, HeaderValue)>,
-    pub set: Vec<(HeaderName, HeaderValue)>,
-    pub remove: Vec<HeaderName>,
+    pub set: BTreeMap<HeaderName, HeaderValue>,
+    pub remove: BTreeSet<HeaderName>,
 }
 
 // === impl ModifyRequestHeader ===
 
-impl ModifyRequestHeader {
+impl ModifyHeader {
     pub fn apply(&self, headers: &mut HeaderMap) {
         for (hdr, val) in &self.add {
             headers.append(hdr, val.clone());
