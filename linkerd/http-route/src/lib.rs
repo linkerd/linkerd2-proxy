@@ -103,5 +103,5 @@ pub fn find<'r, M: Match + 'r, P, B>(
 fn best<M: Ord, P>(matches: impl Iterator<Item = (M, P)>) -> Option<(M, P)> {
     // This is roughly equivalent to `max_by(...)` but we want to ensure
     // that the first match wins.
-    matches.reduce(|(m0, p0), (m1, p1)| if m0 < m1 { (m1, p1) } else { (m0, p0) })
+    matches.reduce(|(m0, p0), (m1, p1)| if m0 >= m1 { (m0, p0) } else { (m1, p1) })
 }
