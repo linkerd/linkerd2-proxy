@@ -9,7 +9,7 @@ pub type Rule = http::Rule<Policy>;
 pub enum Filter {
     Error(http::filter::RespondWithError),
 
-    RequestHeaders(http::filter::ModifyRequestHeader),
+    RequestHeaders(http::filter::ModifyHeader),
 
     Redirect(http::filter::RedirectRequest),
 

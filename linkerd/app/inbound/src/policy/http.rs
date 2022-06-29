@@ -151,14 +151,14 @@ where
         let permit = match self.policy.routes() {
             None => err!(self.mk_route_not_found()),
             Some(Routes::Http(routes)) => {
-                let (permit, r#match, route) = try_fut!(self.authorize(&routes, &req));
-                try_fut!(apply_http_filters(r#match, route, &mut req));
-                permit
+                let (p, m, r) = try_fut!(self.authorize(&routes, &req));
+                try_fut!(apply_http_filters(m, r, &mut req));
+                p
             }
             Some(Routes::Grpc(routes)) => {
-                let (permit, _, route) = try_fut!(self.authorize(&routes, &req));
-                try_fut!(apply_grpc_filters(route, &mut req));
-                permit
+                let (p, _, r) = try_fut!(self.authorize(&routes, &req));
+                try_fut!(apply_grpc_filters(r, &mut req));
+                p
             }
         };
 
@@ -271,7 +271,7 @@ fn apply_http_filters<B>(
                 }
 
                 Ok(None) => {
-                    tracing::debug!("Ignoring irrelvant redirect");
+                    tracing::debug!("Ignoring irrelevant redirect");
                 }
             },
 

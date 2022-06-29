@@ -1,10 +1,10 @@
 pub mod error_respond;
-pub mod modify_request_header;
+pub mod modify_header;
 pub mod redirect;
 
 pub use self::{
     error_respond::RespondWithError,
-    modify_request_header::ModifyRequestHeader,
+    modify_header::ModifyHeader,
     redirect::{InvalidRedirect, RedirectRequest, Redirection},
 };
 

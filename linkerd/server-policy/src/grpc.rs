@@ -1,5 +1,3 @@
-use std::vec;
-
 pub use linkerd_http_route::grpc::{filter, r#match, RouteMatch};
 use linkerd_http_route::{grpc, http};
 
@@ -11,7 +9,7 @@ pub type Rule = grpc::Rule<Policy>;
 pub enum Filter {
     Error(filter::RespondWithError),
 
-    RequestHeaders(http::filter::ModifyRequestHeader),
+    RequestHeaders(http::filter::ModifyHeader),
 
     /// Indicates that the filter kind is unknown to the proxy (e.g., because
     /// the controller is on a new version of the protobuf).
