@@ -130,8 +130,19 @@ impl errors::HttpRescue<Error> for ServerRescue {
         if let Some(cause) = errors::cause_ref::<policy::HttpRouteNotFound>(&*error) {
             return Ok(errors::SyntheticHttpResponse::not_found(cause));
         }
+
         if let Some(cause) = errors::cause_ref::<policy::HttpRouteUnauthorized>(&*error) {
             return Ok(errors::SyntheticHttpResponse::permission_denied(cause));
+        }
+
+        if let Some(error) = errors::cause_ref::<policy::HttpRouteInvalidRedirect>(&*error) {
+            tracing::warn!(%error);
+            return Ok(errors::SyntheticHttpResponse::unexpected_error());
+        }
+        if let Some(policy::HttpRouteRedirect { status, location }) =
+            errors::cause_ref::<policy::HttpRouteRedirect>(&*error)
+        {
+            return Ok(errors::SyntheticHttpResponse::redirect(*status, location));
         }
 
         if let Some(cause) = errors::cause_ref::<crate::GatewayDomainInvalid>(&*error) {

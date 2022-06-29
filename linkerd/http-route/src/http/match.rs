@@ -33,6 +33,12 @@ pub struct RequestMatch {
 
 // === impl MatchRequest ===
 
+impl RequestMatch {
+    pub(crate) fn path(&self) -> &PathMatch {
+        &self.path_match
+    }
+}
+
 impl crate::Match for MatchRequest {
     type Summary = RequestMatch;
 
@@ -71,7 +77,7 @@ impl Default for RequestMatch {
         // > If no matches are specified, the default is a prefix path match on
         // > "/", which has the effect of matching every HTTP request.
         Self {
-            path_match: PathMatch::Prefix("/".len()),
+            path_match: PathMatch::Prefix(0),
             headers: 0,
             query_params: 0,
             method: false,

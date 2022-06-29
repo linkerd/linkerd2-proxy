@@ -8,7 +8,10 @@ mod tcp;
 pub(crate) use self::store::Store;
 pub use self::{
     config::Config,
-    http::{HttpRouteNotFound, HttpRouteUnauthorized, NewHttpPolicy},
+    http::{
+        HttpRouteInvalidRedirect, HttpRouteNotFound, HttpRouteRedirect, HttpRouteUnauthorized,
+        NewHttpPolicy,
+    },
     tcp::NewTcpPolicy,
 };
 
@@ -20,8 +23,10 @@ use linkerd_app_core::{
 };
 use linkerd_cache::Cached;
 pub use linkerd_server_policy::{
-    authz::Suffix, grpc::Route as GrpcRoute, http::Route as HttpRoute, route, Authentication,
-    Authorization, Meta, Protocol, RoutePolicy, ServerPolicy,
+    authz::Suffix,
+    grpc::Route as GrpcRoute,
+    http::{filter::Redirection, Route as HttpRoute},
+    route, Authentication, Authorization, Meta, Protocol, RoutePolicy, ServerPolicy,
 };
 use std::sync::Arc;
 use thiserror::Error;
