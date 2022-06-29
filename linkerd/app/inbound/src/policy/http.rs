@@ -151,14 +151,14 @@ where
         let permit = match self.policy.routes() {
             None => err!(self.mk_route_not_found()),
             Some(Routes::Http(routes)) => {
-                let (p, m, r) = try_fut!(self.authorize(&routes, &req));
-                try_fut!(apply_http_filters(m, r, &mut req));
-                p
+                let (permit, mtch, route) = try_fut!(self.authorize(&routes, &req));
+                try_fut!(apply_http_filters(mtch, route, &mut req));
+                permit
             }
             Some(Routes::Grpc(routes)) => {
-                let (p, _, r) = try_fut!(self.authorize(&routes, &req));
-                try_fut!(apply_grpc_filters(r, &mut req));
-                p
+                let (permit, mtch, route) = try_fut!(self.authorize(&routes, &req));
+                try_fut!(apply_grpc_filters(route, &mut req));
+                permit
             }
         };
 
