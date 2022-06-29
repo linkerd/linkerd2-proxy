@@ -156,7 +156,7 @@ where
                 permit
             }
             Some(Routes::Grpc(routes)) => {
-                let (permit, mtch, route) = try_fut!(self.authorize(&routes, &req));
+                let (permit, _, route) = try_fut!(self.authorize(&routes, &req));
                 try_fut!(apply_grpc_filters(route, &mut req));
                 permit
             }
