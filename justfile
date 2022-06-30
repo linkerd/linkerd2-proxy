@@ -1,4 +1,4 @@
-# See https://just.systems/man/
+# See https://just.systems/man/en
 
 #
 # Configuration
