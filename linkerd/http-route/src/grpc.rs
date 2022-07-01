@@ -1,8 +1,9 @@
+pub mod filter;
 pub mod r#match;
-
-pub use self::r#match::MatchRoute;
 #[cfg(test)]
 mod tests;
+
+pub use self::r#match::MatchRoute;
 
 pub type RouteMatch = crate::RouteMatch<r#match::RouteMatch>;
 
