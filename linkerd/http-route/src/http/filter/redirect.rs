@@ -87,10 +87,12 @@ impl RedirectRequest {
                 .cloned()
                 .ok_or(InvalidRedirect::MissingAuthority),
 
-            // A full override is specified,
+            // A full override is specified, so use it without considering the
+            // original URI.
             Some(AuthorityOverride::Exact(hp)) => Ok(hp.clone()),
 
-            // If only the host is specified, use the
+            // If only the host is specified, try to use the original request's
+            // port, (if it's not the scheme's default).
             Some(AuthorityOverride::Host(h)) => {
                 match orig_uri
                     .port_u16()
