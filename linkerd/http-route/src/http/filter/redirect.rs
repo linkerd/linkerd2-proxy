@@ -58,9 +58,10 @@ impl RedirectRequest {
                 .cloned()
                 .unwrap_or(Scheme::HTTP);
 
+            let authority = self.authority(orig_uri, &scheme)?;
             Uri::builder()
                 .scheme(scheme)
-                .authority(self.authority(orig_uri)?)
+                .authority(authority)
                 .path_and_query(self.path_and_query(orig_uri, rm)?)
                 .build()
                 .map_err(InvalidRedirect::InvalidLocation)?
@@ -74,27 +75,71 @@ impl RedirectRequest {
         Ok(Some(Redirection { status, location }))
     }
 
-    fn authority(&self, orig_uri: &http::Uri) -> Result<Authority, InvalidRedirect> {
+    fn authority(
+        &self,
+        orig_uri: &http::Uri,
+        scheme: &http::uri::Scheme,
+    ) -> Result<Authority, InvalidRedirect> {
         match &self.authority {
-            Some(AuthorityOverride::Exact(hp)) => Ok(hp.clone()),
-
-            // If only the host is specified, use the
-            Some(AuthorityOverride::Host(h)) => match orig_uri.port_u16() {
-                Some(p) => format!("{}:{}", h, p).try_into().map_err(Into::into),
-                None => Ok(h.clone()),
-            },
-
-            Some(AuthorityOverride::Port(p)) => {
-                let h = orig_uri.host().ok_or(InvalidRedirect::MissingAuthority)?;
-                format!("{}:{}", h, p).try_into().map_err(Into::into)
-            }
-
             // Use the original authority if no override is specified.
             None => orig_uri
                 .authority()
                 .cloned()
                 .ok_or(InvalidRedirect::MissingAuthority),
+
+            // A full override is specified,
+            Some(AuthorityOverride::Exact(hp)) => Ok(hp.clone()),
+
+            // If only the host is specified, use the
+            Some(AuthorityOverride::Host(h)) => {
+                match orig_uri
+                    .port_u16()
+                    .and_then(|p| Self::port_if_not_default(scheme, p))
+                {
+                    Some(p) => format!("{}:{}", h, p).try_into().map_err(Into::into),
+                    None => Ok(h.clone()),
+                }
+            }
+
+            Some(AuthorityOverride::Port(p)) => {
+                match Self::port_if_not_default(scheme, (*p).into()) {
+                    // If the override port is not the default for the scheme
+                    // and is not the original port, then re-encode an authority
+                    // using the request's hostname and the override port.
+                    Some(p) if Some(p) != orig_uri.port_u16() => {
+                        let h = orig_uri.host().ok_or(InvalidRedirect::MissingAuthority)?;
+                        format!("{}:{}", h, p).try_into().map_err(Into::into)
+                    }
+
+                    // If the override port is the default for the scheme but
+                    // the original URI has a port specified, then re-encode an
+                    // authority using only the request's hostname (omitting a
+                    // port).
+                    None if orig_uri.port().is_some() => orig_uri
+                        .host()
+                        .ok_or(InvalidRedirect::MissingAuthority)?
+                        .parse()
+                        .map_err(Into::into),
+
+                    // Otherwise, clone the request's original authority without
+                    // modification.
+                    _ => orig_uri
+                        .authority()
+                        .ok_or(InvalidRedirect::MissingAuthority)
+                        .cloned(),
+                }
+            }
         }
+    }
+
+    fn port_if_not_default(scheme: &http::uri::Scheme, port: u16) -> Option<u16> {
+        if *scheme == http::uri::Scheme::HTTP && port == 80 {
+            return None;
+        }
+        if *scheme == http::uri::Scheme::HTTPS && port == 443 {
+            return None;
+        }
+        Some(port)
     }
 
     // XXX This function probably does more allocation that is strictly needed.
@@ -209,6 +254,40 @@ mod tests {
             Some(Redirection {
                 status: http::StatusCode::MOVED_PERMANENTLY,
                 location: "http://example.com:8080/foo?a=b&c".parse().unwrap()
+            }),
+        );
+    }
+
+    #[test]
+    fn port_default_is_omitted() {
+        let rule = Rule {
+            matches: vec![MatchRequest::default()],
+            policy: RedirectRequest {
+                authority: Some(AuthorityOverride::Port(80.try_into().unwrap())),
+                ..RedirectRequest::default()
+            },
+        };
+        assert_eq!(
+            apply!("http://example.com:8080/foo?a=b&c", rule).expect("must apply"),
+            Some(Redirection {
+                status: http::StatusCode::MOVED_PERMANENTLY,
+                location: "http://example.com/foo?a=b&c".parse().unwrap()
+            }),
+        );
+
+        let rule = Rule {
+            matches: vec![MatchRequest::default()],
+            policy: RedirectRequest {
+                scheme: Some(http::uri::Scheme::HTTPS),
+                authority: Some(AuthorityOverride::Port(443.try_into().unwrap())),
+                ..RedirectRequest::default()
+            },
+        };
+        assert_eq!(
+            apply!("http://example.com:8080/foo?a=b&c", rule).expect("must apply"),
+            Some(Redirection {
+                status: http::StatusCode::MOVED_PERMANENTLY,
+                location: "https://example.com/foo?a=b&c".parse().unwrap()
             }),
         );
     }
