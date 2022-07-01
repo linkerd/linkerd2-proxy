@@ -1,19 +1,24 @@
-use std::num::NonZeroU16;
-
 use super::ModifyPath;
 use crate::http::RouteMatch;
 use http::{
     uri::{Authority, InvalidUri, PathAndQuery, Scheme, Uri},
     StatusCode,
 };
+use std::num::NonZeroU16;
 
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct RedirectRequest {
     pub scheme: Option<Scheme>,
-    pub host: Option<String>,
-    pub port: Option<NonZeroU16>,
+    pub authority: Option<AuthorityOverride>,
     pub path: Option<ModifyPath>,
     pub status: Option<StatusCode>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum AuthorityOverride {
+    Exact(Authority),
+    Host(Authority),
+    Port(NonZeroU16),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -70,20 +75,25 @@ impl RedirectRequest {
     }
 
     fn authority(&self, orig_uri: &http::Uri) -> Result<Authority, InvalidRedirect> {
-        match (self.host.as_deref(), self.port) {
-            // If a host is configured, use it and whatever port is configured.
-            (Some(h), Some(p)) => format!("{}:{}", h, p).try_into().map_err(Into::into),
-            (Some(h), None) => h.parse().map_err(Into::into),
+        match &self.authority {
+            Some(AuthorityOverride::Exact(hp)) => Ok(hp.clone()),
 
-            // If a host is NOT configured, use the request's original host
-            // and either an overridden port or the original port.
-            (None, p) => {
+            // If only the host is specified, use the
+            Some(AuthorityOverride::Host(h)) => match orig_uri.port_u16() {
+                Some(p) => format!("{}:{}", h, p).try_into().map_err(Into::into),
+                None => Ok(h.clone()),
+            },
+
+            Some(AuthorityOverride::Port(p)) => {
                 let h = orig_uri.host().ok_or(InvalidRedirect::MissingAuthority)?;
-                match p.or_else(|| orig_uri.port_u16().and_then(|p| p.try_into().ok())) {
-                    Some(p) => format!("{}:{}", h, p).try_into().map_err(Into::into),
-                    None => h.parse().map_err(Into::into),
-                }
+                format!("{}:{}", h, p).try_into().map_err(Into::into)
             }
+
+            // Use the original authority if no override is specified.
+            None => orig_uri
+                .authority()
+                .cloned()
+                .ok_or(InvalidRedirect::MissingAuthority),
         }
     }
 
@@ -172,7 +182,7 @@ mod tests {
         let rule = Rule {
             matches: vec![MatchRequest::default()],
             policy: RedirectRequest {
-                host: Some("example.org".to_string()),
+                authority: Some(AuthorityOverride::Exact("example.org".parse().unwrap())),
                 ..RedirectRequest::default()
             },
         };
@@ -190,7 +200,7 @@ mod tests {
         let rule = Rule {
             matches: vec![MatchRequest::default()],
             policy: RedirectRequest {
-                port: Some(8080.try_into().unwrap()),
+                authority: Some(AuthorityOverride::Port(8080.try_into().unwrap())),
                 ..RedirectRequest::default()
             },
         };
