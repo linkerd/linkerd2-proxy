@@ -51,6 +51,17 @@ struct ConnectionMeta {
 pub struct HttpRouteNotFound(());
 
 #[derive(Debug, thiserror::Error)]
+#[error("invalid redirect: {0}")]
+pub struct HttpRouteInvalidRedirect(#[from] pub http::filter::InvalidRedirect);
+
+#[derive(Debug, thiserror::Error)]
+#[error("request redirected to {location}")]
+pub struct HttpRouteRedirect {
+    pub status: ::http::StatusCode,
+    pub location: ::http::Uri,
+}
+
+#[derive(Debug, thiserror::Error)]
 #[error("unauthorized request on route")]
 pub struct HttpRouteUnauthorized(());
 
@@ -131,8 +142,8 @@ where
         let permit = match self.policy.routes() {
             None => err!(self.mk_route_not_found()),
             Some(Routes::Http(routes)) => {
-                let (permit, _, route) = try_fut!(self.authorize(&routes, &req));
-                try_fut!(apply_http_filters(route, &mut req));
+                let (permit, mtch, route) = try_fut!(self.authorize(&routes, &req));
+                try_fut!(apply_http_filters(mtch, route, &mut req));
                 permit
             }
             Some(Routes::Grpc(routes)) => {
@@ -229,10 +240,28 @@ impl<T, N> HttpPolicyService<T, N> {
     }
 }
 
-fn apply_http_filters<B>(route: &http::Policy, req: &mut ::http::Request<B>) -> Result<()> {
+fn apply_http_filters<B>(
+    r#match: http::RouteMatch,
+    route: &http::Policy,
+    req: &mut ::http::Request<B>,
+) -> Result<()> {
     // TODO Do any metrics apply here?
     for filter in &route.filters {
         match filter {
+            http::Filter::Redirect(redir) => match redir.apply(req.uri(), &r#match) {
+                Ok(Some(http::filter::Redirection { status, location })) => {
+                    return Err(HttpRouteRedirect { status, location }.into());
+                }
+
+                Err(invalid) => {
+                    return Err(HttpRouteInvalidRedirect(invalid).into());
+                }
+
+                Ok(None) => {
+                    tracing::debug!("Ignoring irrelevant redirect");
+                }
+            },
+
             http::Filter::RequestHeaders(rh) => {
                 rh.apply(req.headers_mut());
             }

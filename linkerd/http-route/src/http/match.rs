@@ -33,6 +33,12 @@ pub struct RequestMatch {
 
 // === impl MatchRequest ===
 
+impl RequestMatch {
+    pub(crate) fn path(&self) -> &PathMatch {
+        &self.path_match
+    }
+}
+
 impl crate::Match for MatchRequest {
     type Summary = RequestMatch;
 

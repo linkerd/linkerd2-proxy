@@ -1,5 +1,5 @@
 use crate::svc;
-use http::header::HeaderValue;
+use http::header::{HeaderValue, LOCATION};
 use linkerd_error::{Error, Result};
 use linkerd_error_respond as respond;
 pub use linkerd_proxy_http::{ClientHandle, HasH2Reason};
@@ -32,10 +32,11 @@ pub trait HttpRescue<E> {
 
 #[derive(Clone, Debug)]
 pub struct SyntheticHttpResponse {
-    pub grpc_status: tonic::Code,
-    pub http_status: http::StatusCode,
-    pub close_connection: bool,
-    pub message: Cow<'static, str>,
+    grpc_status: tonic::Code,
+    http_status: http::StatusCode,
+    close_connection: bool,
+    message: Cow<'static, str>,
+    location: Option<HeaderValue>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -95,6 +96,7 @@ impl SyntheticHttpResponse {
             http_status: http::StatusCode::INTERNAL_SERVER_ERROR,
             grpc_status: tonic::Code::Internal,
             message: Cow::Borrowed("unexpected error"),
+            location: None,
         }
     }
 
@@ -104,6 +106,7 @@ impl SyntheticHttpResponse {
             http_status: http::StatusCode::BAD_GATEWAY,
             grpc_status: tonic::Code::Unavailable,
             message: Cow::Owned(msg.to_string()),
+            location: None,
         }
     }
 
@@ -113,6 +116,7 @@ impl SyntheticHttpResponse {
             http_status: http::StatusCode::GATEWAY_TIMEOUT,
             grpc_status: tonic::Code::Unavailable,
             message: Cow::Owned(msg.to_string()),
+            location: None,
         }
     }
 
@@ -122,6 +126,7 @@ impl SyntheticHttpResponse {
             grpc_status: tonic::Code::Unauthenticated,
             close_connection: false,
             message: Cow::Owned(msg.to_string()),
+            location: None,
         }
     }
 
@@ -131,6 +136,7 @@ impl SyntheticHttpResponse {
             grpc_status: tonic::Code::PermissionDenied,
             close_connection: false,
             message: Cow::Owned(msg.to_string()),
+            location: None,
         }
     }
 
@@ -140,6 +146,7 @@ impl SyntheticHttpResponse {
             grpc_status: tonic::Code::Aborted,
             close_connection: true,
             message: Cow::Owned(msg.to_string()),
+            location: None,
         }
     }
 
@@ -149,6 +156,30 @@ impl SyntheticHttpResponse {
             grpc_status: tonic::Code::NotFound,
             close_connection: false,
             message: Cow::Owned(msg.to_string()),
+            location: None,
+        }
+    }
+
+    pub fn redirect(http_status: http::StatusCode, location: &http::Uri) -> Self {
+        Self {
+            http_status,
+            grpc_status: tonic::Code::NotFound,
+            close_connection: false,
+            message: Cow::Borrowed("redirected"),
+            location: Some(
+                HeaderValue::try_from(location.to_string())
+                    .expect("location must be a valid header value"),
+            ),
+        }
+    }
+
+    pub fn response(http_status: http::StatusCode, message: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            http_status,
+            location: None,
+            grpc_status: tonic::Code::FailedPrecondition,
+            close_connection: false,
+            message: message.into(),
         }
     }
 
@@ -193,7 +224,12 @@ impl SyntheticHttpResponse {
         version: http::Version,
         emit_headers: bool,
     ) -> http::Response<B> {
-        debug!(status = %self.http_status, ?version, close = %self.close_connection, "Handling error on HTTP connection");
+        debug!(
+            status = %self.http_status,
+            ?version,
+            close = %self.close_connection,
+            "Handling error on HTTP connection"
+        );
         let mut rsp = http::Response::builder()
             .status(self.http_status)
             .version(version)
@@ -215,6 +251,10 @@ impl SyntheticHttpResponse {
                 // TODO only set when meshed.
                 rsp = rsp.header(L5D_PROXY_CONNECTION, "close");
             }
+        }
+
+        if let Some(loc) = &self.location {
+            rsp = rsp.header(LOCATION, loc);
         }
 
         rsp.body(B::default())

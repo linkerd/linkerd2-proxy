@@ -39,13 +39,14 @@ impl MatchPath {
             }
 
             Self::Prefix(prefix) => {
-                let path = uri.path();
-                if path.starts_with(prefix) {
-                    let rest = &path[prefix.len()..];
-                    // Check that the prefix matches an entire path segment.
-                    if rest.is_empty() || (!prefix.ends_with('/') && rest.starts_with('/')) {
-                        return Some(PathMatch::Prefix(prefix.len()));
-                    }
+                if prefix == "/" {
+                    return Some(PathMatch::Prefix(1));
+                }
+                let prefix = prefix.trim_end_matches('/');
+                let suffix = uri.path().trim_end_matches('/').strip_prefix(prefix)?;
+                // Check that the prefix matches an entire path segment.
+                if suffix.is_empty() || suffix.starts_with('/') {
+                    return Some(PathMatch::Prefix(prefix.len()));
                 }
             }
         }
@@ -119,20 +120,37 @@ mod tests {
 
     #[test]
     fn path_prefix() {
-        let m = MatchPath::Prefix("/foo".to_string());
-        assert_eq!(
-            m.match_length(&"/foo".parse().unwrap()),
-            Some(PathMatch::Prefix("/foo".len()))
-        );
-        assert_eq!(
-            m.match_length(&"/foo/bar".parse().unwrap()),
-            Some(PathMatch::Prefix("/foo".len()))
-        );
-        assert_eq!(
-            m.match_length(&"/foo/bar/qux".parse().unwrap()),
-            Some(PathMatch::Prefix("/foo".len()))
-        );
-        assert_eq!(m.match_length(&"/foobar".parse().unwrap()), None);
+        for (pfx, len) in [("/", 1), ("/foo", 4), ("/foo/", 4)] {
+            let m = MatchPath::Prefix(pfx.to_string());
+            assert_eq!(
+                m.match_length(&"/foo".parse().unwrap()),
+                Some(PathMatch::Prefix(len)),
+                "{pfx} must match /foo",
+            );
+            assert_eq!(
+                m.match_length(&"/foo/".parse().unwrap()),
+                Some(PathMatch::Prefix(len)),
+                "{pfx} must match /foo/",
+            );
+            assert_eq!(
+                m.match_length(&"/foo/bar".parse().unwrap()),
+                Some(PathMatch::Prefix(len)),
+                "{pfx} must match /foo/bar",
+            );
+            assert_eq!(
+                m.match_length(&"/foo/bar/qux".parse().unwrap()),
+                Some(PathMatch::Prefix(len)),
+                "{pfx} must match /foo/bar/qux",
+            );
+            assert_eq!(
+                m.match_length(&"/foobar".parse().unwrap()),
+                if len == 1 {
+                    Some(PathMatch::Prefix(1))
+                } else {
+                    None
+                }
+            );
+        }
     }
 
     #[test]
