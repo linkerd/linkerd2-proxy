@@ -58,6 +58,41 @@ impl std::cmp::PartialEq for MatchHeader {
     }
 }
 
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use linkerd2_proxy_api::http_route as api;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidHeaderMatch {
+        #[error("{0}")]
+        InvalidName(#[from] http::header::InvalidHeaderName),
+
+        #[error("missing a header value match")]
+        MissingValueMatch,
+
+        #[error("{0}")]
+        InvalidValue(#[from] http::header::InvalidHeaderValue),
+
+        #[error("invalid regular expression: {0}")]
+        InvalidRegex(#[from] regex::Error),
+    }
+
+    // === impl MatchHeader ===
+
+    impl TryFrom<api::HeaderMatch> for MatchHeader {
+        type Error = InvalidHeaderMatch;
+
+        fn try_from(hm: api::HeaderMatch) -> Result<Self, Self::Error> {
+            let name = http::header::HeaderName::from_bytes(hm.name.as_bytes())?;
+            match hm.value.ok_or(InvalidHeaderMatch::MissingValueMatch)? {
+                api::header_match::Value::Exact(h) => Ok(MatchHeader::Exact(name, h.parse()?)),
+                api::header_match::Value::Regex(re) => Ok(MatchHeader::Regex(name, re.parse()?)),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -116,7 +116,7 @@ fn convert_req_match(orig: api::RequestMatch) -> Option<http::RequestMatch> {
             http::RequestMatch::Path(Box::new(re))
         }
         api::request_match::Match::Method(mm) => {
-            let m = mm.r#type.and_then(|m| (&m).try_into().ok())?;
+            let m = mm.r#type.and_then(|m| m.try_into().ok())?;
             http::RequestMatch::Method(m)
         }
     };

@@ -5,10 +5,17 @@ license = "Apache-2.0"
 edition = "2021"
 publish = false
 
+[features]
+proto = ["linkerd2-proxy-api"]
+
 [dependencies]
 http = "0.2"
+linkerd2-proxy-api = { version = "0.5", features = ["http-route"], optional = true }
 regex = "1"
 rand = "0.8"
 thiserror = "1"
 tracing = "0.1"
 url = "2"
+
+[dev-dependencies]
+maplit = "1"

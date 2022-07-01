@@ -81,7 +81,7 @@ impl Meta {
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
-    use linkerd2_proxy_api::inbound as api;
+    use linkerd2_proxy_api::{inbound as api, meta};
     use std::time::Duration;
 
     #[derive(Debug, thiserror::Error)]
@@ -100,6 +100,12 @@ pub mod proto {
 
         #[error("invalid authorization: {0}")]
         Authz(#[from] authz::proto::InvalidAuthz),
+
+        #[error("invalid gRPC route: {0}")]
+        GrpcRoute(#[from] grpc::proto::InvalidGrpcRoute),
+
+        #[error("invalid HTTP route: {0}")]
+        HttpRoute(#[from] http::proto::InvalidHttpRoute),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -131,27 +137,59 @@ pub mod proto {
                 .and_then(|api::ProxyProtocol { kind }| kind)
                 .ok_or(InvalidServer::MissingProxyProtocol)?
             {
-                api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect { timeout }) => {
-                    Protocol::Detect {
-                        http: Arc::new([http::default(authorizations.clone())]),
-                        timeout: timeout
-                            .ok_or(InvalidServer::MissingDetectTimeout)?
-                            .try_into()
-                            .map_err(InvalidServer::NegativeDetectTimeout)?,
-                        tcp_authorizations: authorizations,
-                    }
+                api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect {
+                    http_routes,
+                    timeout,
+                }) => Protocol::Detect {
+                    http: if http_routes.is_empty() {
+                        Arc::new([http::default(authorizations.clone())])
+                    } else {
+                        http_routes
+                            .into_iter()
+                            .map(http::proto::try_route)
+                            .collect::<Result<Arc<[_]>, _>>()?
+                    },
+                    timeout: timeout
+                        .ok_or(InvalidServer::MissingDetectTimeout)?
+                        .try_into()
+                        .map_err(InvalidServer::NegativeDetectTimeout)?,
+                    tcp_authorizations: authorizations,
+                },
+
+                api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { routes }) => {
+                    let authzs = if routes.is_empty() {
+                        Arc::new([http::default(authorizations)])
+                    } else {
+                        routes
+                            .into_iter()
+                            .map(http::proto::try_route)
+                            .collect::<Result<Arc<[_]>, _>>()?
+                    };
+                    Protocol::Http1(authzs)
                 }
 
-                api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { .. }) => {
-                    Protocol::Http1(Arc::new([http::default(authorizations)]))
+                api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 { routes }) => {
+                    let authzs = if routes.is_empty() {
+                        Arc::new([http::default(authorizations)])
+                    } else {
+                        routes
+                            .into_iter()
+                            .map(http::proto::try_route)
+                            .collect::<Result<Arc<[_]>, _>>()?
+                    };
+                    Protocol::Http2(authzs)
                 }
 
-                api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 { .. }) => {
-                    Protocol::Http2(Arc::new([http::default(authorizations)]))
-                }
-
-                api::proxy_protocol::Kind::Grpc(api::proxy_protocol::Grpc { .. }) => {
-                    Protocol::Grpc(Arc::new([grpc::default(authorizations)]))
+                api::proxy_protocol::Kind::Grpc(api::proxy_protocol::Grpc { routes }) => {
+                    let authzs = if routes.is_empty() {
+                        Arc::new([grpc::default(authorizations)])
+                    } else {
+                        routes
+                            .into_iter()
+                            .map(grpc::proto::try_route)
+                            .collect::<Result<Arc<[_]>, _>>()?
+                    };
+                    Protocol::Grpc(authzs)
                 }
 
                 api::proxy_protocol::Kind::Tls(_) => Protocol::Tls(authorizations),
@@ -198,6 +236,29 @@ pub mod proto {
             };
 
             Ok(Arc::new(meta))
+        }
+    }
+
+    impl TryFrom<meta::Metadata> for Meta {
+        type Error = InvalidMeta;
+
+        fn try_from(pb: meta::Metadata) -> Result<Self, Self::Error> {
+            match pb.kind.ok_or(InvalidMeta::Missing)? {
+                meta::metadata::Kind::Default(name) => Ok(Meta::Default { name: name.into() }),
+                meta::metadata::Kind::Resource(r) => r.try_into(),
+            }
+        }
+    }
+
+    impl TryFrom<meta::metadata::Resource> for Meta {
+        type Error = InvalidMeta;
+
+        fn try_from(pb: meta::metadata::Resource) -> Result<Self, Self::Error> {
+            Ok(Meta::Resource {
+                group: pb.group,
+                kind: pb.kind,
+                name: pb.name,
+            })
         }
     }
 }

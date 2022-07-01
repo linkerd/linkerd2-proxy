@@ -100,6 +100,31 @@ impl std::cmp::Ord for HostMatch {
     }
 }
 
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use linkerd2_proxy_api::http_route as api;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidHostMatch {
+        #[error("host match must contain a match")]
+        Missing,
+    }
+
+    // === impl MatchHost ===
+
+    impl TryFrom<api::HostMatch> for MatchHost {
+        type Error = InvalidHostMatch;
+
+        fn try_from(hm: api::HostMatch) -> Result<Self, Self::Error> {
+            match hm.r#match.ok_or(InvalidHostMatch::Missing)? {
+                api::host_match::Match::Exact(h) => Ok(MatchHost::Exact(h)),
+                api::host_match::Match::Suffix(sfx) => Ok(MatchHost::Suffix(sfx.reverse_labels)),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

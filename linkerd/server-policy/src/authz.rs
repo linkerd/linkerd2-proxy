@@ -100,6 +100,7 @@ pub mod proto {
                 labels,
                 authentication,
                 networks,
+                metadata,
             } = proto;
 
             if networks.is_empty() {
@@ -148,8 +149,15 @@ pub mod proto {
                 }
             };
 
-            let meta =
-                Meta::try_new_with_default(labels, "policy.linkerd.io", "serverauthorization")?;
+            // If the response includes `metadata`, use it; otherwise fall-back
+            // to using old-style labels.
+            let meta = match metadata {
+                Some(m) => Arc::new(m.try_into()?),
+                None => {
+                    Meta::try_new_with_default(labels, "policy.linkerd.io", "serverauthorization")?
+                }
+            };
+
             Ok(Authorization {
                 networks,
                 authentication: authn,

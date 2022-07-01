@@ -312,7 +312,7 @@ impl iface::Tap for Tap {
 
         let init = api::tap_event::http::RequestInit {
             id: Some(id.clone()),
-            method: Some(req.method().into()),
+            method: Some(req.method().clone().into()),
             scheme: req.uri().scheme().map(http_types::Scheme::from),
             authority,
             path: req.uri().path().into(),

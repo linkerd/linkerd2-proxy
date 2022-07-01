@@ -7,7 +7,7 @@ edition = "2021"
 publish = false
 
 [features]
-proto = ["linkerd2-proxy-api"]
+proto = ["linkerd-http-route/proto", "linkerd2-proxy-api"]
 
 [dependencies]
 ipnet = "2"

@@ -102,3 +102,58 @@ impl std::cmp::Ord for RequestMatch {
             .then_with(|| self.method.cmp(&other.method))
     }
 }
+
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use linkerd2_proxy_api::{http_route as api, http_types};
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidRouteMatch {
+        #[error("invalid path match: {0}")]
+        Path(#[from] path::proto::InvalidPathMatch),
+
+        #[error("invalid header match: {0}")]
+        Header(#[from] header::proto::InvalidHeaderMatch),
+
+        #[error("invalid query param match: {0}")]
+        QueryParam(#[from] query_param::proto::InvalidQueryParamMatch),
+
+        #[error("invalid method match: {0}")]
+        Method(#[from] http_types::InvalidMethod),
+    }
+
+    // === impl MatchRequest ===
+
+    impl TryFrom<api::HttpRouteMatch> for MatchRequest {
+        type Error = InvalidRouteMatch;
+
+        fn try_from(rm: api::HttpRouteMatch) -> Result<Self, Self::Error> {
+            let path = match rm.path {
+                None => None,
+                Some(pm) => Some(pm.try_into()?),
+            };
+            let headers = rm
+                .headers
+                .into_iter()
+                .map(|h| h.try_into())
+                .collect::<Result<Vec<_>, _>>()?;
+            let query_params = rm
+                .query_params
+                .into_iter()
+                .map(|h| h.try_into())
+                .collect::<Result<Vec<_>, _>>()?;
+            let method = match rm.method.map(http::Method::try_from) {
+                None => None,
+                Some(Ok(m)) => Some(m),
+                Some(Err(e)) => return Err(e.into()),
+            };
+            Ok(MatchRequest {
+                path,
+                headers,
+                query_params,
+                method,
+            })
+        }
+    }
+}

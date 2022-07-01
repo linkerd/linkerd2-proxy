@@ -193,6 +193,87 @@ impl RedirectRequest {
     }
 }
 
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use linkerd2_proxy_api::{http_route as api, http_types};
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidRequestRedirect {
+        #[error("invalid location scheme: {0}")]
+        Scheme(#[from] http_types::InvalidScheme),
+
+        #[error("invalid HTTP status code: {0}")]
+        Status(#[from] http::status::InvalidStatusCode),
+
+        #[error("invalid HTTP authority: {0}")]
+        Authority(#[from] http::uri::InvalidUri),
+
+        #[error("invalid HTTP status code: {0}")]
+        StatusNonU16(u32),
+
+        #[error("invalid port number: {0}")]
+        Port(u32),
+
+        #[error("{0}")]
+        Value(#[from] http::header::InvalidHeaderValue),
+    }
+
+    // === impl RedirectRequest ===
+
+    impl TryFrom<api::RequestRedirect> for RedirectRequest {
+        type Error = InvalidRequestRedirect;
+
+        fn try_from(rr: api::RequestRedirect) -> Result<Self, Self::Error> {
+            let scheme = match rr.scheme {
+                None => None,
+                Some(s) => Some(s.try_into()?),
+            };
+
+            let authority = {
+                if rr.port > (u16::MAX as u32) {
+                    return Err(InvalidRequestRedirect::Port(rr.port));
+                }
+                match (rr.host, (rr.port as u16).try_into().ok()) {
+                    (h, p) if h.is_empty() => p.map(AuthorityOverride::Port),
+                    (h, Some(p)) => {
+                        let a = format!("{}:{}", h, p).try_into()?;
+                        Some(AuthorityOverride::Exact(a))
+                    }
+                    (h, None) => {
+                        let a = h.try_into()?;
+                        Some(AuthorityOverride::Host(a))
+                    }
+                }
+            };
+
+            let path = rr.path.and_then(|p| p.replace).map(|p| match p {
+                api::path_modifier::Replace::Full(path) => {
+                    // TODO ensure path is valid.
+                    ModifyPath::ReplaceFullPath(path)
+                }
+                api::path_modifier::Replace::Prefix(prefix) => {
+                    // TODO ensure prefix is valid.
+                    ModifyPath::ReplacePrefixMatch(prefix)
+                }
+            });
+
+            let status = match rr.status {
+                0 => None,
+                s if 100 >= s || s < 600 => Some(http::StatusCode::from_u16(s as u16)?),
+                s => return Err(InvalidRequestRedirect::StatusNonU16(s)),
+            };
+
+            Ok(RedirectRequest {
+                scheme,
+                authority,
+                path,
+                status,
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::http::{find, r#match::MatchPath, MatchRequest, Route, Rule};
