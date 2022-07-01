@@ -7,6 +7,7 @@ pub type Rule = http::Rule<Policy>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Filter {
+    InjectFailure(filter::InjectFailure),
     Redirect(filter::RedirectRequest),
     RequestHeaders(filter::ModifyHeader),
 }

@@ -1,4 +1,4 @@
-pub use linkerd_http_route::grpc::{r#match, RouteMatch};
+pub use linkerd_http_route::grpc::{filter, r#match, RouteMatch};
 use linkerd_http_route::{grpc, http};
 
 pub type Policy = crate::RoutePolicy<Filter>;
@@ -7,6 +7,7 @@ pub type Rule = grpc::Rule<Policy>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Filter {
+    InjectFailure(filter::InjectFailure),
     RequestHeaders(http::filter::ModifyHeader),
 }
 

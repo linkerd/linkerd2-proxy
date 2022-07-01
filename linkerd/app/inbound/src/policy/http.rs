@@ -12,7 +12,7 @@ use linkerd_app_core::{
     Error, Result,
 };
 use linkerd_server_policy::{grpc, http, route::RouteMatch};
-use std::task;
+use std::{sync::Arc, task};
 
 #[cfg(test)]
 mod tests;
@@ -64,6 +64,20 @@ pub struct HttpRouteRedirect {
 #[derive(Debug, thiserror::Error)]
 #[error("unauthorized request on route")]
 pub struct HttpRouteUnauthorized(());
+
+#[derive(Debug, thiserror::Error, Clone, PartialEq)]
+#[error("HTTP request configured to fail with {status}: {message}")]
+pub struct HttpRouteInjectedFailure {
+    pub status: ::http::StatusCode,
+    pub message: Arc<str>,
+}
+
+#[derive(Debug, thiserror::Error, Clone, PartialEq)]
+#[error("gRPC request configured to fail with {code}: {message}")]
+pub struct GrpcRouteInjectedFailure {
+    pub code: u16,
+    pub message: Arc<str>,
+}
 
 // === impl NewHttpPolicy ===
 
@@ -248,6 +262,12 @@ fn apply_http_filters<B>(
     // TODO Do any metrics apply here?
     for filter in &route.filters {
         match filter {
+            http::Filter::InjectFailure(fail) => {
+                if let Some(http::filter::FailureResponse { status, message }) = fail.apply() {
+                    return Err(HttpRouteInjectedFailure { status, message }.into());
+                }
+            }
+
             http::Filter::Redirect(redir) => match redir.apply(req.uri(), &r#match) {
                 Ok(Some(http::filter::Redirection { status, location })) => {
                     return Err(HttpRouteRedirect { status, location }.into());
@@ -274,6 +294,12 @@ fn apply_http_filters<B>(
 fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> Result<()> {
     for filter in &route.filters {
         match filter {
+            grpc::Filter::InjectFailure(fail) => {
+                if let Some(grpc::filter::FailureResponse { code, message }) = fail.apply() {
+                    return Err(GrpcRouteInjectedFailure { code, message }.into());
+                }
+            }
+
             grpc::Filter::RequestHeaders(rh) => {
                 rh.apply(req.headers_mut());
             }

@@ -207,6 +207,65 @@ async fn http_filter_header() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn http_filter_inject_failure() {
+    use linkerd_server_policy::http::{filter, r#match::MatchRequest, Filter, Policy, Route, Rule};
+
+    let rmeta = Arc::new(Meta::Resource {
+        group: "gateway.networking.k8s.io".into(),
+        kind: "httproute".into(),
+        name: "testrt".into(),
+    });
+    let proto = Protocol::Http1(Arc::new([Route {
+        hosts: vec![],
+        rules: vec![Rule {
+            matches: vec![MatchRequest {
+                method: Some(::http::Method::GET),
+                ..MatchRequest::default()
+            }],
+            policy: Policy {
+                authorizations: Arc::new([Authorization {
+                    authentication: Authentication::Unauthenticated,
+                    networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+                    meta: Arc::new(Meta::Resource {
+                        group: "policy.linkerd.io".into(),
+                        kind: "server".into(),
+                        name: "testsaz".into(),
+                    }),
+                }]),
+                filters: vec![Filter::InjectFailure(filter::InjectFailure {
+                    distribution: filter::Distribution::from_ratio(1, 1).unwrap(),
+                    response: filter::FailureResponse {
+                        status: ::http::StatusCode::BAD_REQUEST,
+                        message: "oopsie".into(),
+                    },
+                })],
+                meta: rmeta.clone(),
+            },
+        }],
+    }]));
+    let inner = |_: HttpRoutePermit,
+                 _: ::http::Request<hyper::Body>|
+     -> Result<::http::Response<hyper::Body>> { unreachable!() };
+    let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
+
+    let err = svc
+        .call(
+            ::http::Request::builder()
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect_err("fails");
+    assert_eq!(
+        *err.downcast_ref::<HttpRouteInjectedFailure>().unwrap(),
+        HttpRouteInjectedFailure {
+            status: ::http::StatusCode::BAD_REQUEST,
+            message: "oopsie".into(),
+        }
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn grpc_route() {
     use linkerd_server_policy::grpc::{
         r#match::{MatchRoute, MatchRpc},
@@ -374,4 +433,73 @@ async fn grpc_filter_header() {
         .get::<HttpRoutePermit>()
         .expect("permitted");
     assert_eq!(permit.labels.route.route, rmeta);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn grpc_filter_inject_failure() {
+    use linkerd_server_policy::grpc::{
+        filter,
+        r#match::{MatchRoute, MatchRpc},
+        Filter, Policy, Route, Rule,
+    };
+
+    let rmeta = Arc::new(Meta::Resource {
+        group: "gateway.networking.k8s.io".into(),
+        kind: "grpcroute".into(),
+        name: "testrt".into(),
+    });
+    let proto = Protocol::Grpc(Arc::new([Route {
+        hosts: vec![],
+        rules: vec![Rule {
+            matches: vec![MatchRoute {
+                rpc: MatchRpc {
+                    service: Some("foo.bar.bah".to_string()),
+                    method: Some("baz".to_string()),
+                },
+                ..MatchRoute::default()
+            }],
+
+            policy: Policy {
+                authorizations: Arc::new([Authorization {
+                    authentication: Authentication::Unauthenticated,
+                    networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+                    meta: Arc::new(Meta::Resource {
+                        group: "policy.linkerd.io".into(),
+                        kind: "server".into(),
+                        name: "testsaz".into(),
+                    }),
+                }]),
+                filters: vec![Filter::InjectFailure(filter::InjectFailure {
+                    distribution: filter::Distribution::from_ratio(1, 1).unwrap(),
+                    response: filter::FailureResponse {
+                        code: 4,
+                        message: "oopsie".into(),
+                    },
+                })],
+                meta: rmeta.clone(),
+            },
+        }],
+    }]));
+    let inner = |_: HttpRoutePermit,
+                 _: ::http::Request<hyper::Body>|
+     -> Result<::http::Response<hyper::Body>> { unreachable!() };
+    let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
+
+    let err = svc
+        .call(
+            ::http::Request::builder()
+                .uri("/foo.bar.bah/baz")
+                .method(::http::Method::POST)
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect_err("fails");
+    assert_eq!(
+        *err.downcast_ref::<GrpcRouteInjectedFailure>().unwrap(),
+        GrpcRouteInjectedFailure {
+            code: 4,
+            message: "oopsie".into(),
+        }
+    );
 }
