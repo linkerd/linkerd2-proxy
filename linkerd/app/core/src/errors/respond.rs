@@ -36,7 +36,7 @@ pub struct SyntheticHttpResponse {
     http_status: http::StatusCode,
     close_connection: bool,
     message: Cow<'static, str>,
-    location: Option<http::header::HeaderValue>,
+    location: Option<HeaderValue>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -167,7 +167,7 @@ impl SyntheticHttpResponse {
             close_connection: false,
             message: Cow::Borrowed("redirected"),
             location: Some(
-                http::header::HeaderValue::from_str(&*location.to_string())
+                HeaderValue::from_str(&*location.to_string())
                     .expect("location must be a valid header value"),
             ),
         }
