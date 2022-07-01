@@ -72,7 +72,7 @@ impl RedirectRequest {
     fn authority(&self, orig_uri: &http::Uri) -> Result<Authority, InvalidRedirect> {
         match (self.host.as_deref(), self.port) {
             // If a host is configured, use it and whatever port is configured.
-            (Some(h), Some(p)) => format!("{}:{}", h, p).parse().map_err(Into::into),
+            (Some(h), Some(p)) => format!("{}:{}", h, p).try_into().map_err(Into::into),
             (Some(h), None) => h.parse().map_err(Into::into),
 
             // If a host is NOT configured, use the request's original host
@@ -80,7 +80,7 @@ impl RedirectRequest {
             (None, p) => {
                 let h = orig_uri.host().ok_or(InvalidRedirect::MissingAuthority)?;
                 match p.or_else(|| orig_uri.port_u16().and_then(|p| p.try_into().ok())) {
-                    Some(p) => format!("{}:{}", h, p).parse().map_err(Into::into),
+                    Some(p) => format!("{}:{}", h, p).try_into().map_err(Into::into),
                     None => h.parse().map_err(Into::into),
                 }
             }

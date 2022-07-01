@@ -167,7 +167,7 @@ impl SyntheticHttpResponse {
             close_connection: false,
             message: Cow::Borrowed("redirected"),
             location: Some(
-                HeaderValue::from_str(&*location.to_string())
+                HeaderValue::try_from(location.to_string())
                     .expect("location must be a valid header value"),
             ),
         }
