@@ -18,7 +18,7 @@ pub mod proto {
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidFailureResponse {
-        #[error("invalid HTTP status code: {0}")]
+        #[error("invalid gRPC status code: {0}")]
         StatusNonU16(u32),
 
         #[error("invalid request distribution: {0}")]
