@@ -104,13 +104,15 @@ pub mod proto {
         type Error = InvalidFailureResponse;
 
         fn try_from(proto: api::HttpFailureInjector) -> Result<Self, Self::Error> {
-            if proto.status > u16::MAX as u32 {
-                return Err(InvalidFailureResponse::StatusNonU16(proto.status));
-            }
-            let status = http::StatusCode::from_u16(proto.status as u16)?;
-            let response = FailureResponse {
-                status,
-                message: proto.message.into(),
+            let response = {
+                if proto.status > u16::MAX as u32 {
+                    return Err(InvalidFailureResponse::StatusNonU16(proto.status));
+                }
+
+                FailureResponse {
+                    status: (proto.status as u16).try_into()?,
+                    message: proto.message.into(),
+                }
             };
 
             let distribution = match proto.ratio {

@@ -31,12 +31,15 @@ pub mod proto {
         type Error = InvalidFailureResponse;
 
         fn try_from(proto: api::GrpcFailureInjector) -> Result<Self, Self::Error> {
-            if proto.code > u16::MAX as u32 {
-                return Err(InvalidFailureResponse::StatusNonU16(proto.code));
-            }
-            let response = FailureResponse {
-                code: proto.code as u16,
-                message: proto.message.into(),
+            let response = {
+                if proto.code > u16::MAX as u32 {
+                    return Err(InvalidFailureResponse::StatusNonU16(proto.code));
+                }
+
+                FailureResponse {
+                    code: proto.code as u16,
+                    message: proto.message.into(),
+                }
             };
 
             let distribution = match proto.ratio {
