@@ -250,10 +250,10 @@ pub mod proto {
         }
     }
 
-    impl TryFrom<meta::metadata::Resource> for Meta {
+    impl TryFrom<meta::Resource> for Meta {
         type Error = InvalidMeta;
 
-        fn try_from(pb: meta::metadata::Resource) -> Result<Self, Self::Error> {
+        fn try_from(pb: meta::Resource) -> Result<Self, Self::Error> {
             Ok(Meta::Resource {
                 group: pb.group,
                 kind: pb.kind,
