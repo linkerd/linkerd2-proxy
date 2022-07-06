@@ -129,10 +129,7 @@ pub mod proto {
         type Error = InvalidRouteMatch;
 
         fn try_from(rm: api::HttpRouteMatch) -> Result<Self, Self::Error> {
-            let path = match rm.path {
-                None => None,
-                Some(pm) => Some(pm.try_into()?),
-            };
+            let path = rm.path.map(TryInto::try_into).transpose()?;
             let headers = rm
                 .headers
                 .into_iter()
@@ -143,11 +140,7 @@ pub mod proto {
                 .into_iter()
                 .map(|h| h.try_into())
                 .collect::<Result<Vec<_>, _>>()?;
-            let method = match rm.method.map(http::Method::try_from) {
-                None => None,
-                Some(Ok(m)) => Some(m),
-                Some(Err(e)) => return Err(e.into()),
-            };
+            let method = rm.method.map(http::Method::try_from).transpose()?;
             Ok(MatchRequest {
                 path,
                 headers,

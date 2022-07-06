@@ -225,10 +225,7 @@ pub mod proto {
         type Error = InvalidRequestRedirect;
 
         fn try_from(rr: api::RequestRedirect) -> Result<Self, Self::Error> {
-            let scheme = match rr.scheme {
-                None => None,
-                Some(s) => Some(s.try_into()?),
-            };
+            let scheme = rr.scheme.map(TryInto::try_into).transpose()?;
 
             let authority = {
                 if rr.port > (u16::MAX as u32) {
