@@ -131,7 +131,6 @@ pub mod proto {
         fn try_from(proto: api::Server) -> Result<Self, Self::Error> {
             let authorizations = authz::proto::mk_authorizations(proto.authorizations)?;
 
-            // TODO support non-default routes
             let protocol = match proto
                 .protocol
                 .and_then(|api::ProxyProtocol { kind }| kind)
