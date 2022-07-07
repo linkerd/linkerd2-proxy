@@ -51,7 +51,7 @@ fn main() {
     rt::build().block_on(async move {
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
         let shutdown_grace_period = config.shutdown_grace_period;
-        
+
         let bind = BindTcp::with_orig_dst();
         let app = match config
             .build(
