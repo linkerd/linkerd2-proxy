@@ -131,6 +131,20 @@ pub mod proto {
         fn try_from(proto: api::Server) -> Result<Self, Self::Error> {
             let authorizations = authz::proto::mk_authorizations(proto.authorizations)?;
 
+            macro_rules! mk_routes {
+                ($kind:ident, $authzs:expr, $routes:ident) => {{
+                    if $routes.is_empty() {
+                        let route = $kind::default($authzs);
+                        Ok(Some(route).into_iter().collect::<Arc<[_]>>())
+                    } else {
+                        $routes
+                            .into_iter()
+                            .map($kind::proto::try_route)
+                            .collect::<Result<Arc<[_]>, _>>()
+                    }
+                }};
+            }
+
             let protocol = match proto
                 .protocol
                 .and_then(|api::ProxyProtocol { kind }| kind)
@@ -140,14 +154,7 @@ pub mod proto {
                     http_routes,
                     timeout,
                 }) => Protocol::Detect {
-                    http: if http_routes.is_empty() {
-                        Arc::new([http::default(authorizations.clone())])
-                    } else {
-                        http_routes
-                            .into_iter()
-                            .map(http::proto::try_route)
-                            .collect::<Result<Arc<[_]>, _>>()?
-                    },
+                    http: mk_routes!(http, authorizations.clone(), http_routes)?,
                     timeout: timeout
                         .ok_or(InvalidServer::MissingDetectTimeout)?
                         .try_into()
@@ -156,39 +163,15 @@ pub mod proto {
                 },
 
                 api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { routes }) => {
-                    let authzs = if routes.is_empty() {
-                        Arc::new([http::default(authorizations)])
-                    } else {
-                        routes
-                            .into_iter()
-                            .map(http::proto::try_route)
-                            .collect::<Result<Arc<[_]>, _>>()?
-                    };
-                    Protocol::Http1(authzs)
+                    Protocol::Http1(mk_routes!(http, authorizations, routes)?)
                 }
 
                 api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 { routes }) => {
-                    let authzs = if routes.is_empty() {
-                        Arc::new([http::default(authorizations)])
-                    } else {
-                        routes
-                            .into_iter()
-                            .map(http::proto::try_route)
-                            .collect::<Result<Arc<[_]>, _>>()?
-                    };
-                    Protocol::Http2(authzs)
+                    Protocol::Http2(mk_routes!(http, authorizations, routes)?)
                 }
 
                 api::proxy_protocol::Kind::Grpc(api::proxy_protocol::Grpc { routes }) => {
-                    let authzs = if routes.is_empty() {
-                        Arc::new([grpc::default(authorizations)])
-                    } else {
-                        routes
-                            .into_iter()
-                            .map(grpc::proto::try_route)
-                            .collect::<Result<Arc<[_]>, _>>()?
-                    };
-                    Protocol::Grpc(authzs)
+                    Protocol::Grpc(mk_routes!(grpc, authorizations, routes)?)
                 }
 
                 api::proxy_protocol::Kind::Tls(_) => Protocol::Tls(authorizations),
