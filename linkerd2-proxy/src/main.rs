@@ -15,7 +15,7 @@ use linkerd_app::{
     trace, Config,
 };
 use linkerd_signal as signal;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, time};
 pub use tracing::{debug, error, info, warn};
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
@@ -44,6 +44,9 @@ fn main() {
             std::process::exit(EX_USAGE);
         }
     };
+
+    // TODO(eliza): add this to the config.
+    let shutdown_grace_period = time::Duration::from_secs(60 * 2);
 
     // Builds a runtime with the appropriate number of cores:
     // `LINKERD2_PROXY_CORES` env or the number of available CPUs (as provided
@@ -111,12 +114,15 @@ fn main() {
         let drain = app.spawn();
         tokio::select! {
             _ = signal::shutdown() => {
-                info!("Received shutdown signal");
+                info!(grace_period = ?shutdown_grace_period, "Received shutdown signal");
             }
             _ = shutdown_rx.recv() => {
-                info!("Received shutdown via admin interface");
+                info!(grace_period = ?shutdown_grace_period, "Received shutdown via admin interface");
             }
         }
-        drain.drain().await;
+        match time::timeout(shutdown_grace_period, drain.drain()).await {
+            Ok(()) => debug!("Shutdown completed gracefully"),
+            Err(_) => warn!("Graceful shutdown did not complete in {shutdown_grace_period:?}, terminating now"),
+        }
     });
 }
