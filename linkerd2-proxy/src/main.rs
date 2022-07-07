@@ -45,14 +45,13 @@ fn main() {
         }
     };
 
-    // TODO(eliza): add this to the config.
-    let shutdown_grace_period = time::Duration::from_secs(60 * 2);
-
     // Builds a runtime with the appropriate number of cores:
     // `LINKERD2_PROXY_CORES` env or the number of available CPUs (as provided
     // by cgroups, when possible).
     rt::build().block_on(async move {
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
+        let shutdown_grace_period = config.shutdown_grace_period;
+        
         let bind = BindTcp::with_orig_dst();
         let app = match config
             .build(

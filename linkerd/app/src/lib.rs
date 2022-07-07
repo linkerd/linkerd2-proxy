@@ -57,6 +57,12 @@ pub struct Config {
     pub admin: admin::Config,
     pub tap: tap::Config,
     pub oc_collector: oc_collector::Config,
+
+    /// Grace period for graceful shutdowns.
+    ///
+    /// If the proxy does not shut down gracefully within this timeout, it will
+    /// terminate forcefully, closing any remaining connections.
+    pub shutdown_grace_period: time::Duration,
 }
 
 pub struct App {
@@ -109,6 +115,7 @@ impl Config {
             outbound,
             gateway,
             tap,
+            ..
         } = self;
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle, start_time);
