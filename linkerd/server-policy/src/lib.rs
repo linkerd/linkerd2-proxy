@@ -125,28 +125,34 @@ pub mod proto {
 
     // === impl ServerPolicy ===
 
+    macro_rules! mk_routes {
+        ($kind:ident, $authzs:expr, $routes:ident) => {{
+            if $routes.is_empty() {
+                let route = $kind::default($authzs);
+                Ok(Some(route).into_iter().collect::<Arc<[_]>>())
+            } else {
+                $routes
+                    .into_iter()
+                    .map($kind::proto::try_route)
+                    .collect::<Result<Arc<[_]>, _>>()
+            }
+        }};
+    }
+
     impl TryFrom<api::Server> for ServerPolicy {
         type Error = InvalidServer;
 
         fn try_from(proto: api::Server) -> Result<Self, Self::Error> {
-            let authorizations = authz::proto::mk_authorizations(proto.authorizations)?;
+            let api::Server {
+                protocol,
+                authorizations,
+                labels,
+                server_ips: _,
+            } = proto;
 
-            macro_rules! mk_routes {
-                ($kind:ident, $authzs:expr, $routes:ident) => {{
-                    if $routes.is_empty() {
-                        let route = $kind::default($authzs);
-                        Ok(Some(route).into_iter().collect::<Arc<[_]>>())
-                    } else {
-                        $routes
-                            .into_iter()
-                            .map($kind::proto::try_route)
-                            .collect::<Result<Arc<[_]>, _>>()
-                    }
-                }};
-            }
+            let authorizations = authz::proto::mk_authorizations(authorizations)?;
 
-            let protocol = match proto
-                .protocol
+            let protocol = match protocol
                 .and_then(|api::ProxyProtocol { kind }| kind)
                 .ok_or(InvalidServer::MissingProxyProtocol)?
             {
@@ -178,7 +184,9 @@ pub mod proto {
                 api::proxy_protocol::Kind::Opaque(_) => Protocol::Opaque(authorizations),
             };
 
-            let meta = Meta::try_new_with_default(proto.labels, "policy.linkerd.io", "server")?;
+            // TODO use a `Metadata` type
+            let meta = Meta::try_new_with_default(labels, "policy.linkerd.io", "server")?;
+
             Ok(ServerPolicy { protocol, meta })
         }
     }
