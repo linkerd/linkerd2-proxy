@@ -26,8 +26,8 @@ impl ClientAddrHeaders {
             return;
         }
         let value = match req.extensions().get::<linkerd_proxy_http::ClientHandle>() {
-            Some(client) => HeaderValue::try_from(client.addr.to_string())
-                .expect("a SocketAddr should be a valid header value"),
+            Some(client) => HeaderValue::try_from(client.addr.ip().to_string())
+                .expect("an IP address should format as a valid header value"),
             None => {
                 debug_assert!(false, "request missing `ClientHandle` extension");
                 return;
