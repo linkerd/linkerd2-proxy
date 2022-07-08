@@ -6,11 +6,11 @@ use crate::{
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     metrics::{RouteAuthzLabels, RouteLabels},
+    proxy::http::ClientHandle,
     svc::{self, ServiceExt},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
-    proxy::http::ClientHandle,
 };
 use linkerd_server_policy::{grpc, http, route::RouteMatch};
 use std::{sync::Arc, task};
@@ -287,7 +287,7 @@ fn apply_http_filters<B>(
                 rh.apply(req.headers_mut());
             }
 
-            http::Filter::ForwardedFor(ff) => {
+            http::Filter::ClientAddrHeaders(ff) => {
                 if let Some(client) = req.extensions().get::<ClientHandle>() {
                     ff.apply(client.addr, req.headers_mut());
                 } else {
@@ -313,7 +313,7 @@ fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> 
                 rh.apply(req.headers_mut());
             }
 
-            grpc::Filter::ForwardedFor(ff) => {
+            grpc::Filter::ClientAddrHeaders(ff) => {
                 if let Some(client) = req.extensions().get::<ClientHandle>() {
                     ff.apply(client.addr, req.headers_mut());
                 } else {

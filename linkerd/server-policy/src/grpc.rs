@@ -9,7 +9,7 @@ pub type Rule = grpc::Rule<Policy>;
 pub enum Filter {
     InjectFailure(filter::InjectFailure),
     RequestHeaders(http::filter::ModifyHeader),
-    ForwardedFor(http::filter::ForwardedFor)
+    ClientAddrHeaders(http::filter::ClientAddrHeaders),
 }
 
 #[inline]
