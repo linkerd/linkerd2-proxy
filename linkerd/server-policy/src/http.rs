@@ -10,7 +10,7 @@ pub enum Filter {
     InjectFailure(filter::InjectFailure),
     Redirect(filter::RedirectRequest),
     RequestHeaders(filter::ModifyHeader),
-    ClientAddrHeaders(filter::ClientAddrHeaders),
+    ClientIpHeaders(filter::ClientIpHeaders),
 }
 
 #[inline]

@@ -8,7 +8,7 @@ use http::{
 /// This is typically used to add headers such as
 /// `Forwarded-For`, `X-Forwarded-For`, and friends.
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
-pub struct ClientAddrHeaders {
+pub struct ClientIpHeaders {
     headers: Vec<(HeaderName, Action)>,
 }
 
@@ -20,7 +20,7 @@ pub enum Action {
 
 // === impl ForwardedFor ===
 
-impl ClientAddrHeaders {
+impl ClientIpHeaders {
     pub fn apply<B>(&self, req: &mut Request<B>) {
         if self.headers.is_empty() {
             return;

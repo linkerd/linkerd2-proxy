@@ -286,7 +286,7 @@ fn apply_http_filters<B>(
                 rh.apply(req.headers_mut());
             }
 
-            http::Filter::ClientAddrHeaders(c) => {
+            http::Filter::ClientIpHeaders(c) => {
                 c.apply(req);
             }
         }
@@ -308,7 +308,7 @@ fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> 
                 rh.apply(req.headers_mut());
             }
 
-            grpc::Filter::ClientAddrHeaders(c) => {
+            grpc::Filter::ClientIpHeaders(c) => {
                 c.apply(req);
             }
         }
