@@ -6,7 +6,6 @@ use crate::{
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     metrics::{RouteAuthzLabels, RouteLabels},
-    proxy::http::ClientHandle,
     svc::{self, ServiceExt},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
@@ -287,12 +286,8 @@ fn apply_http_filters<B>(
                 rh.apply(req.headers_mut());
             }
 
-            http::Filter::ClientAddrHeaders(ff) => {
-                if let Some(client) = req.extensions().get::<ClientHandle>() {
-                    ff.apply(client.addr, req.headers_mut());
-                } else {
-                    debug_assert!(false, "missing `ClientHandle` extension!")
-                }
+            http::Filter::ClientAddrHeaders(c) => {
+                c.apply(req);
             }
         }
     }
@@ -313,12 +308,8 @@ fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> 
                 rh.apply(req.headers_mut());
             }
 
-            grpc::Filter::ClientAddrHeaders(ff) => {
-                if let Some(client) = req.extensions().get::<ClientHandle>() {
-                    ff.apply(client.addr, req.headers_mut());
-                } else {
-                    debug_assert!(false, "missing `ClientHandle` extension!")
-                }
+            grpc::Filter::ClientAddrHeaders(c) => {
+                c.apply(req);
             }
         }
     }

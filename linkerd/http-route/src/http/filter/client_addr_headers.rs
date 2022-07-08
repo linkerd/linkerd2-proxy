@@ -1,5 +1,7 @@
-use http::header::{HeaderMap, HeaderName, HeaderValue};
-use std::net::SocketAddr;
+use http::{
+    header::{HeaderName, HeaderValue},
+    Request,
+};
 
 /// Adds or sets HTTP headers containing the client's IP address.
 ///
@@ -19,13 +21,20 @@ pub enum Action {
 // === impl ForwardedFor ===
 
 impl ClientAddrHeaders {
-    pub fn apply(&self, client_addr: SocketAddr, headers: &mut HeaderMap) {
+    pub fn apply<B>(&self, req: &mut Request<B>) {
         if self.headers.is_empty() {
             return;
         }
+        let value = match req.extensions().get::<linkerd_proxy_http::ClientHandle>() {
+            Some(client) => HeaderValue::try_from(client.addr.to_string())
+                .expect("a SocketAddr should be a valid header value"),
+            None => {
+                debug_assert!(false, "request missing `ClientHandle` extension");
+                return;
+            }
+        };
 
-        let value = HeaderValue::try_from(client_addr.to_string())
-            .expect("a SocketAddr should be a valid header value");
+        let headers = req.headers_mut();
         for (header, action) in &self.headers {
             match action {
                 Action::Add => {
