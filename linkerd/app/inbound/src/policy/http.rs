@@ -10,6 +10,7 @@ use linkerd_app_core::{
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
+    proxy::http::ClientHandle,
 };
 use linkerd_server_policy::{grpc, http, route::RouteMatch};
 use std::{sync::Arc, task};
@@ -285,6 +286,14 @@ fn apply_http_filters<B>(
             http::Filter::RequestHeaders(rh) => {
                 rh.apply(req.headers_mut());
             }
+
+            http::Filter::ForwardedFor(ff) => {
+                if let Some(client) = req.extensions().get::<ClientHandle>() {
+                    ff.apply(client.addr, req.headers_mut());
+                } else {
+                    debug_assert!(false, "missing `ClientHandle` extension!")
+                }
+            }
         }
     }
 
@@ -302,6 +311,14 @@ fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> 
 
             grpc::Filter::RequestHeaders(rh) => {
                 rh.apply(req.headers_mut());
+            }
+
+            grpc::Filter::ForwardedFor(ff) => {
+                if let Some(client) = req.extensions().get::<ClientHandle>() {
+                    ff.apply(client.addr, req.headers_mut());
+                } else {
+                    debug_assert!(false, "missing `ClientHandle` extension!")
+                }
             }
         }
     }
