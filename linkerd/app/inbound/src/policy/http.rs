@@ -157,12 +157,12 @@ where
             None => err!(self.mk_route_not_found()),
             Some(Routes::Http(routes)) => {
                 let (permit, mtch, route) = try_fut!(self.authorize(&routes, &req));
-                try_fut!(apply_http_filters(mtch, route, &mut req));
+                try_fut!(self.apply_http_filters(mtch, route, &mut req));
                 permit
             }
             Some(Routes::Grpc(routes)) => {
                 let (permit, _, route) = try_fut!(self.authorize(&routes, &req));
-                try_fut!(apply_grpc_filters(route, &mut req));
+                try_fut!(self.apply_grpc_filters(route, &mut req));
                 permit
             }
         };
@@ -252,67 +252,72 @@ impl<T, N> HttpPolicyService<T, N> {
             .route_not_found(labels, self.connection.dst, self.connection.tls.clone());
         HttpRouteNotFound(()).into()
     }
-}
 
-fn apply_http_filters<B>(
-    r#match: http::RouteMatch,
-    route: &http::Policy,
-    req: &mut ::http::Request<B>,
-) -> Result<()> {
-    // TODO Do any metrics apply here?
-    for filter in &route.filters {
-        match filter {
-            http::Filter::InjectFailure(fail) => {
-                if let Some(http::filter::FailureResponse { status, message }) = fail.apply() {
-                    return Err(HttpRouteInjectedFailure { status, message }.into());
-                }
-            }
-
-            http::Filter::Redirect(redir) => match redir.apply(req.uri(), &r#match) {
-                Ok(Some(http::filter::Redirection { status, location })) => {
-                    return Err(HttpRouteRedirect { status, location }.into());
+    fn apply_http_filters<B>(
+        &self,
+        r#match: http::RouteMatch,
+        route: &http::Policy,
+        req: &mut ::http::Request<B>,
+    ) -> Result<()> {
+        // TODO Do any metrics apply here?
+        for filter in &route.filters {
+            match filter {
+                http::Filter::InjectFailure(fail) => {
+                    if let Some(http::filter::FailureResponse { status, message }) = fail.apply() {
+                        return Err(HttpRouteInjectedFailure { status, message }.into());
+                    }
                 }
 
-                Err(invalid) => {
-                    return Err(HttpRouteInvalidRedirect(invalid).into());
+                http::Filter::Redirect(redir) => match redir.apply(req.uri(), &r#match) {
+                    Ok(Some(http::filter::Redirection { status, location })) => {
+                        return Err(HttpRouteRedirect { status, location }.into());
+                    }
+
+                    Err(invalid) => {
+                        return Err(HttpRouteInvalidRedirect(invalid).into());
+                    }
+
+                    Ok(None) => {
+                        tracing::debug!("Ignoring irrelevant redirect");
+                    }
+                },
+
+                http::Filter::RequestHeaders(rh) => {
+                    rh.apply(req.headers_mut());
                 }
 
-                Ok(None) => {
-                    tracing::debug!("Ignoring irrelevant redirect");
+                http::Filter::ClientIpHeaders(c) => {
+                    c.apply(self.connection.client.ip(), req.headers_mut());
                 }
-            },
-
-            http::Filter::RequestHeaders(rh) => {
-                rh.apply(req.headers_mut());
-            }
-
-            http::Filter::ClientIpHeaders(c) => {
-                c.apply(req);
             }
         }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    fn apply_grpc_filters<B>(
+        &self,
+        route: &grpc::Policy,
+        req: &mut ::http::Request<B>,
+    ) -> Result<()> {
+        for filter in &route.filters {
+            match filter {
+                grpc::Filter::InjectFailure(fail) => {
+                    if let Some(grpc::filter::FailureResponse { code, message }) = fail.apply() {
+                        return Err(GrpcRouteInjectedFailure { code, message }.into());
+                    }
+                }
 
-fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> Result<()> {
-    for filter in &route.filters {
-        match filter {
-            grpc::Filter::InjectFailure(fail) => {
-                if let Some(grpc::filter::FailureResponse { code, message }) = fail.apply() {
-                    return Err(GrpcRouteInjectedFailure { code, message }.into());
+                grpc::Filter::RequestHeaders(rh) => {
+                    rh.apply(req.headers_mut());
+                }
+
+                grpc::Filter::ClientIpHeaders(c) => {
+                    c.apply(self.connection.client.ip(), req.headers_mut());
                 }
             }
-
-            grpc::Filter::RequestHeaders(rh) => {
-                rh.apply(req.headers_mut());
-            }
-
-            grpc::Filter::ClientIpHeaders(c) => {
-                c.apply(req);
-            }
         }
-    }
 
-    Ok(())
+        Ok(())
+    }
 }

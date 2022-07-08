@@ -12,4 +12,3 @@ rand = "0.8"
 thiserror = "1"
 tracing = "0.1"
 url = "2"
-linkerd-proxy-http = { path = "../proxy/http" }

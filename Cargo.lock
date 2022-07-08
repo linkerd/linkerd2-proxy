@@ -1145,7 +1145,6 @@ name = "linkerd-http-route"
 version = "0.1.0"
 dependencies = [
  "http",
- "linkerd-proxy-http",
  "rand",
  "regex",
  "thiserror",
