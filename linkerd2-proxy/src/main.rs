@@ -113,15 +113,17 @@ fn main() {
         let drain = app.spawn();
         tokio::select! {
             _ = signal::shutdown() => {
-                info!(grace_period = ?shutdown_grace_period, "Received shutdown signal");
+                info!("Received shutdown signal");
             }
             _ = shutdown_rx.recv() => {
-                info!(grace_period = ?shutdown_grace_period, "Received shutdown via admin interface");
+                info!("Received shutdown via admin interface");
             }
         }
         match time::timeout(shutdown_grace_period, drain.drain()).await {
             Ok(()) => debug!("Shutdown completed gracefully"),
-            Err(_) => warn!("Graceful shutdown did not complete in {shutdown_grace_period:?}, terminating now"),
+            Err(_) => warn!(
+                "Graceful shutdown did not complete in {shutdown_grace_period:?}, terminating now"
+            ),
         }
     });
 }
