@@ -15,7 +15,7 @@ use linkerd_app::{
     trace, Config,
 };
 use linkerd_signal as signal;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, time};
 pub use tracing::{debug, error, info, warn};
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
@@ -50,6 +50,8 @@ fn main() {
     // by cgroups, when possible).
     rt::build().block_on(async move {
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
+        let shutdown_grace_period = config.shutdown_grace_period;
+
         let bind = BindTcp::with_orig_dst();
         let app = match config
             .build(
@@ -117,6 +119,11 @@ fn main() {
                 info!("Received shutdown via admin interface");
             }
         }
-        drain.drain().await;
+        match time::timeout(shutdown_grace_period, drain.drain()).await {
+            Ok(()) => debug!("Shutdown completed gracefully"),
+            Err(_) => warn!(
+                "Graceful shutdown did not complete in {shutdown_grace_period:?}, terminating now"
+            ),
+        }
     });
 }
