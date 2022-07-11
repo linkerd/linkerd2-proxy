@@ -227,20 +227,16 @@ pub mod proto {
         fn try_from(rr: api::RequestRedirect) -> Result<Self, Self::Error> {
             let scheme = rr.scheme.map(TryInto::try_into).transpose()?;
 
-            let authority = {
-                if rr.port > (u16::MAX as u32) {
-                    return Err(InvalidRequestRedirect::Port(rr.port));
+            let port = u16::try_from(rr.port).map_err(|_| InvalidRequestRedirect::Port(rr.port))?;
+            let authority = match (rr.host, NonZeroU16::try_from(port)) {
+                (h, p) if h.is_empty() => p.ok().map(AuthorityOverride::Port),
+                (h, Ok(p)) => {
+                    let a = format!("{}:{}", h, p).try_into()?;
+                    Some(AuthorityOverride::Exact(a))
                 }
-                match (rr.host, (rr.port as u16).try_into().ok()) {
-                    (h, p) if h.is_empty() => p.map(AuthorityOverride::Port),
-                    (h, Some(p)) => {
-                        let a = format!("{}:{}", h, p).try_into()?;
-                        Some(AuthorityOverride::Exact(a))
-                    }
-                    (h, None) => {
-                        let a = h.try_into()?;
-                        Some(AuthorityOverride::Host(a))
-                    }
+                (h, Err(_)) => {
+                    let a = h.try_into()?;
+                    Some(AuthorityOverride::Host(a))
                 }
             };
 
@@ -255,10 +251,10 @@ pub mod proto {
                 }
             });
 
-            let status = match rr.status {
-                0 => None,
-                s if 100 >= s || s < 600 => Some(http::StatusCode::from_u16(s as u16)?),
-                s => return Err(InvalidRequestRedirect::StatusNonU16(s)),
+            let status = match u16::try_from(rr.status) {
+                Ok(0) => None,
+                Ok(s) if 100 >= s || s < 600 => Some(http::StatusCode::from_u16(s)?),
+                _ => return Err(InvalidRequestRedirect::StatusNonU16(rr.status)),
             };
 
             Ok(RedirectRequest {
