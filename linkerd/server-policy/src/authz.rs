@@ -52,7 +52,6 @@ pub mod proto {
     use super::*;
     use crate::{authz::Network, proto::InvalidMeta};
     use linkerd2_proxy_api::{inbound as api, net::InvalidIpNetwork};
-    use std::net::{Ipv4Addr, Ipv6Addr};
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidAuthz {
@@ -74,19 +73,12 @@ pub mod proto {
 
     pub(crate) fn mk_authorizations(
         authzs: Vec<api::Authz>,
+        parent_authzs: &[Authorization],
     ) -> Result<Arc<[Authorization]>, InvalidAuthz> {
-        let loopback = Authorization {
-            authentication: Authentication::Unauthenticated,
-            networks: vec![Ipv4Addr::LOCALHOST.into(), Ipv6Addr::LOCALHOST.into()],
-            meta: Arc::new(Meta::Default {
-                name: "localhost".into(),
-            }),
-        };
-
         authzs
             .into_iter()
             .map(Authorization::try_from)
-            .chain(Some(Ok(loopback)))
+            .chain(parent_authzs.iter().cloned().map(Ok))
             .collect::<Result<Arc<[_]>, _>>()
     }
 

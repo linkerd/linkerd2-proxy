@@ -41,7 +41,7 @@ pub mod proto {
     use crate::{
         authz::{self, proto::InvalidAuthz},
         proto::InvalidMeta,
-        Meta,
+        Authorization, Meta,
     };
     use linkerd2_proxy_api::inbound as api;
     use linkerd_http_route::http::{
@@ -77,7 +77,10 @@ pub mod proto {
         Meta(#[from] InvalidMeta),
     }
 
-    pub fn try_route(proto: api::HttpRoute) -> Result<Route, InvalidHttpRoute> {
+    pub fn try_route(
+        proto: api::HttpRoute,
+        server_authorizations: &[Authorization],
+    ) -> Result<Route, InvalidHttpRoute> {
         let api::HttpRoute {
             hosts,
             authorizations,
@@ -90,7 +93,7 @@ pub mod proto {
             .map(r#match::MatchHost::try_from)
             .collect::<Result<Vec<_>, InvalidHostMatch>>()?;
 
-        let authzs = authz::proto::mk_authorizations(authorizations)?;
+        let authzs = authz::proto::mk_authorizations(authorizations, &*server_authorizations)?;
         let meta = Arc::new(Meta::try_from(metadata.ok_or(InvalidMeta::Missing)?)?);
         let rules = rules
             .into_iter()

@@ -138,7 +138,7 @@ pub mod proto {
             } else {
                 $routes
                     .into_iter()
-                    .map($kind::proto::try_route)
+                    .map(|r| $kind::proto::try_route(r, &*$server_authzs))
                     .collect::<Result<Arc<[_]>, _>>()
             }
         }};
@@ -155,7 +155,21 @@ pub mod proto {
                 server_ips: _,
             } = proto;
 
-            let authorizations = authz::proto::mk_authorizations(authorizations)?;
+            let authorizations = {
+                // Always permit traffic from localhost.
+                let localhost = Authorization {
+                    authentication: Authentication::Unauthenticated,
+                    networks: vec![
+                        std::net::Ipv4Addr::LOCALHOST.into(),
+                        std::net::Ipv6Addr::LOCALHOST.into(),
+                    ],
+                    meta: Arc::new(Meta::Default {
+                        name: "localhost".into(),
+                    }),
+                };
+
+                authz::proto::mk_authorizations(authorizations, &[localhost])?
+            };
 
             let protocol = match protocol
                 .and_then(|api::ProxyProtocol { kind }| kind)
