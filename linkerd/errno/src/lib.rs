@@ -44,7 +44,7 @@ mod code {
                 }
             }
 
-            impl<'a> From<$from_ty> for $name {
+            impl From<$from_ty> for $name {
                 fn from(err: $from_ty) -> Self {
                     match err {
                         $(
