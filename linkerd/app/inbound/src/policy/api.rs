@@ -71,7 +71,11 @@ where
             Ok(rsp.map(|updates| {
                 updates
                     .map(|up| {
-                        let policy = up?.try_into().map_err(|e| {
+                        // FIXME(ver): If we get an invalid policy, we can't
+                        // pretend we didn't get it -- it might mean that the
+                        // server has tried to configure a policy that we don't
+                        // support!
+                        let policy = ServerPolicy::try_from(up?).map_err(|e| {
                             tonic::Status::invalid_argument(&*format!(
                                 "received invalid policy: {}",
                                 e

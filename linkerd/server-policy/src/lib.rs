@@ -126,9 +126,14 @@ pub mod proto {
     // === impl ServerPolicy ===
 
     macro_rules! mk_routes {
-        ($kind:ident, $authzs:expr, $routes:ident) => {{
+        ($kind:ident, $routes:ident, $server_authzs:expr) => {{
+            // If no routes are specified, then we are probably talking to an
+            // older policy controller version that does not support routes. In
+            // this case, we use a default route (that matches all requests).
+            //
+            // TODO(ver) In 2.14 we can remove this fallback.
             if $routes.is_empty() {
-                let route = $kind::default($authzs);
+                let route = $kind::default($server_authzs);
                 Ok(Some(route).into_iter().collect::<Arc<[_]>>())
             } else {
                 $routes
@@ -160,7 +165,7 @@ pub mod proto {
                     http_routes,
                     timeout,
                 }) => Protocol::Detect {
-                    http: mk_routes!(http, authorizations.clone(), http_routes)?,
+                    http: mk_routes!(http, http_routes, authorizations.clone())?,
                     timeout: timeout
                         .ok_or(InvalidServer::MissingDetectTimeout)?
                         .try_into()
@@ -169,15 +174,15 @@ pub mod proto {
                 },
 
                 api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { routes }) => {
-                    Protocol::Http1(mk_routes!(http, authorizations, routes)?)
+                    Protocol::Http1(mk_routes!(http, routes, authorizations)?)
                 }
 
                 api::proxy_protocol::Kind::Http2(api::proxy_protocol::Http2 { routes }) => {
-                    Protocol::Http2(mk_routes!(http, authorizations, routes)?)
+                    Protocol::Http2(mk_routes!(http, routes, authorizations)?)
                 }
 
                 api::proxy_protocol::Kind::Grpc(api::proxy_protocol::Grpc { routes }) => {
-                    Protocol::Grpc(mk_routes!(grpc, authorizations, routes)?)
+                    Protocol::Grpc(mk_routes!(grpc, routes, authorizations)?)
                 }
 
                 api::proxy_protocol::Kind::Tls(_) => Protocol::Tls(authorizations),
