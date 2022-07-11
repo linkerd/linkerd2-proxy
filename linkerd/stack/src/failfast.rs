@@ -191,7 +191,7 @@ mod test {
         tokio::time::sleep(max_unavailable + Duration::from_millis(1)).await;
         assert_ready_ok!(service.poll_ready());
 
-        let err = service.call(()).await.err().expect("should failfast");
+        let err = service.call(()).await.expect_err("should failfast");
         assert!(err.is::<super::FailFastError>());
 
         // Then the inner service becomes available.
