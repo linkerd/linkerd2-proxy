@@ -14,15 +14,16 @@ pub struct FailureResponse {
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
+    pub use crate::http::filter::inject_failure::proto::InvalidDistribution;
     use linkerd2_proxy_api::grpc_route as api;
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidFailureResponse {
-        #[error("invalid gRPC status code: {0}")]
-        StatusNonU16(u32),
+        #[error("gRPC status code is not a u16")]
+        StatusNonU16(#[from] std::num::TryFromIntError),
 
-        #[error("invalid request distribution: {0}")]
-        Distribution(#[from] rand::distributions::BernoulliError),
+        #[error("{0}")]
+        Distribution(#[from] InvalidDistribution),
     }
 
     // === impl InjectFailure ===
@@ -31,25 +32,14 @@ pub mod proto {
         type Error = InvalidFailureResponse;
 
         fn try_from(proto: api::GrpcFailureInjector) -> Result<Self, Self::Error> {
-            let response = {
-                if proto.code > u16::MAX as u32 {
-                    return Err(InvalidFailureResponse::StatusNonU16(proto.code));
-                }
-
-                FailureResponse {
-                    code: proto.code as u16,
-                    message: proto.message.into(),
-                }
-            };
-
-            let distribution = match proto.ratio {
-                Some(r) => r.try_into()?,
-                None => Default::default(),
+            let response = FailureResponse {
+                code: u16::try_from(proto.code)?,
+                message: proto.message.into(),
             };
 
             Ok(InjectFailure {
                 response,
-                distribution,
+                distribution: proto.ratio.try_into()?,
             })
         }
     }
