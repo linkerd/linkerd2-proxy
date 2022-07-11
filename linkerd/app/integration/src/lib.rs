@@ -101,7 +101,7 @@ macro_rules! assert_eventually {
                     } else if i == $retries {
                         panic!(
                             "assertion failed after {} (retried {} times): {}",
-                            crate::HumanDuration(Instant::now().saturating_duration_since(start_t)),
+                            $crate::HumanDuration(Instant::now().saturating_duration_since(start_t)),
                             i,
                             format_args!($($arg)+)
                         )
@@ -114,7 +114,7 @@ macro_rules! assert_eventually {
                 }
             }.instrument(tracing::trace_span!(
                 "assert_eventually",
-                patience  = %crate::HumanDuration(patience),
+                patience  = %$crate::HumanDuration(patience),
                 max_retries = $retries
             ))
             .await
@@ -146,7 +146,7 @@ macro_rules! assert_contains {
 #[macro_export]
 macro_rules! assert_eventually_contains {
     ($scrape:expr, $contains:expr) => {{
-        let mut res: Result<(), crate::metrics::MatchErr> = Ok(());
+        let mut res: Result<(), $crate::metrics::MatchErr> = Ok(());
         let res_ref = &mut res;
         assert_eventually!(
             {

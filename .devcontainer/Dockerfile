@@ -1,12 +1,12 @@
-ARG RUST_VERSION=1.60.0
+ARG RUST_VERSION=1.62.0
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as kubectl
-ARG KUBECTL_VERSION=v1.23.6
+ARG KUBECTL_VERSION=v1.24.2
 RUN curl --proto '=https' --tlsv1.3 -vsSfLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
     && chmod 755 /usr/local/bin/kubectl
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as k3d
-ARG K3D_VERSION=v5.4.1
+ARG K3D_VERSION=v5.4.4
 RUN cd /usr/local/bin \
     && curl --proto '=https' --tlsv1.3 -vsSfLO "https://github.com/k3d-io/k3d/releases/download/${K3D_VERSION}/k3d-linux-amd64" \
     && mv k3d-linux-amd64 k3d \
@@ -29,12 +29,12 @@ RUN cd /usr/local/bin \
     && chmod 755 checksec
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as just
-ARG JUST_VERSION=1.1.3
+ARG JUST_VERSION=1.2.0
 RUN curl --proto '=https' --tlsv1.3 -vsSfL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
     | tar zvxf - -C /usr/local/bin just
 
 FROM docker.io/rust:${RUST_VERSION}-bullseye as nextest
-ARG NEXTEST_VERSION=0.9.14
+ARG NEXTEST_VERSION=0.9.24
 RUN curl --proto '=https' --tlsv1.3 -vsSfL "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/cargo-nextest-${NEXTEST_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
     | tar zvxf - -C /usr/local/bin cargo-nextest
 
