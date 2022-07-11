@@ -206,14 +206,17 @@ pub mod proto {
         #[error("invalid HTTP status code: {0}")]
         Status(#[from] http::status::InvalidStatusCode),
 
+        #[error("HTTP status code must be a u16: {0}")]
+        StatusNonU16(u32),
+
         #[error("invalid HTTP authority: {0}")]
         Authority(#[from] http::uri::InvalidUri),
 
-        #[error("invalid HTTP status code: {0}")]
-        StatusNonU16(u32),
-
-        #[error("invalid port number: {0}")]
+        #[error("port number must be a u16: {0}")]
         Port(u32),
+
+        #[error("redirect paths must be absolute")]
+        RelativePath,
 
         #[error("{0}")]
         Value(#[from] http::header::InvalidHeaderValue),
@@ -227,6 +230,9 @@ pub mod proto {
         fn try_from(rr: api::RequestRedirect) -> Result<Self, Self::Error> {
             let scheme = rr.scheme.map(TryInto::try_into).transpose()?;
 
+            // We could validate that hostnames are valid DNS names, but
+            // practically it won't break anything in the proxy if these are
+            // invalid.
             let port = u16::try_from(rr.port).map_err(|_| InvalidRequestRedirect::Port(rr.port))?;
             let authority = match (rr.host, NonZeroU16::try_from(port)) {
                 (h, p) if h.is_empty() => p.ok().map(AuthorityOverride::Port),
@@ -240,21 +246,32 @@ pub mod proto {
                 }
             };
 
-            let path = rr.path.and_then(|p| p.replace).map(|p| match p {
-                api::path_modifier::Replace::Full(path) => {
-                    // TODO ensure path is valid.
-                    ModifyPath::ReplaceFullPath(path)
-                }
-                api::path_modifier::Replace::Prefix(prefix) => {
-                    // TODO ensure prefix is valid.
-                    ModifyPath::ReplacePrefixMatch(prefix)
-                }
-            });
+            // We primarily care that rewrite paths are absolute. We could do
+            // additional validation here, but it's probably overkill.
+            let path = rr
+                .path
+                .and_then(|p| p.replace)
+                .map(|p| match p {
+                    api::path_modifier::Replace::Full(path) => {
+                        if !path.starts_with('/') {
+                            return Err(InvalidRequestRedirect::RelativePath);
+                        }
+                        Ok(ModifyPath::ReplaceFullPath(path))
+                    }
+                    api::path_modifier::Replace::Prefix(prefix) => {
+                        if prefix.starts_with('/') {
+                            return Err(InvalidRequestRedirect::RelativePath);
+                        }
+                        Ok(ModifyPath::ReplacePrefixMatch(prefix))
+                    }
+                })
+                .transpose()?;
 
-            let status = match u16::try_from(rr.status) {
-                Ok(0) => None,
-                Ok(s) if 100 >= s || s < 600 => Some(http::StatusCode::from_u16(s)?),
-                _ => return Err(InvalidRequestRedirect::StatusNonU16(rr.status)),
+            let status = match u16::try_from(rr.status)
+                .map_err(|_| InvalidRequestRedirect::StatusNonU16(rr.status))?
+            {
+                0 => None,
+                s => Some(http::StatusCode::try_from(s)?),
             };
 
             Ok(RedirectRequest {
