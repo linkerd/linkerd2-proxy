@@ -184,7 +184,8 @@ pub mod proto {
                 api::proxy_protocol::Kind::Opaque(_) => Protocol::Opaque(authorizations),
             };
 
-            // TODO use a `Metadata` type
+            // TODO Update the API to include a metadata field so that we can
+            // avoid label inference.
             let meta = Meta::try_new_with_default(labels, "policy.linkerd.io", "server")?;
 
             Ok(ServerPolicy { protocol, meta })
