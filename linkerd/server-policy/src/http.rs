@@ -47,9 +47,7 @@ pub mod proto {
     use linkerd_http_route::http::{
         filter::{
             inject_failure::proto::InvalidFailureResponse,
-            modify_header::proto::InvalidModifyHeader,
-            redirect::proto::InvalidRequestRedirect,
-            //InvalidRedirect,
+            modify_header::proto::InvalidModifyHeader, redirect::proto::InvalidRequestRedirect,
         },
         r#match::{host::proto::InvalidHostMatch, proto::InvalidRouteMatch},
     };

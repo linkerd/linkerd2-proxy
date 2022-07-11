@@ -24,13 +24,13 @@ pub enum AuthorityOverride {
 #[derive(Debug, thiserror::Error)]
 pub enum InvalidRedirect {
     #[error("redirects may only replace the path prefix when a path prefix match applied")]
-    InvalidReplacePrefix,
+    ReplacePrefix,
 
     #[error("redirect produced an invalid location: {0}")]
-    InvalidLocation(#[from] http::Error),
+    Location(#[from] http::Error),
 
     #[error("redirect produced an invalid authority: {0}")]
-    InvalidAuthority(#[from] InvalidUri),
+    Authority(#[from] InvalidUri),
 
     #[error("no authority to redirect to")]
     MissingAuthority,
@@ -64,7 +64,7 @@ impl RedirectRequest {
                 .authority(authority)
                 .path_and_query(self.path_and_query(orig_uri, rm)?)
                 .build()
-                .map_err(InvalidRedirect::InvalidLocation)?
+                .map_err(InvalidRedirect::Location)?
         };
         if &location == orig_uri {
             return Ok(None);
@@ -187,7 +187,7 @@ impl RedirectRequest {
                 // If the matched rule was not a prefix match, the redirect
                 // filter is invalid. This should cause us to fail requests with
                 // a 5XX.
-                _ => Err(InvalidRedirect::InvalidReplacePrefix),
+                _ => Err(InvalidRedirect::ReplacePrefix),
             },
         }
     }
@@ -542,7 +542,7 @@ mod tests {
         };
         assert!(matches!(
             apply!("http://example.com/foo/bar", rule).expect_err("must not apply"),
-            InvalidRedirect::InvalidReplacePrefix
+            InvalidRedirect::ReplacePrefix
         ));
     }
 
