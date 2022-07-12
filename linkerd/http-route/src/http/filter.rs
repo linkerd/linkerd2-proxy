@@ -1,8 +1,10 @@
+pub mod client_ip_headers;
 pub mod inject_failure;
 pub mod modify_header;
 pub mod redirect;
 
 pub use self::{
+    client_ip_headers::ClientIpHeaders,
     inject_failure::{Distribution, FailureResponse, InjectFailure},
     modify_header::ModifyHeader,
     redirect::{InvalidRedirect, RedirectRequest, Redirection},

@@ -1,7 +1,7 @@
 use super::*;
 use crate::policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
 use linkerd_app_core::{svc::Service, Infallible};
-use std::sync::Arc;
+use std::{net, sync::Arc};
 
 macro_rules! conn {
     ($client:expr, $dst:expr) => {{
@@ -15,9 +15,11 @@ macro_rules! conn {
         }
     }};
     () => {{
-        conn!([192, 168, 3, 3], [192, 168, 3, 4])
+        conn!(CLIENT_IP, [192, 168, 3, 4])
     }};
 }
+
+const CLIENT_IP: net::IpAddr = net::IpAddr::V4(net::Ipv4Addr::new(192, 168, 3, 3));
 
 macro_rules! new_svc {
     ($proto:expr, $conn:expr, $rsp:expr) => {{
@@ -81,7 +83,7 @@ async fn http_route() {
                 policy: Policy {
                     authorizations: Arc::new([Authorization {
                         authentication: Authentication::Unauthenticated,
-                        networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+                        networks: vec![CLIENT_IP.into()],
                         meta: Arc::new(Meta::Resource {
                             group: "policy.linkerd.io".into(),
                             kind: "server".into(),
@@ -162,7 +164,7 @@ async fn http_filter_header() {
             policy: Policy {
                 authorizations: Arc::new([Authorization {
                     authentication: Authentication::Unauthenticated,
-                    networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+                    networks: vec![CLIENT_IP.into()],
                     meta: Arc::new(Meta::Resource {
                         group: "policy.linkerd.io".into(),
                         kind: "server".into(),
@@ -207,6 +209,71 @@ async fn http_filter_header() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn http_filter_client_ip() {
+    use linkerd_server_policy::http::{filter, r#match::MatchRequest, Filter, Policy, Route, Rule};
+
+    let rmeta = Arc::new(Meta::Resource {
+        group: "gateway.networking.k8s.io".into(),
+        kind: "httproute".into(),
+        name: "testrt".into(),
+    });
+    let proto = Protocol::Http1(Arc::new([Route {
+        hosts: vec![],
+        rules: vec![Rule {
+            matches: vec![MatchRequest {
+                method: Some(::http::Method::GET),
+                ..MatchRequest::default()
+            }],
+            policy: Policy {
+                authorizations: Arc::new([Authorization {
+                    authentication: Authentication::Unauthenticated,
+                    networks: vec![CLIENT_IP.into()],
+                    meta: Arc::new(Meta::Resource {
+                        group: "policy.linkerd.io".into(),
+                        kind: "server".into(),
+                        name: "testsaz".into(),
+                    }),
+                }]),
+                filters: vec![Filter::ClientIpHeaders(filter::ClientIpHeaders {
+                    headers: vec![(
+                        "X-Forwarded-For".parse().unwrap(),
+                        filter::client_ip_headers::Action::Add,
+                    )],
+                })],
+                meta: rmeta.clone(),
+            },
+        }],
+    }]));
+    let inner = |permit: HttpRoutePermit, req: ::http::Request<hyper::Body>| -> Result<_> {
+        assert_eq!(req.headers().len(), 1);
+        assert_eq!(
+            req.headers().get("X-Forwarded-For"),
+            Some(&CLIENT_IP.to_string().parse().unwrap())
+        );
+        let mut rsp = ::http::Response::builder()
+            .body(hyper::Body::default())
+            .unwrap();
+        rsp.extensions_mut().insert(permit);
+        Ok(rsp)
+    };
+    let (mut svc, _tx) = new_svc!(proto, conn!(), inner);
+
+    let rsp = svc
+        .call(
+            ::http::Request::builder()
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect("serves");
+    let permit = rsp
+        .extensions()
+        .get::<HttpRoutePermit>()
+        .expect("permitted");
+    assert_eq!(permit.labels.route.route, rmeta);
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn http_filter_inject_failure() {
     use linkerd_server_policy::http::{filter, r#match::MatchRequest, Filter, Policy, Route, Rule};
 
@@ -225,7 +292,7 @@ async fn http_filter_inject_failure() {
             policy: Policy {
                 authorizations: Arc::new([Authorization {
                     authentication: Authentication::Unauthenticated,
-                    networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+                    networks: vec![CLIENT_IP.into()],
                     meta: Arc::new(Meta::Resource {
                         group: "policy.linkerd.io".into(),
                         kind: "server".into(),
@@ -291,7 +358,7 @@ async fn grpc_route() {
                 policy: Policy {
                     authorizations: Arc::new([Authorization {
                         authentication: Authentication::Unauthenticated,
-                        networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+                        networks: vec![CLIENT_IP.into()],
                         meta: Arc::new(Meta::Resource {
                             group: "policy.linkerd.io".into(),
                             kind: "server".into(),
@@ -389,7 +456,7 @@ async fn grpc_filter_header() {
             policy: Policy {
                 authorizations: Arc::new([Authorization {
                     authentication: Authentication::Unauthenticated,
-                    networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+                    networks: vec![CLIENT_IP.into()],
                     meta: Arc::new(Meta::Resource {
                         group: "policy.linkerd.io".into(),
                         kind: "server".into(),
@@ -462,7 +529,7 @@ async fn grpc_filter_inject_failure() {
             policy: Policy {
                 authorizations: Arc::new([Authorization {
                     authentication: Authentication::Unauthenticated,
-                    networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
+                    networks: vec![CLIENT_IP.into()],
                     meta: Arc::new(Meta::Resource {
                         group: "policy.linkerd.io".into(),
                         kind: "server".into(),
