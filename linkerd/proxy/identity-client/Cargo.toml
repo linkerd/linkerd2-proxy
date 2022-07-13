@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-linkerd2-proxy-api = { version = "0.5", features = ["identity"] }
+linkerd2-proxy-api = { version = "0.6", features = ["identity"] }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
 linkerd-metrics = { path = "../../metrics" }

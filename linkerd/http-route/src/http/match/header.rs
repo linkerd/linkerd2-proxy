@@ -86,7 +86,7 @@ pub mod proto {
         fn try_from(hm: api::HeaderMatch) -> Result<Self, Self::Error> {
             let name = http::header::HeaderName::from_bytes(hm.name.as_bytes())?;
             match hm.value.ok_or(InvalidHeaderMatch::MissingValueMatch)? {
-                api::header_match::Value::Exact(h) => Ok(MatchHeader::Exact(name, h.parse()?)),
+                api::header_match::Value::Exact(h) => Ok(MatchHeader::Exact(name, h.try_into()?)),
                 api::header_match::Value::Regex(re) => Ok(MatchHeader::Regex(name, re.parse()?)),
             }
         }

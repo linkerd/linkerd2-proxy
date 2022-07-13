@@ -22,7 +22,7 @@ linkerd-http-box = { path = "../http-box" }
 linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd-stack = { path = "../stack" }
 linkerd-tonic-watch = { path = "../tonic-watch" }
-linkerd2-proxy-api = { version = "0.5", features = ["destination"] }
+linkerd2-proxy-api = { version = "0.6", features = ["destination"] }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
@@ -34,6 +34,6 @@ tracing = "0.1"
 pin-project = "1"
 
 [dev-dependencies]
-linkerd2-proxy-api = { version = "0.5", features = ["arbitrary"] }
+linkerd2-proxy-api = { version = "0.6", features = ["arbitrary"] }
 prost-types = "0.10"
 quickcheck = { version = "1", default-features = false }
