@@ -40,7 +40,7 @@ pub mod proto {
     use super::*;
     use crate::{
         authz::{self, proto::InvalidAuthz},
-        proto::InvalidMeta,
+        meta::proto::InvalidMeta,
         Authorization, Meta,
     };
     use linkerd2_proxy_api::inbound as api;
