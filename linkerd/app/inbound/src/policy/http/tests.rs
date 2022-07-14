@@ -84,7 +84,7 @@ async fn http_route() {
                         networks: vec![std::net::IpAddr::from([192, 168, 3, 3]).into()],
                         meta: Arc::new(Meta::Resource {
                             group: "policy.linkerd.io".into(),
-                            kind: "AuthorizatoinPolicy".into(),
+                            kind: "AuthorizationPolicy".into(),
                             name: "test".into(),
                         }),
                     }]),

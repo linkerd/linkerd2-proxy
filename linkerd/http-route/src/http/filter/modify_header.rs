@@ -1,6 +1,6 @@
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 
-// Note that while `set` and `remove` could perhaps be better-modled as a Map
+// Note that while `set` and `remove` could perhaps be better-modeled as a Map
 // and Set, we use a vector here so that they can implement `Hash`, etc. We
 // can't use a `BTree*` because `HeaderName` does not implement `Ord`.
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
