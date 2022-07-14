@@ -127,7 +127,7 @@ pub mod proto {
                         Ok(Filter::RequestHeaders(rhm.try_into()?))
                     }
                     None => Ok(Filter::InternalError(
-                        "server profile configured with unknown filter",
+                        "server policy configured with unknown filter",
                     )),
                 })
                 .collect::<Result<Vec<_>, InvalidGrpcRoute>>()?;

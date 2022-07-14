@@ -129,7 +129,7 @@ pub mod proto {
                         Ok(Filter::InjectFailure(rsp.try_into()?))
                     }
                     None => Ok(Filter::InternalError(
-                        "server profile configured with unknown filter",
+                        "server policy configured with unknown filter",
                     )),
                 })
                 .collect::<Result<Vec<_>, InvalidHttpRoute>>()?;
