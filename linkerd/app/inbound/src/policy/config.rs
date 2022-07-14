@@ -1,4 +1,4 @@
-use super::{api::Api, DefaultPolicy, GetPolicy, ServerPolicy, Store};
+use super::{api::Api, DefaultPolicy, GetPolicy, Protocol, ServerPolicy, Store};
 use linkerd_app_core::{control, dns, identity, metrics, svc::NewService};
 use std::collections::{HashMap, HashSet};
 use tokio::time::Duration;
@@ -49,8 +49,15 @@ impl Config {
             } => {
                 let watch = {
                     let backoff = control.connect.backoff;
-                    let c = control.build(dns, metrics, identity).new_service(());
-                    Api::new(workload, c).into_watch(backoff)
+                    let client = control.build(dns, metrics, identity).new_service(());
+                    let detect_timeout = match default {
+                        DefaultPolicy::Allow(ServerPolicy {
+                            protocol: Protocol::Detect { timeout, .. },
+                            ..
+                        }) => timeout,
+                        _ => Duration::from_secs(10),
+                    };
+                    Api::new(workload, detect_timeout, client).into_watch(backoff)
                 };
                 Store::spawn_discover(default, cache_max_idle_age, watch, ports)
             }

@@ -9,7 +9,7 @@ pub(crate) use self::store::Store;
 pub use self::{
     config::Config,
     http::{
-        HttpRouteFilterUnknown, HttpRouteInvalidRedirect, HttpRouteNotFound, HttpRouteRedirect,
+        HttpInvalidPolicy, HttpRouteInvalidRedirect, HttpRouteNotFound, HttpRouteRedirect,
         HttpRouteUnauthorized, NewHttpPolicy,
     },
     tcp::NewTcpPolicy,

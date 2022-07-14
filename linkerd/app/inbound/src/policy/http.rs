@@ -80,8 +80,8 @@ pub struct GrpcRouteInjectedFailure {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("an unknown route filter was configured")]
-pub struct HttpRouteFilterUnknown(());
+#[error("invalid server policy: {0}")]
+pub struct HttpInvalidPolicy(&'static str);
 
 // === impl NewHttpPolicy ===
 
@@ -290,8 +290,8 @@ fn apply_http_filters<B>(
                 rh.apply(req.headers_mut());
             }
 
-            http::Filter::Unknown => {
-                return Err(HttpRouteFilterUnknown(()).into());
+            http::Filter::InternalError(msg) => {
+                return Err(HttpInvalidPolicy(msg).into());
             }
         }
     }
@@ -312,8 +312,8 @@ fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> 
                 rh.apply(req.headers_mut());
             }
 
-            grpc::Filter::Unknown => {
-                return Err(HttpRouteFilterUnknown(()).into());
+            grpc::Filter::InternalError(msg) => {
+                return Err(HttpInvalidPolicy(msg).into());
             }
         }
     }

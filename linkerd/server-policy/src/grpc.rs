@@ -9,7 +9,7 @@ pub type Rule = grpc::Rule<Policy>;
 pub enum Filter {
     InjectFailure(filter::InjectFailure),
     RequestHeaders(http::filter::ModifyHeader),
-    Unknown,
+    InternalError(&'static str),
 }
 
 #[inline]
@@ -126,7 +126,9 @@ pub mod proto {
                     Some(filter::Kind::RequestHeaderModifier(rhm)) => {
                         Ok(Filter::RequestHeaders(rhm.try_into()?))
                     }
-                    None => Ok(Filter::Unknown),
+                    None => Ok(Filter::InternalError(
+                        "server profile configured with unknown filter",
+                    )),
                 })
                 .collect::<Result<Vec<_>, InvalidGrpcRoute>>()?;
 

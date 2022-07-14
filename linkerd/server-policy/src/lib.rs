@@ -41,6 +41,34 @@ pub struct RoutePolicy<T> {
     pub filters: Vec<T>,
 }
 
+impl ServerPolicy {
+    pub fn invalid(timeout: time::Duration) -> Self {
+        let meta = Arc::new(Meta::Default {
+            name: "invalid".into(),
+        });
+        Self {
+            meta: meta.clone(),
+            protocol: Protocol::Detect {
+                timeout,
+                http: Arc::new([http::Route {
+                    hosts: vec![],
+                    rules: vec![http::Rule {
+                        matches: vec![http::r#match::MatchRequest::default()],
+                        policy: http::Policy {
+                            meta,
+                            authorizations: Arc::new([]),
+                            filters: vec![http::Filter::InternalError(
+                                "invalid server configuration",
+                            )],
+                        },
+                    }],
+                }]),
+                tcp_authorizations: Arc::new([]),
+            },
+        }
+    }
+}
+
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;

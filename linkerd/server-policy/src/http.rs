@@ -10,7 +10,7 @@ pub enum Filter {
     InjectFailure(filter::InjectFailure),
     Redirect(filter::RedirectRequest),
     RequestHeaders(filter::ModifyHeader),
-    Unknown,
+    InternalError(&'static str),
 }
 
 #[inline]
@@ -128,7 +128,9 @@ pub mod proto {
                     Some(filter::Kind::FailureInjector(rsp)) => {
                         Ok(Filter::InjectFailure(rsp.try_into()?))
                     }
-                    None => Ok(Filter::Unknown),
+                    None => Ok(Filter::InternalError(
+                        "server profile configured with unknown filter",
+                    )),
                 })
                 .collect::<Result<Vec<_>, InvalidHttpRoute>>()?;
 

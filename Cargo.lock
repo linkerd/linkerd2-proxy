@@ -870,6 +870,7 @@ dependencies = [
  "linkerd-tonic-watch",
  "linkerd-tracing",
  "linkerd2-proxy-api",
+ "once_cell",
  "parking_lot",
  "thiserror",
  "tokio",

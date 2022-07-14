@@ -144,7 +144,7 @@ impl errors::HttpRescue<Error> for ServerRescue {
         {
             return Ok(errors::SyntheticHttpResponse::redirect(*status, location));
         }
-        if let Some(cause) = errors::cause_ref::<policy::HttpRouteFilterUnknown>(&*error) {
+        if let Some(cause) = errors::cause_ref::<policy::HttpInvalidPolicy>(&*error) {
             return Ok(errors::SyntheticHttpResponse::internal_error(
                 cause.to_string(),
             ));
