@@ -24,13 +24,13 @@ pub enum AuthorityOverride {
 #[derive(Debug, thiserror::Error)]
 pub enum InvalidRedirect {
     #[error("redirects may only replace the path prefix when a path prefix match applied")]
-    InvalidReplacePrefix,
+    ReplacePrefix,
 
     #[error("redirect produced an invalid location: {0}")]
-    InvalidLocation(#[from] http::Error),
+    Location(#[from] http::Error),
 
     #[error("redirect produced an invalid authority: {0}")]
-    InvalidAuthority(#[from] InvalidUri),
+    Authority(#[from] InvalidUri),
 
     #[error("no authority to redirect to")]
     MissingAuthority,
@@ -64,7 +64,7 @@ impl RedirectRequest {
                 .authority(authority)
                 .path_and_query(self.path_and_query(orig_uri, rm)?)
                 .build()
-                .map_err(InvalidRedirect::InvalidLocation)?
+                .map_err(InvalidRedirect::Location)?
         };
         if &location == orig_uri {
             return Ok(None);
@@ -187,8 +187,99 @@ impl RedirectRequest {
                 // If the matched rule was not a prefix match, the redirect
                 // filter is invalid. This should cause us to fail requests with
                 // a 5XX.
-                _ => Err(InvalidRedirect::InvalidReplacePrefix),
+                _ => Err(InvalidRedirect::ReplacePrefix),
             },
+        }
+    }
+}
+
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use linkerd2_proxy_api::{http_route as api, http_types};
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidRequestRedirect {
+        #[error("invalid location scheme: {0}")]
+        Scheme(#[from] http_types::InvalidScheme),
+
+        #[error("invalid HTTP status code: {0}")]
+        Status(#[from] http::status::InvalidStatusCode),
+
+        #[error("HTTP status code must be a u16: {0}")]
+        StatusNonU16(u32),
+
+        #[error("invalid HTTP authority: {0}")]
+        Authority(#[from] http::uri::InvalidUri),
+
+        #[error("port number must be a u16: {0}")]
+        Port(u32),
+
+        #[error("redirect paths must be absolute")]
+        RelativePath,
+
+        #[error("{0}")]
+        Value(#[from] http::header::InvalidHeaderValue),
+    }
+
+    // === impl RedirectRequest ===
+
+    impl TryFrom<api::RequestRedirect> for RedirectRequest {
+        type Error = InvalidRequestRedirect;
+
+        fn try_from(rr: api::RequestRedirect) -> Result<Self, Self::Error> {
+            let scheme = rr.scheme.map(TryInto::try_into).transpose()?;
+
+            // We could validate that hostnames are valid DNS names, but
+            // practically it won't break anything in the proxy if these are
+            // invalid.
+            let port = u16::try_from(rr.port).map_err(|_| InvalidRequestRedirect::Port(rr.port))?;
+            let authority = match (rr.host, NonZeroU16::try_from(port)) {
+                (h, p) if h.is_empty() => p.ok().map(AuthorityOverride::Port),
+                (h, Ok(p)) => {
+                    let a = format!("{}:{}", h, p).try_into()?;
+                    Some(AuthorityOverride::Exact(a))
+                }
+                (h, Err(_)) => {
+                    let a = h.try_into()?;
+                    Some(AuthorityOverride::Host(a))
+                }
+            };
+
+            // We primarily care that rewrite paths are absolute. We could do
+            // additional validation here, but it's probably overkill.
+            let path = rr
+                .path
+                .and_then(|p| p.replace)
+                .map(|p| match p {
+                    api::path_modifier::Replace::Full(path) => {
+                        if !path.starts_with('/') {
+                            return Err(InvalidRequestRedirect::RelativePath);
+                        }
+                        Ok(ModifyPath::ReplaceFullPath(path))
+                    }
+                    api::path_modifier::Replace::Prefix(prefix) => {
+                        if prefix.starts_with('/') {
+                            return Err(InvalidRequestRedirect::RelativePath);
+                        }
+                        Ok(ModifyPath::ReplacePrefixMatch(prefix))
+                    }
+                })
+                .transpose()?;
+
+            let status = match u16::try_from(rr.status)
+                .map_err(|_| InvalidRequestRedirect::StatusNonU16(rr.status))?
+            {
+                0 => None,
+                s => Some(http::StatusCode::try_from(s)?),
+            };
+
+            Ok(RedirectRequest {
+                scheme,
+                authority,
+                path,
+                status,
+            })
         }
     }
 }
@@ -464,7 +555,7 @@ mod tests {
         };
         assert!(matches!(
             apply!("http://example.com/foo/bar", rule).expect_err("must not apply"),
-            InvalidRedirect::InvalidReplacePrefix
+            InvalidRedirect::ReplacePrefix
         ));
     }
 

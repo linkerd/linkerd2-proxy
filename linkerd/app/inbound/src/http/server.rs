@@ -144,6 +144,11 @@ impl errors::HttpRescue<Error> for ServerRescue {
         {
             return Ok(errors::SyntheticHttpResponse::redirect(*status, location));
         }
+        if let Some(cause) = errors::cause_ref::<policy::HttpInvalidPolicy>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::internal_error(
+                cause.to_string(),
+            ));
+        }
 
         if let Some(cause) = errors::cause_ref::<crate::GatewayDomainInvalid>(&*error) {
             return Ok(errors::SyntheticHttpResponse::not_found(cause));

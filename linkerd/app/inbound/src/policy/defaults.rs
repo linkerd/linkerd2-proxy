@@ -2,7 +2,7 @@ use linkerd_app_core::{IpNet, Ipv4Net, Ipv6Net};
 use linkerd_server_policy::{
     authz::Suffix, http, Authentication, Authorization, Meta, Protocol, ServerPolicy,
 };
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 pub fn all_authenticated(timeout: Duration) -> ServerPolicy {
     mk("all-authenticated", all_nets(), authenticated(), timeout)
@@ -62,18 +62,22 @@ fn mk(
     authentication: Authentication,
     timeout: Duration,
 ) -> ServerPolicy {
-    let authorizations = std::sync::Arc::new([Authorization {
+    let authorizations = Arc::new([Authorization {
+        meta: Meta::new_default(name),
         networks: nets.into_iter().map(Into::into).collect(),
         authentication,
-        meta: Meta::new_default(name),
     }]);
-    let http = std::sync::Arc::new([http::default(authorizations.clone())]);
+
+    // The default policy supports protocol detection and uses the default
+    // authorization policy on a default route that matches all requests.
+    let protocol = Protocol::Detect {
+        timeout,
+        http: Arc::new([http::default(authorizations.clone())]),
+        tcp_authorizations: authorizations,
+    };
+
     ServerPolicy {
-        protocol: Protocol::Detect {
-            timeout,
-            http,
-            tcp_authorizations: authorizations,
-        },
         meta: Meta::new_default(name),
+        protocol,
     }
 }

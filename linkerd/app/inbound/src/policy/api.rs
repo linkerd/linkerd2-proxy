@@ -10,10 +10,12 @@ use linkerd_app_core::{
 };
 use linkerd_server_policy::ServerPolicy;
 use linkerd_tonic_watch::StreamWatch;
+use std::time;
 
 #[derive(Clone, Debug)]
 pub(super) struct Api<S> {
     workload: String,
+    detect_timeout: time::Duration,
     client: Client<S>,
 }
 
@@ -22,15 +24,20 @@ pub(super) struct GrpcRecover(ExponentialBackoff);
 
 pub(super) type Watch<S> = StreamWatch<GrpcRecover, Api<S>>;
 
+/// If an invalid policy is encountered, then this will be updated to hold a
+/// default, invalid policy.
+static INVALID_POLICY: once_cell::sync::OnceCell<ServerPolicy> = once_cell::sync::OnceCell::new();
+
 impl<S> Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error> + Clone,
     S::ResponseBody:
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
-    pub(super) fn new(workload: String, client: S) -> Self {
+    pub(super) fn new(workload: String, detect_timeout: time::Duration, client: S) -> Self {
         Self {
             workload,
+            detect_timeout,
             client: Client::new(client),
         }
     }
@@ -65,20 +72,24 @@ where
             port: port.into(),
             workload: self.workload.clone(),
         };
+        let detect_timeout = self.detect_timeout;
         let mut client = self.client.clone();
         Box::pin(async move {
             let rsp = client.watch_port(tonic::Request::new(req)).await?;
             Ok(rsp.map(|updates| {
                 updates
-                    .map(|up| {
-                        let policy = up?.try_into().map_err(|e| {
-                            tonic::Status::invalid_argument(&*format!(
-                                "received invalid policy: {}",
-                                e
-                            ))
-                        })?;
+                    .map_ok(move |up| {
+                        // If the server returned an invalid server policy, we
+                        // default to using an invalid policy that causes all
+                        // requests to report an internal error.
+                        let policy = ServerPolicy::try_from(up).unwrap_or_else(|error| {
+                            tracing::warn!(%error, "Server misconfigured");
+                            INVALID_POLICY
+                                .get_or_init(|| ServerPolicy::invalid(detect_timeout))
+                                .clone()
+                        });
                         tracing::debug!(?policy);
-                        Ok(policy)
+                        policy
                     })
                     .boxed()
             }))

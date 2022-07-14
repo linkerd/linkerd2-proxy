@@ -91,11 +91,15 @@ where
 
 impl SyntheticHttpResponse {
     pub fn unexpected_error() -> Self {
+        Self::internal_error("unexpected error")
+    }
+
+    pub fn internal_error(msg: impl Into<Cow<'static, str>>) -> Self {
         Self {
             close_connection: true,
             http_status: http::StatusCode::INTERNAL_SERVER_ERROR,
             grpc_status: tonic::Code::Internal,
-            message: Cow::Borrowed("unexpected error"),
+            message: msg.into(),
             location: None,
         }
     }

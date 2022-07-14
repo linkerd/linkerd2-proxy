@@ -79,6 +79,10 @@ pub struct GrpcRouteInjectedFailure {
     pub message: Arc<str>,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("invalid server policy: {0}")]
+pub struct HttpInvalidPolicy(&'static str);
+
 // === impl NewHttpPolicy ===
 
 impl<N> NewHttpPolicy<N> {
@@ -285,6 +289,10 @@ fn apply_http_filters<B>(
             http::Filter::RequestHeaders(rh) => {
                 rh.apply(req.headers_mut());
             }
+
+            http::Filter::InternalError(msg) => {
+                return Err(HttpInvalidPolicy(msg).into());
+            }
         }
     }
 
@@ -302,6 +310,10 @@ fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> 
 
             grpc::Filter::RequestHeaders(rh) => {
                 rh.apply(req.headers_mut());
+            }
+
+            grpc::Filter::InternalError(msg) => {
+                return Err(HttpInvalidPolicy(msg).into());
             }
         }
     }

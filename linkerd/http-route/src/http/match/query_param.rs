@@ -56,6 +56,42 @@ impl std::cmp::PartialEq for MatchQueryParam {
     }
 }
 
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use linkerd2_proxy_api::http_route as api;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidQueryParamMatch {
+        #[error("missing a query param name")]
+        MissingName,
+
+        #[error("missing a query param value")]
+        MissingValue,
+
+        #[error("invalid regular expression: {0}")]
+        Regex(#[from] regex::Error),
+    }
+
+    // === impl MatchQueryParam ===
+
+    impl TryFrom<api::QueryParamMatch> for MatchQueryParam {
+        type Error = InvalidQueryParamMatch;
+
+        fn try_from(qpm: api::QueryParamMatch) -> Result<Self, Self::Error> {
+            if qpm.name.is_empty() {
+                return Err(InvalidQueryParamMatch::MissingName);
+            }
+            match qpm.value.ok_or(InvalidQueryParamMatch::MissingValue)? {
+                api::query_param_match::Value::Exact(v) => Ok(MatchQueryParam::Exact(qpm.name, v)),
+                api::query_param_match::Value::Regex(re) => {
+                    Ok(MatchQueryParam::Regex(qpm.name, re.parse()?))
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::MatchQueryParam;

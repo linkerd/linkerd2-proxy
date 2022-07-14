@@ -39,6 +39,7 @@ impl<T: Clone> InjectFailure<T> {
 // === impl InjectFailure ===
 
 impl Distribution {
+    #[inline]
     pub fn from_ratio(
         numerator: u32,
         denominator: u32,
@@ -49,6 +50,12 @@ impl Distribution {
             denominator,
             inner,
         })
+    }
+}
+
+impl Default for Distribution {
+    fn default() -> Self {
+        Self::from_ratio(1, 1).expect("default distribution must be valid")
     }
 }
 
@@ -71,5 +78,63 @@ impl Hash for Distribution {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.numerator.hash(state);
         self.denominator.hash(state);
+    }
+}
+
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use linkerd2_proxy_api::http_route as api;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidFailureResponse {
+        #[error("invalid HTTP status code: {0}")]
+        Status(#[from] http::status::InvalidStatusCode),
+
+        #[error("HTTP status is not a u16")]
+        StatusNonU16(#[from] std::num::TryFromIntError),
+
+        #[error("{0}")]
+        Distribution(#[from] InvalidDistribution),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("invalid request distribution: {0}")]
+    pub struct InvalidDistribution(#[from] rand::distributions::BernoulliError);
+
+    // === impl InjectFailure ===
+
+    impl TryFrom<api::HttpFailureInjector> for InjectFailure {
+        type Error = InvalidFailureResponse;
+
+        fn try_from(proto: api::HttpFailureInjector) -> Result<Self, Self::Error> {
+            let response = FailureResponse {
+                status: u16::try_from(proto.status)?.try_into()?,
+                message: proto.message.into(),
+            };
+
+            Ok(InjectFailure {
+                response,
+                distribution: proto.ratio.try_into()?,
+            })
+        }
+    }
+
+    impl TryFrom<Option<api::Ratio>> for Distribution {
+        type Error = InvalidDistribution;
+
+        #[inline]
+        fn try_from(p: Option<api::Ratio>) -> Result<Self, Self::Error> {
+            Ok(p.map(TryInto::try_into).transpose()?.unwrap_or_default())
+        }
+    }
+
+    impl TryFrom<api::Ratio> for Distribution {
+        type Error = InvalidDistribution;
+
+        #[inline]
+        fn try_from(proto: api::Ratio) -> Result<Self, Self::Error> {
+            Self::from_ratio(proto.numerator, proto.denominator).map_err(Into::into)
+        }
     }
 }

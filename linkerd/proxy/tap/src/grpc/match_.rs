@@ -296,7 +296,7 @@ impl TryFrom<observe_request::r#match::Http> for HttpMatch {
             Pb::Method(m) => m
                 .r#type
                 .ok_or(InvalidMatch::Empty)
-                .and_then(|m| (&m).try_into().map_err(|_| InvalidMatch::InvalidHttpMethod))
+                .and_then(|m| m.try_into().map_err(|_| InvalidMatch::InvalidHttpMethod))
                 .map(HttpMatch::Method),
 
             Pb::Authority(a) => a

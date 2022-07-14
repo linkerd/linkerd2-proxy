@@ -102,3 +102,60 @@ impl MatchRpc {
         Some(summary)
     }
 }
+
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use crate::http::r#match::header::proto::InvalidHeaderMatch;
+    use linkerd2_proxy_api::grpc_route as api;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidRouteMatch {
+        #[error("invalid RPC match: {0}")]
+        Rpc(#[from] InvalidRpcMatch),
+
+        #[error("invalid header match: {0}")]
+        Header(#[from] InvalidHeaderMatch),
+
+        #[error("missing RPC match")]
+        MissingRpc,
+    }
+
+    // Currently, RPC match conversion is infallible; but this could change in
+    // the future.
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidRpcMatch {}
+
+    impl TryFrom<api::GrpcRouteMatch> for MatchRoute {
+        type Error = InvalidRouteMatch;
+
+        fn try_from(pb: api::GrpcRouteMatch) -> Result<Self, Self::Error> {
+            Ok(MatchRoute {
+                rpc: pb.rpc.ok_or(InvalidRouteMatch::MissingRpc)?.try_into()?,
+                headers: pb
+                    .headers
+                    .into_iter()
+                    .map(MatchHeader::try_from)
+                    .collect::<Result<Vec<_>, InvalidHeaderMatch>>()?,
+            })
+        }
+    }
+    impl TryFrom<api::GrpcRpcMatch> for MatchRpc {
+        type Error = InvalidRpcMatch;
+
+        fn try_from(pb: api::GrpcRpcMatch) -> Result<Self, Self::Error> {
+            Ok(MatchRpc {
+                service: if pb.service.is_empty() {
+                    None
+                } else {
+                    Some(pb.service)
+                },
+                method: if pb.method.is_empty() {
+                    None
+                } else {
+                    Some(pb.method)
+                },
+            })
+        }
+    }
+}
