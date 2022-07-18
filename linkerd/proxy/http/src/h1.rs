@@ -241,8 +241,20 @@ pub(crate) fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
 
 /// Checks responses to determine if they are successful HTTP upgrades.
 pub(crate) fn is_upgrade<B>(res: &http::Response<B>) -> bool {
+    #[inline]
+    fn is_connect_success<B>(res: &http::Response<B>) -> bool {
+        res.extensions().get::<HttpConnect>().is_some() && res.status().is_success()
+    }
+
     // Upgrades were introduced in HTTP/1.1
     if res.version() != http::Version::HTTP_11 {
+        if is_connect_success(res) {
+            tracing::warn!(
+                "A successful response to a CONNECT request had an incorrect HTTP version \
+                (expected HTTP/1.1, got {})",
+                res.version()
+            );
+        }
         return false;
     }
 
@@ -252,7 +264,7 @@ pub(crate) fn is_upgrade<B>(res: &http::Response<B>) -> bool {
     }
 
     // CONNECT requests are complete if status code is 2xx.
-    if res.extensions().get::<HttpConnect>().is_some() && res.status().is_success() {
+    if is_connect_success(res) {
         return true;
     }
 
