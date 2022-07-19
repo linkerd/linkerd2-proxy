@@ -251,7 +251,7 @@ pub(crate) fn is_upgrade<B>(res: &http::Response<B>) -> bool {
         if is_connect_success(res) {
             tracing::warn!(
                 "A successful response to a CONNECT request had an incorrect HTTP version \
-                (expected HTTP/1.1, got {})",
+                (expected HTTP/1.1, got {:?})",
                 res.version()
             );
         }
