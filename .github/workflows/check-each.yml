@@ -56,7 +56,7 @@ jobs:
         crate: ${{ fromJson(needs.list-changed-crates.outputs.crates) }}
     steps:
       - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
-      - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
+      - uses: olix0r/cargo-action-fmt@ed3530f0739c46ffa0dd983f8746b8c4a3d0a01c
       - name: Install meshtls-boring build deps
         if: matrix.crate == 'linkerd-meshtls-boring'
         run: apt update && apt install -y clang cmake
