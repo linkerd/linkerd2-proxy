@@ -21,15 +21,11 @@ jobs:
           ex=0
           while IFS= read file ; do
             versions=$(sed -nE 's/^ARG RUST_VERSION=([^ ]+)/\1/p' "$file")
-            if [ -z "$versions" ]; then
-              echo "::error file=$file::$file missing 'RUST_VERSION' argument"
-              ex=$((ex + 1))
-            fi
-            for mismatch in $(echo "$version" | grep -vF "$VERSION" || true) ; do
+            for mismatch in $(echo "$versions" | grep -vF "$VERSION" || true) ; do
               echo "::error file=$file::$file uses incorrect rust version(s): $mismatch"
               ex=$((ex + 1))
             done
-          done < <(find . -name Dockerfile -and -not -path './.github/actions/release-tag-meta/*')
+          done < <(find . -name Dockerfile)
           exit $ex
 
   workflows:
@@ -41,7 +37,6 @@ jobs:
           VERSION="$(cat rust-toolchain)"
           ex=0
           while IFS= read file ; do
-            echo "# $file"
             while IFS= read image ; do
               if [[ "$image" =~ ^docker://(docker.io/library/)?rust: ]]; then
                 tag="${image##*rust:}"
