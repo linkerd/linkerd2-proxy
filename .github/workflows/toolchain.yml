@@ -33,7 +33,9 @@ jobs:
     container: ghcr.io/linkerd/dev:v19-yq
     steps:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - run: |
+      - shell: bash
+        run: |
+          echo "# bash $(echo $BASH_VERSION"
           VERSION="$(cat rust-toolchain)"
           ex=0
           while IFS= read -r file ; do
