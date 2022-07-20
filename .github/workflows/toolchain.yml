@@ -46,6 +46,6 @@ jobs:
                   ex=$((ex + 1))
                 fi
               fi
-            done < <(yq '.jobs[] | select(.container) | .container.image // .container'' "$file")
+            done < <(yq '.jobs[] | select(.container) | .container.image // .container' "$file")
           done < <(find .github/workflows -name '*.yml')
           exit $ex
