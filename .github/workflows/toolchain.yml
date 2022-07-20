@@ -19,7 +19,7 @@ jobs:
       - run: |
           VERSION="$(cat rust-toolchain)"
           ex=0
-          while IFS= read file ; do
+          while IFS= read -r file ; do
             versions=$(sed -nE 's/^ARG RUST_VERSION=([^ ]+)/\1/p' "$file")
             for mismatch in $(echo "$versions" | grep -vF "$VERSION" || true) ; do
               echo "::error file=$file::$file uses incorrect rust version(s): $mismatch"
@@ -36,8 +36,8 @@ jobs:
       - run: |
           VERSION="$(cat rust-toolchain)"
           ex=0
-          while IFS= read file ; do
-            while IFS= read image ; do
+          while IFS= read -r file ; do
+            while IFS= read -r image ; do
               if [[ "$image" =~ ^docker://(docker.io/library/)?rust: ]]; then
                 tag="${image##*rust:}"
                 v="${tag%%-*}"
@@ -46,6 +46,6 @@ jobs:
                   ex=$((ex + 1))
                 fi
               fi
-            done < <(yq '.jobs[] | .container.image // .container' "$file")
+            done < <(yq '.jobs[] | select(.container) | .container.image // .container'' "$file")
           done < <(find .github/workflows -name '*.yml')
           exit $ex

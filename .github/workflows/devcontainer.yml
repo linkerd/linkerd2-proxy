@@ -29,8 +29,8 @@ jobs:
       - run: |
           VERSION="$(sed -ne 's/^ARG DEV_VERSION=//p' .devcontainer/Dockerfile)"
           ex=0
-          while IFS= read file ; do
-            while IFS= read image ; do
+          while IFS= read -r file ; do
+            while IFS= read -r image ; do
               if [[ "$image" =~ ^docker://ghcr.io/linkerd/dev: ]]; then
                 tag="${image##*dev:}"
                 tag="${tag%-*}"
@@ -39,6 +39,6 @@ jobs:
                   ex=$((ex + 1))
                 fi
               fi
-            done < <(yq '.jobs[] | .container.image // .container' "$file")
+            done < <(yq '.jobs[] | select(.container) | .container.image // .container'' "$file")
           done < <(find .github/workflows -maxdepth 1 -type f -name '*.yml')
           exit $ex
