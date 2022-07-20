@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.62.0-bullseye
+      image: docker://rust:1.62.1-bullseye
     steps:
       - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: olix0r/cargo-action-fmt@ed3530f0739c46ffa0dd983f8746b8c4a3d0a01c
@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.62.0-bullseye
+      image: docker://rust:1.62.1-bullseye
     steps:
       - run: rustup component add rustfmt
       - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.62.0-bullseye
+      image: docker://rust:1.62.1-bullseye
     steps:
       - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: olix0r/cargo-action-fmt@ed3530f0739c46ffa0dd983f8746b8c4a3d0a01c
