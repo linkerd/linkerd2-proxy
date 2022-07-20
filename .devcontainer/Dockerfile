@@ -1,7 +1,7 @@
 ARG DEV_VERSION=v19
 
-FROM ghcr.io/linkerd/dev:${DEV_VERSION}-rust as nightly
-RUN rustup toolchain add nightly
+FROM ghcr.io/linkerd/dev:${DEV_VERSION}-tools as nightly
+RUN rustup toolchain install --profile=minimal nightly
 RUN cargo +nightly install cargo-fuzz
 
 FROM ghcr.io/linkerd/dev:${DEV_VERSION}-tools

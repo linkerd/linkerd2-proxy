@@ -11,9 +11,6 @@ on:
 permissions:
   contents: read
 
-env:
-  YQ_VERSION: v4.2.0
-
 jobs:
   dockerfiles:
     runs-on: ubuntu-latest
@@ -22,39 +19,38 @@ jobs:
       - run: |
           VERSION="$(cat rust-toolchain)"
           ex=0
-          for f in $(find . -name Dockerfile -and -not -path './.github/actions/release-tag-meta/*'); do
-            versions=$(sed -nE 's/^ARG RUST_VERSION=([^ ]+)/\1/p' $f)
+          while IFS= read file ; do
+            versions=$(sed -nE 's/^ARG RUST_VERSION=([^ ]+)/\1/p' "$file")
             if [ -z "$versions" ]; then
-              echo "::error file=$f::$f missing 'RUST_VERSION' argument"
+              echo "::error file=$file::$file missing 'RUST_VERSION' argument"
               ex=$((ex + 1))
             fi
             for mismatch in $(echo "$version" | grep -vF "$VERSION" || true) ; do
-              echo "::error file=$f::$f uses incorrect rust version(s): $mismatch"
+              echo "::error file=$file::$file uses incorrect rust version(s): $mismatch"
               ex=$((ex + 1))
             done
-          done
+          done < <(find . -name Dockerfile -and -not -path './.github/actions/release-tag-meta/*')
           exit $ex
 
   workflows:
     runs-on: ubuntu-latest
+    container: ghcr.io/linkerd/dev:v19-yq
     steps:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - run: |
-          curl --proto '=https' --tlsv1.3 -vsSfLo /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
-            && chmod +x /usr/local/bin/yq
-      - run: |
           VERSION="$(cat rust-toolchain)"
           ex=0
-          for f in $(find .github/workflows -name '*.yml') ; do
-            echo "# $f"
-            for image in $(yq eval '.jobs[].container.image' $f) ; do
-              if [[ "$image" =~ "^docker://(docker.io/library/)?rust:" ]]; then
-                v="${${image##*rust:}%%-*}"
+          while IFS= read file ; do
+            echo "# $file"
+            while IFS= read image ; do
+              if [[ "$image" =~ ^docker://(docker.io/library/)?rust: ]]; then
+                tag="${image##*rust:}"
+                v="${tag%%-*}"
                 if [[ "$v" != "$VERSION" ]]; then
-                  echo "::warning file=$f::$f uses incorrect rust version: $v"
+                  echo "::warning file=$file::$file uses incorrect rust version: $v"
                   ex=$((ex + 1))
                 fi
               fi
-            done
-          done
+            done < <(yq '.jobs[] | .container.image // .container' "$file")
+          done < <(find .github/workflows -name '*.yml')
           exit $ex

@@ -27,12 +27,18 @@ jobs:
           sudo apt-get update
           sudo apt-get -y --no-install-recommends install jq
       - run: |
-          image=$(sed -E '/^\s*\/\/.*/d' .devcontainer/devcontainer.json |jq -Mr .image)
-          if [ "$image" == "null" ]; then
-            echo "::error file=.devcontainer/devcontainer.json::Missing image"
-            exit 1
-          fi
-          if ! docker pull "$image" ; then
-            echo "::error file=.devcontainer/devcontainer.json::Unable to pull image: $image"
-            exit 1
-          fi
+          VERSION="$(sed -ne 's/^ARG DEV_VERSION=//p' .devcontainer/Dockerfile)"
+          ex=0
+          while IFS= read file ; do
+            while IFS= read image ; do
+              if [[ "$image" =~ ^docker://ghcr.io/linkerd/dev: ]]; then
+                tag="${image##*dev:}"
+                tag="${tag%-*}"
+                if [ "$file" != "$VERSION" ]; then
+                  echo "::warning file=$file::$file uses incorrect devcontainer version: $tag"
+                  ex=$((ex + 1))
+                fi
+              fi
+            done < <(yq '.jobs[] | .container.image // .container' "$file")
+          done < <(find .github/workflows -maxdepth 1 -type f -name '*.yml')
+          exit $ex
