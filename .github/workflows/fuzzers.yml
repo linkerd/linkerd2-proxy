@@ -32,7 +32,7 @@ jobs:
     steps:
       - run: apt update && apt install -y jo
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - uses: tj-actions/changed-files@b2ee165d6b42ab1740e1037eb93748aad96767c5
+      - uses: tj-actions/changed-files@6c44eb8294bb9c93d6118427f4ff8404b695e1d7
         id: changed-files
       - name: list changed crates
         id: list-changed
