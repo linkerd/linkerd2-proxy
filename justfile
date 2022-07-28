@@ -68,7 +68,7 @@ _features := if features == "all" {
 
 # Use nextest if it's available (and we're not in CI). Mostly to work around
 # https://github.com/nextest-rs/nextest/issues/422
-_test := if env_var_or_default("GITHUB_ACTIONS", "") != "true" { "test" } else {
+_test := if env_var_or_default("GITHUB_ACTIONS", "") == "true" { "test" } else {
     ```
     if command -v cargo-nextest >/dev/null 2>&1; then
         echo "nextest run"
