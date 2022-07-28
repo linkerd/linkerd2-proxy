@@ -25,12 +25,8 @@ jobs:
   check-all:
     timeout-minutes: 20
     runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.62.1-bullseye
+    container: ghcr.io/linkerd/dev:v20-rust
     steps:
-      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
-      - uses: olix0r/cargo-action-fmt@ed3530f0739c46ffa0dd983f8746b8c4a3d0a01c
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - uses: ./.github/actions/install-protoc
       - run: just fetch
       - run: just check --exclude=linkerd-meshtls-boring

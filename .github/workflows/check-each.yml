@@ -49,21 +49,12 @@ jobs:
     needs: list-changed-crates
     timeout-minutes: 20
     runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.62.1-bullseye
+    container: ghcr.io/linkerd/dev:v20-rust
     strategy:
       matrix:
         crate: ${{ fromJson(needs.list-changed-crates.outputs.crates) }}
     steps:
-      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
-      - uses: olix0r/cargo-action-fmt@ed3530f0739c46ffa0dd983f8746b8c4a3d0a01c
-      - name: Install meshtls-boring build deps
-        if: matrix.crate == 'linkerd-meshtls-boring'
-        run: apt update && apt install -y clang cmake
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - name: Install protoc
-        if: matrix.crate == 'linkerd-transport-header' || matrix.crate == 'opencensus-proto'
-        uses: ./.github/actions/install-protoc
       - run: just fetch
       - run: just check-crate ${{ matrix.crate }}
 
