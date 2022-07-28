@@ -49,7 +49,7 @@ jobs:
     needs: list-changed-crates
     timeout-minutes: 20
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v20-rust
+    container: ghcr.io/linkerd/dev:v21-rust
     strategy:
       matrix:
         crate: ${{ fromJson(needs.list-changed-crates.outputs.crates) }}

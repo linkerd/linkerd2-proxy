@@ -1,4 +1,4 @@
-ARG DEV_VERSION=v20
+ARG DEV_VERSION=v21
 
 FROM ghcr.io/linkerd/dev:${DEV_VERSION}
 
