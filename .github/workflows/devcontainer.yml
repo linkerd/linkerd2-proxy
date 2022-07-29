@@ -20,14 +20,12 @@ jobs:
 
   devcontainer-image:
     runs-on: ubuntu-latest
+    container: ghcr.io/linkerd/dev:v21-tools
     steps:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get update
-          sudo apt-get -y --no-install-recommends install jq
-      - run: |
-          VERSION="$(sed -ne 's/^ARG DEV_VERSION=//p' .devcontainer/Dockerfile)"
+          # Strip out comments from the devcontainer.json for jq.
+          VERSION="$(grep -Ev '^\s*//.*' .devcontainer/devcontainer.json |jq -r '.image | split(":")[1]')"
           ex=0
           while IFS= read -r file ; do
             while IFS= read -r image ; do
