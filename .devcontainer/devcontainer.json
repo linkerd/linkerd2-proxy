@@ -1,6 +1,6 @@
 {
 	"name": "linkerd2-proxy",
-	"dockerFile": "./Dockerfile",
+	"image": "ghcr.io/linkerd/dev:v21",
 	"extensions": [
 		"DavidAnson.vscode-markdownlint",
 		"NathanRidley.autotrim",
@@ -11,6 +11,7 @@
 		"zxh404.vscode-proto3"
 	],
 	"settings": {},
+	"onCreateCommand": ".devcontainer/on-create.sh",
 	// Support docker + debugger
 	"runArgs": [
 		"--init",
