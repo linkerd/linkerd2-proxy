@@ -24,13 +24,11 @@ jobs:
   meshtls:
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.62.0-bullseye
+    container: ghcr.io/linkerd/dev:v22-rust
     steps:
-      - run: apt update && apt install -y cmake clang golang # for boring
-      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - run: just fetch
+      - run: just clippy-crate linkerd-meshtls --all-features
       - run: |
           just test-crate linkerd-meshtls --all-features --no-run \
             --package=linkerd-meshtls-boring \
@@ -39,23 +37,14 @@ jobs:
           just test-crate linkerd-meshtls --all-features \
             --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
-      # Run clippy on the boring components while we have the dependencies installed.
-      - run: rustup component add clippy
-      - run: |
-          just clippy-crate linkerd-meshtls --features=boring \
-            --package=linkerd-meshtls-boring
-      - run: just clippy-crate linkerd-meshtls --all-features
 
   # Run non-integration tests. This should be quick.
   unit:
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.62.0-bullseye
+    container: ghcr.io/linkerd/dev:v22-rust
     steps:
-      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - uses: ./.github/actions/install-protoc
       - run: just fetch
       - run: |
           just test --no-run \

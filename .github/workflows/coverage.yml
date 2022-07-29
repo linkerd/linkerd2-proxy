@@ -14,7 +14,6 @@ on:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
-  CARGO_TARPAULIN_VERSION: 0.18.5
   RUSTFLAGS: "-D warnings -A deprecated"
   RUSTUP_MAX_RETRIES: 10
 
@@ -24,15 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
-      image: docker://rust:1.62.0-bullseye
+      image: docker://ghcr.io/linkerd/dev:v22-rust
       options: --security-opt seccomp=unconfined # 🤷
     steps:
-      - run: apt update && apt install -y cmake clang golang # for boring
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
-      - name: install cargo-tarpaulin ${{ env.CARGO_TARPAULIN_VERSION }}
-        run: |
-          cd "${CARGO_HOME}/bin"
-          curl -sL https://github.com/xd009642/tarpaulin/releases/download/${CARGO_TARPAULIN_VERSION}/cargo-tarpaulin-${CARGO_TARPAULIN_VERSION}-travis.tar.gz | tar xzvf -
       # XXX(ver) AFAICT, Tarpaulin doesn't allow us to compose a report over multiple invocations,
       # so we have to choose between getting coverage from unit tests and integration tests (since
       # integration tests require --no-default-features to avoid flakiness). Currently the
