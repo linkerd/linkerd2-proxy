@@ -13,7 +13,7 @@ Vendored from https://github.com/census-instrumentation/opencensus-proto/.
 
 [dependencies]
 bytes = "1"
-prost = "0.10"
+prost = "0.11"
 prost-types = "0.10"
 
 [dependencies.tonic]
