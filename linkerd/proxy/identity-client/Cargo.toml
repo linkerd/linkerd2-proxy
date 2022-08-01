@@ -17,6 +17,6 @@ parking_lot = "0.12"
 pin-project = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["time", "sync"] }
-tonic = { version = "0.7", default-features = false }
+tonic = { version = "0.8", default-features = false }
 tracing = "0.1"
 http-body = "0.4"
