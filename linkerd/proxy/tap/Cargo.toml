@@ -11,7 +11,7 @@ http = "0.2"
 hyper = { version = "0.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.5"
-linkerd2-proxy-api = { version = "0.6", features = ["tap"] }
+linkerd2-proxy-api = { version = "0.7", features = ["tap"] }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-error = { path = "../../error" }
 linkerd-meshtls = { path = "../../meshtls" }
@@ -24,11 +24,11 @@ rand = { version = "0.8" }
 thiserror = "1"
 tokio = { version = "1", features = ["time"] }
 tower = { version = "0.4", default-features = false }
-tonic = { version = "0.7", default-features = false }
+tonic = { version = "0.8", default-features = false }
 tracing = "0.1"
 pin-project = "1"
 
 [dev-dependencies]
-linkerd2-proxy-api = { version = "0.6", features = ["arbitrary"] }
-prost-types = "0.10"
+linkerd2-proxy-api = { version = "0.7", features = ["arbitrary"] }
+prost-types = "0.11"
 quickcheck = { version = "1", default-features = false }

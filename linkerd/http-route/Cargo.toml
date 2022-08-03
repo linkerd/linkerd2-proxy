@@ -17,7 +17,7 @@ tracing = "0.1"
 url = "2"
 
 [dependencies.linkerd2-proxy-api]
-version = "0.6"
+version = "0.7"
 features = ["http-route", "grpc-route"]
 optional = true
 

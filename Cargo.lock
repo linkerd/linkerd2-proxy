@@ -1700,9 +1700,9 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6af1b0893c92d50e1af9a9342df7bd1ba73b9ef2abce700e170f2b2d4c84ac72"
+checksum = "9461e1bf61263ffa493117f2177c15a470b4b66f6b58c74e548401293f9ea639"
 dependencies = [
  "h2",
  "http",
@@ -1977,9 +1977,9 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.10.4"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71adf41db68aa0daaefc69bb30bcd68ded9b9abaad5d1fbb6304c4fb390e083e"
+checksum = "399c3c31cdec40583bb68f0b18403400d01ec4289c383aa047560439952c4dd7"
 dependencies = [
  "bytes",
  "prost-derive",
@@ -1987,13 +1987,11 @@ dependencies = [
 
 [[package]]
 name = "prost-build"
-version = "0.10.4"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ae5a4388762d5815a9fc0dea33c56b021cdc8dde0c55e0c9ca57197254b0cab"
+checksum = "7f835c582e6bd972ba8347313300219fed5bfa52caf175298d860b61ff6069bb"
 dependencies = [
  "bytes",
- "cfg-if",
- "cmake",
  "heck",
  "itertools",
  "lazy_static",
@@ -2009,9 +2007,9 @@ dependencies = [
 
 [[package]]
 name = "prost-derive"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df35198f0777b75e9ff669737c6da5136b59dba33cf5a010a6d1cc4d56defc6f"
+checksum = "7345d5f0e08c0536d7ac7229952590239e77abf0a0100a1b1d890add6ea96364"
 dependencies = [
  "anyhow",
  "itertools",
@@ -2022,9 +2020,9 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.10.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "926681c118ae6e512a3ccefd4abbe5521a14f4cc1e207356d4d00c0b7f2006fd"
+checksum = "4dfaa718ad76a44b3415e6c4d53b17c8f99160dcb3a99b10470fce8ad43f6e3e"
 dependencies = [
  "bytes",
  "prost",
@@ -2472,9 +2470,9 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.7.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5be9d60db39854b30b835107500cf0aca0b0d14d6e1c3de124217c23a29c2ddb"
+checksum = "498f271adc46acce75d66f639e4d35b31b2394c295c82496727dafa16d465dd2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2497,9 +2495,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.7.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9263bf4c9bfaae7317c1c2faf7f18491d2fe476f70c414b73bf5d445b00ffa1"
+checksum = "2fbcd2800e34e743b9ae795867d5f77b535d3a3be69fd731e39145719752df8c"
 dependencies = [
  "prettyplease",
  "proc-macro2",
