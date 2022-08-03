@@ -5,6 +5,7 @@
 
 mod log_stream;
 mod tcp_errors;
+mod env_json;
 
 use crate::*;
 use std::io::Read;

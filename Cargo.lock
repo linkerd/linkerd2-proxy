@@ -761,6 +761,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-inbound",
  "linkerd-tracing",
+ "serde",
  "serde_json",
  "thiserror",
  "tokio",

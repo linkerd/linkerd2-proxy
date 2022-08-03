@@ -28,6 +28,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 
+mod json;
 mod log;
 mod readiness;
 
@@ -80,6 +81,52 @@ impl<M> Admin<M> {
             .header(http::header::CONTENT_TYPE, "text/plain")
             .body("live\n".into())
             .expect("builder with known status code must not fail")
+    }
+
+    fn env_rsp<B>(req: Request<B>) -> Response<Body> {
+        use std::{collections::HashMap, env, ffi::OsString};
+
+        if req.method() != http::Method::GET {
+            return Self::method_not_allowed();
+        }
+
+        if let Err(not_acceptable) = json::accepts_json(&req) {
+            return not_acceptable;
+        }
+
+        fn unicode(s: OsString) -> String {
+            s.to_string_lossy().into_owned()
+        }
+
+        let query = req
+            .uri()
+            .path_and_query()
+            .and_then(http::uri::PathAndQuery::query);
+        let env = if let Some(query) = query {
+            if query.contains('=') {
+                return json::json_error_rsp(
+                    "env.json query parameters may not contain key-value pairs",
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+            query
+                .split('&')
+                .map(|qparam| {
+                    let var = match std::env::var(qparam) {
+                        Err(env::VarError::NotPresent) => None,
+                        Err(env::VarError::NotUnicode(bad)) => Some(unicode(bad)),
+                        Ok(var) => Some(var),
+                    };
+                    (qparam.to_string(), var)
+                })
+                .collect::<HashMap<String, Option<String>>>()
+        } else {
+            std::env::vars_os()
+                .map(|(key, var)| (unicode(key), Some(unicode(var))))
+                .collect::<HashMap<String, Option<String>>>()
+        };
+
+        json::json_rsp(&env)
     }
 
     fn shutdown(&self) -> Response<Body> {
@@ -192,6 +239,8 @@ where
                     }),
                 )
             }
+
+            "/env.json" => Box::pin(future::ok(Self::env_rsp(req))),
 
             "/shutdown" => {
                 if req.method() == http::Method::POST {

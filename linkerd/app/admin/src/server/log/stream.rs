@@ -1,3 +1,4 @@
+use crate::server::json;
 use futures::FutureExt;
 use hyper::{
     body::{Buf, Bytes},
@@ -10,20 +11,13 @@ use linkerd_app_core::{
 use trace::EnvFilter;
 use tracing::instrument::WithSubscriber;
 
-static JSON_MIME: &str = "application/json";
-static JSON_HEADER_VAL: http::HeaderValue = http::HeaderValue::from_static(JSON_MIME);
-
 macro_rules! recover {
     ($thing:expr, $msg:literal, $status:expr $(,)?) => {
         match $thing {
             Ok(val) => val,
             Err(error) => {
                 tracing::warn!(%error, status = %$status, message = %$msg);
-                let json = serde_json::to_vec(&serde_json::json!({
-                    "error": error.to_string(),
-                    "status": $status.as_u16(),
-                }))?;
-                return Ok(mk_rsp($status, json));
+                return Ok(json::json_error_rsp(error, $status));
             }
         }
     }
@@ -40,19 +34,8 @@ where
 {
     let handle = handle.into_stream();
 
-    if let Some(accept) = req.headers().get(header::ACCEPT) {
-        let accept = recover!(
-            std::str::from_utf8(accept.as_bytes()),
-            "Accept header should be UTF-8",
-            StatusCode::BAD_REQUEST
-        );
-        let will_accept_json = accept.contains(JSON_MIME)
-            || accept.contains("application/*")
-            || accept.contains("*/*");
-        if !will_accept_json {
-            tracing::warn!(?accept, "Accept header will not accept 'application/json'");
-            return Ok(mk_rsp(StatusCode::NOT_ACCEPTABLE, "application/json"));
-        }
+    if let Err(not_acceptable) = json::accepts_json(&req) {
+        return Ok(not_acceptable);
     }
 
     let try_filter = match req.method() {
@@ -154,7 +137,7 @@ fn parse_filter(filter_str: &str) -> Result<EnvFilter, impl std::error::Error> {
 fn mk_rsp(status: StatusCode, body: impl Into<Body>) -> http::Response<Body> {
     http::Response::builder()
         .status(status)
-        .header(header::CONTENT_TYPE, JSON_HEADER_VAL.clone())
+        .header(header::CONTENT_TYPE, json::JSON_HEADER_VAL.clone())
         .body(body.into())
         .expect("builder with known status code must not fail")
 }
