@@ -3,9 +3,9 @@
 // particular appears to do nothing... T_T
 #![allow(unused_imports)]
 
+mod env;
 mod log_stream;
 mod tcp_errors;
-mod env_json;
 
 use crate::*;
 use std::io::Read;
