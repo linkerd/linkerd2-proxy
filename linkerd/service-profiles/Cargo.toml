@@ -32,8 +32,8 @@ tower = { version = "0.4.13", features = ["ready-cache", "retry", "util"] }
 thiserror = "1"
 tracing = "0.1"
 pin-project = "1"
+prost-types = "0.11"
 
 [dev-dependencies]
 linkerd2-proxy-api = { version = "0.7", features = ["arbitrary"] }
-prost-types = "0.11"
 quickcheck = { version = "1", default-features = false }

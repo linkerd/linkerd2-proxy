@@ -528,8 +528,9 @@ pub fn retry_budget(
     retry_ratio: f32,
     min_retries_per_second: u32,
 ) -> pb::RetryBudget {
+    let ttl = ttl.try_into().expect("retry budget TTL duration cannot be converted to protobuf");
     pb::RetryBudget {
-        ttl: Some(ttl.into()),
+        ttl: Some(ttl),
         retry_ratio,
         min_retries_per_second,
     }
@@ -607,7 +608,8 @@ impl RouteBuilder {
     }
 
     pub fn timeout(mut self, dur: Duration) -> Self {
-        self.route.timeout = Some(dur.into());
+        let dur = dur.try_into().expect("timeout duration cannot be converted to protobuf");
+        self.route.timeout = Some(dur);
         self
     }
 }

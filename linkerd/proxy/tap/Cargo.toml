@@ -20,6 +20,7 @@ linkerd-proxy-http = { path = "../http" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 parking_lot = "0.12"
+prost-types = "0.11"
 rand = { version = "0.8" }
 thiserror = "1"
 tokio = { version = "1", features = ["time"] }
@@ -30,5 +31,4 @@ pin-project = "1"
 
 [dev-dependencies]
 linkerd2-proxy-api = { version = "0.7", features = ["arbitrary"] }
-prost-types = "0.11"
 quickcheck = { version = "1", default-features = false }
