@@ -61,6 +61,27 @@ pub mod library_info {
         Ruby = 9,
         WebJs = 10,
     }
+    impl Language {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Language::Unspecified => "LANGUAGE_UNSPECIFIED",
+                Language::Cpp => "CPP",
+                Language::CSharp => "C_SHARP",
+                Language::Erlang => "ERLANG",
+                Language::GoLang => "GO_LANG",
+                Language::Java => "JAVA",
+                Language::NodeJs => "NODE_JS",
+                Language::Php => "PHP",
+                Language::Python => "PYTHON",
+                Language::Ruby => "RUBY",
+                Language::WebJs => "WEB_JS",
+            }
+        }
+    }
 }
 /// Additional service information.
 #[derive(Clone, PartialEq, ::prost::Message)]
