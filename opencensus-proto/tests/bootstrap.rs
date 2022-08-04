@@ -28,12 +28,15 @@ fn generate(out_dir: &std::path::Path) {
         "opencensus/proto/trace/v1/trace_config.proto",
         "opencensus/proto/trace/v1/trace.proto",
     ];
-    tonic_build::configure()
+    if let Err(error) = tonic_build::configure()
         .build_client(true)
         .build_server(false)
+        .emit_rerun_if_changed(false)
         .out_dir(out_dir)
         .compile(iface_files, &["."])
-        .expect("failed to compile protobuf");
+    {
+        panic!("failed to compile protobuf: {error}")
+    }
 }
 
 /// Returns true if the given path contains files that have changed since the

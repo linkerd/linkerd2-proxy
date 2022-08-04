@@ -16,9 +16,11 @@ fn main() {
             proto_dir.join("trace/v1/trace.proto"),
         ]
     };
+
     if let Err(error) = tonic_build::configure()
         .build_client(true)
         .build_server(false)
+        .emit_rerun_if_changed(false)
         .out_dir(out_dir)
         .compile(iface_files, &[opencensus_dir])
     {
