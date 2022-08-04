@@ -13,7 +13,7 @@ proto = ["linkerd-http-route/proto", "linkerd2-proxy-api"]
 ipnet = "2"
 http = "0.2"
 linkerd-http-route = { path = "../http-route" }
-linkerd2-proxy-api = { version = "0.6", features = ["inbound"], optional = true }
+linkerd2-proxy-api = { version = "0.7", features = ["inbound"], optional = true }
 thiserror = "1"
 
 [dev-dependencies]

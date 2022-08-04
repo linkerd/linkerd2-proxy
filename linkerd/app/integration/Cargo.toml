@@ -33,7 +33,7 @@ hyper = { version = "0.14", features = [
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { version = "0.6", features = [
+linkerd2-proxy-api = { version = "0.7", features = [
     "destination",
     "arbitrary",
 ] }
