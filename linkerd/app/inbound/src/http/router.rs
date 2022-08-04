@@ -1,6 +1,7 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, errors, http_tracing, metrics,
+    classify, errors, http_tracing,
+    metrics::{self, RouteAuthzLabels, RouteLabels},
     profiles::{self, DiscoveryRejected},
     proxy::{http, tap},
     svc::{self, ExtractParam, Param},
@@ -417,9 +418,60 @@ impl tap::Inspect for Logical {
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<tap::Labels> {
-        req.extensions()
+        let mut labels = std::collections::BTreeMap::new();
+        for (k, v) in req
+            .extensions()
             .get::<profiles::http::Route>()
-            .map(|r| r.labels().clone())
+            .iter()
+            .flat_map(|route| route.labels().iter())
+        {
+            labels.insert(k.clone(), v.clone());
+        }
+        if let Some(route_labels) = req.extensions().get::<RouteLabels>() {
+            labels.insert(
+                "srv_group".to_string(),
+                route_labels.server.0.group().to_string(),
+            );
+            labels.insert(
+                "srv_kind".to_string(),
+                route_labels.server.0.kind().to_string(),
+            );
+            labels.insert(
+                "srv_name".to_string(),
+                route_labels.server.0.name().to_string(),
+            );
+            labels.insert(
+                "route_group".to_string(),
+                route_labels.route.group().to_string(),
+            );
+            labels.insert(
+                "route_kind".to_string(),
+                route_labels.route.kind().to_string(),
+            );
+            labels.insert(
+                "route_name".to_string(),
+                route_labels.route.name().to_string(),
+            );
+        }
+        if let Some(authz_labels) = req.extensions().get::<RouteAuthzLabels>() {
+            labels.insert(
+                "authz_group".to_string(),
+                authz_labels.authz.group().to_string(),
+            );
+            labels.insert(
+                "authz_kind".to_string(),
+                authz_labels.authz.kind().to_string(),
+            );
+            labels.insert(
+                "authz_name".to_string(),
+                authz_labels.authz.name().to_string(),
+            );
+        }
+        if labels.is_empty() {
+            None
+        } else {
+            Some(std::sync::Arc::new(labels))
+        }
     }
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {

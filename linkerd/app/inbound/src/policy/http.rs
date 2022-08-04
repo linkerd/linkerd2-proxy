@@ -160,12 +160,12 @@ where
         let permit = match self.policy.routes() {
             None => err!(self.mk_route_not_found()),
             Some(Routes::Http(routes)) => {
-                let (permit, mtch, route) = try_fut!(self.authorize(&routes, &req));
+                let (permit, mtch, route) = try_fut!(self.authorize(&routes, &mut req));
                 try_fut!(apply_http_filters(mtch, route, &mut req));
                 permit
             }
             Some(Routes::Grpc(routes)) => {
-                let (permit, _, route) = try_fut!(self.authorize(&routes, &req));
+                let (permit, _, route) = try_fut!(self.authorize(&routes, &mut req));
                 try_fut!(apply_grpc_filters(route, &mut req));
                 permit
             }
@@ -187,7 +187,7 @@ impl<T, N> HttpPolicyService<T, N> {
     fn authorize<'m, M: super::route::Match + 'm, P, B>(
         &self,
         routes: &'m [super::route::Route<M, RoutePolicy<P>>],
-        req: &::http::Request<B>,
+        req: &mut ::http::Request<B>,
     ) -> Result<(HttpRoutePermit, RouteMatch<M::Summary>, &'m RoutePolicy<P>)> {
         let (r#match, route) =
             super::route::find(routes, req).ok_or_else(|| self.mk_route_not_found())?;
@@ -196,6 +196,7 @@ impl<T, N> HttpPolicyService<T, N> {
             route: route.meta.clone(),
             server: self.policy.server_label(),
         };
+        req.extensions_mut().insert(labels.clone());
 
         let authz = match route
             .authorizations
@@ -226,6 +227,7 @@ impl<T, N> HttpPolicyService<T, N> {
                 route: labels,
                 authz: authz.meta.clone(),
             };
+            req.extensions_mut().insert(labels.clone());
             tracing::debug!(
                 server.group = %labels.route.server.0.group(),
                 server.kind = %labels.route.server.0.kind(),
