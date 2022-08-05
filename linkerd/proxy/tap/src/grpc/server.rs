@@ -367,7 +367,7 @@ impl iface::TapResponse for TapResponse {
         let since_request_init = response_init_at.saturating_duration_since(self.request_init_at);
         let init = api::tap_event::http::Event::ResponseInit(api::tap_event::http::ResponseInit {
             id: Some(self.tap.id.clone()),
-            since_request_init: Some(since_request_init.into()),
+            since_request_init: pb_duration(since_request_init),
             http_status: rsp.status().as_u16().into(),
             headers,
         });
@@ -401,7 +401,7 @@ impl iface::TapResponse for TapResponse {
         let since_request_init = response_end_at.saturating_duration_since(self.request_init_at);
         let end = api::tap_event::http::Event::ResponseEnd(api::tap_event::http::ResponseEnd {
             id: Some(self.tap.id.clone()),
-            since_request_init: Some(since_request_init.into()),
+            since_request_init: pb_duration(since_request_init),
             since_response_init: None,
             response_bytes: 0,
             eos: Some(api::Eos {
@@ -470,8 +470,8 @@ impl TapResponsePayload {
         let since_response_init = response_end_at.saturating_duration_since(self.response_init_at);
         let end = api::tap_event::http::ResponseEnd {
             id: Some(self.tap.id),
-            since_request_init: Some(since_request_init.into()),
-            since_response_init: Some(since_response_init.into()),
+            since_request_init: pb_duration(since_request_init),
+            since_response_init: pb_duration(since_response_init),
             response_bytes: self.response_bytes as u64,
             eos: Some(api::Eos { end }),
             trailers,
@@ -586,4 +586,11 @@ fn headers_to_pb(
             )
             .collect(),
     }
+}
+
+fn pb_duration(duration: std::time::Duration) -> Option<prost_types::Duration> {
+    duration
+        .try_into()
+        .map_err(|error| warn!(%error, ?duration, "Failed to convert duration to protobuf"))
+        .ok()
 }

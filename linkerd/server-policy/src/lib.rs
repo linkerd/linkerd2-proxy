@@ -74,7 +74,6 @@ pub mod proto {
     use super::*;
     use crate::meta::proto::InvalidMeta;
     use linkerd2_proxy_api::inbound as api;
-    use std::time::Duration;
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidServer {
@@ -82,7 +81,7 @@ pub mod proto {
         MissingDetectTimeout,
 
         #[error("invalid protocol detection timeout: {0:?}")]
-        NegativeDetectTimeout(Duration),
+        InvalidTimeout(#[from] prost_types::DurationError),
 
         #[error("missing protocol detection timeout")]
         MissingProxyProtocol,
@@ -159,8 +158,7 @@ pub mod proto {
                     http: mk_routes!(http, http_routes, authorizations.clone())?,
                     timeout: timeout
                         .ok_or(InvalidServer::MissingDetectTimeout)?
-                        .try_into()
-                        .map_err(InvalidServer::NegativeDetectTimeout)?,
+                        .try_into()?,
                     tcp_authorizations: authorizations,
                 },
 

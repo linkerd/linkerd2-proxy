@@ -149,10 +149,10 @@ pub mod span {
         /// or the Boolean values `true` or `false`. Note, global attributes like 
         /// server name can be set as tags using resource API. Examples of attributes:
         ///
-        ///     "/http/user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
-        ///     "/http/server_latency": 300
-        ///     "abc.com/myattribute": true
-        ///     "abc.com/score": 10.239
+        ///      "/http/user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+        ///      "/http/server_latency": 300
+        ///      "abc.com/myattribute": true
+        ///      "abc.com/score": 10.239
         #[prost(map="string, message", tag="1")]
         pub attribute_map: ::std::collections::HashMap<::prost::alloc::string::String, super::AttributeValue>,
         /// The number of attributes that were discarded. Attributes can be discarded
@@ -217,6 +217,19 @@ pub mod span {
                 Sent = 1,
                 /// Indicates a received message.
                 Received = 2,
+            }
+            impl Type {
+                /// String value of the enum field names used in the ProtoBuf definition.
+                ///
+                /// The values are not transformed in any way and thus are considered stable
+                /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+                pub fn as_str_name(&self) -> &'static str {
+                    match self {
+                        Type::Unspecified => "TYPE_UNSPECIFIED",
+                        Type::Sent => "SENT",
+                        Type::Received => "RECEIVED",
+                    }
+                }
             }
         }
         /// A `TimeEvent` can contain either an `Annotation` object or a
@@ -286,6 +299,19 @@ pub mod span {
             /// The linked span is a parent of the current span.
             ParentLinkedSpan = 2,
         }
+        impl Type {
+            /// String value of the enum field names used in the ProtoBuf definition.
+            ///
+            /// The values are not transformed in any way and thus are considered stable
+            /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+            pub fn as_str_name(&self) -> &'static str {
+                match self {
+                    Type::Unspecified => "TYPE_UNSPECIFIED",
+                    Type::ChildLinkedSpan => "CHILD_LINKED_SPAN",
+                    Type::ParentLinkedSpan => "PARENT_LINKED_SPAN",
+                }
+            }
+        }
     }
     /// A collection of links, which are references from this span to a span
     /// in the same or different trace.
@@ -312,6 +338,19 @@ pub mod span {
         /// Indicates that the span covers the client-side wrapper around an RPC or
         /// other remote request.
         Client = 2,
+    }
+    impl SpanKind {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                SpanKind::Unspecified => "SPAN_KIND_UNSPECIFIED",
+                SpanKind::Server => "SERVER",
+                SpanKind::Client => "CLIENT",
+            }
+        }
     }
 }
 /// The `Status` type defines a logical error model that is suitable for different
@@ -508,6 +547,19 @@ pub mod constant_sampler {
         AlwaysOff = 0,
         AlwaysOn = 1,
         AlwaysParent = 2,
+    }
+    impl ConstantDecision {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                ConstantDecision::AlwaysOff => "ALWAYS_OFF",
+                ConstantDecision::AlwaysOn => "ALWAYS_ON",
+                ConstantDecision::AlwaysParent => "ALWAYS_PARENT",
+            }
+        }
     }
 }
 /// Sampler that tries to sample with a rate per time window.

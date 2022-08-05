@@ -33,7 +33,7 @@ hyper = { version = "0.14", features = [
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { version = "0.6", features = [
+linkerd2-proxy-api = { version = "0.7", features = [
     "destination",
     "arbitrary",
 ] }
@@ -47,7 +47,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-rustls = "0.23"
 rustls-pemfile = "1.0"
 tower = { version = "0.4", default-features = false }
-tonic = { version = "0.7", default-features = false }
+tonic = { version = "0.8", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = [
     "fmt",

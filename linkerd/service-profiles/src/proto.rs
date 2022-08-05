@@ -77,13 +77,16 @@ fn set_route_retry(route: &mut http::Route, retry_budget: Option<&Arc<Budget>>) 
     route.set_retries(budget);
 }
 
-fn set_route_timeout(route: &mut http::Route, timeout: Result<Duration, Duration>) {
+fn set_route_timeout(
+    route: &mut http::Route,
+    timeout: Result<Duration, prost_types::DurationError>,
+) {
     match timeout {
         Ok(dur) => {
             route.set_timeout(dur);
         }
-        Err(_) => {
-            warn!("route timeout is negative: {:?}", route);
+        Err(error) => {
+            warn!(%error, "error setting timeout for route");
         }
     }
 }
