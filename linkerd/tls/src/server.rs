@@ -82,12 +82,13 @@ pub struct DetectTls<T, L, P, N> {
     inner: N,
 }
 
-// The initial peek buffer is statically allocated on the stack and is fairly small; but it is
-// large enough to hold the ~300B ClientHello sent by proxies.
+// The initial peek buffer is fairly small so that we can avoid allocating more
+// data then we need; but it is large enough to hold the ~300B ClientHello sent
+// by proxies.
 const PEEK_CAPACITY: usize = 512;
 
-// A larger fallback buffer is allocated onto the heap if the initial peek buffer is
-// insufficient. This is the same value used in HTTP detection.
+// A larger fallback buffer is allocated onto the heap if the initial peek
+// buffer is insufficient. This is the same value used in HTTP detection.
 const BUFFER_CAPACITY: usize = 8192;
 
 impl<L, P, N> NewDetectTls<L, P, N> {
@@ -196,18 +197,18 @@ async fn detect_sni<I>(mut io: I) -> io::Result<(Option<ServerId>, DetectIo<I>)>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin,
 {
-    // First, try to use MSG_PEEK to read the SNI from the TLS ClientHello.
-    // Because peeked data does not need to be retained, we use a static
-    // buffer to prevent needless heap allocation.
+    // First, try to use MSG_PEEK to read the SNI from the TLS ClientHello. We
+    // use a heap-allocated buffer to avoid creating a large `Future` (since we
+    // need to hold the buffer across an await).
     //
-    // Anecdotally, the ClientHello sent by Linkerd proxies is <300B. So a
-    // ~500B byte buffer is more than enough.
-    let mut buf = [0u8; PEEK_CAPACITY];
+    // Anecdotally, the ClientHello sent by Linkerd proxies is <300B. So a ~500B
+    // byte buffer is more than enough.
+    let mut buf = BytesMut::with_capacity(PEEK_CAPACITY);
     let sz = io.peek(&mut buf).await?;
     debug!(sz, "Peeked bytes from TCP stream");
     // Peek may return 0 bytes if the socket is not peekable.
     if sz > 0 {
-        match client_hello::parse_sni(&buf) {
+        match client_hello::parse_sni(buf.as_ref()) {
             Ok(sni) => {
                 return Ok((sni, EitherIo::Left(io)));
             }
