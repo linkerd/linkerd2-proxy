@@ -3,10 +3,10 @@
 	"image": "ghcr.io/linkerd/dev:v24",
 	"extensions": [
 		"DavidAnson.vscode-markdownlint",
+		"kokakiwi.vscode-just",
 		"NathanRidley.autotrim",
 		"rust-lang.rust-analyzer",
 		"samverschueren.final-newline",
-		"skellock.just",
 		"tamasfe.even-better-toml",
 		"zxh404.vscode-proto3"
 	],
