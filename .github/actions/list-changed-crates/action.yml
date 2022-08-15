@@ -9,7 +9,6 @@ inputs:
 outputs:
   crates:
     description: "A JSON list of crates that have changed"
-    value: ${{ steps.list-changed.outputs.crates }}
 
 runs:
   using: docker
