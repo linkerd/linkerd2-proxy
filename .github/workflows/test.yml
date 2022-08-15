@@ -24,7 +24,7 @@ jobs:
   meshtls:
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v24-rust
+    container: ghcr.io/linkerd/dev:v26-rust
     steps:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - run: just fetch
@@ -42,7 +42,7 @@ jobs:
   unit:
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v24-rust
+    container: ghcr.io/linkerd/dev:v26-rust
     steps:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - run: just fetch

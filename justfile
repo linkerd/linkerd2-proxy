@@ -97,7 +97,7 @@ check-fmt:
     {{ cargo }} fmt -- --check
 
 # Run all lints
-lint: shellcheck clippy doc
+lint: shellcheck markdownlint clippy doc
 
 # Lints all shell scripts in the repo.
 shellcheck:
@@ -110,6 +110,9 @@ shellcheck:
     done)
     echo shellcheck $files
     shellcheck $files
+
+markdownlint:
+    markdownlint-cli2 '**/*.md' '!target'
 
 check *flags:
     {{ cargo }} check --workspace --all-targets --frozen {{ flags }} {{ _fmt }}
