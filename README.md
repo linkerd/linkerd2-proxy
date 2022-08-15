@@ -2,8 +2,7 @@
 
 ![linkerd2][logo]
 
-<!-- TODO [![Build Status][ci-badge]][ci] -->
-[![GitHub license][license-badge]](LICENSE)
+[![GitHub license](https://img.shields.io/github/license/linkerd/linkerd2-proxy.svg)](LICENSE)
 [![Slack Status][slack-badge]][slack]
 
 This repo contains the transparent proxy component of [Linkerd2][linkerd2].
@@ -99,19 +98,15 @@ specific language governing permissions and limitations under the License.
 
 <!-- refs -->
 [cargo]: https://github.com/rust-lang/cargo/
-[ci]: https://travis-ci.org/linkerd/linkerd2-proxy
-<!-- TODO [ci-badge]: https://travis-ci.org/linkerd/linkerd2-proxy.svg?branch=master -->
 [cncf]: https://cncf.io/
 [coc]: https://github.com/linkerd/linkerd/wiki/Linkerd-code-of-conduct
 [k8s]: https://kubernetes.io/
-[license-badge]: https://img.shields.io/github/license/linkerd/linkerd2.svg
-[linkerd1]: https://github.com/linkerd/linkerd
-[linkerd2]: https://github.com/linkerd/linkerd2
-[linkerd2-proxy-api]: https://github.com/linkerd/linkerd2-proxy-api
-[loadbalancing]: https://linkerd.io/features/load-balancing/
-[logo]: https://user-images.githubusercontent.com/9226/33582867-3e646e02-d90c-11e7-85a2-2e238737e859.png
-[prom]: https://prometheus.io/
-[rust]: https://www.rust-lang.org/
-[slack-badge]: https://slack.linkerd.io/badge.svg
-[slack]: https://slack.linkerd.io
-[twitter]: https://twitter.com/linkerd/
+[linkerd1]: <https://github.com/linkerd/linkerd>
+[linkerd2]: <https://github.com/linkerd/linkerd2>
+[linkerd2-proxy-api]: <https://github.com/linkerd/linkerd2-proxy-api>
+[loadbalancing]: <https://linkerd.io/2.11/features/load-balancing/>
+[logo]: <https://user-images.githubusercontent.com/9226/33582867-3e646e02-d90c-11e7-85a2-2e238737e859.png>
+[prom]: <https://prometheus.io/>
+[rust]: <https://www.rust-lang.org/>
+[slack-badge]: <https://slack.linkerd.io/badge.svg>
+[slack]: <https://slack.linkerd.io>

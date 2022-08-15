@@ -18,7 +18,7 @@ find_fuzz_dir() {
 
 for file in "$@" ; do
     if [ "$file" = .github/workflows/fuzzers.yml ] || [ "$file" = .github/fuzzers-list.sh ]; then
-        find * -type d -name fuzz
+        find linkerd -type d -name fuzz
         break
     fi
     find_fuzz_dir "$file"

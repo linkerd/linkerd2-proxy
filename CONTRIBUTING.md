@@ -5,7 +5,7 @@
 ## Getting Help
 
 If you have a question about Linkerd2 or have encountered problems using it,
-start by [asking a question in the forums][discourse] or join us in the
+start by [asking a question in the forums][discussions] or join us in the
 [#linkerd2 Slack channel][slack].
 
 ## Certificate of Origin
@@ -99,9 +99,6 @@ Describe the modifications you've made.
 Describe the testing you've done to validate your change.  Performance-related
 changes should include before- and after- benchmark results.
 
-[discourse]: https://discourse.linkerd.io/c/conduit
-[governance]: GOVERNANCE.md
+[discussions]: https://github.com/linkerd/linkerd2/discussions/new
 [issue]: https://github.com/linkerd/linkerd2/issues/new
-[maintainers]: MAINTAINERS.md
-[members]: https://github.com/orgs/linkerd/people
 [slack]: http://slack.linkerd.io/
