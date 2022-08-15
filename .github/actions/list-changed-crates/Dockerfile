@@ -1,8 +1,3 @@
-ARG RUST_VERSION=1.62.1
-FROM docker.io/library/rust:${RUST_VERSION}-bullseye
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update && \
-    apt install -y jq && \
-    rm -rf /var/lib/apt/lists/*
+FROM ghcr.io/linkerd/dev:v26-rust
 COPY entrypoint.sh /
 ENTRYPOINT ["/entrypoint.sh"]

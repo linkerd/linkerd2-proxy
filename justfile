@@ -97,22 +97,7 @@ check-fmt:
     {{ cargo }} fmt -- --check
 
 # Run all lints
-lint: shellcheck markdownlint clippy doc
-
-# Lints all shell scripts in the repo.
-shellcheck:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    files=$(for f in $(find . -type f ! \( -path ./.git/\* -or -path \*/target/\* \)) ; do
-        if [ $(file -b --mime-type $f) = text/x-shellscript ]; then
-            echo -n "$f "
-        fi
-    done)
-    echo shellcheck $files
-    shellcheck $files
-
-markdownlint:
-    markdownlint-cli2 '**/*.md' '!target'
+lint: shellcheck markdownlint clippy doc actions-lint actions-dev-versions
 
 check *flags:
     {{ cargo }} check --workspace --all-targets --frozen {{ flags }} {{ _fmt }}
@@ -202,5 +187,74 @@ docker mode='load':
 # Display the git history minus dependabot updates
 history *paths='.':
     @-git log --oneline --graph --invert-grep --author="dependabot" -- {{ paths }}
+
+# Lints all shell scripts in the repo.
+shellcheck:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    files=$(for f in $(find . -type f ! \( -path ./.git/\* -or -path \*/target/\* \)) ; do
+        if [ $(file -b --mime-type $f) = text/x-shellscript ]; then
+            echo -n "$f "
+        fi
+    done)
+    echo shellcheck $files
+    shellcheck $files
+
+markdownlint:
+    markdownlint-cli2 '**/*.md' '!target'
+
+# Format actionlint output for Github Actions if running in CI.
+_actionlint-fmt := if env_var_or_default("GITHUB_ACTIONS", "") != "true" { "" } else {
+  '{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}}%0A```%0A{{replace $err.Snippet "\\n" "%0A"}}%0A```\n{{end}}'
+}
+
+# Lints all GitHub Actions workflows
+actions-lint:
+    actionlint \
+        {{ if _actionlint-fmt != '' { "-format '" + _actionlint-fmt + "'" } else { "" } }} \
+        .github/workflows/*
+
+# Ensure all devcontainer versions are in sync
+actions-dev-versions:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    IMAGE=$(json5-to-json <.devcontainer/devcontainer.json |jq -r '.image')
+    check_image() {
+        if [ "$1" != "$IMAGE" ]; then
+            # Report all line numbers with the unexpected image.
+            for n in $(grep -nF "$1" "$2" | cut -d: -f1) ; do
+                if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+                    echo "::error file=${2},line=${n}::Expected image '${IMAGE}'; found '${1}'">&2
+                else
+                    echo "${2}:${n}: Expected image '${IMAGE}'; found '${1}'" >&2
+                fi
+            done
+            return 1
+        fi
+    }
+    EX=0
+    # Check workflows for devcontainer images
+    for f in .github/workflows/* ; do
+        # Find all container images that look like our dev image, dropping the
+        # `-suffix` from the tag.
+        for i in $(yq '.jobs.* |  (.container | select(.) | (.image // .)) | match("ghcr.io/linkerd/dev:v[0-9]+").string' < "$f") ; do
+            if ! check_image "$i" "$f" ; then
+                EX=$((EX+1))
+                break
+            fi
+        done
+    done
+    # Check actions for devcontainer images
+    while IFS= read -r f ; do
+        for i in $(awk 'toupper($1) ~ "FROM" { print $2 }' "$f" \
+                    | sed -Ene 's,(ghcr\.io/linkerd/dev:v[0-9]+).*,\1,p')
+        do
+            if ! check_image "$i" "$f" ; then
+                EX=$((EX+1))
+                break
+            fi
+        done
+    done < <(find .github/actions -name Dockerfile\*)
+    exit $EX
 
 # vim: set ft=make :

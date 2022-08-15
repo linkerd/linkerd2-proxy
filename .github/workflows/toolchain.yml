@@ -12,6 +12,18 @@ permissions:
   contents: read
 
 jobs:
+  devcontainer:
+    runs-on: ubuntu-latest
+    container: ghcr.io/linkerd/dev:v26-rust
+    steps:
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - run: |
+          VERSION="$(cat rust-toolchain)"
+          if [ "$(cargo --version | cut -d' ' -f2)" != "$VERSION" ]; then
+            echo "::error file=rust-toolchain::rust-toolchain $VERSION does not match devcontainer $(cargo --version)"
+            exit 1
+          fi
+
   dockerfiles:
     runs-on: ubuntu-latest
     steps:
