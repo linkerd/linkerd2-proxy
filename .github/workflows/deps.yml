@@ -46,7 +46,7 @@ jobs:
   deprecated:
     timeout-minutes: 20
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v26-rust
+    container: ghcr.io/linkerd/dev:v28-rust
     steps:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - run: just fetch
