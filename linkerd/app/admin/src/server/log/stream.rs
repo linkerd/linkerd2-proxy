@@ -104,8 +104,7 @@ where
         async move {
             // TODO(eliza): we could definitely implement some batching here.
             while let Some(line) = rx.next_line().await {
-                tx.send_data(Bytes::copy_from_slice(&*line.as_ref()))
-                    .await?;
+                tx.send_data(Bytes::copy_from_slice(line.as_ref())).await?;
 
                 // if any log events were dropped, report that to the client
                 let dropped = rx.take_dropped_count();

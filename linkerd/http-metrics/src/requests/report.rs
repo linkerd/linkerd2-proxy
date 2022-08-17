@@ -74,7 +74,7 @@ where
             for (status, m) in &tm.by_status {
                 let status = status.as_ref().map(|s| Status(*s));
                 let labels = (tgt, status);
-                get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
+                get_metric(m).fmt_metric_labeled(f, &metric.name, labels)?;
             }
         }
 
@@ -97,7 +97,7 @@ where
                 for (cls, m) in &sm.by_class {
                     let status = status.as_ref().map(|s| Status(*s));
                     let labels = (tgt, (status, cls));
-                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
+                    get_metric(m).fmt_metric_labeled(f, &metric.name, labels)?;
                 }
             }
         }

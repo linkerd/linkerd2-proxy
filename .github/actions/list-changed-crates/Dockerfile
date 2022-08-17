@@ -1,3 +1,3 @@
-FROM ghcr.io/linkerd/dev:v28-rust
+FROM ghcr.io/linkerd/dev:v29-rust
 COPY entrypoint.sh /
 ENTRYPOINT ["/entrypoint.sh"]

@@ -74,7 +74,7 @@ impl Creds {
                 .base
                 .roots
                 .iter()
-                .filter_map(|c| super::fingerprint(&*c))
+                .filter_map(|c| super::fingerprint(c))
                 .collect::<Vec<_>>(),
             "Configuring acceptor roots",
         );
@@ -123,7 +123,7 @@ impl Creds {
                 .base
                 .roots
                 .iter()
-                .filter_map(|c| super::fingerprint(&*c))
+                .filter_map(|c| super::fingerprint(c))
                 .collect::<Vec<_>>(),
             "Configuring connector roots",
         );

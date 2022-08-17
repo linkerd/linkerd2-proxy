@@ -16,7 +16,7 @@
 #
 #     :; docker buildx build . --load
 
-ARG RUST_VERSION=1.62.1
+ARG RUST_VERSION=1.63.0
 ARG RUST_IMAGE=rust:${RUST_VERSION}-bullseye
 
 # Use an arbitrary ~recent edge release image to get the proxy
@@ -47,7 +47,7 @@ RUN --mount=type=cache,target=/var/lib/apt/lists \
 WORKDIR /usr/src/linkerd2-proxy
 COPY . .
 RUN --mount=type=cache,target=target \
-    --mount=type=cache,from=rust:1.62.1-bullseye,source=/usr/local/cargo,target=/usr/local/cargo \
+    --mount=type=cache,from=rust:1.63.0-bullseye,source=/usr/local/cargo,target=/usr/local/cargo \
   mkdir -p /out && \
   if [ -n "$PROXY_UNOPTIMIZED" ]; then \
     (cd linkerd2-proxy && /usr/bin/time -v cargo build --locked --no-default-features --features="$PROXY_FEATURES") && \

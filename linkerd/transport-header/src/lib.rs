@@ -15,11 +15,12 @@ use prost::Message;
 use std::str::FromStr;
 use tracing::trace;
 
+#[allow(clippy::derive_partial_eq_without_eq)]
 mod proto {
     include!("gen/transport.l5d.io.rs");
 }
 
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TransportHeader {
     /// The target port.
     pub port: u16,

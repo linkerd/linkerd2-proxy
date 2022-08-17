@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 3
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.62.1-bullseye
+      image: docker://rust:1.63.0-bullseye
     steps:
       - run: apt update && apt install -y jo
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
@@ -49,7 +49,7 @@ jobs:
     timeout-minutes: 40
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.62.1-bullseye
+      image: docker://rust:1.63.0-bullseye
     strategy:
       matrix:
         dir: ${{ fromJson(needs.list-changed.outputs.dirs) }}

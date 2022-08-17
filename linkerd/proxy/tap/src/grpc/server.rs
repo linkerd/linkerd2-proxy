@@ -92,7 +92,7 @@ enum ExtractKind {
 // === impl Server ===
 
 impl Server {
-    pub(in crate) fn new(registry: Registry) -> Self {
+    pub(crate) fn new(registry: Registry) -> Self {
         let base_id = Arc::new(0.into());
         Self { base_id, registry }
     }

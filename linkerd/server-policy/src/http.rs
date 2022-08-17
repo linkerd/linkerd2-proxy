@@ -93,7 +93,7 @@ pub mod proto {
             .map(r#match::MatchHost::try_from)
             .collect::<Result<Vec<_>, InvalidHostMatch>>()?;
 
-        let authzs = authz::proto::mk_authorizations(authorizations, &*server_authorizations)?;
+        let authzs = authz::proto::mk_authorizations(authorizations, server_authorizations)?;
         let meta = Arc::new(Meta::try_from(metadata.ok_or(InvalidMeta::Missing)?)?);
         let rules = rules
             .into_iter()

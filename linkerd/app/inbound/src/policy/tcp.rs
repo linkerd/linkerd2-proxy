@@ -194,7 +194,7 @@ fn check_authorized(
     {
         for authz in &**authzs {
             if super::is_authorized(authz, client_addr, tls) {
-                return Ok(ServerPermit::new(dst, &*server, authz));
+                return Ok(ServerPermit::new(dst, server, authz));
             }
         }
     }

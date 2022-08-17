@@ -338,7 +338,7 @@ impl Listening {
     }
 }
 
-pub(in crate) async fn run<T, B>(
+pub(crate) async fn run<T, B>(
     svc: T,
     name: &'static str,
     delay: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,

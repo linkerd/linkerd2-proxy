@@ -21,22 +21,22 @@ impl Meta {
 
     pub fn name(&self) -> &str {
         match self {
-            Meta::Default { name } => &*name,
-            Meta::Resource { name, .. } => &*name,
+            Meta::Default { name } => name,
+            Meta::Resource { name, .. } => name,
         }
     }
 
     pub fn kind(&self) -> &str {
         match self {
             Meta::Default { .. } => "default",
-            Meta::Resource { kind, .. } => &*kind,
+            Meta::Resource { kind, .. } => kind,
         }
     }
 
     pub fn group(&self) -> &str {
         match self {
             Meta::Default { .. } => "",
-            Meta::Resource { group, .. } => &*group,
+            Meta::Resource { group, .. } => group,
         }
     }
 }

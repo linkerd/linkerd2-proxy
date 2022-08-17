@@ -3,6 +3,7 @@
 //! Vendored from <https://github.com/census-instrumentation/opencensus-proto/>.
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
+#![allow(clippy::derive_partial_eq_without_eq)]
 #![forbid(unsafe_code)]
 
 pub mod agent {
