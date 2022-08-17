@@ -82,8 +82,8 @@ _test := if env_var_or_default("GITHUB_ACTIONS", "") == "true" { "test" } else {
 # Recipes
 #
 
-# Run all tests and build the proxy
-default: fetch check-fmt lint test build
+# Run all lints
+lint: sh-lint md-lint clippy doc action-lint action-dev-check
 
 # Fetch dependencies
 fetch:
@@ -95,9 +95,6 @@ fmt:
 # Fails if the code does not match the expected format (via rustfmt).
 check-fmt:
     {{ cargo }} fmt -- --check
-
-# Run all lints
-lint: shellcheck markdownlint clippy doc actions-lint actions-dev-versions
 
 check *flags:
     {{ cargo }} check --workspace --all-targets --frozen {{ flags }} {{ _fmt }}
@@ -184,23 +181,17 @@ docker mode='load':
         {{ if features != "" { "--build-arg PROXY_FEATURES=" + features } else { "" } }} \
         {{ if mode == 'push' { "--push" } else { "--load" } }}
 
-# Display the git history minus dependabot updates
-history *paths='.':
-    @-git log --oneline --graph --invert-grep --author="dependabot" -- {{ paths }}
-
 # Lints all shell scripts in the repo.
-shellcheck:
+sh-lint:
     #!/usr/bin/env bash
     set -euo pipefail
-    files=$(for f in $(find . -type f ! \( -path ./.git/\* -or -path \*/target/\* \)) ; do
-        if [ $(file -b --mime-type $f) = text/x-shellscript ]; then
-            echo -n "$f "
-        fi
-    done)
-    echo shellcheck $files
+    files=$(while IFS= read -r f ; do
+        if [ "$(file -b --mime-type "$f")" = text/x-shellscript ]; then echo "$f"; fi
+    done < <(find . -type f ! \( -path ./.git/\* -or -path \*/target/\* \)) | xargs)
+    echo "shellcheck $files" >&2
     shellcheck $files
 
-markdownlint:
+md-lint:
     markdownlint-cli2 '**/*.md' '!target'
 
 # Format actionlint output for Github Actions if running in CI.
@@ -209,52 +200,16 @@ _actionlint-fmt := if env_var_or_default("GITHUB_ACTIONS", "") != "true" { "" } 
 }
 
 # Lints all GitHub Actions workflows
-actions-lint:
+action-lint:
     actionlint \
         {{ if _actionlint-fmt != '' { "-format '" + _actionlint-fmt + "'" } else { "" } }} \
         .github/workflows/*
 
-# Ensure all devcontainer versions are in sync
-actions-dev-versions:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    IMAGE=$(json5-to-json <.devcontainer/devcontainer.json |jq -r '.image')
-    check_image() {
-        if [ "$1" != "$IMAGE" ]; then
-            # Report all line numbers with the unexpected image.
-            for n in $(grep -nF "$1" "$2" | cut -d: -f1) ; do
-                if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-                    echo "::error file=${2},line=${n}::Expected image '${IMAGE}'; found '${1}'">&2
-                else
-                    echo "${2}:${n}: Expected image '${IMAGE}'; found '${1}'" >&2
-                fi
-            done
-            return 1
-        fi
-    }
-    EX=0
-    # Check workflows for devcontainer images
-    for f in .github/workflows/* ; do
-        # Find all container images that look like our dev image, dropping the
-        # `-suffix` from the tag.
-        for i in $(yq '.jobs.* |  (.container | select(.) | (.image // .)) | match("ghcr.io/linkerd/dev:v[0-9]+").string' < "$f") ; do
-            if ! check_image "$i" "$f" ; then
-                EX=$((EX+1))
-                break
-            fi
-        done
-    done
-    # Check actions for devcontainer images
-    while IFS= read -r f ; do
-        for i in $(awk 'toupper($1) ~ "FROM" { print $2 }' "$f" \
-                    | sed -Ene 's,(ghcr\.io/linkerd/dev:v[0-9]+).*,\1,p')
-        do
-            if ! check_image "$i" "$f" ; then
-                EX=$((EX+1))
-                break
-            fi
-        done
-    done < <(find .github/actions -name Dockerfile\*)
-    exit $EX
+action-dev-check:
+    action-dev-check
+
+# Display the git history minus dependabot updates
+history *paths='.':
+    @-git log --oneline --graph --invert-grep --author="dependabot" -- {{ paths }}
 
 # vim: set ft=make :
