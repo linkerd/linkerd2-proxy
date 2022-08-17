@@ -1,6 +1,6 @@
 {
 	"name": "linkerd2-proxy",
-	"image": "ghcr.io/linkerd/dev:v28",
+	"image": "ghcr.io/linkerd/dev:v29",
 	"extensions": [
 		"DavidAnson.vscode-markdownlint",
 		"kokakiwi.vscode-just",

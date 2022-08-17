@@ -26,7 +26,7 @@ pub trait Resolve<T> {
 #[derive(Clone, Debug)]
 pub struct ResolveService<S>(S);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Update<T> {
     Reset(Vec<(SocketAddr, T)>),
     Add(Vec<(SocketAddr, T)>),

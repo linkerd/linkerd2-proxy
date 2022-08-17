@@ -191,7 +191,7 @@ impl SyntheticHttpResponse {
     fn message(&self) -> HeaderValue {
         match self.message {
             Cow::Borrowed(msg) => HeaderValue::from_static(msg),
-            Cow::Owned(ref msg) => HeaderValue::from_str(&*msg).unwrap_or_else(|error| {
+            Cow::Owned(ref msg) => HeaderValue::from_str(msg).unwrap_or_else(|error| {
                 warn!(%error, "Failed to encode error header");
                 HeaderValue::from_static("unexpected error")
             }),

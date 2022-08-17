@@ -65,7 +65,7 @@ fn to_id(pb: TlsIdentity) -> Option<ServerId> {
     }
 }
 
-pub(in crate) fn to_authority(o: AuthorityOverride) -> Option<Authority> {
+pub(crate) fn to_authority(o: AuthorityOverride) -> Option<Authority> {
     match o.authority_override.parse() {
         Ok(name) => Some(name),
         Err(_) => {
@@ -78,7 +78,7 @@ pub(in crate) fn to_authority(o: AuthorityOverride) -> Option<Authority> {
     }
 }
 
-pub(in crate) fn to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
+pub(crate) fn to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
     use crate::api::net::ip_address::Ip;
     use std::net::{Ipv4Addr, Ipv6Addr};
     /*

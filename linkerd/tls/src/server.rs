@@ -321,7 +321,7 @@ mod tests {
         let len = input.len();
         let client_task = tokio::spawn(async move {
             client_io
-                .write_all(&*input)
+                .write_all(input)
                 .await
                 .expect("Write must succeed");
         });

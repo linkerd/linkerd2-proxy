@@ -65,14 +65,14 @@ pub struct HttpRouteRedirect {
 #[error("unauthorized request on route")]
 pub struct HttpRouteUnauthorized(());
 
-#[derive(Debug, thiserror::Error, Clone, PartialEq)]
+#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 #[error("HTTP request configured to fail with {status}: {message}")]
 pub struct HttpRouteInjectedFailure {
     pub status: ::http::StatusCode,
     pub message: Arc<str>,
 }
 
-#[derive(Debug, thiserror::Error, Clone, PartialEq)]
+#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 #[error("gRPC request configured to fail with {code}: {message}")]
 pub struct GrpcRouteInjectedFailure {
     pub code: u16,

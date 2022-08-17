@@ -83,7 +83,7 @@ where
         M: FmtMetric,
     {
         for (key, m) in self.iter() {
-            get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
+            get_metric(m).fmt_metric_labeled(f, &metric.name, key)?;
         }
 
         Ok(())
