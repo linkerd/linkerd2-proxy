@@ -173,7 +173,7 @@ mod tests {
         let policies = Store::for_test(DefaultPolicy::Deny, None);
         let (io, _) = io::duplex(1);
         inbound()
-            .with_stack(new_panic("detect stack must not be built"))
+            .with_stack(new_panic("direct stack must not be built"))
             .push_accept(999, policies, new_ok())
             .into_inner()
             .new_service(Target(999))
