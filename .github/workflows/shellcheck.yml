@@ -14,7 +14,7 @@ jobs:
   sh-lint:
     timeout-minutes: 5
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v29-tools
+    container: ghcr.io/linkerd/dev:v30-tools
     steps:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
       - run: just sh-lint
