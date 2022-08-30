@@ -1,6 +1,12 @@
 name: nix
 
-on: push
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - "*.nix"
+      - justfile
+      - .github/workflows/nix.yml
 
 jobs:
   build:
