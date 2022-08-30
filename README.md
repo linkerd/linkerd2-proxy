@@ -35,6 +35,8 @@ The Linkerd project is hosted by the Cloud Native Computing Foundation
 A [`shell.nix`](./shell.nix) (and generic [`flake.nix`](./flake.nix)) is
 provided with the build dependencies. Use this with `nix-shell` (or with
 `nix develop`, respectively) to get a reproducible development environment.
+This is particularly useful in conjuction with (Direnv)[https://direnv.net]'s
+[`use flake`](https://direnv.net/man/direnv-stdlib.1.html#codeuse-flake-ltinstallablegtcode).
 
 A [`justfile`](./justfile) is provided to automate most build tasks. It provides
 the following recipes:
