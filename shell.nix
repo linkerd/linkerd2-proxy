@@ -3,6 +3,7 @@ with pkgs;
 mkShell {
   buildInputs = [
     cacert
+    cmake # for rust-analyzer
     docker
     git
     just
