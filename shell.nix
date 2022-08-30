@@ -2,6 +2,7 @@
 with pkgs;
 mkShell {
   buildInputs = [
+    cacert
     docker
     git
     just
