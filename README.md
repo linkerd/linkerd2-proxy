@@ -40,14 +40,6 @@ the following recipes:
 * `just test` -- Runs unit and integration tests on your local system using `cargo`
 * `just docker` -- Builds a Docker container image that can be used for testing.
 
-### Nix
-
-A [`shell.nix`](./shell.nix) (and generic [`flake.nix`](./flake.nix)) is
-provided with the build dependencies. Use this with `nix-shell` (or with
-`nix develop`, respectively) to get a reproducible development environment.
-This is particularly useful in conjuction with [Direnv](https://direnv.net)'s
-[`use flake`](https://direnv.net/man/direnv-stdlib.1.html#codeuse-flake-ltinstallablegtcode).
-
 ### Cargo
 
 Usually, [Cargo][cargo], Rust's package manager, is used to build and test this
@@ -58,6 +50,14 @@ project. If you don't have Cargo installed, we suggest getting it via
 
 A Devcontainer is provided for use with Visual Studio Code. It includes all of
 the tooling needed to build and test the proxy.
+
+### Nix
+
+A [`shell.nix`](./shell.nix) (and generic [`flake.nix`](./flake.nix)) is
+provided with the build dependencies. Use this with `nix-shell` (or with
+`nix develop`, respectively) to get a reproducible development environment.
+This is particularly useful in conjuction with [Direnv](https://direnv.net)'s
+[`use flake`](https://direnv.net/man/direnv-stdlib.1.html#codeuse-flake-ltinstallablegtcode).
 
 ### Repository Structure
 
