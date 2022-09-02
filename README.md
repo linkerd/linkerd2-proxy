@@ -56,7 +56,7 @@ the tooling needed to build and test the proxy.
 A [`shell.nix`](./shell.nix) (and generic [`flake.nix`](./flake.nix)) is
 provided with the build dependencies. Use this with `nix-shell` (or with
 `nix develop`, respectively) to get a reproducible development environment.
-This is particularly useful in conjuction with [Direnv](https://direnv.net)'s
+This is particularly useful in conjunction with [Direnv](https://direnv.net)'s
 [`use flake`](https://direnv.net/man/direnv-stdlib.1.html#codeuse-flake-ltinstallablegtcode).
 
 ### Repository Structure
