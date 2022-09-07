@@ -72,7 +72,7 @@ impl Resolver {
         Resolver { dns }
     }
 
-    /// Resolves a name to a set of addresses, preferring SRV records to normal A
+    /// Resolves a name to a set of addresses, preferring SRV records to normal A/AAAA
     /// record lookups.
     pub async fn resolve_addrs(
         &self,
@@ -82,10 +82,10 @@ impl Resolver {
         match self.resolve_srv(name).await {
             Ok(res) => Ok(res),
             Err(srv_error) => {
-                // If the SRV lookup failed for any reason, fall back to A
+                // If the SRV lookup failed for any reason, fall back to A/AAAA
                 // record resolution.
-                debug!(srv.error = %srv_error, "Falling back to A record lookup");
-                let (ips, delay) = match self.resolve_a(name).await {
+                debug!(srv.error = %srv_error, "Falling back to A/AAAA record lookup");
+                let (ips, delay) = match self.resolve_a_or_aaaa(name).await {
                     Ok(res) => res,
                     Err(a_error) => return Err(ResolveError { a_error, srv_error }),
                 };
@@ -98,12 +98,11 @@ impl Resolver {
         }
     }
 
-    async fn resolve_a(
+    async fn resolve_a_or_aaaa(
         &self,
         name: NameRef<'_>,
     ) -> Result<(Vec<net::IpAddr>, time::Sleep), ARecordError> {
-        // TODO(ver) we should attempt AAAA lookups as well (for IPv6).
-        debug!(%name, "Resolving an A record");
+        debug!(%name, "Resolving an A/AAAA record");
         let lookup = self.dns.lookup_ip(name.as_str()).await?;
         let valid_until = Instant::from_std(lookup.valid_until());
         let ips = lookup.iter().collect::<Vec<_>>();
@@ -308,7 +307,7 @@ pub mod fuzz_logic {
         if let Ok(name) = fuzz_data.parse::<Name>() {
             let fcon = FuzzConfig {};
             let resolver = Resolver::from_system_config_with(&fcon).unwrap();
-            let _w = resolver.resolve_a(name.as_ref()).await;
+            let _w = resolver.resolve_a_or_aaaa(name.as_ref()).await;
             let _w2 = resolver.resolve_srv(name.as_ref()).await;
         }
     }
