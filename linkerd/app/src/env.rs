@@ -218,6 +218,9 @@ const ENV_INITIAL_STREAM_WINDOW_SIZE: &str = "LINKERD2_PROXY_HTTP2_INITIAL_STREA
 const ENV_INITIAL_CONNECTION_WINDOW_SIZE: &str =
     "LINKERD2_PROXY_HTTP2_INITIAL_CONNECTION_WINDOW_SIZE";
 
+const ENV_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: &str =
+    "LINKERD2_PROXY_INBOUD_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT";
+
 const ENV_SHUTDOWN_GRACE_PERIOD: &str = "LINKERD2_PROXY_SHUTDOWN_GRACE_PERIOD";
 
 // Default values for various configuration fields
@@ -257,6 +260,13 @@ const DEFAULT_SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(2 * 60);
 // the number of endpoints should generally be pretty constrained.
 const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(20);
 const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(5);
+
+// XXX This default inbound connection idle timeout should be less than or equal
+// to the server's idle timeout so that we don't try to reuse a connection as it
+// is being timed out of the server.
+//
+// In the future this should be made configurable per-server from the proxy API.
+const DEFAULT_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(3);
 
 // By default, we don't limit the number of connections a connection pol may
 // use, as doing so can severely impact CPU utilization for applications with
@@ -496,6 +506,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
         let max_idle =
             inbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
+        let connection_pool_timeout = parse(
+            strings,
+            ENV_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT,
+            parse_duration,
+        )?
+        .unwrap_or(DEFAULT_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT);
         let keepalive = Keepalive(inbound_connect_keepalive?);
         let connect = ConnectConfig {
             keepalive,
@@ -508,7 +524,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             h2_settings,
             h1_settings: h1::PoolSettings {
                 max_idle,
-                idle_timeout: cache_max_idle_age,
+                idle_timeout: connection_pool_timeout,
             },
         };
 
