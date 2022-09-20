@@ -35,4 +35,4 @@ jobs:
       #- run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-app-integration --skip-clean --ignore-tests --no-fail-fast --out=Xml
       - run: cargo tarpaulin --locked --packages=linkerd-app-integration --no-default-features --skip-clean --no-run
       - run: cargo tarpaulin --locked --packages=linkerd-app-integration --no-default-features --skip-clean --ignore-tests --no-fail-fast --out=Xml
-      - uses: codecov/codecov-action@81cd2dc8148241f03f5839d295e000b8f761e378
+      - uses: codecov/codecov-action@d9f34f8cd5cb3b3eb79b3e4b5dae3a16df499a70
