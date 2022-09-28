@@ -1489,6 +1489,7 @@ dependencies = [
  "ipnet",
  "linkerd-http-route",
  "linkerd2-proxy-api",
+ "maplit",
  "prost-types",
  "quickcheck",
  "thiserror",
