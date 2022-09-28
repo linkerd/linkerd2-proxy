@@ -43,12 +43,14 @@ impl Meta {
 
 impl std::cmp::PartialEq for Meta {
     fn eq(&self, other: &Self) -> bool {
+        // Resources that look like Defaults are considered equal.
         self.group() == other.group() && self.kind() == other.kind() && self.name() == other.name()
     }
 }
 
 impl std::hash::Hash for Meta {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Resources that look like Defaults are considered the same.
         self.group().hash(state);
         self.kind().hash(state);
         self.name().hash(state);
@@ -91,7 +93,8 @@ pub mod proto {
 
             if let Some(kind) = labels.remove("kind") {
                 // If the controller set a 'group' and 'kind', but it's just
-                // indicating that we're dealing with a default, then
+                // indicating that we're dealing with a default, then build a
+                // default.
                 if group.is_empty() && kind == "default" {
                     return Ok(Self::new_default(name));
                 }
