@@ -1,4 +1,7 @@
-use crate::{http, LogicalAddr, Profile, Target};
+use crate::{
+    http::{self, RoutePolicy},
+    LogicalAddr, Profile, Target,
+};
 use linkerd2_proxy_api::destination as api;
 use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;
@@ -11,12 +14,7 @@ use tracing::warn;
 pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Profile {
     let name = Name::from_str(&proto.fully_qualified_name).ok();
     let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
-    // let http_routes = proto
-    //     .routes
-    //     .into_iter()
-    //     .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
-    //     .collect();
-    let http_routes = todo!("eliza");
+    let http_routes = convert_routes(proto.routes, retry_budget.as_ref());
     let targets = proto
         .dst_overrides
         .into_iter()
@@ -35,24 +33,103 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
     }
 }
 
+fn convert_routes(
+    orig: impl IntoIterator<Item = api::Route>,
+    retry_budget: Option<&Arc<Budget>>,
+) -> Option<http::Route> {
+    let rules = orig
+        .into_iter()
+        .filter_map(|rt| convert_route(rt, retry_budget))
+        .collect::<Vec<_>>();
+    if rules.is_empty() {
+        return None;
+    }
+    Some(http::Route {
+        rules,
+        hosts: Default::default(),
+    })
+}
+
 fn convert_route(
     orig: api::Route,
     retry_budget: Option<&Arc<Budget>>,
-) -> Option<(http::RequestMatch, http::RoutePolicy)> {
-    let req_match = orig.condition.and_then(convert_req_match)?;
+) -> Option<http::route::Rule<RoutePolicy>> {
     let rsp_classes = orig
         .response_classes
         .into_iter()
         .filter_map(convert_rsp_class)
         .collect();
-    let mut route = http::RoutePolicy::new(orig.metrics_labels.into_iter(), rsp_classes);
+    let mut policy = http::RoutePolicy::new(orig.metrics_labels.into_iter(), rsp_classes);
     if orig.is_retryable {
-        set_route_retry(&mut route, retry_budget);
+        set_route_retry(&mut policy, retry_budget);
     }
     if let Some(timeout) = orig.timeout {
-        set_route_timeout(&mut route, timeout.try_into());
+        set_route_timeout(&mut policy, timeout.try_into());
     }
-    Some((req_match, route))
+
+    let mut rules = Vec::new();
+    for orig in orig.condition.into_iter().flat_map(|orig| orig.r#match) {
+        convert_route_match(orig, &mut rules)
+    }
+    None
+}
+
+fn convert_route_match(rule: api::request_match::Match, dst: &mut Vec<http::route::MatchRequest>) {
+    // XXX(eliza): note that this currently basically ignores most forms of
+    // nesting. converting nested recursive request match exprs from the API
+    // into `MatchRequest`s from `http-route` probably requires some kind of
+    // state machine tracking what kind of expression we're inside of...
+    match rule {
+        api::request_match::Match::All(ms) => {
+            // convert `All` req matches into a single http route match expr
+            // (probably means building one giant path regex...)
+            todo!("eliza: figure this out {ms:?}");
+        }
+        api::request_match::Match::Any(ms) => {
+            // `Any` path matches can be represented as multiple http route
+            // rules...unless we're inside of an `All`, in which case, this is
+            // going to get hairy...
+            todo!("eliza: figure this out {ms:?}");
+        }
+        api::request_match::Match::Not(m) => {
+            // probably requires recursively calling `convert_route_match` with
+            // a bit of state telling us we are inside a "not" expr...
+            todo!("eliza: figure this out {m:?}");
+        }
+        api::request_match::Match::Path(api::PathMatch { regex }) => {
+            let regex = regex.trim();
+            let re = match (regex.starts_with('^'), regex.ends_with('$')) {
+                (true, true) => Regex::new(regex).ok(),
+                (hd_anchor, tl_anchor) => {
+                    let hd = if hd_anchor { "" } else { "^" };
+                    let tl = if tl_anchor { "" } else { "$" };
+                    let re = format!("{}{}{}", hd, regex, tl);
+                    Regex::new(&re).ok()
+                }
+            };
+            match re {
+                None => {}
+                // TODO(eliza): handle the case where we are inside of an `All`
+                // or `Any` expr expr with a method match...
+                Some(re) => dst.push(http::route::MatchRequest {
+                    path: Some(http::route::MatchPath::Regex(re)),
+                    ..Default::default()
+                }),
+            }
+        }
+        api::request_match::Match::Method(mm) => {
+            let m = mm.r#type.and_then(|m| m.try_into().ok());
+            match m {
+                // TODO(eliza): handle the case where we are inside of an `All`
+                // or `Any` expr expr with a method match...
+                Some(m) => dst.push(http::route::MatchRequest {
+                    method: Some(m),
+                    ..Default::default()
+                }),
+                None => {}
+            }
+        }
+    }
 }
 
 fn convert_dst_override(orig: api::WeightedDst) -> Option<Target> {
@@ -92,41 +169,41 @@ fn set_route_timeout(
     }
 }
 
-fn convert_req_match(orig: api::RequestMatch) -> Option<http::RequestMatch> {
-    let m = match orig.r#match? {
-        api::request_match::Match::All(ms) => {
-            let ms = ms.matches.into_iter().filter_map(convert_req_match);
-            http::RequestMatch::All(ms.collect())
-        }
-        api::request_match::Match::Any(ms) => {
-            let ms = ms.matches.into_iter().filter_map(convert_req_match);
-            http::RequestMatch::Any(ms.collect())
-        }
-        api::request_match::Match::Not(m) => {
-            let m = convert_req_match(*m)?;
-            http::RequestMatch::Not(Box::new(m))
-        }
-        api::request_match::Match::Path(api::PathMatch { regex }) => {
-            let regex = regex.trim();
-            let re = match (regex.starts_with('^'), regex.ends_with('$')) {
-                (true, true) => Regex::new(regex).ok()?,
-                (hd_anchor, tl_anchor) => {
-                    let hd = if hd_anchor { "" } else { "^" };
-                    let tl = if tl_anchor { "" } else { "$" };
-                    let re = format!("{}{}{}", hd, regex, tl);
-                    Regex::new(&re).ok()?
-                }
-            };
-            http::RequestMatch::Path(Box::new(re))
-        }
-        api::request_match::Match::Method(mm) => {
-            let m = mm.r#type.and_then(|m| m.try_into().ok())?;
-            http::RequestMatch::Method(m)
-        }
-    };
+// fn convert_req_match(orig: api::RequestMatch) ->  {
+//     let m = match orig.r#match? {
+//         api::request_match::Match::All(ms) => {
+//             let ms = ms.matches.into_iter().filter_map(convert_req_match);
+//             http::RequestMatch::All(ms.collect())
+//         }
+//         api::request_match::Match::Any(ms) => {
+//             let ms = ms.matches.into_iter().filter_map(convert_req_match);
+//             http::RequestMatch::Any(ms.collect())
+//         }
+//         api::request_match::Match::Not(m) => {
+//             let m = convert_req_match(*m)?;
+//             http::RequestMatch::Not(Box::new(m))
+//         }
+//         api::request_match::Match::Path(api::PathMatch { regex }) => {
+//             let regex = regex.trim();
+//             let re = match (regex.starts_with('^'), regex.ends_with('$')) {
+//                 (true, true) => Regex::new(regex).ok()?,
+//                 (hd_anchor, tl_anchor) => {
+//                     let hd = if hd_anchor { "" } else { "^" };
+//                     let tl = if tl_anchor { "" } else { "$" };
+//                     let re = format!("{}{}{}", hd, regex, tl);
+//                     Regex::new(&re).ok()?
+//                 }
+//             };
+//             http::RequestMatch::Path(Box::new(re))
+//         }
+//         api::request_match::Match::Method(mm) => {
+//             let m = mm.r#type.and_then(|m| m.try_into().ok())?;
+//             http::RequestMatch::Method(m)
+//         }
+//     };
 
-    Some(m)
-}
+//     Some(m)
+// }
 
 fn convert_rsp_class(orig: api::ResponseClass) -> Option<http::ResponseClass> {
     let c = orig.condition.and_then(convert_rsp_match)?;

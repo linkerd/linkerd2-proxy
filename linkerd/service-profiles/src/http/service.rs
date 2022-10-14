@@ -1,4 +1,4 @@
-use super::{http_route, Route, RoutePolicy};
+use super::{Route, RoutePolicy};
 use crate::{Profile, Receiver, ReceiverStream};
 use futures::prelude::*;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};

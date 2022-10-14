@@ -3,7 +3,7 @@ pub mod r#match;
 #[cfg(test)]
 mod tests;
 
-pub use self::r#match::{HostMatch, MatchHeader, MatchHost, MatchRequest};
+pub use self::r#match::{HostMatch, MatchHeader, MatchHost, MatchPath, MatchRequest};
 
 pub type RouteMatch = crate::RouteMatch<r#match::RequestMatch>;
 

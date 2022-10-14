@@ -1,7 +1,7 @@
 mod proxy;
 mod service;
 
-use linkerd_http_route as http_route;
+pub use linkerd_http_route::http as route;
 use regex::Regex;
 use std::{
     fmt,
@@ -14,7 +14,7 @@ use tower::retry::budget::Budget;
 
 pub use self::{proxy::NewProxyRouter, service::NewServiceRouter};
 
-pub type Route = http_route::http::Route<RoutePolicy>;
+pub type Route = route::Route<RoutePolicy>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct RoutePolicy {
