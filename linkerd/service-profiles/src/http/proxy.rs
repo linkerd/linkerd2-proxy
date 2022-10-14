@@ -1,4 +1,4 @@
-use super::{RequestMatch, Route};
+use super::{Route, RoutePolicy};
 use crate::{Profile, Receiver, ReceiverStream};
 use futures::{future, prelude::*};
 use linkerd_error::{Error, Result};
@@ -31,8 +31,8 @@ pub struct ProxyRouter<T, N, P, S> {
     inner: S,
     target: T,
     rx: ReceiverStream,
-    http_routes: Vec<(RequestMatch, Route)>,
-    proxies: HashMap<Route, P>,
+    http_route: Option<Route>,
+    proxies: HashMap<RoutePolicy, P>,
 }
 
 // === impl NewProxyRouter ===
@@ -50,7 +50,7 @@ impl<T, M, N> NewService<T> for NewProxyRouter<M, N>
 where
     T: Param<Receiver> + Clone,
     N: NewService<T> + Clone,
-    M: NewService<(Route, T)> + Clone,
+    M: NewService<(RoutePolicy, T)> + Clone,
 {
     type Service = ProxyRouter<T, M, M::Service, N::Service>;
 
@@ -61,7 +61,7 @@ where
             inner,
             target,
             rx: rx.into(),
-            http_routes: Vec::new(),
+            http_route: None,
             proxies: HashMap::new(),
             new_proxy: self.new_proxy.clone(),
         }
@@ -76,7 +76,7 @@ type ProxyResponseFuture<F1, E1, F2, E2> =
 impl<B, T, N, P, S, Rsp> Service<http::Request<B>> for ProxyRouter<T, N, P, S>
 where
     T: Clone,
-    N: NewService<(Route, T), Service = P> + Clone,
+    N: NewService<(RoutePolicy, T), Service = P> + Clone,
     P: Proxy<http::Request<B>, S, Request = http::Request<B>, Response = Rsp>,
     S: Service<http::Request<B>, Response = Rsp>,
     S::Error: Into<Error>,
@@ -92,22 +92,33 @@ where
 
         // If the routes have been updated, update the cache.
         if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
-            debug!(routes = %http_routes.len(), "Updating HTTP routes");
-            let routes = http_routes
-                .iter()
-                .map(|(_, r)| r.clone())
-                .collect::<HashSet<_>>();
-            self.http_routes = http_routes;
+            debug!(
+                routes = http_routes
+                    .as_ref()
+                    .map(|routes| routes.rules.len())
+                    .unwrap_or(0),
+                "Updating HTTP routes"
+            );
 
-            // Clear out defunct routes before building any missing routes.
-            self.proxies.retain(|r, _| routes.contains(r));
-            for route in routes.into_iter() {
-                if let hash_map::Entry::Vacant(ent) = self.proxies.entry(route) {
-                    let proxy = self
-                        .new_proxy
-                        .new_service((ent.key().clone(), self.target.clone()));
-                    ent.insert(proxy);
+            if let Some(route) = http_routes {
+                let route_policies = route
+                    .rules
+                    .iter()
+                    .map(|rule| rule.policy.clone())
+                    .collect::<HashSet<_>>();
+                // Clear out defunct routes before building any missing routes.
+                self.proxies.retain(|r, _| route_policies.contains(r));
+                for rt_policy in route_policies.into_iter() {
+                    if let hash_map::Entry::Vacant(ent) = self.proxies.entry(rt_policy) {
+                        let proxy = self
+                            .new_proxy
+                            .new_service((ent.key().clone(), self.target.clone()));
+                        ent.insert(proxy);
+                    }
                 }
+                self.http_route = Some(route);
+            } else {
+                self.http_route = None;
             }
         }
 
@@ -115,14 +126,18 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        match super::route_for_request(&self.http_routes, &req) {
+        let matched = self
+            .http_route
+            .as_ref()
+            .and_then(|route| route.match_request(&req));
+        match matched {
             None => future::Either::Left({
                 // Use the inner service directly if no route matches the
                 // request.
                 trace!("No routes matched");
                 self.inner.call(req).map_err(Into::into)
             }),
-            Some(route) => future::Either::Right({
+            Some((_, route)) => future::Either::Right({
                 // Otherwise, wrap the inner service with the route-specific
                 // proxy.
                 trace!(?route, "Using route proxy");

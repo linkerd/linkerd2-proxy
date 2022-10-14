@@ -53,21 +53,18 @@ pub trait Match {
     fn match_request<B>(&self, req: &::http::Request<B>) -> Option<Self::Summary>;
 }
 
-/// Finds the best matching route policy for a request.
-pub fn find<'r, M: Match + 'r, P, B>(
-    routes: &'r [Route<M, P>],
-    req: &::http::Request<B>,
-) -> Option<(RouteMatch<M::Summary>, &'r P)> {
-    trace!(routes = ?routes.len(), "Finding matching route");
-
-    best(routes.iter().filter_map(|rt| {
-        trace!(hosts = ?rt.hosts);
-        let host = if rt.hosts.is_empty() {
+impl<M: Match, P> Route<M, P> {
+    pub fn match_request<'r, B>(
+        &'r self,
+        req: &::http::Request<B>,
+    ) -> Option<(RouteMatch<M::Summary>, &'r P)> {
+        trace!(hosts = ?self.hosts);
+        let host = if self.hosts.is_empty() {
             None
         } else {
             let uri = req.uri();
             trace!(%uri, "matching host");
-            let hm = rt
+            let hm = self
                 .hosts
                 .iter()
                 .filter_map(|a| a.summarize_match(uri))
@@ -75,8 +72,8 @@ pub fn find<'r, M: Match + 'r, P, B>(
             Some(hm)
         };
 
-        trace!(rules = %rt.rules.len());
-        let (route, policy) = best(rt.rules.iter().filter_map(|rule| {
+        trace!(rules = %self.rules.len());
+        let (route, policy) = best(self.rules.iter().filter_map(|rule| {
             // If there are no matches in the list, then the rule has an
             // implicit default match.
             if rule.matches.is_empty() {
@@ -96,7 +93,17 @@ pub fn find<'r, M: Match + 'r, P, B>(
         }))?;
 
         Some((RouteMatch { host, route }, policy))
-    }))
+    }
+}
+
+/// Finds the best matching route policy for a request.
+pub fn find<'r, M: Match + 'r, P, B>(
+    routes: &'r [Route<M, P>],
+    req: &::http::Request<B>,
+) -> Option<(RouteMatch<M::Summary>, &'r P)> {
+    trace!(routes = ?routes.len(), "Finding matching route");
+
+    best(routes.iter().filter_map(|rt| rt.match_request(req)))
 }
 
 #[inline]

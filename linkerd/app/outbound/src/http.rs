@@ -33,7 +33,7 @@ pub type Connect = self::endpoint::Connect<Endpoint>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ProfileRoute {
     logical: Logical,
-    route: profiles::http::Route,
+    route: profiles::http::RoutePolicy,
 }
 
 #[derive(Clone, Debug)]
@@ -173,7 +173,7 @@ impl tap::Inspect for Endpoint {
 
     fn route_labels<B>(&self, req: &Request<B>) -> Option<tap::Labels> {
         req.extensions()
-            .get::<profiles::http::Route>()
+            .get::<profiles::http::RoutePolicy>()
             .map(|r| r.labels().clone())
     }
 
@@ -184,8 +184,8 @@ impl tap::Inspect for Endpoint {
 
 // === impl ProfileRoute ===
 
-impl Param<profiles::http::Route> for ProfileRoute {
-    fn param(&self) -> profiles::http::Route {
+impl Param<profiles::http::RoutePolicy> for ProfileRoute {
+    fn param(&self) -> profiles::http::RoutePolicy {
         self.route.clone()
     }
 }

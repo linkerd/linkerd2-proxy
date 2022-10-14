@@ -1,4 +1,4 @@
-use super::{RequestMatch, Route};
+use super::{http_route, Route, RoutePolicy};
 use crate::{Profile, Receiver, ReceiverStream};
 use futures::prelude::*;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
@@ -25,8 +25,8 @@ pub struct ServiceRouter<T, N, S> {
     new_route: N,
     target: T,
     rx: ReceiverStream,
-    http_routes: Vec<(RequestMatch, Route)>,
-    services: HashMap<Route, S>,
+    http_routes: Option<Route>,
+    services: HashMap<RoutePolicy, S>,
     default: S,
 }
 
@@ -41,7 +41,7 @@ impl<N> NewServiceRouter<N> {
 impl<T, N> NewService<T> for NewServiceRouter<N>
 where
     T: Param<Receiver> + Clone,
-    N: NewService<(Option<Route>, T)> + Clone,
+    N: NewService<(Option<RoutePolicy>, T)> + Clone,
 {
     type Service = ServiceRouter<T, N, N::Service>;
 
@@ -52,7 +52,7 @@ where
             default,
             target,
             rx: rx.into(),
-            http_routes: Vec::new(),
+            http_routes: None,
             services: HashMap::new(),
             new_route: self.0.clone(),
         }
@@ -64,7 +64,7 @@ where
 impl<B, T, N, S> Service<http::Request<B>> for ServiceRouter<T, N, S>
 where
     T: Clone,
-    N: NewService<(Option<Route>, T), Service = S> + Clone,
+    N: NewService<(Option<RoutePolicy>, T), Service = S> + Clone,
     S: Service<http::Request<B>> + Clone,
 {
     type Response = S::Response;
@@ -74,23 +74,34 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         // If the routes have been updated, update the cache.
         if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
-            debug!(routes = %http_routes.len(), "Updating HTTP routes");
-            let routes = http_routes
-                .iter()
-                .map(|(_, r)| r.clone())
-                .collect::<HashSet<_>>();
-            self.http_routes = http_routes;
+            debug!(
+                routes = http_routes
+                    .as_ref()
+                    .map(|routes| routes.rules.len())
+                    .unwrap_or(0),
+                "Updating HTTP routes"
+            );
 
-            // Clear out defunct routes before building any missing routes.
-            self.services.retain(|r, _| routes.contains(r));
-            for route in routes.into_iter() {
-                if let hash_map::Entry::Vacant(ent) = self.services.entry(route) {
-                    let route = ent.key().clone();
-                    let svc = self
-                        .new_route
-                        .new_service((Some(route), self.target.clone()));
-                    ent.insert(svc);
+            if let Some(route) = http_routes {
+                let route_policies = route
+                    .rules
+                    .iter()
+                    .map(|rule| rule.policy.clone())
+                    .collect::<HashSet<_>>();
+                // Clear out defunct routes before building any missing routes.
+                self.services.retain(|r, _| route_policies.contains(r));
+                for route in route_policies.into_iter() {
+                    if let hash_map::Entry::Vacant(ent) = self.services.entry(route) {
+                        let route = ent.key().clone();
+                        let svc = self
+                            .new_route
+                            .new_service((Some(route), self.target.clone()));
+                        ent.insert(svc);
+                    }
                 }
+                self.http_routes = Some(route);
+            } else {
+                self.http_routes = None;
             }
         }
 
@@ -98,8 +109,12 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        let inner = match super::route_for_request(&self.http_routes, &req) {
-            Some(route) => {
+        let matched = self
+            .http_routes
+            .as_ref()
+            .and_then(|route| route.match_request(&req));
+        let inner = match matched {
+            Some((_, route)) => {
                 // If the request matches a route, use the route's service.
                 trace!(?route, "Using route service");
                 self.services.get(route).expect("route must exist").clone()

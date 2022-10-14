@@ -131,7 +131,7 @@ impl<E> Outbound<E> {
             logical
                 .clone()
                 .push_switch(
-                    |(route, logical): (Option<profiles::http::Route>, Logical)| -> Result<_, Infallible> {
+                    |(route, logical): (Option<profiles::http::RoutePolicy>, Logical)| -> Result<_, Infallible> {
                         match route {
                             None => Ok(svc::Either::A(logical)),
                             Some(route) => Ok(svc::Either::B(ProfileRoute { route, logical })),
@@ -150,7 +150,7 @@ impl<E> Outbound<E> {
                         // retried, it may have one of two `Body` types. This
                         // layer unifies any `Body` type into `BoxBody`.
                         .push_on_service(http::BoxRequest::erased())
-                        .push_http_insert_target::<profiles::http::Route>()
+                        .push_http_insert_target::<profiles::http::RoutePolicy>()
                         // Sets an optional retry policy.
                         .push(retry::layer(rt.metrics.proxy.http_profile_route_retry.clone()))
                         // Sets an optional request timeout.

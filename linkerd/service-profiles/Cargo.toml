@@ -19,6 +19,7 @@ linkerd-addr = { path = "../addr" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
 linkerd-http-box = { path = "../http-box" }
+linkerd-http-route = { path = "../http-route" }
 linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd-stack = { path = "../stack" }
 linkerd-tonic-watch = { path = "../tonic-watch" }

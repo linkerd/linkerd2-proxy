@@ -11,11 +11,12 @@ use tracing::warn;
 pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Profile {
     let name = Name::from_str(&proto.fully_qualified_name).ok();
     let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
-    let http_routes = proto
-        .routes
-        .into_iter()
-        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
-        .collect();
+    // let http_routes = proto
+    //     .routes
+    //     .into_iter()
+    //     .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
+    //     .collect();
+    let http_routes = todo!("eliza");
     let targets = proto
         .dst_overrides
         .into_iter()
@@ -37,14 +38,14 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
 fn convert_route(
     orig: api::Route,
     retry_budget: Option<&Arc<Budget>>,
-) -> Option<(http::RequestMatch, http::Route)> {
+) -> Option<(http::RequestMatch, http::RoutePolicy)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
     let rsp_classes = orig
         .response_classes
         .into_iter()
         .filter_map(convert_rsp_class)
         .collect();
-    let mut route = http::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
+    let mut route = http::RoutePolicy::new(orig.metrics_labels.into_iter(), rsp_classes);
     if orig.is_retryable {
         set_route_retry(&mut route, retry_budget);
     }
@@ -65,7 +66,7 @@ fn convert_dst_override(orig: api::WeightedDst) -> Option<Target> {
     })
 }
 
-fn set_route_retry(route: &mut http::Route, retry_budget: Option<&Arc<Budget>>) {
+fn set_route_retry(route: &mut http::RoutePolicy, retry_budget: Option<&Arc<Budget>>) {
     let budget = match retry_budget {
         Some(budget) => budget.clone(),
         None => {
@@ -78,7 +79,7 @@ fn set_route_retry(route: &mut http::Route, retry_budget: Option<&Arc<Budget>>) 
 }
 
 fn set_route_timeout(
-    route: &mut http::Route,
+    route: &mut http::RoutePolicy,
     timeout: Result<Duration, prost_types::DurationError>,
 ) {
     match timeout {

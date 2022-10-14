@@ -243,7 +243,7 @@ impl FmtLabels for ControlLabels {
 // === impl ProfileRouteLabels ===
 
 impl ProfileRouteLabels {
-    pub fn inbound(addr: profiles::LogicalAddr, route: &profiles::http::Route) -> Self {
+    pub fn inbound(addr: profiles::LogicalAddr, route: &profiles::http::RoutePolicy) -> Self {
         let labels = prefix_labels("rt", route.labels().iter());
         Self {
             addr,
@@ -252,7 +252,7 @@ impl ProfileRouteLabels {
         }
     }
 
-    pub fn outbound(addr: profiles::LogicalAddr, route: &profiles::http::Route) -> Self {
+    pub fn outbound(addr: profiles::LogicalAddr, route: &profiles::http::RoutePolicy) -> Self {
         let labels = prefix_labels("rt", route.labels().iter());
         Self {
             addr,

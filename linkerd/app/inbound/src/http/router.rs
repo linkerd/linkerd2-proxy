@@ -51,7 +51,7 @@ struct Profile {
 #[derive(Clone, Debug)]
 struct ProfileRoute {
     profile: Profile,
-    route: profiles::http::Route,
+    route: profiles::http::RoutePolicy,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -158,7 +158,7 @@ impl<C> Inbound<C> {
                         )
                         .push_on_service(http::BoxResponse::layer())
                         .push(classify::NewClassify::layer())
-                        .push_http_insert_target::<profiles::http::Route>()
+                        .push_http_insert_target::<profiles::http::RoutePolicy>()
                         .push_map_target(|(route, profile)| ProfileRoute { route, profile })
                         .into_inner(),
                 ))
@@ -318,8 +318,8 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
 
 // === impl Route ===
 
-impl Param<profiles::http::Route> for ProfileRoute {
-    fn param(&self) -> profiles::http::Route {
+impl Param<profiles::http::RoutePolicy> for ProfileRoute {
+    fn param(&self) -> profiles::http::RoutePolicy {
         self.route.clone()
     }
 }
@@ -418,7 +418,7 @@ impl tap::Inspect for Logical {
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<tap::Labels> {
         req.extensions()
-            .get::<profiles::http::Route>()
+            .get::<profiles::http::RoutePolicy>()
             .map(|r| r.labels().clone())
     }
 

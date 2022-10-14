@@ -4,6 +4,7 @@
 use futures::Stream;
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
+use linkerd_http_route as http_route;
 use linkerd_proxy_api_resolve::Metadata;
 use std::{
     fmt,
@@ -36,10 +37,10 @@ struct ReceiverStream {
     inner: tokio_stream::wrappers::WatchStream<Profile>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
-    pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
+    pub http_routes: Option<http::Route>,
     pub targets: Vec<Target>,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
@@ -118,6 +119,20 @@ where
     #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         self.0.get_profile(target)
+    }
+}
+
+// === impl Profile ===
+
+impl Default for Profile {
+    fn default() -> Self {
+        Self {
+            addr: None,
+            http_routes: None,
+            targets: Vec::default(),
+            opaque_protocol: false,
+            endpoint: None,
+        }
     }
 }
 

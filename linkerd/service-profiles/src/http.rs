@@ -1,6 +1,7 @@
 mod proxy;
 mod service;
 
+use linkerd_http_route as http_route;
 use regex::Regex;
 use std::{
     fmt,
@@ -13,8 +14,10 @@ use tower::retry::budget::Budget;
 
 pub use self::{proxy::NewProxyRouter, service::NewServiceRouter};
 
+pub type Route = http_route::http::Route<RoutePolicy>;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Route {
+pub struct RoutePolicy {
     labels: Labels,
     response_classes: ResponseClasses,
     retries: Option<Retries>,
@@ -59,9 +62,9 @@ pub struct Retries {
 struct Labels(Arc<std::collections::BTreeMap<String, String>>);
 
 fn route_for_request<'r, B>(
-    http_routes: &'r [(RequestMatch, Route)],
+    http_routes: &'r [(RequestMatch, RoutePolicy)],
     request: &http::Request<B>,
-) -> Option<&'r Route> {
+) -> Option<&'r RoutePolicy> {
     for (request_match, route) in http_routes {
         if request_match.is_match(request) {
             return Some(route);
@@ -72,7 +75,7 @@ fn route_for_request<'r, B>(
 
 // === impl Route ===
 
-impl Route {
+impl RoutePolicy {
     pub fn new<I>(label_iter: I, response_classes: Vec<ResponseClass>) -> Self
     where
         I: Iterator<Item = (String, String)>,
