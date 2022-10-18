@@ -99,6 +99,13 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
     }
 }
 
+impl<P: Clone> profiles::http::RequestTarget for Logical<P> {
+    fn request_target<B>(&self, route: &profiles::http::Route, req: &http::Request<B>) -> Self {
+        // for now, this always does nothing...
+        self.clone()
+    }
+}
+
 // === impl Concrete ===
 
 impl<P> From<(ConcreteAddr, Logical<P>)> for Concrete<P> {

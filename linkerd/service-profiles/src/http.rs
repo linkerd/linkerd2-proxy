@@ -55,6 +55,13 @@ pub struct Retries {
     budget: Arc<Budget>,
 }
 
+/// Modifies a target based on an HTTP route and a request.
+///
+/// If the route does not modify the target, this can simply clone `Self`.
+pub trait RequestTarget {
+    fn request_target<B>(&self, route: &Route, request: &http::Request<B>) -> Self;
+}
+
 #[derive(Clone, Default)]
 struct Labels(Arc<std::collections::BTreeMap<String, String>>);
 

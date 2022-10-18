@@ -26,7 +26,6 @@ pub struct ServiceRouter<T, N, S> {
     target: T,
     rx: ReceiverStream,
     http_routes: Vec<(RequestMatch, Route)>,
-    services: HashMap<Route, S>,
     default: S,
 }
 
@@ -53,7 +52,6 @@ where
             target,
             rx: rx.into(),
             http_routes: Vec::new(),
-            services: HashMap::new(),
             new_route: self.0.clone(),
         }
     }
@@ -64,6 +62,7 @@ where
 impl<B, T, N, S> Service<http::Request<B>> for ServiceRouter<T, N, S>
 where
     T: Clone,
+    T: super::RequestTarget,
     N: NewService<(Option<Route>, T), Service = S> + Clone,
     S: Service<http::Request<B>> + Clone,
 {
@@ -75,23 +74,7 @@ where
         // If the routes have been updated, update the cache.
         if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
             debug!(routes = %http_routes.len(), "Updating HTTP routes");
-            let routes = http_routes
-                .iter()
-                .map(|(_, r)| r.clone())
-                .collect::<HashSet<_>>();
             self.http_routes = http_routes;
-
-            // Clear out defunct routes before building any missing routes.
-            self.services.retain(|r, _| routes.contains(r));
-            for route in routes.into_iter() {
-                if let hash_map::Entry::Vacant(ent) = self.services.entry(route) {
-                    let route = ent.key().clone();
-                    let svc = self
-                        .new_route
-                        .new_service((Some(route), self.target.clone()));
-                    ent.insert(svc);
-                }
-            }
         }
 
         Poll::Ready(Ok(()))
@@ -102,7 +85,8 @@ where
             Some(route) => {
                 // If the request matches a route, use the route's service.
                 trace!(?route, "Using route service");
-                self.services.get(route).expect("route must exist").clone()
+                let target = self.target.request_target(route, &req);
+                self.new_route.new_service((Some(route.clone()), target))
             }
             None => {
                 // Otherwise, use the default service.
