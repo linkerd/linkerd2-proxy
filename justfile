@@ -39,8 +39,6 @@ cargo_target := if package_arch == "arm64" {
     }
 
 # Support cross-compilation when `package_arch` changes.
-export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER := "aarch64-linux-gnu-gcc"
-export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER := "arm-linux-gnueabihf-gcc"
 strip := if package_arch == "arm64" { "aarch64-linux-gnu-strip" } else if package_arch == "arm" { "arm-linux-gnueabihf-strip" } else { "strip" }
 
 target_dir := join("target", cargo_target, build_type)
@@ -139,13 +137,16 @@ build:
         {{ if build_type == "release" { "--release" } else { "" } }} \
         {{ _features }} {{ _fmt }}
 
+_package_bin := package_dir / "bin" / "linkerd2-proxy"
+
 # Build a package (i.e. for a release)
 package: build
     mkdir -p {{ package_dir }}/bin
     cp LICENSE {{ package_dir }}/
-    cp {{ target_dir }}/linkerd2-proxy {{ package_dir }}/bin/
-    {{ strip }} {{ package_dir }}/bin/linkerd2-proxy ; \
-    ./checksec.sh {{ package_dir }}/bin/linkerd2-proxy \
+    cp {{ target_dir }}/linkerd2-proxy {{ _package_bin }}
+    {{ strip }} {{ _package_bin }}
+    checksec --output=json --file='{{ _package_bin }}' \
+        | jq '.["{{ _package_bin }}"] | del(."fortify-able") | del(.fortified)' \
         > target/package/{{ package_name }}-checksec.json
     jq -S '.'  target/package/{{ package_name }}-checksec.json \
         | diff -u .checksec-expected.json - >&2

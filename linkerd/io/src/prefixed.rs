@@ -38,7 +38,7 @@ impl<I: Send + Sync> io::Peek for PrefixedIo<I> {
             return Ok(0);
         }
 
-        (&mut buf[..sz]).clone_from_slice(&self.prefix[..sz]);
+        buf[..sz].clone_from_slice(&self.prefix[..sz]);
         Ok(sz)
     }
 }
