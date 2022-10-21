@@ -22,7 +22,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v30-rust
+    container: ghcr.io/linkerd/dev:v32-rust
     timeout-minutes: 20
     continue-on-error: true
     steps:

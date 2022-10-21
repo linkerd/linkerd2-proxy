@@ -418,7 +418,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                                 let _ = tx.send(addrs);
                             }
 
-                            futures::ready!((&mut rx).as_mut().poll(cx));
+                            futures::ready!(rx.as_mut().poll(cx));
                             debug!("shutdown");
                             Poll::Ready(())
                         });

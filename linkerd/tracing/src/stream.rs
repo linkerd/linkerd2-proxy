@@ -306,7 +306,7 @@ impl<S> WriterLayer<S> {
         self.writers
             .iter()
             .filter_map(|(_, Writer { filter, writer })| {
-                filter.enabled(meta, ctx.clone()).then(|| writer)
+                filter.enabled(meta, ctx.clone()).then_some(writer)
             })
     }
 }
