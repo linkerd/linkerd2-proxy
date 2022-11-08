@@ -18,6 +18,6 @@ jobs:
     env:
       DOCKER_BUILDKIT: "1"
     steps:
-      - uses: extractions/setup-just@aa5d15c144db4585980a44ebfdd2cf337c4f14cb
+      - uses: extractions/setup-just@95b912dc5d3ed106a72907f2f9b91e76d60bdb76
       - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
       - run: just docker
