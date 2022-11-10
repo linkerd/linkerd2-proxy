@@ -1,0 +1,28 @@
+[package]
+name = "linkerd-client-policy"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[features]
+proto = [
+    "linkerd-http-route/proto",
+    "linkerd-policy-core/proto",
+    "linkerd2-proxy-api",
+    "prost-types",
+]
+
+[dependencies]
+http = "0.2"
+linkerd-addr = { path = "../addr" }
+linkerd-http-route = { path = "../http-route" }
+linkerd-policy-core = { path = "../policy-core" }
+prost-types = { version = "0.11", optional = true }
+thiserror = "1"
+
+[dependencies.linkerd2-proxy-api]
+version = "0.7"
+features = ["outbound"]
+optional = true
