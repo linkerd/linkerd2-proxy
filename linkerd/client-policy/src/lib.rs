@@ -14,8 +14,10 @@ pub struct ClientPolicy {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Protocol {
-    Http1(Arc<[http::Route]>),
-    Http2(Arc<[http::Route]>),
+    // XXX(eliza): currently, this is used only when we get an invalid policy
+    // update, since we only do client policy resolutions when the target is http.
+    Unknown,
+    Http(Arc<[http::Route]>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -28,6 +30,20 @@ pub struct RoutePolicy {
 pub struct Backend {
     pub weight: u32,
     pub addr: Addr,
+}
+
+// === impl ClientPolicy ===
+
+impl ClientPolicy {
+    pub fn invalid() -> Self {
+        let meta = Arc::new(Meta::Default {
+            name: "invalid".into(),
+        });
+        Self {
+            meta,
+            protocol: Protocol::Unknown,
+        }
+    }
 }
 
 #[cfg(feature = "proto")]

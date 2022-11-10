@@ -926,6 +926,7 @@ dependencies = [
  "hyper",
  "linkerd-app-core",
  "linkerd-app-test",
+ "linkerd-client-policy",
  "linkerd-http-classify",
  "linkerd-http-retry",
  "linkerd-identity",
@@ -934,6 +935,8 @@ dependencies = [
  "linkerd-meshtls-rustls",
  "linkerd-retry",
  "linkerd-tracing",
+ "linkerd2-proxy-api",
+ "once_cell",
  "parking_lot",
  "pin-project",
  "thiserror",
@@ -978,6 +981,19 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "linkerd-client-policy"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "linkerd-addr",
+ "linkerd-http-route",
+ "linkerd-policy-core",
+ "linkerd2-proxy-api",
+ "prost-types",
+ "thiserror",
 ]
 
 [[package]]
@@ -1272,6 +1288,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-policy-core"
+version = "0.1.0"
+dependencies = [
+ "linkerd2-proxy-api",
+ "maplit",
+ "quickcheck",
+ "thiserror",
+]
+
+[[package]]
 name = "linkerd-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
@@ -1490,6 +1516,7 @@ dependencies = [
  "http",
  "ipnet",
  "linkerd-http-route",
+ "linkerd-policy-core",
  "linkerd2-proxy-api",
  "maplit",
  "prost-types",
@@ -1706,8 +1733,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9461e1bf61263ffa493117f2177c15a470b4b66f6b58c74e548401293f9ea639"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=alex/outbound#9cfb93f376ac2e74a34f3aa75916783c76d65f0a"
 dependencies = [
  "h2",
  "http",
