@@ -1,0 +1,18 @@
+[package]
+name = "linkerd-policy-core"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[features]
+proto = ["linkerd2-proxy-api"]
+
+[dependencies]
+linkerd2-proxy-api = { version = "0.7", optional = true }
+thiserror = "1"
+
+[dev-dependencies]
+maplit = "1"
+quickcheck = { version = "1", default-features = false }

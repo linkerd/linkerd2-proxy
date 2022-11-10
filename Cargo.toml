@@ -37,6 +37,7 @@ members = [
     "linkerd/meshtls/rustls",
     "linkerd/metrics",
     "linkerd/opencensus",
+    "linkerd/policy-core",
     "linkerd/proxy/api-resolve",
     "linkerd/proxy/dns-resolve",
     "linkerd/proxy/core",
