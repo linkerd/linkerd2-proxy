@@ -80,7 +80,7 @@ pub mod proto {
     // === impl Meta ===
 
     impl Meta {
-        pub(crate) fn try_new_with_default(
+        pub fn try_new_with_default(
             mut labels: std::collections::HashMap<String, String>,
             default_group: &'static str,
             default_kind: &'static str,
