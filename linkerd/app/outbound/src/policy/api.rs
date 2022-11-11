@@ -27,10 +27,6 @@ pub(super) struct GrpcRecover(ExponentialBackoff);
 
 pub(super) type Watch<S> = StreamWatch<GrpcRecover, Api<S>>;
 
-/// If an invalid policy is encountered, then this will be updated to hold a
-/// default, invalid policy.
-static INVALID_POLICY: once_cell::sync::Lazy<ClientPolicy> = once_cell::sync::Lazy::new();
-
 impl<S> Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error> + Clone,
@@ -85,7 +81,7 @@ where
                         // TODO(eliza): this should get an internal error filter...
                         let policy = ClientPolicy::try_from(up).unwrap_or_else(|error| {
                             tracing::warn!(%error, "Client policy misconfigured");
-                            INVALID_POLICY.get().clone()
+                            ClientPolicy::invalid()
                         });
                         tracing::debug!(?policy);
                         policy

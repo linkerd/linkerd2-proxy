@@ -992,8 +992,13 @@ dependencies = [
  "linkerd-http-route",
  "linkerd-policy-core",
  "linkerd2-proxy-api",
+ "once_cell",
  "prost-types",
  "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower",
 ]
 
 [[package]]
