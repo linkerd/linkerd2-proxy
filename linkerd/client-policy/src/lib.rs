@@ -1,15 +1,21 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use std::sync::Arc;
+pub mod discover;
 pub mod http;
+
 use linkerd_addr::Addr;
 pub use linkerd_policy_core::{meta, Meta};
+use std::sync::Arc;
+use once_cell::sync::Lazy;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+pub type Receiver = tokio::sync::watch::Receiver<ClientPolicy>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientPolicy {
     pub protocol: Protocol,
     pub meta: Arc<Meta>,
+    pub exists: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -36,12 +42,22 @@ pub struct Backend {
 
 impl ClientPolicy {
     pub fn invalid() -> Self {
-        let meta = Arc::new(Meta::Default {
-            name: "invalid".into(),
-        });
+        static META: Lazy<Arc<Meta>> = Lazy::new(|| Arc::new(Meta::Default { name: "invalid".into()}));
         Self {
-            meta,
+            meta: META.clone(),
             protocol: Protocol::Unknown,
+            exists: true,
+        }
+    }
+}
+
+impl Default for ClientPolicy {
+    fn default() -> Self {
+        static META: Lazy<Arc<Meta>> = Lazy::new(|| Arc::new(Meta::Default { name: "default".into()}));
+        Self {
+            meta: META.clone(),
+            protocol: Protocol::Unknown,
+            exists: false,
         }
     }
 }
