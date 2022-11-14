@@ -11,6 +11,7 @@ pub mod http;
 mod ingress;
 pub mod logical;
 mod metrics;
+pub mod policy;
 mod resolve;
 mod switch_logical;
 pub mod tcp;
