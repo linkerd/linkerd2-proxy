@@ -12,8 +12,8 @@ use linkerd_client_policy::ClientPolicy;
 use linkerd_tonic_watch::StreamWatch;
 use std::{
     net::SocketAddr,
+    sync::Arc,
     task::{Context, Poll},
-    time,
 };
 
 #[derive(Clone, Debug)]
@@ -26,7 +26,8 @@ pub(super) struct Api<S> {
 pub(super) struct GrpcRecover(ExponentialBackoff);
 
 pub(super) type Watch<S> = StreamWatch<GrpcRecover, Api<S>>;
-
+pub(super) type Response =
+    tonic::Response<futures::stream::BoxStream<'static, Result<ClientPolicy, tonic::Status>>>;
 impl<S> Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error> + Clone,
@@ -53,8 +54,7 @@ where
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
     S::Future: Send + 'static,
 {
-    type Response =
-        tonic::Response<futures::stream::BoxStream<'static, Result<ClientPolicy, tonic::Status>>>;
+    type Response = Response;
     type Error = tonic::Status;
     type Future = futures::future::BoxFuture<'static, Result<Self::Response, tonic::Status>>;
 
@@ -64,9 +64,9 @@ where
 
     fn call(&mut self, addr: SocketAddr) -> Self::Future {
         let target = api::TargetSpec {
-            ip: addr.ip().into(),
+            address: Some(addr.ip().into()),
             port: addr.port() as u32,
-            workload: self.workload.to_owned(),
+            workload: self.workload.as_ref().to_owned(),
         };
         let mut client = self.client.clone();
         Box::pin(async move {
