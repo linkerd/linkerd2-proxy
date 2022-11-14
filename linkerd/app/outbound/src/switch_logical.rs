@@ -51,7 +51,7 @@ impl<S> Outbound<S> {
                             // logical stack so we apply routes, traffic splits, and load balancing.
                             if let Some(logical_addr) = rx.logical_addr() {
                                 tracing::debug!("Profile describes a logical service");
-                                return Ok(svc::Either::B(Logical::new(logical_addr, rx)));
+                                return Ok(svc::Either::B(Logical::new(target.param(), logical_addr, rx)));
                             }
 
                             // Otherwise, if there was a profile but it didn't include an endpoint or logical
