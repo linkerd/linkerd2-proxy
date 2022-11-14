@@ -1,5 +1,9 @@
 use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, ProfileRoute};
-use crate::{endpoint, resolve, stack_labels, Outbound};
+use crate::{
+    endpoint,
+    policy::{GetPolicy, Policy},
+    resolve, stack_labels, Outbound,
+};
 use linkerd_app_core::{
     classify, config, profiles,
     proxy::{
@@ -13,7 +17,11 @@ use linkerd_app_core::{
 use tracing::debug_span;
 
 impl<E> Outbound<E> {
-    pub fn push_http_logical<ESvc, R>(self, resolve: R) -> Outbound<svc::ArcNewHttp<Logical>>
+    pub fn push_http_logical<ESvc, R>(
+        self,
+        resolve: R,
+        policies: impl GetPolicy + Send + Sync + 'static,
+    ) -> Outbound<svc::ArcNewHttp<Logical>>
     where
         E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + Sync + 'static,
         ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -126,10 +134,10 @@ impl<E> Outbound<E> {
                 )
                 .push_cache(cache_max_idle_age);
 
-            // If there's no route, use the logical service directly; otherwise
-            // use the per-route stack.
-            logical
+            let profile_route = logical
                 .clone()
+                // If there's no route, use the logical service directly; otherwise
+                // use the per-route stack.
                 .push_switch(
                     |(route, logical): (Option<profiles::http::Route>, Logical)| -> Result<_, Infallible> {
                         match route {
@@ -172,7 +180,39 @@ impl<E> Outbound<E> {
                         )
                         .into_inner(),
                 )
-                .push(profiles::http::NewServiceRouter::layer())
+                .push(profiles::http::NewServiceRouter::layer());
+
+                let policy = logical.push_map_target(|(policy, logical): (Policy, Logical)| {
+                    // for now, throw away the policy and continue to the
+                    // logical stack.
+
+                    // TODO(eliza): this is where the stack used when a client
+                    // policy is resolved will go...
+                    logical
+                })
+                .instrument(|(policy, logical): &(Policy, Logical)| debug_span!("policy", addr = %policy.dst))
+                // .check_make_service::<(Policy, Logical), http::Request<_>>();
+                ;
+
+                let logical = policy.push_switch(
+                    move |logical: Logical| {
+                        let policy = policies.get_policy(logical.orig_dst);
+                        let is_empty = {
+                            let policy = policy.policy.borrow();
+                            policy.http_routes.is_empty() && policy.backends.is_empty()
+                        };
+                        if is_empty {
+                            // No client policy is defined for this destination,
+                            // so continue with the service profile stack.
+                            return Ok(svc::Either::A(logical));
+                        }
+
+                        Ok(svc::Either::B((policy, logical)))
+                    },
+                    profile_route,
+                );
+
+                logical
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header. The response body is boxed
                 // unify the profile stack's response type with that of to
