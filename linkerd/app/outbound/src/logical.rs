@@ -1,10 +1,10 @@
-use crate::{http, tcp, Outbound};
+use crate::{http, policy::GetPolicy, tcp, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
 use linkerd_app_core::{
     io, profiles,
     proxy::{api_resolve::Metadata, core::Resolve},
     svc,
-    transport::{ClientAddr, Local},
+    transport::{ClientAddr, Local, OrigDstAddr},
     Addr, Error,
 };
 pub use profiles::LogicalAddr;
@@ -14,6 +14,7 @@ use std::fmt;
 pub struct Logical<P> {
     pub profile: profiles::Receiver,
     pub logical_addr: LogicalAddr,
+    pub orig_dst: OrigDstAddr,
     pub protocol: P,
 }
 
@@ -28,10 +29,15 @@ pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 // === impl Logical ===
 
 impl Logical<()> {
-    pub(crate) fn new(logical_addr: LogicalAddr, profile: profiles::Receiver) -> Self {
+    pub(crate) fn new(
+        orig_dst: OrigDstAddr,
+        logical_addr: LogicalAddr,
+        profile: profiles::Receiver,
+    ) -> Self {
         Self {
             profile,
             logical_addr,
+            orig_dst,
             protocol: (),
         }
     }
@@ -116,7 +122,11 @@ impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
-    pub fn push_logical<R, I>(self, resolve: R) -> Outbound<svc::ArcNewTcp<tcp::Logical, I>>
+    pub fn push_logical<R, I>(
+        self,
+        resolve: R,
+        policies: impl GetPolicy + Send + Sync + 'static,
+    ) -> Outbound<svc::ArcNewTcp<tcp::Logical, I>>
     where
         Self: Clone + 'static,
         C: Clone + Send + Sync + Unpin + 'static,
@@ -134,7 +144,7 @@ impl<C> Outbound<C> {
             .clone()
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_http_logical(resolve.clone())
+            .push_http_logical(resolve.clone(), policies)
             .push_http_server()
             .into_inner();
 

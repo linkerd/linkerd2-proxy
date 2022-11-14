@@ -135,6 +135,7 @@ mod tests {
 
         // We create a logical target to be resolved to endpoints.
         let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
+        let ep_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
         let (_tx, rx) = tokio::sync::watch::channel(Profile {
             addr: Some(logical_addr.clone()),
             ..Default::default()
@@ -143,10 +144,10 @@ mod tests {
             profile: rx.into(),
             logical_addr: logical_addr.clone(),
             protocol: (),
+            orig_dst: OrigDstAddr(ep_addr),
         };
 
         // The resolution resolves a single endpoint.
-        let ep_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
         let resolve =
             support::resolver().endpoint_exists(logical_addr.clone(), ep_addr, Default::default());
         let resolved = resolve.handle();
@@ -207,9 +208,9 @@ mod tests {
             profile: rx.into(),
             logical_addr: logical_addr.clone(),
             protocol: (),
+            orig_dst: SocketAddr::new([192, 0, 2, 29].into(), 3333),
         };
 
-        // The resolution resolves a single endpoint.
         let ep0_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
         let ep1_addr = SocketAddr::new([192, 0, 2, 31].into(), 3333);
         let resolve = support::resolver();

@@ -13,18 +13,9 @@ pub type Receiver = tokio::sync::watch::Receiver<ClientPolicy>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientPolicy {
-    pub protocol: Protocol,
+    pub http_routes: Arc<[http::Route]>,
     pub meta: Arc<Meta>,
-    pub exists: bool,
     pub backends: Vec<Backend>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Protocol {
-    // XXX(eliza): currently, this is used only when we get an invalid policy
-    // update, since we only do client policy resolutions when the target is http.
-    Unknown,
-    Http(Arc<[http::Route]>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -50,9 +41,8 @@ impl ClientPolicy {
         });
         Self {
             meta: META.clone(),
-            protocol: Protocol::Unknown,
+            http_routes: NO_ROUTES.clone(),
             backends: Vec::new(),
-            exists: true,
         }
     }
 }
@@ -66,12 +56,13 @@ impl Default for ClientPolicy {
         });
         Self {
             meta: META.clone(),
-            protocol: Protocol::Unknown,
-            exists: false,
+            http_routes: NO_ROUTES.clone(),
             backends: Vec::new(),
         }
     }
 }
+
+static NO_ROUTES: Lazy<Arc<[http::Route]>> = Lazy::new(|| vec![].into());
 
 #[cfg(feature = "proto")]
 pub mod proto {
@@ -124,8 +115,7 @@ pub mod proto {
             });
             Ok(Self {
                 backends,
-                protocol: Protocol::Http(http_routes),
-                exists: true,
+                http_routes,
                 meta,
             })
         }
