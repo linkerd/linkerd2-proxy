@@ -18,7 +18,7 @@ use linkerd_app_core::{
     control::ControlAddr,
     dns, drain,
     metrics::FmtMetrics,
-    svc::Param,
+    svc::{self, Param},
     telemetry,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, ProxyRuntime,
@@ -164,7 +164,13 @@ impl Config {
         let inbound_policies = {
             let dns = dns.resolver;
             let metrics = metrics.control;
-            info_span!("policy").in_scope(|| inbound.build_policies(dns, metrics))
+            info_span!("server_policy").in_scope(|| inbound.build_policies(dns, metrics))
+        };
+
+        let outbound_policies = {
+            let dns = dns.resolver;
+            let metrics = metrics.control;
+            info_span!("client_policy").in_scope(|| outbound.build_policies(dns, metrics))
         };
 
         let admin = {
@@ -196,6 +202,7 @@ impl Config {
             outbound.to_tcp_connect(),
             dst.profiles.clone(),
             dst.resolve.clone(),
+            outbound_policies.clone(),
         );
 
         // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
@@ -220,7 +227,12 @@ impl Config {
 
                 tokio::spawn(
                     outbound
-                        .serve(outbound_listen, profiles.clone(), resolve)
+                        .serve(
+                            outbound_listen,
+                            profiles.clone(),
+                            resolve,
+                            outbound_policies,
+                        )
                         .instrument(info_span!("outbound").or_current()),
                 );
 
