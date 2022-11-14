@@ -1,4 +1,4 @@
-use crate::{http, policy::GetPolicy, tcp, Outbound};
+use crate::{http, policy, tcp, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
 use linkerd_app_core::{
     io, profiles,
@@ -74,6 +74,13 @@ impl svc::Param<Option<http::detect::Skip>> for Logical<()> {
     }
 }
 
+// Used for client policy discovery
+impl<P> svc::Param<OrigDstAddr> for Logical<P> {
+    fn param(&self) -> OrigDstAddr {
+        self.orig_dst.clone()
+    }
+}
+
 impl<P> Logical<P> {
     pub fn addr(&self) -> Addr {
         Addr::from(self.logical_addr.clone().0)
@@ -122,10 +129,10 @@ impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
-    pub fn push_logical<R, I>(
+    pub fn push_logical<R, I, P>(
         self,
         resolve: R,
-        policies: impl GetPolicy + Send + Sync + 'static,
+        policies: P,
     ) -> Outbound<svc::ArcNewTcp<tcp::Logical, I>>
     where
         Self: Clone + 'static,
@@ -139,6 +146,10 @@ impl<C> Outbound<C> {
         R::Future: Send + Unpin,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: fmt::Debug + Send + Sync + Unpin + 'static,
+        P: svc::Service<OrigDstAddr, Response = policy::Receiver>,
+        P: Clone + Send + Sync + 'static,
+        P::Future: Send,
+        Error: From<P::Error>,
     {
         let http = self
             .clone()

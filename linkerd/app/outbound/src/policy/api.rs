@@ -6,12 +6,12 @@ use linkerd_app_core::{
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     proxy::http,
     svc::Service,
+    transport::OrigDstAddr,
     Error, Recover, Result,
 };
 use linkerd_client_policy::ClientPolicy;
 use linkerd_tonic_watch::StreamWatch;
 use std::{
-    net::SocketAddr,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -46,7 +46,7 @@ where
     }
 }
 
-impl<S> Service<SocketAddr> for Api<S>
+impl<S> Service<OrigDstAddr> for Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
     S: Clone + Send + Sync + 'static,
@@ -62,7 +62,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, addr: SocketAddr) -> Self::Future {
+    fn call(&mut self, OrigDstAddr(addr): OrigDstAddr) -> Self::Future {
         let target = api::TargetSpec {
             address: Some(addr.ip().into()),
             port: addr.port() as u32,

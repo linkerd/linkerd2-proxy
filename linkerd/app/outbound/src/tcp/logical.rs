@@ -208,7 +208,7 @@ mod tests {
             profile: rx.into(),
             logical_addr: logical_addr.clone(),
             protocol: (),
-            orig_dst: SocketAddr::new([192, 0, 2, 29].into(), 3333),
+            orig_dst: OrigDstAddr(SocketAddr::new([192, 0, 2, 29].into(), 3333)),
         };
 
         let ep0_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
