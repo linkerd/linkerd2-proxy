@@ -196,7 +196,7 @@ impl<E> Outbound<E> {
                     // policy is resolved will go...
                     logical
                 })
-                .instrument(|(policy, logical): &(Policy, Logical)| debug_span!("policy", addr = %policy.dst))
+                .instrument(|(policy, _): &(Policy, Logical)| debug_span!("policy", addr = %policy.dst))
                 .check_new_service::<(Policy, Logical), http::Request<_>>();
 
                 let logical = policy.push_switch(

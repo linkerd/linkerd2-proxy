@@ -18,7 +18,7 @@ use linkerd_app_core::{
     control::ControlAddr,
     dns, drain,
     metrics::FmtMetrics,
-    svc::{self, Param},
+    svc::Param,
     telemetry,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, ProxyRuntime,

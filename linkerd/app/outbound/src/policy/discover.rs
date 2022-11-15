@@ -1,7 +1,7 @@
 use super::{Policy, Receiver};
 use linkerd_app_core::{
     cache::Cache,
-    svc::{self, stack::Param, NewService, ServiceExt},
+    svc::{self, stack::Param, NewService},
     transport::OrigDstAddr,
     Error,
 };
