@@ -45,6 +45,7 @@ pub(crate) fn default_config() -> Config {
             detect_protocol_timeout: Duration::from_secs(3),
         },
         inbound_ips: Default::default(),
+        policy: todo!("eliza"),
     }
 }
 

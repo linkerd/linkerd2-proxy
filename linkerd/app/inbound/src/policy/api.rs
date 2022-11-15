@@ -10,11 +10,11 @@ use linkerd_app_core::{
 };
 use linkerd_server_policy::ServerPolicy;
 use linkerd_tonic_watch::StreamWatch;
-use std::time;
+use std::{sync::Arc, time};
 
 #[derive(Clone, Debug)]
 pub(super) struct Api<S> {
-    workload: String,
+    workload: Arc<str>,
     detect_timeout: time::Duration,
     client: Client<S>,
 }
@@ -34,7 +34,7 @@ where
     S::ResponseBody:
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
-    pub(super) fn new(workload: String, detect_timeout: time::Duration, client: S) -> Self {
+    pub(super) fn new(workload: Arc<str>, detect_timeout: time::Duration, client: S) -> Self {
         Self {
             workload,
             detect_timeout,
@@ -70,7 +70,7 @@ where
     fn call(&mut self, port: u16) -> Self::Future {
         let req = api::PortSpec {
             port: port.into(),
-            workload: self.workload.clone(),
+            workload: (*self.workload).to_owned(),
         };
         let detect_timeout = self.detect_timeout;
         let mut client = self.client.clone();

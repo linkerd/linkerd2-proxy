@@ -1,6 +1,9 @@
 use super::{api::Api, DefaultPolicy, GetPolicy, Protocol, ServerPolicy, Store};
 use linkerd_app_core::{control, dns, identity, metrics, svc::NewService};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::time::Duration;
 
 /// Configures inbound policies.
@@ -12,7 +15,7 @@ use tokio::time::Duration;
 pub enum Config {
     Discover {
         control: control::Config,
-        workload: String,
+        workload: Arc<str>,
         default: DefaultPolicy,
         cache_max_idle_age: Duration,
         ports: HashSet<u16>,

@@ -162,8 +162,8 @@ impl Config {
         let outbound = Outbound::new(outbound, runtime);
 
         let inbound_policies = {
-            let dns = dns.resolver;
-            let metrics = metrics.control;
+            let dns = dns.resolver.clone();
+            let metrics = metrics.control.clone();
             info_span!("server_policy").in_scope(|| inbound.build_policies(dns, metrics))
         };
 

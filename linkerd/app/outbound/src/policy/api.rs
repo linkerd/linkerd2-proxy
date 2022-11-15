@@ -34,9 +34,9 @@ where
     S::ResponseBody:
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
-    pub(super) fn new(workload: String, client: S) -> Self {
+    pub(super) fn new(workload: Arc<str>, client: S) -> Self {
         Self {
-            workload: workload.into(),
+            workload,
             client: Client::new(client),
         }
     }
