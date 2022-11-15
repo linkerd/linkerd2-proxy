@@ -419,6 +419,81 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         std::sync::Arc::new(ips)
     };
 
+    let outbound_cache_max_idle_age =
+        outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
+    let outbound_connect = {
+        let keepalive = Keepalive(outbound_connect_keepalive?);
+        ConnectConfig {
+            keepalive,
+            timeout: outbound_connect_timeout?.unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
+            backoff: parse_backoff(
+                strings,
+                OUTBOUND_CONNECT_BASE,
+                DEFAULT_OUTBOUND_CONNECT_BACKOFF,
+            )?,
+            h2_settings,
+            h1_settings: h1::PoolSettings {
+                max_idle: outbound_max_idle_per_endpoint?
+                    .unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT),
+                idle_timeout: outbound_cache_max_idle_age,
+            },
+        }
+    };
+    let inbound_connect = {
+        let connection_pool_timeout = parse(
+            strings,
+            ENV_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT,
+            parse_duration,
+        )?
+        .unwrap_or(DEFAULT_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT);
+        let max_idle =
+            inbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
+        let keepalive = Keepalive(inbound_connect_keepalive?);
+        ConnectConfig {
+            keepalive,
+            timeout: inbound_connect_timeout?.unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
+            backoff: parse_backoff(
+                strings,
+                INBOUND_CONNECT_BASE,
+                DEFAULT_INBOUND_CONNECT_BACKOFF,
+            )?,
+            h2_settings,
+            h1_settings: h1::PoolSettings {
+                max_idle,
+                idle_timeout: connection_pool_timeout,
+            },
+        }
+    };
+
+    let policy_svc = parse_control_addr(strings, ENV_POLICY_SVC_BASE)?.map(|addr| {
+        let connect = if addr.addr.is_loopback() {
+            inbound_connect.clone()
+        } else {
+            outbound_connect.clone()
+        };
+        ControlConfig {
+            addr,
+            connect,
+            buffer_capacity,
+        }
+    });
+
+    // The workload, which is opaque from the proxy's point-of-view, is sent to the
+    // policy controller to support policy discovery.
+    // XXX(eliza): this assumes that the workload identifier env var will be
+    // changed to include the pod name, so that it can be used to resolve client
+    // policies as well as server policies...
+    let workload: std::sync::Arc<str> = strings
+        .get(ENV_POLICY_WORKLOAD)?
+        .ok_or_else(|| {
+            error!(
+                "{} must be set with {}_ADDR",
+                ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
+            );
+            EnvError::InvalidEnvVar
+        })?
+        .into();
+
     let outbound = {
         let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
 
@@ -441,30 +516,21 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             keepalive,
             h2_settings,
         };
-        let cache_max_idle_age =
-            outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
-        let max_idle =
-            outbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
-        let keepalive = Keepalive(outbound_connect_keepalive?);
-        let connect = ConnectConfig {
-            keepalive,
-            timeout: outbound_connect_timeout?.unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
-            backoff: parse_backoff(
-                strings,
-                OUTBOUND_CONNECT_BASE,
-                DEFAULT_OUTBOUND_CONNECT_BACKOFF,
-            )?,
-            h2_settings,
-            h1_settings: h1::PoolSettings {
-                max_idle,
-                idle_timeout: cache_max_idle_age,
-            },
-        };
 
         let detect_protocol_timeout =
             outbound_detect_timeout?.unwrap_or(DEFAULT_OUTBOUND_DETECT_TIMEOUT);
         let dispatch_timeout =
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
+        let policy = match policy_svc {
+            Some(ref control) => outbound::policy::Config {
+                control: control.clone(),
+                workload: workload.clone(),
+            },
+            None => {
+                error!("{}_ADDR must be set", ENV_POLICY_SVC_BASE);
+                return Err(EnvError::InvalidEnvVar);
+            }
+        };
 
         outbound::Config {
             ingress_mode,
@@ -472,8 +538,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             allow_discovery: AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks),
             proxy: ProxyConfig {
                 server,
-                connect,
-                cache_max_idle_age,
+                connect: outbound_connect,
+                cache_max_idle_age: outbound_cache_max_idle_age,
                 buffer_capacity,
                 dispatch_timeout,
                 max_in_flight_requests: outbound_max_in_flight?
@@ -481,6 +547,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 detect_protocol_timeout,
             },
             inbound_ips: inbound_ips.clone(),
+            policy,
         }
     };
 
@@ -504,29 +571,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         };
         let cache_max_idle_age =
             inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
-        let max_idle =
-            inbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
-        let connection_pool_timeout = parse(
-            strings,
-            ENV_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT,
-            parse_duration,
-        )?
-        .unwrap_or(DEFAULT_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT);
-        let keepalive = Keepalive(inbound_connect_keepalive?);
-        let connect = ConnectConfig {
-            keepalive,
-            timeout: inbound_connect_timeout?.unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
-            backoff: parse_backoff(
-                strings,
-                INBOUND_CONNECT_BASE,
-                DEFAULT_INBOUND_CONNECT_BACKOFF,
-            )?,
-            h2_settings,
-            h1_settings: h1::PoolSettings {
-                max_idle,
-                idle_timeout: connection_pool_timeout,
-            },
-        };
 
         let detect_protocol_timeout =
             inbound_detect_timeout?.unwrap_or(DEFAULT_INBOUND_DETECT_TIMEOUT);
@@ -560,8 +604,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
             });
 
-            match parse_control_addr(strings, ENV_POLICY_SVC_BASE)? {
-                Some(addr) => {
+            match policy_svc {
+                Some(control) => {
                     // If the inbound is proxy is configured to discover policies, then load the set
                     // of all known inbound ports to be discovered during initialization.
                     let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
@@ -581,29 +625,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
                     // Ensure that the admin server port is included in policy discovery.
                     ports.insert(admin_listener_addr.port());
-
-                    // The workload, which is opaque from the proxy's point-of-view, is sent to the
-                    // policy controller to support policy discovery.
-                    let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
-                        error!(
-                            "{} must be set with {}_ADDR",
-                            ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
-                        );
-                        EnvError::InvalidEnvVar
-                    })?;
-
-                    let control = {
-                        let connect = if addr.addr.is_loopback() {
-                            connect.clone()
-                        } else {
-                            outbound.proxy.connect.clone()
-                        };
-                        ControlConfig {
-                            addr,
-                            connect,
-                            buffer_capacity,
-                        }
-                    };
 
                     inbound::policy::Config::Discover {
                         default,
@@ -708,7 +729,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             allow_discovery: dst_profile_suffixes.into_iter().collect(),
             proxy: ProxyConfig {
                 server,
-                connect,
+                connect: inbound_connect,
                 cache_max_idle_age,
                 buffer_capacity,
                 dispatch_timeout,
