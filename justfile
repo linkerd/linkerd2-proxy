@@ -211,6 +211,6 @@ action-dev-check:
 
 # Display the git history minus dependabot updates
 history *paths='.':
-    @-git log --oneline --graph --invert-grep --author="dependabot" -- {{ paths }}
+    @git log --oneline --graph --invert-grep --author="dependabot" -- {{ paths }}
 
 # vim: set ft=make :
