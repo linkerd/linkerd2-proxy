@@ -173,7 +173,8 @@ pub const ENV_INBOUND_PORTS_REQUIRE_TLS: &str = "LINKERD2_PROXY_INBOUND_PORTS_RE
 pub const ENV_INBOUND_DEFAULT_POLICY: &str = "LINKERD2_PROXY_INBOUND_DEFAULT_POLICY";
 
 pub const ENV_INBOUND_PORTS: &str = "LINKERD2_PROXY_INBOUND_PORTS";
-pub const ENV_POLICY_SVC_BASE: &str = "LINKERD2_PROXY_POLICY_SVC";
+pub const ENV_SERVER_POLICY_SVC_BASE: &str = "LINKERD2_PROXY_POLICY_SVC";
+pub const ENV_CLIENT_POLICY_SVC_BASE: &str = "LINKERD2_PROXY_CLIENT_POLICY_SVC";
 pub const ENV_POLICY_WORKLOAD: &str = "LINKERD2_PROXY_POLICY_WORKLOAD";
 pub const ENV_POLICY_CLUSTER_NETWORKS: &str = "LINKERD2_PROXY_POLICY_CLUSTER_NETWORKS";
 
@@ -465,19 +466,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         }
     };
 
-    let policy_svc = parse_control_addr(strings, ENV_POLICY_SVC_BASE)?.map(|addr| {
-        let connect = if addr.addr.is_loopback() {
-            inbound_connect.clone()
-        } else {
-            outbound_connect.clone()
-        };
-        ControlConfig {
-            addr,
-            connect,
-            buffer_capacity,
-        }
-    });
-
     // The workload, which is opaque from the proxy's point-of-view, is sent to the
     // policy controller to support policy discovery.
     // XXX(eliza): this assumes that the workload identifier env var will be
@@ -488,7 +476,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .ok_or_else(|| {
             error!(
                 "{} must be set with {}_ADDR",
-                ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
+                ENV_POLICY_WORKLOAD, ENV_CLIENT_POLICY_SVC_BASE
             );
             EnvError::InvalidEnvVar
         })?
@@ -521,13 +509,30 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound_detect_timeout?.unwrap_or(DEFAULT_OUTBOUND_DETECT_TIMEOUT);
         let dispatch_timeout =
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
-        let policy = match policy_svc {
-            Some(ref control) => outbound::policy::Config {
-                control: control.clone(),
-                workload: workload.clone(),
-            },
+        let policy = match parse_control_addr(strings, ENV_CLIENT_POLICY_SVC_BASE)? {
+            Some(addr) => {
+                let control = {
+                    let connect = if addr.addr.is_loopback() {
+                        inbound_connect.clone()
+                    } else {
+                        outbound_connect.clone()
+                    };
+                    ControlConfig {
+                        addr,
+                        connect,
+                        buffer_capacity,
+                    }
+                };
+
+                outbound::policy::Config {
+                    workload: workload.clone(),
+                    control,
+                }
+            }
             None => {
-                error!("{}_ADDR must be set", ENV_POLICY_SVC_BASE);
+                // TODO(eliza): should we just always use an empty client policy
+                // if there's no client policy svc addr?
+                error!("{}_ADDR must be set", ENV_CLIENT_POLICY_SVC_BASE);
                 return Err(EnvError::InvalidEnvVar);
             }
         };
@@ -538,7 +543,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             allow_discovery: AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks),
             proxy: ProxyConfig {
                 server,
-                connect: outbound_connect,
+                connect: outbound_connect.clone(),
                 cache_max_idle_age: outbound_cache_max_idle_age,
                 buffer_capacity,
                 dispatch_timeout,
@@ -604,8 +609,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
             });
 
-            match policy_svc {
-                Some(control) => {
+            match parse_control_addr(strings, ENV_SERVER_POLICY_SVC_BASE)? {
+                Some(addr) => {
                     // If the inbound is proxy is configured to discover policies, then load the set
                     // of all known inbound ports to be discovered during initialization.
                     let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
@@ -625,6 +630,19 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
                     // Ensure that the admin server port is included in policy discovery.
                     ports.insert(admin_listener_addr.port());
+
+                    let control = {
+                        let connect = if addr.addr.is_loopback() {
+                            inbound_connect.clone()
+                        } else {
+                            outbound_connect
+                        };
+                        ControlConfig {
+                            addr,
+                            connect,
+                            buffer_capacity,
+                        }
+                    };
 
                     inbound::policy::Config::Discover {
                         default,
