@@ -77,7 +77,7 @@ impl svc::Param<Option<http::detect::Skip>> for Logical<()> {
 // Used for client policy discovery
 impl<P> svc::Param<OrigDstAddr> for Logical<P> {
     fn param(&self) -> OrigDstAddr {
-        self.orig_dst.clone()
+        self.orig_dst
     }
 }
 
