@@ -189,9 +189,9 @@ impl<E> Outbound<E> {
                 .push(profiles::http::NewServiceRouter::layer());
 
                 let policy = logical.push_map_target(|(policy, logical): (Policy, Logical)| {
-                    // for now, throw away the policy and continue to the
-                    // logical stack.
-                    drop(policy);
+                    // for now, just log the client policy rather than actually
+                    // doing anything...
+                    tracing::info!(?logical, ?policy);
                     // TODO(eliza): this is where the stack used when a client
                     // policy is resolved will go...
                     logical
