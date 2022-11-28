@@ -97,7 +97,6 @@ mod tests {
         let server_config = Arc::new(empty_server_config());
         server_tx
             .send(server_config.clone())
-            .ok()
             .expect("receiver is held");
 
         assert!(Arc::ptr_eq(&server.config(), &server_config));
@@ -127,7 +126,6 @@ mod tests {
         assert!(!Arc::ptr_eq(&update_config, &init_config));
         server_tx
             .send(update_config.clone())
-            .ok()
             .expect("receiver is held");
 
         // Give the update task a chance to run.
