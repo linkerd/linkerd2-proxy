@@ -1,18 +1,53 @@
-use crate::Config;
+use crate::{policy, Config};
 pub use futures::prelude::*;
 use linkerd_app_core::{
-    config, drain, exp_backoff, metrics,
+    config, control, drain, exp_backoff, identity, metrics,
     proxy::{
         http::{h1, h2},
         tap,
     },
+    tls,
     transport::{Keepalive, ListenAddr},
-    IpMatch, IpNet, ProxyRuntime,
+    Conditional, IpMatch, IpNet, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
 use std::{str::FromStr, time::Duration};
 
 pub(crate) fn default_config() -> Config {
+    let connect = config::ConnectConfig {
+        keepalive: Keepalive(None),
+        timeout: Duration::from_secs(1),
+        backoff: exp_backoff::ExponentialBackoff::try_new(
+            Duration::from_millis(100),
+            Duration::from_millis(500),
+            0.1,
+        )
+        .unwrap(),
+        h1_settings: h1::PoolSettings {
+            max_idle: 1,
+            idle_timeout: Duration::from_secs(1),
+        },
+        h2_settings: h2::Settings::default(),
+    };
+    let policy = {
+        let addr = "policy.linkerd.svc.cluster.local"
+            .parse()
+            .expect("policy service addr should parse");
+        let id_name = "policy.linkerd.serviceaccount.identity.linkerd.cluster.local"
+            .parse::<identity::Name>()
+            .expect("policy service identity should parse");
+        policy::Config {
+            control: control::Config {
+                addr: control::ControlAddr {
+                    addr,
+                    identity: Conditional::Some(tls::ServerId(id_name).into()),
+                },
+                connect: connect.clone(),
+                buffer_capacity: 1000,
+            },
+            workload: "test:test".into(),
+        }
+    };
     Config {
         ingress_mode: false,
         emit_headers: true,
@@ -23,21 +58,7 @@ pub(crate) fn default_config() -> Config {
                 keepalive: Keepalive(None),
                 h2_settings: h2::Settings::default(),
             },
-            connect: config::ConnectConfig {
-                keepalive: Keepalive(None),
-                timeout: Duration::from_secs(1),
-                backoff: exp_backoff::ExponentialBackoff::try_new(
-                    Duration::from_millis(100),
-                    Duration::from_millis(500),
-                    0.1,
-                )
-                .unwrap(),
-                h1_settings: h1::PoolSettings {
-                    max_idle: 1,
-                    idle_timeout: Duration::from_secs(1),
-                },
-                h2_settings: h2::Settings::default(),
-            },
+            connect,
             buffer_capacity: 10_000,
             cache_max_idle_age: Duration::from_secs(60),
             dispatch_timeout: Duration::from_secs(3),
@@ -45,7 +66,7 @@ pub(crate) fn default_config() -> Config {
             detect_protocol_timeout: Duration::from_secs(3),
         },
         inbound_ips: Default::default(),
-        policy: todo!("eliza"),
+        policy,
     }
 }
 
