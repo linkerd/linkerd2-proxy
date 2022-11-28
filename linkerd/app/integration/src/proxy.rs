@@ -346,6 +346,10 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         );
     }
 
+    if !env.contains_key(app::env::ENV_POLICY_WORKLOAD) {
+        env.put(app::env::ENV_POLICY_WORKLOAD, "test:test".into());
+    }
+
     let config = app::env::parse_config(&env).unwrap();
 
     let dispatch = tracing::Dispatch::default();
