@@ -9,6 +9,7 @@ use linkerd_app_core::{
 };
 pub use profiles::LogicalAddr;
 use std::fmt;
+use tokio::sync::watch;
 
 #[derive(Clone)]
 pub struct Logical<P> {
@@ -47,6 +48,12 @@ impl Logical<()> {
 impl<P> svc::Param<profiles::Receiver> for Logical<P> {
     fn param(&self) -> profiles::Receiver {
         self.profile.clone()
+    }
+}
+
+impl<P> svc::Param<watch::Receiver<profiles::Profile>> for Logical<P> {
+    fn param(&self) -> watch::Receiver<profiles::Profile> {
+        self.profile.clone().into_inner()
     }
 }
 

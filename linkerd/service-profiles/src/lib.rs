@@ -2,9 +2,12 @@
 #![forbid(unsafe_code)]
 
 use futures::Stream;
-use linkerd_addr::{Addr, NameAddr};
+use linkerd_addr::Addr;
+use linkerd_client_policy::Backend;
+pub use linkerd_client_policy::LogicalAddr;
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
+use linkerd_stack::Param;
 use std::{
     fmt,
     future::Future,
@@ -22,7 +25,6 @@ mod default;
 pub mod discover;
 pub mod http;
 mod proto;
-pub mod split;
 
 pub use self::client::Client;
 
@@ -40,7 +42,7 @@ struct ReceiverStream {
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
     pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
-    pub targets: Vec<Target>,
+    pub targets: Vec<Backend>,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
@@ -48,16 +50,6 @@ pub struct Profile {
 /// A profile lookup target.
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LookupAddr(pub Addr);
-
-/// A bound logical service address
-#[derive(Clone, Hash, Eq, PartialEq)]
-pub struct LogicalAddr(pub NameAddr);
-
-#[derive(Clone)]
-pub struct Target {
-    pub addr: NameAddr,
-    pub weight: u32,
-}
 
 #[derive(Clone, Debug)]
 pub struct GetProfileService<P>(P);
@@ -121,6 +113,14 @@ where
     }
 }
 
+// === impl Profile ===
+
+impl Param<Vec<Backend>> for Profile {
+    fn param(&self) -> Vec<Backend> {
+        self.targets.clone()
+    }
+}
+
 // === impl Receiver ===
 
 impl From<watch::Receiver<Profile>> for Receiver {
@@ -142,7 +142,13 @@ impl Receiver {
         self.inner.borrow().endpoint.clone()
     }
 
-    fn targets(&self) -> Vec<Target> {
+    pub fn into_inner(self) -> watch::Receiver<Profile> {
+        self.inner
+    }
+}
+
+impl Param<Vec<Backend>> for Receiver {
+    fn param(&self) -> Vec<Backend> {
         self.inner.borrow().targets.clone()
     }
 }
@@ -196,51 +202,6 @@ impl From<Addr> for LookupAddr {
 impl From<LookupAddr> for Addr {
     fn from(LookupAddr(addr): LookupAddr) -> Addr {
         addr
-    }
-}
-
-// === impl LogicalAddr ===
-
-impl fmt::Display for LogicalAddr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl fmt::Debug for LogicalAddr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LogicalAddr({})", self.0)
-    }
-}
-
-impl FromStr for LogicalAddr {
-    type Err = <NameAddr as FromStr>::Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        NameAddr::from_str(s).map(LogicalAddr)
-    }
-}
-
-impl From<NameAddr> for LogicalAddr {
-    fn from(na: NameAddr) -> Self {
-        Self(na)
-    }
-}
-
-impl From<LogicalAddr> for NameAddr {
-    fn from(LogicalAddr(na): LogicalAddr) -> NameAddr {
-        na
-    }
-}
-
-// === impl Target ===
-
-impl fmt::Debug for Target {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Target")
-            .field("addr", &format_args!("{}", self.addr))
-            .field("weight", &self.weight)
-            .finish()
     }
 }
 

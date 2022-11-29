@@ -1,7 +1,7 @@
 use super::{Concrete, Endpoint, Logical};
-use crate::{endpoint, resolve, Outbound};
+use crate::{endpoint, policy, resolve, Outbound};
 use linkerd_app_core::{
-    config, drain, io, profiles,
+    config, drain, io,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -90,7 +90,7 @@ impl<C> Outbound<C> {
                 .push_map_target(Concrete::from)
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<(ConcreteAddr, Logical), I>()
-                .push(profiles::split::layer())
+                .push(policy::split::layer())
                 .push_on_service(
                     svc::layers()
                         .push(
