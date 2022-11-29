@@ -3,10 +3,10 @@ pub struct CurrentLibraryConfig {
     /// This is required only in the first message on the stream or if the
     /// previous sent CurrentLibraryConfig message has a different Node (e.g.
     /// when the same RPC is used to configure multiple Applications).
-    #[prost(message, optional, tag="1")]
+    #[prost(message, optional, tag = "1")]
     pub node: ::core::option::Option<super::super::common::v1::Node>,
     /// Current configuration.
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub config: ::core::option::Option<super::super::super::trace::v1::TraceConfig>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -14,10 +14,10 @@ pub struct UpdatedLibraryConfig {
     /// This field is ignored when the RPC is used to configure only one Application.
     /// This is required only in the first message on the stream or if the
     /// previous sent UpdatedLibraryConfig message has a different Node.
-    #[prost(message, optional, tag="1")]
+    #[prost(message, optional, tag = "1")]
     pub node: ::core::option::Option<super::super::common::v1::Node>,
     /// Requested updated configuration.
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub config: ::core::option::Option<super::super::super::trace::v1::TraceConfig>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -25,21 +25,20 @@ pub struct ExportTraceServiceRequest {
     /// This is required only in the first message on the stream or if the
     /// previous sent ExportTraceServiceRequest message has a different Node (e.g.
     /// when the same RPC is used to send Spans from multiple Applications).
-    #[prost(message, optional, tag="1")]
+    #[prost(message, optional, tag = "1")]
     pub node: ::core::option::Option<super::super::common::v1::Node>,
     /// A list of Spans that belong to the last received Node.
-    #[prost(message, repeated, tag="2")]
+    #[prost(message, repeated, tag = "2")]
     pub spans: ::prost::alloc::vec::Vec<super::super::super::trace::v1::Span>,
     /// The resource for the spans in this message that do not have an explicit
     /// resource set.
     /// If unset, the most recently set resource in the RPC stream applies. It is
     /// valid to never be set within a stream, e.g. when no resource info is known.
-    #[prost(message, optional, tag="3")]
+    #[prost(message, optional, tag = "3")]
     pub resource: ::core::option::Option<super::super::super::resource::v1::Resource>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ExportTraceServiceResponse {
-}
+pub struct ExportTraceServiceResponse {}
 /// Generated client implementations.
 pub mod trace_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
