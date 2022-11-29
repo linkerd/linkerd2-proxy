@@ -191,7 +191,12 @@ impl<E> Outbound<E> {
                 let policy = logical.push_map_target(|(policy, logical): (Policy, Logical)| {
                     // for now, just log the client policy rather than actually
                     // doing anything...
-                    tracing::info!(?logical, ?policy);
+                    tracing::info!("resolved client policy for {}", policy.dst);
+                    let policy = policy.policy.borrow();
+                    tracing::info!(?policy.meta);
+                    tracing::info!(?policy.http_routes);
+                    tracing::info!(?policy.backends);
+                    
                     // TODO(eliza): this is where the stack used when a client
                     // policy is resolved will go...
                     logical
