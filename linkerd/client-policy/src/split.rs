@@ -1,4 +1,4 @@
-use crate::{Backend, LogicalAddr};
+use crate::LogicalAddr;
 use futures::{prelude::*, ready};
 use indexmap::IndexSet;
 use linkerd_addr::{Addr, NameAddr};
@@ -39,6 +39,13 @@ pub struct Split<T, N, S, Req> {
     addrs: IndexSet<NameAddr>,
     services: ReadyCache<NameAddr, S, Req>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Backend {
+    pub weight: u32,
+    pub addr: Addr,
+}
+
 pub struct BackendStream(pub Pin<Box<dyn Stream<Item = Vec<Backend>> + Send + Sync + 'static>>);
 
 // === impl NewSplit ===

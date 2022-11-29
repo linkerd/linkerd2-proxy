@@ -46,8 +46,8 @@ impl Logical<()> {
 }
 
 /// Used for traffic split.
-impl<P> svc::Param<Vec<policy::Backend>> for Logical<P> {
-    fn param(&self) -> Vec<policy::Backend> {
+impl<P> svc::Param<Vec<policy::split::Backend>> for Logical<P> {
+    fn param(&self) -> Vec<policy::split::Backend> {
         // if a client policy was discovered, use its backends
         if let Some(ref policy) = self.policy {
             return policy.backends();

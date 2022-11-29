@@ -17,7 +17,7 @@ pub struct Policy {
 // === impl Policy ===
 
 impl Policy {
-    pub fn backends(&self) -> Vec<Backend> {
+    pub fn backends(&self) -> Vec<split::Backend> {
         self.policy.borrow().backends.clone()
     }
 

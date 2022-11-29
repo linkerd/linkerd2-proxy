@@ -29,7 +29,7 @@ pub fn default() -> Route {
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
-    use crate::{meta::proto::InvalidMeta, proto::InvalidBackend, Backend, Meta};
+    use crate::{meta::proto::InvalidMeta, proto::InvalidBackend, split::Backend, Meta};
     use linkerd2_proxy_api::outbound as api;
     use linkerd_http_route::http::r#match::{
         host::proto::InvalidHostMatch, proto::InvalidRouteMatch,

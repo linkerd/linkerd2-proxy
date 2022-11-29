@@ -5,7 +5,7 @@ pub mod discover;
 pub mod http;
 pub mod split;
 
-use linkerd_addr::{Addr, NameAddr};
+use linkerd_addr::NameAddr;
 pub use linkerd_policy_core::{meta, Meta};
 use once_cell::sync::Lazy;
 use std::{fmt, str::FromStr, sync::Arc};
@@ -16,19 +16,13 @@ pub type Receiver = tokio::sync::watch::Receiver<ClientPolicy>;
 pub struct ClientPolicy {
     pub http_routes: Arc<[http::Route]>,
     pub meta: Arc<Meta>,
-    pub backends: Vec<Backend>,
+    pub backends: Vec<split::Backend>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RoutePolicy {
-    pub backends: Vec<Backend>,
+    pub backends: Vec<split::Backend>,
     pub meta: Arc<Meta>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Backend {
-    pub weight: u32,
-    pub addr: Addr,
 }
 
 /// A bound logical service address
@@ -105,8 +99,9 @@ static NO_ROUTES: Lazy<Arc<[http::Route]>> = Lazy::new(|| vec![].into());
 
 #[cfg(feature = "proto")]
 pub mod proto {
-    use super::*;
+    use super::{split::Backend, *};
     use linkerd2_proxy_api::{destination, net, outbound as api};
+    use linkerd_addr::Addr;
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidService {

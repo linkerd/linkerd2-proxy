@@ -1,4 +1,4 @@
-use crate::{http, Backend, LogicalAddr, Profile};
+use crate::{http, split::Backend, LogicalAddr, Profile};
 use linkerd2_proxy_api::destination as api;
 use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;

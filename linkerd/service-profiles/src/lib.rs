@@ -3,8 +3,8 @@
 
 use futures::Stream;
 use linkerd_addr::Addr;
+use linkerd_client_policy::split;
 pub use linkerd_client_policy::LogicalAddr;
-use linkerd_client_policy::{split, Backend};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
 use linkerd_stack::Param;
@@ -42,7 +42,7 @@ struct ReceiverStream {
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
     pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
-    pub targets: Vec<Backend>,
+    pub targets: Vec<split::Backend>,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
@@ -115,8 +115,8 @@ where
 
 // === impl Profile ===
 
-impl Param<Vec<Backend>> for Profile {
-    fn param(&self) -> Vec<Backend> {
+impl Param<Vec<split::Backend>> for Profile {
+    fn param(&self) -> Vec<split::Backend> {
         self.targets.clone()
     }
 }
@@ -141,7 +141,7 @@ impl Receiver {
     pub fn endpoint(&self) -> Option<(SocketAddr, Metadata)> {
         self.inner.borrow().endpoint.clone()
     }
-    pub fn backends(&self) -> Vec<Backend> {
+    pub fn backends(&self) -> Vec<split::Backend> {
         self.inner.borrow().targets.clone()
     }
 
