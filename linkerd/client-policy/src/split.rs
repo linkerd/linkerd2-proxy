@@ -12,11 +12,10 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tokio::sync::watch::Receiver;
 use tower::ready_cache::ReadyCache;
 use tracing::{debug, trace};
 
-pub fn layer<P, N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<P, N, S, Req>> + Clone {
+pub fn layer<N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<N, S, Req>> + Clone {
     // This RNG doesn't need to be cryptographically secure. Small and fast is
     // preferable.
     layer::mk(move |inner| NewSplit {
@@ -26,9 +25,9 @@ pub fn layer<P, N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<P, N, S,
 }
 
 #[derive(Debug)]
-pub struct NewSplit<P, N, S, Req> {
+pub struct NewSplit<N, S, Req> {
     inner: N,
-    _service: PhantomData<fn(Req, P) -> S>,
+    _service: PhantomData<fn(Req) -> S>,
 }
 
 pub struct Split<T, N, S, Req> {
@@ -40,10 +39,11 @@ pub struct Split<T, N, S, Req> {
     addrs: IndexSet<NameAddr>,
     services: ReadyCache<NameAddr, S, Req>,
 }
+pub struct BackendStream(pub Pin<Box<dyn Stream<Item = Vec<Backend>> + Send + Sync + 'static>>);
 
 // === impl NewSplit ===
 
-impl<P, N: Clone, S, Req> Clone for NewSplit<P, N, S, Req> {
+impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -52,19 +52,17 @@ impl<P, N: Clone, S, Req> Clone for NewSplit<P, N, S, Req> {
     }
 }
 
-impl<P, T, N, S, Req> NewService<T> for NewSplit<P, N, S, Req>
+impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
-    T: Clone + Param<LogicalAddr> + Param<Receiver<P>>,
+    T: Clone + Param<LogicalAddr> + Param<Vec<Backend>> + Param<BackendStream>,
     N: NewService<(ConcreteAddr, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
-    P: Param<Vec<Backend>> + Send + Sync + 'static,
 {
     type Service = Split<T, N, S, Req>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let mut rx: Receiver<P> = target.param();
-        let mut backends = rx.borrow().param();
+        let mut backends: Vec<Backend> = target.param();
         if backends.is_empty() {
             let LogicalAddr(addr) = target.param();
             backends.push(Backend {
@@ -92,12 +90,7 @@ where
             }
         }
 
-        let stream = Box::pin(async_stream::stream! {
-            while let Ok(()) = rx.changed().await {
-                let backends: Vec<Backend> = rx.borrow_and_update().param();
-                yield backends;
-            }
-        });
+        let BackendStream(stream) = target.param();
 
         Split {
             stream,

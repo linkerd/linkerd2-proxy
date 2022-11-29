@@ -3,8 +3,8 @@
 
 use futures::Stream;
 use linkerd_addr::Addr;
-use linkerd_client_policy::Backend;
 pub use linkerd_client_policy::LogicalAddr;
+use linkerd_client_policy::{split, Backend};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
 use linkerd_stack::Param;
@@ -141,15 +141,23 @@ impl Receiver {
     pub fn endpoint(&self) -> Option<(SocketAddr, Metadata)> {
         self.inner.borrow().endpoint.clone()
     }
+    pub fn backends(&self) -> Vec<Backend> {
+        self.inner.borrow().targets.clone()
+    }
+
+    pub fn backend_stream(&self) -> split::BackendStream {
+        let mut rx = self.clone();
+        let stream = async_stream::stream! {
+            while rx.inner.changed().await.is_ok() {
+                let backends = rx.inner.borrow_and_update().targets.clone();
+                yield backends;
+            }
+        };
+        split::BackendStream(Box::pin(stream))
+    }
 
     pub fn into_inner(self) -> watch::Receiver<Profile> {
         self.inner
-    }
-}
-
-impl Param<Vec<Backend>> for Receiver {
-    fn param(&self) -> Vec<Backend> {
-        self.inner.borrow().targets.clone()
     }
 }
 

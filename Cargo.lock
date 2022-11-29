@@ -941,6 +941,7 @@ dependencies = [
 name = "linkerd-app-outbound"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "bytes",
  "futures",
  "http",
@@ -1563,6 +1564,7 @@ dependencies = [
 name = "linkerd-service-profiles"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "bytes",
  "futures",
  "http",

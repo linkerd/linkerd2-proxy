@@ -142,6 +142,7 @@ mod tests {
         });
         let logical = Logical {
             profile: rx.into(),
+            policy: None,
             logical_addr: logical_addr.clone(),
             protocol: (),
             orig_dst: OrigDstAddr(ep_addr),
@@ -205,6 +206,7 @@ mod tests {
             ..Default::default()
         });
         let logical = Logical {
+            policy: None,
             profile: rx.into(),
             logical_addr: logical_addr.clone(),
             protocol: (),
