@@ -15,6 +15,7 @@ proto = [
 ]
 
 [dependencies]
+anyhow = "1"
 async-stream = "0.3.1"
 futures = "0.3"
 http = "0.2"
@@ -30,7 +31,7 @@ prost-types = { version = "0.11", optional = true }
 rand = { version = "0.8", features = ["small_rng"] }
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
-# tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-util = { version = "0.7.4", features = []}
 tonic = { version = "0.8", default-features = false }
 tower = { version = "0.4.13", features = ["ready-cache", "retry", "util"] }
 tracing = "0.1.37"

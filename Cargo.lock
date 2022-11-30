@@ -1011,6 +1011,7 @@ dependencies = [
 name = "linkerd-client-policy"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-stream",
  "futures",
  "http",
@@ -1027,6 +1028,7 @@ dependencies = [
  "rand",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tonic",
  "tower",
  "tracing",
