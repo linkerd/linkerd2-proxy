@@ -189,27 +189,21 @@ impl<E> Outbound<E> {
                 .push(profiles::http::NewServiceRouter::layer());
 
                 let policy = logical
-                .check_new_service::<Logical, http::Request<_>>()
-                .push_map_target(|(policy, logical): (Policy, Logical)| {
-                    // for now, just log the client policy rather than actually
-                    // doing anything...
-                    {
-                        tracing::info!("resolved client policy for {}", policy.dst);
-                        let policy = policy.policy.borrow();
-                        tracing::info!(?policy.meta);
-                        tracing::info!(?policy.http_routes);
-                        tracing::info!(?policy.backends);
-                    }
-                    // Add the discovered policy to the logical target
-                    Logical {
-                        policy: Some(policy),
-                        ..logical
-                    }
-                })
-                // TODO(eliza): this is where the client-policy-specific
-                // middleware would go...
-                .instrument(|(policy, _): &(Policy, Logical)| debug_span!("policy", addr = %policy.dst))
-                .check_new_service::<(Policy, Logical), http::Request<_>>();
+                    .check_new_service::<Logical, http::Request<_>>()
+                    .push_map_target(|(policy, logical): (Policy, Logical)| {
+                        // for now, just log the client policy rather than actually
+                        // doing anything...
+                        tracing::info!(?logical, ?policy);
+                        // Add the discovered policy to the logical target
+                        Logical {
+                            policy: Some(policy),
+                            ..logical
+                        }
+                    })
+                    // TODO(eliza): this is where the client-policy-specific
+                    // middleware would go...
+                    .instrument(|(policy, _): &(Policy, Logical)| debug_span!("policy", addr = %policy.dst))
+                    .check_new_service::<(Policy, Logical), http::Request<_>>();
 
                 let logical = policy.push_switch(
                     |(policy, logical): (Policy, Logical)| -> Result<_, Infallible> {
