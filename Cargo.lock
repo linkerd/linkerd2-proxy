@@ -941,6 +941,7 @@ dependencies = [
 name = "linkerd-app-outbound"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-stream",
  "bytes",
  "futures",
@@ -965,6 +966,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
+ "tokio-util",
  "tonic",
  "tower",
  "tracing",

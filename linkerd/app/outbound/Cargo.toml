@@ -15,6 +15,7 @@ allow-loopback = []
 test-subscriber = []
 
 [dependencies]
+anyhow = "1"
 async-stream = "0.3.1"
 bytes = "1"
 http = "0.2"
@@ -31,6 +32,7 @@ once_cell = "1"
 parking_lot = "0.12"
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
+tokio-util = { version = "0.7.4" }
 tonic = { version = "0.8", default-features = false }
 tower = { version = "0.4", features = ["util"] }
 tracing = "0.1"

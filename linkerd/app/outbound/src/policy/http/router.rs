@@ -1,6 +1,6 @@
-use super::{Route, RoutePolicy};
-use crate::Receiver;
+use crate::policy::Policy;
 use futures::{future::MapErr, FutureExt, TryFutureExt};
+use linkerd_client_policy::http::{Route, RoutePolicy};
 use linkerd_error::Error;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
@@ -42,7 +42,7 @@ impl<N> NewServiceRouter<N> {
 
 impl<T, N> NewService<T> for NewServiceRouter<N>
 where
-    T: Param<Receiver> + Clone,
+    T: Param<Policy> + Clone,
     N: NewService<(Option<Route>, T)> + Clone,
 {
     type Service = ServiceRouter<T, N, N::Service>;
@@ -136,9 +136,11 @@ where
     }
 }
 
-async fn changed(mut rx: Receiver) -> Result<Receiver, Error> {
-    rx.changed()
+async fn changed(mut policy: Policy) -> Result<Policy, Error> {
+    policy
+        .policy
+        .changed()
         .await
         .map_err(|_| anyhow::anyhow!("client policy watch has closed"))?;
-    Ok(rx)
+    Ok(policy)
 }
