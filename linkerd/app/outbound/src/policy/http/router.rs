@@ -55,16 +55,15 @@ where
             .expect("new service router should only be built when a policy has been discovered");
         let default = self.0.new_service((None, target.clone()));
         let http_routes = rx.policy.borrow().http_routes.clone();
-
         let mut router = ServiceRouter {
             default,
             target,
             changed: ReusableBoxFuture::new(Box::pin(changed(rx))),
-            http_routes,
+            http_routes: http_routes.clone(),
             services: HashMap::new(),
             new_route: self.0.clone(),
         };
-        router.update_route_policies();
+        router.update_route_policies(route_policies(&http_routes));
         router
     }
 }
@@ -72,24 +71,11 @@ where
 // === impl ServiceRouter ===
 
 impl<T, N, S> ServiceRouter<T, N, S> {
-    fn update_route_policies(&mut self)
+    fn update_route_policies(&mut self, route_policies: impl IntoIterator<Item = RoutePolicy>)
     where
         T: Clone,
         N: NewService<(Option<RoutePolicy>, T), Service = S> + Clone,
     {
-        // XXX(eliza): this will unify all routes that share the same policy to
-        // have a single service...which is nice, unless we want e.g. different
-        // metrics for each route. if we want that, we should probably include
-        // the metric labels in the policy, i think?
-        let route_policies = self
-            .http_routes
-            .iter()
-            .flat_map(|route| route.rules.iter())
-            .map(|rule| rule.policy.clone())
-            .collect::<HashSet<_>>();
-
-        // Clear out defunct routes before building any missing routes.
-        self.services.retain(|r, _| route_policies.contains(r));
         for route in route_policies.into_iter() {
             if let hash_map::Entry::Vacant(ent) = self.services.entry(route) {
                 let route = ent.key().clone();
@@ -124,8 +110,16 @@ where
         // If the routes have been updated, update the cache.
         tracing::debug!(routes = %http_routes.len(), "Updating client policy HTTP routes");
 
+        // XXX(eliza): this will unify all routes that share the same policy to
+        // have a single service...which is nice, unless we want e.g. different
+        // metrics for each route. if we want that, we should probably include
+        // the metric labels in the policy, i think?
+        let route_policies = route_policies(&http_routes).collect::<HashSet<_>>();
         self.http_routes = http_routes;
-        self.update_route_policies();
+
+        // Clear out defunct routes before building any missing routes.
+        self.services.retain(|r, _| route_policies.contains(r));
+        self.update_route_policies(route_policies);
 
         // wait for the next change
         self.changed.set(changed(policy));
@@ -163,4 +157,11 @@ async fn changed(mut policy: Policy) -> Result<Policy, Error> {
         .await
         .map_err(|_| anyhow::anyhow!("client policy watch has closed"))?;
     Ok(policy)
+}
+
+fn route_policies(routes: &Arc<[Route]>) -> impl Iterator<Item = RoutePolicy> + '_ {
+    routes
+        .iter()
+        .flat_map(|route| route.rules.iter())
+        .map(|rule| rule.policy.clone())
 }
