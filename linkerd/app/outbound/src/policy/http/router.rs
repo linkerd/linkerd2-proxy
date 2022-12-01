@@ -42,13 +42,17 @@ impl<N> NewServiceRouter<N> {
 
 impl<T, N> NewService<T> for NewServiceRouter<N>
 where
-    T: Param<Policy> + Clone,
-    N: NewService<(Option<Route>, T)> + Clone,
+    T: Param<Option<Policy>> + Clone,
+    N: NewService<(Option<RoutePolicy>, T)> + Clone,
 {
     type Service = ServiceRouter<T, N, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let rx = target.param();
+        let rx = target
+            .param()
+            // TODO(eliza): build this with a `(Policy, T)` target instead so we
+            // know the policy is there...
+            .expect("new service router should only be built when a policy has been discovered");
         let default = self.0.new_service((None, target.clone()));
         ServiceRouter {
             default,
