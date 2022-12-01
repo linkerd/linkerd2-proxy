@@ -12,7 +12,7 @@ use self::{
     strip_proxy_error::NewStripProxyError,
 };
 pub(crate) use self::{require_id_header::IdentityRequired, server::ServerRescue};
-use crate::tcp;
+use crate::{policy, tcp};
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
     classify, metrics,
@@ -35,7 +35,11 @@ struct ProfileRoute {
     logical: Logical,
     route: profiles::http::Route,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct PolicyRoute {
+    logical: Logical,
+    route: policy::RoutePolicy,
+}
 #[derive(Clone, Debug)]
 pub struct CanonicalDstHeader(pub Addr);
 
@@ -209,5 +213,19 @@ impl classify::CanClassify for ProfileRoute {
 
     fn classify(&self) -> classify::Request {
         self.route.response_classes().clone().into()
+    }
+}
+
+// === impl ProfileRoute ===
+
+impl Param<Vec<policy::split::Backend>> for PolicyRoute {
+    fn param(&self) -> Vec<policy::split::Backend> {
+        self.route.backends.clone()
+    }
+}
+
+impl Param<LogicalAddr> for PolicyRoute {
+    fn param(&self) -> LogicalAddr {
+        self.logical.logical_addr
     }
 }
