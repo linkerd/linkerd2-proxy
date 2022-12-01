@@ -208,7 +208,7 @@ impl<E> Outbound<E> {
                         .push(svc::FailFast::layer("HTTPRoute", dispatch_timeout))
                         .push_spawn_buffer(buffer_capacity),
                 )
-                .check_new_service::<PolicyRoute, http::Request<_>>();
+                .check_new_clone::<PolicyRoute>();
 
                 let policy = logical
                     .push_switch(

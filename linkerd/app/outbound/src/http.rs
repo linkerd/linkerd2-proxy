@@ -226,6 +226,6 @@ impl Param<Vec<policy::split::Backend>> for PolicyRoute {
 
 impl Param<LogicalAddr> for PolicyRoute {
     fn param(&self) -> LogicalAddr {
-        self.logical.logical_addr
+        self.logical.logical_addr.clone()
     }
 }

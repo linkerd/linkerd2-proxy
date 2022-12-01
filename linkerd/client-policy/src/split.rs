@@ -62,6 +62,15 @@ where
     }
 }
 
+impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            _service: PhantomData,
+        }
+    }
+}
+
 // === impl Split ===
 
 impl<S, Req> Split<S, Req> {
