@@ -125,7 +125,7 @@ impl<E> Outbound<E> {
             // task so it becomes ready without new requests.
             let logical = concrete
                 .check_new_service::<(ConcreteAddr, Logical), _>()
-                .push(policy::split::layer())
+                .push(policy::split::NewDynamicSplit::layer())
                 .push_on_service(
                     svc::layers()
                         .push(svc::layer::mk(svc::SpawnReady::new))
