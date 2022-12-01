@@ -22,10 +22,12 @@ http = "0.2"
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-client-policy = { path = "../../client-policy", features = ["proto"] }
+linkerd-error = { path = "../../error" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
 linkerd-retry = { path = "../../retry" }
+linkerd-stack = { path = "../../stack" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 linkerd2-proxy-api = { version = "0.7", features = ["outbound"]}
 once_cell = "1"

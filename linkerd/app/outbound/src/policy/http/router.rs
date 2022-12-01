@@ -1,6 +1,6 @@
 use crate::policy::Policy;
 use futures::{future::MapErr, FutureExt, TryFutureExt};
-use linkerd_client_policy::http::{Route, RoutePolicy};
+use linkerd_client_policy::{http::Route, RoutePolicy};
 use linkerd_error::Error;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
@@ -26,7 +26,7 @@ pub struct NewServiceRouter<N>(N);
 pub struct ServiceRouter<T, N, S> {
     new_route: N,
     target: T,
-    changed: ReusableBoxFuture<'static, Result<Receiver, Error>>,
+    changed: ReusableBoxFuture<'static, Result<Policy, Error>>,
     http_routes: Arc<[Route]>,
     services: HashMap<RoutePolicy, S>,
     default: S,
@@ -80,7 +80,7 @@ where
             Poll::Ready(update) => update?,
         };
 
-        let http_routes = policy.borrow_and_update().http_routes.clone();
+        let http_routes = policy.policy.borrow_and_update().http_routes.clone();
 
         // If the routes have been updated, update the cache.
         tracing::debug!(routes = %http_routes.len(), "Updating client policy HTTP routes");

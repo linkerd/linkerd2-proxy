@@ -190,6 +190,7 @@ impl<E> Outbound<E> {
 
                 let policy = logical
                     .check_new_service::<Logical, http::Request<_>>()
+                    // .push(policy::http::NewServiceRouter::layer())
                     .push_map_target(|(policy, logical): (Policy, Logical)| {
                         // for now, just log the client policy rather than actually
                         // doing anything...
