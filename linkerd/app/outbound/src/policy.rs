@@ -11,7 +11,6 @@ pub type Receiver = tokio::sync::watch::Receiver<ClientPolicy>;
 
 #[derive(Clone, Debug)]
 pub struct Policy {
-    pub dst: OrigDstAddr,
     pub policy: cache::Cached<Receiver>,
 }
 

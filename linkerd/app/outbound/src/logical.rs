@@ -8,7 +8,7 @@ use linkerd_app_core::{
     io, profiles,
     proxy::{api_resolve::Metadata, core::Resolve},
     svc,
-    transport::{ClientAddr, Local, OrigDstAddr},
+    transport::{ClientAddr, Local},
     Addr, Error,
 };
 pub use profiles::LogicalAddr;
@@ -19,7 +19,6 @@ pub struct Logical<P> {
     pub profile: profiles::Receiver,
     pub policy: Option<Policy>,
     pub logical_addr: LogicalAddr,
-    pub orig_dst: OrigDstAddr,
     pub protocol: P,
 }
 
@@ -35,15 +34,14 @@ pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 
 impl Logical<()> {
     pub(crate) fn new(
-        orig_dst: OrigDstAddr,
         logical_addr: LogicalAddr,
         profile: profiles::Receiver,
+        policy: Option<Policy>,
     ) -> Self {
         Self {
             profile,
-            policy: None,
+            policy,
             logical_addr,
-            orig_dst,
             protocol: (),
         }
     }
@@ -104,13 +102,6 @@ impl svc::Param<Option<http::detect::Skip>> for Logical<()> {
     }
 }
 
-// Used for client policy discovery
-impl<P> svc::Param<OrigDstAddr> for Logical<P> {
-    fn param(&self) -> OrigDstAddr {
-        self.orig_dst
-    }
-}
-
 /// Used for client policy
 impl<P> svc::Param<Option<Policy>> for Logical<P> {
     fn param(&self) -> Option<Policy> {
@@ -167,11 +158,7 @@ impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
-    pub fn push_logical<R, I, P>(
-        self,
-        resolve: R,
-        policies: P,
-    ) -> Outbound<svc::ArcNewTcp<tcp::Logical, I>>
+    pub fn push_logical<R, I>(self, resolve: R) -> Outbound<svc::ArcNewTcp<tcp::Logical, I>>
     where
         Self: Clone + 'static,
         C: Clone + Send + Sync + Unpin + 'static,
@@ -184,16 +171,12 @@ impl<C> Outbound<C> {
         R::Future: Send + Unpin,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: fmt::Debug + Send + Sync + Unpin + 'static,
-        P: svc::Service<OrigDstAddr, Response = policy::Receiver>,
-        P: Clone + Send + Sync + 'static,
-        P::Future: Send,
-        Error: From<P::Error>,
     {
         let http = self
             .clone()
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_http_logical(resolve.clone(), policies)
+            .push_http_logical(resolve.clone())
             .push_http_server()
             .into_inner();
 

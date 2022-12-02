@@ -61,7 +61,7 @@ where
                 let policy = inner.call(dst).await?;
                 cache.get_or_insert_with(dst, |_| policy)
             };
-            let policy = Policy { dst, policy };
+            let policy = Policy { policy };
             Ok(new_svc.new_service((policy, target)))
         })
     }

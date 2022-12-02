@@ -1,4 +1,4 @@
-use crate::{http, policy, stack_labels, tcp, trace_labels, Config, Outbound};
+use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, http_tracing, io, profiles,
@@ -55,12 +55,11 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
     // connections target individual endpoints in a service). No other caching
     // is employed here: per-endpoint stacks are uncached, and fallback stacks
     // are expected to be cached elsewhere, if necessary.
-    pub fn push_ingress<T, I, P, R, F, O, FSvc>(
+    pub fn push_ingress<T, I, P, R, F, FSvc>(
         self,
         profiles: P,
         resolve: R,
         fallback: F,
-        policies: O,
     ) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
@@ -75,14 +74,10 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
         F: svc::NewService<tcp::Accept, Service = FSvc> + Clone + Send + Sync + 'static,
         FSvc: svc::Service<DetectIo<I>, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,
-        O: svc::Service<OrigDstAddr, Response = policy::Receiver>,
-        O: Clone + Send + Sync + 'static,
-        O::Future: Send,
-        Error: From<O::Error>,
     {
         let http_endpoint = self.clone().into_stack();
 
-        self.push_http_logical(resolve, policies)
+        self.push_http_logical(resolve)
             .map_stack(|config, rt, http_logical| {
                 let detect_http = config.proxy.detect_http();
                 let Config {
@@ -113,7 +108,6 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                         policy: None,
                                         logical_addr,
                                         protocol: http.version,
-                                        orig_dst: todo!("eliza: ugh"),
                                     });
                                 }
                             }
