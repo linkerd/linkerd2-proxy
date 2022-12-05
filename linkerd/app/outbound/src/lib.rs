@@ -205,8 +205,8 @@ impl Outbound<()> {
         let logical = self.to_tcp_connect().push_logical(resolve);
         let endpoint = self.to_tcp_connect().push_endpoint();
         endpoint
-            .push_switch_logical(logical.into_inner(), policies)
-            .push_discover(profiles)
+            .push_switch_logical(logical.into_inner())
+            .push_discover(profiles, policies)
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }
@@ -249,8 +249,8 @@ impl Outbound<()> {
                 .push_logical(resolve.clone());
             let endpoint = self.to_tcp_connect().push_endpoint();
             endpoint
-                .push_switch_logical(logical.into_inner(), policies)
-                .push_discover(profiles.clone())
+                .push_switch_logical(logical.into_inner())
+                .push_discover(profiles.clone(), policies)
                 .into_inner()
         };
 
