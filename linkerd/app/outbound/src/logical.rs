@@ -1,8 +1,4 @@
-use crate::{
-    http,
-    policy::{self, Policy},
-    tcp, Outbound,
-};
+use crate::{http, policy, tcp, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
 use linkerd_app_core::{
     io, profiles,
@@ -17,7 +13,7 @@ use std::fmt;
 #[derive(Clone)]
 pub struct Logical<P> {
     pub profile: profiles::Receiver,
-    pub policy: Option<Policy>,
+    pub policy: Option<policy::Receiver>,
     pub logical_addr: LogicalAddr,
     pub protocol: P,
 }
@@ -36,7 +32,7 @@ impl Logical<()> {
     pub(crate) fn new(
         logical_addr: LogicalAddr,
         profile: profiles::Receiver,
-        policy: Option<Policy>,
+        policy: Option<policy::Receiver>,
     ) -> Self {
         Self {
             profile,
@@ -103,8 +99,8 @@ impl svc::Param<Option<http::detect::Skip>> for Logical<()> {
 }
 
 /// Used for client policy
-impl<P> svc::Param<Option<Policy>> for Logical<P> {
-    fn param(&self) -> Option<Policy> {
+impl<P> svc::Param<Option<policy::Receiver>> for Logical<P> {
+    fn param(&self) -> Option<policy::Receiver> {
         self.policy.clone()
     }
 }

@@ -9,8 +9,12 @@ use linkerd_addr::NameAddr;
 pub use linkerd_policy_core::{meta, Meta};
 use once_cell::sync::Lazy;
 use std::{fmt, str::FromStr, sync::Arc};
+use tokio::sync::watch;
 
-pub type Receiver = tokio::sync::watch::Receiver<ClientPolicy>;
+#[derive(Clone, Debug)]
+pub struct Receiver {
+    inner: watch::Receiver<ClientPolicy>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientPolicy {
@@ -92,6 +96,43 @@ impl Default for ClientPolicy {
             http_routes: NO_ROUTES.clone(),
             backends: Vec::new(),
         }
+    }
+}
+
+// === impl Receiver ===
+
+impl Receiver {
+    pub async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
+        self.inner.changed().await
+    }
+
+    pub fn borrow(&self) -> watch::Ref<'_, ClientPolicy> {
+        self.inner.borrow()
+    }
+
+    pub fn borrow_and_update(&mut self) -> watch::Ref<'_, ClientPolicy> {
+        self.inner.borrow_and_update()
+    }
+
+    pub fn backends(&self) -> Vec<split::Backend> {
+        self.inner.borrow().backends.clone()
+    }
+
+    pub fn backend_stream(&self) -> split::BackendStream {
+        let mut rx = self.inner.clone();
+        let stream = async_stream::stream! {
+            while rx.changed().await.is_ok() {
+                let backends = rx.borrow_and_update().backends.clone();
+                yield backends;
+            }
+        };
+        split::BackendStream(Box::pin(stream))
+    }
+}
+
+impl From<watch::Receiver<ClientPolicy>> for Receiver {
+    fn from(inner: watch::Receiver<ClientPolicy>) -> Self {
+        Self { inner }
     }
 }
 

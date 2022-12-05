@@ -10,7 +10,7 @@ use tracing::debug;
 #[derive(Debug, Clone)]
 pub struct Discovered<T> {
     pub profile: Option<profiles::Receiver>,
-    pub policy: Option<policy::Policy>,
+    pub policy: Option<policy::Receiver>,
     pub target: T,
 }
 
@@ -56,8 +56,6 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, rt, inner| {
             let allow = config.allow_discovery.clone();
-            let cache_max_idle_age = config.proxy.cache_max_idle_age;
-
             // discovers client policies for targets.
             let policy = inner
                 .clone()
@@ -65,7 +63,7 @@ impl<N> Outbound<N> {
                     policy: Some(policy),
                     ..discovered
                 })
-                .push(policy::Discover::layer(policies, cache_max_idle_age))
+                .push(policy::Discover::layer(policies))
                 // policies must be resolved before the logical stack can be
                 // built, so the policy layer is a `MakeService`. drive the
                 // initial resolution via the service's readiness here.
@@ -178,7 +176,7 @@ mod tests {
         let client_policy = svc::mk(|_| {
             let (_, rx) =
                 tokio::sync::watch::channel(linkerd_client_policy::ClientPolicy::default());
-            future::ok::<_, Error>(rx)
+            future::ok::<_, Error>(rx.into())
         });
 
         // Create a profile stack that uses the tracked inner stack.
@@ -250,7 +248,7 @@ mod tests {
         let client_policy = svc::mk(|_| {
             let (_, rx) =
                 tokio::sync::watch::channel(linkerd_client_policy::ClientPolicy::default());
-            future::ok::<_, Error>(rx)
+            future::ok::<_, Error>(rx.into())
         });
 
         // Create a profile stack that uses the tracked inner stack, configured to drop cached

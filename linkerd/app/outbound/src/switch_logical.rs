@@ -63,8 +63,9 @@ impl<S> Outbound<S> {
                                 let has_client_policy = policy
                                     .as_ref()
                                     .map(|policy| {
-                                        let policy = policy.policy.borrow();
-                                        policy.http_routes.is_empty() && policy.backends.is_empty()
+                                        let policy = policy.borrow();
+                                        !(policy.http_routes.is_empty()
+                                            || policy.backends.is_empty())
                                     })
                                     .unwrap_or(false);
                                 // if the client policy discovered for this

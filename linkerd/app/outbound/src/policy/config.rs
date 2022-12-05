@@ -1,4 +1,4 @@
-use super::{api::Api, Receiver};
+use super::{api::Api, ClientPolicy};
 
 use linkerd_app_core::{
     control, dns, identity, metrics,
@@ -7,6 +7,7 @@ use linkerd_app_core::{
     Error,
 };
 use std::sync::Arc;
+use tokio::sync::watch;
 use tower::ServiceExt;
 
 #[derive(Clone, Debug)]
@@ -21,8 +22,12 @@ impl Config {
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: identity::NewClient,
-    ) -> impl svc::Service<OrigDstAddr, Response = Receiver, Future = impl Send, Error = Error>
-           + Clone
+    ) -> impl svc::Service<
+        OrigDstAddr,
+        Response = watch::Receiver<ClientPolicy>,
+        Future = impl Send,
+        Error = Error,
+    > + Clone
            + Send
            + Sync
            + 'static {
