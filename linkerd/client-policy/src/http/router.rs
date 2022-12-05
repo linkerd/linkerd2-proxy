@@ -1,6 +1,6 @@
-use crate::policy::Receiver;
+use super::Route;
+use crate::{Receiver, RoutePolicy};
 use futures::{future::MapErr, FutureExt, TryFutureExt};
-use linkerd_client_policy::{http::Route, RoutePolicy};
 use linkerd_error::Error;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{

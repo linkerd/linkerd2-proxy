@@ -10,7 +10,6 @@ pub use linkerd_client_policy::*;
 pub mod api;
 mod config;
 mod discover;
-pub mod http;
 
 impl Outbound<()> {
     pub fn build_policies(
