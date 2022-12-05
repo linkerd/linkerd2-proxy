@@ -3,3 +3,5 @@ target
 **/corpus
 **/artifacts
 **/fuzz/Cargo.lock
+.direnv
+.envrc

@@ -35,7 +35,8 @@ The Linkerd project is hosted by the Cloud Native Computing Foundation
 A [`justfile`](./justfile) is provided to automate most build tasks. It provides
 the following recipes:
 
-* `just build` -- Compiles the proxy on your local system using `cargo`
+* `just fetch` -- Fetches the dependencies on your local system using `cargo fetch`
+* `just build` -- Compiles the proxy on your local system using `cargo build`
 * `just test` -- Runs unit and integration tests on your local system using `cargo`
 * `just docker` -- Builds a Docker container image that can be used for testing.
 
@@ -49,6 +50,14 @@ project. If you don't have Cargo installed, we suggest getting it via
 
 A Devcontainer is provided for use with Visual Studio Code. It includes all of
 the tooling needed to build and test the proxy.
+
+### Nix
+
+A [`shell.nix`](./shell.nix) (and generic [`flake.nix`](./flake.nix)) is
+provided with the build dependencies. Use this with `nix-shell` (or with
+`nix develop`, respectively) to get a reproducible development environment.
+This is particularly useful in conjunction with [Direnv](https://direnv.net)'s
+[`use flake`](https://direnv.net/man/direnv-stdlib.1.html#codeuse-flake-ltinstallablegtcode).
 
 ### Repository Structure
 

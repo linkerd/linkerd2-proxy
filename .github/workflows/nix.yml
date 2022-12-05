@@ -1,0 +1,23 @@
+name: nix
+
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - "*.nix"
+      - justfile
+      - .github/workflows/nix.yml
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@d64e0553100205688c0fb2fa16edb0fc8663c590
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+
+    - name: Build in shell
+      run: nix-shell --pure --run "just fetch build"

@@ -8,3 +8,5 @@ Dockerfile*
 **/target
 target
 .cargo
+.direnv
+.envrc

@@ -193,7 +193,7 @@ sh-lint:
     shellcheck $files
 
 md-lint:
-    markdownlint-cli2 '**/*.md' '!target'
+    markdownlint-cli2 '**/*.md' '!target' '!.direnv'
 
 # Format actionlint output for Github Actions if running in CI.
 _actionlint-fmt := if env_var_or_default("GITHUB_ACTIONS", "") != "true" { "" } else {
