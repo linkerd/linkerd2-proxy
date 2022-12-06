@@ -1,4 +1,4 @@
-use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, ProfileRoute};
+use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, PolicyRoute, ProfileRoute};
 use crate::{
     endpoint,
     policy::{self, Policy},
@@ -124,8 +124,9 @@ impl<E> Outbound<E> {
             // When the split is in failfast, spawn the service in a background
             // task so it becomes ready without new requests.
             let logical = concrete
+                .clone()
                 .check_new_service::<(ConcreteAddr, Logical), _>()
-                .push(policy::split::layer())
+                .push(policy::split::NewDynamicSplit::layer())
                 .push_on_service(
                     svc::layers()
                         .push(svc::layer::mk(svc::SpawnReady::new))
@@ -188,14 +189,37 @@ impl<E> Outbound<E> {
                 )
                 .push(profiles::http::NewServiceRouter::layer());
 
+            // for now, the client-policy route stack is just a fixed traffic split
+            let policy_route = concrete
+                .check_new_service::<(ConcreteAddr, Logical), _>()
+                .push_map_target(|(concrete, PolicyRoute { route: _, logical }): (ConcreteAddr, PolicyRoute)| {
+                    (concrete, logical)
+                })
+                .push(policy::split::layer())
+                .push_on_service(
+                    svc::layers()
+                        .push(svc::layer::mk(svc::SpawnReady::new))
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .stack
+                                .layer(stack_labels("http", "HTTPRoute")),
+                        )
+                        .push(svc::FailFast::layer("HTTPRoute", dispatch_timeout))
+                        .push_spawn_buffer(buffer_capacity),
+                )
+                .check_new_clone::<PolicyRoute>();
+
                 let policy = logical
-                    .check_new_service::<Logical, http::Request<_>>()
-                    .push_map_target(|(route, logical): (Option<policy::RoutePolicy>, Logical)| {
-                        // for now, just log the route policy
-                        tracing::info!(?route);
-                        // TODO(eliza): actually apply route policies
-                        logical
-                    })
+                    .push_switch(
+                        |(route, logical): (Option<policy::RoutePolicy>, Logical)| -> Result<_, Infallible> {
+                            match route {
+                                None => Ok(svc::Either::A(logical)),
+                                Some(route) => Ok(svc::Either::B(PolicyRoute { route, logical })),
+                            }
+                        },
+                        policy_route,
+                    )
                     .check_new_service::<(Option<policy::RoutePolicy>, Logical), http::Request<_>>()
                     .push(policy::http::NewServiceRouter::layer())
                     .push_map_target(|(policy, logical): (Policy, Logical)| {

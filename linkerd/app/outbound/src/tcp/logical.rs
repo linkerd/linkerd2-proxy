@@ -90,7 +90,7 @@ impl<C> Outbound<C> {
                 .push_map_target(Concrete::from)
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<(ConcreteAddr, Logical), I>()
-                .push(policy::split::layer())
+                .push(policy::split::NewDynamicSplit::layer())
                 .push_on_service(
                     svc::layers()
                         .push(
