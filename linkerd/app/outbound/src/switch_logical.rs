@@ -1,5 +1,8 @@
-use crate::{endpoint::Endpoint, logical::Logical, tcp, transport::OrigDstAddr, Outbound};
-use linkerd_app_core::{io, profiles, svc, Error, Infallible};
+use crate::{
+    discover::Discovered, endpoint::Endpoint, logical::Logical, tcp, transport::OrigDstAddr,
+    Outbound,
+};
+use linkerd_app_core::{io, svc, Error, Infallible};
 use std::fmt;
 
 impl<S> Outbound<S> {
@@ -7,13 +10,14 @@ impl<S> Outbound<S> {
     /// is provided:
     ///
     /// - When a profile includes endpoint information, it is used to build an endpoint stack;
-    /// - Otherwise, if the profile indicates the target is logical, a logical stack is built;
+    /// - Otherwise, if the profile indicates the target is logical, a logical
+    ///   stack is built, including client policy discovery;
     /// - Otherwise, we assume the target is not part of the mesh and we should connect to the
     ///   original destination.
     pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
         self,
         logical: N,
-    ) -> Outbound<svc::ArcNewTcp<(Option<profiles::Receiver>, T), I>>
+    ) -> Outbound<svc::ArcNewTcp<Discovered<T>, I>>
     where
         Self: Clone + 'static,
         T: svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
@@ -28,9 +32,15 @@ impl<S> Outbound<S> {
         let no_tls_reason = self.no_tls_reason();
         self.map_stack(|config, _, endpoint| {
             let inbound_ips = config.inbound_ips.clone();
+
             endpoint
                 .push_switch(
-                    move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Infallible> {
+                    move |Discovered {
+                              target,
+                              profile,
+                              policy,
+                          }: Discovered<T>|
+                          -> Result<_, Infallible> {
                         if let Some(rx) = profile {
                             let is_opaque = rx.is_opaque_protocol();
 
@@ -50,8 +60,23 @@ impl<S> Outbound<S> {
                             // If the profile provides a (named) logical address, then we build a
                             // logical stack so we apply routes, traffic splits, and load balancing.
                             if let Some(logical_addr) = rx.logical_addr() {
-                                tracing::debug!("Profile describes a logical service");
-                                return Ok(svc::Either::B(Logical::new(target.param(), logical_addr, rx)));
+                                let policy = policy.and_then(|policy| {
+                                    // if the client policy discovered for this
+                                    // service is empty, don't populate the
+                                    // policy field.
+                                    if policy.borrow().is_empty() {
+                                        tracing::trace!("Client policy is empty, ignoring it.");
+                                        return None;
+                                    }
+
+                                    Some(policy)
+                                });
+
+                                tracing::debug!(
+                                    has_client_policy = policy.is_some(),
+                                    "Profile describes a logical service"
+                                );
+                                return Ok(svc::Either::B(Logical::new(logical_addr, rx, policy)));
                             }
 
                             // Otherwise, if there was a profile but it didn't include an endpoint or logical
@@ -87,7 +112,7 @@ impl<S> Outbound<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::*;
+    use crate::{profiles, test_util::*};
     use linkerd_app_core::{
         proxy::api_resolve::Metadata,
         svc::{NewService, Param, ServiceExt},
@@ -99,6 +124,25 @@ mod tests {
     #[derive(Debug, Error, Default)]
     #[error("wrong stack built")]
     struct WrongStack;
+
+    fn discovered_no_profile(orig_dst: OrigDstAddr) -> Discovered<OrigDstAddr> {
+        Discovered {
+            profile: None,
+            policy: None,
+            target: orig_dst,
+        }
+    }
+
+    fn discovered_profile(
+        profile: impl Into<profiles::Receiver>,
+        orig_dst: OrigDstAddr,
+    ) -> Discovered<OrigDstAddr> {
+        Discovered {
+            profile: Some(profile.into()),
+            policy: None,
+            target: orig_dst,
+        }
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn no_profile() {
@@ -118,7 +162,7 @@ mod tests {
             .into_inner();
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((None, orig_dst));
+        let svc = stack.new_service(discovered_no_profile(orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -154,7 +198,7 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((Some(profile.into()), orig_dst));
+        let svc = stack.new_service(discovered_profile(profile, orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -185,7 +229,7 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((Some(profile.into()), orig_dst));
+        let svc = stack.new_service(discovered_profile(profile, orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -217,7 +261,7 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(endpoint_addr);
-        let svc = stack.new_service((Some(profile.into()), orig_dst));
+        let svc = stack.new_service(discovered_profile(profile, orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }

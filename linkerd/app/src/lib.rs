@@ -202,7 +202,6 @@ impl Config {
             outbound.to_tcp_connect(),
             dst.profiles.clone(),
             dst.resolve.clone(),
-            outbound_policies.clone(),
         );
 
         // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the

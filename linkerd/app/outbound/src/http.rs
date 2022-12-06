@@ -80,7 +80,6 @@ impl From<(Version, tcp::Logical)> for Logical {
             policy: logical.policy,
             profile: logical.profile,
             logical_addr: logical.logical_addr,
-            orig_dst: logical.orig_dst,
         }
     }
 }

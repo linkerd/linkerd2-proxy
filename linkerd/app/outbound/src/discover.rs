@@ -1,19 +1,37 @@
-use crate::Outbound;
+use crate::{policy, Outbound};
 use linkerd_app_core::{
     io, profiles,
     svc::{self, stack::Param},
     transport::OrigDstAddr,
-    Error,
+    Error, Infallible,
 };
 use tracing::debug;
+
+#[derive(Debug, Clone)]
+pub struct Discovered<T> {
+    pub profile: Option<profiles::Receiver>,
+    pub policy: Option<policy::Receiver>,
+    pub target: T,
+}
+
+impl<T> svc::Param<OrigDstAddr> for Discovered<T>
+where
+    T: svc::Param<OrigDstAddr>,
+{
+    #[inline]
+    fn param(&self) -> OrigDstAddr {
+        self.target.param()
+    }
+}
 
 impl<N> Outbound<N> {
     /// Discovers the profile for a TCP endpoint.
     ///
     /// Resolved services are cached and buffered.
-    pub fn push_discover<T, I, NSvc, P>(
+    pub fn push_discover<T, I, NSvc, P, C>(
         self,
         profiles: P,
+        policies: C,
     ) -> Outbound<
         svc::ArcNewService<
             T,
@@ -24,17 +42,55 @@ impl<N> Outbound<N> {
         T: Param<OrigDstAddr>,
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        N: svc::NewService<(Option<profiles::Receiver>, T), Service = NSvc>,
+        N: svc::NewService<Discovered<T>, Service = NSvc>,
         N: Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
         P::Error: Send,
+        C: svc::Service<OrigDstAddr, Response = policy::Receiver>,
+        C: Clone + Send + Sync + 'static,
+        C::Future: Send,
+        Error: From<C::Error>,
     {
         self.map_stack(|config, rt, inner| {
             let allow = config.allow_discovery.clone();
+            // discovers client policies for targets.
+            let policy = inner
+                .clone()
+                .push_map_target(|(policy, discovered)| Discovered {
+                    policy: Some(policy),
+                    ..discovered
+                })
+                .push(policy::Discover::layer(policies))
+                // policies must be resolved before the logical stack can be
+                // built, so the policy layer is a `MakeService`. drive the
+                // initial resolution via the service's readiness here.
+                .into_new_service()
+                .check_new_service::<Discovered<T>, _>();
+
             inner
+                .push_switch(
+                    |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Infallible> {
+                        // if a profile was discovered, also attempt client
+                        // policy discovery.
+                        if profile.is_some() {
+                            Ok(svc::Either::B(Discovered {
+                                target,
+                                profile,
+                                policy: None,
+                            }))
+                        } else {
+                            Ok(svc::Either::A(Discovered {
+                                target,
+                                profile: None,
+                                policy: None,
+                            }))
+                        }
+                    },
+                    policy,
+                )
                 .push(profiles::discover::layer(profiles, move |t: T| {
                     let OrigDstAddr(addr) = t.param();
                     if allow.matches_ip(addr.ip()) {
@@ -117,12 +173,17 @@ mod tests {
         };
 
         let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        let client_policy = svc::mk(|_| {
+            let (_, rx) =
+                tokio::sync::watch::channel(linkerd_client_policy::ClientPolicy::default());
+            future::ok::<_, Error>(rx.into())
+        });
 
         // Create a profile stack that uses the tracked inner stack.
         let (rt, _shutdown) = runtime();
         let stack = Outbound::new(default_config(), rt)
             .with_stack(stack)
-            .push_discover(profiles)
+            .push_discover(profiles, client_policy)
             .into_inner();
 
         assert_eq!(
@@ -184,6 +245,11 @@ mod tests {
         };
 
         let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        let client_policy = svc::mk(|_| {
+            let (_, rx) =
+                tokio::sync::watch::channel(linkerd_client_policy::ClientPolicy::default());
+            future::ok::<_, Error>(rx.into())
+        });
 
         // Create a profile stack that uses the tracked inner stack, configured to drop cached
         // service after `idle_timeout`.
@@ -195,7 +261,7 @@ mod tests {
         let (rt, _shutdown) = runtime();
         let stack = Outbound::new(cfg, rt)
             .with_stack(stack)
-            .push_discover(profiles)
+            .push_discover(profiles, client_policy)
             .into_inner();
 
         assert_eq!(
@@ -295,10 +361,21 @@ mod tests {
         // doesn't support that right now. So, instead, we return a profile for resolutions to
         // and assert (below) that no profile is provided.
         let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        let client_policy = svc::mk(|_| -> future::Ready<Result<policy::Receiver, Error>> {
+            panic!("if no profile is resolved, a client policy should also not be resolved");
+        });
 
         // Mock an inner stack with a service that asserts that no profile is built.
-        let stack = |(profile, _): (Option<profiles::Receiver>, _)| {
+        let stack = |Discovered {
+                         target: _,
+                         profile,
+                         policy,
+                     }| {
             assert!(profile.is_none(), "profile must not resolve");
+            assert!(
+                policy.is_none(),
+                "if no profile is resolved, client policy should not be resolved"
+            );
             svc::mk(move |_: io::DuplexStream| future::ok::<(), Error>(()))
         };
 
@@ -315,7 +392,7 @@ mod tests {
         let (rt, _shutdown) = runtime();
         let stack = Outbound::new(cfg, rt)
             .with_stack(stack)
-            .push_discover(profiles)
+            .push_discover(profiles, client_policy)
             .into_inner();
 
         // Instantiate a service from the stack so that it instantiates the tracked inner service.

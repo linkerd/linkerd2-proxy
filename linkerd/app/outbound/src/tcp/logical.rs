@@ -145,7 +145,6 @@ mod tests {
             policy: None,
             logical_addr: logical_addr.clone(),
             protocol: (),
-            orig_dst: OrigDstAddr(ep_addr),
         };
 
         // The resolution resolves a single endpoint.
@@ -210,7 +209,6 @@ mod tests {
             profile: rx.into(),
             logical_addr: logical_addr.clone(),
             protocol: (),
-            orig_dst: OrigDstAddr(SocketAddr::new([192, 0, 2, 29].into(), 3333)),
         };
 
         let ep0_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);

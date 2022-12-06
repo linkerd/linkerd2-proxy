@@ -1,6 +1,8 @@
 use crate::RoutePolicy;
 use linkerd_http_route::http;
 pub use linkerd_http_route::http::{filter, r#match, RouteMatch};
+mod router;
+pub use self::router::*;
 
 pub type Route = http::Route<RoutePolicy>;
 pub type Rule = http::Rule<RoutePolicy>;

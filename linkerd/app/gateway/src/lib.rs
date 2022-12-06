@@ -60,13 +60,12 @@ struct RefusedNoTarget(());
 #[error("the provided address could not be resolved: {}", self.0)]
 struct RefusedNotResolved(NameAddr);
 
-pub fn stack<I, O, P, R, C>(
+pub fn stack<I, O, P, R>(
     Config { allow_discovery }: Config,
     inbound: Inbound<()>,
     outbound: Outbound<O>,
     profiles: P,
     resolve: R,
-    client_policies: C,
 ) -> svc::ArcNewTcp<GatewayTransportHeader, I>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
@@ -81,10 +80,6 @@ where
     R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     R::Resolution: Send,
     R::Future: Send + Unpin,
-    C: svc::Service<OrigDstAddr, Response = outbound::policy::Receiver>,
-    C: Clone + Send + Sync + 'static,
-    C::Future: Send,
-    Error: From<C::Error>,
 {
     let ProxyConfig {
         buffer_capacity,
@@ -142,7 +137,6 @@ where
                     policy: None,
                     protocol: (),
                     logical_addr,
-                    orig_dst: todo!("eliza: fix this"),
                 }))
             },
             logical.into_inner(),
@@ -180,7 +174,7 @@ where
     let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
     let http = endpoint
         .clone()
-        .push_http_logical(resolve, client_policies)
+        .push_http_logical(resolve)
         .into_stack()
         .push_switch(Ok::<_, Infallible>, endpoint.into_stack())
         .push(NewGateway::layer(local_id))

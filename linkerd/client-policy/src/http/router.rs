@@ -1,6 +1,6 @@
-use crate::policy::Policy;
+use super::Route;
+use crate::{Receiver, RoutePolicy};
 use futures::{future::MapErr, FutureExt, TryFutureExt};
-use linkerd_client_policy::{http::Route, RoutePolicy};
 use linkerd_error::Error;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
@@ -26,7 +26,7 @@ pub struct NewServiceRouter<N>(N);
 pub struct ServiceRouter<T, N, S> {
     new_route: N,
     target: T,
-    changed: ReusableBoxFuture<'static, Result<Policy, Error>>,
+    changed: ReusableBoxFuture<'static, Result<Receiver, Error>>,
     http_routes: Arc<[Route]>,
     services: HashMap<RoutePolicy, S>,
     default: S,
@@ -42,7 +42,7 @@ impl<N> NewServiceRouter<N> {
 
 impl<T, N> NewService<T> for NewServiceRouter<N>
 where
-    T: Param<Option<Policy>> + Clone,
+    T: Param<Option<Receiver>> + Clone,
     N: NewService<(Option<RoutePolicy>, T)> + Clone,
 {
     type Service = ServiceRouter<T, N, N::Service>;
@@ -54,7 +54,7 @@ where
             // know the policy is there...
             .expect("new service router should only be built when a policy has been discovered");
         let default = self.0.new_service((None, target.clone()));
-        let http_routes = rx.policy.borrow().http_routes.clone();
+        let http_routes = rx.borrow().http_routes.clone();
         let mut router = ServiceRouter {
             default,
             target,
@@ -105,7 +105,7 @@ where
             Poll::Ready(update) => update?,
         };
 
-        let http_routes = policy.policy.borrow_and_update().http_routes.clone();
+        let http_routes = policy.borrow_and_update().http_routes.clone();
 
         // If the routes have been updated, update the cache.
         tracing::debug!(routes = %http_routes.len(), "Updating client policy HTTP routes");
@@ -150,9 +150,8 @@ where
     }
 }
 
-async fn changed(mut policy: Policy) -> Result<Policy, Error> {
+async fn changed(mut policy: Receiver) -> Result<Receiver, Error> {
     policy
-        .policy
         .changed()
         .await
         .map_err(|_| anyhow::anyhow!("client policy watch has closed"))?;

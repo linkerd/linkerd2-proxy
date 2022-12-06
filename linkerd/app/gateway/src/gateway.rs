@@ -99,7 +99,6 @@ where
                 profile,
                 protocol: http.version,
                 logical_addr,
-                orig_dst: todo!("eliza: fix this"),
             }));
 
         Gateway::new(svc, http.target, local_id)

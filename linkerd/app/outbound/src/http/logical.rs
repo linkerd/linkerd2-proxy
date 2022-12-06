@@ -1,9 +1,5 @@
 use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, PolicyRoute, ProfileRoute};
-use crate::{
-    endpoint,
-    policy::{self, Policy},
-    resolve, stack_labels, Outbound,
-};
+use crate::{endpoint, policy, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, config, profiles,
     proxy::{
@@ -12,18 +8,12 @@ use linkerd_app_core::{
         http,
         resolve::map_endpoint,
     },
-    svc,
-    transport::OrigDstAddr,
-    Error, Infallible,
+    svc, Error, Infallible,
 };
 use tracing::debug_span;
 
 impl<E> Outbound<E> {
-    pub fn push_http_logical<ESvc, R, P>(
-        self,
-        resolve: R,
-        policies: P,
-    ) -> Outbound<svc::ArcNewHttp<Logical>>
+    pub fn push_http_logical<ESvc, R>(self, resolve: R) -> Outbound<svc::ArcNewHttp<Logical>>
     where
         E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + Sync + 'static,
         ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -35,10 +25,6 @@ impl<E> Outbound<E> {
         R: Clone + Send + Sync + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
-        P: svc::Service<OrigDstAddr, Response = policy::Receiver>,
-        P: Clone + Send + Sync + 'static,
-        P::Future: Send,
-        Error: From<P::Error>,
     {
         self.map_stack(|config, rt, endpoint| {
             let config::ProxyConfig {
@@ -215,53 +201,51 @@ impl<E> Outbound<E> {
                         |(route, logical): (Option<policy::RoutePolicy>, Logical)| -> Result<_, Infallible> {
                             match route {
                                 None => Ok(svc::Either::A(logical)),
-                                Some(route) => Ok(svc::Either::B(PolicyRoute { route, logical })),
+                                Some(route) => {
+                                    tracing::debug!(?route);
+                                    Ok(svc::Either::B(PolicyRoute { route, logical }))
+                                },
                             }
                         },
                         policy_route,
                     )
                     .check_new_service::<(Option<policy::RoutePolicy>, Logical), http::Request<_>>()
                     .push(policy::http::NewServiceRouter::layer())
-                    .push_map_target(|(policy, logical): (Policy, Logical)| {
-                        // for now, just log the client policy rather than actually
-                        // doing anything...
-                        tracing::info!(?logical, ?policy);
-                        // Add the discovered policy to the logical target
-                        Logical {
-                            policy: Some(policy),
-                            ..logical
+                    .push_map_target(|logical: Logical| {
+                        {
+                            let policy = logical
+                                .policy
+                                .as_ref()
+                                .expect("policy stack should not be built if there's no policy")
+                                .borrow();
+
+                            // for now, log the client policy at INFO for
+                            // development purposes
+                            tracing::info!(
+                                dst = ?logical.logical_addr,
+                                ?policy.backends,
+                                ?policy.http_routes,
+                            );
                         }
+                        logical
+
                     })
-                    .instrument(|(policy, _): &(Policy, Logical)| debug_span!("policy", addr = %policy.dst))
-                    .check_new_service::<(Policy, Logical), http::Request<_>>();
+                    .instrument(|_: &Logical| debug_span!("policy"))
+                    .check_new_service::<Logical, http::Request<_>>();
 
                 let logical = policy.push_switch(
-                    |(policy, logical): (Policy, Logical)| -> Result<_, Infallible> {
-                        let is_empty = {
-                            let policy = policy.policy.borrow();
-                            policy.http_routes.is_empty() && policy.backends.is_empty()
-                        };
-                        if is_empty {
-                            // No client policy is defined for this destination,
-                            // so continue with the service profile stack.
-                            return Ok(svc::Either::B(logical));
+                    |logical: Logical| -> Result<_, Infallible> {
+                        if logical.policy.is_some() {
+                            Ok(svc::Either::A(logical))
+                        } else {
+                            Ok(svc::Either::B(logical))
                         }
-
-                        Ok(svc::Either::A((policy, logical)))
                     },
                     profile_route,
                 )
-                .check_new_service::<(Policy, Logical), http::Request<_>>();
+                .check_new_service::<Logical, http::Request<_>>();
 
                 logical
-                    // discover client policies for the original destination address
-                    .push(policy::Discover::layer(policies, cache_max_idle_age))
-                    .check_make_service::<Logical, http::Request<_>>()
-                    // policies must be resolved before the logical stack can be
-                    // built, so the policy layer is a `MakeService`. drive the
-                    // initial resolution via the service's readiness here.
-                    .into_new_service()
-                    .check_new_service::<Logical, _>()
                     // Strips headers that may be set by this proxy and add an
                     // outbound canonical-dst-header. The response body is boxed
                     // unify the profile stack's response type with that of to

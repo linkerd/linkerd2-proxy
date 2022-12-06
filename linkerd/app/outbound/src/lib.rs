@@ -202,11 +202,11 @@ impl Outbound<()> {
         O::Future: Send,
         Error: From<O::Error>,
     {
-        let logical = self.to_tcp_connect().push_logical(resolve, policies);
+        let logical = self.to_tcp_connect().push_logical(resolve);
         let endpoint = self.to_tcp_connect().push_endpoint();
         endpoint
             .push_switch_logical(logical.into_inner())
-            .push_discover(profiles)
+            .push_discover(profiles, policies)
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }
@@ -246,18 +246,18 @@ impl Outbound<()> {
                 .to_tcp_connect()
                 // TODO(eliza): this should share the same policy cache...figure
                 // that out...
-                .push_logical(resolve.clone(), policies.clone());
+                .push_logical(resolve.clone());
             let endpoint = self.to_tcp_connect().push_endpoint();
             endpoint
                 .push_switch_logical(logical.into_inner())
-                .push_discover(profiles.clone())
+                .push_discover(profiles.clone(), policies)
                 .into_inner()
         };
 
         self.to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_ingress(profiles, resolve, fallback, policies)
+            .push_ingress(profiles, resolve, fallback)
             .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
             .into_inner()
     }
