@@ -201,7 +201,10 @@ impl<E> Outbound<E> {
                         |(route, logical): (Option<policy::RoutePolicy>, Logical)| -> Result<_, Infallible> {
                             match route {
                                 None => Ok(svc::Either::A(logical)),
-                                Some(route) => Ok(svc::Either::B(PolicyRoute { route, logical })),
+                                Some(route) => {
+                                    tracing::debug!(?route);
+                                    Ok(svc::Either::B(PolicyRoute { route, logical }))
+                                },
                             }
                         },
                         policy_route,
@@ -209,9 +212,21 @@ impl<E> Outbound<E> {
                     .check_new_service::<(Option<policy::RoutePolicy>, Logical), http::Request<_>>()
                     .push(policy::http::NewServiceRouter::layer())
                     .push_map_target(|logical: Logical| {
-                        // for now, just log the client policy rather than actually
-                        // doing anything...
-                        tracing::info!(dst = ?logical.logical_addr, policy = ?logical.policy);
+                        {
+                            let policy = logical
+                                .policy
+                                .as_ref()
+                                .expect("policy stack should not be built if there's no policy")
+                                .borrow();
+
+                            // for now, log the client policy at INFO for
+                            // development purposes
+                            tracing::info!(
+                                dst = ?logical.logical_addr,
+                                ?policy.backends,
+                                ?policy.http_routes,
+                            );
+                        }
                         logical
 
                     })
