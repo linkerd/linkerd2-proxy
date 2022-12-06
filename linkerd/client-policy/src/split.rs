@@ -91,6 +91,7 @@ impl<S, Req> Split<S, Req> {
                 weight: 1,
             })
         }
+
         tracing::trace!(?backends, "Building split service");
 
         let mut addrs = IndexSet::with_capacity(backends.len());
