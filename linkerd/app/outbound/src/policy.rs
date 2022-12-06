@@ -5,6 +5,7 @@ pub use linkerd_client_policy::*;
 pub mod api;
 mod config;
 mod discover;
+pub mod http;
 
 pub type Receiver = tokio::sync::watch::Receiver<ClientPolicy>;
 

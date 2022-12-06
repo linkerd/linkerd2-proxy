@@ -932,6 +932,7 @@ dependencies = [
 name = "linkerd-app-outbound"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-stream",
  "bytes",
  "futures",
@@ -940,6 +941,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-client-policy",
+ "linkerd-error",
  "linkerd-http-classify",
  "linkerd-http-retry",
  "linkerd-identity",
@@ -947,6 +949,7 @@ dependencies = [
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
  "linkerd-retry",
+ "linkerd-stack",
  "linkerd-tonic-watch",
  "linkerd-tracing",
  "linkerd2-proxy-api",
@@ -956,6 +959,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
+ "tokio-util",
  "tonic",
  "tower",
  "tracing",
@@ -1002,6 +1006,7 @@ dependencies = [
 name = "linkerd-client-policy"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-stream",
  "futures",
  "http",
@@ -1017,7 +1022,7 @@ dependencies = [
  "prost-types",
  "rand",
  "thiserror",
- "tokio",
+ "tokio-util",
  "tonic",
  "tower",
  "tracing",
