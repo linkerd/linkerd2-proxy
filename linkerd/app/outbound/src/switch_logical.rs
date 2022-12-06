@@ -60,19 +60,20 @@ impl<S> Outbound<S> {
                             // If the profile provides a (named) logical address, then we build a
                             // logical stack so we apply routes, traffic splits, and load balancing.
                             if let Some(logical_addr) = rx.logical_addr() {
-                                let has_client_policy = policy
-                                    .as_ref()
-                                    .map(|policy| {
-                                        let policy = policy.borrow();
-                                        !(policy.http_routes.is_empty()
-                                            || policy.backends.is_empty())
-                                    })
-                                    .unwrap_or(false);
-                                // if the client policy discovered for this
-                                // service is empty, don't populate the policy field.
-                                let policy = if has_client_policy { policy } else { None };
+                                let policy = policy.and_then(|policy| {
+                                    // if the client policy discovered for this
+                                    // service is empty, don't populate the
+                                    // policy field.
+                                    if policy.borrow().is_empty() {
+                                        tracing::trace!("Client policy is empty, ignoring it.");
+                                        return None;
+                                    }
+
+                                    Some(policy)
+                                });
+
                                 tracing::debug!(
-                                    has_client_policy,
+                                    has_client_policy = policy.is_some(),
                                     "Profile describes a logical service"
                                 );
                                 return Ok(svc::Either::B(Logical::new(logical_addr, rx, policy)));

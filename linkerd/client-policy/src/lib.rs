@@ -69,6 +69,10 @@ impl From<LogicalAddr> for NameAddr {
 // === impl ClientPolicy ===
 
 impl ClientPolicy {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.backends.is_empty() && self.http_routes.is_empty()
+    }
     pub fn invalid() -> Self {
         static META: Lazy<Arc<Meta>> = Lazy::new(|| {
             Arc::new(Meta::Default {
