@@ -36,7 +36,7 @@ pub(crate) fn default_config() -> Config {
         let id_name = "policy.linkerd.serviceaccount.identity.linkerd.cluster.local"
             .parse::<identity::Name>()
             .expect("policy service identity should parse");
-        policy::Config {
+        Some(policy::Config {
             control: control::Config {
                 addr: control::ControlAddr {
                     addr,
@@ -46,7 +46,7 @@ pub(crate) fn default_config() -> Config {
                 buffer_capacity: 1000,
             },
             workload: "test:test".into(),
-        }
+        })
     };
     Config {
         ingress_mode: false,

@@ -61,7 +61,7 @@ pub struct Config {
 
     // Whether the proxy may include informational headers on HTTP responses.
     pub emit_headers: bool,
-    pub policy: policy::Config,
+    pub policy: Option<policy::Config>,
 }
 
 #[derive(Clone, Debug)]

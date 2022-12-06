@@ -521,18 +521,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound_detect_timeout?.unwrap_or(DEFAULT_OUTBOUND_DETECT_TIMEOUT);
         let dispatch_timeout =
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
-        let policy = match policy_svc.clone() {
-            Some(control) => outbound::policy::Config {
-                workload: workload.clone(),
-                control,
-            },
-            None => {
-                // TODO(eliza): should we just disable client policy if there's no
-                // policy service address?
-                error!("{}_ADDR must be set", ENV_POLICY_SVC_BASE);
-                return Err(EnvError::InvalidEnvVar);
-            }
-        };
+        let policy = policy_svc.clone().map(|control| outbound::policy::Config {
+            workload: workload.clone(),
+            control,
+        });
         outbound::Config {
             ingress_mode,
             emit_headers: !disable_headers,
