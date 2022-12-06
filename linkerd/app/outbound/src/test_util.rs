@@ -30,7 +30,7 @@ pub(crate) fn default_config() -> Config {
         h2_settings: h2::Settings::default(),
     };
     let policy = {
-        let addr = "policy.linkerd.svc.cluster.local"
+        let addr = "policy.linkerd.svc.cluster.local:8090"
             .parse()
             .expect("policy service addr should parse");
         let id_name = "policy.linkerd.serviceaccount.identity.linkerd.cluster.local"
