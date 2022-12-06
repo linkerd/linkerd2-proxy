@@ -1,4 +1,4 @@
-use crate::{http, LogicalAddr, Profile, Target};
+use crate::{http, split::Backend, LogicalAddr, Profile};
 use linkerd2_proxy_api::destination as api;
 use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;
@@ -54,12 +54,12 @@ fn convert_route(
     Some((req_match, route))
 }
 
-fn convert_dst_override(orig: api::WeightedDst) -> Option<Target> {
+fn convert_dst_override(orig: api::WeightedDst) -> Option<Backend> {
     if orig.weight == 0 {
         return None;
     }
-    let addr = NameAddr::from_str(orig.authority.as_str()).ok()?;
-    Some(Target {
+    let addr = NameAddr::from_str(orig.authority.as_str()).ok()?.into();
+    Some(Backend {
         addr,
         weight: orig.weight,
     })

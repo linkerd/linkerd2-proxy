@@ -1,7 +1,7 @@
-use crate::{LogicalAddr, Profile, Receiver, ReceiverStream, Target};
+use crate::LogicalAddr;
 use futures::{prelude::*, ready};
 use indexmap::IndexSet;
-use linkerd_addr::NameAddr;
+use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::ConcreteAddr;
 use linkerd_stack::{layer, NewService, Param};
@@ -32,13 +32,21 @@ pub struct NewSplit<N, S, Req> {
 
 pub struct Split<T, N, S, Req> {
     rng: SmallRng,
-    rx: ReceiverStream,
+    stream: Pin<Box<dyn Stream<Item = Vec<Backend>> + Send + Sync + 'static>>,
     target: T,
     new_service: N,
     distribution: WeightedIndex<u32>,
     addrs: IndexSet<NameAddr>,
     services: ReadyCache<NameAddr, S, Req>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Backend {
+    pub weight: u32,
+    pub addr: Addr,
+}
+
+pub struct BackendStream(pub Pin<Box<dyn Stream<Item = Vec<Backend>> + Send + Sync + 'static>>);
 
 // === impl NewSplit ===
 
@@ -53,7 +61,7 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 
 impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
-    T: Clone + Param<LogicalAddr> + Param<Receiver>,
+    T: Clone + Param<LogicalAddr> + Param<Vec<Backend>> + Param<BackendStream>,
     N: NewService<(ConcreteAddr, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
@@ -61,29 +69,38 @@ where
     type Service = Split<T, N, S, Req>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let rx: Receiver = target.param();
-        let mut targets = rx.targets();
-        if targets.is_empty() {
+        let mut backends: Vec<Backend> = target.param();
+        if backends.is_empty() {
             let LogicalAddr(addr) = target.param();
-            targets.push(Target { addr, weight: 1 })
+            backends.push(Backend {
+                addr: addr.into(),
+                weight: 1,
+            })
         }
-        trace!(?targets, "Building split service");
+        trace!(?backends, "Building split service");
 
-        let mut addrs = IndexSet::with_capacity(targets.len());
-        let mut weights = Vec::with_capacity(targets.len());
+        let mut addrs = IndexSet::with_capacity(backends.len());
+        let mut weights = Vec::with_capacity(backends.len());
         let mut services = ReadyCache::default();
         let new_service = self.inner.clone();
-        for Target { weight, addr } in targets.into_iter() {
-            services.push(
-                addr.clone(),
-                new_service.new_service((ConcreteAddr(addr.clone()), target.clone())),
-            );
-            addrs.insert(addr);
-            weights.push(weight);
+        for Backend { weight, addr } in backends.into_iter() {
+            match addr {
+                Addr::Name(addr) => {
+                    services.push(
+                        addr.clone(),
+                        new_service.new_service((ConcreteAddr(addr.clone()), target.clone())),
+                    );
+                    addrs.insert(addr);
+                    weights.push(weight);
+                }
+                Addr::Socket(_) => todo!("eliza: update splits to handle WeightedEndpoints"),
+            }
         }
 
+        let BackendStream(stream) = target.param();
+
         Split {
-            rx: rx.into(),
+            stream,
             target,
             new_service,
             services,
@@ -112,38 +129,45 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut update = None;
-        while let Poll::Ready(Some(up)) = self.rx.poll_next_unpin(cx) {
+        while let Poll::Ready(Some(up)) = self.stream.poll_next_unpin(cx) {
             update = Some(up);
         }
 
         // Every time the profile updates, rebuild the distribution, reusing
         // services that existed in the prior state.
-        if let Some(Profile { mut targets, .. }) = update {
-            if targets.is_empty() {
+        if let Some(mut backends) = update {
+            if backends.is_empty() {
                 let LogicalAddr(addr) = self.target.param();
-                targets.push(Target { addr, weight: 1 })
+                backends.push(Backend {
+                    addr: addr.into(),
+                    weight: 1,
+                })
             }
-            debug!(?targets, "Updating");
+            debug!(?backends, "Updating");
 
             // Replace the old set of addresses with an empty set. The
             // prior set is used to determine whether a new service
             // needs to be created and what stale services should be
             // removed.
             let mut prior_addrs =
-                std::mem::replace(&mut self.addrs, IndexSet::with_capacity(targets.len()));
-            let mut weights = Vec::with_capacity(targets.len());
+                std::mem::replace(&mut self.addrs, IndexSet::with_capacity(backends.len()));
+            let mut weights = Vec::with_capacity(backends.len());
 
             // Create an updated distribution and set of services.
-            for Target { weight, addr } in targets.into_iter() {
+            for Backend { weight, addr } in backends.into_iter() {
+                let addr = match addr {
+                    Addr::Name(addr) => addr,
+                    Addr::Socket(_) => todo!("eliza: update splits to handle WeightedEndpoints"),
+                };
                 // Reuse the prior services whenever possible.
                 if !prior_addrs.remove(&addr) {
-                    debug!(%addr, "Creating target");
+                    debug!(%addr, "Creating backend");
                     let svc = self
                         .new_service
                         .new_service((ConcreteAddr(addr.clone()), self.target.clone()));
                     self.services.push(addr.clone(), svc);
                 } else {
-                    trace!(%addr, "Target already exists");
+                    trace!(%addr, "Backend already exists");
                 }
                 self.addrs.insert(addr);
                 weights.push(weight);

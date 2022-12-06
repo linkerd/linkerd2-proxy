@@ -14,6 +14,25 @@ pub struct Policy {
     pub policy: cache::Cached<Receiver>,
 }
 
+// === impl Policy ===
+
+impl Policy {
+    pub fn backends(&self) -> Vec<split::Backend> {
+        self.policy.borrow().backends.clone()
+    }
+
+    pub fn backend_stream(&self) -> split::BackendStream {
+        let mut rx = self.policy.clone();
+        let stream = async_stream::stream! {
+            while rx.changed().await.is_ok() {
+                let backends = rx.borrow_and_update().backends.clone();
+                yield backends;
+            }
+        };
+        split::BackendStream(Box::pin(stream))
+    }
+}
+
 impl Outbound<()> {
     pub fn build_policies(
         &self,

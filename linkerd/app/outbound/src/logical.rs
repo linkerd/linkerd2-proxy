@@ -13,6 +13,7 @@ use std::fmt;
 #[derive(Clone)]
 pub struct Logical<P> {
     pub profile: profiles::Receiver,
+    pub policy: Option<policy::Policy>,
     pub logical_addr: LogicalAddr,
     pub orig_dst: OrigDstAddr,
     pub protocol: P,
@@ -36,10 +37,35 @@ impl Logical<()> {
     ) -> Self {
         Self {
             profile,
+            policy: None,
             logical_addr,
             orig_dst,
             protocol: (),
         }
+    }
+}
+
+/// Used for traffic split.
+impl<P> svc::Param<Vec<policy::split::Backend>> for Logical<P> {
+    fn param(&self) -> Vec<policy::split::Backend> {
+        // if a client policy was discovered, use its backends
+        if let Some(ref policy) = self.policy {
+            return policy.backends();
+        }
+
+        self.profile.backends()
+    }
+}
+
+/// Used for traffic split.
+impl<P> svc::Param<policy::split::BackendStream> for Logical<P> {
+    fn param(&self) -> policy::split::BackendStream {
+        // if a client policy was discovered, use its backends
+        if let Some(ref policy) = self.policy {
+            return policy.backend_stream();
+        }
+
+        self.profile.backend_stream()
     }
 }
 
@@ -106,6 +132,7 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Logical")
             .field("protocol", &self.protocol)
+            .field("policy", &self.policy)
             .field("profile", &format_args!(".."))
             .field("logical_addr", &self.logical_addr)
             .finish()

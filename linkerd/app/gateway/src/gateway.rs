@@ -95,6 +95,7 @@ where
         let svc = self
             .outbound
             .new_service(svc::Either::A(outbound::http::Logical {
+                policy: None,
                 profile,
                 protocol: http.version,
                 logical_addr,

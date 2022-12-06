@@ -73,6 +73,7 @@ impl From<(Version, tcp::Logical)> for Logical {
     fn from((protocol, logical): (Version, tcp::Logical)) -> Self {
         Self {
             protocol,
+            policy: logical.policy,
             profile: logical.profile,
             logical_addr: logical.logical_addr,
             orig_dst: logical.orig_dst,
