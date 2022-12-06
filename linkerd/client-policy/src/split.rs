@@ -34,7 +34,6 @@ pub struct NewSplit<N, S, Req> {
 
 pub struct Split<S, Req> {
     rng: SmallRng,
-
     distribution: WeightedIndex<u32>,
     addrs: IndexSet<NameAddr>,
     services: ReadyCache<NameAddr, S, Req>,
@@ -85,7 +84,6 @@ impl<S, Req> Split<S, Req> {
         S::Error: Into<Error>,
         T: Param<LogicalAddr> + Clone,
     {
-
         if backends.is_empty() {
             let LogicalAddr(addr) = target.param();
             backends.push(Backend {
@@ -93,7 +91,7 @@ impl<S, Req> Split<S, Req> {
                 weight: 1,
             })
         }
-        
+
         tracing::trace!(?backends, "Building split service");
 
         let mut addrs = IndexSet::with_capacity(backends.len());
