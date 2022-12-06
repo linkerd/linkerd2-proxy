@@ -40,13 +40,13 @@ manifest_expr() {
 
 files=$1
 if [ -z "$files" ]; then
-    echo 'No files specified' >&2
-    exit 1
+    echo '[]'
+    exit 0
 fi
 
 # Get the crate names for all changed manifest directories.
 crates=$(cargo metadata --locked --format-version=1 \
     | jq -cr "[.packages[] | select(.manifest_path | $(manifest_expr "$files")) | .name]")
 
-echo "::set-output name=crates::$crates"
+echo "crates=$crates" >> "$GITHUB_OUTPUT"
 echo "$crates" | jq .

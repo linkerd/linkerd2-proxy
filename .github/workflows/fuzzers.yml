@@ -38,7 +38,7 @@ jobs:
         shell: bash
         run: |
           dirs=$(.github/fuzzers-list.sh ${{ steps.changed-files.outputs.all_changed_files }} | jo -a)
-          echo "::set-output name=dirs::$dirs"
+          echo "dirs=$dirs" >> "$GITHUB_OUTPUT"
     outputs:
       dirs: ${{ steps.list-changed.outputs.dirs }}
 
