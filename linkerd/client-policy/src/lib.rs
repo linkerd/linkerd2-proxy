@@ -3,11 +3,12 @@
 
 pub mod discover;
 pub mod http;
+pub mod split;
 
-use linkerd_addr::Addr;
+use linkerd_addr::NameAddr;
 pub use linkerd_policy_core::{meta, Meta};
 use once_cell::sync::Lazy;
-use std::sync::Arc;
+use std::{fmt, str::FromStr, sync::Arc};
 
 pub type Receiver = tokio::sync::watch::Receiver<ClientPolicy>;
 
@@ -15,19 +16,51 @@ pub type Receiver = tokio::sync::watch::Receiver<ClientPolicy>;
 pub struct ClientPolicy {
     pub http_routes: Arc<[http::Route]>,
     pub meta: Arc<Meta>,
-    pub backends: Vec<Backend>,
+    pub backends: Vec<split::Backend>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RoutePolicy {
-    pub backends: Vec<Backend>,
+    pub backends: Vec<split::Backend>,
     pub meta: Arc<Meta>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Backend {
-    pub weight: u32,
-    pub addr: Addr,
+/// A bound logical service address
+#[derive(Clone, Hash, Eq, PartialEq)]
+pub struct LogicalAddr(pub NameAddr);
+
+// === impl LogicalAddr ===
+
+impl fmt::Display for LogicalAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl fmt::Debug for LogicalAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "LogicalAddr({})", self.0)
+    }
+}
+
+impl FromStr for LogicalAddr {
+    type Err = <NameAddr as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        NameAddr::from_str(s).map(LogicalAddr)
+    }
+}
+
+impl From<NameAddr> for LogicalAddr {
+    fn from(na: NameAddr) -> Self {
+        Self(na)
+    }
+}
+
+impl From<LogicalAddr> for NameAddr {
+    fn from(LogicalAddr(na): LogicalAddr) -> NameAddr {
+        na
+    }
 }
 
 // === impl ClientPolicy ===
@@ -66,8 +99,9 @@ static NO_ROUTES: Lazy<Arc<[http::Route]>> = Lazy::new(|| vec![].into());
 
 #[cfg(feature = "proto")]
 pub mod proto {
-    use super::*;
+    use super::{split::Backend, *};
     use linkerd2_proxy_api::{destination, net, outbound as api};
+    use linkerd_addr::Addr;
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidService {

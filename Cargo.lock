@@ -378,6 +378,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00f5fb52a06bdcadeb54e8d3671f8888a39697dcb0b81b23b55174030427f4eb"
 
 [[package]]
+name = "futures-macro"
+version = "0.3.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42cd15d1c7456c04dbdf7e88bcd69760d74f3a798d6444e16974b505b0e62f17"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "futures-sink"
 version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -398,6 +409,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-io",
+ "futures-macro",
  "futures-sink",
  "futures-task",
  "memchr",
@@ -920,6 +932,7 @@ dependencies = [
 name = "linkerd-app-outbound"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "bytes",
  "futures",
  "http",
@@ -989,18 +1002,25 @@ dependencies = [
 name = "linkerd-client-policy"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
+ "futures",
  "http",
+ "indexmap",
  "linkerd-addr",
+ "linkerd-error",
  "linkerd-http-route",
  "linkerd-policy-core",
+ "linkerd-proxy-api-resolve",
+ "linkerd-stack",
  "linkerd2-proxy-api",
  "once_cell",
  "prost-types",
+ "rand",
  "thiserror",
  "tokio",
- "tokio-stream",
  "tonic",
  "tower",
+ "tracing",
 ]
 
 [[package]]
@@ -1535,12 +1555,14 @@ dependencies = [
 name = "linkerd-service-profiles"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "bytes",
  "futures",
  "http",
  "http-body",
  "indexmap",
  "linkerd-addr",
+ "linkerd-client-policy",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-http-box",

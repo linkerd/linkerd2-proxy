@@ -110,6 +110,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                 if let Some(logical_addr) = profile.logical_addr() {
                                     return Ok(http::Logical {
                                         profile,
+                                        policy: None,
                                         logical_addr,
                                         protocol: http.version,
                                         orig_dst: todo!("eliza: ugh"),
