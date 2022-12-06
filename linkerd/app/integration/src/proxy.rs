@@ -295,11 +295,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         "LINKERD2_PROXY_DESTINATION_SVC_ADDR",
         controller.addr.to_string(),
     );
-    // TODO(eliza): allow configuring a separate mock client policy server...
-    env.put(
-        "LINKERD2_PROXY_CLIENT_POLICY_SVC_ADDR",
-        controller.addr.to_string(),
-    );
+
     if random_ports {
         env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
     }
