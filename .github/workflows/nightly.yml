@@ -22,11 +22,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v32-rust
+    container: ghcr.io/linkerd/dev:v37-rust
     timeout-minutes: 20
     continue-on-error: true
     steps:
       - run: rustup toolchain install --profile=minimal nightly
       - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
       - run: just toolchain=nightly fetch
-      - run: just toolchain=nightly build_type=release build
+      - run: just toolchain=nightly profile=release build
