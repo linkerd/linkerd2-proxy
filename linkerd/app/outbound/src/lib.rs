@@ -242,11 +242,7 @@ impl Outbound<()> {
         // it doesn't include TCP metrics, since they are already instrumented
         // on this ingress stack.
         let fallback = {
-            let logical = self
-                .to_tcp_connect()
-                // TODO(eliza): this should share the same policy cache...figure
-                // that out...
-                .push_logical(resolve.clone());
+            let logical = self.to_tcp_connect().push_logical(resolve.clone());
             let endpoint = self.to_tcp_connect().push_endpoint();
             endpoint
                 .push_switch_logical(logical.into_inner())
