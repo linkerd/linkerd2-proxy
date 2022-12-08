@@ -69,6 +69,7 @@ jobs:
             g++-aarch64-linux-gnu \
             gcc-aarch64-linux-gnu \
             libc6-dev-arm64-cross
+          echo CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc >> "$GITHUB_ENV"
 
       - if: matrix.arch == 'arm'
         run: |
@@ -79,6 +80,7 @@ jobs:
             g++-arm-linux-gnueabihf \
             gcc-arm-linux-gnueabihf \
             libc6-dev-armhf-cross
+          echo CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc >> "$GITHUB_ENV"
 
       - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
       - run: just fetch
