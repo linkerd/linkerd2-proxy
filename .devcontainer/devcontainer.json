@@ -1,6 +1,6 @@
 {
 	"name": "linkerd2-proxy",
-	"image": "ghcr.io/linkerd/dev:v32",
+	"image": "ghcr.io/linkerd/dev:v37",
 	"extensions": [
 		"DavidAnson.vscode-markdownlint",
 		"kokakiwi.vscode-just",
@@ -27,6 +27,15 @@
 	"overrideCommand": false,
 	"remoteUser": "code",
 	"mounts": [
-		"source=/var/run/docker.sock,target=/var/run/docker-host.sock,type=bind"
+		{
+			"source": "/var/run/docker.sock",
+			"target": "/var/run/docker-host.sock",
+			"type": "bind"
+		},
+		{
+			"source": "${localEnv:HOME}/.docker",
+			"target": "/home/code/.docker",
+			"type": "bind"
+		}
 	]
 }

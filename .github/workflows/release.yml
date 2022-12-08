@@ -58,12 +58,34 @@ jobs:
     name: Package (${{ matrix.arch }})
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    container: docker://ghcr.io/linkerd/dev:v32-rust-cross
+    container: docker://ghcr.io/linkerd/dev:v37-rust
     steps:
+      - if: matrix.arch == 'arm64'
+        run: |
+          rustup target add aarch64-unknown-linux-gnu
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            binutils-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            gcc-aarch64-linux-gnu \
+            libc6-dev-arm64-cross
+          echo CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc >> "$GITHUB_ENV"
+
+      - if: matrix.arch == 'arm'
+        run: |
+          rustup target add armv7-unknown-linux-gnueabihf
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            binutils-arm-linux-gnueabihf \
+            g++-arm-linux-gnueabihf \
+            gcc-arm-linux-gnueabihf \
+            libc6-dev-armhf-cross
+          echo CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc >> "$GITHUB_ENV"
+
       - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
       - run: just fetch
       - name: Run just package
-        run: just build_type=release package_arch=${{ matrix.arch }} package_version=${{ needs.meta.outputs.version }} package
+        run: just profile=release package_arch=${{ matrix.arch }} package_version=${{ needs.meta.outputs.version }} package
       - uses: actions/upload-artifact@83fd05a356d7e2593de66fc9913b3002723633cb
         with:
           name: ${{ matrix.arch }}-artifacts
