@@ -18,7 +18,6 @@ pub struct Receiver {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientPolicy {
     pub http_routes: Arc<[http::Route]>,
-    pub meta: Arc<Meta>,
     pub backends: Vec<split::Backend>,
 }
 
@@ -74,13 +73,7 @@ impl ClientPolicy {
         self.backends.is_empty() && self.http_routes.is_empty()
     }
     pub fn invalid() -> Self {
-        static META: Lazy<Arc<Meta>> = Lazy::new(|| {
-            Arc::new(Meta::Default {
-                name: "invalid".into(),
-            })
-        });
         Self {
-            meta: META.clone(),
             http_routes: NO_ROUTES.clone(),
             backends: Vec::new(),
         }
@@ -89,13 +82,7 @@ impl ClientPolicy {
 
 impl Default for ClientPolicy {
     fn default() -> Self {
-        static META: Lazy<Arc<Meta>> = Lazy::new(|| {
-            Arc::new(Meta::Default {
-                name: "default".into(),
-            })
-        });
         Self {
-            meta: META.clone(),
             http_routes: NO_ROUTES.clone(),
             backends: Vec::new(),
         }
@@ -185,16 +172,9 @@ pub mod proto {
                 .map(http::proto::try_route)
                 .collect::<Result<Vec<_>, _>>()?
                 .into();
-            // TODO: there's no top-level metadata field for a `Service` in the
-            // outbound proxy API yet, so we don't know the name of the
-            // resource...should we add a metadata field to the API?
-            let meta = Arc::new(Meta::Default {
-                name: "TODO".into(),
-            });
             Ok(Self {
                 backends,
                 http_routes,
-                meta,
             })
         }
     }
