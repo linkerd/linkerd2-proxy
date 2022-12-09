@@ -73,7 +73,6 @@ impl Controller {
         self.inbound_calls.lock().push_back((spec, rx));
         InboundSender(tx)
     }
-
     pub async fn run(self) -> controller::Listening {
         let svc = grpc::transport::Server::builder()
             .add_service(
@@ -92,6 +91,26 @@ impl Controller {
             )
             .into_service();
         controller::run(svc, "support policy controller", None).await
+    }
+}
+
+impl OutboundSender {
+    pub fn send(&self, up: outbound::Service) {
+        self.0.send(Ok(up)).expect("send outbound Service update")
+    }
+
+    pub fn send_err(&self, err: grpc::Status) {
+        self.0.send(Err(err)).expect("send outbound error")
+    }
+}
+
+impl InboundSender {
+    pub fn send(&self, up: inbound::Server) {
+        self.0.send(Ok(up)).expect("send inbound Server update")
+    }
+
+    pub fn send_err(&self, err: grpc::Status) {
+        self.0.send(Err(err)).expect("send inbound error")
     }
 }
 
