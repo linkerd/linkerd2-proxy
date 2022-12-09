@@ -11,6 +11,10 @@ pub type Route<P> = crate::Route<MatchRequest, P>;
 
 pub type Rule<P> = crate::Rule<MatchRequest, P>;
 
+#[derive(Debug, thiserror::Error, Default)]
+#[error("no route found for request")]
+pub struct HttpRouteNotFound(());
+
 #[inline]
 pub fn find<'r, P, B>(
     routes: &'r [Route<P>],

@@ -3,7 +3,7 @@ use linkerd_http_route::http;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
 
-pub use linkerd_http_route::http::{filter, r#match, MatchRequest, RouteMatch};
+pub use linkerd_http_route::http::*;
 
 mod router;
 pub use self::router::*;

@@ -176,7 +176,7 @@ impl<E> Outbound<E> {
                 .push(profiles::http::NewServiceRouter::layer());
 
             // for now, the client-policy route stack is just a fixed traffic split
-            let policy_route = concrete
+            let policy = concrete
                 .check_new_service::<(ConcreteAddr, Logical), _>()
                 .push_map_target(|(concrete, PolicyRoute { route: _, logical }): (ConcreteAddr, PolicyRoute)| {
                     (concrete, logical)
@@ -194,44 +194,33 @@ impl<E> Outbound<E> {
                         .push(svc::FailFast::layer("HTTPRoute", dispatch_timeout))
                         .push_spawn_buffer(buffer_capacity),
                 )
-                .check_new_clone::<PolicyRoute>();
+                .check_new_clone::<PolicyRoute>()
+                .push_map_target(|(route, logical)| {
+                    tracing::debug!(?route);
+                    PolicyRoute { route, logical }
+                })
+                .push(policy::http::NewServiceRouter::layer())
+                .push_map_target(|logical: Logical| {
+                    {
+                        let policy = logical
+                            .policy
+                            .as_ref()
+                            .expect("policy stack should not be built if there's no policy")
+                            .borrow();
 
-                let policy = logical
-                    .push_switch(
-                        |(route, logical): (Option<policy::RoutePolicy>, Logical)| -> Result<_, Infallible> {
-                            match route {
-                                None => Ok(svc::Either::A(logical)),
-                                Some(route) => {
-                                    tracing::debug!(?route);
-                                    Ok(svc::Either::B(PolicyRoute { route, logical }))
-                                },
-                            }
-                        },
-                        policy_route,
-                    )
-                    .check_new_service::<(Option<policy::RoutePolicy>, Logical), http::Request<_>>()
-                    .push(policy::http::NewServiceRouter::layer())
-                    .push_map_target(|logical: Logical| {
-                        {
-                            let policy = logical
-                                .policy
-                                .as_ref()
-                                .expect("policy stack should not be built if there's no policy")
-                                .borrow();
+                        // for now, log the client policy at INFO for
+                        // development purposes
+                        tracing::info!(
+                            dst = ?logical.logical_addr,
+                            ?policy.backends,
+                            ?policy.http_routes,
+                        );
+                    }
+                    logical
 
-                            // for now, log the client policy at INFO for
-                            // development purposes
-                            tracing::info!(
-                                dst = ?logical.logical_addr,
-                                ?policy.backends,
-                                ?policy.http_routes,
-                            );
-                        }
-                        logical
-
-                    })
-                    .instrument(|_: &Logical| debug_span!("policy"))
-                    .check_new_service::<Logical, http::Request<_>>();
+                })
+                .instrument(|_: &Logical| debug_span!("policy"))
+                .check_new_service::<Logical, http::Request<_>>();
 
                 let logical = policy.push_switch(
                     |logical: Logical| -> Result<_, Infallible> {

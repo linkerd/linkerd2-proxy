@@ -1,6 +1,6 @@
-use super::Route;
+use super::{HttpRouteNotFound, Route};
 use crate::{Receiver, RoutePolicy};
-use futures::{future::MapErr, FutureExt, TryFutureExt};
+use futures::{future, FutureExt, TryFutureExt};
 use linkerd_error::Error;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
@@ -29,7 +29,6 @@ pub struct ServiceRouter<T, N, S> {
     changed: ReusableBoxFuture<'static, Result<Receiver, Error>>,
     http_routes: Arc<[Route]>,
     services: HashMap<RoutePolicy, S>,
-    default: S,
 }
 
 // === impl NewServiceRouter ===
@@ -43,7 +42,7 @@ impl<N> NewServiceRouter<N> {
 impl<T, N> NewService<T> for NewServiceRouter<N>
 where
     T: Param<Option<Receiver>> + Clone,
-    N: NewService<(Option<RoutePolicy>, T)> + Clone,
+    N: NewService<(RoutePolicy, T)> + Clone,
 {
     type Service = ServiceRouter<T, N, N::Service>;
 
@@ -53,10 +52,8 @@ where
             // TODO(eliza): build this with a `(Policy, T)` target instead so we
             // know the policy is there...
             .expect("new service router should only be built when a policy has been discovered");
-        let default = self.0.new_service((None, target.clone()));
         let http_routes = rx.borrow().http_routes.clone();
         let mut router = ServiceRouter {
-            default,
             target,
             changed: ReusableBoxFuture::new(Box::pin(changed(rx))),
             http_routes: http_routes.clone(),
@@ -74,14 +71,12 @@ impl<T, N, S> ServiceRouter<T, N, S> {
     fn update_route_policies(&mut self, route_policies: impl IntoIterator<Item = RoutePolicy>)
     where
         T: Clone,
-        N: NewService<(Option<RoutePolicy>, T), Service = S> + Clone,
+        N: NewService<(RoutePolicy, T), Service = S> + Clone,
     {
         for route in route_policies.into_iter() {
             if let hash_map::Entry::Vacant(ent) = self.services.entry(route) {
                 let route = ent.key().clone();
-                let svc = self
-                    .new_route
-                    .new_service((Some(route), self.target.clone()));
+                let svc = self.new_route.new_service((route, self.target.clone()));
                 ent.insert(svc);
             }
         }
@@ -91,13 +86,16 @@ impl<T, N, S> ServiceRouter<T, N, S> {
 impl<B, T, N, S> Service<http::Request<B>> for ServiceRouter<T, N, S>
 where
     T: Clone,
-    N: NewService<(Option<RoutePolicy>, T), Service = S> + Clone,
+    N: NewService<(RoutePolicy, T), Service = S> + Clone,
     S: Service<http::Request<B>> + Clone,
     Error: From<S::Error>,
 {
     type Response = S::Response;
     type Error = Error;
-    type Future = MapErr<Oneshot<S, http::Request<B>>, fn(S::Error) -> Error>;
+    type Future = future::Either<
+        future::MapErr<Oneshot<S, http::Request<B>>, fn(S::Error) -> Error>,
+        future::Ready<Result<S::Response, Error>>,
+    >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         let mut policy = match self.changed.poll_unpin(cx) {
@@ -128,7 +126,7 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        let inner = match super::find(&self.http_routes, &req) {
+        match super::find(&self.http_routes, &req) {
             Some((req_match, policy)) => {
                 tracing::trace!(
                     route.group = %policy.meta.group(),
@@ -138,15 +136,20 @@ where
                     "Using HTTPRoute service",
                 );
 
-                self.services.get(policy).expect("route must exist").clone()
+                let future = self
+                    .services
+                    .get(policy)
+                    .expect("route must exist")
+                    .clone()
+                    .oneshot(req)
+                    .map_err(Into::into as fn(_) -> _);
+                future::Either::Left(future)
             }
             None => {
-                tracing::trace!("No HTTPRoutes matched");
-                self.default.clone()
+                tracing::warn!("No HTTPRoutes matched");
+                future::Either::Right(future::ready(Err(HttpRouteNotFound::default().into())))
             }
-        };
-
-        inner.oneshot(req).map_err(Into::into)
+        }
     }
 }
 

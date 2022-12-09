@@ -1,5 +1,5 @@
 use linkerd_http_route::http;
-pub use linkerd_http_route::http::{filter, r#match, RouteMatch};
+pub use linkerd_http_route::http::*;
 
 pub type Policy = crate::RoutePolicy<Filter>;
 pub type Route = http::Route<Policy>;

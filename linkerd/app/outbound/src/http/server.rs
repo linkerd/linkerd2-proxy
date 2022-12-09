@@ -1,5 +1,5 @@
 use super::{IdentityRequired, ProxyConnectionClose};
-use crate::{http, trace_labels, Outbound};
+use crate::{http, policy, trace_labels, Outbound};
 use linkerd_app_core::{
     config, errors, http_tracing,
     svc::{self, ExtractParam},
@@ -104,6 +104,9 @@ impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
 
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        if let Some(cause) = errors::cause_ref::<policy::http::HttpRouteNotFound>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::not_found(cause));
+        }
         if let Some(cause) = errors::cause_ref::<http::ResponseTimeoutError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
