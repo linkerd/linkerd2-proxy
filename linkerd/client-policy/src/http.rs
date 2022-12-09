@@ -21,23 +21,6 @@ pub fn find<'r, B>(
 
 pub(super) static NO_ROUTES: Lazy<Arc<[Route]>> = Lazy::new(|| vec![].into());
 
-pub(super) static DEFAULT_ROUTES: Lazy<Arc<[Route]>> = Lazy::new(|| {
-    vec![Route {
-        hosts: vec![],
-        rules: vec![Rule {
-            matches: vec![MatchRequest {
-                path: Some(r#match::MatchPath::Prefix(String::from("/"))),
-                ..Default::default()
-            }],
-            policy: RoutePolicy {
-                backends: vec![],
-                meta: crate::Meta::new_default("default"),
-            },
-        }],
-    }]
-    .into()
-});
-
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;

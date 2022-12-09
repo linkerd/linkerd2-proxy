@@ -17,7 +17,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub(crate) fn build(
+    pub(super) fn build(
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,

@@ -83,7 +83,7 @@ impl ClientPolicy {
 impl Default for ClientPolicy {
     fn default() -> Self {
         Self {
-            http_routes: http::DEFAULT_ROUTES.clone(),
+            http_routes: http::NO_ROUTES.clone(),
             backends: Vec::new(),
         }
     }
