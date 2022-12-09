@@ -4,7 +4,6 @@ use futures::prelude::*;
 use indexmap::IndexSet;
 use linkerd_addr::Addr;
 use linkerd_error::Error;
-use linkerd_proxy_api_resolve::ConcreteAddr;
 use linkerd_stack::{layer, NewService, Param};
 use rand::distributions::WeightedIndex;
 use std::{
@@ -55,7 +54,7 @@ impl<N, S, Req> NewDynamicSplit<N, S, Req> {
 impl<T, N, S, Req> NewService<T> for NewDynamicSplit<N, S, Req>
 where
     T: Clone + Param<LogicalAddr> + Param<Vec<Backend>> + Param<BackendStream>,
-    N: NewService<(ConcreteAddr, T), Service = S> + Clone,
+    N: NewService<(Addr, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
 {
@@ -80,7 +79,7 @@ impl<T, N, S, Req> tower::Service<Req> for DynamicSplit<T, N, S, Req>
 where
     Req: Send + 'static,
     T: Clone + Param<LogicalAddr>,
-    N: NewService<(ConcreteAddr, T), Service = S> + Clone,
+    N: NewService<(Addr, T), Service = S> + Clone,
     S: tower::Service<Req> + Send + 'static,
     S::Response: Send + 'static,
     S::Error: Into<Error>,
@@ -120,16 +119,12 @@ where
 
             // Create an updated distribution and set of services.
             for Backend { weight, addr } in backends.into_iter() {
-                let addr = match addr {
-                    Addr::Name(addr) => addr,
-                    Addr::Socket(_) => todo!("eliza: update splits to handle WeightedEndpoints"),
-                };
                 // Reuse the prior services whenever possible.
                 if !prior_addrs.remove(&addr) {
                     debug!(%addr, "Creating backend");
                     let svc = self
                         .new_service
-                        .new_service((ConcreteAddr(addr.clone()), self.target.clone()));
+                        .new_service((addr.clone(), self.target.clone()));
                     self.split.services.push(addr.clone(), svc);
                 } else {
                     trace!(%addr, "Backend already exists");
