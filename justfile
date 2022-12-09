@@ -5,15 +5,14 @@
 #
 
 export RUST_BACKTRACE := env_var_or_default("RUST_BACKTRACE", "short")
+
+# Use the dev environment's version of protoc.
 export PROTOC_NO_VENDOR := "1"
 
-export DOCKER_BUILDKIT := "1"
-
 # By default we compile in development mode mode because it's faster.
-build_type := if env_var_or_default("RELEASE", "") == "" { "debug" } else { "release" }
-
+profile := if env_var_or_default("RELEASE", "") == "" { "debug" } else { "release" }
 toolchain := ""
-cargo := "cargo" + if toolchain != "" { " +" + toolchain } else { "" }
+_cargo := "just-cargo profile=" + profile + " toolchain=" + toolchain
 
 features := ""
 
@@ -41,40 +40,17 @@ cargo_target := if package_arch == "arm64" {
 # Support cross-compilation when `package_arch` changes.
 strip := if package_arch == "arm64" { "aarch64-linux-gnu-strip" } else if package_arch == "arm" { "arm-linux-gnueabihf-strip" } else { "strip" }
 
-target_dir := join("target", cargo_target, build_type)
+target_dir := join("target", cargo_target, profile)
 target_bin := join(target_dir, "linkerd2-proxy")
 package_name := "linkerd2-proxy-" + package_version + "-" + package_arch
 package_dir := join("target/package", package_name)
 shasum := "shasum -a 256"
-
-# If we're running in Github Actions and cargo-action-fmt is installed, then add
-# a command suffix that formats errors.
-_fmt := if env_var_or_default("GITHUB_ACTIONS", "") != "true" { "" } else {
-    ```
-    if command -v cargo-action-fmt >/dev/null 2>&1; then
-        echo "--message-format=json | cargo-action-fmt"
-    fi
-    ```
-}
 
 _features := if features == "all" {
         "--all-features"
     } else if features != "" {
         "--no-default-features --features=" + features
     } else { "" }
-
-
-# Use nextest if it's available (and we're not in CI). Mostly to work around
-# https://github.com/nextest-rs/nextest/issues/422
-_test := if env_var_or_default("GITHUB_ACTIONS", "") == "true" { "test" } else {
-    ```
-    if command -v cargo-nextest >/dev/null 2>&1; then
-        echo "nextest run"
-    else
-        echo "test"
-    fi
-    ```
-}
 
 #
 # Recipes
@@ -85,57 +61,53 @@ lint: sh-lint md-lint clippy doc action-lint action-dev-check
 
 # Fetch dependencies
 fetch:
-    {{ cargo }} fetch --locked
+    @{{ _cargo }} fetch --locked
 
 fmt:
-    {{ cargo }} fmt
+    @{{ _cargo }} fmt
 
 # Fails if the code does not match the expected format (via rustfmt).
 check-fmt:
-    {{ cargo }} fmt -- --check
+    @{{ _cargo }} fmt -- --check
 
 check *flags:
-    {{ cargo }} check --workspace --all-targets --frozen {{ flags }} {{ _fmt }}
+    @{{ _cargo }} check --workspace --all-targets --frozen {{ flags }}
 
 check-crate crate *flags:
-    {{ cargo }} check --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
+    @{{ _cargo }} check --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }}
 
 clippy *flags:
-    {{ cargo }} clippy --workspace --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
+    @{{ _cargo }} clippy --workspace --all-targets --frozen {{ _features }} {{ flags }}
 
 clippy-crate crate *flags:
-    {{ cargo }} clippy --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
+    @{{ _cargo }} clippy --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }}
 
 clippy-dir dir *flags:
-    cd {{ dir }} && {{ cargo }} clippy --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
+    cd {{ dir }} && {{ _cargo }} clippy --all-targets --frozen {{ _features }} {{ flags }}
 
 doc *flags:
-    {{ cargo }} doc --no-deps --workspace --frozen {{ _features }} {{ flags }} {{ _fmt }}
+    @{{ _cargo }} doc --no-deps --workspace --frozen {{ _features }} {{ flags }}
 
 doc-crate crate *flags:
-    {{ cargo }} doc --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }} {{ _fmt }}
+    @{{ _cargo }} doc --package={{ crate }} --all-targets --frozen {{ _features }} {{ flags }}
+
+# Build all tests
+test-build *flags:
+    @{{ _cargo }} test-build --workspace --frozen {{ _features }} {{ flags }}
 
 # Run all tests
 test *flags:
-    {{ cargo }} {{ _test }} --workspace --frozen {{ _features }} \
-        {{ if build_type == "release" { "--release" } else { "" } }} \
-        {{ flags }}
+    @{{ _cargo }} test --workspace --frozen {{ _features }} {{ flags }}
 
 test-crate crate *flags:
-    {{ cargo }} {{ _test }} --package={{ crate }} --frozen {{ _features }} \
-        {{ if build_type == "release" { "--release" } else { "" } }} \
-        {{ flags }}
+    @{{ _cargo }} test --package={{ crate }} --frozen {{ _features }} {{ flags }}
 
 test-dir dir *flags:
-    cd {{ dir }} && {{ cargo }} {{ _test }} --frozen {{ _features }} \
-            {{ if build_type == "release" { "--release" } else { "" } }} \
-            {{ flags }}
+    cd {{ dir }} && {{ _cargo }} test --frozen {{ _features }} {{ flags }}
 
 # Build the proxy
 build:
-    {{ cargo }} build --frozen --package=linkerd2-proxy --target={{ cargo_target }} \
-        {{ if build_type == "release" { "--release" } else { "" } }} \
-        {{ _features }} {{ _fmt }}
+    @{{ _cargo }} build --frozen --package=linkerd2-proxy --target={{ cargo_target }} {{ _features }}
 
 _package_bin := package_dir / "bin" / "linkerd2-proxy"
 
@@ -166,11 +138,11 @@ fuzzers:
     fi
 
     for dir in $(find . -type d -name fuzz); do
-        echo "cd $dir && {{ cargo }} fuzz build"
+        echo "cd $dir && {{ _cargo }} fuzz build"
         (
             cd $dir
-            {{ cargo }} fuzz build --target={{ cargo_target }} \
-                {{ if build_type == "release" { "--release" } else { "" } }}
+            @{{ _cargo }} fuzz build --target={{ cargo_target }} \
+                {{ if profile == "release" { "--release" } else { "" } }}
         )
     done
 
@@ -178,39 +150,20 @@ fuzzers:
 docker mode='load':
     docker buildx build . \
         --tag={{ docker_image }} \
-        {{ if build_type != 'release' { "--build-arg PROXY_UNOPTIMIZED=1" } else { "" } }} \
+        {{ if profile != 'release' { "--build-arg PROXY_UNOPTIMIZED=1" } else { "" } }} \
         {{ if features != "" { "--build-arg PROXY_FEATURES=" + features } else { "" } }} \
         {{ if mode == 'push' { "--push" } else { "--load" } }}
 
 # Lints all shell scripts in the repo.
 sh-lint:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    files=$(while IFS= read -r f ; do
-        if [ "$(file -b --mime-type "$f")" = text/x-shellscript ]; then echo "$f"; fi
-    done < <(find . -type f ! \( -path ./.git/\* -or -path \*/target/\* \)) | xargs)
-    echo "shellcheck $files" >&2
-    shellcheck $files
+    @just-sh
 
 md-lint:
-    markdownlint-cli2 '**/*.md' '!target'
-
-# Format actionlint output for Github Actions if running in CI.
-_actionlint-fmt := if env_var_or_default("GITHUB_ACTIONS", "") != "true" { "" } else {
-  '{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}}%0A```%0A{{replace $err.Snippet "\\n" "%0A"}}%0A```\n{{end}}'
-}
+    @just-md
 
 # Lints all GitHub Actions workflows
 action-lint:
-    actionlint \
-        {{ if _actionlint-fmt != '' { "-format '" + _actionlint-fmt + "'" } else { "" } }} \
-        .github/workflows/*
+    @just-dev lint-actions
 
 action-dev-check:
-    action-dev-check
-
-# Display the git history minus dependabot updates
-history *paths='.':
-    @git log --oneline --graph --invert-grep --author="dependabot" -- {{ paths }}
-
-# vim: set ft=make :
+    @just-dev check-action-images
