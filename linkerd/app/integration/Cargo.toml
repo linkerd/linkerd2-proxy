@@ -47,7 +47,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-rustls = "0.23"
 rustls-pemfile = "1.0"
 tower = { version = "0.4", default-features = false }
-tonic = { version = "0.8", default-features = false }
+tonic = { version = "0.8", default-features = false, features = ["transport"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = [
     "fmt",

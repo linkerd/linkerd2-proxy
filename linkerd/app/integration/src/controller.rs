@@ -345,7 +345,7 @@ pub(crate) async fn run<T, B>(
 ) -> Listening
 where
     T: tower::Service<http::Request<hyper::body::Body>, Response = http::Response<B>>,
-    T: Clone + Send + Sync + 'static,
+    T: Clone + Send + 'static,
     T::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     T::Future: Send,
     B: http_body::Body + Send + 'static,

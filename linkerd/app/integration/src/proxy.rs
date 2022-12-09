@@ -17,6 +17,7 @@ pub fn new() -> Proxy {
 pub struct Proxy {
     controller: Option<controller::Listening>,
     identity: Option<controller::Listening>,
+    policy: Option<controller::Listening>,
 
     /// Inbound/outbound addresses helpful for mocking connections that do not
     /// implement `server::Listener`.
@@ -44,6 +45,7 @@ pub struct Listening {
 
     controller: controller::Listening,
     identity: controller::Listening,
+    policy: Option<controller::Listening>,
 
     shutdown: Shutdown,
     terminated: oneshot::Receiver<()>,
@@ -119,6 +121,14 @@ impl Proxy {
 
     pub fn identity(mut self, i: controller::Listening) -> Self {
         self.identity = Some(i);
+        self
+    }
+
+    /// Pass a customized support policy controller for this proxy to use.
+    ///
+    /// If not called, this proxy will be configured without a policy controller.
+    pub fn policy(mut self, p: controller::Listening) -> Self {
+        self.policy = Some(p);
         self
     }
 
@@ -223,6 +233,7 @@ impl Listening {
             thread,
             shutdown,
             terminated,
+            policy,
             ..
         } = self;
 
@@ -249,9 +260,17 @@ impl Listening {
         }
         .instrument(tracing::info_span!("inbound"));
 
+        let policy_controller = async move {
+            if let Some(srv) = policy {
+                srv.join().await;
+            }
+        }
+        .instrument(tracing::info_span!("policy_controller"));
+
         tokio::join! {
             inbound,
             outbound,
+            policy_controller,
             identity.join(),
             controller.join(),
         };
@@ -295,6 +314,14 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         "LINKERD2_PROXY_DESTINATION_SVC_ADDR",
         controller.addr.to_string(),
     );
+
+    if let Some(ref policy) = proxy.policy {
+        env.put("LINKERD2_PROXY_POLICY_SVC_ADDR", policy.addr.to_string());
+        env.put(
+            "LINKERD2_PROXY_POLICY_SVC_NAME",
+            "policy.linkerd.serviceaccount.identity.linkerd.cluster.local".to_string(),
+        );
+    }
 
     if random_ports {
         env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
@@ -471,6 +498,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
 
         controller,
         identity,
+        policy: proxy.policy,
 
         shutdown: tx,
         terminated: term_rx,
