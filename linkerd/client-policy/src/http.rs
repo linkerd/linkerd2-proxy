@@ -1,6 +1,10 @@
 use crate::RoutePolicy;
 use linkerd_http_route::http;
-pub use linkerd_http_route::http::{filter, r#match, RouteMatch};
+use once_cell::sync::Lazy;
+use std::sync::Arc;
+
+pub use linkerd_http_route::http::{filter, r#match, MatchRequest, RouteMatch};
+
 mod router;
 pub use self::router::*;
 
@@ -15,18 +19,24 @@ pub fn find<'r, B>(
     http::find(routes, req)
 }
 
-pub fn default() -> Route {
-    Route {
+pub(super) static NO_ROUTES: Lazy<Arc<[Route]>> = Lazy::new(|| vec![].into());
+
+pub(super) static DEFAULT_ROUTES: Lazy<Arc<[Route]>> = Lazy::new(|| {
+    vec![Route {
         hosts: vec![],
         rules: vec![Rule {
-            matches: vec![],
+            matches: vec![MatchRequest {
+                path: Some(r#match::MatchPath::Prefix(String::from("/"))),
+                ..Default::default()
+            }],
             policy: RoutePolicy {
                 backends: vec![],
                 meta: crate::Meta::new_default("default"),
             },
         }],
-    }
-}
+    }]
+    .into()
+});
 
 #[cfg(feature = "proto")]
 pub mod proto {

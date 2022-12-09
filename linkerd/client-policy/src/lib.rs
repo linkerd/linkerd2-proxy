@@ -6,7 +6,6 @@ pub mod split;
 
 use linkerd_addr::NameAddr;
 pub use linkerd_policy_core::{meta, Meta};
-use once_cell::sync::Lazy;
 use std::{fmt, str::FromStr, sync::Arc};
 use tokio::sync::watch;
 
@@ -72,9 +71,10 @@ impl ClientPolicy {
     pub fn is_empty(&self) -> bool {
         self.backends.is_empty() && self.http_routes.is_empty()
     }
+
     pub fn invalid() -> Self {
         Self {
-            http_routes: NO_ROUTES.clone(),
+            http_routes: http::NO_ROUTES.clone(),
             backends: Vec::new(),
         }
     }
@@ -83,7 +83,7 @@ impl ClientPolicy {
 impl Default for ClientPolicy {
     fn default() -> Self {
         Self {
-            http_routes: NO_ROUTES.clone(),
+            http_routes: http::DEFAULT_ROUTES.clone(),
             backends: Vec::new(),
         }
     }
@@ -125,8 +125,6 @@ impl From<watch::Receiver<ClientPolicy>> for Receiver {
         Self { inner }
     }
 }
-
-static NO_ROUTES: Lazy<Arc<[http::Route]>> = Lazy::new(|| vec![].into());
 
 #[cfg(feature = "proto")]
 pub mod proto {
