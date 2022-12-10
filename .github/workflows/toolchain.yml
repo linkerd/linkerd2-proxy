@@ -14,7 +14,7 @@ permissions:
 jobs:
   devcontainer:
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v37-rust
+    container: ghcr.io/linkerd/dev:v38-rust
     steps:
       - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
       - run: |
@@ -24,26 +24,10 @@ jobs:
             exit 1
           fi
 
-  dockerfiles:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
-      - run: |
-          VERSION="$(cat rust-toolchain)"
-          ex=0
-          while IFS= read -r file ; do
-            versions=$(sed -nE 's/^ARG RUST_VERSION=([^ ]+)/\1/p' "$file")
-            for mismatch in $(echo "$versions" | grep -vF "$VERSION" || true) ; do
-              echo "::error file=$file::$file uses incorrect rust version(s): $mismatch"
-              ex=$((ex + 1))
-            done
-          done < <(find . -name Dockerfile)
-          exit $ex
-
   workflows:
     runs-on: ubuntu-latest
     steps:
-      - uses: linkerd/dev/actions/setup-tools@v37
+      - uses: linkerd/dev/actions/setup-tools@v38
       - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
       - shell: bash
         run: |

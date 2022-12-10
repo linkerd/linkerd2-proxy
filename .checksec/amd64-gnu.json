@@ -6,5 +6,5 @@
   "relro": "full",
   "rpath": "no",
   "runpath": "no",
-  "symbols": "no"
+  "symbols": "yes"
 }

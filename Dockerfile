@@ -16,50 +16,39 @@
 #
 #     :; docker buildx build . --load
 
-ARG RUST_VERSION=1.64.0
-ARG RUST_IMAGE=rust:${RUST_VERSION}-bullseye
+ARG RUST_IMAGE=ghcr.io/linkerd/dev:v38-rust
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
-ARG RUNTIME_IMAGE=ghcr.io/linkerd/proxy:edge-22.2.1
+ARG RUNTIME_IMAGE=ghcr.io/linkerd/proxy:edge-22.12.1
 
 # Build the proxy, leveraging (new, experimental) cache mounting.
 #
 # See: https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/experimental.md#run---mounttypecache
-FROM $RUST_IMAGE as build
+FROM --platform=$BUILDPLATFORM $RUST_IMAGE as build
 
-# When set, causes the proxy to be compiled in development mode.
-ARG PROXY_UNOPTIMIZED
-
-# Controls what features are enabled in the proxy.
-ARG PROXY_FEATURES="multicore,meshtls-rustls"
-
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/tmp \
-  apt update && apt install -y time
-
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/tmp \
-  if $(echo "$PROXY_FEATURES" | grep "meshtls-boring" >/dev/null); then \
-    apt install -y cmake clang golang ; \
-  fi
+ARG PROXY_FEATURES=""
+RUN apt-get update && \
+    apt-get install -y time && \
+    if [[ "$PROXY_FEATURES" =~ .*meshtls-boring.* ]] ; then \
+      apt-get install -y golang ; \
+    fi && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/linkerd2-proxy
 COPY . .
-RUN --mount=type=cache,target=target \
-    --mount=type=cache,from=rust:1.64.0-bullseye,source=/usr/local/cargo,target=/usr/local/cargo \
-  mkdir -p /out && \
-  if [ -n "$PROXY_UNOPTIMIZED" ]; then \
-    (cd linkerd2-proxy && /usr/bin/time -v cargo build --locked --no-default-features --features="$PROXY_FEATURES") && \
-    mv target/debug/linkerd2-proxy /out/linkerd2-proxy ; \
-  else \
-    (cd linkerd2-proxy && /usr/bin/time -v cargo build --locked --no-default-features --features="$PROXY_FEATURES" --release) && \
-    mv target/release/linkerd2-proxy /out/linkerd2-proxy ; \
-  fi
+RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
+    just fetch
+ARG TARGETARCH="amd64"
+ARG PROFILE="release"
+RUN --mount=type=cache,id=target,target=target \
+    --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
+    just arch=$TARGETARCH features=$PROXY_FEATURES profile=$PROFILE build && \
+    bin=$(just --evaluate profile="$PROFILE" _target_bin) ; \
+    mkdir -p /out && mv $bin /out/linkerd2-proxy
 
 ## Install the proxy binary into the base runtime image.
 FROM $RUNTIME_IMAGE as runtime
-
 WORKDIR /linkerd
 COPY --from=build /out/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
 ENV LINKERD2_PROXY_LOG=warn,linkerd=info

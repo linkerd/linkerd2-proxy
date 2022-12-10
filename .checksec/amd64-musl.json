@@ -1,0 +1,10 @@
+{
+  "canary": "yes",
+  "fortify_source": "no",
+  "nx": "yes",
+  "pie": "yes",
+  "relro": "full",
+  "rpath": "no",
+  "runpath": "no",
+  "symbols": "yes"
+}

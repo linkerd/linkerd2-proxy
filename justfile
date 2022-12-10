@@ -12,7 +12,6 @@ export PROTOC_NO_VENDOR := "1"
 # By default we compile in development mode mode because it's faster.
 profile := if env_var_or_default("RELEASE", "") == "" { "debug" } else { "release" }
 toolchain := ""
-_cargo := "just-cargo profile=" + profile + " toolchain=" + toolchain
 
 features := ""
 
@@ -25,25 +24,28 @@ docker_tag := `git rev-parse --abbrev-ref HEAD | sed 's|/|.|'` + "." + `git rev-
 docker_image := docker_repo + ":" + docker_tag
 
 # The architecture name to use for packages. Either 'amd64', 'arm64', or 'arm'.
-package_arch := "amd64"
+arch := "amd64"
 
-# If a `package_arch` is specified, then we change the default cargo `--target`
+libc := 'gnu'
+
+# If a `arch` is specified, then we change the default cargo `--target`
 # to support cross-compilation. Otherwise, we use `rustup` to find the default.
-cargo_target := if package_arch == "arm64" {
-        "aarch64-unknown-linux-gnu"
-    } else if package_arch == "arm" {
-        "armv7-unknown-linux-gnueabihf"
+_target := if arch == 'amd64' {
+        "x86_64-unknown-linux-" + libc
+    } else if arch == "arm64" {
+        "aarch64-unknown-linux-" + libc
+    } else if arch == "arm" {
+        "armv7-unknown-linux-" + libc + "eabihf"
     } else {
-        `rustup show | sed -n 's/^Default host: \(.*\)/\1/p'`
+        error("unsupported arch=" + arch)
     }
 
-# Support cross-compilation when `package_arch` changes.
-strip := if package_arch == "arm64" { "aarch64-linux-gnu-strip" } else if package_arch == "arm" { "arm-linux-gnueabihf-strip" } else { "strip" }
+_cargo := 'just-cargo profile=' + profile + ' target=' + _target + ' toolchain=' + toolchain
 
-target_dir := join("target", cargo_target, profile)
-target_bin := join(target_dir, "linkerd2-proxy")
-package_name := "linkerd2-proxy-" + package_version + "-" + package_arch
-package_dir := join("target/package", package_name)
+_target_dir := "target" / _target / profile
+_target_bin := _target_dir / "linkerd2-proxy"
+_package_name := "linkerd2-proxy-" + package_version + "-" + arch + if libc == 'musl' { '-static' } else { '' }
+_package_dir := "target/package" / _package_name
 shasum := "shasum -a 256"
 
 _features := if features == "all" {
@@ -55,6 +57,9 @@ _features := if features == "all" {
 #
 # Recipes
 #
+
+rustup:
+    @{{ _cargo }} _target-installed
 
 # Run all lints
 lint: sh-lint md-lint clippy doc action-lint action-dev-check
@@ -106,27 +111,41 @@ test-dir dir *flags:
     cd {{ dir }} && {{ _cargo }} test --frozen {{ _features }} {{ flags }}
 
 # Build the proxy
-build:
-    @{{ _cargo }} build --frozen --package=linkerd2-proxy --target={{ cargo_target }} {{ _features }}
+build: && checksec _strip
+    @rm -f {{ _target_bin }} {{ _target_bin }}.dbg
+    @{{ _cargo }} build --frozen --package=linkerd2-proxy {{ _features }}
 
-_package_bin := package_dir / "bin" / "linkerd2-proxy"
+_strip:
+    {{ _objcopy }} --only-keep-debug {{ _target_bin }} {{ _target_bin }}.dbg
+    {{ _objcopy }} --strip-unneeded {{ _target_bin }}
+    {{ _objcopy }} --add-gnu-debuglink={{ _target_bin }}.dbg {{ _target_bin }}
+
+_package_bin := _package_dir / "bin" / "linkerd2-proxy"
+
+# XXX {aarch64,arm}-musl builds do not enable PIE, so we can't use
+_expected_checksec := '.checksec' / arch + '-' + libc + '.json'
+
+# Check the security properties of the proxy binary.
+checksec:
+    checksec --output=json --file='{{ _target_bin }}' \
+        | jq '.' | tee /dev/stderr \
+        | jq -S '.[] | del(."fortify-able") | del(.fortified)' \
+        | diff -u {{ _expected_checksec }} - >&2
+
+_objcopy := 'llvm-objcopy-' + `just-cargo --evaluate _llvm-version`
 
 # Build a package (i.e. for a release)
 package: build
-    mkdir -p {{ package_dir }}/bin
-    cp LICENSE {{ package_dir }}/
-    cp {{ target_dir }}/linkerd2-proxy {{ _package_bin }}
-    {{ strip }} {{ _package_bin }}
-    checksec --output=json --file='{{ _package_bin }}' \
-        | jq '.["{{ _package_bin }}"] | del(."fortify-able") | del(.fortified)' \
-        > target/package/{{ package_name }}-checksec.json
-    jq -S '.'  target/package/{{ package_name }}-checksec.json \
-        | diff -u .checksec-expected.json - >&2
-    cd target/package \
-        && (tar -czvf {{ package_name }}.tar.gz {{ package_name }} >/dev/null) \
-        && ({{ shasum }} {{ package_name }}.tar.gz > {{ package_name }}.txt)
-    @rm -rf {{ package_dir }}
-    @du -h target/package/{{ package_name }}*
+    @rm -f  {{ _package_dir }}/bin
+    @mkdir -p {{ _package_dir }}/bin
+    cp LICENSE {{ _package_dir }}/
+    cp {{ _target_bin }} {{ _package_bin }}
+    cp {{ _target_bin }}.dbg {{ _package_bin }}.dbg
+    tar -czvf target/package/{{ _package_name }}.tar.gz  -C target/package {{ _package_name }} >/dev/null
+    cd target/package && ({{ shasum }} {{ _package_name }}.tar.gz | tee {{ _package_name }}.txt)
+    @rm -rf {{ _package_dir }}
+    @du -h target/package/{{ _package_name }}.tar.gz
+    @tar tzvf target/package/{{ _package_name }}.tar.gz
 
 # Build all of the fuzzers (SLOW).
 fuzzers:
@@ -141,18 +160,19 @@ fuzzers:
         echo "cd $dir && {{ _cargo }} fuzz build"
         (
             cd $dir
-            @{{ _cargo }} fuzz build --target={{ cargo_target }} \
+            @{{ _cargo }} fuzz build \
                 {{ if profile == "release" { "--release" } else { "" } }}
         )
     done
 
 # Build a docker image (FOR TESTING ONLY)
-docker mode='load':
+docker *args='--output=type=docker':
     docker buildx build . \
+        --pull \
         --tag={{ docker_image }} \
-        {{ if profile != 'release' { "--build-arg PROXY_UNOPTIMIZED=1" } else { "" } }} \
+        --build-arg PROFILE='{{ profile }}' \
         {{ if features != "" { "--build-arg PROXY_FEATURES=" + features } else { "" } }} \
-        {{ if mode == 'push' { "--push" } else { "--load" } }}
+        {{ args }}
 
 # Lints all shell scripts in the repo.
 sh-lint:
