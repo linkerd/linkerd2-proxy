@@ -100,8 +100,23 @@ impl<E> Outbound<E> {
                 // resolved. Endpoint resolution is skipped when there is no
                 // concrete address.
                 .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
+                // Cache and buffer the concrete address client stacks created
+                // for each backend in the HTTPRoute, so that connections are
+                // shared across multiple route rules that share a backend.
+                // TODO(eliza): add a test that these connections are cached
+                // across routes.
+                .push_on_service(
+                    svc::layers()
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .stack
+                                .layer(stack_labels("http", "concrete")),
+                        )
+                        .push_spawn_buffer(buffer_capacity),
+                )
                 .push_map_target(Concrete::from)
-                .push(svc::ArcNewService::layer());
+                .push_cache(cache_max_idle_age);
 
             // Distribute requests over a distribution of balancers via a
             // traffic split.
@@ -178,22 +193,6 @@ impl<E> Outbound<E> {
             // for now, the client-policy route stack is just a fixed traffic split
             let policy = concrete
                 .check_new_service::<(ConcreteAddr, Logical), _>()
-                // Cache and buffer the concrete address client stacks created
-                // for each backend in the HTTPRoute, so that connections are
-                // shared across multiple route rules that share a backend.
-                // TODO(eliza): add a test that these connections are cached
-                // across routes.
-                .push_on_service(
-                    svc::layers()
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(stack_labels("http", "concrete")),
-                        )
-                        .push_spawn_buffer(buffer_capacity),
-                )
-                .push_cache(cache_max_idle_age)
                 // Any per-route policy has to go between the split layer and
                 // the concrete stack cache, since we _don't_ want to share
                 // client policy across routes that have the same backend!
