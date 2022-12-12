@@ -122,7 +122,8 @@ _strip:
 
 _package_bin := _package_dir / "bin" / "linkerd2-proxy"
 
-# XXX {aarch64,arm}-musl builds do not enable PIE, so we can't use
+# XXX {aarch64,arm}-musl builds do not enable PIE, so we use target-specific
+# files to document those differences.
 _expected_checksec := '.checksec' / arch + '-' + libc + '.json'
 
 # Check the security properties of the proxy binary.
