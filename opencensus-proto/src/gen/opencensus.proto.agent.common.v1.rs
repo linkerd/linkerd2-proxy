@@ -2,6 +2,7 @@
 /// Note, this is not the metadata about the Node or service that is described by associated spans.
 /// In the future we plan to extend the identifier proto definition to support
 /// additional information (e.g cloud id, etc.)
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Node {
     /// Identifier that uniquely identifies a process within a VM/container.
@@ -21,6 +22,7 @@ pub struct Node {
     >,
 }
 /// Identifier that uniquely identifies a process within a VM/container.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProcessIdentifier {
     /// The host name. Usually refers to the machine/container name.
@@ -35,6 +37,7 @@ pub struct ProcessIdentifier {
     pub start_timestamp: ::core::option::Option<::prost_types::Timestamp>,
 }
 /// Information on OpenCensus Library.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LibraryInfo {
     /// Language of OpenCensus Library.
@@ -97,6 +100,7 @@ pub mod library_info {
     }
 }
 /// Additional service information.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ServiceInfo {
     /// Name of the service.

@@ -1,3 +1,4 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Header {
     /// The target port.
@@ -11,6 +12,7 @@ pub struct Header {
     #[prost(message, optional, tag = "3")]
     pub session_protocol: ::core::option::Option<SessionProtocol>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SessionProtocol {
     #[prost(oneof = "session_protocol::Kind", tags = "1, 2")]
@@ -18,10 +20,13 @@ pub struct SessionProtocol {
 }
 /// Nested message and enum types in `SessionProtocol`.
 pub mod session_protocol {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Http1 {}
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Http2 {}
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
         #[prost(message, tag = "1")]
