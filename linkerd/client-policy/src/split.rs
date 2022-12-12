@@ -35,8 +35,8 @@ pub struct NewSplit<N, S, Req> {
 pub struct Split<S, Req> {
     rng: SmallRng,
     distribution: WeightedIndex<u32>,
-    addrs: IndexSet<Addr>,
-    services: ReadyCache<Addr, S, Req>,
+    addrs: IndexSet<NameAddr>,
+    services: ReadyCache<NameAddr, S, Req>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -50,7 +50,7 @@ pub struct Backend {
 impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
     T: Clone + Param<LogicalAddr> + Param<Vec<Backend>>,
-    N: NewService<(Addr, T), Service = S> + Clone,
+    N: NewService<(ConcreteAddr, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
 {
@@ -76,7 +76,7 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 impl<S, Req> Split<S, Req> {
     fn new<T>(
         mut backends: Vec<Backend>,
-        new_service: &impl NewService<(Addr, T), Service = S>,
+        new_service: &impl NewService<(ConcreteAddr, T), Service = S>,
         target: T,
     ) -> Self
     where
@@ -98,12 +98,17 @@ impl<S, Req> Split<S, Req> {
         let mut weights = Vec::with_capacity(backends.len());
         let mut services = ReadyCache::default();
         for Backend { weight, addr } in backends.into_iter() {
-            services.push(
-                addr.clone(),
-                new_service.new_service((addr.clone(), target.clone())),
-            );
-            addrs.insert(addr);
-            weights.push(weight);
+            match addr {
+                Addr::Name(addr) => {
+                    services.push(
+                        addr.clone(),
+                        new_service.new_service((ConcreteAddr(addr.clone()), target.clone())),
+                    );
+                    addrs.insert(addr);
+                    weights.push(weight);
+                }
+                Addr::Socket(_) => todo!("eliza: update splits to handle WeightedEndpoints"),
+            }
         }
 
         Self {
