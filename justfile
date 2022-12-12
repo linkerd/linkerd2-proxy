@@ -129,18 +129,16 @@ _expected_checksec := '.checksec' / arch + '-' + libc + '.json'
 checksec:
     checksec --output=json --file='{{ _target_bin }}' \
         | jq '.' | tee /dev/stderr \
-        | jq -S '.[] | del(."fortify-able") | del(.fortified)' \
+        | jq -S '.[] | del(."fortify_source") | del(."fortify-able") | del(.fortified) | del(.symbols)' \
         | diff -u {{ _expected_checksec }} - >&2
 
 _objcopy := 'llvm-objcopy-' + `just-cargo --evaluate _llvm-version`
 
 # Build a package (i.e. for a release)
 package: build
-    @rm -f  {{ _package_dir }}/bin
     @mkdir -p {{ _package_dir }}/bin
     cp LICENSE {{ _package_dir }}/
-    cp {{ _target_bin }} {{ _package_bin }}
-    cp {{ _target_bin }}.dbg {{ _package_bin }}.dbg
+    cp {{ _target_bin }} {{ _target_bin }}.dbg {{ _package_dir }}/
     tar -czvf target/package/{{ _package_name }}.tar.gz  -C target/package {{ _package_name }} >/dev/null
     cd target/package && ({{ shasum }} {{ _package_name }}.tar.gz | tee {{ _package_name }}.txt)
     @rm -rf {{ _package_dir }}
