@@ -12,9 +12,7 @@ mod resolve;
 pub use self::metadata::{Metadata, ProtocolHint};
 pub use self::resolve::Resolve;
 
-// TODO this should hold a `NameAddr`; but this currently isn't possible due to
-// outbound target types.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ConcreteAddr(pub NameAddr);
 
 impl std::fmt::Display for ConcreteAddr {
