@@ -1,3 +1,4 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CurrentLibraryConfig {
     /// This is required only in the first message on the stream or if the
@@ -9,6 +10,7 @@ pub struct CurrentLibraryConfig {
     #[prost(message, optional, tag = "2")]
     pub config: ::core::option::Option<super::super::super::trace::v1::TraceConfig>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdatedLibraryConfig {
     /// This field is ignored when the RPC is used to configure only one Application.
@@ -20,6 +22,7 @@ pub struct UpdatedLibraryConfig {
     #[prost(message, optional, tag = "2")]
     pub config: ::core::option::Option<super::super::super::trace::v1::TraceConfig>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportTraceServiceRequest {
     /// This is required only in the first message on the stream or if the
@@ -37,6 +40,7 @@ pub struct ExportTraceServiceRequest {
     #[prost(message, optional, tag = "3")]
     pub resource: ::core::option::Option<super::super::super::resource::v1::Resource>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportTraceServiceResponse {}
 /// Generated client implementations.

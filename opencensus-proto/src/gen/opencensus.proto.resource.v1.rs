@@ -1,4 +1,5 @@
 /// Resource information.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Resource {
     /// Type identifier for the resource.
