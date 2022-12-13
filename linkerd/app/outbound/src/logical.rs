@@ -18,7 +18,7 @@ pub struct Logical<P> {
     pub protocol: P,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Concrete<P> {
     pub resolve: ConcreteAddr,
     pub logical: Logical<P>,
