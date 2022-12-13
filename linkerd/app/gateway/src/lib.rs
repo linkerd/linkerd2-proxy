@@ -174,8 +174,7 @@ where
     let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
     let http = endpoint
         .clone()
-        .push_http_concrete(resolve)
-        .push_http_logical()
+        .push_http_logical(resolve)
         .into_stack()
         .push_switch(Ok::<_, Infallible>, endpoint.into_stack())
         .push(NewGateway::layer(local_id))
