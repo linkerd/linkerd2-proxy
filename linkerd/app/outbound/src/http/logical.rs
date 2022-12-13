@@ -47,7 +47,7 @@ impl<E> Outbound<E> {
                 // task so it becomes ready without new requests.
                 let logical = concrete
                     .clone()
-                    .check_new_service::<(ConcreteAddr, Logical), _>()
+                    .push_map_target(Concrete::from)
                     .push(policy::split::NewDynamicSplit::layer())
                     .push_on_service(
                         svc::layers()
@@ -113,7 +113,7 @@ impl<E> Outbound<E> {
 
                 // for now, the client-policy route stack is just a fixed traffic split
                 let policy = concrete
-                    .check_new_service::<(ConcreteAddr, Logical), _>()
+                    .push_map_target(Concrete::from)
                     // Any per-route policy has to go between the split layer and
                     // the concrete stack cache, since we _don't_ want to share
                     // client policy across routes that have the same backend!
@@ -190,9 +190,9 @@ impl<E> Outbound<E> {
         resolve: R,
     ) -> Outbound<
         cache::NewCachedService<
-            (ConcreteAddr, Logical),
+            Concrete,
             impl svc::NewService<
-                    (ConcreteAddr, Logical),
+                    Concrete,
                     Service = impl svc::Service<
                         http::Request<http::BoxBody>,
                         Response = http::Response<http::BoxBody>,
@@ -301,9 +301,8 @@ impl<E> Outbound<E> {
                         )
                         .push_spawn_buffer(buffer_capacity),
                 )
-                .push_map_target(Concrete::from)
                 .push_cache(cache_max_idle_age)
-                .check_new_service::<(ConcreteAddr, Logical), http::Request<_>>()
+                .check_new_service::<Concrete, http::Request<_>>()
         })
     }
 }
