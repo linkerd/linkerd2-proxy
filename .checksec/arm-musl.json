@@ -1,0 +1,8 @@
+{
+  "canary": "yes",
+  "nx": "yes",
+  "pie": "no",
+  "relro": "partial",
+  "rpath": "no",
+  "runpath": "no"
+}

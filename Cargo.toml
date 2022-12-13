@@ -64,7 +64,7 @@ members = [
     "linkerd/transport-metrics",
     "linkerd2-proxy",
     "opencensus-proto",
-    "tools"
+    "tools",
 ]
 
 # Debug symbols end up chewing up several GB of disk space, so better to just
