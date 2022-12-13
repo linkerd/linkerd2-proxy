@@ -10,7 +10,7 @@ publish = false
 http = "0.2"
 hyper = { version = "0.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
-ipnet = "2.5"
+ipnet = "2.7"
 linkerd2-proxy-api = { version = "0.7", features = ["tap"] }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-error = { path = "../../error" }

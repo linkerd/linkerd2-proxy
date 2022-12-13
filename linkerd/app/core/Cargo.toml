@@ -19,7 +19,7 @@ http = "0.2"
 http-body = "0.4"
 hyper = { version = "0.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
-ipnet = "2.5"
+ipnet = "2.7"
 linkerd-addr = { path = "../../addr" }
 linkerd-cache = { path = "../../cache" }
 linkerd-conditional = { path = "../../conditional" }
