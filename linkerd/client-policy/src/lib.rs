@@ -6,7 +6,13 @@ pub mod split;
 
 use linkerd_addr::NameAddr;
 pub use linkerd_policy_core::{meta, Meta};
-use std::{fmt, str::FromStr, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    hash::{Hash, Hasher},
+    str::FromStr,
+    sync::Arc,
+};
 use tokio::sync::watch;
 
 #[derive(Clone, Debug)]
@@ -24,8 +30,13 @@ pub struct ClientPolicy {
 pub struct RoutePolicy<P> {
     pub backends: Vec<split::Backend>,
     pub meta: Arc<Meta>,
+    /// Only used by service profile routes currently.
+    pub labels: Labels,
     pub proto: P,
 }
+
+#[derive(Clone, Default)]
+pub struct Labels(Arc<BTreeMap<String, String>>);
 
 /// A bound logical service address
 #[derive(Clone, Hash, Eq, PartialEq)]
@@ -124,6 +135,42 @@ impl Receiver {
 impl From<watch::Receiver<ClientPolicy>> for Receiver {
     fn from(inner: watch::Receiver<ClientPolicy>) -> Self {
         Self { inner }
+    }
+}
+
+// === impl RoutePolicy ===
+
+impl<P> RoutePolicy<P> {
+    pub fn labels(&self) -> &Arc<BTreeMap<String, String>> {
+        &self.labels.0
+    }
+}
+
+// === impl Labels ===
+
+impl PartialEq for Labels {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for Labels {}
+
+impl Hash for Labels {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(Arc::as_ref(&self.0) as *const _ as usize);
+    }
+}
+
+impl fmt::Debug for Labels {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromIterator<(String, String)> for Labels {
+    fn from_iter<T: IntoIterator<Item = (String, String)>>(iter: T) -> Self {
+        Self(Arc::new(iter.into_iter().collect::<BTreeMap<_, _>>()))
     }
 }
 

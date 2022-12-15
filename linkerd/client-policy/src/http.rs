@@ -242,6 +242,8 @@ pub mod proto {
             policy: RoutePolicy {
                 backends,
                 meta,
+                // No metrics labels yet --- figure this out!
+                labels: Default::default(),
                 // the outbound policy API doesn't currently have fields for
                 // these forms of client policy.
                 proto: HttpPolicy::default(),

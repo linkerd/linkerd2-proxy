@@ -436,10 +436,9 @@ impl tap::Inspect for Logical {
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<tap::Labels> {
-        // req.extensions()
-        //     .get::<profiles::http::RoutePolicy>()
-        //     .map(|r| r.labels().clone())
-        todo!("eliza: labels")
+        req.extensions()
+            .get::<profiles::http::RoutePolicy>()
+            .map(|r| r.labels().clone())
     }
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {

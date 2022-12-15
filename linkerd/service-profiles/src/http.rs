@@ -1,9 +1,5 @@
 use regex::Regex;
-use std::{
-    fmt,
-    hash::{Hash, Hasher},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 pub use linkerd_client_policy::http::{
     HttpPolicy, ResponseClass, ResponseClasses, ResponseMatch, Retries, RoutePolicy,
@@ -83,13 +79,11 @@ pub(crate) fn default_route() -> (RequestMatch, RoutePolicy) {
         RoutePolicy {
             meta: DEFAULT_META.clone(),
             backends: Vec::new(),
+            labels: Default::default(),
             proto: Default::default(),
         },
     )
 }
-
-#[derive(Clone, Default)]
-struct Labels(Arc<std::collections::BTreeMap<String, String>>);
 
 // === impl RequestMatch ===
 
@@ -103,27 +97,5 @@ impl RequestMatch {
             RequestMatch::Any(ref ms) => ms.iter().any(|m| m.is_match(req)),
             RequestMatch::Default => true,
         }
-    }
-}
-
-// === impl Labels ===
-
-impl PartialEq for Labels {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-impl Eq for Labels {}
-
-impl Hash for Labels {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_usize(Arc::as_ref(&self.0) as *const _ as usize);
-    }
-}
-
-impl fmt::Debug for Labels {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
     }
 }

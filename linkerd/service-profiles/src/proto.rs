@@ -51,9 +51,11 @@ fn convert_route(
         .into_iter()
         .filter_map(convert_rsp_class)
         .collect();
+    let labels = orig.metrics_labels.into_iter().collect();
     let mut route = http::RoutePolicy {
         backends: Vec::new(), // service profiles do not have top level backends
         meta,
+        labels,
         proto: http::HttpPolicy {
             response_classes,
             retries: None,

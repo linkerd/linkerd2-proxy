@@ -16,7 +16,7 @@ use crate::{policy, tcp};
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
     classify, metrics,
-    profiles::{self, LogicalAddr},
+    profiles::LogicalAddr,
     proxy::{api_resolve::ProtocolHint, tap},
     svc::Param,
     tls, Addr, Conditional, CANONICAL_DST_HEADER,
@@ -205,10 +205,9 @@ impl tap::Inspect for Endpoint {
     }
 
     fn route_labels<B>(&self, req: &Request<B>) -> Option<tap::Labels> {
-        // req.extensions()
-        //     .get::<profiles::http::RoutePolicy>()
-        //     .map(|r| r.labels().clone())
-        todo!("eliza: labels")
+        req.extensions()
+            .get::<policy::http::RoutePolicy>()
+            .map(|r| r.labels().clone())
     }
 
     fn is_outbound<B>(&self, _: &Request<B>) -> bool {
@@ -226,8 +225,7 @@ impl Param<policy::http::RoutePolicy> for PolicyRoute {
 
 impl Param<metrics::ProfileRouteLabels> for PolicyRoute {
     fn param(&self) -> metrics::ProfileRouteLabels {
-        todo!("eliza: labels")
-        // metrics::ProfileRouteLabels::outbound(self.logical.logical_addr.clone(), &self.route)
+        metrics::ProfileRouteLabels::outbound(self.logical.logical_addr.clone(), &self.route)
     }
 }
 
