@@ -109,7 +109,7 @@ where
     T: Clone,
     N: NewService<(F::Route, T), Service = P> + Clone,
     P: Proxy<http::Request<B>, S, Request = http::Request<B>, Response = Rsp>,
-    S: Service<http::Request<B>, Response = Rsp> + Clone,
+    S: Service<http::Request<B>, Response = Rsp>,
     Error: From<S::Error>,
     F: FindRoute,
 {

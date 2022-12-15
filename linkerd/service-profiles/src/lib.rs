@@ -42,7 +42,7 @@ struct ReceiverStream {
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
     // TODO(eliza): this ought to be an `Arc` probably?
-    pub http_routes: Vec<(self::http::RequestMatch, http::RoutePolicy)>,
+    pub http_routes: http::RouteList,
     pub targets: Vec<split::Backend>,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,

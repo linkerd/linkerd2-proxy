@@ -933,6 +933,7 @@ name = "linkerd-app-inbound"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "async-stream",
  "bytes",
  "futures",
  "http",
@@ -1641,6 +1642,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tonic-watch",
  "linkerd2-proxy-api",
+ "once_cell",
  "pin-project",
  "prost-types",
  "quickcheck",

@@ -1,4 +1,5 @@
 use crate::{policy, stack_labels, Inbound};
+use futures::Stream;
 use linkerd_app_core::{
     classify, errors, http_tracing, metrics,
     profiles::{self, DiscoveryRejected},
@@ -8,7 +9,7 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, Remote, ServerAddr},
     Error, Infallible, NameAddr, Result,
 };
-use std::net::SocketAddr;
+use std::{net::SocketAddr, pin::Pin};
 use tracing::{debug, debug_span};
 
 /// Describes an HTTP client target.
@@ -158,10 +159,11 @@ impl<C> Inbound<C> {
                         )
                         .push_on_service(http::BoxResponse::layer())
                         .push(classify::NewClassify::layer())
-                        .push_http_insert_target::<profiles::http::Route>()
+                        .push_http_insert_target::<profiles::http::RoutePolicy>()
                         .push_map_target(|(route, profile)| ProfileRoute { route, profile })
                         .into_inner(),
                 ))
+                .check_new_service::<Profile, http::Request<_>>()
                 .push_switch(
                     // If the profile was resolved to a logical (service) address, build a profile
                     // stack to include route-level metrics, etc. Otherwise, skip this stack and use
@@ -318,8 +320,8 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
 
 // === impl Route ===
 
-impl Param<profiles::http::Route> for ProfileRoute {
-    fn param(&self) -> profiles::http::Route {
+impl Param<profiles::http::RoutePolicy> for ProfileRoute {
+    fn param(&self) -> profiles::http::RoutePolicy {
         self.route.clone()
     }
 }
@@ -349,6 +351,23 @@ impl Param<http::ResponseTimeout> for ProfileRoute {
 impl Param<profiles::Receiver> for Profile {
     fn param(&self) -> profiles::Receiver {
         self.profiles.clone()
+    }
+}
+
+impl Param<Pin<Box<dyn Stream<Item = profiles::http::RouteList> + Send + 'static>>> for Profile {
+    fn param(&self) -> Pin<Box<dyn Stream<Item = profiles::http::RouteList> + Send + 'static>> {
+        use async_stream::stream;
+
+        let mut rx = self.profiles.clone().into_inner();
+        Box::pin(stream! {
+            loop {
+                let routes = rx.borrow_and_update().http_routes.clone();
+                yield routes;
+                if rx.changed().await.is_err() {
+                    break;
+                }
+            }
+        })
     }
 }
 
@@ -417,9 +436,10 @@ impl tap::Inspect for Logical {
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<tap::Labels> {
-        req.extensions()
-            .get::<profiles::http::Route>()
-            .map(|r| r.labels().clone())
+        // req.extensions()
+        //     .get::<profiles::http::RoutePolicy>()
+        //     .map(|r| r.labels().clone())
+        todo!("eliza: labels")
     }
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {

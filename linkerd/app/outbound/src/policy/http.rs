@@ -6,8 +6,7 @@ use std::{pin::Pin, sync::Arc};
 #[derive(Clone, Debug)]
 pub enum RouteList {
     HttpRoute(Arc<[Route]>),
-    // TODO(eliza): would be nice if the profile routes were arced
-    Profile(Vec<(profiles::RequestMatch, RoutePolicy)>),
+    Profile(profiles::RouteList),
 }
 
 pub type RouteListStream = Pin<Box<dyn Stream<Item = RouteList> + Send + 'static>>;
@@ -21,17 +20,14 @@ impl FindRoute for RouteList {
     {
         match self {
             Self::HttpRoute(routes) => routes.with_routes(f),
-            Self::Profile(routes) => {
-                let mut iter = routes.iter().map(|(_, policy)| policy.clone());
-                f(&mut iter)
-            }
+            Self::Profile(routes) => routes.with_routes(f),
         }
     }
 
     fn find_route<'r, B>(&'r self, request: &http::Request<B>) -> Option<&'r Self::Route> {
         match self {
             Self::HttpRoute(routes) => routes.find_route(request),
-            Self::Profile(routes) => profiles::route_for_request(routes, request),
+            Self::Profile(routes) => routes.find_route(request),
         }
     }
 }
