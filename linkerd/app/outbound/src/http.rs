@@ -31,15 +31,11 @@ pub type Endpoint = crate::endpoint::Endpoint<Version>;
 pub type Connect = self::endpoint::Connect<Endpoint>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct ProfileRoute {
-    logical: Logical,
-    route: profiles::http::Route,
-}
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct PolicyRoute {
     logical: Logical,
-    route: policy::RoutePolicy,
+    route: policy::http::RoutePolicy,
 }
+
 #[derive(Clone, Debug)]
 pub struct CanonicalDstHeader(pub Addr);
 
@@ -102,6 +98,38 @@ impl Param<normalize_uri::DefaultAuthority> for Logical {
             uri::Authority::from_str(&self.logical_addr.to_string())
                 .expect("Address must be a valid authority"),
         ))
+    }
+}
+
+impl Param<policy::http::RouteListStream> for Logical {
+    fn param(&self) -> policy::http::RouteListStream {
+        use async_stream::stream;
+        use policy::http::RouteList;
+
+        // If a client policy was discovered, use its HTTP routes.
+        if let Some(mut rx) = self.policy.clone() {
+            return Box::pin(stream! {
+                loop {
+                    let routes = rx.borrow_and_update().http_routes.clone();
+                    yield RouteList::HttpRoute(routes);
+                    if rx.changed().await.is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+
+        // otherwise, use service profile HTTP routes (if there are any).
+        let mut rx = self.profile.clone().into_inner();
+        Box::pin(stream! {
+            loop {
+                let routes = rx.borrow_and_update().http_routes.clone();
+                yield RouteList::Profile(routes);
+                if rx.changed().await.is_err() {
+                    break;
+                }
+            }
+        })
     }
 }
 
@@ -177,9 +205,10 @@ impl tap::Inspect for Endpoint {
     }
 
     fn route_labels<B>(&self, req: &Request<B>) -> Option<tap::Labels> {
-        req.extensions()
-            .get::<profiles::http::Route>()
-            .map(|r| r.labels().clone())
+        // req.extensions()
+        //     .get::<profiles::http::RoutePolicy>()
+        //     .map(|r| r.labels().clone())
+        todo!("eliza: labels")
     }
 
     fn is_outbound<B>(&self, _: &Request<B>) -> bool {
@@ -187,27 +216,28 @@ impl tap::Inspect for Endpoint {
     }
 }
 
-// === impl ProfileRoute ===
+// === impl PolicyRoute ===
 
-impl Param<profiles::http::Route> for ProfileRoute {
-    fn param(&self) -> profiles::http::Route {
+impl Param<policy::http::RoutePolicy> for PolicyRoute {
+    fn param(&self) -> policy::http::RoutePolicy {
         self.route.clone()
     }
 }
 
-impl Param<metrics::ProfileRouteLabels> for ProfileRoute {
+impl Param<metrics::ProfileRouteLabels> for PolicyRoute {
     fn param(&self) -> metrics::ProfileRouteLabels {
-        metrics::ProfileRouteLabels::outbound(self.logical.logical_addr.clone(), &self.route)
+        todo!("eliza: labels")
+        // metrics::ProfileRouteLabels::outbound(self.logical.logical_addr.clone(), &self.route)
     }
 }
 
-impl Param<ResponseTimeout> for ProfileRoute {
+impl Param<ResponseTimeout> for PolicyRoute {
     fn param(&self) -> ResponseTimeout {
         ResponseTimeout(self.route.timeout())
     }
 }
 
-impl classify::CanClassify for ProfileRoute {
+impl classify::CanClassify for PolicyRoute {
     type Classify = classify::Request;
 
     fn classify(&self) -> classify::Request {

@@ -1,6 +1,7 @@
 use crate::{http, split::Backend, LogicalAddr, Profile};
 use linkerd2_proxy_api::destination as api;
 use linkerd_addr::NameAddr;
+use linkerd_client_policy::Meta;
 use linkerd_dns_name::Name;
 use linkerd_proxy_api_resolve::pb as resolve;
 use regex::Regex;
@@ -10,11 +11,16 @@ use tracing::warn;
 
 pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Profile {
     let name = Name::from_str(&proto.fully_qualified_name).ok();
+    let meta = Arc::new(Meta::Resource {
+        group: "linkerd.io".to_string(),
+        kind: "ServiceProfile".to_string(),
+        name: proto.fully_qualified_name,
+    });
     let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
     let http_routes = proto
         .routes
         .into_iter()
-        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
+        .filter_map(move |orig| convert_route(meta.clone(), orig, retry_budget.as_ref()))
         .collect();
     let targets = proto
         .dst_overrides
@@ -35,16 +41,26 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
 }
 
 fn convert_route(
+    meta: Arc<Meta>,
     orig: api::Route,
     retry_budget: Option<&Arc<Budget>>,
-) -> Option<(http::RequestMatch, http::Route)> {
+) -> Option<(http::RequestMatch, http::RoutePolicy)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
-    let rsp_classes = orig
+    let response_classes = orig
         .response_classes
         .into_iter()
         .filter_map(convert_rsp_class)
         .collect();
-    let mut route = http::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
+    let mut route = http::RoutePolicy {
+        backends: Vec::new(), // service profiles do not have top level backends
+        meta,
+        proto: http::HttpPolicy {
+            response_classes,
+            retries: None,
+            timeout: None,
+        },
+    };
+
     if orig.is_retryable {
         set_route_retry(&mut route, retry_budget);
     }
@@ -65,7 +81,7 @@ fn convert_dst_override(orig: api::WeightedDst) -> Option<Backend> {
     })
 }
 
-fn set_route_retry(route: &mut http::Route, retry_budget: Option<&Arc<Budget>>) {
+fn set_route_retry(route: &mut http::RoutePolicy, retry_budget: Option<&Arc<Budget>>) {
     let budget = match retry_budget {
         Some(budget) => budget.clone(),
         None => {
@@ -78,7 +94,7 @@ fn set_route_retry(route: &mut http::Route, retry_budget: Option<&Arc<Budget>>) 
 }
 
 fn set_route_timeout(
-    route: &mut http::Route,
+    route: &mut http::RoutePolicy,
     timeout: Result<Duration, prost_types::DurationError>,
 ) {
     match timeout {

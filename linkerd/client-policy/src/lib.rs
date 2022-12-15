@@ -21,9 +21,10 @@ pub struct ClientPolicy {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RoutePolicy {
+pub struct RoutePolicy<P> {
     pub backends: Vec<split::Backend>,
     pub meta: Arc<Meta>,
+    pub proto: P,
 }
 
 /// A bound logical service address

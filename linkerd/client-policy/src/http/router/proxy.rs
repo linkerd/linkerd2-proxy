@@ -1,7 +1,7 @@
 use crate::http::{router::FindRoute, HttpRouteNotFound};
 use futures::{future, FutureExt, Stream, StreamExt, TryFutureExt};
 use linkerd_error::Error;
-use linkerd_stack::{layer, NewService, Oneshot, Param, Proxy, Service, ServiceExt};
+use linkerd_stack::{layer, NewService, Param, Proxy, Service};
 use std::{
     collections::{
         hash_map::{self, HashMap},

@@ -51,7 +51,7 @@ struct Profile {
 #[derive(Clone, Debug)]
 struct ProfileRoute {
     profile: Profile,
-    route: profiles::http::Route,
+    route: profiles::http::RoutePolicy,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -144,7 +144,7 @@ impl<C> Inbound<C> {
             http.clone()
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_map_target(|p: Profile| p.logical)
-                .push(profiles::http::NewProxyRouter::layer(
+                .push(linkerd_client_policy::http::NewProxyRouter::layer(
                     // If the request matches a route, use a per-route proxy to
                     // wrap the inner service.
                     svc::proxies()

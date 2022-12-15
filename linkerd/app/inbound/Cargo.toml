@@ -15,6 +15,7 @@ http = "0.2"
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-cache = { path = "../../cache" }
+linkerd-client-policy = { path = "../../client-policy", features = ["proto"] }
 linkerd-http-access-log = { path = "../../http-access-log" }
 linkerd-server-policy = { path = "../../server-policy", features = ["proto"] }
 linkerd-tonic-watch = { path = "../../tonic-watch" }

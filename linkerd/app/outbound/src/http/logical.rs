@@ -1,4 +1,4 @@
-use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, PolicyRoute, ProfileRoute};
+use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, PolicyRoute};
 use crate::{endpoint, policy, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     cache, classify, config, profiles,
@@ -28,58 +28,36 @@ impl<E> Outbound<E> {
     {
         let concrete = self.push_http_concrete(resolve);
 
-        // for now, the client-policy route stack is just a fixed traffic split
-        let policy = concrete.clone().push_client_policy();
+        concrete.map_stack(|config, rt, concrete| {
+            let config::ProxyConfig {
+                buffer_capacity,
+                cache_max_idle_age,
+                dispatch_timeout,
+                ..
+            } = config.proxy;
 
-        let profile_route = concrete
-            .map_stack(|config, rt, concrete| {
-                let config::ProxyConfig {
-                    buffer_capacity,
-                    cache_max_idle_age,
-                    dispatch_timeout,
-                    ..
-                } = config.proxy;
-
-                // Distribute requests over a distribution of balancers via a
-                // traffic split.
-                //
-                // If the traffic split is empty/unavailable, eagerly fail requests.
-                // When the split is in failfast, spawn the service in a background
-                // task so it becomes ready without new requests.
-                concrete
-                    .push_map_target(Concrete::from)
-                    .push(policy::split::NewDynamicSplit::layer())
-                    .push_on_service(
-                        svc::layers()
-                            .push(svc::layer::mk(svc::SpawnReady::new))
-                            .push(
-                                rt.metrics
-                                    .proxy
-                                    .stack
-                                    .layer(stack_labels("http", "logical")),
-                            )
-                            .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
-                            .push_spawn_buffer(buffer_capacity),
-                    )
-                    .push_cache(cache_max_idle_age)
-            })
-            .push_profile_route()
-            .into_inner();
-
-        policy.map_stack(|_, _, policy| {
-            policy
-                // switch between the client policy and service profile stacks
-                // based on whether a client policy was discovered.
-                .push_switch(
-                    |logical: Logical| -> Result<_, Infallible> {
-                        if logical.policy.is_some() {
-                            Ok(svc::Either::A(logical))
-                        } else {
-                            Ok(svc::Either::B(logical))
-                        }
-                    },
-                    profile_route,
+            // Distribute requests over a distribution of balancers via a
+            // traffic split.
+            //
+            // If the traffic split is empty/unavailable, eagerly fail requests.
+            // When the split is in failfast, spawn the service in a background
+            // task so it becomes ready without new requests.
+            concrete
+                .push_map_target(Concrete::from)
+                .push(policy::split::NewDynamicSplit::layer())
+                .push_on_service(
+                    svc::layers()
+                        .push(svc::layer::mk(svc::SpawnReady::new))
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .stack
+                                .layer(stack_labels("http", "logical")),
+                        )
+                        .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
+                        .push_spawn_buffer(buffer_capacity),
                 )
+                .push_cache(cache_max_idle_age)
                 .check_new_service::<Logical, http::Request<_>>()
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header. The response body is boxed
@@ -92,88 +70,88 @@ impl<E> Outbound<E> {
         })
     }
 
-    /// Push the stack that's built when a client policy is discovered for an
-    /// outbound service.
-    fn push_client_policy<ESvc>(
-        self,
-    ) -> Outbound<
-        impl svc::NewService<
-                Logical,
-                Service = impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Future = impl Send,
-                    Error = impl Into<Error>,
-                > + Send
-                              + 'static,
-            > + Clone,
-    >
-    where
-        E: svc::NewService<Concrete, Service = ESvc> + Clone + Send + Sync + 'static,
-        ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-            + Send
-            + 'static,
-        ESvc::Error: Into<Error>,
-        ESvc::Future: Send,
-    {
-        self.map_stack(|config, rt, concrete| {
-            let config::ProxyConfig {
-                buffer_capacity,
-                dispatch_timeout,
-                ..
-            } = config.proxy;
+    // /// Push the stack that's built when a client policy is discovered for an
+    // /// outbound service.
+    // fn push_client_policy<ESvc>(
+    //     self,
+    // ) -> Outbound<
+    //     impl svc::NewService<
+    //             Logical,
+    //             Service = impl svc::Service<
+    //                 http::Request<http::BoxBody>,
+    //                 Response = http::Response<http::BoxBody>,
+    //                 Future = impl Send,
+    //                 Error = impl Into<Error>,
+    //             > + Send
+    //                           + 'static,
+    //         > + Clone,
+    // >
+    // where
+    //     E: svc::NewService<Concrete, Service = ESvc> + Clone + Send + Sync + 'static,
+    //     ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+    //         + Send
+    //         + 'static,
+    //     ESvc::Error: Into<Error>,
+    //     ESvc::Future: Send,
+    // {
+    //     self.map_stack(|config, rt, concrete| {
+    //         let config::ProxyConfig {
+    //             buffer_capacity,
+    //             dispatch_timeout,
+    //             ..
+    //         } = config.proxy;
 
-            concrete
-                .push_map_target(Concrete::from)
-                // Any per-route policy has to go between the split layer and
-                // the concrete stack cache, since we _don't_ want to share
-                // client policy across routes that have the same backend!
-                .push_map_target(
-                    |(concrete, PolicyRoute { route: _, logical }): (ConcreteAddr, PolicyRoute)| {
-                        (concrete, logical)
-                    },
-                )
-                .push(policy::split::layer())
-                .push_on_service(
-                    svc::layers()
-                        .push(svc::layer::mk(svc::SpawnReady::new))
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(stack_labels("http", "HTTPRoute")),
-                        )
-                        .push(svc::FailFast::layer("HTTPRoute", dispatch_timeout))
-                        .push_spawn_buffer(buffer_capacity),
-                )
-                .check_new_clone::<PolicyRoute>()
-                .push_map_target(|(route, logical)| {
-                    tracing::debug!(?route);
-                    PolicyRoute { route, logical }
-                })
-                .push(policy::http::NewServiceRouter::layer())
-                .push_map_target(|logical: Logical| {
-                    {
-                        let policy = logical
-                            .policy
-                            .as_ref()
-                            .expect("policy stack should not be built if there's no policy")
-                            .borrow();
+    //         concrete
+    //             .push_map_target(Concrete::from)
+    //             // Any per-route policy has to go between the split layer and
+    //             // the concrete stack cache, since we _don't_ want to share
+    //             // client policy across routes that have the same backend!
+    //             .push_map_target(
+    //                 |(concrete, PolicyRoute { route: _, logical }): (ConcreteAddr, PolicyRoute)| {
+    //                     (concrete, logical)
+    //                 },
+    //             )
+    //             .push(policy::split::layer())
+    //             .push_on_service(
+    //                 svc::layers()
+    //                     .push(svc::layer::mk(svc::SpawnReady::new))
+    //                     .push(
+    //                         rt.metrics
+    //                             .proxy
+    //                             .stack
+    //                             .layer(stack_labels("http", "HTTPRoute")),
+    //                     )
+    //                     .push(svc::FailFast::layer("HTTPRoute", dispatch_timeout))
+    //                     .push_spawn_buffer(buffer_capacity),
+    //             )
+    //             .check_new_clone::<PolicyRoute>()
+    //             .push_map_target(|(route, logical)| {
+    //                 tracing::debug!(?route);
+    //                 PolicyRoute { route, logical }
+    //             })
+    //             .push(policy::http::NewServiceRouter::layer())
+    //             .push_map_target(|logical: Logical| {
+    //                 {
+    //                     let policy = logical
+    //                         .policy
+    //                         .as_ref()
+    //                         .expect("policy stack should not be built if there's no policy")
+    //                         .borrow();
 
-                        // for now, log the client policy at INFO for
-                        // development purposes
-                        tracing::info!(
-                            dst = ?logical.logical_addr,
-                            ?policy.backends,
-                            ?policy.http_routes,
-                        );
-                    }
-                    logical
-                })
-                .instrument(|_: &Logical| debug_span!("policy"))
-                .check_new_service::<Logical, http::Request<_>>()
-        })
-    }
+    //                     // for now, log the client policy at INFO for
+    //                     // development purposes
+    //                     tracing::info!(
+    //                         dst = ?logical.logical_addr,
+    //                         ?policy.backends,
+    //                         ?policy.http_routes,
+    //                     );
+    //                 }
+    //                 logical
+    //             })
+    //             .instrument(|_: &Logical| debug_span!("policy"))
+    //             .check_new_service::<Logical, http::Request<_>>()
+    //     })
+    // }
 
     /// Push the stack that's built when an outbound service has a Service Profile.
     ///
@@ -202,51 +180,45 @@ impl<E> Outbound<E> {
         ESvc::Future: Send,
     {
         self.map_stack(|_, rt, logical| {
-             // If there's no route, use the logical service directly; otherwise
-                // use the per-route stack.
-                logical.clone().push_switch(
-                    |(route, logical): (Option<profiles::http::Route>, Logical)| -> Result<_, Infallible> {
-                        match route {
-                            None => Ok(svc::Either::A(logical)),
-                            Some(route) => Ok(svc::Either::B(ProfileRoute { route, logical })),
-                        }
-                    },
-                    logical
-                        .push_map_target(|r: ProfileRoute| r.logical)
-                        .push_on_service(http::BoxRequest::layer())
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .http_profile_route_actual
-                                .to_layer::<classify::Response, _, ProfileRoute>(),
-                        )
-                        // Depending on whether or not the request can be
-                        // retried, it may have one of two `Body` types. This
-                        // layer unifies any `Body` type into `BoxBody`.
-                        .push_on_service(http::BoxRequest::erased())
-                        .push_http_insert_target::<profiles::http::Route>()
-                        // Sets an optional retry policy.
-                        .push(retry::layer(rt.metrics.proxy.http_profile_route_retry.clone()))
-                        // Sets an optional request timeout.
-                        .push(http::NewTimeout::layer())
-                        // Records per-route metrics.
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .http_profile_route
-                                .to_layer::<classify::Response, _, _>(),
-                        )
-                        // Sets the per-route response classifier as a request
-                        // extension.
-                        .push(classify::NewClassify::layer())
-                        .push_on_service(
-                            svc::layers()
-                                .push(http::BoxResponse::layer())
-                                .push(svc::BoxCloneService::layer())
-                        )
-                        .into_inner(),
+            logical
+                .push_map_target(|r: PolicyRoute| r.logical)
+                .push_on_service(http::BoxRequest::layer())
+                .push(
+                    rt.metrics
+                        .proxy
+                        .http_profile_route_actual
+                        .to_layer::<classify::Response, _, PolicyRoute>(),
                 )
-                .push(profiles::http::NewServiceRouter::layer())
+                // Depending on whether or not the request can be
+                // retried, it may have one of two `Body` types. This
+                // layer unifies any `Body` type into `BoxBody`.
+                .push_on_service(http::BoxRequest::erased())
+                .push_http_insert_target::<policy::http::RoutePolicy>()
+                // Sets an optional retry policy.
+                .push(retry::layer(
+                    rt.metrics.proxy.http_profile_route_retry.clone(),
+                ))
+                // Sets an optional request timeout.
+                .push(http::NewTimeout::layer())
+                // Records per-route metrics.
+                .push(
+                    rt.metrics
+                        .proxy
+                        .http_profile_route
+                        .to_layer::<classify::Response, _, _>(),
+                )
+                // Sets the per-route response classifier as a request
+                // extension.
+                .push(classify::NewClassify::layer())
+                .push_on_service(
+                    svc::layers()
+                        .push(http::BoxResponse::layer())
+                        .push(svc::BoxCloneService::layer()),
+                )
+                .check_new_service::<PolicyRoute, _>()
+                .push_map_target(|(route, logical)| PolicyRoute { route, logical })
+                .push(policy::http::NewServiceRouter::layer())
+                .check_new_service::<Logical, _>()
         })
     }
 

@@ -41,7 +41,8 @@ struct ReceiverStream {
 #[derive(Clone, Debug, Default)]
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
-    pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
+    // TODO(eliza): this ought to be an `Arc` probably?
+    pub http_routes: Vec<(self::http::RequestMatch, http::RoutePolicy)>,
     pub targets: Vec<split::Backend>,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
@@ -141,6 +142,7 @@ impl Receiver {
     pub fn endpoint(&self) -> Option<(SocketAddr, Metadata)> {
         self.inner.borrow().endpoint.clone()
     }
+
     pub fn backends(&self) -> Vec<split::Backend> {
         self.inner.borrow().targets.clone()
     }

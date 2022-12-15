@@ -35,6 +35,12 @@ impl<N, F> NewServiceRouter<N, F> {
     }
 }
 
+impl<N: Clone, F> Clone for NewServiceRouter<N, F> {
+    fn clone(&self) -> Self {
+        Self::new(self.0.clone())
+    }
+}
+
 impl<T, N, F> NewService<T> for NewServiceRouter<N, F>
 where
     T: Param<Pin<Box<dyn Stream<Item = F> + Send + 'static>>> + Clone,

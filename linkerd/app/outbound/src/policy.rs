@@ -12,6 +12,7 @@ use tokio::sync::watch;
 pub mod api;
 mod config;
 mod discover;
+pub mod http;
 
 impl Outbound<()> {
     pub fn build_policies(
