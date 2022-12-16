@@ -19,6 +19,10 @@ pub enum RequestMatch {
     Default,
 }
 
+/// A list of ServiceProfile HTTP route matching expressions and their
+/// corresponding policies.
+///
+/// This is a newtype primarily so that it can implement the `FindRoute` trait.
 #[derive(Clone, Debug)]
 pub struct RouteList(Arc<[(RequestMatch, RoutePolicy)]>);
 

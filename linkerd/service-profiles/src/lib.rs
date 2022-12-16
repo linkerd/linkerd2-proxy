@@ -41,7 +41,6 @@ struct ReceiverStream {
 #[derive(Clone, Debug, Default)]
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
-    // TODO(eliza): this ought to be an `Arc` probably?
     pub http_routes: http::RouteList,
     pub targets: Vec<split::Backend>,
     pub opaque_protocol: bool,
