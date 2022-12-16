@@ -1,7 +1,7 @@
 use super::{Concrete, Endpoint, Logical};
 use crate::{endpoint, resolve, Outbound};
 use linkerd_app_core::{
-    config, drain, io, profiles,
+    drain, io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -39,12 +39,11 @@ impl<C> Outbound<C> {
         R::Future: Send + Unpin,
     {
         self.map_stack(|config, rt, connect| {
-            let config::ProxyConfig {
-                buffer_capacity,
-                cache_max_idle_age,
-                dispatch_timeout,
+            let crate::Config {
+                orig_dst_idle_timeout,
+                tcp_logical_buffer,
                 ..
-            } = config.proxy;
+            } = config;
 
             let resolve = svc::stack(resolve.into_service())
                 .check_service::<ConcreteAddr>()
@@ -60,7 +59,7 @@ impl<C> Outbound<C> {
                 .check_service::<Concrete>()
                 .into_inner();
 
-            connect
+            let concrete = connect
                 .push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
                 .instrument(|t: &Endpoint| {
@@ -70,7 +69,7 @@ impl<C> Outbound<C> {
                         server.id = t.tls.value().map(|tls| tracing::field::display(&tls.server_id)),
                     )
                 })
-                .push(resolve::layer(resolve, config.proxy.cache_max_idle_age * 2))
+                .push(resolve::layer(resolve, *orig_dst_idle_timeout * 2))
                 .push_on_service(
                     svc::layers()
                         .push(tcp::balance::layer(
@@ -87,8 +86,10 @@ impl<C> Outbound<C> {
                         .push(drain::Retain::layer(rt.drain.clone())),
                 )
                 .into_new_service()
+                .push(svc::ArcNewService::layer());
+
+            concrete
                 .push_map_target(Concrete::from)
-                .push(svc::ArcNewService::layer())
                 .check_new_service::<(ConcreteAddr, Logical), I>()
                 .push(profiles::split::layer())
                 .push_on_service(
@@ -99,9 +100,9 @@ impl<C> Outbound<C> {
                                 .stack
                                 .layer(crate::stack_labels("tcp", "logical")),
                         )
-                        .push_buffer("TCP Logical", buffer_capacity, dispatch_timeout),
+                        .push_buffer("TCP Logical", tcp_logical_buffer.capacity, tcp_logical_buffer.failfast_timeout),
                 )
-                .push_cache(cache_max_idle_age)
+                .push_cache(*orig_dst_idle_timeout)
                 .check_new_service::<Logical, I>()
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()

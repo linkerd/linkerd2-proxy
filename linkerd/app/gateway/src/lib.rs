@@ -7,7 +7,6 @@ mod tests;
 
 use self::gateway::NewGateway;
 use linkerd_app_core::{
-    config::ProxyConfig,
     identity, io, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{
@@ -81,12 +80,7 @@ where
     R::Resolution: Send,
     R::Future: Send + Unpin,
 {
-    let ProxyConfig {
-        buffer_capacity,
-        cache_max_idle_age,
-        dispatch_timeout,
-        ..
-    } = inbound.config().proxy.clone();
+    let inbound_config = inbound.config().clone();
     let local_id = identity::LocalId(inbound.identity().name().clone());
 
     // For each gatewayed connection that is *not* HTTP, use the target from the
@@ -158,9 +152,13 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 )
-                .push_buffer("TCP Gatweay", buffer_capacity, dispatch_timeout),
+                .push_buffer(
+                    "TCP Gatweay",
+                    inbound_config.tcp_server_buffer.capacity,
+                    inbound_config.tcp_server_buffer.failfast_timeout,
+                ),
         )
-        .push_cache(cache_max_idle_age)
+        .push_cache(inbound_config.profile_idle_timeout)
         .check_new_service::<NameAddr, I>();
 
     // Cache an HTTP gateway service for each destination and HTTP version.
@@ -171,7 +169,8 @@ where
     let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
     let http = endpoint
         .clone()
-        .push_http_logical(resolve)
+        .push_http_concrete(resolve)
+        .push_http_logical()
         .into_stack()
         .push_switch(Ok::<_, Infallible>, endpoint.into_stack())
         .push(NewGateway::layer(local_id))
@@ -191,9 +190,13 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("http", "gateway")),
                 )
-                .push_buffer("Gateway", buffer_capacity, dispatch_timeout),
+                .push_buffer(
+                    "Gateway",
+                    inbound_config.http_logical_buffer.capacity,
+                    inbound_config.http_logical_buffer.failfast_timeout,
+                ),
         )
-        .push_cache(cache_max_idle_age)
+        .push_cache(inbound_config.profile_idle_timeout)
         .push_on_service(
             svc::layers()
                 .push(http::Retain::layer())

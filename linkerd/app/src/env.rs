@@ -372,7 +372,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let dst_addr = parse_control_addr(strings, ENV_DESTINATION_SVC_BASE);
     let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
-    let dst_profile_idle_timeout = parse(
+    let dst_profile_skip_timeout = parse(
         strings,
         ENV_DESTINATION_PROFILE_INITIAL_TIMEOUT,
         parse_duration,
@@ -473,14 +473,28 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             proxy: ProxyConfig {
                 server,
                 connect,
-                cache_max_idle_age,
-                buffer_capacity,
-                dispatch_timeout,
                 max_in_flight_requests: outbound_max_in_flight?
                     .unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout,
             },
             inbound_ips: inbound_ips.clone(),
+            orig_dst_idle_timeout: cache_max_idle_age,
+            tcp_connection_buffer: BufferConfig {
+                capacity: buffer_capacity,
+                failfast_timeout: dispatch_timeout,
+            },
+            tcp_logical_buffer: BufferConfig {
+                capacity: buffer_capacity,
+                failfast_timeout: dispatch_timeout,
+            },
+            http_server_buffer: BufferConfig {
+                capacity: buffer_capacity,
+                failfast_timeout: dispatch_timeout,
+            },
+            http_logical_buffer: BufferConfig {
+                capacity: buffer_capacity,
+                failfast_timeout: dispatch_timeout,
+            },
         }
     };
 
@@ -709,17 +723,24 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             proxy: ProxyConfig {
                 server,
                 connect,
-                cache_max_idle_age,
-                buffer_capacity,
-                dispatch_timeout,
                 max_in_flight_requests: inbound_max_in_flight?
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout,
             },
             policy,
-            profile_idle_timeout: dst_profile_idle_timeout?
+            profile_skip_timeout: dst_profile_skip_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
             allowed_ips: inbound_ips.into(),
+
+            profile_idle_timeout: cache_max_idle_age,
+            tcp_server_buffer: BufferConfig {
+                capacity: buffer_capacity,
+                failfast_timeout: dispatch_timeout,
+            },
+            http_logical_buffer: BufferConfig {
+                capacity: buffer_capacity,
+                failfast_timeout: dispatch_timeout,
+            },
         }
     };
 

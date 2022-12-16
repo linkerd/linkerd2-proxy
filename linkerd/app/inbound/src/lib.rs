@@ -18,7 +18,7 @@ pub(crate) mod test_util;
 
 pub use self::{metrics::Metrics, policy::DefaultPolicy};
 use linkerd_app_core::{
-    config::{ConnectConfig, ProxyConfig},
+    config::{BufferConfig, ConnectConfig, ProxyConfig},
     drain,
     http_tracing::OpenCensusSink,
     identity, io,
@@ -39,8 +39,12 @@ pub struct Config {
     pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
     pub policy: policy::Config,
-    pub profile_idle_timeout: Duration,
     pub allowed_ips: transport::AllowIps,
+
+    pub profile_skip_timeout: Duration,
+    pub profile_idle_timeout: Duration,
+    pub tcp_server_buffer: BufferConfig,
+    pub http_logical_buffer: BufferConfig,
 }
 
 #[derive(Clone)]

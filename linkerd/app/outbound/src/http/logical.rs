@@ -1,7 +1,7 @@
 use super::{retry, CanonicalDstHeader, Concrete, Endpoint, Logical, ProfileRoute};
 use crate::{endpoint, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
-    classify, config, profiles,
+    classify, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -12,31 +12,39 @@ use linkerd_app_core::{
 };
 use tracing::debug_span;
 
-impl<E> Outbound<E> {
-    pub fn push_http_logical<ESvc, R>(self, resolve: R) -> Outbound<svc::ArcNewHttp<Logical>>
+impl<N> Outbound<N> {
+    pub fn push_http_concrete<NSvc, R>(
+        self,
+        resolve: R,
+    ) -> Outbound<
+        svc::ArcNewService<
+            Concrete,
+            impl svc::Service<
+                http::Request<http::BoxBody>,
+                Response = http::Response<http::BoxBody>,
+                Error = Error,
+                Future = impl Send,
+            >,
+        >,
+    >
     where
-        E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + Sync + 'static,
-        ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+        N: svc::NewService<Endpoint, Service = NSvc> + Clone + Send + Sync + 'static,
+        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
             + 'static,
-        ESvc::Error: Into<Error>,
-        ESvc::Future: Send,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send,
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
         R: Clone + Send + Sync + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {
         self.map_stack(|config, rt, endpoint| {
-            let config::ProxyConfig {
-                buffer_capacity,
-                cache_max_idle_age,
-                dispatch_timeout,
+            let crate::Config {
+                orig_dst_idle_timeout,
                 ..
-            } = config.proxy;
-            let watchdog = cache_max_idle_age * 2;
-
-            let endpoint =
-                endpoint.instrument(|e: &Endpoint| debug_span!("endpoint", server.addr = %e.addr));
+            } = config;
+            let watchdog = *orig_dst_idle_timeout * 2;
 
             let resolve = svc::stack(resolve.into_service())
                 .check_service::<ConcreteAddr>()
@@ -52,8 +60,8 @@ impl<E> Outbound<E> {
                 .check_service::<Concrete>()
                 .into_inner();
 
-            let concrete = endpoint
-                .clone()
+            endpoint
+                // .instrument(|e: &Endpoint| debug_span!("endpoint", server.addr = %e.addr))
                 .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers().push(http::BoxRequest::layer()).push(
@@ -88,8 +96,6 @@ impl<E> Outbound<E> {
                                 .stack
                                 .layer(stack_labels("http", "balancer")),
                         )
-                        .push(svc::layer::mk(svc::SpawnReady::new))
-                        .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
                         .push(http::BoxResponse::layer()),
                 )
                 .check_make_service::<Concrete, http::Request<_>>()
@@ -100,8 +106,25 @@ impl<E> Outbound<E> {
                 // resolved. Endpoint resolution is skipped when there is no
                 // concrete address.
                 .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
-                .push_map_target(Concrete::from)
-                .push(svc::ArcNewService::layer());
+                .push(svc::ArcNewService::layer())
+        })
+    }
+
+    pub fn push_http_logical<NSvc>(self) -> Outbound<svc::ArcNewHttp<Logical>>
+    where
+        N: svc::NewService<Concrete, Service = NSvc> + Clone + Send + Sync + 'static,
+        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Send
+            + 'static,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send,
+    {
+        self.map_stack(|config, rt, concrete| {
+            let crate::Config {
+                orig_dst_idle_timeout,
+                http_logical_buffer,
+                ..
+            } = config;
 
             // Distribute requests over a distribution of balancers via a
             // traffic split.
@@ -110,6 +133,7 @@ impl<E> Outbound<E> {
             // When the split is in failfast, spawn the service in a background
             // task so it becomes ready without new requests.
             let logical = concrete
+                .push_map_target(Concrete::from)
                 .check_new_service::<(ConcreteAddr, Logical), _>()
                 .push(profiles::split::layer())
                 .push_on_service(
@@ -120,9 +144,9 @@ impl<E> Outbound<E> {
                                 .stack
                                 .layer(stack_labels("http", "logical")),
                         )
-                        .push_buffer("HTTP Logical", buffer_capacity, dispatch_timeout),
+                        .push_buffer("HTTP Logical", http_logical_buffer.capacity, http_logical_buffer.failfast_timeout),
                 )
-                .push_cache(cache_max_idle_age);
+                .push_cache(*orig_dst_idle_timeout);
 
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.

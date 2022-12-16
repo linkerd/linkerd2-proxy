@@ -20,7 +20,7 @@ pub(crate) mod test_util;
 pub use self::metrics::Metrics;
 use futures::Stream;
 use linkerd_app_core::{
-    config::ProxyConfig,
+    config::{BufferConfig, ProxyConfig},
     drain,
     http_tracing::OpenCensusSink,
     identity, io, profiles,
@@ -49,8 +49,17 @@ const EWMA_DECAY: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub proxy: ProxyConfig,
     pub allow_discovery: AddrMatch,
+
+    pub proxy: ProxyConfig,
+
+    pub orig_dst_idle_timeout: Duration,
+
+    pub tcp_connection_buffer: BufferConfig,
+    pub tcp_logical_buffer: BufferConfig,
+
+    pub http_server_buffer: BufferConfig,
+    pub http_logical_buffer: BufferConfig,
 
     // In "ingress mode", we assume we are always routing HTTP requests and do
     // not perform per-target-address discovery. Non-HTTP connections are
@@ -132,19 +141,6 @@ impl<S> Outbound<S> {
 
     pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
         self.map_stack(move |_, _, stack| stack.push(layer))
-    }
-
-    pub fn push_buffer_on_service<Req: Send + 'static>(
-        self,
-        name: &'static str,
-    ) -> Outbound<svc::stack::OnService<svc::BufferLayer<Req>, S>> {
-        self.map_stack(|config, _, stack| {
-            stack.push_buffer_on_service(
-                name,
-                config.proxy.buffer_capacity,
-                config.proxy.dispatch_timeout,
-            )
-        })
     }
 
     /// Creates a new `Outbound` by replacing the inner stack, as modified by `f`.

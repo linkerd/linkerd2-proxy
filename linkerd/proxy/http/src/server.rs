@@ -118,7 +118,7 @@ where
         debug!(?version, "Handling as HTTP");
 
         Box::pin(async move {
-            let (svc, closed) = SetClientHandle::new(io.peer_addr()?, inner.clone());
+            let (svc, closed) = SetClientHandle::new(io.peer_addr()?, inner);
 
             match version {
                 Version::Http1 => {

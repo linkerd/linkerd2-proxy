@@ -134,8 +134,15 @@ impl<C> Outbound<C> {
             .clone()
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_http_logical(resolve.clone())
-            .push_buffer_on_service("HTTP Server")
+            .push_http_concrete(resolve.clone())
+            .push_http_logical()
+            .map_stack(|config, _, stk| {
+                stk.push_buffer_on_service(
+                    "HTTP Server",
+                    config.http_server_buffer.capacity,
+                    config.http_server_buffer.failfast_timeout,
+                )
+            })
             .push_http_server()
             .into_inner();
 

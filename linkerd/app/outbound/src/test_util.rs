@@ -1,7 +1,8 @@
 use crate::Config;
 pub use futures::prelude::*;
 use linkerd_app_core::{
-    config, drain, exp_backoff, metrics,
+    config::{self, BufferConfig},
+    drain, exp_backoff, metrics,
     proxy::{
         http::{h1, h2},
         tap,
@@ -13,6 +14,10 @@ pub use linkerd_app_test as support;
 use std::{str::FromStr, time::Duration};
 
 pub(crate) fn default_config() -> Config {
+    let buffer = BufferConfig {
+        capacity: 10_000,
+        failfast_timeout: Duration::from_secs(3),
+    };
     Config {
         ingress_mode: false,
         emit_headers: true,
@@ -38,13 +43,15 @@ pub(crate) fn default_config() -> Config {
                 },
                 h2_settings: h2::Settings::default(),
             },
-            buffer_capacity: 10_000,
-            cache_max_idle_age: Duration::from_secs(60),
-            dispatch_timeout: Duration::from_secs(3),
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(3),
         },
         inbound_ips: Default::default(),
+        orig_dst_idle_timeout: Duration::from_secs(60),
+        tcp_connection_buffer: buffer.clone(),
+        tcp_logical_buffer: buffer.clone(),
+        http_logical_buffer: buffer.clone(),
+        http_server_buffer: buffer,
     }
 }
 

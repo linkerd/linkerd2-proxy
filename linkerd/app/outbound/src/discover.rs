@@ -60,11 +60,11 @@ impl<N> Outbound<N> {
                         )
                         .push_buffer(
                             "TCP Server",
-                            config.proxy.buffer_capacity,
-                            config.proxy.dispatch_timeout,
+                            config.tcp_connection_buffer.capacity,
+                            config.tcp_connection_buffer.failfast_timeout,
                         ),
                 )
-                .push_cache(config.proxy.cache_max_idle_age)
+                .push_cache(config.orig_dst_idle_timeout)
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })
@@ -184,7 +184,7 @@ mod tests {
         // service after `idle_timeout`.
         let cfg = {
             let mut cfg = default_config();
-            cfg.proxy.cache_max_idle_age = idle_timeout;
+            cfg.orig_dst_idle_timeout = idle_timeout;
             cfg
         };
         let (rt, _shutdown) = runtime();

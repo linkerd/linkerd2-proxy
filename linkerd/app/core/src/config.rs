@@ -14,6 +14,12 @@ pub struct ServerConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct BufferConfig {
+    pub capacity: usize,
+    pub failfast_timeout: Duration,
+}
+
+#[derive(Clone, Debug)]
 pub struct ConnectConfig {
     pub backoff: ExponentialBackoff,
     pub timeout: Duration,
@@ -26,9 +32,6 @@ pub struct ConnectConfig {
 pub struct ProxyConfig {
     pub server: ServerConfig,
     pub connect: ConnectConfig,
-    pub buffer_capacity: usize,
-    pub cache_max_idle_age: Duration,
-    pub dispatch_timeout: Duration,
     pub max_in_flight_requests: usize,
     pub detect_protocol_timeout: Duration,
 }

@@ -203,16 +203,16 @@ impl<C> Inbound<C> {
                 .push_on_service(svc::layer::mk(svc::SpawnReady::new))
                 // Skip the profile stack if it takes too long to become ready.
                 .push_when_unready(
-                    config.profile_idle_timeout,
+                    config.profile_skip_timeout,
                     http.push_on_service(svc::layer::mk(svc::SpawnReady::new))
                         .into_inner(),
                 )
                 .push_on_service(
                     svc::layers()
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
-                        .push_buffer("HTTP Logical", config.proxy.buffer_capacity, config.proxy.dispatch_timeout),
+                        .push_buffer("HTTP Logical", config.http_logical_buffer.capacity, config.http_logical_buffer.failfast_timeout),
                 )
-                .push_cache(config.proxy.cache_max_idle_age)
+                .push_cache(config.profile_idle_timeout)
                 .push_on_service(
                     svc::layers()
                         .push(http::Retain::layer())
