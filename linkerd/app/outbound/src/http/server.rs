@@ -1,7 +1,7 @@
 use super::{IdentityRequired, ProxyConnectionClose};
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{
-    config, errors, http_tracing,
+    errors, http_tracing,
     svc::{self, ExtractParam},
     Error, Result,
 };
@@ -28,32 +28,21 @@ impl<N> Outbound<N> {
     where
         T: svc::Param<http::normalize_uri::DefaultAuthority>,
         N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
-        NSvc: Send + 'static,
+        NSvc: svc::Service<
+                http::Request<http::BoxBody>,
+                Response = http::Response<http::BoxBody>,
+                Error = Error,
+            > + Clone
+            + Send
+            + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
     {
         self.map_stack(|config, rt, http| {
-            let config::ProxyConfig {
-                dispatch_timeout,
-                max_in_flight_requests,
-                buffer_capacity,
-                ..
-            } = config.proxy;
-
             http.check_new_service::<T, _>()
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
-                        // Limit the number of in-flight requests. When the proxy is
-                        // at capacity, go into failfast after a dispatch timeout. If
-                        // the router is unavailable, then spawn the service on a
-                        // background task to ensure it becomes ready without new
-                        // requests being processed.
-                        .push(svc::layer::mk(svc::SpawnReady::new))
-                        .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
-                        .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
-                        .push_spawn_buffer(buffer_capacity)
                         .push(rt.metrics.http_errors.to_layer())
                         // Tear down server connections when a peer proxy generates an error.
                         .push(ProxyConnectionClose::layer()),

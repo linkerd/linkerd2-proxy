@@ -135,6 +135,7 @@ impl<C> Outbound<C> {
             .push_tcp_endpoint()
             .push_http_endpoint()
             .push_http_logical(resolve.clone())
+            .push_buffer_on_service("HTTP Server")
             .push_http_server()
             .into_inner();
 

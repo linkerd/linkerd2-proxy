@@ -52,22 +52,17 @@ impl<N> Outbound<N> {
                 }))
                 .push_on_service(
                     svc::layers()
-                        // If the traffic split is empty/unavailable, eagerly fail
-                        // requests. When the split is in failfast, spawn the
-                        // service in a background task so it becomes ready without
-                        // new requests.
-                        .push(svc::layer::mk(svc::SpawnReady::new))
                         .push(
                             rt.metrics
                                 .proxy
                                 .stack
                                 .layer(crate::stack_labels("tcp", "server")),
                         )
-                        .push(svc::FailFast::layer(
+                        .push_buffer(
                             "TCP Server",
+                            config.proxy.buffer_capacity,
                             config.proxy.dispatch_timeout,
-                        ))
-                        .push_spawn_buffer(config.proxy.buffer_capacity),
+                        ),
                 )
                 .push_cache(config.proxy.cache_max_idle_age)
                 .push(svc::ArcNewService::layer())

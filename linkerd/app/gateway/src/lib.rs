@@ -158,9 +158,7 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 )
-                .push(svc::layer::mk(svc::SpawnReady::new))
-                .push(svc::FailFast::layer("TCP Gateway", dispatch_timeout))
-                .push_spawn_buffer(buffer_capacity),
+                .push_buffer("TCP Gatweay", buffer_capacity, dispatch_timeout),
         )
         .push_cache(cache_max_idle_age)
         .check_new_service::<NameAddr, I>();
@@ -193,9 +191,7 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("http", "gateway")),
                 )
-                .push(svc::layer::mk(svc::SpawnReady::new))
-                .push(svc::FailFast::layer("Gateway", dispatch_timeout))
-                .push_spawn_buffer(buffer_capacity),
+                .push_buffer("Gateway", buffer_capacity, dispatch_timeout),
         )
         .push_cache(cache_max_idle_age)
         .push_on_service(

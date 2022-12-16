@@ -114,15 +114,13 @@ impl<E> Outbound<E> {
                 .push(profiles::split::layer())
                 .push_on_service(
                     svc::layers()
-                        .push(svc::layer::mk(svc::SpawnReady::new))
                         .push(
                             rt.metrics
                                 .proxy
                                 .stack
                                 .layer(stack_labels("http", "logical")),
                         )
-                        .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
-                        .push_spawn_buffer(buffer_capacity),
+                        .push_buffer("HTTP Logical", buffer_capacity, dispatch_timeout),
                 )
                 .push_cache(cache_max_idle_age);
 

@@ -215,6 +215,7 @@ impl<S> Outbound<S> {
             .clone()
             .push_tcp_endpoint::<http::Connect>()
             .push_http_endpoint()
+            .push_buffer_on_service("HTTP Server")
             .push_http_server()
             .into_inner();
 

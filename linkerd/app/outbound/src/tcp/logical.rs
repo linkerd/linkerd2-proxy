@@ -99,9 +99,7 @@ impl<C> Outbound<C> {
                                 .stack
                                 .layer(crate::stack_labels("tcp", "logical")),
                         )
-                        .push(svc::layer::mk(svc::SpawnReady::new))
-                        .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
-                        .push_spawn_buffer(buffer_capacity),
+                        .push_buffer("TCP Logical", buffer_capacity, dispatch_timeout),
                 )
                 .push_cache(cache_max_idle_age)
                 .check_new_service::<Logical, I>()

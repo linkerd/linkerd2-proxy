@@ -210,11 +210,7 @@ impl<C> Inbound<C> {
                 .push_on_service(
                     svc::layers()
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
-                        .push(svc::FailFast::layer(
-                            "HTTP Logical",
-                            config.proxy.dispatch_timeout,
-                        ))
-                        .push_spawn_buffer(config.proxy.buffer_capacity),
+                        .push_buffer("HTTP Logical", config.proxy.buffer_capacity, config.proxy.dispatch_timeout),
                 )
                 .push_cache(config.proxy.cache_max_idle_age)
                 .push_on_service(

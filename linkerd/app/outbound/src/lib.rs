@@ -134,6 +134,19 @@ impl<S> Outbound<S> {
         self.map_stack(move |_, _, stack| stack.push(layer))
     }
 
+    pub fn push_buffer_on_service<Req: Send + 'static>(
+        self,
+        name: &'static str,
+    ) -> Outbound<svc::stack::OnService<svc::BufferLayer<Req>, S>> {
+        self.map_stack(|config, _, stack| {
+            stack.push_buffer_on_service(
+                name,
+                config.proxy.buffer_capacity,
+                config.proxy.dispatch_timeout,
+            )
+        })
+    }
+
     /// Creates a new `Outbound` by replacing the inner stack, as modified by `f`.
     fn map_stack<T>(
         self,
