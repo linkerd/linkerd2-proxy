@@ -121,6 +121,10 @@ where
     >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        // Poll the inner service first so we don't bother updating routes unless we can actually
+        // use them.
+        futures::ready!(self.inner.poll_ready(cx).map_err(Into::into))?;
+
         let http_routes = match self.rx.poll_next_unpin(cx) {
             Poll::Pending => return Poll::Ready(Ok(())),
             Poll::Ready(None) => {
