@@ -9,6 +9,7 @@ use crate::core::{
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use inbound::policy;
+use rangemap::RangeInclusiveSet;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -68,6 +69,8 @@ pub enum ParseError {
     ),
     #[error("not a valid subnet mask")]
     NotANetwork,
+    #[error("not a valid port range")]
+    NotAPortRange,
     #[error("host is not an IP address")]
     HostIsNotAnIpAddress,
     #[error("not a valid IP address: {0}")]
@@ -935,6 +938,30 @@ fn parse_port_set(s: &str) -> Result<HashSet<u16>, ParseError> {
     if !s.is_empty() {
         for num in s.split(',') {
             set.insert(parse_number::<u16>(num)?);
+        }
+    }
+    Ok(set)
+}
+
+fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
+    let mut set = RangeInclusiveSet::new();
+    if !s.is_empty() {
+        for part in s.split(',') {
+            let mut parts = part.splitn(2, '-');
+            let low = parts.next().ok_or_else(|| {
+                error!("Not a valid port range: {part}");
+                ParseError::NotAPortRange
+            })?;
+            let low = parse_number::<u16>(low)?;
+            if let Some(high) = parts.next() {
+                let high = parse_number::<u16>(high).map_err(|e| {
+                    error!("Not a valid port range: {part}");
+                    e
+                })?;
+                set.insert(low..=high);
+            } else {
+                set.insert(low..=low);
+            }
         }
     }
     Ok(set)
