@@ -1,7 +1,7 @@
 use crate::{policy, Config};
 pub use futures::prelude::*;
 use linkerd_app_core::{
-    config,
+    config, control,
     dns::Suffix,
     drain, exp_backoff,
     identity::rustls,
@@ -10,6 +10,7 @@ use linkerd_app_core::{
         http::{h1, h2},
         tap,
     },
+    tls,
     transport::{Keepalive, ListenAddr},
     ProxyRuntime,
 };
@@ -31,7 +32,24 @@ pub fn default_config() -> Config {
             name: "testsaz".into(),
         }),
     }]);
-    let policy = policy::Config::Fixed {
+
+    let connect = config::ConnectConfig {
+        keepalive: Keepalive(None),
+        timeout: Duration::from_secs(1),
+        backoff: exp_backoff::ExponentialBackoff::try_new(
+            Duration::from_millis(100),
+            Duration::from_millis(500),
+            0.1,
+        )
+        .unwrap(),
+        h1_settings: h1::PoolSettings {
+            max_idle: 1,
+            idle_timeout: Duration::from_secs(1),
+        },
+        h2_settings: h2::Settings::default(),
+    };
+
+    let policy = policy::Config {
         cache_max_idle_age: Duration::from_secs(20),
         default: ServerPolicy {
             protocol: Protocol::Detect {
@@ -46,6 +64,23 @@ pub fn default_config() -> Config {
             }),
         }
         .into(),
+        workload: "test".into(),
+        control: control::Config {
+            addr: control::ControlAddr {
+                addr: "policy.linkerd.svc.cluster.local:8090"
+                    .parse()
+                    .expect("control addr must be valid"),
+                identity: tls::ConditionalClientTls::Some(tls::ClientTls {
+                    server_id: "policy.linkerd.serviceaccount.identity.linkerd.cluster.local"
+                        .parse()
+                        .expect("control identity name must be valid"),
+                    alpn: None,
+                }),
+            },
+            connect: connect.clone(),
+            buffer_capacity: 10_000,
+        },
+        opaque_ports: None,
         ports: Default::default(),
     };
 
@@ -57,21 +92,7 @@ pub fn default_config() -> Config {
                 keepalive: Keepalive(None),
                 h2_settings: h2::Settings::default(),
             },
-            connect: config::ConnectConfig {
-                keepalive: Keepalive(None),
-                timeout: Duration::from_secs(1),
-                backoff: exp_backoff::ExponentialBackoff::try_new(
-                    Duration::from_millis(100),
-                    Duration::from_millis(500),
-                    0.1,
-                )
-                .unwrap(),
-                h1_settings: h1::PoolSettings {
-                    max_idle: 1,
-                    idle_timeout: Duration::from_secs(1),
-                },
-                h2_settings: h2::Settings::default(),
-            },
+            connect,
             buffer_capacity: 10_000,
             cache_max_idle_age: Duration::from_secs(20),
             dispatch_timeout: Duration::from_secs(1),

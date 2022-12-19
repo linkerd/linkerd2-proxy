@@ -1,4 +1,4 @@
-use super::{api, AllowPolicy, DefaultPolicy, GetPolicy};
+use super::{api, config, AllowPolicy, DefaultPolicy, GetPolicy};
 use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error};
 use linkerd_cache::Cache;
 pub use linkerd_server_policy::{
@@ -30,26 +30,31 @@ struct PortHasher(u16);
 // === impl Store ===
 
 impl<S> Store<S> {
+    #[cfg(test)]
     pub(crate) fn spawn_fixed(
         default: DefaultPolicy,
         idle_timeout: Duration,
         ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
+        opaque_ports: Option<config::OpaquePorts>,
     ) -> Self {
         let cache = {
-            let rxs = ports.into_iter().map(|(p, s)| {
-                // When using a fixed policy, we don't need to watch for changes. It's
-                // safe to discard the sender, as the receiver will continue to let us
-                // borrow/clone each fixed policy.
-                let (_, rx) = watch::channel(s);
-                (p, rx)
+            let opaque =
+                opaque_ports
+                    .into_iter()
+                    .flat_map(|config::OpaquePorts { ports, policy }| {
+                        let policy = Self::spawn_default(DefaultPolicy::Allow(policy));
+                        ports.into_iter().map(move |port| (port, policy.clone()))
+                    });
+            let rxs = ports.into_iter().map(|(port, policy)| {
+                let (_, rx) = watch::channel(policy);
+                (port, rx)
             });
-            Cache::with_permanent_from_iter(idle_timeout, rxs)
+            Cache::with_permanent_from_iter(idle_timeout, rxs.chain(opaque))
         };
-
         Self {
             cache,
-            discover: None,
             default_rx: Self::spawn_default(default),
+            discover: None,
         }
     }
 
@@ -62,6 +67,7 @@ impl<S> Store<S> {
         idle_timeout: Duration,
         discover: api::Watch<S>,
         ports: HashSet<u16>,
+        opaque_ports: Option<config::OpaquePorts>,
     ) -> Self
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
@@ -76,6 +82,13 @@ impl<S> Store<S> {
         // `idle_timeout` to prevent holding policy watches indefinitely for
         // ports that are generally unused.
         let cache = {
+            let opaque =
+                opaque_ports
+                    .into_iter()
+                    .flat_map(|config::OpaquePorts { ports, policy }| {
+                        let policy = Self::spawn_default(DefaultPolicy::Allow(policy));
+                        ports.into_iter().map(move |port| (port, policy.clone()))
+                    });
             let rxs = ports.into_iter().map(|port| {
                 let discover = discover.clone();
                 let default = default.clone();
@@ -83,13 +96,12 @@ impl<S> Store<S> {
                     .in_scope(|| discover.spawn_with_init(port, default.into()));
                 (port, rx)
             });
-            Cache::with_permanent_from_iter(idle_timeout, rxs)
+            Cache::with_permanent_from_iter(idle_timeout, rxs.chain(opaque))
         };
-
         Self {
             cache,
-            discover: Some(discover),
             default_rx: Self::spawn_default(default),
+            discover: Some(discover),
         }
     }
 
