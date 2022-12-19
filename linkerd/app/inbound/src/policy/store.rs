@@ -62,6 +62,7 @@ impl<S> Store<S> {
         idle_timeout: Duration,
         discover: api::Watch<S>,
         ports: HashSet<u16>,
+        default_ports: impl IntoIterator<Item = (u16, DefaultPolicy)>,
     ) -> Self
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
@@ -76,13 +77,20 @@ impl<S> Store<S> {
         // `idle_timeout` to prevent holding policy watches indefinitely for
         // ports that are generally unused.
         let cache = {
-            let rxs = ports.into_iter().map(|port| {
-                let discover = discover.clone();
-                let default = default.clone();
-                let rx = info_span!("watch", port)
-                    .in_scope(|| discover.spawn_with_init(port, default.into()));
-                (port, rx)
-            });
+            let rxs = ports
+                .into_iter()
+                .map(|port| {
+                    let discover = discover.clone();
+                    let default = default.clone();
+                    let rx = info_span!("watch", port)
+                        .in_scope(|| discover.spawn_with_init(port, default.into()));
+                    (port, rx)
+                })
+                .chain(
+                    default_ports
+                        .into_iter()
+                        .map(|(port, policy)| (port, Self::spawn_default(policy))),
+                );
             Cache::with_permanent_from_iter(idle_timeout, rxs)
         };
 

@@ -14,6 +14,7 @@ pub enum Config {
         control: control::Config,
         workload: String,
         default: DefaultPolicy,
+        default_ports: HashMap<u16, DefaultPolicy>,
         cache_max_idle_age: Duration,
         ports: HashSet<u16>,
     },
@@ -45,6 +46,7 @@ impl Config {
                 ports,
                 workload,
                 default,
+                default_ports,
                 cache_max_idle_age,
             } => {
                 let watch = {
@@ -59,7 +61,7 @@ impl Config {
                     };
                     Api::new(workload, detect_timeout, client).into_watch(backoff)
                 };
-                Store::spawn_discover(default, cache_max_idle_age, watch, ports)
+                Store::spawn_discover(default, cache_max_idle_age, watch, ports, default_ports)
             }
         }
     }
