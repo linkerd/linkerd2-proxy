@@ -495,6 +495,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 capacity: buffer_capacity,
                 failfast_timeout: dispatch_timeout,
             },
+            http_concrete_buffer: BufferConfig {
+                capacity: buffer_capacity,
+                failfast_timeout: dispatch_timeout,
+            },
         }
     };
 

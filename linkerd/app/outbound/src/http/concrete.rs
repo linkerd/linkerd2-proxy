@@ -63,24 +63,18 @@ impl<N> Outbound<N> {
                 .instrument(|e: &Endpoint| debug_span!("endpoint", server.addr = %e.addr))
                 .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 .push_on_service(
-                    svc::layers().push(http::BoxRequest::layer()).push(
-                        rt.metrics
-                            .proxy
-                            .stack
-                            .layer(stack_labels("http", "balance.endpoint")),
-                    ),
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(stack_labels("http", "balance.endpoint")),
                 )
-                .check_new_service::<Endpoint, http::Request<_>>()
+                .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 // Resolve the service to its endpoints and balance requests over them.
-                //
-                // If the balancer has been empty/unavailable, eagerly fail requests.
-                // When the balancer is in failfast, spawn the service in a background
-                // task so it becomes ready without new requests.
                 //
                 // We *don't* ensure that the endpoint is driven to readiness here, because this
                 // might cause us to continually attempt to reestablish connections without
                 // consulting discovery to see whether the endpoint has been removed. Instead, the
-                // endpoint layer spawns each _connection_ attempt on a background task, but the
+                // endpoint stack spawns each _connection_ attempt on a background task, but the
                 // decision to attempt the connection must be driven by the balancer.
                 .push(resolve::layer(resolve, watchdog))
                 .push_on_service(
@@ -97,7 +91,7 @@ impl<N> Outbound<N> {
                         )
                         .push(http::BoxResponse::layer()),
                 )
-                .check_make_service::<Concrete, http::Request<_>>()
+                .check_make_service::<Concrete, http::Request<http::BoxBody>>()
                 .push(svc::MapErr::layer(Into::into))
                 // Drives the initial resolution via the service's readiness.
                 .into_new_service()

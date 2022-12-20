@@ -1,12 +1,13 @@
 use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
-use futures::prelude::*;
+use futures::{future::Either, prelude::*};
+use linkerd_error::Error;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
     collections::{hash_map, HashMap, HashSet},
     task::{Context, Poll},
 };
-use tracing::{debug, trace};
+use tracing::{debug, error, trace};
 
 /// A router that uses a per-route `Service` (with a fallback service when no
 /// route is matched).
@@ -17,108 +18,110 @@ use tracing::{debug, trace};
 /// * Routes are constructed eagerly as the profile updates;
 /// * Routes are removed eagerly as the profile updates (i.e. there's no
 ///   idle-oriented eviction).
-#[derive(Clone, Debug)]
-pub struct NewServiceRouter<N>(N);
-
 #[derive(Debug)]
-pub struct ServiceRouter<T, N, S> {
+pub struct NewServiceRouter<U, N, R> {
+    new_inner: N,
+    route_layer: R,
+    _marker: std::marker::PhantomData<fn(U)>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ServiceRouter<T, N, R, S> {
     target: T,
     new_route: N,
-    routes: Routes<S>,
+
+    rx: ReceiverStream,
+    matches: std::sync::Arc<[(RequestMatch, Route)]>,
+    routes: HashMap<Route, R>,
+
     default: S,
-    profile: Receiver,
-    profile_rx: ReceiverStream,
-}
-
-#[derive(Clone, Debug)]
-struct Routes<S> {
-    matches: Vec<(RequestMatch, Route)>,
-    services: HashMap<Route, S>,
-}
-
-impl<S> Default for Routes<S> {
-    fn default() -> Self {
-        Self {
-            matches: Vec::new(),
-            services: HashMap::new(),
-        }
-    }
-}
-
-impl<T: Clone, N: Clone, S: Clone> Clone for ServiceRouter<T, N, S> {
-    fn clone(&self) -> Self {
-        Self {
-            target: self.target.clone(),
-            new_route: self.new_route.clone(),
-            default: self.default.clone(),
-            routes: self.routes.clone(),
-            profile: self.profile.clone(),
-            profile_rx: self.profile.clone().into(),
-        }
-    }
 }
 
 // === impl NewServiceRouter ===
 
-impl<N> NewServiceRouter<N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(Self)
+impl<U, N, R: Clone> NewServiceRouter<U, N, R> {
+    pub fn layer(route_layer: R) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |new_inner| Self {
+            new_inner,
+            route_layer: route_layer.clone(),
+            _marker: std::marker::PhantomData,
+        })
     }
 }
 
-impl<T, N> NewService<T> for NewServiceRouter<N>
+impl<U, N: Clone, R: Clone> Clone for NewServiceRouter<U, N, R> {
+    fn clone(&self) -> Self {
+        Self {
+            new_inner: self.new_inner.clone(),
+            route_layer: self.route_layer.clone(),
+            _marker: self._marker,
+        }
+    }
+}
+
+impl<T, U, N, NSvc, R, RSvc> NewService<T> for NewServiceRouter<U, N, R>
 where
     T: Param<Receiver> + Clone,
-    N: NewService<(Option<Route>, T)> + Clone,
+    U: From<T>,
+    N: NewService<T>,
+    N::Service: NewService<U, Service = NSvc>,
+    R: layer::Layer<N::Service>,
+    R::Service: NewService<(Route, T), Service = RSvc>,
 {
-    type Service = ServiceRouter<T, N, N::Service>;
+    type Service = ServiceRouter<T, R::Service, RSvc, NSvc>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let rx = target.param();
-        let default = self.0.new_service((None, target.clone()));
+        let rx: Receiver = target.param();
+        let new_inner = self.new_inner.new_service(target.clone());
+        let default = new_inner.new_service(target.clone().into());
+        let new_route = self.route_layer.layer(new_inner);
         ServiceRouter {
             target,
-            new_route: self.0.clone(),
-            routes: Default::default(),
+            new_route,
             default,
-            profile: rx.clone(),
-            profile_rx: rx.into(),
+            rx: rx.into(),
+            matches: std::sync::Arc::new([]),
+            routes: HashMap::default(),
         }
     }
 }
 
 // === impl ServiceRouter ===
 
-impl<B, T, N, S> Service<http::Request<B>> for ServiceRouter<T, N, S>
+impl<B, T, N, R, S> Service<http::Request<B>> for ServiceRouter<T, N, R, S>
 where
     T: Clone,
-    N: NewService<(Option<Route>, T), Service = S> + Clone,
-    S: Service<http::Request<B>> + Clone,
+    N: NewService<(Route, T), Service = R> + Clone,
+    R: Service<http::Request<B>, Response = S::Response, Error = Error> + Clone,
+    S: Service<http::Request<B>, Error = Error>,
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = Oneshot<S, http::Request<B>>;
+    type Future = Either<S::Future, Oneshot<R, http::Request<B>>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
-        // If the routes have been updated, update the cache.
-        if let Poll::Ready(Some(Profile { http_routes, .. })) = self.profile_rx.poll_next_unpin(cx)
-        {
-            debug!(routes = %http_routes.len(), "Updating HTTP routes");
-            let routes = http_routes
-                .iter()
-                .map(|(_, r)| r.clone())
-                .collect::<HashSet<_>>();
-            self.routes.matches = http_routes;
+        // Only process profile updates when the default route is viable. In
+        // most cases is should be a common service used by all routes, so
+        // testing its state is valuable.
+        futures::ready!(self.default.poll_ready(cx))?;
 
-            // Clear out defunct routes before building any missing routes.
-            self.routes.services.retain(|r, _| routes.contains(r));
-            for route in routes.into_iter() {
-                if let hash_map::Entry::Vacant(ent) = self.routes.services.entry(route) {
-                    let route = ent.key().clone();
-                    let svc = self
-                        .new_route
-                        .new_service((Some(route), self.target.clone()));
-                    ent.insert(svc);
+        // If the routes have changed, update the cache.
+        if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
+            if self.matches.len() != http_routes.len()
+                || self.matches.iter().zip(&http_routes).any(|(a, b)| a != b)
+            {
+                debug!(routes = %http_routes.len(), "Updating HTTP routes");
+                let routes = (http_routes.iter().map(|(_, r)| r.clone())).collect::<HashSet<_>>();
+                self.matches = http_routes.into_iter().collect();
+
+                // Clear out defunct routes before building any missing routes.
+                self.routes.retain(|r, _| routes.contains(r));
+                for route in routes.into_iter() {
+                    if let hash_map::Entry::Vacant(ent) = self.routes.entry(route) {
+                        let route = ent.key().clone();
+                        let svc = self.new_route.new_service((route, self.target.clone()));
+                        ent.insert(svc);
+                    }
                 }
             }
         }
@@ -127,23 +130,19 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        let inner = match super::route_for_request(&self.routes.matches, &req) {
-            Some(route) => {
-                // If the request matches a route, use the route's service.
+        // If the request matches a route, use the route's service.
+        if let Some(route) = super::route_for_request(&self.matches, &req) {
+            if let Some(svc) = self.routes.get(route).cloned() {
                 trace!(?route, "Using route service");
-                self.routes
-                    .services
-                    .get(route)
-                    .expect("route must exist")
-                    .clone()
+                return Either::Right(svc.oneshot(req));
             }
-            None => {
-                // Otherwise, use the default service.
-                trace!("No routes matched");
-                self.default.clone()
-            }
-        };
 
-        inner.oneshot(req)
+            debug_assert!(false, "Route not found in cache");
+            error!(?route, "Route not found in cache. This is a bug.");
+        }
+
+        // Otherwise, use the default service.
+        trace!("Using default service");
+        Either::Left(self.default.call(req))
     }
 }

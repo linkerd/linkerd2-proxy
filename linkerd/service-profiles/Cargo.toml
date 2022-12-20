@@ -31,6 +31,7 @@ tonic = { version = "0.8", default-features = false }
 tower = { version = "0.4.13", features = ["ready-cache", "retry", "util"] }
 thiserror = "1"
 tracing = "0.1"
+parking_lot = "0.12"
 pin-project = "1"
 prost-types = "0.11"
 

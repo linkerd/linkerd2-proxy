@@ -42,7 +42,12 @@ pub struct BufferLayer<Req> {
 pub type BoxHttp<B = http::BoxBody> =
     BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>;
 
+pub type BoxCloneHttp<B = http::BoxBody> =
+    BoxCloneService<http::Request<B>, http::Response<http::BoxBody>, Error>;
+
 pub type ArcNewHttp<T, B = http::BoxBody> = ArcNewService<T, BoxHttp<B>>;
+
+pub type ArcNewCloneHttp<T, B = http::BoxBody> = ArcNewService<T, BoxCloneHttp<B>>;
 
 pub type BoxTcp<I> = BoxService<I, (), Error>;
 

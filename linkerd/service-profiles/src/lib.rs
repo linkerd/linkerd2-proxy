@@ -18,13 +18,14 @@ use tokio::sync::watch;
 use tower::util::{Oneshot, ServiceExt};
 
 mod client;
+mod concrete;
 mod default;
 pub mod discover;
 pub mod http;
 mod proto;
 pub mod split;
 
-pub use self::client::Client;
+pub use self::{client::Client, concrete::NewConcreteCache};
 
 #[derive(Clone, Debug)]
 pub struct Receiver {
@@ -33,6 +34,7 @@ pub struct Receiver {
 
 #[derive(Debug)]
 struct ReceiverStream {
+    rx: tokio::sync::watch::Receiver<Profile>,
     inner: tokio_stream::wrappers::WatchStream<Profile>,
 }
 
@@ -150,9 +152,18 @@ impl Receiver {
 // === impl ReceiverStream ===
 
 impl From<Receiver> for ReceiverStream {
-    fn from(Receiver { inner }: Receiver) -> Self {
-        let inner = tokio_stream::wrappers::WatchStream::new(inner);
-        ReceiverStream { inner }
+    fn from(Receiver { inner: rx }: Receiver) -> Self {
+        let inner = tokio_stream::wrappers::WatchStream::new(rx.clone());
+        ReceiverStream { rx, inner }
+    }
+}
+
+impl Clone for ReceiverStream {
+    fn clone(&self) -> Self {
+        Self {
+            rx: self.rx.clone(),
+            inner: tokio_stream::wrappers::WatchStream::new(self.rx.clone()),
+        }
     }
 }
 

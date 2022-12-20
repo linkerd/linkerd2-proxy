@@ -1,7 +1,6 @@
 mod proxy;
 mod service;
 
-use regex::Regex;
 use std::{
     fmt,
     hash::{Hash, Hasher},
@@ -21,14 +20,18 @@ pub struct Route {
     timeout: Option<Duration>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RequestMatch {
     All(Vec<RequestMatch>),
     Any(Vec<RequestMatch>),
     Not(Box<RequestMatch>),
-    Path(Box<Regex>),
+    Path(Regex),
     Method(http::Method),
 }
+
+/// Wras a `regex::Regex` to implement `PartialEq` via the original string.
+#[derive(Clone, Debug)]
+pub struct Regex(regex::Regex);
 
 #[derive(Clone, Debug)]
 pub struct ResponseClass {
@@ -118,7 +121,7 @@ impl RequestMatch {
     fn is_match<B>(&self, req: &http::Request<B>) -> bool {
         match self {
             RequestMatch::Method(ref method) => req.method() == *method,
-            RequestMatch::Path(ref re) => re.is_match(req.uri().path()),
+            RequestMatch::Path(Regex(ref re)) => re.is_match(req.uri().path()),
             RequestMatch::Not(ref m) => !m.is_match(req),
             RequestMatch::All(ref ms) => ms.iter().all(|m| m.is_match(req)),
             RequestMatch::Any(ref ms) => ms.iter().any(|m| m.is_match(req)),
@@ -228,5 +231,19 @@ impl Hash for Labels {
 impl fmt::Debug for Labels {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+// === impl Regex ===
+
+impl From<regex::Regex> for Regex {
+    fn from(regex: regex::Regex) -> Self {
+        Self(regex)
+    }
+}
+
+impl PartialEq for Regex {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_str() == other.0.as_str()
     }
 }

@@ -4,6 +4,7 @@
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
+#![allow(warnings)]
 
 mod discover;
 pub mod endpoint;
@@ -60,6 +61,7 @@ pub struct Config {
 
     pub http_server_buffer: BufferConfig,
     pub http_logical_buffer: BufferConfig,
+    pub http_concrete_buffer: BufferConfig,
 
     // In "ingress mode", we assume we are always routing HTTP requests and do
     // not perform per-target-address discovery. Non-HTTP connections are
