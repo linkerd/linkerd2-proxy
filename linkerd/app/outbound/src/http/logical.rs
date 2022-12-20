@@ -27,7 +27,9 @@ impl<N> Outbound<N> {
                 http::Request<http::BoxBody>,
                 Response = http::Response<http::BoxBody>,
                 Error = Error,
-            > + Send
+            > + Clone
+            + Send
+            + Sync
             + 'static,
         NSvc::Future: Send,
     {
@@ -40,13 +42,6 @@ impl<N> Outbound<N> {
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.
             concrete
-                .push_buffer_on_service::<http::Request<http::BoxBody>>(
-                    "HTTP Concrete",
-                    http_concrete_buffer.capacity,
-                    http_concrete_buffer.failfast_timeout,
-                )
-                // TODO(ver) stack metrics.
-                .push_on_service(http::BoxResponse::layer())
                 .push_map_target(Concrete::from)
                 .push(profiles::NewConcreteCache::layer())
                 .push(profiles::http::NewServiceRouter::<Concrete, _, _>::layer(

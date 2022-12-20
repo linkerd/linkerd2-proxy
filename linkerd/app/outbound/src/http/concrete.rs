@@ -19,11 +19,11 @@ impl<N> Outbound<N> {
         svc::ArcNewService<
             Concrete,
             impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-                Future = impl Send,
-            >,
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
         >,
     >
     where
@@ -40,10 +40,10 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, rt, endpoint| {
             let crate::Config {
+                http_concrete_buffer,
                 orig_dst_idle_timeout,
                 ..
             } = config;
-            let watchdog = *orig_dst_idle_timeout * 2;
 
             let resolve = svc::stack(resolve.into_service())
                 .check_service::<ConcreteAddr>()
@@ -66,7 +66,7 @@ impl<N> Outbound<N> {
                     rt.metrics
                         .proxy
                         .stack
-                        .layer(stack_labels("http", "balance.endpoint")),
+                        .layer(stack_labels("http", "concrete.endpoint")),
                 )
                 .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 // Resolve the service to its endpoints and balance requests over them.
@@ -76,28 +76,32 @@ impl<N> Outbound<N> {
                 // consulting discovery to see whether the endpoint has been removed. Instead, the
                 // endpoint stack spawns each _connection_ attempt on a background task, but the
                 // decision to attempt the connection must be driven by the balancer.
-                .push(resolve::layer(resolve, watchdog))
-                .push_on_service(
-                    svc::layers()
-                        .push(http::balance::layer(
-                            crate::EWMA_DEFAULT_RTT,
-                            crate::EWMA_DECAY,
-                        ))
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(stack_labels("http", "balancer")),
-                        )
-                        .push(http::BoxResponse::layer()),
-                )
+                //
+                // TODO(ver) remove the watchdog timeout.
+                .push(resolve::layer(resolve, *orig_dst_idle_timeout * 2))
+                .push_on_service(http::balance::layer(
+                    crate::EWMA_DEFAULT_RTT,
+                    crate::EWMA_DECAY,
+                ))
                 .check_make_service::<Concrete, http::Request<http::BoxBody>>()
                 .push(svc::MapErr::layer(Into::into))
                 // Drives the initial resolution via the service's readiness.
                 .into_new_service()
-                // The concrete address is only set when the profile could be
-                // resolved. Endpoint resolution is skipped when there is no
-                // concrete address.
+                .push_on_service(
+                    svc::layers()
+                        .push(http::BoxResponse::layer())
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .stack
+                                .layer(stack_labels("http", "concrete")),
+                        )
+                        .push_buffer::<http::Request<http::BoxBody>>(
+                            "HTTP Concrete",
+                            http_concrete_buffer.capacity,
+                            http_concrete_buffer.failfast_timeout,
+                        ),
+                )
                 .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
