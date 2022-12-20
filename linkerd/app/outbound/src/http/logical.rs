@@ -40,18 +40,15 @@ impl<N> Outbound<N> {
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.
             concrete
-                .check_new_service::<Concrete, http::Request<http::BoxBody>>()
                 .push_buffer_on_service::<http::Request<http::BoxBody>>(
                     "HTTP Concrete",
                     http_concrete_buffer.capacity,
                     http_concrete_buffer.failfast_timeout,
                 )
+                // TODO(ver) stack metrics.
                 .push_on_service(http::BoxResponse::layer())
-                .check_new_service::<Concrete, http::Request<http::BoxBody>>()
-                .check_new_clone::<Concrete>()
                 .push_map_target(Concrete::from)
                 .push(profiles::NewConcreteCache::layer())
-                .check_new_clone::<Logical>()
                 .push(profiles::http::NewServiceRouter::<Concrete, _, _>::layer(
                     svc::layers()
                         // FIXME splitting/distribution should be done here:
@@ -89,16 +86,12 @@ impl<N> Outbound<N> {
                         .push_on_service(http::BoxResponse::layer())
                         .push_map_target(|(route, logical)| ProfileRoute { logical, route }),
                 ))
-                .check_new_clone::<Logical>()
-                .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header. The response body is boxed
                 // unify the profile stack's response type with that of to
                 // endpoint stack.
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
                 .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))
-                .check_new_clone::<Logical>()
-                .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // .push_on_service(svc::BoxCloneService::layer())
                 .push(svc::ArcNewService::layer())
         })
