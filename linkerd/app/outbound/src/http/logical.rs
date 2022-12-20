@@ -51,9 +51,8 @@ impl<N> Outbound<N> {
                 .push(profiles::NewConcreteCache::layer())
                 .push(profiles::http::NewServiceRouter::<Concrete, _, _>::layer(
                     svc::layers()
-                        // FIXME splitting/distribution should be done here:
-                        // .push(profiles::split::layer())
                         .push_map_target(Concrete::from)
+                        .push(profiles::NewDistribute::layer())
                         .push_map_target(|r: ProfileRoute| r.logical)
                         .push(http::insert::NewInsert::<ProfileRoute, _>::layer())
                         .push_on_service(http::BoxRequest::layer())

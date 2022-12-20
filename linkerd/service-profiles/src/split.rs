@@ -4,99 +4,103 @@ use indexmap::IndexSet;
 use linkerd_addr::NameAddr;
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::ConcreteAddr;
-use linkerd_stack::{layer, NewService, Param};
+use linkerd_stack::{layer, NewService, Param, Service};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use std::{
     marker::PhantomData,
-    pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 use tower::ready_cache::ReadyCache;
 use tracing::{debug, trace};
 
-pub fn layer<N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<N, S, Req>> + Clone {
-    // This RNG doesn't need to be cryptographically secure. Small and fast is
-    // preferable.
-    layer::mk(move |inner| NewSplit {
-        inner,
-        _service: PhantomData,
-    })
+#[derive(Debug)]
+pub struct NewDistribute<N, Req> {
+    inner: N,
+    _p: PhantomData<fn() -> Req>,
 }
 
 #[derive(Debug)]
-pub struct NewSplit<N, S, Req> {
-    inner: N,
-    _service: PhantomData<fn(Req) -> S>,
-}
+pub struct Distribute<T, N, Req>
+where
+    N: NewService<(ConcreteAddr, T)>,
+{
+    target: T,
+    new_inner: N,
 
-pub struct Split<T, N, S, Req> {
     rng: SmallRng,
     rx: ReceiverStream,
-    target: T,
-    new_service: N,
-    distribution: WeightedIndex<u32>,
     addrs: IndexSet<NameAddr>,
-    services: ReadyCache<NameAddr, S, Req>,
+    services: ReadyCache<NameAddr, N::Service, Req>,
+    distribution: Option<Arc<WeightedIndex<u32>>>,
 }
 
-// === impl NewSplit ===
+// === impl NewDistribute ===
 
-impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
+impl<N, Req> NewDistribute<N, Req> {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(|inner| Self {
+            inner,
+            _p: PhantomData,
+        })
+    }
+}
+
+impl<N: Clone, Req> Clone for NewDistribute<N, Req> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            _service: self._service,
+            _p: PhantomData,
         }
     }
 }
 
-impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
+impl<T, N, S, Req> NewService<T> for NewDistribute<N, Req>
 where
-    T: Clone + Param<LogicalAddr> + Param<Receiver>,
+    T: Param<Receiver> + Clone,
     N: NewService<(ConcreteAddr, T), Service = S> + Clone,
-    S: tower::Service<Req>,
-    S::Error: Into<Error>,
+    S: Service<Req, Error = Error>,
 {
-    type Service = Split<T, N, S, Req>;
+    type Service = Distribute<T, N, Req>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let rx: Receiver = target.param();
-        let mut targets = rx.targets();
-        if targets.is_empty() {
-            let LogicalAddr(addr) = target.param();
-            targets.push(Target { addr, weight: 1 })
-        }
-        trace!(?targets, "Building split service");
-
-        let mut addrs = IndexSet::with_capacity(targets.len());
-        let mut weights = Vec::with_capacity(targets.len());
-        let mut services = ReadyCache::default();
-        let new_service = self.inner.clone();
-        for Target { weight, addr } in targets.into_iter() {
-            services.push(
-                addr.clone(),
-                new_service.new_service((ConcreteAddr(addr.clone()), target.clone())),
-            );
-            addrs.insert(addr);
-            weights.push(weight);
-        }
-
-        Split {
-            rx: rx.into(),
+        Self::Service {
             target,
-            new_service,
-            services,
-            addrs,
-            distribution: WeightedIndex::new(weights).unwrap(),
-            rng: SmallRng::from_rng(&mut thread_rng()).expect("RNG must initialize"),
+            new_inner: self.inner.clone(),
+
+            rng: SmallRng::from_rng(&mut thread_rng()).expect("rng"),
+            rx: rx.into(),
+            addrs: Default::default(),
+            services: Default::default(),
+            distribution: None,
         }
     }
 }
 
-// === impl Split ===
+// === impl Distribute ===
 
-impl<T, N, S, Req> tower::Service<Req> for Split<T, N, S, Req>
+impl<T: Clone, N: Clone, Req> Clone for Distribute<T, N, Req>
+where
+    N: NewService<(ConcreteAddr, T)>,
+    N::Service: Service<Req>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            target: self.target.clone(),
+            new_inner: self.new_inner.clone(),
+
+            rng: SmallRng::from_rng(&mut thread_rng()).expect("rng"),
+            rx: self.rx.clone(),
+            addrs: Default::default(),
+            services: Default::default(),
+            distribution: None,
+        }
+    }
+}
+
+impl<T, N, S, Req> Distribute<T, N, Req>
 where
     Req: Send + 'static,
     T: Clone + Param<LogicalAddr>,
@@ -106,71 +110,90 @@ where
     S::Error: Into<Error>,
     S::Future: Send,
 {
-    type Response = S::Response;
-    type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<S::Response, Error>> + Send + 'static>>;
+    fn update(&mut self, mut targets: Vec<Target>) {
+        if targets.is_empty() {
+            let LogicalAddr(addr) = self.target.param();
+            targets.push(Target { addr, weight: 1 })
+        }
+        debug!(?targets, "Updating");
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let mut update = None;
-        while let Poll::Ready(Some(up)) = self.rx.poll_next_unpin(cx) {
-            update = Some(up);
+        if targets.len() == self.addrs.len() || targets.iter().all(|t| self.addrs.contains(&t.addr))
+        {
+            return;
         }
 
+        // Replace the old set of addresses with an empty set. The
+        // prior set is used to determine whether a new service
+        // needs to be created and what stale services should be
+        // removed.
+        let mut prior_addrs =
+            std::mem::replace(&mut self.addrs, IndexSet::with_capacity(targets.len()));
+        let mut weights = Vec::with_capacity(targets.len());
+
+        // Create an updated distribution and set of services.
+        for Target { weight, addr } in targets.into_iter() {
+            // Reuse the prior services whenever possible.
+            if !prior_addrs.remove(&addr) {
+                debug!(%addr, "Creating target");
+                let svc = self
+                    .new_inner
+                    .new_service((ConcreteAddr(addr.clone()), self.target.clone()));
+                self.services.push(addr.clone(), svc);
+            } else {
+                trace!(%addr, "Target already exists");
+            }
+            self.addrs.insert(addr);
+            weights.push(weight);
+        }
+
+        self.distribution = Some(Arc::new(WeightedIndex::new(weights).unwrap()));
+
+        // Remove all prior services that did not exist in the new
+        // set of targets.
+        for addr in prior_addrs.into_iter() {
+            self.services.evict(&addr);
+        }
+    }
+}
+
+impl<T, N, S, Req> tower::Service<Req> for Distribute<T, N, Req>
+where
+    Req: Send + 'static,
+    T: Clone + Param<LogicalAddr>,
+    N: NewService<(ConcreteAddr, T), Service = S> + Clone,
+    S: tower::Service<Req, Error = Error> + Send + 'static,
+    S::Response: Send + 'static,
+    S::Future: Send,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // Every time the profile updates, rebuild the distribution, reusing
         // services that existed in the prior state.
-        if let Some(Profile { mut targets, .. }) = update {
-            if targets.is_empty() {
-                let LogicalAddr(addr) = self.target.param();
-                targets.push(Target { addr, weight: 1 })
-            }
-            debug!(?targets, "Updating");
-
-            // Replace the old set of addresses with an empty set. The
-            // prior set is used to determine whether a new service
-            // needs to be created and what stale services should be
-            // removed.
-            let mut prior_addrs =
-                std::mem::replace(&mut self.addrs, IndexSet::with_capacity(targets.len()));
-            let mut weights = Vec::with_capacity(targets.len());
-
-            // Create an updated distribution and set of services.
-            for Target { weight, addr } in targets.into_iter() {
-                // Reuse the prior services whenever possible.
-                if !prior_addrs.remove(&addr) {
-                    debug!(%addr, "Creating target");
-                    let svc = self
-                        .new_service
-                        .new_service((ConcreteAddr(addr.clone()), self.target.clone()));
-                    self.services.push(addr.clone(), svc);
-                } else {
-                    trace!(%addr, "Target already exists");
-                }
-                self.addrs.insert(addr);
-                weights.push(weight);
-            }
-
-            self.distribution = WeightedIndex::new(weights).unwrap();
-
-            // Remove all prior services that did not exist in the new
-            // set of targets.
-            for addr in prior_addrs.into_iter() {
-                self.services.evict(&addr);
-            }
+        if let Poll::Ready(Some(Profile { targets, .. })) = self.rx.poll_next_unpin(cx) {
+            self.update(targets);
         }
 
         // Wait for all target services to be ready. If any services fail, then
         // the whole service fails.
-        Poll::Ready(ready!(self.services.poll_pending(cx)).map_err(Into::into))
+        Poll::Ready(ready!(self.services.poll_pending(cx).map_err(Into::into)))
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        let idx = if self.addrs.len() == 1 {
-            0
-        } else {
-            self.distribution.sample(&mut self.rng)
+        let addr = {
+            let idx = if self.addrs.len() == 1 {
+                0
+            } else {
+                self.distribution
+                    .as_ref()
+                    .expect("distribution must be set")
+                    .sample(&mut self.rng)
+            };
+            self.addrs.get_index(idx).expect("invalid index")
         };
-        let addr = self.addrs.get_index(idx).expect("invalid index");
         trace!(?addr, "Dispatching");
-        Box::pin(self.services.call_ready(addr, req).err_into::<Error>())
+        self.services.call_ready(addr, req)
     }
 }

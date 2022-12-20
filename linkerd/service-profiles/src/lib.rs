@@ -23,9 +23,9 @@ mod default;
 pub mod discover;
 pub mod http;
 mod proto;
-pub mod split;
+mod split;
 
-pub use self::{client::Client, concrete::NewConcreteCache};
+pub use self::{client::Client, concrete::NewConcreteCache, split::NewDistribute};
 
 #[derive(Clone, Debug)]
 pub struct Receiver {

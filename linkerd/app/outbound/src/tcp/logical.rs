@@ -91,7 +91,7 @@ impl<C> Outbound<C> {
             concrete
                 .push_map_target(Concrete::from)
                 .check_new_service::<(ConcreteAddr, Logical), I>()
-                .push(profiles::split::layer())
+                .push(profiles::NewDistribute::layer())
                 .push_on_service(
                     svc::layers()
                         .push(
