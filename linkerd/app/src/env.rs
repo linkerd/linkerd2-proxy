@@ -332,7 +332,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_disable_ports = parse(
         strings,
         ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-        parse_port_set,
+        parse_port_range_set,
     );
 
     let buffer_capacity = parse(strings, ENV_BUFFER_CAPACITY, parse_number);
@@ -599,9 +599,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
             // Load opaque ports from the environment.
             let opaque_ports = {
-                let ports = inbound_disable_ports?.unwrap_or_default();
+                let ranges = inbound_disable_ports?.unwrap_or_default();
                 // Ensure that the inbound port does not disable protocol detection
-                if ports.contains(&inbound_port) {
+                if ranges.contains(&inbound_port) {
                     error!(
                         "{} must not contain {} ({})",
                         ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
@@ -619,7 +619,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                             }
                             _ => unreachable!("port must have been configured to detect prior to marking it opaque"),
                         };
-                        Some(inbound::policy::config::OpaquePorts { ports, policy })
+                        Some(inbound::policy::config::OpaquePorts { ranges, policy })
                     }
                     // If the default policy is deny, then we should still
                     // perform policy lookups for all ports, even if they are
@@ -659,7 +659,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
             if let Some(ref opaque) = opaque_ports {
                 for port in &ports {
-                    if opaque.ports.contains(port) {
+                    // XXX(eliza): it might be nicer to split the opaque range
+                    // containing a port in `INBOUND_PORTS` into two separate
+                    // ranges that don't include the configured inbound port? But
+                    // for now, let's just error.
+                    if opaque.ranges.contains(port) {
                         error!(
                             "{} must not contain ports in {} ({})",
                             ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, ENV_INBOUND_PORTS, port

@@ -1,12 +1,14 @@
 use super::{api, config, AllowPolicy, DefaultPolicy, GetPolicy};
 use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error};
-use linkerd_cache::Cache;
+use linkerd_cache::{Cache, Cached};
 pub use linkerd_server_policy::{
     authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
 };
+use rangemap::RangeInclusiveSet;
 use std::{
     collections::HashSet,
     hash::{BuildHasherDefault, Hasher},
+    sync::Arc,
 };
 use tokio::{sync::watch, time::Duration};
 use tracing::info_span;
@@ -16,6 +18,7 @@ pub struct Store<S> {
     cache: Cache<u16, Rx, BuildHasherDefault<PortHasher>>,
     default_rx: Rx,
     discover: Option<api::Watch<S>>,
+    opaque_ports: Option<(Arc<RangeInclusiveSet<u16>>, Rx)>,
 }
 
 type Rx = watch::Receiver<ServerPolicy>;
@@ -38,24 +41,13 @@ impl<S> Store<S> {
         opaque_ports: Option<config::OpaquePorts>,
     ) -> Self {
         let cache = {
-            let opaque =
-                opaque_ports
-                    .into_iter()
-                    .flat_map(|config::OpaquePorts { ports, policy }| {
-                        let policy = Self::spawn_default(DefaultPolicy::Allow(policy));
-                        ports.into_iter().map(move |port| (port, policy.clone()))
-                    });
             let rxs = ports.into_iter().map(|(port, policy)| {
                 let (_, rx) = watch::channel(policy);
                 (port, rx)
             });
-            Cache::with_permanent_from_iter(idle_timeout, rxs.chain(opaque))
+            Cache::with_permanent_from_iter(idle_timeout, rxs)
         };
-        Self {
-            cache,
-            default_rx: Self::spawn_default(default),
-            discover: None,
-        }
+        Self::new(cache, default, None, opaque_ports)
     }
 
     /// Spawns a watch for each of the given ports.
@@ -82,13 +74,6 @@ impl<S> Store<S> {
         // `idle_timeout` to prevent holding policy watches indefinitely for
         // ports that are generally unused.
         let cache = {
-            let opaque =
-                opaque_ports
-                    .into_iter()
-                    .flat_map(|config::OpaquePorts { ports, policy }| {
-                        let policy = Self::spawn_default(DefaultPolicy::Allow(policy));
-                        ports.into_iter().map(move |port| (port, policy.clone()))
-                    });
             let rxs = ports.into_iter().map(|port| {
                 let discover = discover.clone();
                 let default = default.clone();
@@ -96,12 +81,28 @@ impl<S> Store<S> {
                     .in_scope(|| discover.spawn_with_init(port, default.into()));
                 (port, rx)
             });
-            Cache::with_permanent_from_iter(idle_timeout, rxs.chain(opaque))
+            Cache::with_permanent_from_iter(idle_timeout, rxs)
         };
+        Self::new(cache, default, Some(discover), opaque_ports)
+    }
+
+    fn new(
+        cache: Cache<u16, Rx, BuildHasherDefault<PortHasher>>,
+        default: DefaultPolicy,
+        discover: Option<api::Watch<S>>,
+        opaque_ports: Option<config::OpaquePorts>,
+    ) -> Self {
+        let opaque_ports = opaque_ports.map(|config::OpaquePorts { ranges, policy }| {
+            (
+                Arc::new(ranges),
+                Self::spawn_default(DefaultPolicy::Allow(policy)),
+            )
+        });
         Self {
-            cache,
             default_rx: Self::spawn_default(default),
-            discover: Some(discover),
+            opaque_ports,
+            cache,
+            discover,
         }
     }
 
@@ -125,26 +126,37 @@ where
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
     fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy {
+        let port = dst.port();
+
+        // First, check if the port is marked as opaque.
+        if let Some((ref opaque_ranges, ref opaque_policy)) = self.opaque_ports {
+            if opaque_ranges.contains(&port) {
+                tracing::trace!(%port, "using opaque port policy");
+                let server = Cached::uncached(opaque_policy.clone());
+                return AllowPolicy { dst, server };
+            }
+        }
+
         // Lookup the polcify for the target port in the cache. If it doesn't
         // already exist, we spawn a watch on the API (if it is configured). If
         // no discovery API is configured we use the default policy.
-        let server =
-            self.cache
-                .get_or_insert_with(dst.port(), |port| match self.discover.clone() {
-                    Some(disco) => info_span!("watch", port).in_scope(|| {
-                        tracing::trace!(%port, "spawning policy discovery");
-                        disco.spawn_with_init(*port, self.default_rx.borrow().clone())
-                    }),
+        let server = self
+            .cache
+            .get_or_insert_with(port, |port| match self.discover.clone() {
+                Some(disco) => info_span!("watch", port).in_scope(|| {
+                    tracing::trace!(%port, "spawning policy discovery");
+                    disco.spawn_with_init(*port, self.default_rx.borrow().clone())
+                }),
 
-                    // If no discovery API is configured, then we use the
-                    // default policy. Whlie it's a little wasteful to cache
-                    // these results separately, this case isn't expected to be
-                    // used outside of testing.
-                    None => {
-                        tracing::trace!(%port, "using the default policy");
-                        self.default_rx.clone()
-                    }
-                });
+                // If no discovery API is configured, then we use the
+                // default policy. Whlie it's a little wasteful to cache
+                // these results separately, this case isn't expected to be
+                // used outside of testing.
+                None => {
+                    tracing::trace!(%port, "using the default policy");
+                    self.default_rx.clone()
+                }
+            });
 
         AllowPolicy { dst, server }
     }

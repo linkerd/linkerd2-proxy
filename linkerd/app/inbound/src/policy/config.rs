@@ -1,5 +1,6 @@
 use super::{api::Api, DefaultPolicy, GetPolicy, Protocol, ServerPolicy, Store};
 use linkerd_app_core::{control, dns, identity, metrics, svc::NewService};
+use rangemap::RangeInclusiveSet;
 use std::collections::HashSet;
 use tokio::time::Duration;
 
@@ -18,7 +19,7 @@ pub struct Config {
 
 #[derive(Clone, Debug)]
 pub struct OpaquePorts {
-    pub ports: HashSet<u16>,
+    pub ranges: RangeInclusiveSet<u16>,
     pub policy: ServerPolicy,
 }
 

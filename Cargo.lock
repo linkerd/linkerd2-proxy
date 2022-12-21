@@ -876,6 +876,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "once_cell",
  "parking_lot",
+ "rangemap",
  "thiserror",
  "tokio",
  "tokio-test",
