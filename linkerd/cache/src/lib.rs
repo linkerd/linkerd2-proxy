@@ -310,6 +310,7 @@ impl<V> CacheEntry<V> {
 
 // === impl Cached ===
 
+#[cfg(feature = "test-util")]
 impl<V> Cached<V> {
     /// Returns a new `Cached` handle wrapping the provided value, but *not*
     /// associated with a cache.
