@@ -25,6 +25,10 @@ pub fn identity() -> identity::Controller {
     identity::Controller::default()
 }
 
+pub fn policy() -> policy::Controller {
+    policy::Controller::default()
+}
+
 pub type Labels = HashMap<String, String>;
 
 pub type DstReceiver = UnboundedReceiverStream<Result<pb::Update, grpc::Status>>;
