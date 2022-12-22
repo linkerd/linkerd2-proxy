@@ -1,0 +1,12 @@
+[package]
+name = "linkerd-distribute"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+indexmap = "1"
+linkerd-stack = { path = "../stack" }
+rand = { version = "0.8", features = ["small_rng"] }
+tracing = "0.1"
