@@ -5,7 +5,10 @@ use tokio::time::Duration;
 
 /// Configures inbound policies.
 ///
-/// The proxy usually watches dynamic policies from the control plane.
+/// Most policies are watched dynamically from the control plane. A default
+/// policy is used when the controller does not provide a policy for a given
+/// port. In addition, a pre-configured list of opaque ports can be provided
+/// to avoid unnecessary policy lookups for ports which will always be opaque.
 #[derive(Clone, Debug)]
 pub struct Config {
     pub control: control::Config,
