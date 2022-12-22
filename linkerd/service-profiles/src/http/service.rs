@@ -1,15 +1,19 @@
 use super::{RequestMatch, Route};
-use crate::{LogicalAddr, NewDistribute, Profile};
+use crate::LogicalAddr;
 use futures::{future::Either, prelude::*};
-use linkerd_error::Error;
+use linkerd_addr::NameAddr;
 use linkerd_proxy_api_resolve::ConcreteAddr;
-use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
+use linkerd_stack::{layer, NewCloneService, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
-    collections::{hash_map, HashMap, HashSet},
+    collections::HashMap,
     task::{Context, Poll},
 };
 use tokio::sync::watch;
-use tracing::{debug, error, trace};
+use tracing::{error, trace};
+
+type Distribution = crate::Distribution<NameAddr>;
+type NewDistribute<S> = crate::NewDistribute<NameAddr, S>;
+type Distribute<S> = crate::Distribute<NameAddr, S>;
 
 /// A router that uses a per-route `Service` (with a fallback service when no
 /// route is matched).
@@ -22,7 +26,7 @@ use tracing::{debug, error, trace};
 ///   idle-oriented eviction).
 #[derive(Clone, Debug)]
 pub struct NewServiceRouter<N, R, U> {
-    new_concrete: N,
+    new_backend: N,
     route_layer: R,
     _marker: std::marker::PhantomData<fn(U)>,
 }
@@ -41,8 +45,8 @@ struct Shared<R, S> {
 
 impl<C, N, R: Clone> NewServiceRouter<N, R, C> {
     pub fn layer(route_layer: R) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |new_concrete| Self {
-            new_concrete,
+        layer::mk(move |new_backend| Self {
+            new_backend,
             route_layer: route_layer.clone(),
             _marker: std::marker::PhantomData,
         })
@@ -54,150 +58,127 @@ where
     L: Param<LogicalAddr> + Param<crate::Receiver> + Clone,
     C: From<(ConcreteAddr, L)>,
     N: NewService<C> + Clone,
-    N::Service: Clone,
-    R: layer::Layer<N::Service>, // TODO NewDistribute<N::Service>,
-    R::Service: NewService<(Route, L)>,
+    N::Service: Clone + Send + Sync + 'static,
+    R: layer::Layer<NewCloneService<Distribute<N::Service>>>, // TODO NewDistribute<N::Service>,
+    R::Service: NewService<(Route, L), Service = S>,
+    S: Send + Sync + 'static,
 {
-    type Service = ServiceRouter<R::Service, N::Service>;
+    type Service = ServiceRouter<S, Distribute<N::Service>>;
 
     fn new_service(&self, target: L) -> Self::Service {
         // Spawn a background task that watches for profile updates and, when a
         // change is necessary, rebuilds stacks:
         //
-        // 1. Maintain a cache of concrete backend services (i.e., load
+        // 1. Maintain a cache of backend backend services (i.e., load
         //    balancers). These services are shared across all routes and
         //    therefor must be cloneable (i.e., buffered).
         // 2.
         // 3. Publish these stacks so that they may be used
 
-        // Build the initial stacks by checking the profile.
-        // TODO(ver) configure a distributor.
-
         let mut profiles: crate::Receiver = target.param();
-        let profile = profiles.borrow_and_update();
+        let (tx, rx) = {
+            // Build the initial stacks by checking the profile.
+            let profile = profiles.borrow_and_update();
 
-        // TODO(ver) use a different key type that is structured instead of
-        // simply a name.
-        let mut concretes = HashMap::with_capacity(profile.targets.len().max(1));
-        for target in profile.targets.iter() {
-            let addr = target.addr.clone();
-            let concrete = self
-                .inner
-                .new_service(C::from((ConcreteAddr(addr.clone()), target.clone())));
-            concretes.insert(addr.clone(), concrete);
-        }
-        // TODO(ver) we should make it a requirement of the provider that there
-        // is always at least one backend.
-        if concretes.is_empty() {
-            let LogicalAddr(addr) = target.param();
-            let concrete = self
-                .inner
-                .new_service(C::from((ConcreteAddr(addr.clone()), target.clone())));
-            concretes.insert(addr, concrete);
-        }
-
-        // Build a distributor that has access to all of the concrete backends.
-        let new_distribute = NewDistribute::new(concretes.iter().cloned());
-
-        // Build the default route using the default distributor.
-        let default_distribution = profile.targets;
-        new_distribute.new_service(default_distribution);
-
-        //
-
-        let route_layer = self.route_layer.clone();
-        let shared = Shared {
-            matches: profile.http_routes.iter().cloned().collect(),
-            routes: profile
-                .http_routes
-                .iter()
-                .map(|(_, r)| {
-                    // TODO(ver) configure a distributor.
-                    route_layer
-                        .layer(new_distribute.clone())
-                        .new_service((r.clone(), target.clone()))
-                })
-                .collect(),
-            default,
-        };
-        let (tx, rx) = watch::channel(shared);
-
-        tokio::spawn(async move {
-            let mut profiles: crate::ReceiverStream = profiles.into();
-            loop {
-                match profiles.next().await {
-                    Some(Ok(profile)) => {
-                        todo!("Publish updated stacks")
-                    }
-                    Some(Err(error)) => {
-                        error!(%error, "Failed to receive profile");
-                        return;
-                    }
-                    None => return,
-                }
+            // TODO(ver) use a different key type that is structured instead of
+            // simply a name.
+            let mut backends = HashMap::with_capacity(profile.targets.len().max(1));
+            for t in profile.targets.iter() {
+                let addr = t.addr.clone();
+                let backend = self
+                    .new_backend
+                    .new_service(C::from((ConcreteAddr(addr.clone()), target.clone())));
+                backends.insert(addr.clone(), backend);
             }
+            // TODO(ver) we should make it a requirement of the provider that there
+            // is always at least one backend.
+            if backends.is_empty() {
+                let LogicalAddr(addr) = target.param();
+                let backend = self
+                    .new_backend
+                    .new_service(C::from((ConcreteAddr(addr.clone()), target.clone())));
+                backends.insert(addr, backend);
+            }
+
+            // Create a stack that can distribute requests to the backend backends.
+            let new_distribute = NewDistribute::new(
+                backends
+                    .iter()
+                    .map(|(addr, svc)| (addr.clone(), svc.clone())),
+            );
+
+            // Build a single distribution service that will be shared across all routes.
+            //
+            // TODO(ver) Move this into the route stack so that each route's
+            // distribution may vary.
+            let distribution = profile
+                .targets
+                .iter()
+                .cloned()
+                .map(|crate::Target { addr, weight }| (addr, weight))
+                .collect::<Distribution>();
+            let distribute = new_distribute.new_service(distribution);
+
+            let new_route = self
+                .route_layer
+                .layer(NewCloneService::from(distribute.clone()));
+            let shared = Shared {
+                matches: profile.http_routes.to_vec(),
+                routes: profile
+                    .http_routes
+                    .iter()
+                    .map(|(_, r)| {
+                        let svc = new_route.new_service((r.clone(), target.clone()));
+                        (r.clone(), svc)
+                    })
+                    .collect(),
+                default: distribute,
+            };
+            watch::channel(shared)
+        };
+        tokio::spawn(async move {
+            let mut profiles = crate::ReceiverStream::from(profiles);
+            while let Some(_profile) = profiles.next().await {
+                // Update `backends`.
+                // New distribution.
+                // New routes.
+                // Publish new shared state.
+                todo!();
+            }
+            drop(tx);
         });
 
-        ServiceRouter {
-            target,
-            new_route,
-            default,
-            rx: rx.into(),
-            matches: std::sync::Arc::new([]),
-            routes: HashMap::default(),
-        }
+        ServiceRouter(rx)
     }
 }
 
 // === impl ServiceRouter ===
 
-impl<B, T, N, R, S> Service<http::Request<B>> for ServiceRouter<T, N, R, S>
+impl<B, R, S> Service<http::Request<B>> for ServiceRouter<R, S>
 where
-    T: Clone,
-    N: NewService<(Route, T), Service = R> + Clone,
-    R: Service<http::Request<B>, Response = S::Response, Error = Error> + Clone,
-    S: Service<http::Request<B>, Error = Error>,
+    R: Service<http::Request<B>, Response = S::Response, Error = S::Error> + Clone,
+    S: Service<http::Request<B>> + Clone,
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = Either<S::Future, Oneshot<R, http::Request<B>>>;
+    type Future = Either<Oneshot<S, http::Request<B>>, Oneshot<R, http::Request<B>>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
-        // TODO(ver) This should be pending when all backends are unavailable.
-
-        // Only process profile updates when the default route is viable. In
-        // most cases is should be a common service used by all routes, so
-        // testing its state is valuable.
-        futures::ready!(self.default.poll_ready(cx))?;
-
-        // If the routes have changed, update the cache.
-        if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
-            if self.matches.len() != http_routes.len()
-                || self.matches.iter().zip(&http_routes).any(|(a, b)| a != b)
-            {
-                debug!(routes = %http_routes.len(), "Updating HTTP routes");
-                let routes = (http_routes.iter().map(|(_, r)| r.clone())).collect::<HashSet<_>>();
-                self.matches = http_routes.into_iter().collect();
-
-                // Clear out defunct routes before building any missing routes.
-                self.routes.retain(|r, _| routes.contains(r));
-                for route in routes.into_iter() {
-                    if let hash_map::Entry::Vacant(ent) = self.routes.entry(route) {
-                        let route = ent.key().clone();
-                        let svc = self.new_route.new_service((route, self.target.clone()));
-                        ent.insert(svc);
-                    }
-                }
-            }
-        }
-
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+        // TODO(ver) figure out how backpressure should work here. Ideally, we
+        // should only advertise readiness when at least one backend is ready.
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        let Shared {
+            matches,
+            routes,
+            default,
+        } = &*self.0.borrow();
+
         // If the request matches a route, use the route's service.
-        if let Some(route) = super::route_for_request(&self.matches, &req) {
-            if let Some(svc) = self.routes.get(route).cloned() {
+        if let Some(route) = super::route_for_request(matches, &req) {
+            if let Some(svc) = routes.get(route).cloned() {
                 trace!(?route, "Using route service");
                 return Either::Right(svc.oneshot(req));
             }
@@ -208,6 +189,6 @@ where
 
         // Otherwise, use the default service.
         trace!("Using default service");
-        Either::Left(self.default.call(req))
+        Either::Left(default.clone().oneshot(req))
     }
 }

@@ -3,7 +3,6 @@
 //! TODO(ver) This is totally decoupled from service profiles and should live
 //! somewhere else.
 
-use futures::prelude::*;
 use indexmap::IndexMap;
 use linkerd_stack::{NewService, Param, Service};
 use rand::{
@@ -17,22 +16,21 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tracing::warn;
 
 #[derive(Clone, Debug)]
 pub struct NewDistribute<K, S> {
-    backends: Arc<IndexMap<K, S>>,
+    backends: IndexMap<K, S>,
 }
 
 #[derive(Debug)]
 pub struct Distribute<K, S> {
-    backends: Arc<IndexMap<K, S>>,
+    backends: IndexMap<K, S>,
     ready_idx: Option<usize>,
     inner: Inner<K>,
 }
 
 /// A parameter type that configures how a [`Distribute`] should behave.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Distribution<K> {
     /// A distribution that has no backends, and therefore never becomes ready.
     Empty,
@@ -45,10 +43,10 @@ pub enum Distribution<K> {
     RandomAvailable(Arc<WeightedKeys<K>>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct WeightedKeys<K> {
     keys: Vec<K>,
-    index: WeightedIndex<usize>,
+    index: WeightedIndex<u32>,
 }
 
 #[derive(Debug)]
@@ -69,7 +67,7 @@ enum Inner<K> {
 impl<K: Hash + Eq, S> NewDistribute<K, S> {
     #[inline]
     pub(crate) fn new(backends: impl IntoIterator<Item = (K, S)>) -> Self {
-        let backends = backends.into_iter().collect();
+        let backends: IndexMap<K, S> = backends.into_iter().collect();
         assert!(
             !backends.is_empty(),
             "must have at least one concrete backend"
@@ -81,7 +79,7 @@ impl<K: Hash + Eq, S> NewDistribute<K, S> {
 impl<T, K, S> NewService<T> for NewDistribute<K, S>
 where
     T: Param<Distribution<K>>,
-    K: Hash + Eq,
+    K: Hash + Eq + Clone,
     S: Clone,
 {
     type Service = Distribute<K, S>;
@@ -97,28 +95,14 @@ where
 
 // === impl Distribute ===
 
-impl<K, S> Clone for Distribute<K, S> {
+impl<K: Clone, S: Clone> Clone for Distribute<K, S> {
     fn clone(&self) -> Self {
         Self {
             backends: self.backends.clone(),
+            inner: self.inner.clone(),
             // Clear the ready index so that the new clone must become ready
             // independently.
             ready_idx: None,
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<K> Clone for Inner<K> {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Empty => Inner::Empty,
-            Self::FirstAvailable { keys } => Self::FirstAvailable { keys: keys.clone() },
-            Self::RandomAvailable { keys, .. } => Self::RandomAvailable {
-                keys: keys.clone(),
-                polled_idxs: HashSet::with_capacity(keys.keys.len()),
-                rng: SmallRng::from_rng(rand::thread_rng()).expect("RNG must initialize"),
-            },
         }
     }
 }
@@ -142,8 +126,9 @@ where
         }
 
         match self.inner {
-            // Empty distributions are never ready.
-            Inner::Empty => {}
+            Inner::Empty => {
+                tracing::debug!("empty distribution will never become ready");
+            }
 
             Inner::FirstAvailable { ref keys } => {
                 for key in keys.iter() {
@@ -167,7 +152,7 @@ where
                 // to poll the backend. Continue selecting endpoints until we
                 // find one that is ready or we've tried all backends in the
                 // distribution.
-                self.polled_idxs.clear();
+                polled_idxs.clear();
                 while polled_idxs.len() != keys.keys.len() {
                     let (idx, _, svc) = self
                         .backends
@@ -202,13 +187,25 @@ where
 
 // === impl Distribution ===
 
+impl<K> FromIterator<K> for Distribution<K> {
+    fn from_iter<T: IntoIterator<Item = K>>(iter: T) -> Self {
+        Self::first_available(iter)
+    }
+}
+
+impl<K> FromIterator<(K, u32)> for Distribution<K> {
+    fn from_iter<T: IntoIterator<Item = (K, u32)>>(iter: T) -> Self {
+        Self::random_available(iter)
+    }
+}
+
 impl<K> Distribution<K> {
     pub fn empty() -> Self {
         Self::Empty
     }
 
     pub fn first_available(keys: impl IntoIterator<Item = K>) -> Self {
-        let keys = keys.collect();
+        let keys: Arc<[K]> = keys.into_iter().collect();
         if keys.is_empty() {
             return Self::Empty;
         }
@@ -222,13 +219,15 @@ impl<K> Distribution<K> {
         }
 
         let index = WeightedIndex::new(weights).expect("must succeed");
-        Self::RandomAvailable(Arc::new(Self { keys, index }))
+        Self::RandomAvailable(Arc::new(WeightedKeys { keys, index }))
     }
 }
 
+// === impl Inner ===
+
 impl<K> From<Distribution<K>> for Inner<K> {
-    fn from(self) -> Self {
-        match self {
+    fn from(dist: Distribution<K>) -> Self {
+        match dist {
             Distribution::Empty => Self::Empty,
             Distribution::FirstAvailable(keys) => Self::FirstAvailable { keys },
             Distribution::RandomAvailable(keys) => Self::RandomAvailable {
@@ -240,7 +239,21 @@ impl<K> From<Distribution<K>> for Inner<K> {
     }
 }
 
-// === impl Random===
+impl<K> Clone for Inner<K> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Empty => Inner::Empty,
+            Self::FirstAvailable { keys } => Self::FirstAvailable { keys: keys.clone() },
+            Self::RandomAvailable { keys, .. } => Self::RandomAvailable {
+                keys: keys.clone(),
+                polled_idxs: HashSet::with_capacity(keys.keys.len()),
+                rng: SmallRng::from_rng(rand::thread_rng()).expect("RNG must initialize"),
+            },
+        }
+    }
+}
+
+// === impl WeightedKeys ===
 
 impl<K> WeightedKeys<K> {
     fn next<R: rand::Rng>(&self, rng: &mut R) -> &K {

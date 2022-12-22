@@ -157,10 +157,6 @@ impl Receiver {
     pub fn endpoint(&self) -> Option<(SocketAddr, Metadata)> {
         self.inner.borrow().endpoint.clone()
     }
-
-    fn targets(&self) -> Vec<Target> {
-        self.inner.borrow().targets.clone()
-    }
 }
 
 // === impl ReceiverStream ===
