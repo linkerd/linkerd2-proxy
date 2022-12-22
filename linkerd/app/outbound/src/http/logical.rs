@@ -42,11 +42,8 @@ impl<N> Outbound<N> {
                 .push_map_target(Concrete::from)
                 .push(profiles::http::NewServiceRouter::<Concrete, _, _>::layer(
                     svc::layers()
-                        .push_map_target(Concrete::from)
                         // Maintain a per-route distributor over concrete
                         // backends from the (above) concrete cache.
-                        .push(profiles::NewDistribute::layer())
-                        .push_map_target(|r: ProfileRoute| r.logical)
                         .push(http::insert::NewInsert::<ProfileRoute, _>::layer())
                         .push_on_service(http::BoxRequest::layer())
                         .push(
