@@ -139,6 +139,10 @@ impl Receiver {
         self.inner.borrow_and_update()
     }
 
+    pub async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
+        self.inner.changed().await
+    }
+
     pub fn logical_addr(&self) -> Option<LogicalAddr> {
         self.inner.borrow().addr.clone()
     }

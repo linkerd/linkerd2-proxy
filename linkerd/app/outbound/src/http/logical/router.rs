@@ -13,7 +13,7 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::sync::watch;
-use tracing::{error, trace};
+use tracing::{error, trace, Instrument};
 
 type Distribution = linkerd_distribute::Distribution<NameAddr>;
 type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
@@ -58,11 +58,13 @@ impl<N, R: Clone, U> NewRouter<N, R, U> {
 
 impl<T, U, N, R, S> NewService<T> for NewRouter<N, R, U>
 where
-    T: Param<profiles::LogicalAddr> + Param<profiles::Receiver> + Clone,
+    T: Param<profiles::LogicalAddr> + Param<profiles::Receiver>,
+    T: Clone + Send + 'static,
     U: From<(ConcreteAddr, T)>,
-    N: NewService<U> + Clone,
+    N: NewService<U> + Clone + Send + 'static,
     N::Service: Clone + Send + Sync + 'static,
     R: layer::Layer<NewCloneService<Distribute<N::Service>>>, // TODO NewDistribute<N::Service>,
+    R: Clone + Send + 'static,
     R::Service: NewService<(Route, T), Service = S>,
     S: Send + Sync + 'static,
 {
@@ -85,23 +87,107 @@ where
         // TODO(ver) use a different key type that is structured instead of
         // simply a name.
         let mut backends = HashMap::with_capacity(profile.targets.len().max(1));
-        for t in profile.targets.iter() {
+        Self::mk_backends(&mut backends, &self.new_backend, &profile.targets, &target);
+
+        let distribute = Self::mk_distribute(&backends, &profile.targets, &target);
+        let routes = Self::mk_routes(distribute, &self.route_layer, &profile.http_routes, &target);
+
+        let (tx, rx) = watch::channel(Shared {
+            matches: profile.http_routes.clone(),
+            routes,
+        });
+
+        drop(profile);
+
+        let new_backend = self.new_backend.clone();
+        let route_layer = self.route_layer.clone();
+        let span = tracing::debug_span!("router", target = %Param::<profiles::LogicalAddr>::param(&target));
+        tokio::spawn(
+            async move {
+                while profiles.changed().await.is_ok() {
+                    let profile = profiles.borrow_and_update();
+                    // Update `backends`.
+                    // TODO(eliza): can we avoid doing this if the backends haven't
+                    // changed at all (e.g., handle updates that only change the
+                    // routes?)
+                    tracing::debug!(backends = profile.targets.len(), "Updating backends");
+                    backends.clear();
+                    Self::mk_backends(&mut backends, &new_backend, &profile.targets, &target);
+
+                    // New distribution.
+                    // TODO(eliza): if the backends and weights haven't changed, it
+                    // would be nice to avoid rebuilding the distributor...
+                    let distribute = Self::mk_distribute(&backends, &profile.targets, &target);
+
+                    // New routes.
+                    // TODO(eliza): if the backends and weights haven't changed, it
+                    // would be nice to avoid rebuilding the distributor...
+                    tracing::debug!(routes = profile.http_routes.len(), "Updating HTTP routes");
+                    let routes =
+                        Self::mk_routes(distribute, &route_layer, &profile.http_routes, &target);
+
+                    // Publish new shared state.
+                    let shared = Shared {
+                        matches: profile.http_routes.clone(),
+                        routes,
+                    };
+                    if tx.send(shared).is_err() {
+                        tracing::debug!(
+                            "No services are listening for profile updates, shutting down"
+                        );
+                        return;
+                    }
+                }
+
+                tracing::debug!("Profile watch has closed, shutting down");
+            }
+            .instrument(span),
+        );
+
+        Router(rx)
+    }
+}
+
+impl<U, N, R> NewRouter<N, R, U>
+where
+    N: NewService<U> + Clone,
+    N::Service: Clone + Send + Sync + 'static,
+{
+    fn mk_backends<T>(
+        backends: &mut HashMap<NameAddr, N::Service>,
+        new_backend: &N,
+        targets: &[profiles::Target],
+        target: &T,
+    ) where
+        U: From<(ConcreteAddr, T)>,
+        T: Param<profiles::LogicalAddr> + Clone,
+    {
+        backends.reserve(targets.len().max(1));
+        for t in targets.iter() {
             let addr = t.addr.clone();
-            let backend = self
-                .new_backend
-                .new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
+            let backend =
+                new_backend.new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
             backends.insert(addr.clone(), backend);
         }
+
         // TODO(ver) we should make it a requirement of the provider that there
         // is always at least one backend.
         if backends.is_empty() {
             let profiles::LogicalAddr(addr) = target.param();
-            let backend = self
-                .new_backend
-                .new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
+            let backend =
+                new_backend.new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
             backends.insert(addr, backend);
         }
+    }
 
+    fn mk_distribute<T>(
+        backends: &HashMap<NameAddr, N::Service>,
+        targets: &[profiles::Target],
+        target: &T,
+    ) -> Distribute<N::Service>
+    where
+        T: Param<profiles::LogicalAddr>,
+    {
         // Create a stack that can distribute requests to the backends.
         let new_distribute = NewDistribute::new(
             backends
@@ -113,49 +199,40 @@ where
         //
         // TODO(ver) Move this into the route stack so that each route's
         // distribution may vary.
-        let distribution = if profile.targets.is_empty() {
+        let distribution = if targets.is_empty() {
             let profiles::LogicalAddr(addr) = target.param();
             std::iter::once((addr, 1)).collect::<Distribution>()
         } else {
-            profile
-                .targets
+            targets
                 .iter()
                 .cloned()
                 .map(|profiles::Target { addr, weight }| (addr, weight))
                 .collect::<Distribution>()
         };
-        let distribute = new_distribute.new_service(distribution);
+        new_distribute.new_service(distribution)
+    }
 
-        let new_route = self.route_layer.layer(NewCloneService::from(distribute));
-        let routes = profile
-            .http_routes
+    fn mk_routes<S, T>(
+        distribute: Distribute<N::Service>,
+        route_layer: &R,
+        http_routes: &[(RequestMatch, Route)],
+        target: &T,
+    ) -> HashMap<Route, S>
+    where
+        T: Clone,
+        U: From<(ConcreteAddr, T)>,
+        R: layer::Layer<NewCloneService<Distribute<N::Service>>>, // TODO NewDistribute<N::Service>,
+        R::Service: NewService<(Route, T), Service = S>,
+        S: Send + Sync + 'static,
+    {
+        let new_route = route_layer.layer(NewCloneService::from(distribute));
+        http_routes
             .iter()
             .map(|(_, r)| {
                 let svc = new_route.new_service((r.clone(), target.clone()));
                 (r.clone(), svc)
             })
-            .collect();
-
-        let (tx, rx) = watch::channel(Shared {
-            matches: profile.http_routes.clone(),
-            routes,
-        });
-        drop(profile);
-
-        tokio::spawn(async move {
-            let mut profiles = profiles::ReceiverStream::from(profiles);
-            while let Some(_profile) = profiles.next().await {
-                // Update `backends`.
-                // New distribution.
-                // New routes.
-                // Publish new shared state.
-                todo!();
-            }
-            drop(backends);
-            drop(tx);
-        });
-
-        Router(rx)
+            .collect()
     }
 }
 
