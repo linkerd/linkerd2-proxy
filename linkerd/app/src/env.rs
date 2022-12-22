@@ -479,7 +479,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             },
             inbound_ips: inbound_ips.clone(),
             orig_dst_idle_timeout: cache_max_idle_age,
-            tcp_connection_buffer: BufferConfig {
+            tcp_accept_buffer: BufferConfig {
                 capacity: buffer_capacity,
                 failfast_timeout: dispatch_timeout,
             },
@@ -487,15 +487,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 capacity: buffer_capacity,
                 failfast_timeout: dispatch_timeout,
             },
-            http_server_buffer: BufferConfig {
-                capacity: buffer_capacity,
-                failfast_timeout: dispatch_timeout,
-            },
-            http_logical_buffer: BufferConfig {
-                capacity: buffer_capacity,
-                failfast_timeout: dispatch_timeout,
-            },
-            http_concrete_buffer: BufferConfig {
+            http_buffer: BufferConfig {
                 capacity: buffer_capacity,
                 failfast_timeout: dispatch_timeout,
             },

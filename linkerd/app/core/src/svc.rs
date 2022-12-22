@@ -256,6 +256,14 @@ impl<S> Stack<S> {
         self
     }
 
+    pub fn check_new_new<T, U>(self) -> Self
+    where
+        S: NewService<T>,
+        S::Service: NewService<U>,
+    {
+        self
+    }
+
     pub fn check_new_clone<T>(self) -> Self
     where
         S: NewService<T>,

@@ -1,12 +1,14 @@
 use super::{RequestMatch, Route};
-use crate::{Profile, Receiver, ReceiverStream};
+use crate::{LogicalAddr, NewDistribute, Profile};
 use futures::{future::Either, prelude::*};
 use linkerd_error::Error;
+use linkerd_proxy_api_resolve::ConcreteAddr;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
     collections::{hash_map, HashMap, HashSet},
     task::{Context, Poll},
 };
+use tokio::sync::watch;
 use tracing::{debug, error, trace};
 
 /// A router that uses a per-route `Service` (with a fallback service when no
@@ -18,63 +20,124 @@ use tracing::{debug, error, trace};
 /// * Routes are constructed eagerly as the profile updates;
 /// * Routes are removed eagerly as the profile updates (i.e. there's no
 ///   idle-oriented eviction).
-#[derive(Debug)]
-pub struct NewServiceRouter<U, N, R> {
-    new_inner: N,
+#[derive(Clone, Debug)]
+pub struct NewServiceRouter<N, R, U> {
+    new_concrete: N,
     route_layer: R,
     _marker: std::marker::PhantomData<fn(U)>,
 }
 
 #[derive(Clone, Debug)]
-pub struct ServiceRouter<T, N, R, S> {
-    target: T,
-    new_route: N,
+pub struct ServiceRouter<R, S>(watch::Receiver<Shared<R, S>>);
 
-    rx: ReceiverStream,
-    matches: std::sync::Arc<[(RequestMatch, Route)]>,
-    routes: HashMap<Route, R>,
-
+#[derive(Debug)]
+struct Shared<R, S> {
+    matches: Vec<(RequestMatch, Route)>,
+    routes: HashMap<Route, R>, // TODO(ver) AHashMap?
     default: S,
 }
 
 // === impl NewServiceRouter ===
 
-impl<U, N, R: Clone> NewServiceRouter<U, N, R> {
+impl<C, N, R: Clone> NewServiceRouter<N, R, C> {
     pub fn layer(route_layer: R) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |new_inner| Self {
-            new_inner,
+        layer::mk(move |new_concrete| Self {
+            new_concrete,
             route_layer: route_layer.clone(),
             _marker: std::marker::PhantomData,
         })
     }
 }
 
-impl<U, N: Clone, R: Clone> Clone for NewServiceRouter<U, N, R> {
-    fn clone(&self) -> Self {
-        Self {
-            new_inner: self.new_inner.clone(),
-            route_layer: self.route_layer.clone(),
-            _marker: self._marker,
-        }
-    }
-}
-
-impl<T, U, N, NSvc, R, RSvc> NewService<T> for NewServiceRouter<U, N, R>
+impl<L, C, N, R, S> NewService<L> for NewServiceRouter<N, R, C>
 where
-    T: Param<Receiver> + Clone,
-    U: From<T>,
-    N: NewService<T>,
-    N::Service: NewService<U, Service = NSvc>,
-    R: layer::Layer<N::Service>,
-    R::Service: NewService<(Route, T), Service = RSvc>,
+    L: Param<LogicalAddr> + Param<crate::Receiver> + Clone,
+    C: From<(ConcreteAddr, L)>,
+    N: NewService<C> + Clone,
+    N::Service: Clone,
+    R: layer::Layer<N::Service>, // TODO NewDistribute<N::Service>,
+    R::Service: NewService<(Route, L)>,
 {
-    type Service = ServiceRouter<T, R::Service, RSvc, NSvc>;
+    type Service = ServiceRouter<R::Service, N::Service>;
 
-    fn new_service(&self, target: T) -> Self::Service {
-        let rx: Receiver = target.param();
-        let new_inner = self.new_inner.new_service(target.clone());
-        let default = new_inner.new_service(target.clone().into());
-        let new_route = self.route_layer.layer(new_inner);
+    fn new_service(&self, target: L) -> Self::Service {
+        // Spawn a background task that watches for profile updates and, when a
+        // change is necessary, rebuilds stacks:
+        //
+        // 1. Maintain a cache of concrete backend services (i.e., load
+        //    balancers). These services are shared across all routes and
+        //    therefor must be cloneable (i.e., buffered).
+        // 2.
+        // 3. Publish these stacks so that they may be used
+
+        // Build the initial stacks by checking the profile.
+        // TODO(ver) configure a distributor.
+
+        let mut profiles: crate::Receiver = target.param();
+        let profile = profiles.borrow_and_update();
+
+        // TODO(ver) use a different key type that is structured instead of
+        // simply a name.
+        let mut concretes = HashMap::with_capacity(profile.targets.len().max(1));
+        for target in profile.targets.iter() {
+            let addr = target.addr.clone();
+            let concrete = self
+                .inner
+                .new_service(C::from((ConcreteAddr(addr.clone()), target.clone())));
+            concretes.insert(addr.clone(), concrete);
+        }
+        // TODO(ver) we should make it a requirement of the provider that there
+        // is always at least one backend.
+        if concretes.is_empty() {
+            let LogicalAddr(addr) = target.param();
+            let concrete = self
+                .inner
+                .new_service(C::from((ConcreteAddr(addr.clone()), target.clone())));
+            concretes.insert(addr, concrete);
+        }
+
+        // Build a distributor that has access to all of the concrete backends.
+        let new_distribute = NewDistribute::new(concretes.iter().cloned());
+
+        // Build the default route using the default distributor.
+        let default_distribution = profile.targets;
+        new_distribute.new_service(default_distribution);
+
+        //
+
+        let route_layer = self.route_layer.clone();
+        let shared = Shared {
+            matches: profile.http_routes.iter().cloned().collect(),
+            routes: profile
+                .http_routes
+                .iter()
+                .map(|(_, r)| {
+                    // TODO(ver) configure a distributor.
+                    route_layer
+                        .layer(new_distribute.clone())
+                        .new_service((r.clone(), target.clone()))
+                })
+                .collect(),
+            default,
+        };
+        let (tx, rx) = watch::channel(shared);
+
+        tokio::spawn(async move {
+            let mut profiles: crate::ReceiverStream = profiles.into();
+            loop {
+                match profiles.next().await {
+                    Some(Ok(profile)) => {
+                        todo!("Publish updated stacks")
+                    }
+                    Some(Err(error)) => {
+                        error!(%error, "Failed to receive profile");
+                        return;
+                    }
+                    None => return,
+                }
+            }
+        });
+
         ServiceRouter {
             target,
             new_route,
@@ -100,6 +163,8 @@ where
     type Future = Either<S::Future, Oneshot<R, http::Request<B>>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+        // TODO(ver) This should be pending when all backends are unavailable.
+
         // Only process profile updates when the default route is viable. In
         // most cases is should be a common service used by all routes, so
         // testing its state is valuable.

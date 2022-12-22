@@ -34,19 +34,17 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
     {
         self.map_stack(|config, rt, concrete| {
-            let crate::Config {
-                http_concrete_buffer,
-                ..
-            } = config;
+            let crate::Config { http_buffer, .. } = config;
 
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.
             concrete
                 .push_map_target(Concrete::from)
-                .push(profiles::NewConcreteCache::layer())
                 .push(profiles::http::NewServiceRouter::<Concrete, _, _>::layer(
                     svc::layers()
                         .push_map_target(Concrete::from)
+                        // Maintain a per-route distributor over concrete
+                        // backends from the (above) concrete cache.
                         .push(profiles::NewDistribute::layer())
                         .push_map_target(|r: ProfileRoute| r.logical)
                         .push(http::insert::NewInsert::<ProfileRoute, _>::layer())
@@ -86,7 +84,6 @@ impl<N> Outbound<N> {
                 // endpoint stack.
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
                 .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))
-                // .push_on_service(svc::BoxCloneService::layer())
                 .push(svc::ArcNewService::layer())
         })
     }

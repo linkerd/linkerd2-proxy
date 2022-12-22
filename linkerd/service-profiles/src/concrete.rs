@@ -1,7 +1,7 @@
 use crate::{LogicalAddr, Receiver};
 use linkerd_addr::NameAddr;
 use linkerd_proxy_api_resolve::ConcreteAddr;
-use linkerd_stack::{layer, NewService, Param};
+use linkerd_stack::{NewService, Param};
 use parking_lot::RwLock;
 use std::{
     collections::{HashMap, HashSet},
@@ -10,48 +10,39 @@ use std::{
 use tracing::{debug, error};
 
 #[derive(Clone, Debug)]
-pub struct NewConcreteCache<N>(N);
-
-#[derive(Clone, Debug)]
-pub struct ConcreteCache<T, N, S> {
+pub struct ConcreteCache<T, N>
+where
+    N: NewService<(ConcreteAddr, T)>,
+{
     logical: T,
     rx: Receiver,
-    new_inner: N,
-    // XXX Should we use some other coordinate type instead of NameAddr?
-    services: Arc<RwLock<HashMap<NameAddr, S>>>,
+    inner: N,
+
+    // XXX(ver) Should we use some other coordinate type instead of NameAddr?
+    services: Arc<RwLock<HashMap<NameAddr, N::Service>>>,
 }
 
-// === impl NewConcreteCache ===
+// === impl ConcreteCache ===
 
-impl<N> NewConcreteCache<N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone + Copy {
-        layer::mk(Self)
-    }
-}
-
-impl<T, N> NewService<T> for NewConcreteCache<N>
+impl<L, N> ConcreteCache<L, N>
 where
-    T: Clone + Param<LogicalAddr> + Param<Receiver>,
-    N: NewService<(ConcreteAddr, T)> + Clone,
+    L: Param<Receiver>,
+    N: NewService<(ConcreteAddr, L)>,
 {
-    type Service = ConcreteCache<T, N, N::Service>;
-
-    fn new_service(&self, logical: T) -> Self::Service {
-        Self::Service {
+    pub(crate) fn new(logical: L, inner: N) -> Self {
+        Self {
             rx: logical.param(),
             logical,
-            new_inner: self.0.clone(),
+            inner,
             services: Default::default(),
         }
     }
 }
 
-// === impl ConcreteCache ===
-
 // TODO(ver) we are going to need to configure on more than `ConcreteAddr`, like
 // a load balancer config. We need to think through the target type a bit
 // more...
-impl<C, L, N> NewService<C> for ConcreteCache<L, N, N::Service>
+impl<C, L, N> NewService<C> for ConcreteCache<L, N>
 where
     C: Param<ConcreteAddr>,
     L: Param<LogicalAddr> + Clone,
@@ -81,6 +72,7 @@ where
         // proceed caching a new service for this target.
         debug_assert!(false, "Building unknown service: {:?}", addr);
         error!(?addr, "Building unknown service. This is a bug.");
+        let mut services = self.services.write();
         let svc = self
             .new_inner
             .new_service((ConcreteAddr(addr.clone()), self.logical.clone()));
@@ -89,24 +81,16 @@ where
     }
 }
 
-impl<L, N> ConcreteCache<L, N, N::Service>
+impl<L, N> ConcreteCache<L, N>
 where
     L: Param<LogicalAddr> + Clone,
-    // TODO we are going to need to configure on more than `ConcreteAddr`, like
-    // a load balancer config. We need to think through the target type a bit
-    // more...
     N: NewService<(ConcreteAddr, L)> + Clone,
     N::Service: Clone,
 {
-    fn update(&self, services: &mut HashMap<NameAddr, N::Service>) {
+    fn update(&self, targets: impl IntoIterator<Item = NameAddr>) {
         // Every time the profile updates, rebuild the distribution, reusing
         // services that existed in the prior state.
-        let mut targets = self
-            .rx
-            .targets()
-            .iter()
-            .map(|t| t.addr.clone())
-            .collect::<HashSet<_>>();
+        let mut targets = targets.into_iter().collect::<HashSet<_>>();
 
         // TODO(ver) we should ensure that profiles always have at least one
         // target so we don't need to special-case this here.

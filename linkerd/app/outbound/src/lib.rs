@@ -56,12 +56,10 @@ pub struct Config {
 
     pub orig_dst_idle_timeout: Duration,
 
-    pub tcp_connection_buffer: BufferConfig,
+    pub tcp_accept_buffer: BufferConfig,
     pub tcp_logical_buffer: BufferConfig,
 
-    pub http_server_buffer: BufferConfig,
-    pub http_logical_buffer: BufferConfig,
-    pub http_concrete_buffer: BufferConfig,
+    pub http_buffer: BufferConfig,
 
     // In "ingress mode", we assume we are always routing HTTP requests and do
     // not perform per-target-address discovery. Non-HTTP connections are

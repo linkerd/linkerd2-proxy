@@ -1,199 +1,250 @@
-use crate::{LogicalAddr, Profile, Receiver, ReceiverStream, Target};
-use futures::{prelude::*, ready};
-use indexmap::IndexSet;
-use linkerd_addr::NameAddr;
-use linkerd_error::Error;
-use linkerd_proxy_api_resolve::ConcreteAddr;
-use linkerd_stack::{layer, NewService, Param, Service};
-use rand::distributions::{Distribution, WeightedIndex};
-use rand::{rngs::SmallRng, thread_rng, SeedableRng};
+//! A general load-agnostic traffic distribution stack.
+//!
+//! TODO(ver) This is totally decoupled from service profiles and should live
+//! somewhere else.
+
+use futures::prelude::*;
+use indexmap::IndexMap;
+use linkerd_stack::{NewService, Param, Service};
+use rand::{
+    distributions::{Distribution as _, WeightedIndex},
+    rngs::SmallRng,
+    SeedableRng,
+};
 use std::{
-    marker::PhantomData,
+    collections::HashSet,
+    hash::Hash,
     sync::Arc,
     task::{Context, Poll},
 };
-use tower::ready_cache::ReadyCache;
-use tracing::{debug, trace};
+use tracing::warn;
 
-#[derive(Debug)]
-pub struct NewDistribute<N, Req> {
-    inner: N,
-    _p: PhantomData<fn() -> Req>,
+#[derive(Clone, Debug)]
+pub struct NewDistribute<K, S> {
+    backends: Arc<IndexMap<K, S>>,
 }
 
 #[derive(Debug)]
-pub struct Distribute<T, N, Req>
-where
-    N: NewService<(ConcreteAddr, T)>,
-{
-    target: T,
-    new_inner: N,
+pub struct Distribute<K, S> {
+    backends: Arc<IndexMap<K, S>>,
+    ready_idx: Option<usize>,
+    inner: Inner<K>,
+}
 
-    rng: SmallRng,
-    rx: ReceiverStream,
-    addrs: IndexSet<NameAddr>,
-    services: ReadyCache<NameAddr, N::Service, Req>,
-    distribution: Option<Arc<WeightedIndex<u32>>>,
+/// A parameter type that configures how a [`Distribute`] should behave.
+#[derive(Clone, Debug)]
+pub enum Distribution<K> {
+    /// A distribution that has no backends, and therefore never becomes ready.
+    Empty,
+
+    /// A distribution that uses the first available backend in an ordered list.
+    FirstAvailable(Arc<[K]>),
+
+    /// A distribution that uses the first available backend when randomly
+    /// selecting over a weighted distributino of backends.
+    RandomAvailable(Arc<WeightedKeys<K>>),
+}
+
+#[derive(Debug)]
+pub struct WeightedKeys<K> {
+    keys: Vec<K>,
+    index: WeightedIndex<usize>,
+}
+
+#[derive(Debug)]
+enum Inner<K> {
+    Empty,
+    FirstAvailable {
+        keys: Arc<[K]>,
+    },
+    RandomAvailable {
+        keys: Arc<WeightedKeys<K>>,
+        polled_idxs: HashSet<usize>,
+        rng: SmallRng,
+    },
 }
 
 // === impl NewDistribute ===
 
-impl<N, Req> NewDistribute<N, Req> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(|inner| Self {
-            inner,
-            _p: PhantomData,
-        })
+impl<K: Hash + Eq, S> NewDistribute<K, S> {
+    #[inline]
+    pub(crate) fn new(backends: impl IntoIterator<Item = (K, S)>) -> Self {
+        let backends = backends.into_iter().collect();
+        assert!(
+            !backends.is_empty(),
+            "must have at least one concrete backend"
+        );
+        Self { backends }
     }
 }
 
-impl<N: Clone, Req> Clone for NewDistribute<N, Req> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<T, N, S, Req> NewService<T> for NewDistribute<N, Req>
+impl<T, K, S> NewService<T> for NewDistribute<K, S>
 where
-    T: Param<Receiver> + Clone,
-    N: NewService<(ConcreteAddr, T), Service = S> + Clone,
-    S: Service<Req, Error = Error>,
+    T: Param<Distribution<K>>,
+    K: Hash + Eq,
+    S: Clone,
 {
-    type Service = Distribute<T, N, Req>;
+    type Service = Distribute<K, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let rx: Receiver = target.param();
         Self::Service {
-            target,
-            new_inner: self.inner.clone(),
-
-            rng: SmallRng::from_rng(&mut thread_rng()).expect("rng"),
-            rx: rx.into(),
-            addrs: Default::default(),
-            services: Default::default(),
-            distribution: None,
+            inner: target.param().into(),
+            ready_idx: None,
+            backends: self.backends.clone(),
         }
     }
 }
 
 // === impl Distribute ===
 
-impl<T: Clone, N: Clone, Req> Clone for Distribute<T, N, Req>
-where
-    N: NewService<(ConcreteAddr, T)>,
-    N::Service: Service<Req>,
-{
+impl<K, S> Clone for Distribute<K, S> {
     fn clone(&self) -> Self {
         Self {
-            target: self.target.clone(),
-            new_inner: self.new_inner.clone(),
-
-            rng: SmallRng::from_rng(&mut thread_rng()).expect("rng"),
-            rx: self.rx.clone(),
-            addrs: Default::default(),
-            services: Default::default(),
-            distribution: None,
+            backends: self.backends.clone(),
+            // Clear the ready index so that the new clone must become ready
+            // independently.
+            ready_idx: None,
+            inner: self.inner.clone(),
         }
     }
 }
 
-impl<T, N, S, Req> Distribute<T, N, Req>
-where
-    Req: Send + 'static,
-    T: Clone + Param<LogicalAddr>,
-    N: NewService<(ConcreteAddr, T), Service = S> + Clone,
-    S: tower::Service<Req> + Send + 'static,
-    S::Response: Send + 'static,
-    S::Error: Into<Error>,
-    S::Future: Send,
-{
-    fn update(&mut self, mut targets: Vec<Target>) {
-        if targets.is_empty() {
-            let LogicalAddr(addr) = self.target.param();
-            targets.push(Target { addr, weight: 1 })
-        }
-        debug!(?targets, "Updating");
-
-        if targets.len() == self.addrs.len() || targets.iter().all(|t| self.addrs.contains(&t.addr))
-        {
-            return;
-        }
-
-        // Replace the old set of addresses with an empty set. The
-        // prior set is used to determine whether a new service
-        // needs to be created and what stale services should be
-        // removed.
-        let mut prior_addrs =
-            std::mem::replace(&mut self.addrs, IndexSet::with_capacity(targets.len()));
-        let mut weights = Vec::with_capacity(targets.len());
-
-        // Create an updated distribution and set of services.
-        for Target { weight, addr } in targets.into_iter() {
-            // Reuse the prior services whenever possible.
-            if !prior_addrs.remove(&addr) {
-                debug!(%addr, "Creating target");
-                let svc = self
-                    .new_inner
-                    .new_service((ConcreteAddr(addr.clone()), self.target.clone()));
-                self.services.push(addr.clone(), svc);
-            } else {
-                trace!(%addr, "Target already exists");
-            }
-            self.addrs.insert(addr);
-            weights.push(weight);
-        }
-
-        self.distribution = Some(Arc::new(WeightedIndex::new(weights).unwrap()));
-
-        // Remove all prior services that did not exist in the new
-        // set of targets.
-        for addr in prior_addrs.into_iter() {
-            self.services.evict(&addr);
+impl<K> Clone for Inner<K> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Empty => Inner::Empty,
+            Self::FirstAvailable { keys } => Self::FirstAvailable { keys: keys.clone() },
+            Self::RandomAvailable { keys, .. } => Self::RandomAvailable {
+                keys: keys.clone(),
+                polled_idxs: HashSet::with_capacity(keys.keys.len()),
+                rng: SmallRng::from_rng(rand::thread_rng()).expect("RNG must initialize"),
+            },
         }
     }
 }
 
-impl<T, N, S, Req> tower::Service<Req> for Distribute<T, N, Req>
+impl<Req, K, S> Service<Req> for Distribute<K, S>
 where
-    Req: Send + 'static,
-    T: Clone + Param<LogicalAddr>,
-    N: NewService<(ConcreteAddr, T), Service = S> + Clone,
-    S: tower::Service<Req, Error = Error> + Send + 'static,
-    S::Response: Send + 'static,
-    S::Future: Send,
+    K: Hash + Eq + std::fmt::Debug,
+    S: Service<Req>,
 {
     type Response = S::Response;
     type Error = S::Error;
     type Future = S::Future;
 
+    // Note that this doesn't necessarily drive all inner services to readiness.
+    // We expect that these inner services should be buffered or otherwise drive
+    // themselves to readiness (i.e. via SpawnReady).
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // Every time the profile updates, rebuild the distribution, reusing
-        // services that existed in the prior state.
-        if let Poll::Ready(Some(Profile { targets, .. })) = self.rx.poll_next_unpin(cx) {
-            self.update(targets);
+        // If we've already chosen a ready index, then skip polling.
+        if self.ready_idx.is_some() {
+            return Poll::Ready(Ok(()));
         }
 
-        // Wait for all target services to be ready. If any services fail, then
-        // the whole service fails.
-        Poll::Ready(ready!(self.services.poll_pending(cx).map_err(Into::into)))
+        match self.inner {
+            // Empty distributions are never ready.
+            Inner::Empty => {}
+
+            Inner::FirstAvailable { ref keys } => {
+                for key in keys.iter() {
+                    let (idx, _, svc) = self
+                        .backends
+                        .get_full_mut(key)
+                        .expect("distributions must not reference unknown backends");
+                    if svc.poll_ready(cx)?.is_ready() {
+                        self.ready_idx = Some(idx);
+                        return Poll::Ready(Ok(()));
+                    }
+                }
+            }
+
+            Inner::RandomAvailable {
+                ref keys,
+                ref mut polled_idxs,
+                ref mut rng,
+            } => {
+                // Choose a random index (via the weighted distribution) to try
+                // to poll the backend. Continue selecting endpoints until we
+                // find one that is ready or we've tried all backends in the
+                // distribution.
+                self.polled_idxs.clear();
+                while polled_idxs.len() != keys.keys.len() {
+                    let (idx, _, svc) = self
+                        .backends
+                        .get_full_mut(keys.next(rng))
+                        .expect("distributions must not reference unknown backends");
+                    if polled_idxs.insert(idx) {
+                        // The index was not already polled, so poll it.
+                        if svc.poll_ready(cx)?.is_ready() {
+                            self.ready_idx = Some(idx);
+                            return Poll::Ready(Ok(()));
+                        }
+                    }
+                }
+            }
+        }
+
+        Poll::Pending
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        let addr = {
-            let idx = if self.addrs.len() == 1 {
-                0
-            } else {
-                self.distribution
-                    .as_ref()
-                    .expect("distribution must be set")
-                    .sample(&mut self.rng)
-            };
-            self.addrs.get_index(idx).expect("invalid index")
-        };
-        trace!(?addr, "Dispatching");
-        self.services.call_ready(addr, req)
+        let idx = self
+            .ready_idx
+            .take()
+            .expect("poll_ready must be called first");
+        let (_, svc) = self
+            .backends
+            .get_index_mut(idx)
+            .expect("index must exist in distribution");
+        svc.call(req)
+    }
+}
+
+// === impl Distribution ===
+
+impl<K> Distribution<K> {
+    pub fn empty() -> Self {
+        Self::Empty
+    }
+
+    pub fn first_available(keys: impl IntoIterator<Item = K>) -> Self {
+        let keys = keys.collect();
+        if keys.is_empty() {
+            return Self::Empty;
+        }
+        Self::FirstAvailable(keys)
+    }
+
+    pub fn random_available<T: IntoIterator<Item = (K, u32)>>(iter: T) -> Self {
+        let (keys, weights): (Vec<_>, Vec<_>) = iter.into_iter().filter(|(_, w)| *w > 0).unzip();
+        if keys.len() < 2 {
+            return Self::first_available(keys);
+        }
+
+        let index = WeightedIndex::new(weights).expect("must succeed");
+        Self::RandomAvailable(Arc::new(Self { keys, index }))
+    }
+}
+
+impl<K> From<Distribution<K>> for Inner<K> {
+    fn from(self) -> Self {
+        match self {
+            Distribution::Empty => Self::Empty,
+            Distribution::FirstAvailable(keys) => Self::FirstAvailable { keys },
+            Distribution::RandomAvailable(keys) => Self::RandomAvailable {
+                polled_idxs: HashSet::with_capacity(keys.keys.len()),
+                keys,
+                rng: SmallRng::from_rng(rand::thread_rng()).expect("RNG must initialize"),
+            },
+        }
+    }
+}
+
+// === impl Random===
+
+impl<K> WeightedKeys<K> {
+    fn next<R: rand::Rng>(&self, rng: &mut R) -> &K {
+        let idx = self.index.sample(rng);
+        &self.keys[idx]
     }
 }

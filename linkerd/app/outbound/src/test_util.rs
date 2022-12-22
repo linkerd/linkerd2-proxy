@@ -48,11 +48,9 @@ pub(crate) fn default_config() -> Config {
         },
         inbound_ips: Default::default(),
         orig_dst_idle_timeout: Duration::from_secs(60),
-        tcp_connection_buffer: buffer.clone(),
+        tcp_accept_buffer: buffer.clone(),
         tcp_logical_buffer: buffer.clone(),
-        http_concrete_buffer: buffer.clone(),
-        http_logical_buffer: buffer.clone(),
-        http_server_buffer: buffer,
+        http_buffer: buffer.clone(),
     }
 }
 

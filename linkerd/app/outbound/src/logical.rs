@@ -138,9 +138,9 @@ impl<C> Outbound<C> {
             .push_http_logical()
             .map_stack(|config, _, stk| {
                 stk.push_buffer_on_service(
-                    "HTTP Server",
-                    config.http_server_buffer.capacity,
-                    config.http_server_buffer.failfast_timeout,
+                    "HTTP",
+                    config.http_buffer.capacity,
+                    config.http_buffer.failfast_timeout,
                 )
             })
             .push_http_server()

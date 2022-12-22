@@ -18,14 +18,19 @@ use tokio::sync::watch;
 use tower::util::{Oneshot, ServiceExt};
 
 mod client;
-mod concrete;
+// TODO remove me.
+// mod concrete;
 mod default;
 pub mod discover;
 pub mod http;
 mod proto;
 mod split;
 
-pub use self::{client::Client, concrete::NewConcreteCache, split::NewDistribute};
+pub use self::{
+    client::Client,
+    // TODO move me.
+    split::{Distribute, Distribution, NewDistribute},
+};
 
 #[derive(Clone, Debug)]
 pub struct Receiver {
@@ -34,7 +39,6 @@ pub struct Receiver {
 
 #[derive(Debug)]
 struct ReceiverStream {
-    rx: tokio::sync::watch::Receiver<Profile>,
     inner: tokio_stream::wrappers::WatchStream<Profile>,
 }
 
@@ -131,7 +135,17 @@ impl From<watch::Receiver<Profile>> for Receiver {
     }
 }
 
+impl From<Receiver> for watch::Receiver<Profile> {
+    fn from(Receiver { inner }: Receiver) -> watch::Receiver<Profile> {
+        inner
+    }
+}
+
 impl Receiver {
+    pub(crate) fn borrow_and_update(&mut self) -> watch::Ref<'_, Profile> {
+        self.inner.borrow_and_update()
+    }
+
     pub fn logical_addr(&self) -> Option<LogicalAddr> {
         self.inner.borrow().addr.clone()
     }
@@ -153,17 +167,8 @@ impl Receiver {
 
 impl From<Receiver> for ReceiverStream {
     fn from(Receiver { inner: rx }: Receiver) -> Self {
-        let inner = tokio_stream::wrappers::WatchStream::new(rx.clone());
-        ReceiverStream { rx, inner }
-    }
-}
-
-impl Clone for ReceiverStream {
-    fn clone(&self) -> Self {
-        Self {
-            rx: self.rx.clone(),
-            inner: tokio_stream::wrappers::WatchStream::new(self.rx.clone()),
-        }
+        let inner = tokio_stream::wrappers::WatchStream::new(rx);
+        ReceiverStream { inner }
     }
 }
 

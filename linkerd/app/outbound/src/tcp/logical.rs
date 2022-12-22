@@ -76,33 +76,27 @@ impl<C> Outbound<C> {
                             crate::EWMA_DEFAULT_RTT,
                             crate::EWMA_DECAY,
                         ))
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(crate::stack_labels("tcp", "balancer")),
-                        )
                         .push(tcp::Forward::layer())
                         .push(drain::Retain::layer(rt.drain.clone())),
                 )
                 .into_new_service()
-                .push(svc::ArcNewService::layer());
-
-            concrete
-                .push_map_target(Concrete::from)
-                .check_new_service::<(ConcreteAddr, Logical), I>()
-                .push(profiles::NewDistribute::layer())
                 .push_on_service(
                     svc::layers()
                         .push(
                             rt.metrics
                                 .proxy
                                 .stack
-                                .layer(crate::stack_labels("tcp", "logical")),
+                                .layer(crate::stack_labels("tcp", "concrete")),
                         )
-                        .push_buffer("TCP Logical", tcp_logical_buffer.capacity, tcp_logical_buffer.failfast_timeout),
+                        .push_buffer("TCP Concrete", tcp_logical_buffer.capacity, tcp_logical_buffer.failfast_timeout)
                 )
-                .push_cache(*orig_dst_idle_timeout)
+                .check_new_service::<Concrete, I>()
+                .push(svc::ArcNewService::layer());
+
+            concrete
+                .push_map_target(Concrete::from)
+                .check_new_service::<(ConcreteAddr, Logical), I>()
+                .push(profiles::NewDistribute::router())
                 .check_new_service::<Logical, I>()
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()

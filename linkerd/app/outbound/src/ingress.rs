@@ -83,7 +83,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                 let detect_http = config.proxy.detect_http();
                 let Config {
                     allow_discovery,
-                    http_logical_buffer,
+                    http_buffer,
                     orig_dst_idle_timeout,
                     proxy:
                         ProxyConfig {
@@ -148,9 +148,9 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                     .layer(stack_labels("http", "logical")),
                             )
                             .push_buffer(
-                                "HTTP Logical",
-                                http_logical_buffer.capacity,
-                                http_logical_buffer.failfast_timeout,
+                                "HTTP Ingress",
+                                http_buffer.capacity,
+                                http_buffer.failfast_timeout,
                             ),
                     )
                     // Caches the profile-based stack so that it can be reused across

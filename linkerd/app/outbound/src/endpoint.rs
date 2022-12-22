@@ -217,9 +217,9 @@ impl<S> Outbound<S> {
             .push_http_endpoint()
             .map_stack(|config, _, stk| {
                 stk.push_buffer_on_service(
-                    "HTTP Server",
-                    config.http_server_buffer.capacity,
-                    config.http_server_buffer.failfast_timeout,
+                    "http",
+                    config.http_buffer.capacity,
+                    config.http_buffer.failfast_timeout,
                 )
             })
             .push_http_server()

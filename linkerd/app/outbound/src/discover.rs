@@ -60,8 +60,8 @@ impl<N> Outbound<N> {
                         )
                         .push_buffer(
                             "TCP Server",
-                            config.tcp_connection_buffer.capacity,
-                            config.tcp_connection_buffer.failfast_timeout,
+                            config.tcp_accept_buffer.capacity,
+                            config.tcp_accept_buffer.failfast_timeout,
                         ),
                 )
                 .push_cache(config.orig_dst_idle_timeout)

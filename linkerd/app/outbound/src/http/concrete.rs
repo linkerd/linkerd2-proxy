@@ -40,7 +40,7 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, rt, endpoint| {
             let crate::Config {
-                http_concrete_buffer,
+                http_buffer,
                 orig_dst_idle_timeout,
                 ..
             } = config;
@@ -97,9 +97,9 @@ impl<N> Outbound<N> {
                                 .layer(stack_labels("http", "concrete")),
                         )
                         .push_buffer::<http::Request<http::BoxBody>>(
-                            "HTTP Concrete",
-                            http_concrete_buffer.capacity,
-                            http_concrete_buffer.failfast_timeout,
+                            "HTTP",
+                            http_buffer.capacity,
+                            http_buffer.failfast_timeout,
                         ),
                 )
                 .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
