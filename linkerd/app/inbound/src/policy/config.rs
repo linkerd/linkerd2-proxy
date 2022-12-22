@@ -14,11 +14,19 @@ pub struct Config {
     pub control: control::Config,
     pub workload: String,
     pub default: DefaultPolicy,
+    /// A pre-configured list of ports which are assumed to always be opaque,
+    /// and for which no control plane lookup is performed.
+    ///
+    /// This is set to `None` when the default policy is `Deny`, as using the
+    /// default policy for pre-configured opaque ports will simply result in
+    /// them being denied. If this is `None`, policies will be looked up for all
+    /// ports.
     pub opaque_ports: Option<OpaquePorts>,
     pub cache_max_idle_age: Duration,
     pub ports: HashSet<u16>,
 }
 
+/// Pre-configured opaque ports.
 #[derive(Clone, Debug)]
 pub struct OpaquePorts {
     pub ports: HashSet<u16>,
