@@ -17,16 +17,22 @@ use std::{
     task::{Context, Poll},
 };
 
+/// Builds `Distribute` services for a specific `Distribution`.
 #[derive(Clone, Debug)]
 pub struct NewDistribute<K, S> {
-    backends: Arc<IndexMap<K, S>>,
+    backends: IndexMap<K, S>,
 }
 
+/// A service that distributes requests over a set of backends.
 #[derive(Debug)]
 pub struct Distribute<K, S> {
-    backends: Arc<IndexMap<K, S>>,
-    ready: Option<S>,
-    inner: Inner<K>,
+    backends: IndexMap<K, S>,
+    selection: Selection<K>,
+
+    /// Stores the index of the backend that was has been polled to ready. The
+    /// service at this index will be used on the next invocation of
+    /// `Service::call`.
+    ready_idx: Option<usize>,
 }
 
 /// A parameter type that configures how a [`Distribute`] should behave.
@@ -49,8 +55,9 @@ pub struct WeightedKeys<K> {
     index: WeightedIndex<u32>,
 }
 
+/// Holds per-distribution state for a [`Distribute`] service.
 #[derive(Debug)]
-enum Inner<K> {
+enum Selection<K> {
     Empty,
     FirstAvailable {
         keys: Arc<[K]>,
@@ -68,7 +75,7 @@ impl<K: Hash + Eq, S> NewDistribute<K, S> {
     #[inline]
     pub fn new(pairs: impl IntoIterator<Item = (K, S)>) -> Self {
         Self {
-            backends: Arc::new(pairs.into_iter().collect()),
+            backends: pairs.into_iter().collect(),
         }
     }
 }
@@ -82,10 +89,13 @@ where
     type Service = Distribute<K, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
+        let distribution = target.param();
+        // TODO(ver) validate that the distribution includes only keys in our
+        // set of backends.
         Self::Service {
-            inner: target.param().into(),
+            selection: distribution.into(),
             backends: self.backends.clone(),
-            ready: None,
+            ready_idx: None,
         }
     }
 }
@@ -96,10 +106,10 @@ impl<K: Clone, S: Clone> Clone for Distribute<K, S> {
     fn clone(&self) -> Self {
         Self {
             backends: self.backends.clone(),
-            inner: self.inner.clone(),
+            selection: self.selection.clone(),
             // Clear the ready index so that the new clone must become ready
             // independently.
-            ready: None,
+            ready_idx: None,
         }
     }
 }
@@ -118,30 +128,29 @@ where
     // themselves to readiness (i.e. via SpawnReady).
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // If we've already chosen a ready index, then skip polling.
-        if self.ready.is_some() {
+        if self.ready_idx.is_some() {
             return Poll::Ready(Ok(()));
         }
 
-        match self.inner {
-            Inner::Empty => {
+        match self.selection {
+            Selection::Empty => {
                 tracing::debug!("empty distribution will never become ready");
             }
 
-            Inner::FirstAvailable { ref keys } => {
+            Selection::FirstAvailable { ref keys } => {
                 for key in keys.iter() {
-                    let svc = self
+                    let (idx, _, svc) = self
                         .backends
-                        .get(key)
+                        .get_full_mut(key)
                         .expect("distributions must not reference unknown backends");
-                    let mut svc = svc.clone();
                     if svc.poll_ready(cx)?.is_ready() {
-                        self.ready = Some(svc);
+                        self.ready_idx = Some(idx);
                         return Poll::Ready(Ok(()));
                     }
                 }
             }
 
-            Inner::RandomAvailable {
+            Selection::RandomAvailable {
                 ref keys,
                 ref mut polled_idxs,
                 ref mut rng,
@@ -154,13 +163,12 @@ where
                 while polled_idxs.len() != keys.keys.len() {
                     let (idx, _, svc) = self
                         .backends
-                        .get_full(keys.next(rng))
+                        .get_full_mut(keys.next(rng))
                         .expect("distributions must not reference unknown backends");
                     if polled_idxs.insert(idx) {
                         // The index was not already polled, so poll it.
-                        let mut svc = svc.clone();
                         if svc.poll_ready(cx)?.is_ready() {
-                            self.ready = Some(svc);
+                            self.ready_idx = Some(idx);
                             return Poll::Ready(Ok(()));
                         }
                     }
@@ -168,15 +176,19 @@ where
             }
         }
 
-        debug_assert!(self.ready.is_none());
+        debug_assert!(self.ready_idx.is_none());
         Poll::Pending
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        self.ready
+        let idx = self
+            .ready_idx
             .take()
-            .expect("poll_ready must be called first")
-            .call(req)
+            .expect("poll_ready must be called first");
+
+        let (_, svc) = self.backends.get_index_mut(idx).expect("index must exist");
+
+        svc.call(req)
     }
 }
 
@@ -218,9 +230,9 @@ impl<K> Distribution<K> {
     }
 }
 
-// === impl Inner ===
+// === impl Selection ===
 
-impl<K> From<Distribution<K>> for Inner<K> {
+impl<K> From<Distribution<K>> for Selection<K> {
     fn from(dist: Distribution<K>) -> Self {
         match dist {
             Distribution::Empty => Self::Empty,
@@ -234,10 +246,10 @@ impl<K> From<Distribution<K>> for Inner<K> {
     }
 }
 
-impl<K> Clone for Inner<K> {
+impl<K> Clone for Selection<K> {
     fn clone(&self) -> Self {
         match self {
-            Self::Empty => Inner::Empty,
+            Self::Empty => Selection::Empty,
             Self::FirstAvailable { keys } => Self::FirstAvailable { keys: keys.clone() },
             Self::RandomAvailable { keys, .. } => Self::RandomAvailable {
                 keys: keys.clone(),
