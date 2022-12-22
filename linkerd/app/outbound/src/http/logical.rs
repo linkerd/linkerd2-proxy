@@ -1,3 +1,6 @@
+mod router;
+
+use self::router::NewRouter;
 use super::{retry, CanonicalDstHeader, Concrete, Logical, ProfileRoute};
 use crate::Outbound;
 use linkerd_app_core::{
@@ -39,8 +42,7 @@ impl<N> Outbound<N> {
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.
             concrete
-                .push_map_target(Concrete::from)
-                .push(profiles::http::NewServiceRouter::<Concrete, _, _>::layer(
+                .push(NewRouter::<_, _, Concrete>::layer(
                     svc::layers()
                         // Maintain a per-route distributor over concrete
                         // backends from the (above) concrete cache.
@@ -83,12 +85,5 @@ impl<N> Outbound<N> {
                 .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))
                 .push(svc::ArcNewService::layer())
         })
-    }
-}
-
-impl From<Logical> for Concrete {
-    fn from(l: Logical) -> Self {
-        let profiles::LogicalAddr(addr) = l.logical_addr.clone();
-        Self::from((ConcreteAddr(addr), l))
     }
 }

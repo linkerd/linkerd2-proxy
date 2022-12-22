@@ -1,7 +1,7 @@
-//! A general load-agnostic traffic distribution stack.
-//!
-//! TODO(ver) This is totally decoupled from service profiles and should live
-//! somewhere else.
+//! A load-agnostic traffic distribution stack module.
+
+#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
+#![forbid(unsafe_code)]
 
 use indexmap::IndexMap;
 use linkerd_stack::{NewService, Param, Service};
@@ -66,7 +66,7 @@ enum Inner<K> {
 
 impl<K: Hash + Eq, S> NewDistribute<K, S> {
     #[inline]
-    pub(crate) fn new(pairs: impl IntoIterator<Item = (K, S)>) -> Self {
+    pub fn new(pairs: impl IntoIterator<Item = (K, S)>) -> Self {
         Self {
             backends: Arc::new(pairs.into_iter().collect()),
         }

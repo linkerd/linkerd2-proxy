@@ -1,5 +1,4 @@
 mod proxy;
-mod service;
 
 use std::{
     fmt,
@@ -10,7 +9,7 @@ use std::{
 };
 use tower::retry::budget::Budget;
 
-pub use self::{proxy::NewProxyRouter, service::NewServiceRouter};
+pub use self::proxy::NewProxyRouter;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {
@@ -61,7 +60,7 @@ pub struct Retries {
 #[derive(Clone, Default)]
 struct Labels(Arc<std::collections::BTreeMap<String, String>>);
 
-fn route_for_request<'r, B>(
+pub fn route_for_request<'r, B>(
     http_routes: &'r [(RequestMatch, Route)],
     request: &http::Request<B>,
 ) -> Option<&'r Route> {

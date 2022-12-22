@@ -18,19 +18,12 @@ use tokio::sync::watch;
 use tower::util::{Oneshot, ServiceExt};
 
 mod client;
-// TODO remove me.
-// mod concrete;
 mod default;
 pub mod discover;
 pub mod http;
 mod proto;
-mod split;
 
-pub use self::{
-    client::Client,
-    // TODO move me.
-    split::{Distribute, Distribution, NewDistribute},
-};
+pub use self::client::Client;
 
 #[derive(Clone, Debug)]
 pub struct Receiver {
@@ -38,7 +31,7 @@ pub struct Receiver {
 }
 
 #[derive(Debug)]
-struct ReceiverStream {
+pub struct ReceiverStream {
     inner: tokio_stream::wrappers::WatchStream<Profile>,
 }
 
@@ -142,7 +135,7 @@ impl From<Receiver> for watch::Receiver<Profile> {
 }
 
 impl Receiver {
-    pub(crate) fn borrow_and_update(&mut self) -> watch::Ref<'_, Profile> {
+    pub fn borrow_and_update(&mut self) -> watch::Ref<'_, Profile> {
         self.inner.borrow_and_update()
     }
 

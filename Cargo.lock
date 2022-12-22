@@ -926,6 +926,7 @@ dependencies = [
  "hyper",
  "linkerd-app-core",
  "linkerd-app-test",
+ "linkerd-distribute",
  "linkerd-http-classify",
  "linkerd-http-retry",
  "linkerd-identity",
@@ -996,6 +997,16 @@ dependencies = [
  "thiserror",
  "tokio",
  "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-distribute"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "linkerd-stack",
+ "rand",
  "tracing",
 ]
 
@@ -1507,6 +1518,7 @@ dependencies = [
  "http-body",
  "indexmap",
  "linkerd-addr",
+ "linkerd-distribute",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-http-box",
