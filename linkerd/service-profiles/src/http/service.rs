@@ -122,20 +122,22 @@ where
             let new_route = self
                 .route_layer
                 .layer(NewCloneService::from(distribute.clone()));
-            let shared = Shared {
-                matches: profile.http_routes.to_vec(),
-                routes: profile
-                    .http_routes
-                    .iter()
-                    .map(|(_, r)| {
-                        let svc = new_route.new_service((r.clone(), target.clone()));
-                        (r.clone(), svc)
-                    })
-                    .collect(),
+            let routes = profile
+                .http_routes
+                .iter()
+                .map(|(_, r)| {
+                    let svc = new_route.new_service((r.clone(), target.clone()));
+                    (r.clone(), svc)
+                })
+                .collect();
+
+            watch::channel(Shared {
                 default: distribute,
-            };
-            watch::channel(shared)
+                matches: profile.http_routes.clone(),
+                routes,
+            })
         };
+
         tokio::spawn(async move {
             let mut profiles = crate::ReceiverStream::from(profiles);
             while let Some(_profile) = profiles.next().await {

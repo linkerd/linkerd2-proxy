@@ -19,13 +19,13 @@ use std::{
 
 #[derive(Clone, Debug)]
 pub struct NewDistribute<K, S> {
-    backends: IndexMap<K, S>,
+    backends: Arc<IndexMap<K, S>>,
 }
 
 #[derive(Debug)]
 pub struct Distribute<K, S> {
-    backends: IndexMap<K, S>,
-    ready_idx: Option<usize>,
+    backends: Arc<IndexMap<K, S>>,
+    ready: Option<S>,
     inner: Inner<K>,
 }
 
@@ -66,13 +66,10 @@ enum Inner<K> {
 
 impl<K: Hash + Eq, S> NewDistribute<K, S> {
     #[inline]
-    pub(crate) fn new(backends: impl IntoIterator<Item = (K, S)>) -> Self {
-        let backends: IndexMap<K, S> = backends.into_iter().collect();
-        assert!(
-            !backends.is_empty(),
-            "must have at least one concrete backend"
-        );
-        Self { backends }
+    pub(crate) fn new(pairs: impl IntoIterator<Item = (K, S)>) -> Self {
+        Self {
+            backends: Arc::new(pairs.into_iter().collect()),
+        }
     }
 }
 
@@ -87,8 +84,8 @@ where
     fn new_service(&self, target: T) -> Self::Service {
         Self::Service {
             inner: target.param().into(),
-            ready_idx: None,
             backends: self.backends.clone(),
+            ready: None,
         }
     }
 }
@@ -102,7 +99,7 @@ impl<K: Clone, S: Clone> Clone for Distribute<K, S> {
             inner: self.inner.clone(),
             // Clear the ready index so that the new clone must become ready
             // independently.
-            ready_idx: None,
+            ready: None,
         }
     }
 }
@@ -110,7 +107,7 @@ impl<K: Clone, S: Clone> Clone for Distribute<K, S> {
 impl<Req, K, S> Service<Req> for Distribute<K, S>
 where
     K: Hash + Eq + std::fmt::Debug,
-    S: Service<Req>,
+    S: Service<Req> + Clone,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -121,7 +118,7 @@ where
     // themselves to readiness (i.e. via SpawnReady).
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // If we've already chosen a ready index, then skip polling.
-        if self.ready_idx.is_some() {
+        if self.ready.is_some() {
             return Poll::Ready(Ok(()));
         }
 
@@ -132,12 +129,13 @@ where
 
             Inner::FirstAvailable { ref keys } => {
                 for key in keys.iter() {
-                    let (idx, _, svc) = self
+                    let svc = self
                         .backends
-                        .get_full_mut(key)
+                        .get(key)
                         .expect("distributions must not reference unknown backends");
+                    let mut svc = svc.clone();
                     if svc.poll_ready(cx)?.is_ready() {
-                        self.ready_idx = Some(idx);
+                        self.ready = Some(svc);
                         return Poll::Ready(Ok(()));
                     }
                 }
@@ -156,12 +154,13 @@ where
                 while polled_idxs.len() != keys.keys.len() {
                     let (idx, _, svc) = self
                         .backends
-                        .get_full_mut(keys.next(rng))
+                        .get_full(keys.next(rng))
                         .expect("distributions must not reference unknown backends");
                     if polled_idxs.insert(idx) {
                         // The index was not already polled, so poll it.
+                        let mut svc = svc.clone();
                         if svc.poll_ready(cx)?.is_ready() {
-                            self.ready_idx = Some(idx);
+                            self.ready = Some(svc);
                             return Poll::Ready(Ok(()));
                         }
                     }
@@ -169,19 +168,15 @@ where
             }
         }
 
+        debug_assert!(self.ready.is_none());
         Poll::Pending
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        let idx = self
-            .ready_idx
+        self.ready
             .take()
-            .expect("poll_ready must be called first");
-        let (_, svc) = self
-            .backends
-            .get_index_mut(idx)
-            .expect("index must exist in distribution");
-        svc.call(req)
+            .expect("poll_ready must be called first")
+            .call(req)
     }
 }
 
