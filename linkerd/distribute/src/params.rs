@@ -29,6 +29,12 @@ impl<K> From<K> for Distribution<K> {
     }
 }
 
+impl<K> Default for Distribution<K> {
+    fn default() -> Self {
+        Self::Empty
+    }
+}
+
 impl<K> Distribution<K> {
     pub fn first_available(keys: impl IntoIterator<Item = K>) -> Self {
         let keys: Arc<[K]> = keys.into_iter().collect();

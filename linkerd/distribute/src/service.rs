@@ -37,11 +37,7 @@ enum Selection<K> {
 
 // === impl Distribute ===
 
-impl<K, S> Distribute<K, S>
-where
-    K: Hash + Eq + Clone,
-    S: Clone,
-{
+impl<K: Hash + Eq, S> Distribute<K, S> {
     pub(crate) fn new(backends: IndexMap<K, S>, dist: Distribution<K>) -> Self {
         Self {
             backends,
@@ -85,14 +81,15 @@ where
                 }
             }
 
+            // Choose a random index (via the weighted distribution) to try to
+            // poll the backend. Continue selecting endpoints until we find one
+            // that is ready or we've tried all backends in the distribution.
             Selection::RandomAvailable {
                 ref keys,
                 ref mut rng,
             } => {
-                // Choose a random index (via the weighted distribution) to try
-                // to poll the backend. Continue selecting endpoints until we
-                // find one that is ready or we've tried all backends in the
-                // distribution.
+                // Clone the weighted index so that we can zero out the weights
+                // as pending services are polled.
                 let mut index = keys.index().clone();
                 loop {
                     // Sample the weighted index to find a backend to try.
@@ -112,8 +109,7 @@ where
                     match index.update_weights(&[(idx, &0)]) {
                         Ok(()) => {}
                         Err(WeightedError::AllWeightsZero) => {
-                            // If zeroeing out the index puts it into an invalid
-                            // state, then there are no backends remaining.
+                            // There are no backends remaining.
                             break;
                         }
                         Err(error) => {
@@ -178,5 +174,110 @@ impl<K> Clone for Selection<K> {
                 rng: SmallRng::from_rng(rand::thread_rng()).expect("RNG must initialize"),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_test::*;
+    use tower_test::mock;
+
+    #[test]
+    fn empty_pending() {
+        let mut dist_svc = mock::Spawn::new(Distribute::<&'static str, mock::Mock<(), ()>>::new(
+            Default::default(),
+            Default::default(),
+        ));
+        assert_eq!(dist_svc.get_ref().backends.len(), 0);
+        assert_pending!(dist_svc.poll_ready());
+    }
+
+    #[test]
+    fn first_available_prefers_first() {
+        let (mock0, mut handle0) = mock::pair();
+        let (mock1, mut handle1) = mock::pair();
+        let mut dist_svc = mock::Spawn::new(Distribute::new(
+            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
+            Distribution::FirstAvailable(Arc::new(["foo", "bar"])),
+        ));
+        assert_eq!(dist_svc.get_ref().backends.len(), 2);
+
+        handle1.allow(1);
+        handle0.allow(1);
+        assert_ready_ok!(dist_svc.poll_ready());
+        assert_eq!(dist_svc.get_ref().ready_idx, Some(0));
+        let mut call = task::spawn(dist_svc.call(()));
+        match assert_ready!(handle0.poll_request()) {
+            Some(((), rsp)) => rsp.send_response(()),
+            _ => panic!("expected request"),
+        }
+        assert_ready_ok!(call.poll());
+    }
+
+    #[test]
+    fn first_available_uses_second() {
+        let (mock0, mut handle0) = mock::pair();
+        let (mock1, mut handle1) = mock::pair();
+        let mut dist_svc = mock::Spawn::new(Distribute::new(
+            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
+            Distribution::FirstAvailable(Arc::new(["foo", "bar"])),
+        ));
+        assert_eq!(dist_svc.get_ref().backends.len(), 2);
+
+        handle0.allow(0);
+        handle1.allow(1);
+        assert_ready_ok!(dist_svc.poll_ready());
+        assert_eq!(dist_svc.get_ref().ready_idx, Some(1));
+        let mut call = task::spawn(dist_svc.call(()));
+        match assert_ready!(handle1.poll_request()) {
+            Some(((), rsp)) => rsp.send_response(()),
+            _ => panic!("expected request"),
+        }
+        assert_ready_ok!(call.poll());
+    }
+
+    #[test]
+    fn random_available_follows_weight() {
+        let (mock0, mut handle0) = mock::pair();
+        let (mock1, mut handle1) = mock::pair();
+        let mut dist_svc = mock::Spawn::new(Distribute::new(
+            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
+            Distribution::random_available([("foo", 1), ("bar", 99999)]).unwrap(),
+        ));
+        assert_eq!(dist_svc.get_ref().backends.len(), 2);
+
+        handle0.allow(1);
+        handle1.allow(1);
+        assert_ready_ok!(dist_svc.poll_ready());
+        assert_eq!(dist_svc.get_ref().ready_idx, Some(1));
+        let mut call = task::spawn(dist_svc.call(()));
+        match assert_ready!(handle1.poll_request()) {
+            Some(((), rsp)) => rsp.send_response(()),
+            _ => panic!("expected request"),
+        }
+        assert_ready_ok!(call.poll());
+    }
+
+    #[test]
+    fn random_available_follows_availability() {
+        let (mock0, mut handle0) = mock::pair();
+        let (mock1, mut handle1) = mock::pair();
+        let mut dist_svc = mock::Spawn::new(Distribute::new(
+            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
+            Distribution::random_available([("foo", 1), ("bar", 99999)]).unwrap(),
+        ));
+        assert_eq!(dist_svc.get_ref().backends.len(), 2);
+
+        handle0.allow(1);
+        handle1.allow(0);
+        assert_ready_ok!(dist_svc.poll_ready());
+        assert_eq!(dist_svc.get_ref().ready_idx, Some(0));
+        let mut call = task::spawn(dist_svc.call(()));
+        match assert_ready!(handle0.poll_request()) {
+            Some(((), rsp)) => rsp.send_response(()),
+            _ => panic!("expected request"),
+        }
+        assert_ready_ok!(call.poll());
     }
 }
