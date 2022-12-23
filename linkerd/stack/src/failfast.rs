@@ -313,7 +313,7 @@ where
 // === impl Shared ===
 impl Shared {
     fn exit_failfast(&self) {
-        // the load part of this operation can be `Relaxed`, because this task
+        // The load part of this operation can be `Relaxed` because this task
         // is the only place where the the value is ever set.
         if self
             .in_failfast
