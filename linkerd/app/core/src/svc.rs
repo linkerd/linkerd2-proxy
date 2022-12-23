@@ -408,7 +408,6 @@ where
 
     fn layer(&self, inner: S) -> Self::Service {
         failfast::FailFast::wrap_layer(
-            self.name,
             self.failfast_timeout,
             layer::mk(move |inner| Buffer::new(BoxService::new(inner), self.capacity)),
         )

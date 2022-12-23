@@ -46,7 +46,6 @@ use tracing::{debug, info, trace, warn};
 #[derive(Debug)]
 pub struct Advertise<S> {
     inner: S,
-    scope: &'static str,
     shared: Arc<Shared>,
     /// Are we currently waiting on a notification that the inner service has
     /// exited failfast?
@@ -70,7 +69,6 @@ pub struct Advertise<S> {
 /// middleware will exit the failfast state.
 #[derive(Debug)]
 pub struct FailFast<S> {
-    scope: &'static str,
     max_unavailable: Duration,
     wait: Pin<Box<Sleep>>,
     state: State<S>,
@@ -79,10 +77,8 @@ pub struct FailFast<S> {
 
 /// An error representing that an operation timed out.
 #[derive(Debug, Error)]
-#[error("{} service in fail-fast", self.scope)]
-pub struct FailFastError {
-    scope: &'static str,
-}
+#[error("service in fail-fast")]
+pub struct FailFastError(());
 
 #[derive(Debug)]
 enum State<S> {
@@ -102,15 +98,14 @@ struct Shared {
 #[pin_project(project = ResponseFutureProj)]
 pub enum ResponseFuture<F> {
     Inner(#[pin] F),
-    FailFast(&'static str),
+    FailFast,
 }
 
 // === impl Advertise ===
 
 impl<S> Advertise<S> {
-    fn new(scope: &'static str, inner: S, shared: Arc<Shared>) -> Self {
+    fn new(inner: S, shared: Arc<Shared>) -> Self {
         Self {
-            scope,
             inner,
             shared,
             is_waiting: false,
@@ -124,7 +119,7 @@ where
     S: Clone,
 {
     fn clone(&self) -> Self {
-        Self::new(self.scope, self.inner.clone(), self.shared.clone())
+        Self::new(self.inner.clone(), self.shared.clone())
     }
 }
 
@@ -137,22 +132,21 @@ where
     type Future = S::Future;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let scope = self.scope;
         loop {
             if self.is_waiting {
                 // We are currently waiting for the inner service to exit failfast.
-                trace!("Advertise: waiting for {scope} service to become ready",);
+                trace!("Advertise: waiting for service to become ready",);
                 ready!(self.waiting.poll_unpin(cx));
-                trace!("Advertise: {scope} service became ready");
+                trace!("Advertise: service became ready");
                 self.is_waiting = false;
             } else if self.shared.in_failfast.load(Ordering::Acquire) {
                 // We are in failfast. start waiting for the inner service to
                 // exit failfast.
-                trace!("Advertise: {scope} service in failfast, waiting for readiness",);
+                trace!("Advertise: service in failfast, waiting for readiness",);
                 let shared = self.shared.clone();
                 self.waiting.set(async move {
                     shared.notify.notified().await;
-                    trace!("Advertise: {scope} service has become ready");
+                    trace!("Advertise: service has become ready");
                 });
                 self.is_waiting = true;
             } else {
@@ -178,7 +172,6 @@ impl<S> FailFast<S> {
     /// failfast service, which wraps the inner layer's service, will return
     /// `Poll::Pending` while the innermost service is unavailable.
     pub fn wrap_layer<L>(
-        scope: &'static str,
         max_unavailable: Duration,
         inner_layer: L,
     ) -> impl layer::Layer<S, Service = Advertise<L::Service>> + Clone
@@ -190,15 +183,14 @@ impl<S> FailFast<S> {
                 notify: Notify::new(),
                 in_failfast: AtomicBool::new(false),
             });
-            let inner = Self::new(scope, max_unavailable, shared.clone(), inner);
+            let inner = Self::new(max_unavailable, shared.clone(), inner);
             let inner = inner_layer.layer(inner);
-            Advertise::new(scope, inner, shared)
+            Advertise::new(inner, shared)
         })
     }
 
-    fn new(scope: &'static str, max_unavailable: Duration, shared: Arc<Shared>, inner: S) -> Self {
+    fn new(max_unavailable: Duration, shared: Arc<Shared>, inner: S) -> Self {
         Self {
-            scope,
             max_unavailable,
             // The sleep is reset whenever the service becomes unavailable; this
             // initial one will never actually be used, so it's okay to start it
@@ -220,7 +212,6 @@ where
     type Future = ResponseFuture<S::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let scope = self.scope;
         loop {
             match mem::replace(&mut self.state, State::Invalid) {
                 State::Open(mut inner) => match inner.poll_ready(cx) {
@@ -229,7 +220,7 @@ where
                         self.wait
                             .as_mut()
                             .reset(Instant::now() + self.max_unavailable);
-                        debug!("{scope} service has become unavailable");
+                        debug!("Service has become unavailable");
                         self.state = State::Waiting(inner)
                     }
                     Poll::Ready(res) => {
@@ -240,7 +231,7 @@ where
                 State::Waiting(mut inner) => match inner.poll_ready(cx) {
                     // The inner service became ready, transition back to `Open`.
                     Poll::Ready(res) => {
-                        trace!("{scope} has become ready");
+                        trace!("Service has become ready");
                         self.state = State::Open(inner);
                         return Poll::Ready(res.map_err(Into::into));
                     }
@@ -251,18 +242,18 @@ where
 
                         if poll.is_pending() {
                             // The timeout hasn't elapsed yet, keep waiting.
-                            trace!("{scope} service is Pending");
+                            trace!("Service is Pending");
                             self.state = State::Waiting(inner);
                             return Poll::Pending;
                         }
 
-                        warn!("{scope} entering failfast after {:?}", self.max_unavailable);
+                        warn!("Service entering failfast after {:?}", self.max_unavailable);
                         self.shared.in_failfast.store(true, Ordering::Release);
 
                         let shared = self.shared.clone();
                         self.state = State::FailFast(task::spawn(async move {
                             let _ = inner.ready().await;
-                            info!("{scope} service has recovered");
+                            info!("Service service has recovered");
                             shared.exit_failfast();
                             inner
                         }));
@@ -275,7 +266,7 @@ where
                         self.state = State::Open(svc);
                     } else {
                         // Admit requests and fail them immediately.
-                        debug!("{} in failfast", self.scope);
+                        debug!("Service in failfast");
                         self.state = State::FailFast(task);
                         return Poll::Ready(Ok(()));
                     }
@@ -288,7 +279,7 @@ where
     fn call(&mut self, req: T) -> Self::Future {
         match self.state {
             State::Open(ref mut inner) => ResponseFuture::Inner(inner.call(req)),
-            State::FailFast(_) => ResponseFuture::FailFast(self.scope),
+            State::FailFast(_) => ResponseFuture::FailFast,
             State::Waiting(_) => panic!("poll_ready must be called"),
             State::Invalid => unreachable!("state should always be put back, this is a bug!"),
         }
@@ -305,7 +296,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project() {
             ResponseFutureProj::Inner(f) => f.try_poll(cx).map_err(Into::into),
-            ResponseFutureProj::FailFast(scope) => Poll::Ready(Err(FailFastError { scope }.into())),
+            ResponseFutureProj::FailFast => Poll::Ready(Err(FailFastError(()).into())),
         }
     }
 }
@@ -342,7 +333,7 @@ mod test {
             notify: tokio::sync::Notify::new(),
             in_failfast: AtomicBool::new(false),
         });
-        let mut service = Spawn::new(FailFast::new("Test", max_unavailable, shared, service));
+        let mut service = Spawn::new(FailFast::new(max_unavailable, shared, service));
 
         // The inner starts unavailable.
         handle.allow(0);
@@ -382,11 +373,7 @@ mod test {
         let max_unavailable = Duration::from_millis(100);
         let (service, mut handle) = mock::pair::<(), ()>();
 
-        let layer = FailFast::wrap_layer(
-            "Test",
-            max_unavailable,
-            layer::mk(|inner| Buffer::new(inner, 3)),
-        );
+        let layer = FailFast::wrap_layer(max_unavailable, layer::mk(|inner| Buffer::new(inner, 3)));
         let mut service = Spawn::new(layer.layer(service));
 
         // The inner starts unavailable...
