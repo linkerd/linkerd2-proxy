@@ -58,11 +58,7 @@ impl<N> Outbound<N> {
                                 .stack
                                 .layer(crate::stack_labels("tcp", "server")),
                         )
-                        .push_buffer(
-                            "TCP Server",
-                            config.tcp_connection_buffer.capacity,
-                            config.tcp_connection_buffer.failfast_timeout,
-                        ),
+                        .push_buffer("TCP Server", &config.tcp_connection_buffer),
                 )
                 .push_cache(config.orig_dst_idle_timeout)
                 .push(svc::ArcNewService::layer())

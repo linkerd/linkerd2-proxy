@@ -100,7 +100,7 @@ impl<C> Outbound<C> {
                                 .stack
                                 .layer(crate::stack_labels("tcp", "logical")),
                         )
-                        .push_buffer("TCP Logical", tcp_logical_buffer.capacity, tcp_logical_buffer.failfast_timeout),
+                        .push_buffer("TCP Logical", tcp_logical_buffer),
                 )
                 .push_cache(*orig_dst_idle_timeout)
                 .check_new_service::<Logical, I>()

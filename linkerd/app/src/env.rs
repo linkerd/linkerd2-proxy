@@ -615,7 +615,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         ControlConfig {
                             addr,
                             connect,
-                            buffer_capacity,
+                            buffer: BufferConfig {
+                                capacity: buffer_capacity,
+                                failfast_timeout: dispatch_timeout,
+                            },
                         }
                     };
 
@@ -751,12 +754,20 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         } else {
             outbound.proxy.connect.clone()
         };
+        let failfast_timeout = if addr.addr.is_loopback() {
+            inbound.http_logical_buffer.failfast_timeout
+        } else {
+            outbound.http_logical_buffer.failfast_timeout
+        };
         super::dst::Config {
             context: dst_token?.unwrap_or_default(),
             control: ControlConfig {
                 addr,
                 connect,
-                buffer_capacity,
+                buffer: BufferConfig {
+                    capacity: buffer_capacity,
+                    failfast_timeout,
+                },
             },
         }
     };
@@ -786,7 +797,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             } else {
                 outbound.proxy.connect.clone()
             };
-
+            let failfast_timeout = if addr.addr.is_loopback() {
+                inbound.http_logical_buffer.failfast_timeout
+            } else {
+                outbound.http_logical_buffer.failfast_timeout
+            };
             let attributes = oc_attributes_file_path
                 .map(|path| match path {
                     Some(path) => oc_trace_attributes(path),
@@ -800,7 +815,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 control: ControlConfig {
                     addr,
                     connect,
-                    buffer_capacity: 10,
+                    buffer: BufferConfig {
+                        capacity: buffer_capacity,
+                        failfast_timeout,
+                    },
                 },
             }))
         }
@@ -825,12 +843,20 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         } else {
             outbound.proxy.connect.clone()
         };
+        let failfast_timeout = if addr.addr.is_loopback() {
+            inbound.http_logical_buffer.failfast_timeout
+        } else {
+            outbound.http_logical_buffer.failfast_timeout
+        };
         identity::Config {
             certify,
             control: ControlConfig {
                 addr,
                 connect,
-                buffer_capacity: 1,
+                buffer: BufferConfig {
+                    capacity: buffer_capacity,
+                    failfast_timeout,
+                },
             },
             documents,
         }

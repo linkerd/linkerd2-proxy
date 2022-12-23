@@ -42,7 +42,7 @@ impl<N> Outbound<N> {
                                 .stack
                                 .layer(stack_labels("http", "logical")),
                         )
-                        .push_buffer("HTTP Logical", http_logical_buffer.capacity, http_logical_buffer.failfast_timeout),
+                        .push_buffer("HTTP Logical", http_logical_buffer),
                 )
                 .push_cache(*orig_dst_idle_timeout);
 
