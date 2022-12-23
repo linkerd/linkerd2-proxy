@@ -407,6 +407,8 @@ where
     type Service = failfast::Advertise<Buffer<Req, S::Response, Error>>;
 
     fn layer(&self, inner: S) -> Self::Service {
+        // TODO(eliza): add some kind of middleware that wraps errors from the
+        // failfast service with `self.name`.
         failfast::FailFast::wrap_layer(
             self.failfast_timeout,
             layer::mk(move |inner| Buffer::new(BoxService::new(inner), self.capacity)),
