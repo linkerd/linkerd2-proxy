@@ -29,7 +29,7 @@ pub struct Distribute<K, S> {
     backends: IndexMap<K, S>,
     selection: Selection<K>,
 
-    /// Stores the index of the backend that was has been polled to ready. The
+    /// Stores the index of the backend that has been polled to ready. The
     /// service at this index will be used on the next invocation of
     /// `Service::call`.
     ready_idx: Option<usize>,
@@ -45,7 +45,7 @@ pub enum Distribution<K> {
     FirstAvailable(Arc<[K]>),
 
     /// A distribution that uses the first available backend when randomly
-    /// selecting over a weighted distributino of backends.
+    /// selecting over a weighted distribution of backends.
     RandomAvailable(Arc<WeightedKeys<K>>),
 }
 
