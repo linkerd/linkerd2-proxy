@@ -84,7 +84,7 @@ pub struct FailFastError(());
 enum State<S> {
     Open(S),
     Waiting(S),
-    FailFast(task::JoinHandle<S>),
+    FailFast(task::JoinHandle<Result<S, (S, Error)>>),
     /// Empty state used only for transitions.
     Invalid,
 }
@@ -252,18 +252,32 @@ where
 
                         let shared = self.shared.clone();
                         self.state = State::FailFast(task::spawn(async move {
-                            let _ = inner.ready().await;
-                            info!("Service service has recovered");
+                            let res = inner.ready().await;
                             shared.exit_failfast();
-                            inner
+                            match res {
+                                Ok(_) => {
+                                    info!("Service has recovered");
+                                    Ok(inner)
+                                }
+                                Err(error) => {
+                                    let error = error.into();
+                                    warn!(%error, "Service failed to recover");
+                                    Err((inner, error))
+                                }
+                            }
                         }));
                     }
                 },
                 State::FailFast(mut task) => {
                     if let Poll::Ready(res) = task.poll_unpin(cx) {
                         // The service became ready in the background, exit failfast.
-                        let svc = res.expect("failfast background task should not panic");
+                        let (svc, res) = match res {
+                            Err(joinerr) => panic!("failfast background task panicked: {joinerr}"),
+                            Ok(Err((svc, error))) => (svc, Poll::Ready(Err(error))),
+                            Ok(Ok(svc)) => (svc, Poll::Ready(Ok(()))),
+                        };
                         self.state = State::Open(svc);
+                        return res;
                     } else {
                         // Admit requests and fail them immediately.
                         debug!("Service in failfast");
