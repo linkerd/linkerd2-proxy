@@ -10,7 +10,7 @@ mod connect;
 mod either;
 mod fail;
 mod fail_on_error;
-mod failfast;
+pub mod failfast;
 mod filter;
 pub mod layer;
 mod make_thunk;
