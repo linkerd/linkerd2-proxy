@@ -122,6 +122,7 @@ where
         }
 
         debug_assert!(self.ready_idx.is_none());
+        tracing::trace!("no ready services in distribution");
         Poll::Pending
     }
 
