@@ -1,4 +1,4 @@
-use rand::distributions::WeightedIndex;
+use rand::distributions::{WeightedError, WeightedIndex};
 use std::sync::Arc;
 
 /// A parameter type that configures how a [`Distribute`] should behave.
@@ -23,6 +23,12 @@ pub struct WeightedKeys<K> {
 
 // === impl Distribution ===
 
+impl<K> From<K> for Distribution<K> {
+    fn from(inner: K) -> Self {
+        Self::first_available(Some(inner))
+    }
+}
+
 impl<K> Distribution<K> {
     pub fn first_available(keys: impl IntoIterator<Item = K>) -> Self {
         let keys: Arc<[K]> = keys.into_iter().collect();
@@ -32,13 +38,18 @@ impl<K> Distribution<K> {
         Self::FirstAvailable(keys)
     }
 
-    pub fn random_available<T: IntoIterator<Item = (K, u32)>>(iter: T) -> Self {
+    pub fn random_available<T: IntoIterator<Item = (K, u32)>>(
+        iter: T,
+    ) -> Result<Self, WeightedError> {
         let (keys, weights): (Vec<_>, Vec<_>) = iter.into_iter().filter(|(_, w)| *w > 0).unzip();
         if keys.len() < 2 {
-            return Self::first_available(keys);
+            return Ok(Self::first_available(keys));
         }
-        let index = WeightedIndex::new(weights).expect("must succeed");
-        Self::RandomAvailable(Arc::new(WeightedKeys { keys, index }))
+        let index = WeightedIndex::new(weights)?;
+        Ok(Self::RandomAvailable(Arc::new(WeightedKeys {
+            keys,
+            index,
+        })))
     }
 
     pub(crate) fn keys(&self) -> &[K] {
@@ -47,24 +58,6 @@ impl<K> Distribution<K> {
             Self::FirstAvailable(keys) => keys,
             Self::RandomAvailable(keys) => keys.keys(),
         }
-    }
-}
-
-impl<K> From<K> for Distribution<K> {
-    fn from(inner: K) -> Self {
-        Self::first_available(Some(inner))
-    }
-}
-
-impl<K> FromIterator<K> for Distribution<K> {
-    fn from_iter<T: IntoIterator<Item = K>>(iter: T) -> Self {
-        Self::first_available(iter)
-    }
-}
-
-impl<K> FromIterator<(K, u32)> for Distribution<K> {
-    fn from_iter<T: IntoIterator<Item = (K, u32)>>(iter: T) -> Self {
-        Self::random_available(iter)
     }
 }
 

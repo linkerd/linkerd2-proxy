@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use linkerd_stack::Service;
 use rand::{distributions::Distribution as _, rngs::SmallRng, SeedableRng};
 use std::{
-    collections::HashSet,
     hash::Hash,
     sync::Arc,
     task::{Context, Poll},
@@ -28,7 +27,6 @@ enum Selection<K> {
     FirstAvailable,
     RandomAvailable {
         keys: Arc<WeightedKeys<K>>,
-        polled_idxs: HashSet<usize>,
         rng: SmallRng,
     },
 }
@@ -85,26 +83,32 @@ where
 
             Selection::RandomAvailable {
                 ref keys,
-                ref mut polled_idxs,
                 ref mut rng,
             } => {
                 // Choose a random index (via the weighted distribution) to try
                 // to poll the backend. Continue selecting endpoints until we
                 // find one that is ready or we've tried all backends in the
                 // distribution.
-                polled_idxs.clear();
-                while polled_idxs.len() != keys.keys().len() {
-                    let idx = keys.index().sample(rng);
+                let mut index = keys.index().clone();
+                for _ in 0..=keys.keys().len() {
+                    // Sample the weighted index to find a backend to try.
+                    let idx = index.sample(rng);
                     let (_, svc) = self
                         .backends
                         .get_index_mut(idx)
                         .expect("distributions must not reference unknown backends");
-                    if polled_idxs.insert(idx) {
-                        // The index was not already polled, so poll it.
-                        if svc.poll_ready(cx)?.is_ready() {
-                            self.ready_idx = Some(idx);
-                            return Poll::Ready(Ok(()));
-                        }
+
+                    if svc.poll_ready(cx)?.is_ready() {
+                        self.ready_idx = Some(idx);
+                        return Poll::Ready(Ok(()));
+                    }
+
+                    // Zero out the weight of the backend we just tried so that
+                    // it's not selected again.
+                    if index.update_weights(&[(idx, &0)]).is_err() {
+                        // If zeroeing out the index puts it into an invalid
+                        // state, then there are no backends remaining.
+                        break;
                     }
                 }
             }
@@ -146,7 +150,6 @@ impl<K> From<Distribution<K>> for Selection<K> {
             Distribution::Empty => Self::Empty,
             Distribution::FirstAvailable(_) => Self::FirstAvailable,
             Distribution::RandomAvailable(keys) => Self::RandomAvailable {
-                polled_idxs: HashSet::with_capacity(keys.keys().len()),
                 keys,
                 rng: SmallRng::from_rng(rand::thread_rng()).expect("RNG must initialize"),
             },
@@ -161,7 +164,6 @@ impl<K> Clone for Selection<K> {
             Self::FirstAvailable => Self::FirstAvailable,
             Self::RandomAvailable { keys, .. } => Self::RandomAvailable {
                 keys: keys.clone(),
-                polled_idxs: HashSet::with_capacity(keys.keys().len()),
                 rng: SmallRng::from_rng(rand::thread_rng()).expect("RNG must initialize"),
             },
         }
