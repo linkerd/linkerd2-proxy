@@ -404,7 +404,7 @@ where
     S: Service<Req, Error = Error> + Send + 'static,
     S::Future: Send,
 {
-    type Service = failfast::Advertise<Buffer<Req, S::Response, Error>>;
+    type Service = failfast::Gate<Buffer<Req, S::Response, Error>>;
 
     fn layer(&self, inner: S) -> Self::Service {
         // TODO(eliza): add some kind of middleware that wraps errors from the

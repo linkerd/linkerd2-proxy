@@ -29,11 +29,11 @@ use tracing::{debug, info, trace, warn};
 /// the *actual* readiness state of the [`FailFast`]'s inner service up the
 /// stack.
 ///
-/// A [`FailFast`]/[`Advertise`] pair is primarily intended to be used in
+/// A [`FailFast`]/[`Gate`] pair is primarily intended to be used in
 /// conjunction with a `tower::Buffer`. By placing the [`FailFast`] middleware
-/// inside of the `Buffer` and the `Advertise` middleware outside of the buffer,
+/// inside of the `Buffer` and the `Gate` middleware outside of the buffer,
 /// the buffer's queue can be proactively drained when the inner service enters
-/// failfast, while the outer `Advertise` middleware will continue to return
+/// failfast, while the outer `Gate` middleware will continue to return
 /// [`Poll::Pending`] from its `poll_ready` method. This can be used to fail any
 /// requests that have already been dispatched to the inner service while it is in
 /// failfast, while allowing a load balancer or other traffic distributor to
@@ -41,10 +41,10 @@ use tracing::{debug, info, trace, warn};
 /// becomes available.
 ///
 /// A `Layer`, such as a `Buffer` layer, may be wrapped in a new `Layer` which
-/// produces a [`FailFast`]/[`Advertise`] pair around the inner `Layer`'s
+/// produces a [`FailFast`]/[`Gate`] pair around the inner `Layer`'s
 /// service using the [`FailFast::wrap_layer`] function.
 #[derive(Debug)]
-pub struct Advertise<S> {
+pub struct Gate<S> {
     inner: S,
     shared: Arc<Shared>,
     /// Are we currently waiting on a notification that the inner service has
@@ -101,9 +101,9 @@ pub enum ResponseFuture<F> {
     FailFast,
 }
 
-// === impl Advertise ===
+// === impl Gate ===
 
-impl<S> Advertise<S> {
+impl<S> Gate<S> {
     fn new(inner: S, shared: Arc<Shared>) -> Self {
         Self {
             inner,
@@ -114,7 +114,7 @@ impl<S> Advertise<S> {
     }
 }
 
-impl<S> Clone for Advertise<S>
+impl<S> Clone for Gate<S>
 where
     S: Clone,
 {
@@ -123,7 +123,7 @@ where
     }
 }
 
-impl<S, T> tower::Service<T> for Advertise<S>
+impl<S, T> tower::Service<T> for Gate<S>
 where
     S: tower::Service<T>,
 {
@@ -135,18 +135,18 @@ where
         loop {
             if self.is_waiting {
                 // We are currently waiting for the inner service to exit failfast.
-                trace!("Advertise: waiting for service to become ready",);
+                trace!("Gate: waiting for service to become ready",);
                 ready!(self.waiting.poll_unpin(cx));
-                trace!("Advertise: service became ready");
+                trace!("Gate: service became ready");
                 self.is_waiting = false;
             } else if self.shared.in_failfast.load(Ordering::Acquire) {
                 // We are in failfast. start waiting for the inner service to
                 // exit failfast.
-                trace!("Advertise: service in failfast, waiting for readiness",);
+                trace!("Gate: service in failfast, waiting for readiness",);
                 let shared = self.shared.clone();
                 self.waiting.set(async move {
                     shared.notify.notified().await;
-                    trace!("Advertise: service has become ready");
+                    trace!("Gate: service has become ready");
                 });
                 self.is_waiting = true;
             } else {
@@ -174,7 +174,7 @@ impl<S> FailFast<S> {
     pub fn wrap_layer<L>(
         max_unavailable: Duration,
         inner_layer: L,
-    ) -> impl layer::Layer<S, Service = Advertise<L::Service>> + Clone
+    ) -> impl layer::Layer<S, Service = Gate<L::Service>> + Clone
     where
         L: layer::Layer<Self> + Clone,
     {
@@ -185,7 +185,7 @@ impl<S> FailFast<S> {
             });
             let inner = Self::new(max_unavailable, shared.clone(), inner);
             let inner = inner_layer.layer(inner);
-            Advertise::new(inner, shared)
+            Gate::new(inner, shared)
         })
     }
 
