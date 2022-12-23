@@ -423,7 +423,7 @@ async fn grpc_meshed_response_error_header() {
         .headers()
         .get(L5D_PROXY_ERROR)
         .expect("response did not contain L5D_PROXY_ERROR header");
-    assert_eq!(message, "HTTP Logical service in fail-fast");
+    assert_eq!(message, "service in fail-fast");
 
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
