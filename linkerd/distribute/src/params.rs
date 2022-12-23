@@ -2,6 +2,8 @@ use rand::distributions::{WeightedError, WeightedIndex};
 use std::sync::Arc;
 
 /// A parameter type that configures how a [`Distribute`] should behave.
+///
+/// [`Distribute`]: crate::service::Distribute
 #[derive(Clone, Debug, PartialEq)]
 pub enum Distribution<K> {
     /// A distribution that has no backends, and therefore never becomes ready.
