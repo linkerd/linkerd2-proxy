@@ -194,6 +194,23 @@ mod tests {
     }
 
     #[test]
+    fn first_available_woken() {
+        let (mock0, mut handle0) = mock::pair::<(), ()>();
+        let (mock1, mut handle1) = mock::pair::<(), ()>();
+        let mut dist_svc = mock::Spawn::new(Distribute::new(
+            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
+            Distribution::FirstAvailable(Arc::new(["foo", "bar"])),
+        ));
+        assert_eq!(dist_svc.get_ref().backends.len(), 2);
+
+        handle0.allow(0);
+        handle1.allow(0);
+        assert_pending!(dist_svc.poll_ready());
+        handle1.allow(1);
+        assert!(dist_svc.is_woken());
+    }
+
+    #[test]
     fn first_available_prefers_first() {
         let (mock0, mut handle0) = mock::pair();
         let (mock1, mut handle1) = mock::pair();
@@ -235,6 +252,23 @@ mod tests {
             _ => panic!("expected request"),
         }
         assert_ready_ok!(call.poll());
+    }
+
+    #[test]
+    fn random_available_woken() {
+        let (mock0, mut handle0) = mock::pair::<(), ()>();
+        let (mock1, mut handle1) = mock::pair::<(), ()>();
+        let mut dist_svc = mock::Spawn::new(Distribute::new(
+            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
+            Distribution::random_available([("foo", 1), ("bar", 99999)]).unwrap(),
+        ));
+        assert_eq!(dist_svc.get_ref().backends.len(), 2);
+
+        handle0.allow(0);
+        handle1.allow(0);
+        assert_pending!(dist_svc.poll_ready());
+        handle0.allow(1);
+        assert!(dist_svc.is_woken());
     }
 
     #[test]
