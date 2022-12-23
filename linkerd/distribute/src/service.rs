@@ -1,7 +1,11 @@
 use super::{Distribution, WeightedKeys};
 use indexmap::IndexMap;
 use linkerd_stack::Service;
-use rand::{distributions::Distribution as _, rngs::SmallRng, SeedableRng};
+use rand::{
+    distributions::{Distribution as _, WeightedError},
+    rngs::SmallRng,
+    SeedableRng,
+};
 use std::{
     hash::Hash,
     sync::Arc,
@@ -49,8 +53,8 @@ where
 
 impl<Req, K, S> Service<Req> for Distribute<K, S>
 where
-    K: Hash + Eq + std::fmt::Debug,
-    S: Service<Req> + Clone,
+    K: Hash + Eq,
+    S: Service<Req>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -90,7 +94,7 @@ where
                 // find one that is ready or we've tried all backends in the
                 // distribution.
                 let mut index = keys.index().clone();
-                for _ in 0..=keys.keys().len() {
+                loop {
                     // Sample the weighted index to find a backend to try.
                     let idx = index.sample(rng);
                     let (_, svc) = self
@@ -105,10 +109,17 @@ where
 
                     // Zero out the weight of the backend we just tried so that
                     // it's not selected again.
-                    if index.update_weights(&[(idx, &0)]).is_err() {
-                        // If zeroeing out the index puts it into an invalid
-                        // state, then there are no backends remaining.
-                        break;
+                    match index.update_weights(&[(idx, &0)]) {
+                        Ok(()) => {}
+                        Err(WeightedError::AllWeightsZero) => {
+                            // If zeroeing out the index puts it into an invalid
+                            // state, then there are no backends remaining.
+                            break;
+                        }
+                        Err(error) => {
+                            tracing::error!(%error, "unexpected error updating weights; giving up");
+                            break;
+                        }
                     }
                 }
             }
