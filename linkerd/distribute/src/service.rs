@@ -196,37 +196,39 @@ mod tests {
 
     #[test]
     fn first_available_woken() {
-        let (mock0, mut handle0) = mock::pair::<(), ()>();
-        let (mock1, mut handle1) = mock::pair::<(), ()>();
+        let (mulder, mut mulder_ctl) = mock::pair::<(), ()>();
+        let (scully, mut scully_ctl) = mock::pair::<(), ()>();
         let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
-            Distribution::FirstAvailable(Arc::new(["foo", "bar"])),
+            vec![("mulder", mulder), ("scully", scully)]
+                .into_iter()
+                .collect(),
+            Distribution::FirstAvailable(Arc::new(["mulder", "scully"])),
         ));
-        assert_eq!(dist_svc.get_ref().backends.len(), 2);
 
-        handle0.allow(0);
-        handle1.allow(0);
+        mulder_ctl.allow(0);
+        scully_ctl.allow(0);
         assert_pending!(dist_svc.poll_ready());
-        handle1.allow(1);
+        scully_ctl.allow(1);
         assert!(dist_svc.is_woken());
     }
 
     #[test]
     fn first_available_prefers_first() {
-        let (mock0, mut handle0) = mock::pair();
-        let (mock1, mut handle1) = mock::pair();
+        let (mulder, mut mulder_ctl) = mock::pair();
+        let (scully, mut scully_ctl) = mock::pair();
         let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
-            Distribution::FirstAvailable(Arc::new(["foo", "bar"])),
+            vec![("mulder", mulder), ("scully", scully)]
+                .into_iter()
+                .collect(),
+            Distribution::FirstAvailable(Arc::new(["mulder", "scully"])),
         ));
-        assert_eq!(dist_svc.get_ref().backends.len(), 2);
 
-        handle1.allow(1);
-        handle0.allow(1);
+        scully_ctl.allow(1);
+        mulder_ctl.allow(1);
         assert_ready_ok!(dist_svc.poll_ready());
         assert_eq!(dist_svc.get_ref().ready_idx, Some(0));
         let mut call = task::spawn(dist_svc.call(()));
-        match assert_ready!(handle0.poll_request()) {
+        match assert_ready!(mulder_ctl.poll_request()) {
             Some(((), rsp)) => rsp.send_response(()),
             _ => panic!("expected request"),
         }
@@ -235,20 +237,21 @@ mod tests {
 
     #[test]
     fn first_available_uses_second() {
-        let (mock0, mut handle0) = mock::pair();
-        let (mock1, mut handle1) = mock::pair();
+        let (mulder, mut mulder_ctl) = mock::pair();
+        let (scully, mut scully_ctl) = mock::pair();
         let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
-            Distribution::FirstAvailable(Arc::new(["foo", "bar"])),
+            vec![("mulder", mulder), ("scully", scully)]
+                .into_iter()
+                .collect(),
+            Distribution::FirstAvailable(Arc::new(["mulder", "scully"])),
         ));
-        assert_eq!(dist_svc.get_ref().backends.len(), 2);
 
-        handle0.allow(0);
-        handle1.allow(1);
+        mulder_ctl.allow(0);
+        scully_ctl.allow(1);
         assert_ready_ok!(dist_svc.poll_ready());
         assert_eq!(dist_svc.get_ref().ready_idx, Some(1));
         let mut call = task::spawn(dist_svc.call(()));
-        match assert_ready!(handle1.poll_request()) {
+        match assert_ready!(scully_ctl.poll_request()) {
             Some(((), rsp)) => rsp.send_response(()),
             _ => panic!("expected request"),
         }
@@ -257,37 +260,45 @@ mod tests {
 
     #[test]
     fn random_available_woken() {
-        let (mock0, mut handle0) = mock::pair::<(), ()>();
-        let (mock1, mut handle1) = mock::pair::<(), ()>();
+        let (mulder, mut mulder_ctl) = mock::pair::<(), ()>();
+        let (scully, mut scully_ctl) = mock::pair::<(), ()>();
+        let (skinner, mut skinner_ctl) = mock::pair::<(), ()>();
         let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
-            Distribution::random_available([("foo", 1), ("bar", 99999)]).unwrap(),
+            vec![("mulder", mulder), ("scully", scully), ("skinner", skinner)]
+                .into_iter()
+                .collect(),
+            Distribution::random_available([("mulder", 1), ("scully", 99998), ("skinner", 1)])
+                .unwrap(),
         ));
-        assert_eq!(dist_svc.get_ref().backends.len(), 2);
 
-        handle0.allow(0);
-        handle1.allow(0);
+        mulder_ctl.allow(0);
+        scully_ctl.allow(0);
+        skinner_ctl.allow(0);
         assert_pending!(dist_svc.poll_ready());
-        handle0.allow(1);
+        skinner_ctl.allow(1);
         assert!(dist_svc.is_woken());
     }
 
     #[test]
     fn random_available_follows_weight() {
-        let (mock0, mut handle0) = mock::pair();
-        let (mock1, mut handle1) = mock::pair();
+        let (mulder, mut mulder_ctl) = mock::pair();
+        let (scully, mut scully_ctl) = mock::pair();
+        let (skinner, mut skinner_ctl) = mock::pair();
         let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
-            Distribution::random_available([("foo", 1), ("bar", 99999)]).unwrap(),
+            vec![("mulder", mulder), ("scully", scully), ("skinner", skinner)]
+                .into_iter()
+                .collect(),
+            Distribution::random_available([("mulder", 1), ("scully", 99998), ("skinner", 1)])
+                .unwrap(),
         ));
-        assert_eq!(dist_svc.get_ref().backends.len(), 2);
 
-        handle0.allow(1);
-        handle1.allow(1);
+        mulder_ctl.allow(1);
+        scully_ctl.allow(1);
+        skinner_ctl.allow(1);
         assert_ready_ok!(dist_svc.poll_ready());
         assert_eq!(dist_svc.get_ref().ready_idx, Some(1));
         let mut call = task::spawn(dist_svc.call(()));
-        match assert_ready!(handle1.poll_request()) {
+        match assert_ready!(scully_ctl.poll_request()) {
             Some(((), rsp)) => rsp.send_response(()),
             _ => panic!("expected request"),
         }
@@ -296,20 +307,24 @@ mod tests {
 
     #[test]
     fn random_available_follows_availability() {
-        let (mock0, mut handle0) = mock::pair();
-        let (mock1, mut handle1) = mock::pair();
+        let (mulder, mut mulder_ctl) = mock::pair();
+        let (scully, mut scully_ctl) = mock::pair();
+        let (skinner, mut skinner_ctl) = mock::pair();
         let mut dist_svc = mock::Spawn::new(Distribute::new(
-            vec![("foo", mock0), ("bar", mock1)].into_iter().collect(),
-            Distribution::random_available([("foo", 1), ("bar", 99999)]).unwrap(),
+            vec![("mulder", mulder), ("scully", scully), ("skinner", skinner)]
+                .into_iter()
+                .collect(),
+            Distribution::random_available([("mulder", 1), ("scully", 99998), ("skinner", 1)])
+                .unwrap(),
         ));
-        assert_eq!(dist_svc.get_ref().backends.len(), 2);
 
-        handle0.allow(1);
-        handle1.allow(0);
+        mulder_ctl.allow(1);
+        scully_ctl.allow(0);
+        skinner_ctl.allow(0);
         assert_ready_ok!(dist_svc.poll_ready());
         assert_eq!(dist_svc.get_ref().ready_idx, Some(0));
         let mut call = task::spawn(dist_svc.call(()));
-        match assert_ready!(handle0.poll_request()) {
+        match assert_ready!(mulder_ctl.poll_request()) {
             Some(((), rsp)) => rsp.send_response(()),
             _ => panic!("expected request"),
         }
