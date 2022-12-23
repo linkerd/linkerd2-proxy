@@ -1000,6 +1000,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-distribute"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "linkerd-stack",
+ "rand",
+ "tokio-test",
+ "tower-test",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-dns"
 version = "0.1.0"
 dependencies = [
