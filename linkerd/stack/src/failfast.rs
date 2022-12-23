@@ -90,7 +90,7 @@ enum State<S> {
     Waiting(S),
     FailFast(task::JoinHandle<S>),
     /// Empty state used only for transitions.
-    Empty,
+    Invalid,
 }
 
 #[derive(Debug)]
@@ -222,7 +222,7 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let scope = self.scope;
         loop {
-            match mem::replace(&mut self.state, State::Empty) {
+            match mem::replace(&mut self.state, State::Invalid) {
                 State::Open(mut inner) => match inner.poll_ready(cx) {
                     // The inner service just transitioned to `Pending`, so initiate a new timeout.
                     Poll::Pending => {
@@ -280,7 +280,7 @@ where
                         return Poll::Ready(Ok(()));
                     }
                 }
-                State::Empty => unreachable!("state should always be put back, this is a bug!"),
+                State::Invalid => unreachable!("state should always be put back, this is a bug!"),
             }
         }
     }
@@ -290,7 +290,7 @@ where
             State::Open(ref mut inner) => ResponseFuture::Inner(inner.call(req)),
             State::FailFast(_) => ResponseFuture::FailFast(self.scope),
             State::Waiting(_) => panic!("poll_ready must be called"),
-            State::Empty => unreachable!("state should always be put back, this is a bug!"),
+            State::Invalid => unreachable!("state should always be put back, this is a bug!"),
         }
     }
 }
