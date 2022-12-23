@@ -270,7 +270,7 @@ where
                 },
                 State::FailFast(mut task) => {
                     if let Poll::Ready(res) = task.poll_unpin(cx) {
-                        // the service became ready in the background, exit failfast.
+                        // The service became ready in the background, exit failfast.
                         let svc = res.expect("failfast background task should not panic");
                         self.state = State::Open(svc);
                     } else {
