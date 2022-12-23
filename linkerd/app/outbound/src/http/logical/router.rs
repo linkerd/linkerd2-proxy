@@ -89,6 +89,7 @@ where
         let mut backends = HashMap::with_capacity(profile.targets.len().max(1));
         Self::mk_backends(&mut backends, &self.new_backend, &profile.targets, &target);
 
+        // Create a stack that can distribute requests to the backends.
         let distribute = Self::mk_distribute(&backends, &profile.targets, &target);
         let routes = Self::mk_routes(distribute, &self.route_layer, &profile.http_routes, &target);
 
