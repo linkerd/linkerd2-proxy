@@ -1,3 +1,4 @@
+mod concrete;
 pub mod detect;
 mod endpoint;
 pub mod logical;
