@@ -77,7 +77,8 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
     {
         let http_endpoint = self.clone().into_stack();
 
-        self.push_http_logical(resolve)
+        self.push_http_concrete(resolve)
+            .push_http_logical()
             .map_stack(|config, rt, http_logical| {
                 let detect_http = config.proxy.detect_http();
                 let Config {

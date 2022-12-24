@@ -134,7 +134,8 @@ impl<C> Outbound<C> {
             .clone()
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_http_logical(resolve.clone())
+            .push_http_concrete(resolve.clone())
+            .push_http_logical()
             .push_http_server()
             .into_inner();
 
