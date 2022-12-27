@@ -195,6 +195,7 @@ impl<S> Stack<S> {
         self.push(http::insert::NewResponseInsert::layer())
     }
 
+    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
     pub fn push_buffer_on_service<Req>(
         self,
         name: &'static str,
