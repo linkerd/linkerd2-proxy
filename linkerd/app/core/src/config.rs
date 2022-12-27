@@ -15,7 +15,12 @@ pub struct ServerConfig {
 
 #[derive(Clone, Debug)]
 pub struct BufferConfig {
+    /// The number of requests (or connections, depending on the context) that
+    /// may be buffered
     pub capacity: usize,
+
+    /// The maximum amount of time a request may be buffered before failfast
+    /// errors are emitted.
     pub failfast_timeout: Duration,
 }
 

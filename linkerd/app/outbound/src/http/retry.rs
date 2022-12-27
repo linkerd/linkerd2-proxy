@@ -1,9 +1,9 @@
-use super::ProfileRoute;
 use futures::{future, FutureExt};
 use linkerd_app_core::{
     classify,
     http_metrics::retries::Handle,
-    metrics, profiles,
+    metrics::{self, ProfileRouteLabels},
+    profiles::{self, http::Route},
     proxy::http::{ClientHandle, EraseResponse, HttpBody},
     svc::{layer, Either, Param},
     Error,
@@ -49,17 +49,19 @@ impl NewRetryPolicy {
     }
 }
 
-impl retry::NewPolicy<ProfileRoute> for NewRetryPolicy {
+impl<T> retry::NewPolicy<T> for NewRetryPolicy
+where
+    T: Param<Route> + Param<ProfileRouteLabels>,
+{
     type Policy = RetryPolicy;
 
-    fn new_policy(&self, route: &ProfileRoute) -> Option<Self::Policy> {
-        let retries = route.route.retries().cloned()?;
-
-        let metrics = self.metrics.get_handle(route.param());
+    fn new_policy(&self, target: &T) -> Option<Self::Policy> {
+        let route: Route = target.param();
+        let labels: ProfileRouteLabels = target.param();
         Some(RetryPolicy {
-            metrics,
-            budget: retries.budget().clone(),
-            response_classes: route.route.response_classes().clone(),
+            metrics: self.metrics.get_handle(labels),
+            budget: route.retries()?.budget().clone(),
+            response_classes: route.response_classes().clone(),
         })
     }
 }

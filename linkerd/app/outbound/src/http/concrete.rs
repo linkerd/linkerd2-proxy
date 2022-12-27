@@ -9,7 +9,6 @@ use linkerd_app_core::{
     },
     svc, Error, Infallible,
 };
-use tracing::debug_span;
 
 impl<N> Outbound<N> {
     pub fn push_http_concrete<NSvc, R>(
@@ -40,10 +39,11 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, rt, endpoint| {
             let crate::Config {
-                http_buffer,
-                orig_dst_idle_timeout,
+                discovery_idle_timeout,
+                http_request_buffer,
                 ..
             } = config;
+            let watchdog = *discovery_idle_timeout * 2;
 
             let resolve = svc::stack(resolve.into_service())
                 .check_service::<ConcreteAddr>()
@@ -60,7 +60,6 @@ impl<N> Outbound<N> {
                 .into_inner();
 
             endpoint
-                .instrument(|e: &Endpoint| debug_span!("endpoint", server.addr = %e.addr))
                 .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 .push_on_service(
                     rt.metrics
@@ -68,6 +67,8 @@ impl<N> Outbound<N> {
                         .stack
                         .layer(stack_labels("http", "concrete.endpoint")),
                 )
+                .instrument(|t: &Endpoint| tracing::debug_span!("endpoint", addr = %t.addr))
+                .check_new_service::<Endpoint, http::Request<_>>()
                 .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 // Resolve the service to its endpoints and balance requests over them.
                 //
@@ -78,7 +79,7 @@ impl<N> Outbound<N> {
                 // decision to attempt the connection must be driven by the balancer.
                 //
                 // TODO(ver) remove the watchdog timeout.
-                .push(resolve::layer(resolve, *orig_dst_idle_timeout * 2))
+                .push(resolve::layer(resolve, *discovery_idle_timeout * 2))
                 .push_on_service(http::balance::layer(
                     crate::EWMA_DEFAULT_RTT,
                     crate::EWMA_DECAY,
@@ -96,13 +97,9 @@ impl<N> Outbound<N> {
                                 .stack
                                 .layer(stack_labels("http", "concrete")),
                         )
-                        .push_buffer::<http::Request<http::BoxBody>>(
-                            "HTTP",
-                            http_buffer.capacity,
-                            http_buffer.failfast_timeout,
-                        ),
+                        .push_buffer::<http::Request<http::BoxBody>>("HTTP", http_request_buffer),
                 )
-                .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
+                .instrument(|c: &Concrete| tracing::debug_span!("concrete", addr = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
     }

@@ -1007,6 +1007,8 @@ dependencies = [
  "indexmap",
  "linkerd-stack",
  "rand",
+ "tokio-test",
+ "tower-test",
  "tracing",
 ]
 

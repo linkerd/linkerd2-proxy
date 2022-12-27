@@ -6,14 +6,14 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::time;
-use tower::util::Either;
+use tower::{spawn_ready::SpawnReady, util::Either};
 use tracing::{debug, trace};
 
 /// A service which falls back to a secondary service if the primary service
 /// takes too long to become ready.
 #[derive(Debug)]
 pub struct SwitchReady<A, B> {
-    primary: A,
+    primary: SpawnReady<A>,
     secondary: B,
     switch_after: time::Duration,
     sleep: Pin<Box<time::Sleep>>,
@@ -78,7 +78,12 @@ impl<A, B> SwitchReady<A, B> {
     /// the `secondary` service is used until the primary service becomes ready again.
     pub fn new(primary: A, secondary: B, switch_after: time::Duration) -> Self {
         Self {
-            primary,
+            // The primary service is wrapped in a `SpawnReady` so that it can
+            // still become ready even when we've reverted to using the
+            // secondary service.
+            primary: SpawnReady::new(primary),
+            // The secondary service is not wrapped because we don't really care
+            // about driving it to readiness unless the primary has timed out.
             secondary,
             switch_after,
             // The sleep is reset whenever the service becomes unready; this
@@ -90,16 +95,17 @@ impl<A, B> SwitchReady<A, B> {
     }
 }
 
-impl<A, B, R> tower::Service<R> for SwitchReady<A, B>
+impl<A, B, Req> tower::Service<Req> for SwitchReady<A, B>
 where
-    A: tower::Service<R>,
+    Req: 'static,
+    A: tower::Service<Req> + Send + 'static,
     A::Error: Into<Error>,
-    B: tower::Service<R, Response = A::Response>,
+    B: tower::Service<Req, Response = A::Response>,
     B::Error: Into<Error>,
 {
     type Response = A::Response;
     type Error = Error;
-    type Future = Either<A::Future, B::Future>;
+    type Future = Either<<SpawnReady<A> as tower::Service<Req>>::Future, B::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
@@ -156,26 +162,12 @@ where
         }
     }
 
-    fn call(&mut self, req: R) -> Self::Future {
+    fn call(&mut self, req: Req) -> Self::Future {
         trace!(state = ?self.state, "SwitchReady::call");
         match self.state {
             State::Primary => Either::A(self.primary.call(req)),
             State::Secondary => Either::B(self.secondary.call(req)),
             State::Waiting => panic!("called before ready!"),
-        }
-    }
-}
-
-impl<A: Clone, B: Clone> Clone for SwitchReady<A, B> {
-    fn clone(&self) -> Self {
-        Self {
-            primary: self.primary.clone(),
-            secondary: self.secondary.clone(),
-            switch_after: self.switch_after,
-            // Reset the state and the sleep; each clone of the underlying services
-            // may become ready independently (e.g. semaphore).
-            sleep: Box::pin(time::sleep(time::Duration::default())),
-            state: State::Primary,
         }
     }
 }
@@ -226,6 +218,7 @@ mod tests {
 
         // The primary service becomes ready.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -257,6 +250,7 @@ mod tests {
 
         // The secondary service becomes ready.
         b_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -287,6 +281,7 @@ mod tests {
 
         // The secondary service becomes ready.
         b_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -297,6 +292,7 @@ mod tests {
 
         // The primary service becomes ready.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -312,6 +308,7 @@ mod tests {
 
         // The primary service becomes ready again.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -343,6 +340,7 @@ mod tests {
 
         // The primary service becomes ready.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -358,6 +356,7 @@ mod tests {
 
         // The primary service becomes ready.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -375,6 +374,7 @@ mod tests {
 
         // The primary service becomes ready.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -402,6 +402,7 @@ mod tests {
 
         // Error the primary
         a_handle.send_error("lol");
+        tokio::task::yield_now().await;
         assert_ready_err!(switch.poll_ready());
     }
 

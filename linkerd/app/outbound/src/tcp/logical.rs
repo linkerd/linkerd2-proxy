@@ -45,8 +45,8 @@ impl<C> Outbound<C> {
     {
         self.map_stack(|config, rt, connect| {
             let crate::Config {
-                orig_dst_idle_timeout,
-                tcp_logical_buffer,
+                discovery_idle_timeout,
+                tcp_connection_buffer,
                 ..
             } = config;
 
@@ -67,14 +67,8 @@ impl<C> Outbound<C> {
             let concrete = connect
                 .push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
-                .instrument(|t: &Endpoint| {
-                    debug_span!(
-                        "endpoint",
-                        server.addr = %t.addr,
-                        server.id = t.tls.value().map(|tls| tracing::field::display(&tls.server_id)),
-                    )
-                })
-                .push(resolve::layer(resolve, *orig_dst_idle_timeout * 2))
+                .instrument(|t: &Endpoint| debug_span!("endpoint", addr = %t.addr))
+                .push(resolve::layer(resolve, *discovery_idle_timeout * 2))
                 .push_on_service(
                     svc::layers()
                         .push(tcp::balance::layer(
@@ -93,7 +87,9 @@ impl<C> Outbound<C> {
                                 .stack
                                 .layer(crate::stack_labels("tcp", "concrete")),
                         )
-                        .push_buffer("TCP Concrete", tcp_logical_buffer.capacity, tcp_logical_buffer.failfast_timeout)
+                        // TODO(ver) We should instead buffer per concrete
+                        // target.
+                        .push_buffer("TCP Concrete", tcp_connection_buffer),
                 )
                 .check_new_service::<Concrete, I>()
                 .push(svc::ArcNewService::layer());

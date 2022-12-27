@@ -7,6 +7,7 @@ use linkerd_app_core::{
 };
 use std::{
     collections::HashMap,
+    sync::Arc,
     task::{Context, Poll},
 };
 use tokio::sync::watch;
@@ -146,11 +147,10 @@ where
         T: Param<profiles::LogicalAddr>,
     {
         // Create a stack that can distribute requests to the backends.
-        let new_distribute = NewDistribute::new(
-            backends
-                .iter()
-                .map(|(addr, svc)| (addr.clone(), svc.clone())),
-        );
+        let new_distribute = backends
+            .iter()
+            .map(|(addr, svc)| (addr.clone(), svc.clone()))
+            .collect::<NewDistribute<_>>();
 
         // Build a single distribution service that will be shared across all routes.
         //
@@ -158,13 +158,15 @@ where
         // distribution may vary.
         let distribution = if targets.is_empty() {
             let profiles::LogicalAddr(addr) = target.param();
-            std::iter::once((addr, 1)).collect::<Distribution>()
+            Distribution::from(addr)
         } else {
-            targets
-                .iter()
-                .cloned()
-                .map(|profiles::Target { addr, weight }| (addr, weight))
-                .collect::<Distribution>()
+            Distribution::random_available(
+                targets
+                    .iter()
+                    .cloned()
+                    .map(|profiles::Target { addr, weight }| (addr, weight)),
+            )
+            .expect("distribution must be valid")
         };
         new_distribute.new_service(distribution)
     }
