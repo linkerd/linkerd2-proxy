@@ -6,7 +6,7 @@ use thiserror::Error;
 use tower::Service;
 
 /// A middleware that sheds load when the inner `Service` isn't ready.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LoadShed<S> {
     inner: S,
     open: bool,
