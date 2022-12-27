@@ -62,13 +62,7 @@ impl<C> Outbound<C> {
             let concrete = connect
                 .push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
-                .instrument(|t: &Endpoint| {
-                    debug_span!(
-                        "endpoint",
-                        server.addr = %t.addr,
-                        server.id = t.tls.value().map(|tls| tracing::field::display(&tls.server_id)),
-                    )
-                })
+                .instrument(|t: &Endpoint| debug_span!("endpoint", addr = %t.addr))
                 .push(resolve::layer(resolve, *orig_dst_idle_timeout * 2))
                 .push_on_service(
                     svc::layers()

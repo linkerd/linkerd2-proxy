@@ -68,6 +68,7 @@ impl<N> Outbound<N> {
                             .layer(stack_labels("http", "balance.endpoint")),
                     ),
                 )
+                .instrument(|t: &Endpoint| tracing::debug_span!("endpoint", addr = %t.addr))
                 .check_new_service::<Endpoint, http::Request<_>>()
                 // Resolve the service to its endpoints and balance requests over them.
                 //
