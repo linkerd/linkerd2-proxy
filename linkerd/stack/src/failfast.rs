@@ -164,6 +164,20 @@ where
 // === impl FailFast ===
 
 impl<S> FailFast<S> {
+    /// Returns a layer for producing a `FailFast` without a paired [`Gate`].
+    pub fn layer<L>(max_unavailable: Duration) -> impl layer::Layer<S, Service = Self> + Clone {
+        layer::mk(move |inner| {
+            Self::new(
+                max_unavailable,
+                Arc::new(Shared {
+                    notify: Notify::new(),
+                    in_failfast: AtomicBool::new(false),
+                }),
+                inner,
+            )
+        })
+    }
+
     /// Returns a layer for producing a `FailFast` pair wrapping an inner
     /// layer's service.
     ///
@@ -255,7 +269,7 @@ where
                             let res = inner.ready().await;
                             // Notify the paired `Gate` instances to begin
                             // advertising readiness so that the failfast
-                            // service can advance. 
+                            // service can advance.
                             shared.exit_failfast();
                             match res {
                                 Ok(_) => {
