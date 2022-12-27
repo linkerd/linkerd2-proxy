@@ -96,12 +96,12 @@ pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 
 const ENV_INGRESS_MODE: &str = "LINKERD2_PROXY_INGRESS_MODE";
 
-const ENV_INBOUND_HTTP_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_INBOUND_HTTP_BUFFER_CAPACITY";
+const ENV_INBOUND_HTTP_QUEUE_CAPACITY: &str = "LINKERD2_PROXY_INBOUND_HTTP_QUEUE_CAPACITY";
 const ENV_INBOUND_HTTP_FAILFAST_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_HTTP_FAILFAST_TIMEOUT";
 
-const ENV_OUTBOUND_TCP_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_TCP_BUFFER_CAPACITY";
+const ENV_OUTBOUND_TCP_QUEUE_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_TCP_QUEUE_CAPACITY";
 const ENV_OUTBOUND_TCP_FAILFAST_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_TCP_FAILFAST_TIMEOUT";
-const ENV_OUTBOUND_HTTP_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_HTTP_BUFFER_CAPACITY";
+const ENV_OUTBOUND_HTTP_QUEUE_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_HTTP_QUEUE_CAPACITY";
 const ENV_OUTBOUND_HTTP_FAILFAST_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_HTTP_FAILFAST_TIMEOUT";
 
 pub const ENV_INBOUND_DETECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_DETECT_TIMEOUT";
@@ -233,23 +233,23 @@ pub const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
 const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 
-const DEFAULT_INBOUND_HTTP_BUFFER_CAPACITY: usize = 100;
+const DEFAULT_INBOUND_HTTP_QUEUE_CAPACITY: usize = 100;
 const DEFAULT_INBOUND_HTTP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_INBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 const DEFAULT_INBOUND_CONNECT_BACKOFF: ExponentialBackoff =
     ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_millis(500), 0.1);
 
-const DEFAULT_OUTBOUND_TCP_BUFFER_CAPACITY: usize = 10;
+const DEFAULT_OUTBOUND_TCP_QUEUE_CAPACITY: usize = 10;
 const DEFAULT_OUTBOUND_TCP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(3);
-const DEFAULT_OUTBOUND_HTTP_BUFFER_CAPACITY: usize = 100;
+const DEFAULT_OUTBOUND_HTTP_QUEUE_CAPACITY: usize = 100;
 const DEFAULT_OUTBOUND_HTTP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_OUTBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff =
     ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_millis(500), 0.1);
 
-const DEFAULT_CONTROL_BUFFER_CAPACITY: usize = 100;
+const DEFAULT_CONTROL_QUEUE_CAPACITY: usize = 100;
 const DEFAULT_CONTROL_FAILFAST_TIMEOUT: Duration = Duration::from_secs(10);
 
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
@@ -322,17 +322,17 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_detect_timeout = parse(strings, ENV_INBOUND_DETECT_TIMEOUT, parse_duration);
     let inbound_connect_timeout = parse(strings, ENV_INBOUND_CONNECT_TIMEOUT, parse_duration);
     let inbound_http_buffer_capacity =
-        parse(strings, ENV_INBOUND_HTTP_BUFFER_CAPACITY, parse_number);
+        parse(strings, ENV_INBOUND_HTTP_QUEUE_CAPACITY, parse_number);
     let inbound_http_failfast_timeout =
         parse(strings, ENV_INBOUND_HTTP_FAILFAST_TIMEOUT, parse_duration);
 
     let outbound_detect_timeout = parse(strings, ENV_OUTBOUND_DETECT_TIMEOUT, parse_duration);
     let outbound_tcp_buffer_capacity =
-        parse(strings, ENV_OUTBOUND_TCP_BUFFER_CAPACITY, parse_number);
+        parse(strings, ENV_OUTBOUND_TCP_QUEUE_CAPACITY, parse_number);
     let outbound_tcp_failfast_timeout =
         parse(strings, ENV_OUTBOUND_TCP_FAILFAST_TIMEOUT, parse_duration);
     let outbound_http_buffer_capacity =
-        parse(strings, ENV_OUTBOUND_HTTP_BUFFER_CAPACITY, parse_number);
+        parse(strings, ENV_OUTBOUND_HTTP_QUEUE_CAPACITY, parse_number);
     let outbound_http_failfast_timeout =
         parse(strings, ENV_OUTBOUND_HTTP_FAILFAST_TIMEOUT, parse_duration);
     let outbound_connect_timeout = parse(strings, ENV_OUTBOUND_CONNECT_TIMEOUT, parse_duration);
@@ -489,11 +489,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound_detect_timeout?.unwrap_or(DEFAULT_OUTBOUND_DETECT_TIMEOUT);
 
         let tcp_buffer_capacity =
-            outbound_tcp_buffer_capacity?.unwrap_or(DEFAULT_OUTBOUND_TCP_BUFFER_CAPACITY);
+            outbound_tcp_buffer_capacity?.unwrap_or(DEFAULT_OUTBOUND_TCP_QUEUE_CAPACITY);
         let tcp_failfast_timeout =
             outbound_tcp_failfast_timeout?.unwrap_or(DEFAULT_OUTBOUND_TCP_FAILFAST_TIMEOUT);
         let http_buffer_capacity =
-            outbound_http_buffer_capacity?.unwrap_or(DEFAULT_OUTBOUND_HTTP_BUFFER_CAPACITY);
+            outbound_http_buffer_capacity?.unwrap_or(DEFAULT_OUTBOUND_HTTP_QUEUE_CAPACITY);
         let http_failfast_timeout =
             outbound_http_failfast_timeout?.unwrap_or(DEFAULT_OUTBOUND_HTTP_FAILFAST_TIMEOUT);
 
@@ -637,7 +637,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                             addr,
                             connect,
                             buffer: BufferConfig {
-                                capacity: DEFAULT_CONTROL_BUFFER_CAPACITY,
+                                capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
                                 failfast_timeout: DEFAULT_CONTROL_FAILFAST_TIMEOUT,
                             },
                         }
@@ -759,7 +759,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             discovery_idle_timeout,
             http_request_buffer: BufferConfig {
                 capacity: inbound_http_buffer_capacity?
-                    .unwrap_or(DEFAULT_INBOUND_HTTP_BUFFER_CAPACITY),
+                    .unwrap_or(DEFAULT_INBOUND_HTTP_QUEUE_CAPACITY),
                 failfast_timeout: inbound_http_failfast_timeout?
                     .unwrap_or(DEFAULT_INBOUND_HTTP_FAILFAST_TIMEOUT),
             },
@@ -784,7 +784,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 addr,
                 connect,
                 buffer: BufferConfig {
-                    capacity: DEFAULT_CONTROL_BUFFER_CAPACITY,
+                    capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
                     failfast_timeout,
                 },
             },
@@ -835,7 +835,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     addr,
                     connect,
                     buffer: BufferConfig {
-                        capacity: DEFAULT_CONTROL_BUFFER_CAPACITY,
+                        capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
                         failfast_timeout,
                     },
                 },
@@ -873,7 +873,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 addr,
                 connect,
                 buffer: BufferConfig {
-                    capacity: DEFAULT_CONTROL_BUFFER_CAPACITY,
+                    capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
                     failfast_timeout,
                 },
             },

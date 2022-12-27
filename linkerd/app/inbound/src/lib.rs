@@ -41,8 +41,8 @@ pub struct Config {
     pub policy: policy::Config,
     pub allowed_ips: transport::AllowIps,
 
-    /// Configures how long the proxy will wait for a profile response for
-    /// skipping route information.
+    /// Configures the timeout after which the proxy will revert to skipping
+    /// service profile routing instrumentation.
     pub profile_skip_timeout: Duration,
 
     /// Configures how long the proxy will retain policy & profile resolutions
