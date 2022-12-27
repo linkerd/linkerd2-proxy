@@ -1,7 +1,7 @@
 // Possibly unused, but useful during development.
 
 pub use crate::proxy::http;
-use crate::{cache, Error};
+use crate::{cache, config::BufferConfig, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
@@ -11,12 +11,14 @@ pub use linkerd_stack::{
     NewRouter, NewService, Param, Predicate, UnwrapOr,
 };
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
+use stack::OnService;
 use std::{
+    marker::PhantomData,
     task::{Context, Poll},
     time::Duration,
 };
 use tower::{
-    buffer::{Buffer as TowerBuffer, BufferLayer},
+    buffer::Buffer as TowerBuffer,
     layer::util::{Identity, Stack as Pair},
     make::MakeService,
 };
@@ -29,6 +31,13 @@ pub use tower::{
 pub struct AlwaysReconnect(ExponentialBackoff);
 
 pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
+
+pub struct BufferLayer<Req> {
+    name: &'static str,
+    capacity: usize,
+    failfast_timeout: Duration,
+    _marker: PhantomData<fn(Req)>,
+}
 
 pub type BoxHttp<B = http::BoxBody> =
     BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>;
@@ -80,15 +89,15 @@ impl<L> Layers<L> {
     }
 
     /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
-    pub fn push_spawn_buffer<Req>(
+    pub fn push_buffer<Req>(
         self,
-        capacity: usize,
-    ) -> Layers<Pair<Pair<L, BoxServiceLayer<Req>>, BufferLayer<Req>>>
+        name: &'static str,
+        config: &BufferConfig,
+    ) -> Layers<Pair<L, BufferLayer<Req>>>
     where
         Req: Send + 'static,
     {
-        self.push(BoxServiceLayer::new())
-            .push(BufferLayer::new(capacity))
+        self.push(buffer(name, config))
     }
 
     pub fn push_on_service<U>(self, layer: U) -> Layers<Pair<L, stack::OnServiceLayer<U>>> {
@@ -152,22 +161,6 @@ impl<S> Stack<S> {
         self.push(NewReconnect::layer(AlwaysReconnect(backoff)))
     }
 
-    /// Buffer requests when when the next layer is out of capacity.
-    pub fn spawn_buffer<Req, Rsp>(
-        self,
-        capacity: usize,
-    ) -> Stack<Buffer<Req, S::Response, S::Error>>
-    where
-        Req: Send + 'static,
-        S: Service<Req> + Send + 'static,
-        S::Response: Send + 'static,
-        S::Error: Into<Error> + Send + Sync + 'static,
-        S::Future: Send,
-    {
-        self.push(BoxServiceLayer::new())
-            .push(BufferLayer::new(capacity))
-    }
-
     /// Assuming `S` implements `NewService` or `MakeService`, applies the given
     /// `L`-typed layer on each service produced by `S`.
     pub fn push_on_service<L: Clone>(self, layer: L) -> Stack<stack::OnService<L, S>> {
@@ -200,6 +193,18 @@ impl<S> Stack<S> {
         self,
     ) -> Stack<http::insert::NewResponseInsert<P, S>> {
         self.push(http::insert::NewResponseInsert::layer())
+    }
+
+    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
+    pub fn push_buffer_on_service<Req>(
+        self,
+        name: &'static str,
+        config: &BufferConfig,
+    ) -> Stack<OnService<BufferLayer<Req>, S>>
+    where
+        Req: Send + 'static,
+    {
+        self.push_on_service(buffer(name, config))
     }
 
     pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::NewCachedService<T, S>>
@@ -379,5 +384,42 @@ impl<E: Into<Error>> Recover<E> for AlwaysReconnect {
 
     fn recover(&self, _: E) -> Result<Self::Backoff, E> {
         Ok(self.0.stream())
+    }
+}
+
+// === impl BufferLayer ===
+
+fn buffer<Req>(name: &'static str, config: &BufferConfig) -> BufferLayer<Req> {
+    BufferLayer {
+        name,
+        capacity: config.capacity,
+        failfast_timeout: config.failfast_timeout,
+        _marker: PhantomData,
+    }
+}
+
+impl<Req, S> Layer<S> for BufferLayer<Req>
+where
+    Req: Send + 'static,
+    S: Service<Req, Error = Error> + Send + 'static,
+    S::Future: Send,
+{
+    type Service = Buffer<Req, S::Response, Error>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        let spawn_ready = SpawnReady::new(inner);
+        let fail_fast = FailFast::layer(self.name, self.failfast_timeout).layer(spawn_ready);
+        Buffer::new(BoxService::new(fail_fast), self.capacity)
+    }
+}
+
+impl<Req> Clone for BufferLayer<Req> {
+    fn clone(&self) -> Self {
+        Self {
+            capacity: self.capacity,
+            name: self.name,
+            failfast_timeout: self.failfast_timeout,
+            _marker: self._marker,
+        }
     }
 }

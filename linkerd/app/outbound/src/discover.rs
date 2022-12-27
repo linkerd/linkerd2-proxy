@@ -52,24 +52,15 @@ impl<N> Outbound<N> {
                 }))
                 .push_on_service(
                     svc::layers()
-                        // If the traffic split is empty/unavailable, eagerly fail
-                        // requests. When the split is in failfast, spawn the
-                        // service in a background task so it becomes ready without
-                        // new requests.
-                        .push(svc::layer::mk(svc::SpawnReady::new))
                         .push(
                             rt.metrics
                                 .proxy
                                 .stack
                                 .layer(crate::stack_labels("tcp", "server")),
                         )
-                        .push(svc::FailFast::layer(
-                            "TCP Server",
-                            config.proxy.dispatch_timeout,
-                        ))
-                        .push_spawn_buffer(config.proxy.buffer_capacity),
+                        .push_buffer("TCP Server", &config.tcp_connection_buffer),
                 )
-                .push_cache(config.proxy.cache_max_idle_age)
+                .push_cache(config.discovery_idle_timeout)
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })
@@ -189,7 +180,7 @@ mod tests {
         // service after `idle_timeout`.
         let cfg = {
             let mut cfg = default_config();
-            cfg.proxy.cache_max_idle_age = idle_timeout;
+            cfg.discovery_idle_timeout = idle_timeout;
             cfg
         };
         let (rt, _shutdown) = runtime();

@@ -7,7 +7,6 @@ mod tests;
 
 use self::gateway::NewGateway;
 use linkerd_app_core::{
-    config::ProxyConfig,
     identity, io, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{
@@ -81,12 +80,7 @@ where
     R::Resolution: Send,
     R::Future: Send + Unpin,
 {
-    let ProxyConfig {
-        buffer_capacity,
-        cache_max_idle_age,
-        dispatch_timeout,
-        ..
-    } = inbound.config().proxy.clone();
+    let inbound_config = inbound.config().clone();
     let local_id = identity::LocalId(inbound.identity().name().clone());
 
     // For each gatewayed connection that is *not* HTTP, use the target from the
@@ -158,11 +152,9 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 )
-                .push(svc::layer::mk(svc::SpawnReady::new))
-                .push(svc::FailFast::layer("TCP Gateway", dispatch_timeout))
-                .push_spawn_buffer(buffer_capacity),
+                .push_buffer("TCP Gateway", &outbound.config().tcp_connection_buffer),
         )
-        .push_cache(cache_max_idle_age)
+        .push_cache(outbound.config().discovery_idle_timeout)
         .check_new_service::<NameAddr, I>();
 
     // Cache an HTTP gateway service for each destination and HTTP version.
@@ -194,11 +186,9 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("http", "gateway")),
                 )
-                .push(svc::layer::mk(svc::SpawnReady::new))
-                .push(svc::FailFast::layer("Gateway", dispatch_timeout))
-                .push_spawn_buffer(buffer_capacity),
+                .push_buffer("Gateway", &inbound_config.http_request_buffer),
         )
-        .push_cache(cache_max_idle_age)
+        .push_cache(inbound_config.discovery_idle_timeout)
         .push_on_service(
             svc::layers()
                 .push(http::Retain::layer())

@@ -20,7 +20,7 @@ pub(crate) mod test_util;
 pub use self::metrics::Metrics;
 use futures::Stream;
 use linkerd_app_core::{
-    config::ProxyConfig,
+    config::{BufferConfig, ProxyConfig},
     drain,
     http_tracing::OpenCensusSink,
     identity, io, profiles,
@@ -49,8 +49,26 @@ const EWMA_DECAY: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub proxy: ProxyConfig,
     pub allow_discovery: AddrMatch,
+
+    pub proxy: ProxyConfig,
+
+    /// Configures the duration the proxy will retain idle stacks (with no
+    /// active connections) for an outbound address. When an idle stack is
+    /// dropped, all cached service discovery information is dropped.
+    pub discovery_idle_timeout: Duration,
+
+    /// Configures how connections are buffered *for each outbound address*.
+    ///
+    /// A buffer capacity of 100 means that 100 connections may be buffered for
+    /// each IP:port to which an application attempts to connect.
+    pub tcp_connection_buffer: BufferConfig,
+
+    /// Configures how HTTP requests are buffered *for each outbound address*.
+    ///
+    /// A buffer capacity of 100 means that 100 requests may be buffered for
+    /// each IP:port to which an application has opened an outbound TCP connection.
+    pub http_request_buffer: BufferConfig,
 
     // In "ingress mode", we assume we are always routing HTTP requests and do
     // not perform per-target-address discovery. Non-HTTP connections are

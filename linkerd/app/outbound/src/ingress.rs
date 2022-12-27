@@ -83,13 +83,12 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                 let detect_http = config.proxy.detect_http();
                 let Config {
                     allow_discovery,
+                    http_request_buffer,
+                    discovery_idle_timeout,
                     proxy:
                         ProxyConfig {
                             server: ServerConfig { h2_settings, .. },
-                            dispatch_timeout,
                             max_in_flight_requests,
-                            buffer_capacity,
-                            cache_max_idle_age,
                             ..
                         },
                     ..
@@ -148,13 +147,11 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                     .stack
                                     .layer(stack_labels("http", "logical")),
                             )
-                            .push(svc::layer::mk(svc::SpawnReady::new))
-                            .push(svc::FailFast::layer("HTTP Logical", *dispatch_timeout))
-                            .push_spawn_buffer(*buffer_capacity),
+                            .push_buffer("HTTP Logical", http_request_buffer),
                     )
                     // Caches the profile-based stack so that it can be reused across
                     // multiple requests to the same canonical destination.
-                    .push_cache(*cache_max_idle_age)
+                    .push_cache(*discovery_idle_timeout)
                     .push_on_service(
                         svc::layers()
                             .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
@@ -188,14 +185,6 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             }
                         },
                         http_endpoint
-                            .push_on_service(
-                                svc::layers()
-                                    .push(svc::layer::mk(svc::SpawnReady::new))
-                                    .push(svc::FailFast::layer(
-                                        "Ingress server",
-                                        *dispatch_timeout,
-                                    )),
-                            )
                             .instrument(|_: &_| info_span!("forward"))
                             .into_inner(),
                     )
@@ -235,7 +224,6 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             // background task (i.e., by `SpawnReady`).  Otherwise, the
                             // inner service is always ready (because it's a router).
                             .push(svc::ConcurrencyLimitLayer::new(*max_in_flight_requests))
-                            .push(svc::FailFast::layer("Ingress server", *dispatch_timeout))
                             .push(rt.metrics.http_errors.to_layer()),
                     )
                     .push(http::ServerRescue::layer(config.emit_headers))

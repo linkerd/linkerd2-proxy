@@ -21,6 +21,7 @@ use tracing::debug_span;
 struct ServerRescue;
 
 impl<H> Inbound<H> {
+    /// Fails requests when the `HSvc`-typed inner service is not ready.
     pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: Param<Version>
@@ -43,7 +44,6 @@ impl<H> Inbound<H> {
         self.map_stack(|config, rt, http| {
             let ProxyConfig {
                 server: ServerConfig { h2_settings, .. },
-                dispatch_timeout,
                 max_in_flight_requests,
                 ..
             } = config.proxy;
@@ -59,14 +59,18 @@ impl<H> Inbound<H> {
                         .push(http::BoxRequest::layer())
                         // Downgrades the protocol if upgraded by an outbound proxy.
                         .push(http::orig_proto::Downgrade::layer())
-                        // Limit the number of in-flight requests. When the proxy is
-                        // at capacity, go into failfast after a dispatch timeout.
-                        // Note that the inner service _always_ returns ready (due
-                        // to `NewRouter`) and the concurrency limit need not be
-                        // driven outside of the request path, so there's no need
-                        // for SpawnReady
+                        // Limit the number of in-flight inbound requests.
+                        //
+                        // TODO(ver) This concurrency limit applies only to
+                        // requests that do not yet have responses, but ignores
+                        // streaming bodies. We should change this to an
+                        // HTTP-specific imlementation that tracks request and
+                        // response bodies.
                         .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
-                        .push(svc::FailFast::layer("HTTP Server", dispatch_timeout)),
+                        // Shed load by failing requests when the concurrency
+                        // limit is reached. No delay is used before failfast
+                        // goes into effect so it is expected that the inner.
+                        .push(svc::FailFast::layer("HTTP Server", Default::default())),
                 )
                 .push(rt.metrics.http_errors.to_layer())
                 .push(ServerRescue::layer())

@@ -215,6 +215,9 @@ impl<S> Outbound<S> {
             .clone()
             .push_tcp_endpoint::<http::Connect>()
             .push_http_endpoint()
+            .map_stack(|config, _, stk| {
+                stk.push_buffer_on_service("HTTP Server", &config.http_request_buffer)
+            })
             .push_http_server()
             .into_inner();
 

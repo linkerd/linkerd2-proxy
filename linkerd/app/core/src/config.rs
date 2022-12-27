@@ -14,6 +14,17 @@ pub struct ServerConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct BufferConfig {
+    /// The number of requests (or connections, depending on the context) that
+    /// may be buffered
+    pub capacity: usize,
+
+    /// The maximum amount of time a request may be buffered before failfast
+    /// errors are emitted.
+    pub failfast_timeout: Duration,
+}
+
+#[derive(Clone, Debug)]
 pub struct ConnectConfig {
     pub backoff: ExponentialBackoff,
     pub timeout: Duration,
@@ -26,9 +37,6 @@ pub struct ConnectConfig {
 pub struct ProxyConfig {
     pub server: ServerConfig,
     pub connect: ConnectConfig,
-    pub buffer_capacity: usize,
-    pub cache_max_idle_age: Duration,
-    pub dispatch_timeout: Duration,
     pub max_in_flight_requests: usize,
     pub detect_protocol_timeout: Duration,
 }

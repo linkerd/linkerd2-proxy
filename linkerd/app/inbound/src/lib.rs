@@ -18,7 +18,7 @@ pub(crate) mod test_util;
 
 pub use self::{metrics::Metrics, policy::DefaultPolicy};
 use linkerd_app_core::{
-    config::{ConnectConfig, ProxyConfig},
+    config::{BufferConfig, ConnectConfig, ProxyConfig},
     drain,
     http_tracing::OpenCensusSink,
     identity, io,
@@ -39,8 +39,18 @@ pub struct Config {
     pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
     pub policy: policy::Config,
-    pub profile_idle_timeout: Duration,
     pub allowed_ips: transport::AllowIps,
+
+    /// Configures the timeout after which the proxy will revert to skipping
+    /// service profile routing instrumentation.
+    pub profile_skip_timeout: Duration,
+
+    /// Configures how long the proxy will retain policy & profile resolutions
+    /// for idle/unused ports and services.
+    pub discovery_idle_timeout: Duration,
+
+    /// Configures how HTTP requests are buffered *for each inbound port*.
+    pub http_request_buffer: BufferConfig,
 }
 
 #[derive(Clone)]

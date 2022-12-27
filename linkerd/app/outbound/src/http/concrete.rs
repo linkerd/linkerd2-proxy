@@ -1,7 +1,6 @@
 use super::{Concrete, Endpoint};
 use crate::{endpoint, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
-    config::ProxyConfig,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -10,7 +9,6 @@ use linkerd_app_core::{
     },
     svc, Error, Infallible,
 };
-use tracing::debug_span;
 
 impl<N> Outbound<N> {
     pub fn push_http_concrete<NSvc, R>(
@@ -40,12 +38,11 @@ impl<N> Outbound<N> {
         R::Future: Send + Unpin,
     {
         self.map_stack(|config, rt, endpoint| {
-            let ProxyConfig {
-                cache_max_idle_age,
-                dispatch_timeout,
+            let crate::Config {
+                discovery_idle_timeout,
                 ..
-            } = config.proxy;
-            let watchdog = cache_max_idle_age * 2;
+            } = config;
+            let watchdog = *discovery_idle_timeout * 2;
 
             let resolve = svc::stack(resolve.into_service())
                 .check_service::<ConcreteAddr>()
@@ -62,7 +59,6 @@ impl<N> Outbound<N> {
                 .into_inner();
 
             endpoint
-                .instrument(|e: &Endpoint| debug_span!("endpoint", server.addr = %e.addr))
                 .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers().push(http::BoxRequest::layer()).push(
@@ -72,6 +68,7 @@ impl<N> Outbound<N> {
                             .layer(stack_labels("http", "balance.endpoint")),
                     ),
                 )
+                .instrument(|t: &Endpoint| tracing::debug_span!("endpoint", addr = %t.addr))
                 .check_new_service::<Endpoint, http::Request<_>>()
                 // Resolve the service to its endpoints and balance requests over them.
                 //
@@ -97,8 +94,6 @@ impl<N> Outbound<N> {
                                 .stack
                                 .layer(stack_labels("http", "balancer")),
                         )
-                        .push(svc::layer::mk(svc::SpawnReady::new))
-                        .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
                         .push(http::BoxResponse::layer()),
                 )
                 .check_make_service::<Concrete, http::Request<_>>()
@@ -108,7 +103,7 @@ impl<N> Outbound<N> {
                 // The concrete address is only set when the profile could be
                 // resolved. Endpoint resolution is skipped when there is no
                 // concrete address.
-                .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
+                .instrument(|c: &Concrete| tracing::debug_span!("concrete", service = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
     }

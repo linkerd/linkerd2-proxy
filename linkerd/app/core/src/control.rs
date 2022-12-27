@@ -12,7 +12,7 @@ use tracing::warn;
 pub struct Config {
     pub addr: ControlAddr,
     pub connect: config::ConnectConfig,
-    pub buffer_capacity: usize,
+    pub buffer: config::BufferConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -95,7 +95,7 @@ impl Config {
             .into_new_service()
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
-            .push_on_service(svc::layers().push_spawn_buffer(self.buffer_capacity))
+            .push_buffer_on_service("Controller client", &self.buffer)
             .instrument(|c: &ControlAddr| tracing::info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
             .push(svc::ArcNewService::layer())

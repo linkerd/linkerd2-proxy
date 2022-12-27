@@ -50,6 +50,7 @@ pub fn default_config() -> Config {
     };
 
     Config {
+        policy,
         allow_discovery: Some(cluster_local).into_iter().collect(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
@@ -72,15 +73,16 @@ pub fn default_config() -> Config {
                 },
                 h2_settings: h2::Settings::default(),
             },
-            buffer_capacity: 10_000,
-            cache_max_idle_age: Duration::from_secs(20),
-            dispatch_timeout: Duration::from_secs(1),
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(10),
         },
-        policy,
-        profile_idle_timeout: Duration::from_millis(500),
         allowed_ips: Default::default(),
+        http_request_buffer: config::BufferConfig {
+            capacity: 10_000,
+            failfast_timeout: Duration::from_secs(1),
+        },
+        discovery_idle_timeout: Duration::from_secs(20),
+        profile_skip_timeout: Duration::from_secs(1),
     }
 }
 

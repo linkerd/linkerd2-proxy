@@ -136,6 +136,9 @@ impl<C> Outbound<C> {
             .push_http_endpoint()
             .push_http_concrete(resolve.clone())
             .push_http_logical()
+            .map_stack(|config, _, stk| {
+                stk.push_buffer_on_service("HTTP Server", &config.http_request_buffer)
+            })
             .push_http_server()
             .into_inner();
 

@@ -22,12 +22,40 @@ pub struct NewServiceRouter<N>(N);
 
 #[derive(Debug)]
 pub struct ServiceRouter<T, N, S> {
-    new_route: N,
     target: T,
-    rx: ReceiverStream,
-    http_routes: Vec<(RequestMatch, Route)>,
-    services: HashMap<Route, S>,
+    new_route: N,
+    routes: Routes<S>,
     default: S,
+    profile: Receiver,
+    profile_rx: ReceiverStream,
+}
+
+#[derive(Clone, Debug)]
+struct Routes<S> {
+    matches: Vec<(RequestMatch, Route)>,
+    services: HashMap<Route, S>,
+}
+
+impl<S> Default for Routes<S> {
+    fn default() -> Self {
+        Self {
+            matches: Vec::new(),
+            services: HashMap::new(),
+        }
+    }
+}
+
+impl<T: Clone, N: Clone, S: Clone> Clone for ServiceRouter<T, N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            target: self.target.clone(),
+            new_route: self.new_route.clone(),
+            default: self.default.clone(),
+            routes: self.routes.clone(),
+            profile: self.profile.clone(),
+            profile_rx: self.profile.clone().into(),
+        }
+    }
 }
 
 // === impl NewServiceRouter ===
@@ -49,12 +77,12 @@ where
         let rx = target.param();
         let default = self.0.new_service((None, target.clone()));
         ServiceRouter {
-            default,
             target,
-            rx: rx.into(),
-            http_routes: Vec::new(),
-            services: HashMap::new(),
             new_route: self.0.clone(),
+            routes: Default::default(),
+            default,
+            profile: rx.clone(),
+            profile_rx: rx.into(),
         }
     }
 }
@@ -73,18 +101,19 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         // If the routes have been updated, update the cache.
-        if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
+        if let Poll::Ready(Some(Profile { http_routes, .. })) = self.profile_rx.poll_next_unpin(cx)
+        {
             debug!(routes = %http_routes.len(), "Updating HTTP routes");
             let routes = http_routes
                 .iter()
                 .map(|(_, r)| r.clone())
                 .collect::<HashSet<_>>();
-            self.http_routes = http_routes;
+            self.routes.matches = http_routes;
 
             // Clear out defunct routes before building any missing routes.
-            self.services.retain(|r, _| routes.contains(r));
+            self.routes.services.retain(|r, _| routes.contains(r));
             for route in routes.into_iter() {
-                if let hash_map::Entry::Vacant(ent) = self.services.entry(route) {
+                if let hash_map::Entry::Vacant(ent) = self.routes.services.entry(route) {
                     let route = ent.key().clone();
                     let svc = self
                         .new_route
@@ -98,11 +127,15 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        let inner = match super::route_for_request(&self.http_routes, &req) {
+        let inner = match super::route_for_request(&self.routes.matches, &req) {
             Some(route) => {
                 // If the request matches a route, use the route's service.
                 trace!(?route, "Using route service");
-                self.services.get(route).expect("route must exist").clone()
+                self.routes
+                    .services
+                    .get(route)
+                    .expect("route must exist")
+                    .clone()
             }
             None => {
                 // Otherwise, use the default service.
