@@ -34,6 +34,9 @@ impl<N> Outbound<N> {
                 .push_map_target(Concrete::from)
                 // This failfast is needed to ensure that a single unavailable
                 // balancer doesn't block the entire split.
+                //
+                // TODO(ver) remove this when we replace `split` with
+                // `distribute`.
                 .push_on_service(
                     svc::layers()
                         .push(svc::layer::mk(svc::SpawnReady::new))
@@ -56,6 +59,7 @@ impl<N> Outbound<N> {
                         )
                         .push_buffer("HTTP Logical", http_request_buffer),
                 )
+                // TODO(ver) this should not be a generalized time-based evicting cache.
                 .push_cache(*orig_dst_idle_timeout);
 
             // If there's no route, use the logical service directly; otherwise
