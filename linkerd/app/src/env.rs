@@ -483,15 +483,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 capacity: buffer_capacity,
                 failfast_timeout: dispatch_timeout,
             },
-            tcp_logical_buffer: BufferConfig {
-                capacity: buffer_capacity,
-                failfast_timeout: dispatch_timeout,
-            },
-            http_server_buffer: BufferConfig {
-                capacity: buffer_capacity,
-                failfast_timeout: dispatch_timeout,
-            },
-            http_logical_buffer: BufferConfig {
+            http_request_buffer: BufferConfig {
                 capacity: buffer_capacity,
                 failfast_timeout: dispatch_timeout,
             },
@@ -736,11 +728,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             allowed_ips: inbound_ips.into(),
 
             profile_idle_timeout: cache_max_idle_age,
-            tcp_server_buffer: BufferConfig {
+            tcp_connection_buffer: BufferConfig {
                 capacity: buffer_capacity,
                 failfast_timeout: dispatch_timeout,
             },
-            http_logical_buffer: BufferConfig {
+            http_request_buffer: BufferConfig {
                 capacity: buffer_capacity,
                 failfast_timeout: dispatch_timeout,
             },
@@ -755,9 +747,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound.proxy.connect.clone()
         };
         let failfast_timeout = if addr.addr.is_loopback() {
-            inbound.http_logical_buffer.failfast_timeout
+            inbound.http_request_buffer.failfast_timeout
         } else {
-            outbound.http_logical_buffer.failfast_timeout
+            outbound.http_request_buffer.failfast_timeout
         };
         super::dst::Config {
             context: dst_token?.unwrap_or_default(),
@@ -798,9 +790,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 outbound.proxy.connect.clone()
             };
             let failfast_timeout = if addr.addr.is_loopback() {
-                inbound.http_logical_buffer.failfast_timeout
+                inbound.http_request_buffer.failfast_timeout
             } else {
-                outbound.http_logical_buffer.failfast_timeout
+                outbound.http_request_buffer.failfast_timeout
             };
             let attributes = oc_attributes_file_path
                 .map(|path| match path {
@@ -844,9 +836,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound.proxy.connect.clone()
         };
         let failfast_timeout = if addr.addr.is_loopback() {
-            inbound.http_logical_buffer.failfast_timeout
+            inbound.http_request_buffer.failfast_timeout
         } else {
-            outbound.http_logical_buffer.failfast_timeout
+            outbound.http_request_buffer.failfast_timeout
         };
         identity::Config {
             certify,

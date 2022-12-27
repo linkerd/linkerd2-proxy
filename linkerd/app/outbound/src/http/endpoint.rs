@@ -25,7 +25,8 @@ impl<C> Outbound<C> {
     pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
     where
         T: Clone + Send + Sync + 'static,
-        T: svc::Param<http::client::Settings>
+        T: svc::Param<Remote<ServerAddr>>
+            + svc::Param<http::client::Settings>
             + svc::Param<Option<http::AuthorityOverride>>
             + svc::Param<metrics::EndpointLabels>
             + svc::Param<tls::ConditionalClientTls>
@@ -90,6 +91,10 @@ impl<C> Outbound<C> {
                     "host",
                     CANONICAL_DST_HEADER,
                 ]))
+                .instrument(|t: &T| {
+                    let Remote(ServerAddr(addr)) = t.param();
+                    tracing::debug_span!("endpoint", %addr)
+                })
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxResponse::layer())

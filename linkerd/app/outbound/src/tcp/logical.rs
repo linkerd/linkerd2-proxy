@@ -41,7 +41,7 @@ impl<C> Outbound<C> {
         self.map_stack(|config, rt, connect| {
             let crate::Config {
                 orig_dst_idle_timeout,
-                tcp_logical_buffer,
+                tcp_connection_buffer,
                 ..
             } = config;
 
@@ -100,8 +100,12 @@ impl<C> Outbound<C> {
                                 .stack
                                 .layer(crate::stack_labels("tcp", "logical")),
                         )
-                        .push_buffer("TCP Logical", tcp_logical_buffer),
+                        // TODO(ver) We should instead buffer per concrete
+                        // target.
+                        .push_buffer("TCP Logical", tcp_connection_buffer),
                 )
+                // TODO(ver) Can we replace this evicting cache? The detect
+                // stack would have to hold/reuse inner stacks.
                 .push_cache(*orig_dst_idle_timeout)
                 .check_new_service::<Logical, I>()
                 .instrument(|_: &Logical| debug_span!("tcp"))

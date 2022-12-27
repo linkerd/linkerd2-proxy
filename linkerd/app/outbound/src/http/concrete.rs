@@ -9,7 +9,6 @@ use linkerd_app_core::{
     },
     svc, Error, Infallible,
 };
-use tracing::debug_span;
 
 impl<N> Outbound<N> {
     pub fn push_http_concrete<NSvc, R>(
@@ -60,7 +59,6 @@ impl<N> Outbound<N> {
                 .into_inner();
 
             endpoint
-                .instrument(|e: &Endpoint| debug_span!("endpoint", server.addr = %e.addr))
                 .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers().push(http::BoxRequest::layer()).push(
@@ -104,7 +102,7 @@ impl<N> Outbound<N> {
                 // The concrete address is only set when the profile could be
                 // resolved. Endpoint resolution is skipped when there is no
                 // concrete address.
-                .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
+                .instrument(|c: &Concrete| tracing::debug_span!("concrete", service = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
     }

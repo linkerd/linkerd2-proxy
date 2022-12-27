@@ -77,11 +77,11 @@ pub fn default_config() -> Config {
             detect_protocol_timeout: Duration::from_secs(10),
         },
         allowed_ips: Default::default(),
-        tcp_server_buffer: config::BufferConfig {
+        tcp_connection_buffer: config::BufferConfig {
             capacity: 10_000,
             failfast_timeout: Duration::from_secs(1),
         },
-        http_logical_buffer: config::BufferConfig {
+        http_request_buffer: config::BufferConfig {
             capacity: 10_000,
             failfast_timeout: Duration::from_secs(1),
         },

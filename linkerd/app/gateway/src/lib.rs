@@ -152,7 +152,7 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 )
-                .push_buffer("TCP Gatweay", &inbound_config.tcp_server_buffer),
+                .push_buffer("TCP Gatweay", &inbound_config.tcp_connection_buffer),
         )
         .push_cache(inbound_config.profile_idle_timeout)
         .check_new_service::<NameAddr, I>();
@@ -186,7 +186,7 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("http", "gateway")),
                 )
-                .push_buffer("Gateway", &inbound_config.http_logical_buffer),
+                .push_buffer("Gateway", &inbound_config.http_request_buffer),
         )
         .push_cache(inbound_config.profile_idle_timeout)
         .push_on_service(
