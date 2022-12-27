@@ -165,7 +165,7 @@ where
 
 impl<S> FailFast<S> {
     /// Returns a layer for producing a `FailFast` without a paired [`Gate`].
-    pub fn layer<L>(max_unavailable: Duration) -> impl layer::Layer<S, Service = Self> + Clone {
+    pub fn layer(max_unavailable: Duration) -> impl layer::Layer<S, Service = Self> + Clone {
         layer::mk(move |inner| {
             Self::new(
                 max_unavailable,
@@ -418,7 +418,8 @@ mod test {
         let max_unavailable = Duration::from_millis(100);
         let (service, mut handle) = mock::pair::<(), ()>();
 
-        let layer = FailFast::wrap_layer(max_unavailable, layer::mk(|inner| Buffer::new(inner, 3)));
+        let layer =
+            FailFast::layer_gated(max_unavailable, layer::mk(|inner| Buffer::new(inner, 3)));
         let mut service = Spawn::new(layer.layer(service));
 
         // The inner starts unavailable...

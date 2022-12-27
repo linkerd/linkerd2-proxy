@@ -40,10 +40,7 @@ impl<N> Outbound<N> {
                 .push_on_service(
                     svc::layers()
                         .push(svc::layer::mk(svc::SpawnReady::new))
-                        .push(svc::FailFast::layer(
-                            "HTTP Balancer",
-                            http_request_buffer.failfast_timeout,
-                        ))
+                        .push(svc::FailFast::layer(http_request_buffer.failfast_timeout))
                 )
                 .check_new_service::<(ConcreteAddr, Logical), _>()
                 // Distribute requests over a distribution of balancers via a

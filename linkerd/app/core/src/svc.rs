@@ -6,9 +6,11 @@ use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
-    self as stack, failfast, layer, ArcNewService, BoxCloneService, BoxService, BoxServiceLayer,
-    Either, ExtractParam, Fail, Filter, InsertParam, LoadShed, MakeConnection, MapErr,
-    MapTargetLayer, NewRouter, NewService, Param, Predicate, UnwrapOr,
+    self as stack,
+    failfast::{self, FailFast},
+    layer, ArcNewService, BoxCloneService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
+    Filter, InsertParam, LoadShed, MakeConnection, MapErr, MapTargetLayer, NewRouter, NewService,
+    Param, Predicate, UnwrapOr,
 };
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use stack::OnService;
@@ -409,7 +411,7 @@ where
     fn layer(&self, inner: S) -> Self::Service {
         // TODO(eliza): add some kind of middleware that wraps errors from the
         // failfast service with `self.name`.
-        failfast::FailFast::wrap_layer(
+        failfast::FailFast::layer_gated(
             self.failfast_timeout,
             layer::mk(move |inner| Buffer::new(BoxService::new(inner), self.capacity)),
         )
