@@ -7,8 +7,8 @@ use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
     self as stack, failfast, layer, ArcNewService, BoxCloneService, BoxService, BoxServiceLayer,
-    Either, ExtractParam, Fail, Filter, InsertParam, MakeConnection, MapErr, MapTargetLayer,
-    NewRouter, NewService, Param, Predicate, UnwrapOr,
+    Either, ExtractParam, Fail, Filter, InsertParam, LoadShed, MakeConnection, MapErr,
+    MapTargetLayer, NewRouter, NewService, Param, Predicate, UnwrapOr,
 };
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use stack::OnService;
