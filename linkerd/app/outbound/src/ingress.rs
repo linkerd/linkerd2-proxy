@@ -84,7 +84,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                 let Config {
                     allow_discovery,
                     http_request_buffer,
-                    orig_dst_idle_timeout,
+                    discovery_idle_timeout,
                     proxy:
                         ProxyConfig {
                             server: ServerConfig { h2_settings, .. },
@@ -151,7 +151,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     )
                     // Caches the profile-based stack so that it can be reused across
                     // multiple requests to the same canonical destination.
-                    .push_cache(*orig_dst_idle_timeout)
+                    .push_cache(*discovery_idle_timeout)
                     .push_on_service(
                         svc::layers()
                             .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))

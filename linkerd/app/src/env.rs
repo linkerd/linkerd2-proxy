@@ -96,8 +96,13 @@ pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 
 const ENV_INGRESS_MODE: &str = "LINKERD2_PROXY_INGRESS_MODE";
 
-const ENV_INBOUND_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_DISPATCH_TIMEOUT";
-const ENV_OUTBOUND_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_DISPATCH_TIMEOUT";
+const ENV_INBOUND_HTTP_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_INBOUND_HTTP_BUFFER_CAPACITY";
+const ENV_INBOUND_HTTP_FAILFAST_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_HTTP_FAILFAST_TIMEOUT";
+
+const ENV_OUTBOUND_TCP_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_TCP_BUFFER_CAPACITY";
+const ENV_OUTBOUND_TCP_FAILFAST_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_TCP_FAILFAST_TIMEOUT";
+const ENV_OUTBOUND_HTTP_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_HTTP_BUFFER_CAPACITY";
+const ENV_OUTBOUND_HTTP_FAILFAST_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_HTTP_FAILFAST_TIMEOUT";
 
 pub const ENV_INBOUND_DETECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_DETECT_TIMEOUT";
 const ENV_OUTBOUND_DETECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_DETECT_TIMEOUT";
@@ -110,11 +115,6 @@ const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEP
 
 const ENV_INBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_CONNECT_KEEPALIVE";
 const ENV_OUTBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_KEEPALIVE";
-
-pub const ENV_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_BUFFER_CAPACITY";
-
-pub const ENV_INBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_INBOUND_ROUTER_MAX_IDLE_AGE";
-pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_MAX_IDLE_AGE";
 
 const ENV_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str = "LINKERD2_PROXY_MAX_IDLE_CONNS_PER_ENDPOINT";
 const ENV_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str =
@@ -220,6 +220,8 @@ const ENV_INITIAL_CONNECTION_WINDOW_SIZE: &str =
 
 const ENV_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: &str =
     "LINKERD2_PROXY_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT";
+const ENV_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: &str =
+    "LINKERD2_PROXY_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT";
 
 const ENV_SHUTDOWN_GRACE_PERIOD: &str = "LINKERD2_PROXY_SHUTDOWN_GRACE_PERIOD";
 
@@ -227,18 +229,29 @@ const ENV_SHUTDOWN_GRACE_PERIOD: &str = "LINKERD2_PROXY_SHUTDOWN_GRACE_PERIOD";
 const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "127.0.0.1:4140";
 pub const DEFAULT_INBOUND_LISTEN_ADDR: &str = "0.0.0.0:4143";
 pub const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
+
 const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
-const DEFAULT_INBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);
+
+const DEFAULT_INBOUND_HTTP_BUFFER_CAPACITY: usize = 100;
+const DEFAULT_INBOUND_HTTP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_INBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 const DEFAULT_INBOUND_CONNECT_BACKOFF: ExponentialBackoff =
     ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_millis(500), 0.1);
-const DEFAULT_OUTBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(3);
+
+const DEFAULT_OUTBOUND_TCP_BUFFER_CAPACITY: usize = 10;
+const DEFAULT_OUTBOUND_TCP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(3);
+const DEFAULT_OUTBOUND_HTTP_BUFFER_CAPACITY: usize = 100;
+const DEFAULT_OUTBOUND_HTTP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_OUTBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff =
     ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_millis(500), 0.1);
+
+const DEFAULT_CONTROL_BUFFER_CAPACITY: usize = 100;
+const DEFAULT_CONTROL_FAILFAST_TIMEOUT: Duration = Duration::from_secs(10);
+
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
@@ -248,25 +261,33 @@ const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams
 const DEFAULT_SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(2 * 60);
 
 // This configuration limits the amount of time Linkerd retains cached clients &
-// connections.
+// connections for a given destination ip:port, as referenced by the application
+// client.
 //
 // After this timeout expires, the proxy will need to re-resolve destination
 // metadata. The outbound default of 5s matches Kubernetes' default DNS TTL. On
 // the outbound side, especially, we want to use a limited idle timeout since
 // stale clients/connections can have a severe memory impact, especially when
-// the application communicates with many endpoints or at high concurrency.
-//
-// On the inbound side, we want to be a bit more permissive so that periodic, as
-// the number of endpoints should generally be pretty constrained.
-const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(20);
-const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(5);
+// the application communicates with many destinations.
+const ENV_OUTBOUND_DISCOVERY_IDLE_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_DISCOVERY_IDLE_TIMEOUT";
+const DEFAULT_OUTBOUND_DISCOVERY_IDLE_TIMEOUT: Duration = Duration::from_secs(5);
+
+// On the inbound side, we may lookup per-port policy or per-service profile
+// configuration. We are more permissive in retaining inbound configuration,
+// because we expect this to be a generally lower-cardinality set of
+// configurations to discover.
+const ENV_INBOUND_DISCOVERY_IDLE_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_DISCOVERY_IDLE_TIMEOUT";
+const DEFAULT_INBOUND_DISCOVERY_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
 // XXX This default inbound connection idle timeout should be less than or equal
 // to the server's idle timeout so that we don't try to reuse a connection as it
 // is being timed out of the server.
 //
-// In the future this should be made configurable per-server from the proxy API.
+// TODO(ver) this should be made configurable per-server from the proxy API.
 const DEFAULT_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(3);
+
+// TODO(ver) This should be configurable at the load balancer level.
+const DEFAULT_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(3);
 
 // By default, we don't limit the number of connections a connection pol may
 // use, as doing so can severely impact CPU utilization for applications with
@@ -281,18 +302,8 @@ const DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = usize::MAX;
 const DEFAULT_INBOUND_MAX_IN_FLIGHT: usize = 100_000;
 const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = 100_000;
 
-// This value should be large enough to admit requests without exerting
-// backpressure so that requests implicitly buffer in the executor; but it
-// should be small enough that callers can't force the proxy to consume an
-// extreme amount of memory. Also keep in mind that there may be several buffers
-// used in a given proxy, each of which assumes this capacity.
-//
-// The value of 10K is chosen somewhat arbitrarily, but seems high enough to
-// buffer requests for high-load services.
-const DEFAULT_BUFFER_CAPACITY: usize = 10_000;
-
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
-const DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT: Duration = Duration::from_millis(500);
+const DEFAULT_DESTINATION_PROFILE_SKIP_TIMEOUT: Duration = Duration::from_millis(500);
 
 const DEFAULT_IDENTITY_MIN_REFRESH: Duration = Duration::from_secs(10);
 const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24);
@@ -309,11 +320,21 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let admin_listener_addr = parse(strings, ENV_ADMIN_LISTEN_ADDR, parse_socket_addr);
 
     let inbound_detect_timeout = parse(strings, ENV_INBOUND_DETECT_TIMEOUT, parse_duration);
-    let inbound_dispatch_timeout = parse(strings, ENV_INBOUND_DISPATCH_TIMEOUT, parse_duration);
     let inbound_connect_timeout = parse(strings, ENV_INBOUND_CONNECT_TIMEOUT, parse_duration);
+    let inbound_http_buffer_capacity =
+        parse(strings, ENV_INBOUND_HTTP_BUFFER_CAPACITY, parse_number);
+    let inbound_http_failfast_timeout =
+        parse(strings, ENV_INBOUND_HTTP_FAILFAST_TIMEOUT, parse_duration);
 
     let outbound_detect_timeout = parse(strings, ENV_OUTBOUND_DETECT_TIMEOUT, parse_duration);
-    let outbound_dispatch_timeout = parse(strings, ENV_OUTBOUND_DISPATCH_TIMEOUT, parse_duration);
+    let outbound_tcp_buffer_capacity =
+        parse(strings, ENV_OUTBOUND_TCP_BUFFER_CAPACITY, parse_number);
+    let outbound_tcp_failfast_timeout =
+        parse(strings, ENV_OUTBOUND_TCP_FAILFAST_TIMEOUT, parse_duration);
+    let outbound_http_buffer_capacity =
+        parse(strings, ENV_OUTBOUND_HTTP_BUFFER_CAPACITY, parse_number);
+    let outbound_http_failfast_timeout =
+        parse(strings, ENV_OUTBOUND_HTTP_FAILFAST_TIMEOUT, parse_duration);
     let outbound_connect_timeout = parse(strings, ENV_OUTBOUND_CONNECT_TIMEOUT, parse_duration);
 
     let inbound_accept_keepalive = parse(strings, ENV_INBOUND_ACCEPT_KEEPALIVE, parse_duration);
@@ -330,12 +351,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         parse_port_set,
     );
 
-    let buffer_capacity = parse(strings, ENV_BUFFER_CAPACITY, parse_number);
-
-    let inbound_cache_max_idle_age =
-        parse(strings, ENV_INBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
-    let outbound_cache_max_idle_age =
-        parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
+    let inbound_discovery_idle_timeout =
+        parse(strings, ENV_INBOUND_DISCOVERY_IDLE_TIMEOUT, parse_duration);
+    let outbound_discovery_idle_timeout =
+        parse(strings, ENV_OUTBOUND_DISCOVERY_IDLE_TIMEOUT, parse_duration);
 
     let inbound_max_idle_per_endpoint = parse(
         strings,
@@ -400,8 +419,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         ..Default::default()
     };
 
-    let buffer_capacity = buffer_capacity?.unwrap_or(DEFAULT_BUFFER_CAPACITY);
-
     let dst_profile_suffixes = dst_profile_suffixes?
         .unwrap_or_else(|| parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
     let dst_profile_networks = dst_profile_networks?.unwrap_or_default();
@@ -441,11 +458,17 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             keepalive,
             h2_settings,
         };
-        let cache_max_idle_age =
-            outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
+        let discovery_idle_timeout =
+            outbound_discovery_idle_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISCOVERY_IDLE_TIMEOUT);
         let max_idle =
             outbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
         let keepalive = Keepalive(outbound_connect_keepalive?);
+        let connection_pool_timeout = parse(
+            strings,
+            ENV_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT,
+            parse_duration,
+        )?;
+
         let connect = ConnectConfig {
             keepalive,
             timeout: outbound_connect_timeout?.unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
@@ -457,14 +480,22 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             h2_settings,
             h1_settings: h1::PoolSettings {
                 max_idle,
-                idle_timeout: cache_max_idle_age,
+                idle_timeout: connection_pool_timeout
+                    .unwrap_or(DEFAULT_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT),
             },
         };
 
         let detect_protocol_timeout =
             outbound_detect_timeout?.unwrap_or(DEFAULT_OUTBOUND_DETECT_TIMEOUT);
-        let dispatch_timeout =
-            outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
+
+        let tcp_buffer_capacity =
+            outbound_tcp_buffer_capacity?.unwrap_or(DEFAULT_OUTBOUND_TCP_BUFFER_CAPACITY);
+        let tcp_failfast_timeout =
+            outbound_tcp_failfast_timeout?.unwrap_or(DEFAULT_OUTBOUND_TCP_FAILFAST_TIMEOUT);
+        let http_buffer_capacity =
+            outbound_http_buffer_capacity?.unwrap_or(DEFAULT_OUTBOUND_HTTP_BUFFER_CAPACITY);
+        let http_failfast_timeout =
+            outbound_http_failfast_timeout?.unwrap_or(DEFAULT_OUTBOUND_HTTP_FAILFAST_TIMEOUT);
 
         outbound::Config {
             ingress_mode,
@@ -478,14 +509,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 detect_protocol_timeout,
             },
             inbound_ips: inbound_ips.clone(),
-            orig_dst_idle_timeout: cache_max_idle_age,
+            discovery_idle_timeout,
             tcp_connection_buffer: BufferConfig {
-                capacity: buffer_capacity,
-                failfast_timeout: dispatch_timeout,
+                capacity: tcp_buffer_capacity,
+                failfast_timeout: tcp_failfast_timeout,
             },
             http_request_buffer: BufferConfig {
-                capacity: buffer_capacity,
-                failfast_timeout: dispatch_timeout,
+                capacity: http_buffer_capacity,
+                failfast_timeout: http_failfast_timeout,
             },
         }
     };
@@ -508,8 +539,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             keepalive,
             h2_settings,
         };
-        let cache_max_idle_age =
-            inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
+        let discovery_idle_timeout =
+            inbound_discovery_idle_timeout?.unwrap_or(DEFAULT_INBOUND_DISCOVERY_IDLE_TIMEOUT);
         let max_idle =
             inbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
         let connection_pool_timeout = parse(
@@ -536,8 +567,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
         let detect_protocol_timeout =
             inbound_detect_timeout?.unwrap_or(DEFAULT_INBOUND_DETECT_TIMEOUT);
-        let dispatch_timeout =
-            inbound_dispatch_timeout?.unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT);
 
         // Ensure that connections that directly target the inbound port are secured (unless
         // identity is disabled).
@@ -608,8 +637,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                             addr,
                             connect,
                             buffer: BufferConfig {
-                                capacity: buffer_capacity,
-                                failfast_timeout: dispatch_timeout,
+                                capacity: DEFAULT_CONTROL_BUFFER_CAPACITY,
+                                failfast_timeout: DEFAULT_CONTROL_FAILFAST_TIMEOUT,
                             },
                         }
                     };
@@ -619,7 +648,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         ports,
                         workload,
                         control,
-                        cache_max_idle_age,
+                        cache_max_idle_age: discovery_idle_timeout,
                     }
                 }
 
@@ -702,7 +731,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
                     inbound::policy::Config::Fixed {
                         default,
-                        cache_max_idle_age,
+                        cache_max_idle_age: discovery_idle_timeout,
                         ports: require_identity_ports
                             .into_iter()
                             .chain(require_tls_ports)
@@ -724,17 +753,15 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             },
             policy,
             profile_skip_timeout: dst_profile_skip_timeout?
-                .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
+                .unwrap_or(DEFAULT_DESTINATION_PROFILE_SKIP_TIMEOUT),
             allowed_ips: inbound_ips.into(),
 
-            profile_idle_timeout: cache_max_idle_age,
-            tcp_connection_buffer: BufferConfig {
-                capacity: buffer_capacity,
-                failfast_timeout: dispatch_timeout,
-            },
+            discovery_idle_timeout,
             http_request_buffer: BufferConfig {
-                capacity: buffer_capacity,
-                failfast_timeout: dispatch_timeout,
+                capacity: inbound_http_buffer_capacity?
+                    .unwrap_or(DEFAULT_INBOUND_HTTP_BUFFER_CAPACITY),
+                failfast_timeout: inbound_http_failfast_timeout?
+                    .unwrap_or(DEFAULT_INBOUND_HTTP_FAILFAST_TIMEOUT),
             },
         }
     };
@@ -757,7 +784,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 addr,
                 connect,
                 buffer: BufferConfig {
-                    capacity: buffer_capacity,
+                    capacity: DEFAULT_CONTROL_BUFFER_CAPACITY,
                     failfast_timeout,
                 },
             },
@@ -808,7 +835,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     addr,
                     connect,
                     buffer: BufferConfig {
-                        capacity: buffer_capacity,
+                        capacity: DEFAULT_CONTROL_BUFFER_CAPACITY,
                         failfast_timeout,
                     },
                 },
@@ -846,7 +873,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 addr,
                 connect,
                 buffer: BufferConfig {
-                    capacity: buffer_capacity,
+                    capacity: DEFAULT_CONTROL_BUFFER_CAPACITY,
                     failfast_timeout,
                 },
             },

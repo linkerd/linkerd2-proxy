@@ -200,19 +200,14 @@ impl<C> Inbound<C> {
                     Ok(profiles::LookupAddr(addr.into()))
                 }))
                 .instrument(|_: &Logical| debug_span!("profile"))
-                .push_on_service(svc::layer::mk(svc::SpawnReady::new))
                 // Skip the profile stack if it takes too long to become ready.
-                .push_when_unready(
-                    config.profile_skip_timeout,
-                    http.push_on_service(svc::layer::mk(svc::SpawnReady::new))
-                        .into_inner(),
-                )
+                .push_when_unready(config.profile_skip_timeout, http.into_inner())
                 .push_on_service(
                     svc::layers()
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
                         .push_buffer("HTTP Logical", &config.http_request_buffer),
                 )
-                .push_cache(config.profile_idle_timeout)
+                .push_cache(config.discovery_idle_timeout)
                 .push_on_service(
                     svc::layers()
                         .push(http::Retain::layer())

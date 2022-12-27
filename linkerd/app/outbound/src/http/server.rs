@@ -43,6 +43,21 @@ impl<N> Outbound<N> {
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
+                        // Limit the number of in-flight outbound requests
+                        // (across all targets).
+                        //
+                        // TODO(ver) This concurrency limit applies only to
+                        // requests that do not yet have responses, but ignores
+                        // streaming bodies. We should change this to an
+                        // HTTP-specific imlementation that tracks request and
+                        // response bodies.
+                        .push(svc::ConcurrencyLimitLayer::new(
+                            config.proxy.max_in_flight_requests,
+                        ))
+                        // Shed load by failing requests when the concurrency
+                        // limit is reached. No delay is used before failfast
+                        // goes into effect so it is expected that the inner.
+                        .push(svc::FailFast::layer("HTTP Server", Default::default()))
                         .push(rt.metrics.http_errors.to_layer())
                         // Tear down server connections when a peer proxy generates an error.
                         .push(ProxyConnectionClose::layer()),

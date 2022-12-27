@@ -47,7 +47,7 @@ pub(crate) fn default_config() -> Config {
             detect_protocol_timeout: Duration::from_secs(3),
         },
         inbound_ips: Default::default(),
-        orig_dst_idle_timeout: Duration::from_secs(60),
+        discovery_idle_timeout: Duration::from_secs(60),
         tcp_connection_buffer: buffer.clone(),
         http_request_buffer: buffer,
     }

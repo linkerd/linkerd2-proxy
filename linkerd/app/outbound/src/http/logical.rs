@@ -25,7 +25,7 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, rt, concrete| {
             let crate::Config {
-                orig_dst_idle_timeout,
+                discovery_idle_timeout,
                 http_request_buffer,
                 ..
             } = config;
@@ -60,7 +60,7 @@ impl<N> Outbound<N> {
                         .push_buffer("HTTP Logical", http_request_buffer),
                 )
                 // TODO(ver) this should not be a generalized time-based evicting cache.
-                .push_cache(*orig_dst_idle_timeout);
+                .push_cache(*discovery_idle_timeout);
 
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.

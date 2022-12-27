@@ -60,7 +60,7 @@ impl<N> Outbound<N> {
                         )
                         .push_buffer("TCP Server", &config.tcp_connection_buffer),
                 )
-                .push_cache(config.orig_dst_idle_timeout)
+                .push_cache(config.discovery_idle_timeout)
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })
@@ -180,7 +180,7 @@ mod tests {
         // service after `idle_timeout`.
         let cfg = {
             let mut cfg = default_config();
-            cfg.orig_dst_idle_timeout = idle_timeout;
+            cfg.discovery_idle_timeout = idle_timeout;
             cfg
         };
         let (rt, _shutdown) = runtime();

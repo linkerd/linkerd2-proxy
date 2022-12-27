@@ -56,7 +56,7 @@ pub struct Config {
     /// Configures the duration the proxy will retain idle stacks (with no
     /// active connections) for an outbound address. When an idle stack is
     /// dropped, all cached service discovery information is dropped.
-    pub orig_dst_idle_timeout: Duration,
+    pub discovery_idle_timeout: Duration,
 
     /// Configures how connections are buffered *for each outbound address*.
     ///

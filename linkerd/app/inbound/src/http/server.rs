@@ -21,6 +21,7 @@ use tracing::debug_span;
 struct ServerRescue;
 
 impl<H> Inbound<H> {
+    /// Fails requests when the `HSvc`-typed inner service is not ready.
     pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: Param<Version>
@@ -65,11 +66,11 @@ impl<H> Inbound<H> {
                         // streaming bodies. We should change this to an
                         // HTTP-specific imlementation that tracks request and
                         // response bodies.
-                        //
-                        // TODO(ver) Shed load by failing requests when the
-                        // concurrency limit is reached. We don't want to bother
-                        // with failfast.
-                        .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests)),
+                        .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
+                        // Shed load by failing requests when the concurrency
+                        // limit is reached. No delay is used before failfast
+                        // goes into effect so it is expected that the inner.
+                        .push(svc::FailFast::layer("HTTP Server", Default::default())),
                 )
                 .push(rt.metrics.http_errors.to_layer())
                 .push(ServerRescue::layer())

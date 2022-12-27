@@ -39,10 +39,10 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, rt, endpoint| {
             let crate::Config {
-                orig_dst_idle_timeout,
+                discovery_idle_timeout,
                 ..
             } = config;
-            let watchdog = *orig_dst_idle_timeout * 2;
+            let watchdog = *discovery_idle_timeout * 2;
 
             let resolve = svc::stack(resolve.into_service())
                 .check_service::<ConcreteAddr>()

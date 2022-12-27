@@ -40,7 +40,7 @@ impl<C> Outbound<C> {
     {
         self.map_stack(|config, rt, connect| {
             let crate::Config {
-                orig_dst_idle_timeout,
+                discovery_idle_timeout,
                 tcp_connection_buffer,
                 ..
             } = config;
@@ -63,7 +63,7 @@ impl<C> Outbound<C> {
                 .push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
                 .instrument(|t: &Endpoint| debug_span!("endpoint", addr = %t.addr))
-                .push(resolve::layer(resolve, *orig_dst_idle_timeout * 2))
+                .push(resolve::layer(resolve, *discovery_idle_timeout * 2))
                 .push_on_service(
                     svc::layers()
                         .push(tcp::balance::layer(
@@ -100,7 +100,7 @@ impl<C> Outbound<C> {
                 )
                 // TODO(ver) Can we replace this evicting cache? The detect
                 // stack would have to hold/reuse inner stacks.
-                .push_cache(*orig_dst_idle_timeout)
+                .push_cache(*discovery_idle_timeout)
                 .check_new_service::<Logical, I>()
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()
