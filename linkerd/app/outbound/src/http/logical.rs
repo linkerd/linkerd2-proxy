@@ -64,7 +64,7 @@ impl<N> Outbound<N> {
 
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.
-            let route = (split.clone())
+            let route = split.clone()
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_map_target(|r: ProfileRoute| r.logical)
                 .push_on_service(http::BoxRequest::layer())

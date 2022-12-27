@@ -60,14 +60,14 @@ pub struct Config {
 
     /// Configures how connections are buffered *for each outbound address*.
     ///
-    /// A buffer capacity of 100 eans that 100 connections may be buffered for
+    /// A buffer capacity of 100 means that 100 connections may be buffered for
     /// each IP:port to which an application attempts to connect.
     pub tcp_connection_buffer: BufferConfig,
 
     /// Configures how HTTP requests are buffered *for each outbound address*.
     ///
-    /// A buffer capacity of 100 eans that 100 connections may be buffered for
-    /// each IP:port to which an application attempts to connect.
+    /// A buffer capacity of 100 means that 100 requests may be buffered for
+    /// each IP:port to which an application has opened an outbound TCP connection.
     pub http_request_buffer: BufferConfig,
 
     // In "ingress mode", we assume we are always routing HTTP requests and do
