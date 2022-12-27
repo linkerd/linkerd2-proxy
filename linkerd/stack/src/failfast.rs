@@ -171,7 +171,7 @@ impl<S> FailFast<S> {
     /// fail-fast errors produced by _its_ inner service. However, the outer
     /// failfast service, which wraps the inner layer's service, will return
     /// `Poll::Pending` while the innermost service is unavailable.
-    pub fn wrap_layer<L>(
+    pub fn layer_gated<L>(
         max_unavailable: Duration,
         inner_layer: L,
     ) -> impl layer::Layer<S, Service = Gate<L::Service>> + Clone
@@ -253,6 +253,9 @@ where
                         let shared = self.shared.clone();
                         self.state = State::FailFast(task::spawn(async move {
                             let res = inner.ready().await;
+                            // Notify the paired `Gate` instances to begin
+                            // advertising readiness so that the failfast
+                            // service can advance. 
                             shared.exit_failfast();
                             match res {
                                 Ok(_) => {
