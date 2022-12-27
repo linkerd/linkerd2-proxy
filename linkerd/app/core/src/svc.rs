@@ -1,7 +1,7 @@
 // Possibly unused, but useful during development.
 
 pub use crate::proxy::http;
-use crate::{cache, Error};
+use crate::{cache, config::BufferConfig, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
@@ -97,13 +97,12 @@ impl<L> Layers<L> {
     pub fn push_buffer<Req>(
         self,
         name: &'static str,
-        capacity: usize,
-        failfast_timeout: Duration,
+        config: &BufferConfig,
     ) -> Layers<Pair<L, BufferLayer<Req>>>
     where
         Req: Send + 'static,
     {
-        self.push(buffer(name, capacity, failfast_timeout))
+        self.push(buffer(name, config))
     }
 
     pub fn push_on_service<U>(self, layer: U) -> Layers<Pair<L, stack::OnServiceLayer<U>>> {
@@ -204,13 +203,12 @@ impl<S> Stack<S> {
     pub fn push_buffer_on_service<Req>(
         self,
         name: &'static str,
-        capacity: usize,
-        failfast_timeout: Duration,
+        config: &BufferConfig,
     ) -> Stack<OnService<BufferLayer<Req>, S>>
     where
         Req: Send + 'static,
     {
-        self.push_on_service(buffer(name, capacity, failfast_timeout))
+        self.push_on_service(buffer(name, config))
     }
 
     pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::NewCachedService<T, S>>
@@ -403,15 +401,11 @@ impl<E: Into<Error>> Recover<E> for AlwaysReconnect {
 
 // === impl BufferLayer ===
 
-fn buffer<Req>(
-    name: &'static str,
-    capacity: usize,
-    failfast_timeout: Duration,
-) -> BufferLayer<Req> {
+fn buffer<Req>(name: &'static str, config: &BufferConfig) -> BufferLayer<Req> {
     BufferLayer {
         name,
-        capacity,
-        failfast_timeout,
+        capacity: config.capacity,
+        failfast_timeout: config.failfast_timeout,
         _marker: PhantomData,
     }
 }
@@ -425,12 +419,9 @@ where
     type Service = Buffer<Req, S::Response, Error>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        Buffer::new(
-            BoxService::new(
-                FailFast::layer(self.name, self.failfast_timeout).layer(SpawnReady::new(inner)),
-            ),
-            self.capacity,
-        )
+        let spawn_ready = SpawnReady::new(inner);
+        let fail_fast = FailFast::layer(self.name, self.failfast_timeout).layer(spawn_ready);
+        Buffer::new(BoxService::new(fail_fast), self.capacity)
     }
 }
 

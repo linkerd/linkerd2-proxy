@@ -41,10 +41,16 @@ pub struct Config {
     pub policy: policy::Config,
     pub allowed_ips: transport::AllowIps,
 
+    /// Configures how long the proxy will wait for a profile response for
+    /// skipping route information.
     pub profile_skip_timeout: Duration,
-    pub profile_idle_timeout: Duration,
-    pub tcp_server_buffer: BufferConfig,
-    pub http_logical_buffer: BufferConfig,
+
+    /// Configures how long the proxy will retain policy & profile resolutions
+    /// for idle/unused ports and services.
+    pub discovery_idle_timeout: Duration,
+
+    /// Configures how HTTP requests are buffered *for each inbound port*.
+    pub http_request_buffer: BufferConfig,
 }
 
 #[derive(Clone)]

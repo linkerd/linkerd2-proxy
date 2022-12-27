@@ -1,14 +1,20 @@
 mod router;
 
 use self::router::NewRouter;
-use super::{retry, CanonicalDstHeader, Concrete, Logical, ProfileRoute};
-use crate::Outbound;
+use super::{retry, CanonicalDstHeader, Concrete, Logical};
+use crate::{stack_labels, Outbound};
 use linkerd_app_core::{
-    classify, profiles,
+    classify, metrics, profiles,
     proxy::{api_resolve::ConcreteAddr, http},
-    svc, Error,
+    svc, Error, Infallible,
 };
 use tracing::debug_span;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct ProfileRoute {
+    logical: Logical,
+    route: profiles::http::Route,
+}
 
 impl<N> Outbound<N> {
     pub fn push_http_logical<NSvc>(
@@ -37,8 +43,6 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
     {
         self.map_stack(|config, rt, concrete| {
-            let crate::Config { http_buffer, .. } = config;
-
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.
             concrete
@@ -69,7 +73,7 @@ impl<N> Outbound<N> {
                             rt.metrics
                                 .proxy
                                 .http_profile_route
-                                .to_layer::<classify::Response, _, _>(),
+                                .to_layer::<classify::Response, _, ProfileRoute>(),
                         )
                         // Sets the per-route response classifier as a request
                         // extension.
@@ -82,8 +86,36 @@ impl<N> Outbound<N> {
                 // unify the profile stack's response type with that of to
                 // endpoint stack.
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
-                .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))
+                .instrument(|l: &Logical| debug_span!("logical", service = %l.logical_addr))
                 .push(svc::ArcNewService::layer())
         })
+    }
+}
+
+// === impl ProfileRoute ===
+
+impl svc::Param<profiles::http::Route> for ProfileRoute {
+    fn param(&self) -> profiles::http::Route {
+        self.route.clone()
+    }
+}
+
+impl svc::Param<metrics::ProfileRouteLabels> for ProfileRoute {
+    fn param(&self) -> metrics::ProfileRouteLabels {
+        metrics::ProfileRouteLabels::outbound(self.logical.logical_addr.clone(), &self.route)
+    }
+}
+
+impl svc::Param<http::ResponseTimeout> for ProfileRoute {
+    fn param(&self) -> http::ResponseTimeout {
+        http::ResponseTimeout(self.route.timeout())
+    }
+}
+
+impl classify::CanClassify for ProfileRoute {
+    type Classify = classify::Request;
+
+    fn classify(&self) -> classify::Request {
+        self.route.response_classes().clone().into()
     }
 }

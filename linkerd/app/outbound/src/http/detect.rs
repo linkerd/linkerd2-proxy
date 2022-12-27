@@ -31,11 +31,6 @@ impl<N> Outbound<N> {
         self.map_stack(|config, rt, tcp| {
             let ServerConfig { h2_settings, .. } = config.proxy.server;
 
-            let skipped = tcp
-                .clone()
-                .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
-                .into_inner();
-
             svc::stack(http)
                 .push_on_service(
                     svc::layers()
@@ -47,7 +42,8 @@ impl<N> Outbound<N> {
                 .push_map_target(U::from)
                 .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
                 .push(svc::UnwrapOr::layer(
-                    tcp.push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
+                    tcp.clone()
+                        .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
                         .into_inner(),
                 ))
                 .push_on_service(svc::BoxService::layer())
@@ -66,7 +62,8 @@ impl<N> Outbound<N> {
                         tracing::debug!("Attempting HTTP protocol detection");
                         Ok(svc::Either::A(target))
                     },
-                    skipped,
+                    tcp.push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
+                        .into_inner(),
                 )
                 .check_new_service::<T, _>()
                 .push_on_service(svc::BoxService::layer())

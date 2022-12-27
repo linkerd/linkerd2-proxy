@@ -16,7 +16,6 @@ pub(crate) use self::{require_id_header::IdentityRequired, server::ServerRescue}
 use crate::tcp;
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
-    classify, metrics,
     profiles::{self, LogicalAddr},
     proxy::{api_resolve::ProtocolHint, tap},
     svc::Param,
@@ -30,12 +29,6 @@ pub type Concrete = crate::logical::Concrete<Version>;
 pub type Endpoint = crate::endpoint::Endpoint<Version>;
 
 pub type Connect = self::endpoint::Connect<Endpoint>;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct ProfileRoute {
-    logical: Logical,
-    route: profiles::http::Route,
-}
 
 #[derive(Clone, Debug)]
 pub struct CanonicalDstHeader(pub Addr);
@@ -180,33 +173,5 @@ impl tap::Inspect for Endpoint {
 
     fn is_outbound<B>(&self, _: &Request<B>) -> bool {
         true
-    }
-}
-
-// === impl ProfileRoute ===
-
-impl Param<profiles::http::Route> for ProfileRoute {
-    fn param(&self) -> profiles::http::Route {
-        self.route.clone()
-    }
-}
-
-impl Param<metrics::ProfileRouteLabels> for ProfileRoute {
-    fn param(&self) -> metrics::ProfileRouteLabels {
-        metrics::ProfileRouteLabels::outbound(self.logical.logical_addr.clone(), &self.route)
-    }
-}
-
-impl Param<ResponseTimeout> for ProfileRoute {
-    fn param(&self) -> ResponseTimeout {
-        ResponseTimeout(self.route.timeout())
-    }
-}
-
-impl classify::CanClassify for ProfileRoute {
-    type Classify = classify::Request;
-
-    fn classify(&self) -> classify::Request {
-        self.route.response_classes().clone().into()
     }
 }
