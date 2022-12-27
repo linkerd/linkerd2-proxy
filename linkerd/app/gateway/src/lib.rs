@@ -152,7 +152,7 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 )
-                .push_buffer("TCP Gatweay", &inbound_config.tcp_connection_buffer),
+                .push_buffer("TCP Gateway", &inbound_config.tcp_connection_buffer),
         )
         .push_cache(inbound_config.profile_idle_timeout)
         .check_new_service::<NameAddr, I>();
