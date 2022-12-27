@@ -303,6 +303,19 @@ where
     }
 }
 
+impl<S> Drop for FailFast<S> {
+    /// When dropping a `FailFast` layer, which may own a spawned background
+    /// task, ensure that the background task is canceled to avoid leaking it
+    /// onto the runtime.
+    fn drop(&mut self) {
+        if let State::FailFast(ref task) = self.state {
+            task.abort();
+        }
+    }
+}
+
+// === impl ResponseFuture ===
+
 impl<F> Future for ResponseFuture<F>
 where
     F: TryFuture,
@@ -319,6 +332,7 @@ where
 }
 
 // === impl Shared ===
+
 impl Shared {
     fn exit_failfast(&self) {
         // The load part of this operation can be `Relaxed` because this task
