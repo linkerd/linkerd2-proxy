@@ -218,6 +218,7 @@ mod tests {
 
         // The primary service becomes ready.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -249,6 +250,7 @@ mod tests {
 
         // The secondary service becomes ready.
         b_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -279,6 +281,7 @@ mod tests {
 
         // The secondary service becomes ready.
         b_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -289,6 +292,7 @@ mod tests {
 
         // The primary service becomes ready.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -304,6 +308,7 @@ mod tests {
 
         // The primary service becomes ready again.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -335,6 +340,7 @@ mod tests {
 
         // The primary service becomes ready.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -350,6 +356,7 @@ mod tests {
 
         // The primary service becomes ready.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -367,6 +374,7 @@ mod tests {
 
         // The primary service becomes ready.
         a_handle.allow(1);
+        tokio::task::yield_now().await;
         assert_ready_ok!(switch.poll_ready());
 
         let call = switch.call(());
@@ -394,6 +402,7 @@ mod tests {
 
         // Error the primary
         a_handle.send_error("lol");
+        tokio::task::yield_now().await;
         assert_ready_err!(switch.poll_ready());
     }
 
