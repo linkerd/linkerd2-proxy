@@ -107,11 +107,11 @@ where
         // TODO(ver) use a different key type that is structured instead of
         // simply a name.
         let mut backends = HashMap::with_capacity(profile.targets.len().max(1));
-        let n_backends = self.mk_backends(&targets, &mut backends, &target);
+        let n_backends = self.mk_backends(&mut backends, &targets, &target);
         tracing::debug!(backends = n_backends, "Built backends");
 
         // Initial distribution.
-        let distribute = Self::mk_distribute(&targets, &backends, &target);
+        let distribute = Self::mk_distribute(&backends, &targets, &target);
 
         // Initial routes.
         let routes = self.mk_routes(&profile.http_routes, distribute.clone(), &target);
@@ -126,7 +126,7 @@ where
         // Spawn background rebuilder task.
         tokio::spawn(
             self.clone()
-                .rebuild(target, targets, backends, distribute, tx, profiles)
+                .rebuild(tx, distribute, backends, targets, target.clone(), profiles)
                 .in_current_span(),
         );
 
@@ -142,11 +142,11 @@ where
 {
     async fn rebuild<T, S>(
         self,
-        target: T,
-        mut targets: HashMap<NameAddr, u32>,
-        mut backends: HashMap<NameAddr, N::Service>,
-        mut distribute: NewCloneService<Distribute<N::Service>>,
         tx: watch::Sender<Shared<S>>,
+        mut distribute: NewCloneService<Distribute<N::Service>>,
+        mut backends: HashMap<NameAddr, N::Service>,
+        mut targets: HashMap<NameAddr, u32>,
+        target: T,
         mut profiles: profiles::Receiver,
     ) where
         T: Param<profiles::LogicalAddr> + Clone,
@@ -168,15 +168,18 @@ where
                 // Clear out old backends.
                 let removed_backends = {
                     let current_backends = backends.len();
-                    backends.retain(|addr, _| targets.contains_key(addr));
+                    backends.retain(|addr, _| new_targets.contains_key(addr));
                     current_backends - backends.len()
                 };
 
                 // Update `backends`.
-                let added_backends = self.mk_backends(&targets, &mut backends, &target);
+                let added_backends = self.mk_backends(&mut backends, &new_targets, &target);
 
                 // Update `distribute`.
-                distribute = Self::mk_distribute(&targets, &backends, &target);
+                distribute = Self::mk_distribute(&backends, &new_targets, &target);
+
+                targets = new_targets;
+
                 tracing::debug!(
                     backends.added = added_backends,
                     backends.removed = removed_backends,
@@ -186,7 +189,6 @@ where
                 // Skip updating the backends if the targets and weights are
                 // unchanged.
                 tracing::debug!("Targets and weights have not changed");
-                return;
             }
 
             // Update routes.
@@ -207,8 +209,8 @@ where
 
     fn mk_backends<T>(
         &self,
-        targets: &HashMap<NameAddr, u32>,
         backends: &mut HashMap<NameAddr, N::Service>,
+        targets: &HashMap<NameAddr, u32>,
         target: &T,
     ) -> usize
     where
@@ -245,13 +247,12 @@ where
     }
 
     fn mk_distribute<T>(
-        targets: &HashMap<NameAddr, u32>,
         backends: &HashMap<NameAddr, N::Service>,
+        targets: &HashMap<NameAddr, u32>,
         target: &T,
     ) -> NewCloneService<Distribute<N::Service>>
     where
         T: Param<profiles::LogicalAddr> + Clone,
-        U: From<(ConcreteAddr, T)>,
     {
         // Update the distribution.
         // Create a stack that can distribute requests to the backends.
