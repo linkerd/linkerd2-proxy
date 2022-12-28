@@ -73,17 +73,16 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
-            if self.is_waiting {
-                // We are currently waiting for the inner service to exit failfast.
-                trace!("waiting for service to become ready",);
-                ready!(self.waiting.poll_unpin(cx));
-                trace!("service became ready");
+            // Check the inner service's state. If it's not in failfast, use the
+            // inner service directly.
+            if !self.shared.in_failfast.load(Ordering::Acquire) {
                 self.is_waiting = false;
+                return self.inner.poll_ready(cx);
             }
 
-            // Check if the inner service is in failfast. If it is, start
-            // waiting to be notified of a change.
-            if self.shared.in_failfast.load(Ordering::Acquire) {
+            // Ensure that this task is notified when the inner service exits
+            // failfast. Return pending until we are notified about a change.
+            if !self.is_waiting {
                 trace!("service in failfast, waiting for readiness",);
                 let shared = self.shared.clone();
                 self.waiting.set(async move {
@@ -91,10 +90,11 @@ where
                     trace!("service has become ready");
                 });
                 self.is_waiting = true;
-            } else {
-                // Otherwise, we are not in failfast. Poll the inner service.
-                return self.inner.poll_ready(cx);
             }
+            trace!("waiting for service to become ready",);
+            ready!(self.waiting.poll_unpin(cx));
+            trace!("service became ready");
+            self.is_waiting = false;
         }
     }
 

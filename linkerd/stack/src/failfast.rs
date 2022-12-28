@@ -292,11 +292,7 @@ impl Shared {
     fn exit_failfast(&self) {
         // The load part of this operation can be `Relaxed` because this task
         // is the only place where the the value is ever set.
-        if self
-            .in_failfast
-            .compare_exchange(true, false, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
-        {
+        if self.in_failfast.swap(true, Ordering::Release) {
             self.notify.notify_waiters();
         }
     }
