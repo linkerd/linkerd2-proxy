@@ -1,9 +1,7 @@
-use futures::prelude::*;
 use linkerd_app_core::{
     profiles::{
         self,
         http::{RequestMatch, Route},
-        Profile,
     },
     proxy::api_resolve::ConcreteAddr,
     svc::{layer, NewCloneService, NewService, Oneshot, Param, Service, ServiceExt},
