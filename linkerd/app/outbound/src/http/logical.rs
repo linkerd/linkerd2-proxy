@@ -2,12 +2,8 @@ mod router;
 
 use self::router::NewRouter;
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
-use crate::{stack_labels, Outbound};
-use linkerd_app_core::{
-    classify, metrics, profiles,
-    proxy::{api_resolve::ConcreteAddr, http},
-    svc, Error, Infallible,
-};
+use crate::Outbound;
+use linkerd_app_core::{classify, metrics, profiles, proxy::http, svc, Error};
 use tracing::debug_span;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -17,6 +13,7 @@ struct ProfileRoute {
 }
 
 impl<N> Outbound<N> {
+    // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_http_logical<NSvc>(
         self,
     ) -> Outbound<
@@ -79,13 +76,23 @@ impl<N> Outbound<N> {
                         // extension.
                         .push(classify::NewClassify::layer())
                         .push_on_service(http::BoxResponse::layer())
-                        .push_map_target(|(route, logical)| ProfileRoute { logical, route }),
+                        .push_map_target(|(route, logical)| ProfileRoute { logical, route })
+                        .push(svc::NewLazy::layer()),
                 ))
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header. The response body is boxed
                 // unify the profile stack's response type with that of to
                 // endpoint stack.
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
+                // This caches each logical stack so that it can be reused
+                // across per-connection HTTP server stacks (i.e. created by the
+                // `DetectService`).
+                //
+                // TODO(ver) Update the detection stack so this dynamic caching
+                // can be removed.
+                //
+                // XXX(ver) This cache key includes the HTTP version. Should it?
+                .push_cache(config.discovery_idle_timeout)
                 .instrument(|l: &Logical| debug_span!("logical", service = %l.logical_addr))
                 .push(svc::ArcNewService::layer())
         })

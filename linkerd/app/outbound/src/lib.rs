@@ -4,7 +4,6 @@
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
-#![allow(warnings)]
 
 mod discover;
 pub mod endpoint;
@@ -51,6 +50,7 @@ const EWMA_DECAY: Duration = Duration::from_secs(10);
 #[derive(Clone, Debug)]
 pub struct Config {
     pub allow_discovery: AddrMatch,
+
     pub proxy: ProxyConfig,
 
     /// Configures the duration the proxy will retain idle stacks (with no

@@ -11,6 +11,7 @@ use linkerd_app_core::{
 };
 
 impl<N> Outbound<N> {
+    // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_http_concrete<NSvc, R>(
         self,
         resolve: R,
@@ -43,7 +44,6 @@ impl<N> Outbound<N> {
                 http_request_buffer,
                 ..
             } = config;
-            let watchdog = *discovery_idle_timeout * 2;
 
             let resolve = svc::stack(resolve.into_service())
                 .check_service::<ConcreteAddr>()

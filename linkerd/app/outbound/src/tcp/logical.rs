@@ -6,7 +6,7 @@ use self::router::NewRouter;
 use super::{Concrete, Endpoint, Logical};
 use crate::{endpoint, resolve, Outbound};
 use linkerd_app_core::{
-    drain, io, profiles,
+    drain, io,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -87,18 +87,20 @@ impl<C> Outbound<C> {
                                 .stack
                                 .layer(crate::stack_labels("tcp", "concrete")),
                         )
-                        // TODO(ver) We should instead buffer per concrete
-                        // target.
                         .push_buffer("TCP Concrete", tcp_connection_buffer),
                 )
                 .check_new_service::<Concrete, I>()
                 .push(svc::ArcNewService::layer());
 
             concrete
-                .push_map_target(Concrete::from)
-                .check_new_service::<(ConcreteAddr, Logical), I>()
                 .push(NewRouter::layer())
-                .check_new_service::<Logical, I>()
+                // This caches each logical stack so that it can be reused
+                // across per-connection server stacks (i.e., created by the
+                // DetectService).
+                //
+                // TODO(ver) Update the detection stack so this dynamic caching
+                // can be removed.
+                .push_cache(*discovery_idle_timeout)
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()
                 .push(svc::ArcNewService::layer())
