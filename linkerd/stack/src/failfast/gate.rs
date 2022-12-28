@@ -24,7 +24,10 @@ use tracing::trace;
 ///
 /// A `Layer`, such as a `Buffer` layer, may be wrapped in a new `Layer` which
 /// produces a [`FailFast`]/[`Gate`] pair around the inner `Layer`'s
-/// service using the [`FailFast::wrap_layer`] function.
+/// service using the [`FailFast::layer_gated`] function.
+///
+/// [`FailFast`]: super::FailFast
+/// [`FailFast::layer_gated`]: super::FailFast::layer_gated
 #[derive(Debug)]
 pub struct Gate<S> {
     inner: S,
