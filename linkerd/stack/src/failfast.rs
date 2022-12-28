@@ -1,8 +1,14 @@
 //! A middleware that limits the amount of time the service may be not ready
 //! before requests are failed.
 
+mod gate;
+#[cfg(test)]
+mod test;
+
+pub use self::gate::Gate;
+
 use crate::layer;
-use futures::{ready, FutureExt, TryFuture};
+use futures::{FutureExt, TryFuture};
 use linkerd_error::Error;
 use pin_project::pin_project;
 use std::{
@@ -21,38 +27,8 @@ use tokio::{
     task,
     time::{self, Duration, Instant, Sleep},
 };
-use tokio_util::sync::ReusableBoxFuture;
 use tower::ServiceExt;
 use tracing::{debug, info, trace, warn};
-
-/// A middleware which, when paired with a [`FailFast`] middleware, advertises
-/// the *actual* readiness state of the [`FailFast`]'s inner service up the
-/// stack.
-///
-/// A [`FailFast`]/[`Gate`] pair is primarily intended to be used in
-/// conjunction with a `tower::Buffer`. By placing the [`FailFast`] middleware
-/// inside of the `Buffer` and the `Gate` middleware outside of the buffer,
-/// the buffer's queue can be proactively drained when the inner service enters
-/// failfast, while the outer `Gate` middleware will continue to return
-/// [`Poll::Pending`] from its `poll_ready` method. This can be used to fail any
-/// requests that have already been dispatched to the inner service while it is in
-/// failfast, while allowing a load balancer or other traffic distributor to
-/// send any new requests to a different backend until this backend actually
-/// becomes available.
-///
-/// A `Layer`, such as a `Buffer` layer, may be wrapped in a new `Layer` which
-/// produces a [`FailFast`]/[`Gate`] pair around the inner `Layer`'s
-/// service using the [`FailFast::wrap_layer`] function.
-#[derive(Debug)]
-pub struct Gate<S> {
-    inner: S,
-    shared: Arc<Shared>,
-    /// Are we currently waiting on a notification that the inner service has
-    /// exited failfast?
-    is_waiting: bool,
-    /// Future awaiting a notification from the inner `FailFast` service.
-    waiting: ReusableBoxFuture<'static, ()>,
-}
 
 /// A middleware that limits the amount of time the service may be not ready.
 ///
@@ -69,7 +45,7 @@ pub struct Gate<S> {
 /// middleware will exit the failfast state.
 #[derive(Debug)]
 pub struct FailFast<S> {
-    max_unavailable: Duration,
+    timeout: Duration,
     wait: Pin<Box<Sleep>>,
     state: State<S>,
     shared: Arc<Shared>,
@@ -101,74 +77,14 @@ pub enum ResponseFuture<F> {
     FailFast,
 }
 
-// === impl Gate ===
-
-impl<S> Gate<S> {
-    fn new(inner: S, shared: Arc<Shared>) -> Self {
-        Self {
-            inner,
-            shared,
-            is_waiting: false,
-            waiting: ReusableBoxFuture::new(async move { unreachable!() }),
-        }
-    }
-}
-
-impl<S> Clone for Gate<S>
-where
-    S: Clone,
-{
-    fn clone(&self) -> Self {
-        Self::new(self.inner.clone(), self.shared.clone())
-    }
-}
-
-impl<S, T> tower::Service<T> for Gate<S>
-where
-    S: tower::Service<T>,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        loop {
-            if self.is_waiting {
-                // We are currently waiting for the inner service to exit failfast.
-                trace!("Gate: waiting for service to become ready",);
-                ready!(self.waiting.poll_unpin(cx));
-                trace!("Gate: service became ready");
-                self.is_waiting = false;
-            } else if self.shared.in_failfast.load(Ordering::Acquire) {
-                // We are in failfast. start waiting for the inner service to
-                // exit failfast.
-                trace!("Gate: service in failfast, waiting for readiness",);
-                let shared = self.shared.clone();
-                self.waiting.set(async move {
-                    shared.notify.notified().await;
-                    trace!("Gate: service has become ready");
-                });
-                self.is_waiting = true;
-            } else {
-                // We are not in failfast, poll the inner service
-                return self.inner.poll_ready(cx);
-            }
-        }
-    }
-
-    fn call(&mut self, req: T) -> Self::Future {
-        self.inner.call(req)
-    }
-}
-
 // === impl FailFast ===
 
 impl<S> FailFast<S> {
     /// Returns a layer for producing a `FailFast` without a paired [`Gate`].
-    pub fn layer(max_unavailable: Duration) -> impl layer::Layer<S, Service = Self> + Clone {
+    pub fn layer(timeout: Duration) -> impl layer::Layer<S, Service = Self> + Clone {
         layer::mk(move |inner| {
             Self::new(
-                max_unavailable,
+                timeout,
                 Arc::new(Shared {
                     notify: Notify::new(),
                     in_failfast: AtomicBool::new(false),
@@ -186,7 +102,7 @@ impl<S> FailFast<S> {
     /// failfast service, which wraps the inner layer's service, will return
     /// `Poll::Pending` while the innermost service is unavailable.
     pub fn layer_gated<L>(
-        max_unavailable: Duration,
+        timeout: Duration,
         inner_layer: L,
     ) -> impl layer::Layer<S, Service = Gate<L::Service>> + Clone
     where
@@ -197,15 +113,15 @@ impl<S> FailFast<S> {
                 notify: Notify::new(),
                 in_failfast: AtomicBool::new(false),
             });
-            let inner = Self::new(max_unavailable, shared.clone(), inner);
+            let inner = Self::new(timeout, shared.clone(), inner);
             let inner = inner_layer.layer(inner);
             Gate::new(inner, shared)
         })
     }
 
-    fn new(max_unavailable: Duration, shared: Arc<Shared>, inner: S) -> Self {
+    fn new(timeout: Duration, shared: Arc<Shared>, inner: S) -> Self {
         Self {
-            max_unavailable,
+            timeout,
             // The sleep is reset whenever the service becomes unavailable; this
             // initial one will never actually be used, so it's okay to start it
             // now.
@@ -228,12 +144,14 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
             match mem::replace(&mut self.state, State::Invalid) {
+                // ## Open => (Open | Waiting)
+                //
+                // Initially, poll the inner service. If it is pending,
+                // transition to the waiting state.
                 State::Open(mut inner) => match inner.poll_ready(cx) {
                     // The inner service just transitioned to `Pending`, so initiate a new timeout.
                     Poll::Pending => {
-                        self.wait
-                            .as_mut()
-                            .reset(Instant::now() + self.max_unavailable);
+                        self.wait.as_mut().reset(Instant::now() + self.timeout);
                         debug!("Service has become unavailable");
                         self.state = State::Waiting(inner)
                     }
@@ -242,6 +160,21 @@ where
                         return Poll::Ready(res.map_err(Into::into));
                     }
                 },
+
+                // ## Waiting => (Waiting | Open | FailFast)
+                //
+                // While waiting, poll the inner service directly. If it
+                // continues to be pending past the timeout, transition to the
+                // FailFast state.
+                //
+                // When entering the FailFast state, we advertise this state
+                // change to paired `Gate` instances (so that they may begin
+                // refusing new requests) and spawn a background task that
+                // drives the inner service to become ready. When the inner
+                // service becomes ready, the background task notifies the
+                // `Gate`s so that they admit more requests. That should allow
+                // this poll_ready to be called again to advance the state to
+                // open.
                 State::Waiting(mut inner) => match inner.poll_ready(cx) {
                     // The inner service became ready, transition back to `Open`.
                     Poll::Ready(res) => {
@@ -261,7 +194,7 @@ where
                             return Poll::Pending;
                         }
 
-                        warn!("Service entering failfast after {:?}", self.max_unavailable);
+                        warn!("Service entering failfast after {:?}", self.timeout);
                         self.shared.in_failfast.store(true, Ordering::Release);
 
                         let shared = self.shared.clone();
@@ -285,6 +218,13 @@ where
                         }));
                     }
                 },
+
+                // ## FailFast => (FailFast | Open)
+                //
+                // While in the FailFast state, first check if the background
+                // task has completed with a result. If so, transition back to
+                // `Open`. Otherwise, continue to advertise readiness so that we
+                // may fail requests.
                 State::FailFast(mut task) => {
                     if let Poll::Ready(res) = task.poll_unpin(cx) {
                         // The service became ready in the background, exit failfast.
@@ -302,6 +242,7 @@ where
                         return Poll::Ready(Ok(()));
                     }
                 }
+
                 State::Invalid => unreachable!("state should always be put back, this is a bug!"),
             }
         }
@@ -357,116 +298,6 @@ impl Shared {
             .is_ok()
         {
             self.notify.notify_waiters();
-        };
-    }
-}
-#[cfg(test)]
-mod test {
-    use super::*;
-    use std::time::Duration;
-    use tokio_test::{assert_pending, assert_ready, assert_ready_err, assert_ready_ok, task};
-    use tower_test::mock::{self, Spawn};
-
-    #[tokio::test]
-    async fn fails_fast() {
-        let _trace = linkerd_tracing::test::trace_init();
-        tokio::time::pause();
-
-        let max_unavailable = Duration::from_millis(100);
-        let (service, mut handle) = mock::pair::<(), ()>();
-        let shared = Arc::new(Shared {
-            notify: tokio::sync::Notify::new(),
-            in_failfast: AtomicBool::new(false),
-        });
-        let mut service = Spawn::new(FailFast::new(max_unavailable, shared, service));
-
-        // The inner starts unavailable.
-        handle.allow(0);
-        assert_pending!(service.poll_ready());
-
-        // Then we wait for the idle timeout, at which point the service
-        // should start failing fast.
-        tokio::time::sleep(max_unavailable + Duration::from_millis(1)).await;
-        assert_ready_ok!(service.poll_ready());
-
-        let err = service.call(()).await.expect_err("should failfast");
-        assert!(err.is::<super::FailFastError>());
-
-        // Then the inner service becomes available.
-        handle.allow(1);
-
-        // Yield to allow the background task to drive the inner service to readiness.
-        tokio::task::yield_now().await;
-
-        assert_ready_ok!(service.poll_ready());
-        let fut = service.call(());
-
-        let ((), rsp) = handle.next_request().await.expect("must get a request");
-        rsp.send_response(());
-
-        let ret = fut.await;
-        assert!(ret.is_ok());
-    }
-
-    #[tokio::test]
-    async fn drains_buffer() {
-        use tower::{buffer::Buffer, Layer};
-
-        let _trace = linkerd_tracing::test::with_default_filter("trace");
-        tokio::time::pause();
-
-        let max_unavailable = Duration::from_millis(100);
-        let (service, mut handle) = mock::pair::<(), ()>();
-
-        let layer =
-            FailFast::layer_gated(max_unavailable, layer::mk(|inner| Buffer::new(inner, 3)));
-        let mut service = Spawn::new(layer.layer(service));
-
-        // The inner starts unavailable...
-        handle.allow(0);
-        // ...but the buffer will accept requests while it has capacity.
-        assert_ready_ok!(service.poll_ready());
-        let mut buffer1 = task::spawn(service.call(()));
-
-        assert_ready_ok!(service.poll_ready());
-        let mut buffer2 = task::spawn(service.call(()));
-
-        assert_ready_ok!(service.poll_ready());
-        let mut buffer3 = task::spawn(service.call(()));
-
-        // The buffer is now full
-        assert_pending!(service.poll_ready());
-
-        // Then we wait for the idle timeout, at which point failfast should
-        // trigger and the buffer requests should be failed.
-        tokio::time::sleep(max_unavailable + Duration::from_millis(1)).await;
-        // However, the *outer* service should remain unready.
-        assert_pending!(service.poll_ready());
-
-        // Buffered requests should now fail.
-        assert_ready_err!(buffer1.poll());
-        assert_ready_err!(buffer2.poll());
-        assert_ready_err!(buffer3.poll());
-        drop((buffer1, buffer2, buffer3));
-
-        // The buffer has been drained, but the outer service should still be
-        // pending.
-        assert_pending!(service.poll_ready());
-
-        // Then the inner service becomes available.
-        handle.allow(1);
-        tracing::info!("handle.allow(1)");
-
-        // Yield to allow the background task to drive the inner service to readiness.
-        tokio::task::yield_now().await;
-
-        assert_ready_ok!(service.poll_ready());
-        let fut = service.call(());
-
-        let ((), rsp) = handle.next_request().await.expect("must get a request");
-        rsp.send_response(());
-
-        let ret = fut.await;
-        assert!(ret.is_ok());
+        }
     }
 }
