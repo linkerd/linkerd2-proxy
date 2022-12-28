@@ -87,8 +87,6 @@ impl<C> Outbound<C> {
                                 .stack
                                 .layer(crate::stack_labels("tcp", "concrete")),
                         )
-                        // TODO(ver) We should instead buffer per concrete
-                        // target.
                         .push_buffer("TCP Concrete", tcp_connection_buffer),
                 )
                 .check_new_service::<Concrete, I>()
