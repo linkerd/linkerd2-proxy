@@ -6,14 +6,12 @@ use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
-    self as stack,
-    failfast::{self, FailFast},
-    layer, ArcNewService, BoxCloneService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
-    Filter, InsertParam, LoadShed, MakeConnection, MapErr, MapTargetLayer, NewRouter, NewService,
-    Param, Predicate, UnwrapOr,
+    self as stack, layer, ArcNewService, BoxCloneService, BoxService, BoxServiceLayer, Either,
+    ExtractParam, Fail, FailFast, Filter, InsertParam, LoadShed, MakeConnection, MapErr,
+    MapTargetLayer, NewRouter, NewService, Param, Predicate, UnwrapOr,
 };
+use linkerd_stack::{failfast, OnService};
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
-use stack::OnService;
 use std::{
     marker::PhantomData,
     task::{Context, Poll},
@@ -426,7 +424,7 @@ where
 
     fn layer(&self, inner: S) -> Self::Service {
         let buf = layer::mk(move |inner| Buffer::new(BoxService::new(inner), self.capacity));
-        let buf = failfast::FailFast::layer_gated(self.failfast_timeout, buf);
+        let buf = FailFast::layer_gated(self.failfast_timeout, buf);
         buf.layer(inner)
     }
 }
