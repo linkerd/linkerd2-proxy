@@ -76,7 +76,8 @@ impl<N> Outbound<N> {
                         // extension.
                         .push(classify::NewClassify::layer())
                         .push_on_service(http::BoxResponse::layer())
-                        .push_map_target(|(route, logical)| ProfileRoute { logical, route }),
+                        .push_map_target(|(route, logical)| ProfileRoute { logical, route })
+                        .push(svc::NewLazy::layer()),
                 ))
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header. The response body is boxed

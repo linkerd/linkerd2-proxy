@@ -24,6 +24,12 @@ enum Shared<T, N, S> {
 
 /// === impl NewLazy ===
 
+impl<N> NewLazy<N> {
+    pub fn layer() -> impl super::layer::Layer<N, Service = Self> + Clone {
+        super::layer::mk(Self)
+    }
+}
+
 impl<T, N> NewService<T> for NewLazy<N>
 where
     N: NewService<T> + Clone,
