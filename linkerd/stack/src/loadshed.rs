@@ -97,7 +97,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio_test::{assert_ready_err, assert_ready_ok};
+    use tokio_test::{assert_pending, assert_ready_err, assert_ready_ok, task};
     use tower_test::mock::{self, Spawn};
 
     #[tokio::test]
@@ -111,11 +111,7 @@ mod tests {
         assert_ready_ok!(service.poll_ready());
 
         let call = service.call(());
-        let (_, send_rsp) = handle
-            .next_request()
-            .await
-            .expect("should call inner service");
-        send_rsp.send_response(());
+        complete_req(&mut handle).await;
         call.await.expect("should succeed");
 
         // Then the inner service becomes unavailable.
@@ -130,12 +126,64 @@ mod tests {
         assert_ready_ok!(service.poll_ready());
 
         let call = service.call(());
-        let (_, send_rsp) = handle
-            .next_request()
-            .await
-            .expect("should call inner service");
-        send_rsp.send_response(());
+        complete_req(&mut handle).await;
         call.await.expect("should succeed");
+    }
+
+    #[tokio::test]
+    async fn buffer_load_shed() {
+        use tower::{buffer::Buffer, ServiceExt};
+
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let (service, mut handle) = mock::pair::<(), ()>();
+        let service = LoadShed::new(Buffer::new(service, 3));
+
+        // The inner starts unavailable...
+        handle.allow(0);
+        // ...but the buffer will accept requests while it has capacity.
+        let mut oneshot1 = task::spawn(service.clone().oneshot(()));
+        assert_pending!(oneshot1.poll());
+        let mut oneshot2 = task::spawn(service.clone().oneshot(()));
+        assert_pending!(oneshot2.poll());
+        let mut oneshot3 = task::spawn(service.clone().oneshot(()));
+        assert_pending!(oneshot3.poll());
+
+        // The buffer is now full, so the loadshed service should fail this
+        // request.
+        let mut oneshot4 = task::spawn(service.clone().oneshot(()));
+        assert_ready_err!(oneshot4.poll());
+
+        // Complete one request.
+        handle.allow(1);
+        complete_req(&mut handle).await;
+
+        // The first oneshot should complete...
+        assert_ready_ok!(oneshot1.poll());
+        // ...while the others remain pending.
+        assert_pending!(oneshot2.poll());
+        assert_pending!(oneshot3.poll());
+
+        // Now that there's space in the buffer, the service should no longer be
+        // shedding load.
+        let mut oneshot5 = task::spawn(service.clone().oneshot(()));
+        assert_pending!(oneshot5.poll());
+
+        // The buffer is now full, so the loadshed service should fail any
+        // additional requests.
+        let mut oneshot6 = task::spawn(service.clone().oneshot(()));
+        let mut oneshot7 = task::spawn(service.clone().oneshot(()));
+        assert_ready_err!(oneshot6.poll());
+        assert_ready_err!(oneshot7.poll());
+
+        // Complete all remaining requests
+        handle.allow(3);
+        complete_req(&mut handle).await;
+        complete_req(&mut handle).await;
+        complete_req(&mut handle).await;
+        assert_ready_ok!(oneshot2.poll());
+        assert_ready_ok!(oneshot3.poll());
+        assert_ready_ok!(oneshot5.poll());
     }
 
     #[tokio::test]
@@ -147,5 +195,14 @@ mod tests {
         // The inner service errors.
         handle.send_error("service machine broke");
         assert_ready_err!(service.poll_ready());
+    }
+
+    async fn complete_req(handle: &mut mock::Handle<(), ()>) {
+        handle
+            .next_request()
+            .await
+            .expect("should call inner service")
+            .1
+            .send_response(());
     }
 }
