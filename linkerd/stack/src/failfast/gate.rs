@@ -88,11 +88,10 @@ where
                     trace!("service has become ready");
                 });
                 self.is_waiting = true;
-                continue;
+            } else {
+                // Otherwise, we are not in failfast. Poll the inner service.
+                return self.inner.poll_ready(cx);
             }
-
-            // Otherwise, we are not in failfast. Poll the inner service.
-            return self.inner.poll_ready(cx);
         }
     }
 
