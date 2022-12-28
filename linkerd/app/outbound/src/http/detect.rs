@@ -11,6 +11,11 @@ use tracing::debug_span;
 pub struct Skip;
 
 impl<N> Outbound<N> {
+    // TODO(ver) This stack creates a new service for each connection, which
+    // needlessly busts caching. We can be smarter about reusing inner services
+    // across connections by moving caching into this stack. On the other hand,
+    // it's not clear whether this sharing/reuse should be done with endpoint
+    // stacks...
     pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -57,9 +62,6 @@ impl<N> Outbound<N> {
                 .check_new_service::<(Option<http::Version>, T), _>()
                 .push_map_target(detect::allow_timeout)
                 .push(svc::ArcNewService::layer())
-                // TODO(ver) This layer creates a new service for each
-                // connection, which needlessly busts caching. We can be smarter
-                // about reusing inner services across connections.
                 .push(detect::NewDetectService::layer(config.proxy.detect_http()))
                 .push_switch(
                     // When the target is marked as as opaque, we skip HTTP
