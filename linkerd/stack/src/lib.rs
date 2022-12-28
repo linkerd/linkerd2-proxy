@@ -10,9 +10,10 @@ mod connect;
 mod either;
 mod fail;
 mod fail_on_error;
-mod failfast;
+pub mod failfast;
 mod filter;
 pub mod layer;
+mod loadshed;
 mod make_thunk;
 mod map_err;
 mod map_target;
@@ -36,6 +37,7 @@ pub use self::{
     fail_on_error::FailOnError,
     failfast::{FailFast, FailFastError},
     filter::{Filter, FilterLayer, Predicate},
+    loadshed::{LoadShed, LoadShedError},
     make_thunk::MakeThunk,
     map_err::MapErr,
     map_target::{MapTarget, MapTargetLayer, MapTargetService},

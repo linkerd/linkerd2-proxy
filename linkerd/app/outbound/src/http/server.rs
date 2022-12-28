@@ -55,9 +55,8 @@ impl<N> Outbound<N> {
                             config.proxy.max_in_flight_requests,
                         ))
                         // Shed load by failing requests when the concurrency
-                        // limit is reached. No delay is used before failfast
-                        // goes into effect so it is expected that the inner.
-                        .push(svc::FailFast::layer("HTTP Server", Default::default()))
+                        // limit is reached.
+                        .push(svc::LoadShed::layer())
                         .push(rt.metrics.http_errors.to_layer())
                         // Tear down server connections when a peer proxy generates an error.
                         .push(ProxyConnectionClose::layer()),
@@ -116,6 +115,9 @@ impl errors::HttpRescue<Error> for ServerRescue {
         }
         if let Some(cause) = errors::cause_ref::<errors::FailFastError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        }
+        if let Some(cause) = errors::cause_ref::<errors::LoadShedError>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::unavailable(cause));
         }
 
         if errors::is_caused_by::<errors::H2Error>(&*error) {

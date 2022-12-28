@@ -1559,6 +1559,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
+ "tokio-util",
  "tower",
  "tower-test",
  "tracing",

@@ -37,14 +37,7 @@ impl<N> Outbound<N> {
                 //
                 // TODO(ver) remove this when we replace `split` with
                 // `distribute`.
-                .push_on_service(
-                    svc::layers()
-                        .push(svc::layer::mk(svc::SpawnReady::new))
-                        .push(svc::FailFast::layer(
-                            "HTTP Balancer",
-                            http_request_buffer.failfast_timeout,
-                        ))
-                )
+                .push_on_service(svc::FailFast::layer(http_request_buffer.failfast_timeout))
                 .check_new_service::<(ConcreteAddr, Logical), _>()
                 // Distribute requests over a distribution of balancers via a
                 // traffic split.
