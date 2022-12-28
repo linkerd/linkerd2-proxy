@@ -6,7 +6,7 @@ use thiserror::Error;
 use tower::Service;
 
 /// A middleware that sheds load when the inner `Service` isn't ready.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct LoadShed<S> {
     inner: S,
     open: bool,
@@ -20,8 +20,23 @@ pub struct LoadShedError(());
 // === impl LoadShed ===
 
 impl<S> LoadShed<S> {
+    /// Fails requests when the inner service is not ready.
+    ///
+    /// Innner services MUST be responsible for driving themselves to ready
+    /// (e.g., via [`SpawnReady`], where appropriate).
+    ///
+    /// [`SpawnReady`]: tower::spawn_ready::SpawnReady
     pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy + Clone {
         layer::mk(|inner| Self { inner, open: true })
+    }
+}
+
+impl<S: Clone> Clone for LoadShed<S> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            open: true,
+        }
     }
 }
 
@@ -42,13 +57,19 @@ where
             Poll::Ready(ready) => {
                 if !self.open {
                     tracing::debug!("Service has become available");
+                    self.open = true;
                 }
-                self.open = true;
                 Poll::Ready(ready.map_err(Into::into))
             }
+
+            // If the inner service is not ready, we return ready anyway so load
+            // can be shed by failing requests. This inner service MUST be
+            // responsible for driving itself to ready.
             Poll::Pending => {
-                tracing::debug!("Service unavailable");
-                self.open = false;
+                if self.open {
+                    tracing::debug!("Service has become unavailable");
+                    self.open = false;
+                }
                 Poll::Ready(Ok(()))
             }
         }
