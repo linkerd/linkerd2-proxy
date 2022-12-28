@@ -124,6 +124,16 @@ impl SyntheticHttpResponse {
         }
     }
 
+    pub fn unavailable(msg: impl ToString) -> Self {
+        Self {
+            close_connection: true,
+            http_status: http::StatusCode::SERVICE_UNAVAILABLE,
+            grpc_status: tonic::Code::Unavailable,
+            message: Cow::Owned(msg.to_string()),
+            location: None,
+        }
+    }
+
     pub fn unauthenticated(msg: impl ToString) -> Self {
         Self {
             http_status: http::StatusCode::FORBIDDEN,
