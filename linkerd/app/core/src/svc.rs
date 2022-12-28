@@ -90,7 +90,15 @@ impl<L> Layers<L> {
         self.push(stack::MapTargetLayer::new(map_target))
     }
 
-    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
+    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated
+    /// task.
+
+    ///
+    /// The service admits `config.capacity` requests before it returns
+    /// `Poll::Pending`.
+    ///
+    /// If the inner service is not ready for `config.failfast_timeout`, then
+    /// the service becomes unavailable and requests in the buffer are failed.
     pub fn push_buffer<Req>(
         self,
         name: &'static str,
@@ -197,7 +205,14 @@ impl<S> Stack<S> {
         self.push(http::insert::NewResponseInsert::layer())
     }
 
-    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
+    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated
+    /// task.
+    ///
+    /// The service admits `config.capacity` requests before it returns
+    /// `Poll::Pending`.
+    ///
+    /// If the inner service is not ready for `config.failfast_timeout`, then
+    /// the service becomes unavailable and requests in the buffer are failed.
     pub fn push_buffer_on_service<Req>(
         self,
         name: &'static str,
@@ -393,6 +408,7 @@ impl<E: Into<Error>> Recover<E> for AlwaysReconnect {
 
 fn buffer<Req>(name: &'static str, config: &BufferConfig) -> BufferLayer<Req> {
     BufferLayer {
+        // TODO(ver) remove this.
         name,
         capacity: config.capacity,
         failfast_timeout: config.failfast_timeout,
@@ -409,13 +425,9 @@ where
     type Service = failfast::Gate<Buffer<Req, S::Response, Error>>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        // TODO(eliza): add some kind of middleware that wraps errors from the
-        // failfast service with `self.name`.
-        failfast::FailFast::layer_gated(
-            self.failfast_timeout,
-            layer::mk(move |inner| Buffer::new(BoxService::new(inner), self.capacity)),
-        )
-        .layer(inner)
+        let buf = layer::mk(move |inner| Buffer::new(BoxService::new(inner), self.capacity));
+        let buf = failfast::FailFast::layer_gated(self.failfast_timeout, buf);
+        buf.layer(inner)
     }
 }
 

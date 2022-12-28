@@ -13,7 +13,7 @@ pub struct ServerConfig {
     pub h2_settings: h2::Settings,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct BufferConfig {
     /// The number of requests (or connections, depending on the context) that
     /// may be buffered
