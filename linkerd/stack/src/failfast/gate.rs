@@ -76,18 +76,20 @@ where
             // Check the inner service's state. If it's not in failfast, use the
             // inner service directly.
             if !self.shared.in_failfast.load(Ordering::Acquire) {
+                trace!("service is not in failfast");
                 self.is_waiting = false;
                 return self.inner.poll_ready(cx);
             }
+            trace!("service in failfast");
 
             // Ensure that this task is notified when the inner service exits
             // failfast. Return pending until we are notified about a change.
             if !self.is_waiting {
-                trace!("service in failfast, waiting for readiness",);
+                trace!("resetting watch");
                 let shared = self.shared.clone();
                 self.waiting.set(async move {
                     shared.notify.notified().await;
-                    trace!("service has become ready");
+                    trace!("notified");
                 });
                 self.is_waiting = true;
             }
