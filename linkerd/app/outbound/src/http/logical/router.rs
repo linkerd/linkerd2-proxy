@@ -3,6 +3,7 @@ use linkerd_app_core::{
     profiles::{
         self,
         http::{RequestMatch, Route},
+        Profile,
     },
     proxy::api_resolve::ConcreteAddr,
     svc::{layer, NewCloneService, NewService, Oneshot, Param, Service, ServiceExt},
@@ -44,6 +45,17 @@ struct Shared<S> {
     routes: HashMap<Route, S>, // TODO(ver) AHashMap?
 }
 
+struct Rebuild<T, U, N: NewService<U>, R, S> {
+    target: T,
+    new_backend: N,
+    route_layer: R,
+    targets: HashMap<NameAddr, u32>,
+    backends: HashMap<NameAddr, N::Service>,
+    distribute: NewCloneService<Distribute<N::Service>>,
+    tx: watch::Sender<Shared<S>>,
+    _marker: std::marker::PhantomData<fn(U)>,
+}
+
 // === impl NewRouter ===
 
 impl<N, R: Clone, U> NewRouter<N, R, U> {
@@ -60,7 +72,7 @@ impl<T, U, N, R, S> NewService<T> for NewRouter<N, R, U>
 where
     T: Param<profiles::LogicalAddr> + Param<profiles::Receiver>,
     T: Clone + Send + 'static,
-    U: From<(ConcreteAddr, T)>,
+    U: From<(ConcreteAddr, T)> + Send + 'static,
     N: NewService<U> + Clone + Send + 'static,
     N::Service: Clone + Send + Sync + 'static,
     R: layer::Layer<NewCloneService<Distribute<N::Service>>>, // TODO NewDistribute<N::Service>,
@@ -84,14 +96,34 @@ where
         // Build the initial stacks by checking the profile.
         let profile = profiles.borrow_and_update();
 
+        let targets = profile
+            .targets
+            .iter()
+            .map(|profiles::Target { addr, weight }| (addr.clone(), *weight))
+            .collect::<HashMap<_, _>>();
+
+        // Initial backends.
         // TODO(ver) use a different key type that is structured instead of
         // simply a name.
         let mut backends = HashMap::with_capacity(profile.targets.len().max(1));
-        Self::mk_backends(&mut backends, &self.new_backend, &profile.targets, &target);
+        let n_backends = Rebuild::<T, U, N, R, S>::make_backends(
+            &targets,
+            &mut backends,
+            &target,
+            &self.new_backend,
+        );
+        tracing::debug!(backends = n_backends, "Built backends");
 
-        // Create a stack that can distribute requests to the backends.
-        let distribute = Self::mk_distribute(&backends, &profile.targets, &target);
-        let routes = Self::mk_routes(distribute, &self.route_layer, &profile.http_routes, &target);
+        // Initial distribution.
+        let distribute = Rebuild::<T, U, N, R, S>::make_distribute(&targets, &backends, &target);
+
+        // Initial routes.
+        let routes = Rebuild::<T, U, N, R, S>::make_routes(
+            &profile.http_routes,
+            &self.route_layer,
+            distribute.clone(),
+            &target,
+        );
 
         let (tx, rx) = watch::channel(Shared {
             matches: profile.http_routes.clone(),
@@ -100,141 +132,25 @@ where
 
         drop(profile);
 
+        // Spawn background rebuilder task.
         let new_backend = self.new_backend.clone();
         let route_layer = self.route_layer.clone();
-        let span = tracing::debug_span!("router", target = %Param::<profiles::LogicalAddr>::param(&target));
         tokio::spawn(
-            async move {
-                while profiles.changed().await.is_ok() {
-                    let profile = profiles.borrow_and_update();
-                    // Update `backends`.
-                    // TODO(eliza): can we avoid doing this if the backends haven't
-                    // changed at all (e.g., handle updates that only change the
-                    // routes?)
-                    tracing::debug!(backends = profile.targets.len(), "Updating backends");
-                    backends.clear();
-                    Self::mk_backends(&mut backends, &new_backend, &profile.targets, &target);
-
-                    // New distribution.
-                    // TODO(eliza): if the backends and weights haven't changed, it
-                    // would be nice to avoid rebuilding the distributor...
-                    let distribute = Self::mk_distribute(&backends, &profile.targets, &target);
-
-                    // New routes.
-                    // TODO(eliza): if the backends and weights haven't changed, it
-                    // would be nice to avoid rebuilding the distributor...
-                    tracing::debug!(routes = profile.http_routes.len(), "Updating HTTP routes");
-                    let routes =
-                        Self::mk_routes(distribute, &route_layer, &profile.http_routes, &target);
-
-                    // Publish new shared state.
-                    let shared = Shared {
-                        matches: profile.http_routes.clone(),
-                        routes,
-                    };
-                    if tx.send(shared).is_err() {
-                        tracing::debug!(
-                            "No services are listening for profile updates, shutting down"
-                        );
-                        return;
-                    }
-                }
-
-                tracing::debug!("Profile watch has closed, shutting down");
+            Rebuild {
+                targets,
+                backends,
+                new_backend: self.new_backend.clone(),
+                route_layer: self.route_layer.clone(),
+                distribute,
+                target,
+                tx,
+                _marker: std::marker::PhantomData,
             }
-            .instrument(span),
+            .rebuild(profiles)
+            .in_current_span(),
         );
 
         Router(rx)
-    }
-}
-
-impl<U, N, R> NewRouter<N, R, U>
-where
-    N: NewService<U> + Clone,
-    N::Service: Clone + Send + Sync + 'static,
-{
-    fn mk_backends<T>(
-        backends: &mut HashMap<NameAddr, N::Service>,
-        new_backend: &N,
-        targets: &[profiles::Target],
-        target: &T,
-    ) where
-        U: From<(ConcreteAddr, T)>,
-        T: Param<profiles::LogicalAddr> + Clone,
-    {
-        backends.reserve(targets.len().max(1));
-        for t in targets.iter() {
-            let addr = t.addr.clone();
-            let backend =
-                new_backend.new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
-            backends.insert(addr.clone(), backend);
-        }
-
-        // TODO(ver) we should make it a requirement of the provider that there
-        // is always at least one backend.
-        if backends.is_empty() {
-            let profiles::LogicalAddr(addr) = target.param();
-            let backend =
-                new_backend.new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
-            backends.insert(addr, backend);
-        }
-    }
-
-    fn mk_distribute<T>(
-        backends: &HashMap<NameAddr, N::Service>,
-        targets: &[profiles::Target],
-        target: &T,
-    ) -> Distribute<N::Service>
-    where
-        T: Param<profiles::LogicalAddr>,
-    {
-        // Create a stack that can distribute requests to the backends.
-        let new_distribute = backends
-            .iter()
-            .map(|(addr, svc)| (addr.clone(), svc.clone()))
-            .collect::<NewDistribute<_>>();
-
-        // Build a single distribution service that will be shared across all routes.
-        //
-        // TODO(ver) Move this into the route stack so that each route's
-        // distribution may vary.
-        let distribution = if targets.is_empty() {
-            let profiles::LogicalAddr(addr) = target.param();
-            Distribution::from(addr)
-        } else {
-            Distribution::random_available(
-                targets
-                    .iter()
-                    .cloned()
-                    .map(|profiles::Target { addr, weight }| (addr, weight)),
-            )
-            .expect("distribution must be valid")
-        };
-        new_distribute.new_service(distribution)
-    }
-
-    fn mk_routes<S, T>(
-        distribute: Distribute<N::Service>,
-        route_layer: &R,
-        http_routes: &[(RequestMatch, Route)],
-        target: &T,
-    ) -> HashMap<Route, S>
-    where
-        T: Clone,
-        U: From<(ConcreteAddr, T)>,
-        R: layer::Layer<NewCloneService<Distribute<N::Service>>>, // TODO NewDistribute<N::Service>,
-        R::Service: NewService<(Route, T), Service = S>,
-        S: Send + Sync + 'static,
-    {
-        let new_route = route_layer.layer(NewCloneService::from(distribute));
-        http_routes
-            .iter()
-            .map(|(_, r)| {
-                let svc = new_route.new_service((r.clone(), target.clone()));
-                (r.clone(), svc)
-            })
-            .collect()
     }
 }
 
@@ -269,5 +185,160 @@ where
         }
 
         todo!("handle no matching route");
+    }
+}
+
+// === impl Rebuild ===
+
+impl<T, U, N, R, S> Rebuild<T, U, N, R, S>
+where
+    T: Param<profiles::LogicalAddr>,
+    T: Clone + Send + 'static,
+    U: From<(ConcreteAddr, T)>,
+    N: NewService<U> + Clone + Send + 'static,
+    N::Service: Clone + Send + Sync + 'static,
+    R: layer::Layer<NewCloneService<Distribute<N::Service>>>, // TODO NewDistribute<N::Service>,
+    R: Clone + Send + 'static,
+    R::Service: NewService<(Route, T), Service = S>,
+    S: Send + Sync + 'static,
+{
+    async fn rebuild(mut self, mut profiles: profiles::Receiver) {
+        while profiles.changed().await.is_ok() {
+            let profile = profiles.borrow_and_update();
+            let targets = profile
+                .targets
+                .iter()
+                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight))
+                .collect::<HashMap<_, _>>();
+
+            if targets != self.targets {
+                tracing::debug!(backends = targets.len(), "Updated backends");
+
+                // Clear out old backends.
+                let removed_backends = {
+                    let current_backends = self.backends.len();
+                    self.backends.retain(|addr, _| targets.contains_key(addr));
+                    current_backends - self.backends.len()
+                };
+
+                // Update `backends`.
+                let added_backends = Self::make_backends(
+                    &targets,
+                    &mut self.backends,
+                    &self.target,
+                    &self.new_backend,
+                );
+
+                // Update `distribute`.
+                self.distribute = Self::make_distribute(&targets, &self.backends, &self.target);
+                tracing::debug!(
+                    backends.added = added_backends,
+                    backends.removed = removed_backends,
+                    "Updated backends"
+                );
+            } else {
+                // Skip updating the backends if the targets and weights are
+                // unchanged.
+                tracing::debug!("Targets and weights have not changed");
+                return;
+            }
+
+            // Update routes.
+            tracing::debug!(routes = profile.http_routes.len(), "Updating HTTP routes");
+            let routes = Self::make_routes(
+                &profile.http_routes,
+                &self.route_layer,
+                self.distribute.clone(),
+                &self.target,
+            );
+
+            // Publish new shared state.
+            let shared = Shared {
+                matches: profile.http_routes.clone(),
+                routes,
+            };
+            if self.tx.send(shared).is_err() {
+                tracing::debug!("No services are listening for profile updates, shutting down");
+                return;
+            }
+        }
+    }
+
+    fn make_backends(
+        targets: &HashMap<NameAddr, u32>,
+        backends: &mut HashMap<NameAddr, N::Service>,
+        target: &T,
+        new_backend: &N,
+    ) -> usize {
+        backends.reserve(targets.len().max(1));
+        let mut new_backends = 0;
+        for addr in targets.keys() {
+            // Skip rebuilding targets we already have a stack for.
+            if backends.contains_key(addr) {
+                continue;
+            }
+
+            let backend =
+                new_backend.new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
+            backends.insert(addr.clone(), backend);
+            new_backends += 1;
+        }
+
+        // TODO(ver) we should make it a requirement of the provider that there
+        // is always at least one backend.
+        if backends.is_empty() {
+            let profiles::LogicalAddr(addr) = target.param();
+            let backend =
+                new_backend.new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
+            backends.insert(addr, backend);
+            return 1;
+        }
+
+        new_backends
+    }
+
+    fn make_distribute(
+        targets: &HashMap<NameAddr, u32>,
+        backends: &HashMap<NameAddr, N::Service>,
+        target: &T,
+    ) -> NewCloneService<Distribute<N::Service>> {
+        // Update the distribution.
+        // Create a stack that can distribute requests to the backends.
+        let new_distribute = backends
+            .iter()
+            .map(|(addr, svc)| (addr.clone(), svc.clone()))
+            .collect::<NewDistribute<_>>();
+
+        // Build a single distribution service that will be shared across all routes.
+        //
+        // TODO(ver) Move this into the route stack so that each route's
+        // distribution may vary.
+        let distribution = if targets.is_empty() {
+            let profiles::LogicalAddr(addr) = target.param();
+            Distribution::from(addr)
+        } else {
+            Distribution::random_available(
+                targets.iter().map(|(addr, weight)| (addr.clone(), *weight)),
+            )
+            .expect("distribution must be valid")
+        };
+
+        NewCloneService::from(new_distribute.new_service(distribution))
+    }
+
+    fn make_routes(
+        http_routes: &[(RequestMatch, Route)],
+        route_layer: &R,
+        distribute: NewCloneService<Distribute<N::Service>>,
+        target: &T,
+    ) -> HashMap<Route, S> {
+        let new_route = route_layer.layer(distribute);
+        http_routes
+            .iter()
+            .map(|(_, r)| {
+                let svc = new_route.new_service((r.clone(), target.clone()));
+                (r.clone(), svc)
+            })
+            .collect()
     }
 }
