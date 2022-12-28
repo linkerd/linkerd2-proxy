@@ -2,16 +2,14 @@ use futures::prelude::*;
 use linkerd_app_core::{
     profiles,
     proxy::api_resolve::ConcreteAddr,
-    svc::{layer, NewCloneService, NewService, Oneshot, Param, Service, ServiceExt},
+    svc::{layer, NewService, Param, Service},
     NameAddr,
 };
 use std::{
     collections::HashMap,
-    sync::Arc,
     task::{Context, Poll},
 };
 use tokio::sync::watch;
-use tracing::{error, trace};
 
 #[derive(Clone, Debug)]
 pub struct NewRouter<N, U>(N, std::marker::PhantomData<fn(U)>);

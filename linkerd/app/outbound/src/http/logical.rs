@@ -2,12 +2,8 @@ mod router;
 
 use self::router::NewRouter;
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
-use crate::{stack_labels, Outbound};
-use linkerd_app_core::{
-    classify, metrics, profiles,
-    proxy::{api_resolve::ConcreteAddr, http},
-    svc, Error, Infallible,
-};
+use crate::Outbound;
+use linkerd_app_core::{classify, metrics, profiles, proxy::http, svc, Error};
 use tracing::debug_span;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -42,7 +38,7 @@ impl<N> Outbound<N> {
             + 'static,
         NSvc::Future: Send,
     {
-        self.map_stack(|config, rt, concrete| {
+        self.map_stack(|_config, rt, concrete| {
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.
             concrete

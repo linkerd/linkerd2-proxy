@@ -6,7 +6,7 @@ use self::router::NewRouter;
 use super::{Concrete, Endpoint, Logical};
 use crate::{endpoint, resolve, Outbound};
 use linkerd_app_core::{
-    drain, io, profiles,
+    drain, io,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,

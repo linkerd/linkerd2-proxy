@@ -43,7 +43,6 @@ impl<N> Outbound<N> {
                 http_request_buffer,
                 ..
             } = config;
-            let watchdog = *discovery_idle_timeout * 2;
 
             let resolve = svc::stack(resolve.into_service())
                 .check_service::<ConcreteAddr>()
