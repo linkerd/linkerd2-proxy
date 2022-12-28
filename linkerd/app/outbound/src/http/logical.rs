@@ -13,6 +13,7 @@ struct ProfileRoute {
 }
 
 impl<N> Outbound<N> {
+    // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_http_logical<NSvc>(
         self,
     ) -> Outbound<
@@ -38,7 +39,7 @@ impl<N> Outbound<N> {
             + 'static,
         NSvc::Future: Send,
     {
-        self.map_stack(|_config, rt, concrete| {
+        self.map_stack(|config, rt, concrete| {
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.
             concrete
@@ -82,6 +83,15 @@ impl<N> Outbound<N> {
                 // unify the profile stack's response type with that of to
                 // endpoint stack.
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
+                // This caches each logical stack so that it can be reused
+                // across per-connection HTTP server stacks (i.e. created by the
+                // `DetectService`).
+                //
+                // TODO(ver) Update the detection stack so this dynamic caching
+                // can be removed.
+                //
+                // XXX(ver) This cache key includes the HTTP version. Should it?
+                .push_cache(config.discovery_idle_timeout)
                 .instrument(|l: &Logical| debug_span!("logical", service = %l.logical_addr))
                 .push(svc::ArcNewService::layer())
         })

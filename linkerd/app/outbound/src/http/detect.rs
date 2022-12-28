@@ -46,10 +46,20 @@ impl<N> Outbound<N> {
                         .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
                         .into_inner(),
                 ))
-                .push_on_service(svc::BoxService::layer())
+                .push_on_service(
+                    svc::layers()
+                        // `DetectService` oneshots the inner service, so we add
+                        // a loadshed to prevent leaking tasks if (for some
+                        // unexpected reason) the inner service is not ready.
+                        .push(svc::LoadShed::layer())
+                        .push(svc::BoxService::layer()),
+                )
                 .check_new_service::<(Option<http::Version>, T), _>()
                 .push_map_target(detect::allow_timeout)
                 .push(svc::ArcNewService::layer())
+                // TODO(ver) This layer creates a new service for each
+                // connection, which needlessly busts caching. We can be smarter
+                // about reusing inner services across connections.
                 .push(detect::NewDetectService::layer(config.proxy.detect_http()))
                 .push_switch(
                     // When the target is marked as as opaque, we skip HTTP

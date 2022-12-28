@@ -11,6 +11,7 @@ use linkerd_app_core::{
 };
 
 impl<N> Outbound<N> {
+    // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_http_concrete<NSvc, R>(
         self,
         resolve: R,

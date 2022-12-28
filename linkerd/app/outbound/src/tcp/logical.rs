@@ -93,10 +93,14 @@ impl<C> Outbound<C> {
                 .push(svc::ArcNewService::layer());
 
             concrete
-                .push_map_target(Concrete::from)
-                .check_new_service::<(ConcreteAddr, Logical), I>()
                 .push(NewRouter::layer())
-                .check_new_service::<Logical, I>()
+                // This caches each logical stack so that it can be reused
+                // across per-connection server stacks (i.e., created by the
+                // DetectService).
+                //
+                // TODO(ver) Update the detection stack so this dynamic caching
+                // can be removed.
+                .push_cache(*discovery_idle_timeout)
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()
                 .push(svc::ArcNewService::layer())
