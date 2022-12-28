@@ -13,7 +13,7 @@ use std::{
 use tokio::sync::watch;
 use tracing::{error, trace, Instrument};
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct NewRouter<N, U>(N, std::marker::PhantomData<fn(U)>);
 
 #[derive(Clone, Debug)]
@@ -38,7 +38,7 @@ impl<T, U, N> NewService<T> for NewRouter<N, U>
 where
     T: Param<profiles::LogicalAddr> + Param<profiles::Receiver>,
     T: Clone + Send + 'static,
-    U: From<(ConcreteAddr, T)>,
+    U: From<(ConcreteAddr, T)> + 'static,
     N: NewService<U> + Clone + Send + 'static,
     N::Service: Clone + Send + Sync + 'static,
 {
@@ -57,47 +57,25 @@ where
         let mut profiles: profiles::Receiver = target.param();
         // Build the initial stacks by checking the profile.
         let profile = profiles.borrow_and_update();
-
+        let targets = profile
+            .targets
+            .iter()
+            .map(|profiles::Target { addr, weight }| (addr.clone(), *weight))
+            .collect::<HashMap<_, _>>();
         // TODO(ver) use a different key type that is structured instead of
         // simply a name.
-        let mut backends = HashMap::with_capacity(profile.targets.len().max(1));
-        Self::mk_backends(&mut backends, &self.0, &profile.targets, &target);
+        let mut backends = HashMap::with_capacity(targets.len().max(1));
+        self.mk_backends(&mut backends, &targets, &target);
 
         // Create a stack that can distribute requests to the backends.
-        let distribute = Self::mk_distribute(&backends, &profile.targets, &target);
+        let distribute = Self::mk_distribute(&backends, &targets, &target);
         let (tx, rx) = watch::channel(distribute.clone());
         drop(profile);
 
-        let new_backend = self.0.clone();
-        let span = tracing::debug_span!("router", target = %Param::<profiles::LogicalAddr>::param(&target));
         tokio::spawn(
-            async move {
-                while profiles.changed().await.is_ok() {
-                    let profile = profiles.borrow_and_update();
-                    // Update `backends`.
-                    // TODO(eliza): can we avoid doing this if the backends haven't
-                    // changed at all (e.g., handle updates that only change the
-                    // routes?)
-                    tracing::debug!(backends = profile.targets.len(), "Updating backends");
-                    backends.clear();
-                    Self::mk_backends(&mut backends, &new_backend, &profile.targets, &target);
-
-                    // New distribution.
-                    // TODO(eliza): if the backends and weights haven't changed, it
-                    // would be nice to avoid rebuilding the distributor...
-                    let distribute = Self::mk_distribute(&backends, &profile.targets, &target);
-
-                    if tx.send(distribute).is_err() {
-                        tracing::debug!(
-                            "No services are listening for profile updates, shutting down"
-                        );
-                        return;
-                    }
-                }
-
-                tracing::debug!("Profile watch has closed, shutting down");
-            }
-            .instrument(span),
+            self.clone()
+                .rebuild(tx, backends, targets, target, profiles)
+                .in_current_span(),
         );
         Router {
             rx,
@@ -108,39 +86,105 @@ where
 
 impl<N, U> NewRouter<N, U>
 where
-    N: NewService<U> + Clone,
-    N::Service: Clone + Send + Sync + 'static,
+    N: NewService<U>,
+    N::Service: Clone,
 {
-    fn mk_backends<T>(
-        backends: &mut HashMap<NameAddr, N::Service>,
-        new_backend: &N,
-        targets: &[profiles::Target],
-        target: &T,
+    async fn rebuild<T>(
+        self,
+        tx: watch::Sender<Distribute<N::Service>>,
+        mut backends: HashMap<NameAddr, N::Service>,
+        mut targets: HashMap<NameAddr, u32>,
+        target: T,
+        mut profiles: profiles::Receiver,
     ) where
+        T: Param<profiles::LogicalAddr> + Clone,
+        U: From<(ConcreteAddr, T)>,
+    {
+        while profiles.changed().await.is_ok() {
+            let profile = profiles.borrow_and_update();
+            let new_targets = profile
+                .targets
+                .iter()
+                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight))
+                .collect::<HashMap<_, _>>();
+
+            if new_targets != targets {
+                tracing::debug!(backends = new_targets.len(), "Updated backends");
+
+                // Clear out old backends.
+                let removed_backends = {
+                    let current_backends = backends.len();
+                    backends.retain(|addr, _| new_targets.contains_key(addr));
+                    current_backends - backends.len()
+                };
+
+                // Update `backends`.
+                let added_backends = self.mk_backends(&mut backends, &new_targets, &target);
+
+                // Update `distribute`.
+                let distribute = Self::mk_distribute(&backends, &new_targets, &target);
+
+                targets = new_targets;
+
+                tracing::debug!(
+                    backends.added = added_backends,
+                    backends.removed = removed_backends,
+                    "Updated backends"
+                );
+
+                if tx.send(distribute).is_err() {
+                    tracing::debug!("No services are listening for profile updates, shutting down");
+                    return;
+                }
+            } else {
+                // Skip updating the backends if the targets and weights are
+                // unchanged.
+                tracing::debug!("Targets and weights have not changed");
+            }
+        }
+    }
+
+    fn mk_backends<T>(
+        &self,
+        backends: &mut HashMap<NameAddr, N::Service>,
+        targets: &HashMap<NameAddr, u32>,
+        target: &T,
+    ) -> usize
+    where
         U: From<(ConcreteAddr, T)>,
         T: Param<profiles::LogicalAddr> + Clone,
     {
         backends.reserve(targets.len().max(1));
-        for t in targets.iter() {
-            let addr = t.addr.clone();
-            let backend =
-                new_backend.new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
+        let mut new_backends = 0;
+        for addr in targets.keys() {
+            // Skip rebuilding targets we already have a stack for.
+            if backends.contains_key(addr) {
+                continue;
+            }
+            let backend = self
+                .0
+                .new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
             backends.insert(addr.clone(), backend);
+            new_backends += 1;
         }
 
         // TODO(ver) we should make it a requirement of the provider that there
         // is always at least one backend.
         if backends.is_empty() {
             let profiles::LogicalAddr(addr) = target.param();
-            let backend =
-                new_backend.new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
+            let backend = self
+                .0
+                .new_service(U::from((ConcreteAddr(addr.clone()), target.clone())));
             backends.insert(addr, backend);
+            return 1;
         }
+
+        new_backends
     }
 
     fn mk_distribute<T>(
         backends: &HashMap<NameAddr, N::Service>,
-        targets: &[profiles::Target],
+        targets: &HashMap<NameAddr, u32>,
         target: &T,
     ) -> Distribute<N::Service>
     where
@@ -161,14 +205,17 @@ where
             Distribution::from(addr)
         } else {
             Distribution::random_available(
-                targets
-                    .iter()
-                    .cloned()
-                    .map(|profiles::Target { addr, weight }| (addr, weight)),
+                targets.iter().map(|(addr, weight)| (addr.clone(), *weight)),
             )
             .expect("distribution must be valid")
         };
         new_distribute.new_service(distribution)
+    }
+}
+
+impl<N: Clone, U> Clone for NewRouter<N, U> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), std::marker::PhantomData)
     }
 }
 
