@@ -1,6 +1,6 @@
 mod router;
 
-use self::router::NewRouter;
+use self::router::NewRoute;
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
 use crate::Outbound;
 use linkerd_app_core::{classify, metrics, profiles, proxy::http, svc, Error};
@@ -40,45 +40,45 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
     {
         self.map_stack(|config, rt, concrete| {
-            // If there's no route, use the logical service directly; otherwise
-            // use the per-route stack.
-            concrete
-                .push(NewRouter::<_, _, Concrete>::layer(
-                    svc::layers()
-                        // Maintain a per-route distributor over concrete
-                        // backends from the (above) concrete cache.
-                        .push(http::insert::NewInsert::<ProfileRoute, _>::layer())
-                        .push_on_service(http::BoxRequest::layer())
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .http_profile_route_actual
-                                .to_layer::<classify::Response, _, ProfileRoute>(),
-                        )
-                        // Depending on whether or not the request can be
-                        // retried, it may have one of two `Body` types. This
-                        // layer unifies any `Body` type into `BoxBody`.
-                        .push_on_service(http::BoxRequest::erased())
-                        // Sets an optional retry policy.
-                        .push(retry::layer(
-                            rt.metrics.proxy.http_profile_route_retry.clone(),
-                        ))
-                        // Sets an optional request timeout.
-                        .push(http::NewTimeout::layer())
-                        // Records per-route metrics.
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .http_profile_route
-                                .to_layer::<classify::Response, _, ProfileRoute>(),
-                        )
-                        // Sets the per-route response classifier as a request
-                        // extension.
-                        .push(classify::NewClassify::layer())
-                        .push_on_service(http::BoxResponse::layer())
-                        .push_map_target(|(route, logical)| ProfileRoute { logical, route })
-                        .push(svc::NewLazy::layer()),
+            let route = svc::layers()
+                // Maintain a per-route distributor over concrete
+                // backends from the (above) concrete cache.
+                .push(http::insert::NewInsert::<ProfileRoute, _>::layer())
+                .push_on_service(http::BoxRequest::layer())
+                .push(
+                    rt.metrics
+                        .proxy
+                        .http_profile_route_actual
+                        .to_layer::<classify::Response, _, ProfileRoute>(),
+                )
+                // Depending on whether or not the request can be
+                // retried, it may have one of two `Body` types. This
+                // layer unifies any `Body` type into `BoxBody`.
+                .push_on_service(http::BoxRequest::erased())
+                // Sets an optional retry policy.
+                .push(retry::layer(
+                    rt.metrics.proxy.http_profile_route_retry.clone(),
                 ))
+                // Sets an optional request timeout.
+                .push(http::NewTimeout::layer())
+                // Records per-route metrics.
+                .push(
+                    rt.metrics
+                        .proxy
+                        .http_profile_route
+                        .to_layer::<classify::Response, _, ProfileRoute>(),
+                )
+                // Sets the per-route response classifier as a request
+                // extension.
+                .push(classify::NewClassify::layer())
+                .push_on_service(http::BoxResponse::layer())
+                .push_map_target(|(route, logical)| ProfileRoute { logical, route })
+                .push(svc::NewLazy::layer());
+
+            concrete
+                .check_new_service::<Concrete, _>()
+                .push(NewRoute::<_, _, Concrete>::layer(route))
+                .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header. The response body is boxed
                 // unify the profile stack's response type with that of to

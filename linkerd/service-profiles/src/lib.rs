@@ -26,9 +26,7 @@ mod proto;
 pub use self::client::Client;
 
 #[derive(Clone, Debug)]
-pub struct Receiver {
-    inner: tokio::sync::watch::Receiver<Profile>,
-}
+pub struct Receiver(pub tokio::sync::watch::Receiver<Profile>);
 
 #[derive(Debug)]
 pub struct ReceiverStream {
@@ -124,42 +122,42 @@ where
 
 impl From<watch::Receiver<Profile>> for Receiver {
     fn from(inner: watch::Receiver<Profile>) -> Self {
-        Self { inner }
+        Self(inner)
     }
 }
 
 impl From<Receiver> for watch::Receiver<Profile> {
-    fn from(Receiver { inner }: Receiver) -> watch::Receiver<Profile> {
+    fn from(Receiver(inner): Receiver) -> watch::Receiver<Profile> {
         inner
     }
 }
 
 impl Receiver {
     pub fn borrow_and_update(&mut self) -> watch::Ref<'_, Profile> {
-        self.inner.borrow_and_update()
+        self.0.borrow_and_update()
     }
 
     pub async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
-        self.inner.changed().await
+        self.0.changed().await
     }
 
     pub fn logical_addr(&self) -> Option<LogicalAddr> {
-        self.inner.borrow().addr.clone()
+        self.0.borrow().addr.clone()
     }
 
     pub fn is_opaque_protocol(&self) -> bool {
-        self.inner.borrow().opaque_protocol
+        self.0.borrow().opaque_protocol
     }
 
     pub fn endpoint(&self) -> Option<(SocketAddr, Metadata)> {
-        self.inner.borrow().endpoint.clone()
+        self.0.borrow().endpoint.clone()
     }
 }
 
 // === impl ReceiverStream ===
 
 impl From<Receiver> for ReceiverStream {
-    fn from(Receiver { inner: rx }: Receiver) -> Self {
+    fn from(Receiver(rx): Receiver) -> Self {
         let inner = tokio_stream::wrappers::WatchStream::new(rx);
         ReceiverStream { inner }
     }

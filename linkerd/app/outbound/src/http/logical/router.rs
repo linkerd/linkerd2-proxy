@@ -1,24 +1,25 @@
 use linkerd_app_core::{
-    profiles::{
-        self,
-        http::{RequestMatch, Route},
-        Profile,
-    },
+    profiles::{self, Profile},
     proxy::api_resolve::ConcreteAddr,
-    svc::{layer, NewCloneService, NewService, Oneshot, Param, Service, ServiceExt},
+    svc::{
+        layer, NewCloneService, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt,
+        UpdateWatch,
+    },
     NameAddr,
 };
 use std::{
     collections::HashMap,
     marker::PhantomData,
+    sync::Arc,
     task::{Context, Poll},
 };
-use tokio::sync::watch;
-use tracing::{error, trace, Instrument};
+use tracing::{error, trace};
 
 type Distribution = linkerd_distribute::Distribution<NameAddr>;
 type Distribute<S> = linkerd_distribute::Distribute<NameAddr, S>;
 type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
+
+type Matches = Arc<[(profiles::http::RequestMatch, profiles::http::Route)]>;
 
 /// A router that uses a per-route `Service` (with a fallback service when no
 /// route is matched).
@@ -30,93 +31,82 @@ type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
 /// * Routes are removed eagerly as the profile updates (i.e. there's no
 ///   idle-oriented eviction).
 #[derive(Debug)]
-pub struct NewRouter<N, R, U> {
+pub struct NewRoute<N, R, U> {
     new_backend: N,
     route_layer: R,
     _marker: PhantomData<fn(U)>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Router<S>(watch::Receiver<Shared<S>>);
-
-#[derive(Debug)]
-struct Shared<S> {
-    matches: Vec<(RequestMatch, Route)>,
-    routes: HashMap<Route, S>, // TODO(ver) AHashMap?
-}
-
-struct State<T, U, N, S, L, R> {
+pub struct Update<T, U, N, S, L, R> {
     target: T,
 
     new_backend: N,
     backends: HashMap<NameAddr, S>,
 
     route_layer: L,
-    matches: Vec<(RequestMatch, Route)>,
-    routes: HashMap<Route, R>,
+    matches: Matches,
+    routes: HashMap<profiles::http::Route, R>,
 
     _marker: PhantomData<fn(U)>,
 }
 
-// === impl NewRouter ===
+#[derive(Clone, Debug)]
+pub struct Route<S> {
+    matches: Matches,
+    routes: HashMap<profiles::http::Route, S>, // TODO(ver) AHashMap?
+}
 
-impl<N, R: Clone, U> NewRouter<N, R, U> {
-    pub fn layer(route_layer: R) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |new_backend| Self {
-            new_backend,
-            route_layer: route_layer.clone(),
-            _marker: PhantomData,
+// === impl NewRoute ===
+
+impl<N, R: Clone, U> NewRoute<N, R, U> {
+    pub fn layer(
+        route_layer: R,
+    ) -> impl layer::Layer<N, Service = NewSpawnWatch<Profile, Self>> + Clone {
+        layer::mk(move |new_backend| {
+            NewSpawnWatch::new(Self {
+                new_backend,
+                route_layer: route_layer.clone(),
+                _marker: PhantomData,
+            })
         })
     }
 }
 
-impl<T, U, N, R, S> NewService<T> for NewRouter<N, R, U>
+impl<T, U, N, R, S> NewService<T> for NewRoute<N, R, U>
 where
-    T: Param<profiles::LogicalAddr> + Param<profiles::Receiver>,
-    T: Clone + Send + 'static,
-    U: From<(ConcreteAddr, T)> + Send + 'static,
-    N: NewService<U> + Clone + Send + 'static,
-    N::Service: Clone + Send + Sync + 'static,
-    R: layer::Layer<NewCloneService<Distribute<N::Service>>>,
-    R: Clone + Send + 'static,
-    R::Service: NewService<(Route, T), Service = S>,
-    S: Clone + Send + Sync + 'static,
+    N: NewService<U> + Clone,
+    R: layer::Layer<NewCloneService<Distribute<N::Service>>> + Clone,
+    R::Service: NewService<(profiles::http::Route, T), Service = S>,
+    S: Clone,
 {
-    type Service = Router<S>;
+    type Service = Update<T, U, N, N::Service, R, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let mut profiles: profiles::Receiver = target.param();
-
-        // Spawn a background task that updates the all routes and backends for the router.
-        let mut state = State::new(target, self.new_backend.clone(), self.route_layer.clone());
-        let (tx, rx) = watch::channel(
-            state
-                .update(&*profiles.borrow_and_update())
-                .expect("initial update must produce a new state"),
-        );
-        tokio::spawn(
-            state
-                .run(profiles, tx)
-                .instrument(tracing::debug_span!("httprouter")),
-        );
-
-        Router(rx)
-    }
-}
-
-impl<N: Clone, R: Clone, U> Clone for NewRouter<N, R, U> {
-    fn clone(&self) -> Self {
-        Self {
+        Update {
+            target,
             new_backend: self.new_backend.clone(),
             route_layer: self.route_layer.clone(),
+            backends: HashMap::default(),
+            matches: Arc::new([]),
+            routes: HashMap::default(),
             _marker: PhantomData,
         }
     }
 }
 
-// === impl Router ===
+impl<N: Clone, R: Clone, U> Clone for NewRoute<N, R, U> {
+    fn clone(&self) -> Self {
+        Self {
+            new_backend: self.new_backend.clone(),
+            route_layer: self.route_layer.clone(),
+            _marker: self._marker,
+        }
+    }
+}
 
-impl<B, S> Service<http::Request<B>> for Router<S>
+// === impl Route ===
+
+impl<B, S> Service<http::Request<B>> for Route<S>
 where
     S: Service<http::Request<B>> + Clone,
 {
@@ -131,11 +121,9 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        let Shared { matches, routes } = &*self.0.borrow();
-
         // If the request matches a route, use the route's service.
-        if let Some(route) = profiles::http::route_for_request(matches, &req) {
-            if let Some(svc) = routes.get(route).cloned() {
+        if let Some(route) = profiles::http::route_for_request(&self.matches, &req) {
+            if let Some(svc) = self.routes.get(route).cloned() {
                 trace!(?route, "Using route service");
                 return svc.oneshot(req);
             }
@@ -150,52 +138,30 @@ where
 
 // === impl Shared ===
 
-impl<S> Default for Shared<S> {
+impl<S> Default for Route<S> {
     fn default() -> Self {
         Self {
-            matches: Vec::new(),
+            matches: Arc::new([]),
             routes: HashMap::new(),
         }
     }
 }
 
-// === impl State ===
+// === impl Update ===
 
-impl<T, U, N, L, R> State<T, U, N, N::Service, L, R>
+impl<T, U, N, L, R> UpdateWatch<Profile> for Update<T, U, N, N::Service, L, R>
 where
-    T: Param<profiles::LogicalAddr> + Clone,
-    U: From<(ConcreteAddr, T)>,
-    N: NewService<U>,
-    N::Service: Clone,
-    L: layer::Layer<NewCloneService<Distribute<N::Service>>>,
-    L::Service: NewService<(Route, T), Service = R>,
-    R: Clone,
+    T: Param<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+    U: From<(ConcreteAddr, T)> + 'static,
+    N: NewService<U> + Send + Sync + 'static,
+    N::Service: Clone + Send + Sync + 'static,
+    L: layer::Layer<NewCloneService<Distribute<N::Service>>> + Send + Sync + 'static,
+    L::Service: NewService<(profiles::http::Route, T), Service = R>,
+    R: Clone + Send + Sync + 'static,
 {
-    fn new(target: T, new_backend: N, route_layer: L) -> Self {
-        Self {
-            target,
-            new_backend,
-            route_layer,
-            backends: HashMap::default(),
-            matches: Vec::new(),
-            routes: HashMap::default(),
-            _marker: PhantomData,
-        }
-    }
+    type Service = Route<R>;
 
-    async fn run(mut self, mut profiles: profiles::Receiver, tx: watch::Sender<Shared<R>>) {
-        while profiles.changed().await.is_ok() {
-            let profile = profiles.borrow_and_update();
-            if let Some(shared) = self.update(&profile) {
-                tracing::debug!("Publishing updated state");
-                if tx.send(shared).is_err() {
-                    return;
-                }
-            }
-        }
-    }
-
-    fn update(&mut self, profile: &Profile) -> Option<Shared<R>> {
+    fn update(&mut self, profile: &Profile) -> Option<Self::Service> {
         let targets = profile
             .targets
             .iter()
@@ -207,7 +173,7 @@ where
         if changed_backends || changed_routes {
             self.update_routes(&profile.http_routes, &targets);
 
-            Some(Shared {
+            Some(Route {
                 matches: self.matches.clone(),
                 routes: self.routes.clone(),
             })
@@ -215,7 +181,18 @@ where
             None
         }
     }
+}
 
+impl<T, U, N, L, R> Update<T, U, N, N::Service, L, R>
+where
+    T: Param<profiles::LogicalAddr> + Clone,
+    U: From<(ConcreteAddr, T)>,
+    N: NewService<U>,
+    N::Service: Clone,
+    L: layer::Layer<NewCloneService<Distribute<N::Service>>>,
+    L::Service: NewService<(profiles::http::Route, T), Service = R>,
+    R: Clone,
+{
     fn update_backends<V>(&mut self, targets: &HashMap<NameAddr, V>) -> bool {
         let removed = {
             let init = self.backends.len();
@@ -258,12 +235,12 @@ where
 
     fn update_routes(
         &mut self,
-        http_routes: &[(RequestMatch, Route)],
+        http_routes: &[(profiles::http::RequestMatch, profiles::http::Route)],
         targets: &HashMap<NameAddr, u32>,
     ) {
         let new_distribute: NewDistribute<N::Service> = self.backends.clone().into();
 
-        self.matches = http_routes.to_vec();
+        self.matches = http_routes.iter().cloned().collect();
 
         self.routes = http_routes
             .iter()
