@@ -26,6 +26,7 @@ mod router;
 mod switch_ready;
 mod timeout;
 mod unwrap_or;
+mod watch;
 
 pub use self::{
     arc_new_service::ArcNewService,
@@ -50,6 +51,7 @@ pub use self::{
     switch_ready::{NewSwitchReady, SwitchReady},
     timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,
+    watch::{NewSpawnWatch, SpawnWatch, UpdateWatch},
 };
 pub use tower::{
     service_fn,
