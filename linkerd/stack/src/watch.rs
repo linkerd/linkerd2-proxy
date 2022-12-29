@@ -3,8 +3,8 @@ use std::task::{Context, Poll};
 use tokio::sync::watch;
 use tracing::Instrument;
 
-pub trait UpdateWatch<T> {
-    type Service: Clone + Default;
+pub trait UpdateWatch<T>: Send + Sync + 'static {
+    type Service: Clone + Default + Send + Sync + 'static;
 
     fn update(&mut self, target: &T) -> Option<Self::Service>;
 }
@@ -35,8 +35,7 @@ where
     T: Param<watch::Receiver<P>> + Clone,
     P: Clone + Send + Sync + 'static,
     N: NewService<T, Service = U> + Send + 'static,
-    U: UpdateWatch<P> + Send + Sync + 'static,
-    U::Service: Send + Sync + 'static,
+    U: UpdateWatch<P>,
 {
     type Service = SpawnWatch<U::Service>;
 
