@@ -72,10 +72,10 @@ impl<U, N: Clone> Clone for NewRoute<U, N> {
 
 impl<T, U, N> UpdateWatch<Profile> for Update<T, U, N, N::Service>
 where
-    T: Param<profiles::LogicalAddr> + Clone,
-    U: From<(ConcreteAddr, T)>,
-    N: NewService<U>,
-    N::Service: Clone,
+    T: Param<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+    U: From<(ConcreteAddr, T)> + 'static,
+    N: NewService<U> + Send + Sync + 'static,
+    N::Service: Clone + Send + Sync + 'static,
 {
     type Service = Distribute<N::Service>;
 

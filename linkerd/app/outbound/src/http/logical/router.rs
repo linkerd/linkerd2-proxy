@@ -151,13 +151,13 @@ impl<S> Default for Route<S> {
 
 impl<T, U, N, L, R> UpdateWatch<Profile> for Update<T, U, N, N::Service, L, R>
 where
-    T: Param<profiles::LogicalAddr> + Clone,
-    U: From<(ConcreteAddr, T)>,
-    N: NewService<U>,
-    N::Service: Clone,
-    L: layer::Layer<NewCloneService<Distribute<N::Service>>>,
+    T: Param<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+    U: From<(ConcreteAddr, T)> + 'static,
+    N: NewService<U> + Send + Sync + 'static,
+    N::Service: Clone + Send + Sync + 'static,
+    L: layer::Layer<NewCloneService<Distribute<N::Service>>> + Send + Sync + 'static,
     L::Service: NewService<(profiles::http::Route, T), Service = R>,
-    R: Clone,
+    R: Clone + Send + Sync + 'static,
 {
     type Service = Route<R>;
 
