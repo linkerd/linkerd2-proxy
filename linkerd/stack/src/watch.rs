@@ -11,8 +11,14 @@ pub trait UpdateWatch<T>: Send + 'static {
 
     /// Update the inner service with a new `target` value.
     ///
-    /// If this method returns `None`, the `Default` implementation for
-    /// [`Self::Service`] is used instead.
+    /// If the inner service has not changed as a result of the update, this
+    /// method may return `None`. If `None` is returned, no update will be
+    /// published to the [`SpawnWatch`] service.
+    ///
+    /// This method is also called initially when the first [`SpawnWatch`]
+    /// service is constructed. In this case, it should generally not return
+    /// `None`, but if it does, the [`Default`] value of the [`Self::Service`]
+    /// type is used.
     fn update(&mut self, target: &T) -> Option<Self::Service>;
 }
 
