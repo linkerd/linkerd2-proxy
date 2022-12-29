@@ -93,7 +93,7 @@ pub trait InsertParam<P, T> {
 #[derive(Copy, Clone, Debug)]
 pub struct CloneParam<P>(P);
 
-/// === Param ===
+// === Param ===
 
 /// The identity `Param`.
 impl<T: ToOwned> Param<T::Owned> for T {
@@ -103,7 +103,7 @@ impl<T: ToOwned> Param<T::Owned> for T {
     }
 }
 
-/// === ExtractParam ===
+// === ExtractParam ===
 
 impl<F, P, T> ExtractParam<P, T> for F
 where
@@ -135,7 +135,7 @@ impl<P: ToOwned, T> ExtractParam<P::Owned, T> for CloneParam<P> {
     }
 }
 
-/// === InsertParam ===
+// === InsertParam ===
 
 impl<P, T> InsertParam<P, T> for () {
     type Target = (P, T);

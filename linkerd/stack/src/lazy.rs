@@ -22,7 +22,7 @@ enum Shared<T, N, S> {
     Invalid,
 }
 
-/// === impl NewLazy ===
+// === impl NewLazy ===
 
 impl<N> NewLazy<N> {
     pub fn layer() -> impl super::layer::Layer<N, Service = Self> + Clone {
@@ -47,7 +47,7 @@ where
     }
 }
 
-/// === impl Lazy ===
+// === impl Lazy ===
 
 impl<Req, T, N, S> Service<Req> for Lazy<T, N, S>
 where
@@ -100,7 +100,7 @@ impl<T, N, S: Clone> Clone for Lazy<T, N, S> {
     }
 }
 
-/// === impl Shared ===
+// === impl Shared ===
 
 impl<T, N, S> Default for Shared<T, N, S> {
     fn default() -> Self {
