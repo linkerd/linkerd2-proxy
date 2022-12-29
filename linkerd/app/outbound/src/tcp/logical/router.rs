@@ -1,4 +1,3 @@
-use futures::prelude::*;
 use linkerd_app_core::{
     profiles,
     proxy::api_resolve::ConcreteAddr,
@@ -10,7 +9,7 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::sync::watch;
-use tracing::{error, trace, Instrument};
+use tracing::Instrument;
 
 #[derive(Debug)]
 pub struct NewRouter<N, U>(N, std::marker::PhantomData<fn(U)>);
