@@ -250,6 +250,15 @@ pub mod span {
                         Type::Received => "RECEIVED",
                     }
                 }
+                /// Creates an enum from field names used in the ProtoBuf definition.
+                pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+                    match value {
+                        "TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+                        "SENT" => Some(Self::Sent),
+                        "RECEIVED" => Some(Self::Received),
+                        _ => None,
+                    }
+                }
             }
         }
         /// A `TimeEvent` can contain either an `Annotation` object or a
@@ -344,6 +353,15 @@ pub mod span {
                     Type::ParentLinkedSpan => "PARENT_LINKED_SPAN",
                 }
             }
+            /// Creates an enum from field names used in the ProtoBuf definition.
+            pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+                match value {
+                    "TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+                    "CHILD_LINKED_SPAN" => Some(Self::ChildLinkedSpan),
+                    "PARENT_LINKED_SPAN" => Some(Self::ParentLinkedSpan),
+                    _ => None,
+                }
+            }
         }
     }
     /// A collection of links, which are references from this span to a span
@@ -393,6 +411,15 @@ pub mod span {
                 SpanKind::Unspecified => "SPAN_KIND_UNSPECIFIED",
                 SpanKind::Server => "SERVER",
                 SpanKind::Client => "CLIENT",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "SPAN_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+                "SERVER" => Some(Self::Server),
+                "CLIENT" => Some(Self::Client),
+                _ => None,
             }
         }
     }
@@ -624,6 +651,15 @@ pub mod constant_sampler {
                 ConstantDecision::AlwaysOff => "ALWAYS_OFF",
                 ConstantDecision::AlwaysOn => "ALWAYS_ON",
                 ConstantDecision::AlwaysParent => "ALWAYS_PARENT",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "ALWAYS_OFF" => Some(Self::AlwaysOff),
+                "ALWAYS_ON" => Some(Self::AlwaysOn),
+                "ALWAYS_PARENT" => Some(Self::AlwaysParent),
+                _ => None,
             }
         }
     }
