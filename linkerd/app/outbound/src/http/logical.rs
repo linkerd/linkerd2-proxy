@@ -41,8 +41,6 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, rt, concrete| {
             let route = svc::layers()
-                // Maintain a per-route distributor over concrete
-                // backends from the (above) concrete cache.
                 .push(http::insert::NewInsert::<ProfileRoute, _>::layer())
                 .push_on_service(http::BoxRequest::layer())
                 .push(

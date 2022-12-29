@@ -59,31 +59,33 @@ where
     type Future = S::Future;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        loop {
-            if let Some(inner) = self.inner.as_mut() {
-                return inner.poll_ready(cx);
+        if let Some(inner) = self.inner.as_mut() {
+            return inner.poll_ready(cx);
+        }
+
+        let mut shared = self.shared.lock();
+        *shared = match std::mem::take(&mut *shared) {
+            Shared::Uninit { inner, target } => {
+                let svc = inner.new_service(target);
+                self.inner = Some(svc.clone());
+                Shared::Service(svc)
             }
 
-            let mut shared = self.shared.lock();
-            *shared = match std::mem::take(&mut *shared) {
-                Shared::Uninit { inner, target } => {
-                    let svc = inner.new_service(target);
-                    self.inner = Some(svc.clone());
-                    Shared::Service(svc)
-                }
+            Shared::Service(svc) => {
+                self.inner = Some(svc.clone());
+                Shared::Service(svc)
+            }
 
-                Shared::Service(svc) => {
-                    self.inner = Some(svc.clone());
-                    Shared::Service(svc)
-                }
+            Shared::Invalid => unreachable!(),
+        };
 
-                Shared::Invalid => unreachable!(),
-            };
-
-            debug_assert!(self.inner.is_some());
-        }
+        self.inner
+            .as_mut()
+            .expect("inner service must be set")
+            .poll_ready(cx)
     }
 
+    #[inline]
     fn call(&mut self, req: Req) -> Self::Future {
         self.inner.as_mut().expect("polled").call(req)
     }
