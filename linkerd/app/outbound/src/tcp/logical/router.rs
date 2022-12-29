@@ -18,7 +18,7 @@ type Distribution = linkerd_distribute::Distribution<NameAddr>;
 type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
 type Distribute<S> = linkerd_distribute::Distribute<NameAddr, S>;
 
-struct Update<T, U, N, S> {
+pub struct Update<T, U, N, S> {
     target: T,
 
     new_backend: N,

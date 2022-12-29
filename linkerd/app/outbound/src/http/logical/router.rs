@@ -37,7 +37,7 @@ pub struct NewRoute<N, R, U> {
     _marker: PhantomData<fn(U)>,
 }
 
-struct Update<T, U, N, S, L, R> {
+pub struct Update<T, U, N, S, L, R> {
     target: T,
 
     new_backend: N,
