@@ -13,6 +13,7 @@ mod fail_on_error;
 pub mod failfast;
 mod filter;
 pub mod layer;
+mod lazy;
 mod loadshed;
 mod make_thunk;
 mod map_err;
@@ -37,6 +38,7 @@ pub use self::{
     fail_on_error::FailOnError,
     failfast::{FailFast, FailFastError},
     filter::{Filter, FilterLayer, Predicate},
+    lazy::{Lazy, NewLazy},
     loadshed::{LoadShed, LoadShedError},
     make_thunk::MakeThunk,
     map_err::MapErr,
