@@ -2,7 +2,7 @@ mod router;
 #[cfg(test)]
 mod tests;
 
-use self::router::NewRouter;
+use self::router::NewRoute;
 use super::{Concrete, Endpoint, Logical};
 use crate::{endpoint, resolve, Outbound};
 use linkerd_app_core::{
@@ -92,8 +92,12 @@ impl<C> Outbound<C> {
                 .check_new_service::<Concrete, I>()
                 .push(svc::ArcNewService::layer());
 
-            concrete
-                .push(NewRouter::layer())
+            let route = concrete
+                .check_new_service::<Concrete, I>()
+                .push(NewRoute::<Concrete, svc::ArcNewService<Concrete, _>>::layer())
+                .check_new_service::<Logical, I>();
+
+            route
                 // This caches each logical stack so that it can be reused
                 // across per-connection server stacks (i.e., created by the
                 // DetectService).
