@@ -151,7 +151,8 @@ impl<K: Clone, S: Clone> Clone for Distribute<K, S> {
 }
 
 impl<K, S> Default for Distribute<K, S> {
-    /// Returns an empty distribution. This distribution will never become ready/
+    /// Returns an empty distribution. This distribution will never become
+    /// ready.
     fn default() -> Self {
         Self {
             backends: Default::default(),
