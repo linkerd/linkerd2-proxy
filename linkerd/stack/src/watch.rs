@@ -4,7 +4,7 @@ use tokio::sync::watch;
 use tracing::Instrument;
 
 pub trait UpdateWatch<T> {
-    type Service;
+    type Service: Clone + Default;
 
     fn update(&mut self, target: &T) -> Option<Self::Service>;
 }
@@ -36,7 +36,7 @@ where
     P: Clone + Send + Sync + 'static,
     N: NewService<T, Service = U> + Send + 'static,
     U: UpdateWatch<P> + Send + Sync + 'static,
-    U::Service: Clone + Default + Send + Sync + 'static,
+    U::Service: Send + Sync + 'static,
 {
     type Service = SpawnWatch<U::Service>;
 
