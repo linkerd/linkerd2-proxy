@@ -71,6 +71,7 @@ impl<N> Outbound<N> {
                 .push(classify::NewClassify::layer())
                 .push_on_service(http::BoxResponse::layer())
                 .push_map_target(|(route, logical)| ProfileRoute { logical, route })
+                // Only build a route service when it is used.
                 .push(svc::NewLazy::layer());
 
             concrete

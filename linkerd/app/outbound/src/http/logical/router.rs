@@ -239,9 +239,7 @@ where
         targets: &HashMap<NameAddr, u32>,
     ) {
         let new_distribute: NewDistribute<N::Service> = self.backends.clone().into();
-
         self.matches = http_routes.iter().cloned().collect();
-
         self.routes = http_routes
             .iter()
             .map(|(_, r)| {
