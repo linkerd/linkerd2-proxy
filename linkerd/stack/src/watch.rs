@@ -3,7 +3,7 @@ use std::task::{Context, Poll};
 use tokio::sync::watch;
 use tracing::Instrument;
 
-/// Defines how to update a [`Service`] in the background as a [`watch::Reciever`]
+/// Defines how to update a [`Service`] in the background as a [`watch::Receiver`].
 /// containing a `T-`typed target is updated.
 pub trait UpdateWatch<T>: Send + 'static {
     /// The type of service built based on the watched target.
@@ -109,6 +109,7 @@ where
         self.inner.poll_ready(cx)
     }
 
+    #[inline]
     fn call(&mut self, req: Req) -> Self::Future {
         self.inner.call(req)
     }
