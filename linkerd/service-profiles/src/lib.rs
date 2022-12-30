@@ -25,6 +25,7 @@ mod default;
 pub mod discover;
 pub mod http;
 mod proto;
+pub mod tcp;
 
 pub use self::client::Client;
 
@@ -40,14 +41,9 @@ pub struct ReceiverStream {
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
     pub http_routes: http::RouteSet,
+    pub tcp_routes: tcp::RouteSet,
     /// A list of all target backend addresses on this profile and its routes.
     pub target_addrs: AHashSet<NameAddr>,
-    /// Targets for TCP traffic splitting.
-    ///
-    /// Targets for HTTP traffic splitting are stored on each route in `self.http_routes`.
-    // TODO(eliza): what if we added a "TCP route" type and just generated a
-    // single one, in anticipation of supporting the Gateway API TCPRoute type?
-    pub tcp_targets: Targets,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
@@ -190,15 +186,22 @@ impl linkerd_stack::Param<http::RouteSet> for Profile {
     }
 }
 
+impl linkerd_stack::Param<tcp::RouteSet> for Profile {
+    fn param(&self) -> tcp::RouteSet {
+        self.tcp_routes.clone()
+    }
+}
+
 impl Default for Profile {
     fn default() -> Self {
         // TODO(eliza): add default route
-        static DEFAULT_ROUTES: Lazy<http::RouteSet> = Lazy::new(|| Vec::new().into());
+        static DEFAULT_HTTP_ROUTES: Lazy<http::RouteSet> = Lazy::new(|| Vec::new().into());
+        static DEFAULT_TCP_ROUTES: Lazy<tcp::RouteSet> = Lazy::new(|| Vec::new().into());
         Self {
             addr: None,
-            http_routes: DEFAULT_ROUTES.clone(),
+            http_routes: DEFAULT_HTTP_ROUTES.clone(),
+            tcp_routes: DEFAULT_TCP_ROUTES.clone(),
             target_addrs: Default::default(),
-            tcp_targets: Default::default(),
             opaque_protocol: false,
             endpoint: None,
         }

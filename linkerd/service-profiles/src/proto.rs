@@ -1,4 +1,4 @@
-use crate::{http, LogicalAddr, Profile, Target, Targets};
+use crate::{http, tcp, LogicalAddr, Profile, Target, Targets};
 use linkerd2_proxy_api::destination as api;
 use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;
@@ -28,12 +28,14 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
         let labels = std::collections::HashMap::new();
         resolve::to_addr_meta(e, &labels)
     });
+    // service profiles don't define TCP routes, generate a single match;
+    let tcp_routes = std::iter::once(((), tcp::Route::new(targets.clone()))).collect();
     Profile {
         addr: name.map(move |n| LogicalAddr(NameAddr::from((n, port)))),
         http_routes,
+        tcp_routes,
         opaque_protocol: proto.opaque_protocol,
         target_addrs,
-        tcp_targets: targets,
         endpoint,
     }
 }

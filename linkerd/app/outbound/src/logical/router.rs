@@ -51,7 +51,7 @@ pub struct Route<M, R, S> {
     routes: HashMap<R, S>, // TODO(ver) AHashMap?
 }
 
-pub trait MatchRoute<Req>: Sized {
+pub trait MatchRoute<Req>: Eq + Sized {
     fn match_route<'matches, K>(
         matches: &'matches Matches<Self, K>,
         req: &Req,
