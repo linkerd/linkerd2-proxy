@@ -1,4 +1,4 @@
-use super::{RequestMatch, Route};
+use super::{Route, RouteSet};
 use crate::{Profile, Receiver, ReceiverStream};
 use futures::{future, prelude::*};
 use linkerd_error::{Error, Result};
@@ -31,7 +31,7 @@ pub struct ProxyRouter<T, N, P, S> {
     inner: S,
     target: T,
     rx: ReceiverStream,
-    http_routes: Vec<(RequestMatch, Route)>,
+    http_routes: RouteSet,
     proxies: HashMap<Route, P>,
 }
 
@@ -61,7 +61,7 @@ where
             inner,
             target,
             rx: rx.into(),
-            http_routes: Vec::new(),
+            http_routes: Vec::new().into(),
             proxies: HashMap::new(),
             new_proxy: self.new_proxy.clone(),
         }

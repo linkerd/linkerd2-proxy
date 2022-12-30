@@ -12,6 +12,8 @@ use tower::retry::budget::Budget;
 pub use self::proxy::NewProxyRouter;
 use crate::Targets;
 
+pub type RouteSet = Arc<[(RequestMatch, Route)]>;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {
     labels: Labels,
@@ -22,7 +24,7 @@ pub struct Route {
     targets: Targets,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestMatch {
     All(Vec<RequestMatch>),
     Any(Vec<RequestMatch>),
@@ -63,10 +65,10 @@ pub struct Retries {
 #[derive(Clone, Default)]
 struct Labels(Arc<std::collections::BTreeMap<String, String>>);
 
-pub fn route_for_request<'r, B>(
-    http_routes: &'r [(RequestMatch, Route)],
+pub fn route_for_request<'r, R, B>(
+    http_routes: &'r [(RequestMatch, R)],
     request: &http::Request<B>,
-) -> Option<&'r Route> {
+) -> Option<&'r R> {
     for (request_match, route) in http_routes {
         if request_match.is_match(request) {
             return Some(route);
@@ -253,3 +255,5 @@ impl PartialEq for Regex {
         self.0.as_str() == other.0.as_str()
     }
 }
+
+impl Eq for Regex {}

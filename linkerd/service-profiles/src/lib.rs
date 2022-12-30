@@ -6,6 +6,7 @@ use futures::Stream;
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
+use once_cell::sync::Lazy;
 use std::{
     fmt,
     future::Future,
@@ -35,10 +36,10 @@ pub struct ReceiverStream {
     inner: tokio_stream::wrappers::WatchStream<Profile>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
-    pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
+    pub http_routes: http::RouteSet,
     /// A list of all target backend addresses on this profile and its routes.
     pub target_addrs: AHashSet<NameAddr>,
     /// Targets for TCP traffic splitting.
@@ -181,6 +182,29 @@ impl Stream for ReceiverStream {
     }
 }
 
+// === impl Profile ===
+
+impl linkerd_stack::Param<http::RouteSet> for Profile {
+    fn param(&self) -> http::RouteSet {
+        self.http_routes.clone()
+    }
+}
+
+impl Default for Profile {
+    fn default() -> Self {
+        // TODO(eliza): add default route
+        static DEFAULT_ROUTES: Lazy<http::RouteSet> = Lazy::new(|| Vec::new().into());
+        Self {
+            addr: None,
+            http_routes: DEFAULT_ROUTES.clone(),
+            target_addrs: Default::default(),
+            tcp_targets: Default::default(),
+            opaque_protocol: false,
+            endpoint: None,
+        }
+    }
+}
+
 // === impl LookupAddr ===
 
 impl fmt::Display for LookupAddr {
@@ -271,7 +295,6 @@ impl Targets {
 
 impl Default for Targets {
     fn default() -> Self {
-        use once_cell::sync::Lazy;
         static NO_TARGETS: Lazy<Targets> = Lazy::new(|| Targets(Arc::new([])));
         NO_TARGETS.clone()
     }
