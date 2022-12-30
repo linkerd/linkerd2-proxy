@@ -19,7 +19,7 @@ type Distribution = linkerd_distribute::Distribution<NameAddr>;
 type Distribute<S> = linkerd_distribute::Distribute<NameAddr, S>;
 type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
 
-type Matches = Arc<[(profiles::http::RequestMatch, profiles::http::Route)]>;
+type Matches<M, K> = Arc<[(M, K)]>;
 
 /// A router that uses a per-route `Service` (with a fallback service when no
 /// route is matched).
@@ -37,22 +37,21 @@ pub struct NewRoute<N, R, U> {
     _marker: PhantomData<fn(U)>,
 }
 
-pub struct Update<T, U, N, S, L, R> {
-    target: T,
+pub struct Update<InT, OutT, N, S, L, R> {
+    target: InT,
 
     new_backend: N,
     backends: HashMap<NameAddr, S>,
 
     route_layer: L,
-    matches: Matches,
-    routes: HashMap<profiles::http::Route, R>,
+    route: Route<R>,
 
-    _marker: PhantomData<fn(U)>,
+    _marker: PhantomData<fn(OutT)>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Route<S> {
-    matches: Matches,
+    matches: Matches<profiles::http::RequestMatch, profiles::http::Route>,
     routes: HashMap<profiles::http::Route, S>, // TODO(ver) AHashMap?
 }
 
@@ -87,8 +86,7 @@ where
             new_backend: self.new_backend.clone(),
             route_layer: self.route_layer.clone(),
             backends: HashMap::default(),
-            matches: Arc::new([]),
-            routes: HashMap::default(),
+            route: Route::default(),
             _marker: PhantomData,
         }
     }
@@ -105,6 +103,15 @@ impl<N: Clone, R: Clone, U> Clone for NewRoute<N, R, U> {
 }
 
 // === impl Route ===
+
+impl<S> Default for Route<S> {
+    fn default() -> Self {
+        Self {
+            matches: Arc::new([]),
+            routes: HashMap::new(),
+        }
+    }
+}
 
 impl<B, S> Service<http::Request<B>> for Route<S>
 where
@@ -136,17 +143,6 @@ where
     }
 }
 
-// === impl Shared ===
-
-impl<S> Default for Route<S> {
-    fn default() -> Self {
-        Self {
-            matches: Arc::new([]),
-            routes: HashMap::new(),
-        }
-    }
-}
-
 // === impl Update ===
 
 impl<T, U, N, L, R> UpdateWatch<Profile> for Update<T, U, N, N::Service, L, R>
@@ -169,13 +165,13 @@ where
             .collect::<HashMap<_, _>>();
 
         let changed_backends = self.update_backends(&targets);
-        let changed_routes = *self.matches != profile.http_routes;
+        let changed_routes = *self.route.matches != profile.http_routes;
         if changed_backends || changed_routes {
             self.update_routes(&profile.http_routes, &targets);
 
             Some(Route {
-                matches: self.matches.clone(),
-                routes: self.routes.clone(),
+                matches: self.route.matches.clone(),
+                routes: self.route.routes.clone(),
             })
         } else {
             None
@@ -239,27 +235,29 @@ where
         targets: &HashMap<NameAddr, u32>,
     ) {
         let new_distribute: NewDistribute<N::Service> = self.backends.clone().into();
-        self.matches = http_routes.iter().cloned().collect();
-        self.routes = http_routes
-            .iter()
-            .map(|(_, r)| {
-                // TODO(ver) targets should be provided by the route
-                // configuration.
-                let distribution = if targets.is_empty() {
-                    let profiles::LogicalAddr(addr) = self.target.param();
-                    Distribution::from(addr)
-                } else {
-                    Distribution::random_available(
-                        targets.iter().map(|(addr, weight)| (addr.clone(), *weight)),
-                    )
-                    .expect("distribution must be valid")
-                };
+        self.route = Route {
+            matches: http_routes.iter().cloned().collect(),
+            routes: http_routes
+                .iter()
+                .map(|(_, r)| {
+                    // TODO(ver) targets should be provided by the route
+                    // configuration.
+                    let distribution = if targets.is_empty() {
+                        let profiles::LogicalAddr(addr) = self.target.param();
+                        Distribution::from(addr)
+                    } else {
+                        Distribution::random_available(
+                            targets.iter().map(|(addr, weight)| (addr.clone(), *weight)),
+                        )
+                        .expect("distribution must be valid")
+                    };
 
-                let dist = NewCloneService::from(new_distribute.new_service(distribution));
-                let new_route = self.route_layer.layer(dist);
-                let svc = new_route.new_service((r.clone(), self.target.clone()));
-                (r.clone(), svc)
-            })
-            .collect();
+                    let dist = NewCloneService::from(new_distribute.new_service(distribution));
+                    let new_route = self.route_layer.layer(dist);
+                    let svc = new_route.new_service((r.clone(), self.target.clone()));
+                    (r.clone(), svc)
+                })
+                .collect(),
+        };
     }
 }
