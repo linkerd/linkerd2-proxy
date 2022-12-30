@@ -64,7 +64,7 @@ where
         }
 
         let mut shared = self.shared.lock();
-        *shared = match std::mem::take(&mut *shared) {
+        *shared = match std::mem::replace(&mut *shared, Shared::Invalid) {
             Shared::Uninit { inner, target } => {
                 let svc = inner.new_service(target);
                 self.inner = Some(svc.clone());
@@ -97,14 +97,6 @@ impl<T, N, S: Clone> Clone for Lazy<T, N, S> {
             inner: self.inner.clone(),
             shared: self.shared.clone(),
         }
-    }
-}
-
-// === impl Shared ===
-
-impl<T, N, S> Default for Shared<T, N, S> {
-    fn default() -> Self {
-        Shared::Invalid
     }
 }
 
