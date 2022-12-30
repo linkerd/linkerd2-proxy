@@ -33,6 +33,7 @@ pub struct NewRoute<N, R, U, M, K> {
     route_layer: R,
     _marker: PhantomData<fn((U, M, K))>,
 }
+
 pub struct Update<InT, OutT, N, S, L, M, K, R> {
     target: InT,
 
@@ -205,6 +206,8 @@ where
         if target_addrs
             .iter()
             .all(|addr| self.backends.contains_key(addr))
+            // Don't return early if we still need to populate the default backend!
+            && !target_addrs.is_empty()
         {
             return removed > 0;
         }
