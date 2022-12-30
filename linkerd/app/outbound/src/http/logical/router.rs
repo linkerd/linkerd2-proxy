@@ -1,10 +1,7 @@
 use linkerd_app_core::{
     profiles::{self, Profile},
     proxy::api_resolve::ConcreteAddr,
-    svc::{
-        layer, NewCloneService, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt,
-        UpdateWatch,
-    },
+    svc::{layer, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt, UpdateWatch},
     NameAddr,
 };
 use std::{
@@ -15,8 +12,7 @@ use std::{
 };
 use tracing::{error, trace};
 
-type Distribution = linkerd_distribute::Distribution<NameAddr>;
-type Distribute<S> = linkerd_distribute::Distribute<NameAddr, S>;
+pub(super) type Distribution = linkerd_distribute::Distribution<NameAddr>;
 type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
 
 type Matches<M, K> = Arc<[(M, K)]>;
@@ -74,7 +70,7 @@ impl<N, R: Clone, U> NewRoute<N, R, U> {
 impl<T, U, N, R, S> NewService<T> for NewRoute<N, R, U>
 where
     N: NewService<U> + Clone,
-    R: layer::Layer<NewCloneService<Distribute<N::Service>>> + Clone,
+    R: layer::Layer<NewDistribute<N::Service>> + Clone,
     R::Service: NewService<(profiles::http::Route, T), Service = S>,
     S: Clone,
 {
@@ -151,7 +147,7 @@ where
     U: From<(ConcreteAddr, T)> + 'static,
     N: NewService<U> + Send + Sync + 'static,
     N::Service: Clone + Send + Sync + 'static,
-    L: layer::Layer<NewCloneService<Distribute<N::Service>>> + Send + Sync + 'static,
+    L: layer::Layer<NewDistribute<N::Service>> + Send + Sync + 'static,
     L::Service: NewService<(profiles::http::Route, T), Service = R>,
     R: Clone + Send + Sync + 'static,
 {
@@ -190,7 +186,7 @@ where
     U: From<(ConcreteAddr, T)>,
     N: NewService<U>,
     N::Service: Clone,
-    L: layer::Layer<NewCloneService<Distribute<N::Service>>>,
+    L: layer::Layer<NewDistribute<N::Service>>,
     L::Service: NewService<(profiles::http::Route, T), Service = R>,
     R: Clone,
 {
@@ -240,26 +236,10 @@ where
             matches: http_routes.iter().cloned().collect(),
             routes: http_routes
                 .iter()
-                .map(|(_, r)| {
-                    let targets = r.targets().as_ref();
-                    // TODO(eliza): have the route impl `Param<Distribution>` so
-                    // it could also provide first available.
-                    let distribution = if targets.is_empty() {
-                        let profiles::LogicalAddr(addr) = self.target.param();
-                        Distribution::from(addr)
-                    } else {
-                        Distribution::random_available(
-                            targets
-                                .iter()
-                                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
-                        )
-                        .expect("distribution must be valid")
-                    };
-
-                    let dist = NewCloneService::from(new_distribute.new_service(distribution));
-                    let new_route = self.route_layer.layer(dist);
-                    let svc = new_route.new_service((r.clone(), self.target.clone()));
-                    (r.clone(), svc)
+                .map(|(_, route)| {
+                    let new_route = self.route_layer.layer(new_distribute.clone());
+                    let svc = new_route.new_service((route.clone(), self.target.clone()));
+                    (route.clone(), svc)
                 })
                 .collect(),
         };
