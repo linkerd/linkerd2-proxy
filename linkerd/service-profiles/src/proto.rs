@@ -1,4 +1,4 @@
-use crate::{http, LogicalAddr, Profile, Target};
+use crate::{http, LogicalAddr, Profile, Target, Targets};
 use linkerd2_proxy_api::destination as api;
 use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;
@@ -11,15 +11,17 @@ use tracing::warn;
 pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Profile {
     let name = Name::from_str(&proto.fully_qualified_name).ok();
     let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
-    let http_routes = proto
-        .routes
-        .into_iter()
-        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
-        .collect();
     let targets = proto
         .dst_overrides
         .into_iter()
         .filter_map(convert_dst_override)
+        .collect();
+    // This has to be borrowed here so that it's not moved into the `filter_map` closure.
+    let targets_ref = &targets;
+    let http_routes = proto
+        .routes
+        .into_iter()
+        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref(), targets_ref))
         .collect();
     let endpoint = proto.endpoint.and_then(|e| {
         let labels = std::collections::HashMap::new();
@@ -28,15 +30,16 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
     Profile {
         addr: name.map(move |n| LogicalAddr(NameAddr::from((n, port)))),
         http_routes,
-        targets,
         opaque_protocol: proto.opaque_protocol,
         endpoint,
+        targets,
     }
 }
 
 fn convert_route(
     orig: api::Route,
     retry_budget: Option<&Arc<Budget>>,
+    targets: &Targets,
 ) -> Option<(http::RequestMatch, http::Route)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
     let rsp_classes = orig
@@ -44,7 +47,11 @@ fn convert_route(
         .into_iter()
         .filter_map(convert_rsp_class)
         .collect();
-    let mut route = http::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
+    let mut route = http::Route::new(
+        orig.metrics_labels.into_iter(),
+        rsp_classes,
+        targets.clone(),
+    );
     if orig.is_retryable {
         set_route_retry(&mut route, retry_budget);
     }
