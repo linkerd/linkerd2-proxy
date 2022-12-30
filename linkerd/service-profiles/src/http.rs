@@ -1,6 +1,4 @@
 mod proxy;
-
-use once_cell::sync::Lazy;
 use std::{
     fmt,
     hash::{Hash, Hasher},
@@ -32,6 +30,8 @@ pub enum RequestMatch {
     Not(Box<RequestMatch>),
     Path(Regex),
     Method(http::Method),
+    /// The default route always matches all requests.
+    Default,
 }
 
 /// Wras a `regex::Regex` to implement `PartialEq` via the original string.
@@ -134,20 +134,14 @@ impl RequestMatch {
             RequestMatch::Not(ref m) => !m.is_match(req),
             RequestMatch::All(ref ms) => ms.iter().all(|m| m.is_match(req)),
             RequestMatch::Any(ref ms) => ms.iter().any(|m| m.is_match(req)),
+            RequestMatch::Default => true,
         }
     }
 }
 
 impl Default for RequestMatch {
     fn default() -> Self {
-        // TODO(eliza): adding a `RequestMatch::Default` variant that just
-        // always matches would be more efficient...
-        static REGEX: Lazy<Regex> = Lazy::new(|| {
-            ".*".parse::<regex::Regex>()
-                .expect("regex should always parse")
-                .into()
-        });
-        Self::Path(REGEX.clone())
+        Self::Default
     }
 }
 
