@@ -16,6 +16,7 @@ members = [
     "linkerd/app",
     "linkerd/cache",
     "linkerd/conditional",
+    "linkerd/client-policy",
     "linkerd/distribute",
     "linkerd/detect",
     "linkerd/dns/name",

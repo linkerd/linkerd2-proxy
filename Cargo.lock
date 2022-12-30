@@ -995,6 +995,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-client-policy"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "http",
+ "linkerd-addr",
+ "once_cell",
+ "tower",
+]
+
+[[package]]
 name = "linkerd-conditional"
 version = "0.1.0"
 
@@ -1534,6 +1545,7 @@ dependencies = [
  "http-body",
  "indexmap",
  "linkerd-addr",
+ "linkerd-client-policy",
  "linkerd-distribute",
  "linkerd-dns-name",
  "linkerd-error",
