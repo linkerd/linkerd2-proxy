@@ -15,7 +15,8 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
         .dst_overrides
         .into_iter()
         .filter_map(convert_dst_override)
-        .collect();
+        .collect::<Targets>();
+    let target_addrs = targets.iter().map(|t| t.addr.clone()).collect();
     // This has to be borrowed here so that it's not moved into the `filter_map` closure.
     let targets_ref = &targets;
     let http_routes = proto
@@ -31,8 +32,9 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
         addr: name.map(move |n| LogicalAddr(NameAddr::from((n, port)))),
         http_routes,
         opaque_protocol: proto.opaque_protocol,
+        target_addrs,
+        tcp_targets: targets,
         endpoint,
-        targets,
     }
 }
 

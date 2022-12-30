@@ -5,7 +5,7 @@ use linkerd_app_core::{
     NameAddr,
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     marker::PhantomData,
     sync::Arc,
     task::{Context, Poll},
@@ -154,18 +154,7 @@ where
     type Service = Route<R>;
 
     fn update(&mut self, profile: &Profile) -> Option<Self::Service> {
-        let targets = profile
-            .targets
-            .iter()
-            .map(|profiles::Target { addr, .. }| addr.clone())
-            // The `all_targets()` iterator may contain the same backend addr
-            // multiple times; however, collecting it to a `HashSet` will
-            // de-duplicate the targets.
-            // TODO(eliza): should the profile just also contain a hashset of
-            // backend names?
-            .collect::<HashSet<_>>();
-
-        let changed_backends = self.update_backends(&targets);
+        let changed_backends = self.update_backends(&profile.target_addrs);
         let changed_routes = *self.route.matches != profile.http_routes;
         if changed_backends || changed_routes {
             self.update_routes(&profile.http_routes);
@@ -190,19 +179,22 @@ where
     L::Service: NewService<(profiles::http::Route, T), Service = R>,
     R: Clone,
 {
-    fn update_backends(&mut self, targets: &HashSet<NameAddr>) -> bool {
+    fn update_backends(&mut self, target_addrs: &ahash::AHashSet<NameAddr>) -> bool {
         let removed = {
             let init = self.backends.len();
-            self.backends.retain(|addr, _| targets.contains(addr));
+            self.backends.retain(|addr, _| target_addrs.contains(addr));
             init - self.backends.len()
         };
 
-        if targets.iter().all(|addr| self.backends.contains_key(addr)) {
+        if target_addrs
+            .iter()
+            .all(|addr| self.backends.contains_key(addr))
+        {
             return removed > 0;
         }
 
-        self.backends.reserve(targets.len().max(1));
-        for addr in targets {
+        self.backends.reserve(target_addrs.len().max(1));
+        for addr in target_addrs {
             // Skip rebuilding targets we already have a stack for.
             if self.backends.contains_key(addr) {
                 continue;

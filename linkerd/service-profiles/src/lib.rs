@@ -1,6 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
+use ahash::AHashSet;
 use futures::Stream;
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
@@ -38,7 +39,14 @@ pub struct ReceiverStream {
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
     pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
-    pub targets: Targets,
+    /// A list of all target backend addresses on this profile and its routes.
+    pub target_addrs: AHashSet<NameAddr>,
+    /// Targets for TCP traffic splitting.
+    ///
+    /// Targets for HTTP traffic splitting are stored on each route in `self.http_routes`.
+    // TODO(eliza): what if we added a "TCP route" type and just generated a
+    // single one, in anticipation of supporting the Gateway API TCPRoute type?
+    pub tcp_targets: Targets,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
@@ -170,23 +178,6 @@ impl Stream for ReceiverStream {
     #[inline]
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Pin::new(&mut self.inner).poll_next(cx)
-    }
-}
-
-// === impl Profile ===
-
-impl Profile {
-    /// Returns an iterator over all targets in this profile.
-    ///
-    /// Note that targets are *not* de-duplicated here. The same target may
-    /// occur multiple times in this iterator, with different or the same weights.
-    // XXX(eliza): this is kinda gross...
-    pub fn all_targets(&self) -> impl Iterator<Item = &Target> + '_ {
-        self.targets.0.iter().chain(
-            self.http_routes
-                .iter()
-                .flat_map(|(_, r)| r.targets().iter()),
-        )
     }
 }
 
