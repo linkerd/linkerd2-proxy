@@ -26,7 +26,7 @@ pub fn empty() -> Profile {
         addr: None,
         http_routes: std::iter::empty().collect(),
         tcp_routes: std::iter::empty().collect(),
-        target_addrs: Default::default(),
+        backend_addrs: Default::default(),
         endpoint: None,
         opaque_protocol: false,
     }
@@ -38,12 +38,12 @@ pub fn with_addr(addr: &str) -> Profile {
 }
 
 pub fn with_nameaddr(addr: NameAddr) -> Profile {
-    let targets = std::iter::once(Target {
+    let targets = std::iter::once(Backend {
         addr: addr.clone(),
         weight: 1,
     })
-    .collect::<Targets>();
-    let target_addrs = std::iter::once(addr.clone()).collect();
+    .collect::<Backends>();
+    let backend_addrs = std::iter::once(addr.clone()).collect();
     Profile {
         addr: Some(LogicalAddr(addr)),
         http_routes: std::iter::once((
@@ -53,7 +53,7 @@ pub fn with_nameaddr(addr: NameAddr) -> Profile {
         .collect(),
         tcp_routes: std::iter::once((tcp::RequestMatch::default(), tcp::Route::new(targets)))
             .collect(),
-        target_addrs,
+        backend_addrs,
         endpoint: None,
         opaque_protocol: false,
     }

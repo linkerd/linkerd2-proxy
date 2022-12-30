@@ -189,7 +189,7 @@ where
     type Service = Route<M, K, R>;
 
     fn update(&mut self, profile: &Profile) -> Option<Self::Service> {
-        let changed_backends = self.update_backends(&profile.target_addrs);
+        let changed_backends = self.update_backends(&profile.backend_addrs);
         let routes = profile.param();
         let changed_routes = self.route.matches != routes;
         if changed_backends || changed_routes {

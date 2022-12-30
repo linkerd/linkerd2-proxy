@@ -10,7 +10,7 @@ use std::{
 use tower::retry::budget::Budget;
 
 pub use self::proxy::NewProxyRouter;
-use crate::Targets;
+use crate::Backends;
 
 pub type RouteSet = Arc<[(RequestMatch, Route)]>;
 
@@ -20,8 +20,7 @@ pub struct Route {
     response_classes: ResponseClasses,
     retries: Option<Retries>,
     timeout: Option<Duration>,
-    // TODO(eliza): I would prefer to rename this to `backends`...
-    targets: Targets,
+    backends: Backends,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,14 +81,14 @@ pub fn route_for_request<'r, R, B>(
 // === impl Route ===
 
 impl Route {
-    pub fn new<I>(label_iter: I, response_classes: Vec<ResponseClass>, targets: Targets) -> Self
+    pub fn new<I>(label_iter: I, response_classes: Vec<ResponseClass>, targets: Backends) -> Self
     where
         I: Iterator<Item = (String, String)>,
     {
         let labels = Labels(Arc::new(label_iter.collect()));
 
         Self {
-            targets,
+            backends: targets,
             labels,
             response_classes: ResponseClasses(response_classes.into()),
             retries: None,
@@ -112,8 +111,9 @@ impl Route {
     pub fn timeout(&self) -> Option<Duration> {
         self.timeout
     }
-    pub fn targets(&self) -> &Targets {
-        &self.targets
+
+    pub fn backends(&self) -> &Backends {
+        &self.backends
     }
 
     pub fn set_retries(&mut self, budget: Arc<Budget>) {

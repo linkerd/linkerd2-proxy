@@ -129,11 +129,12 @@ impl classify::CanClassify for ProfileRoute {
 
 impl svc::Param<router::Distribution> for ProfileRoute {
     fn param(&self) -> router::Distribution {
+        debug_assert!(!self.route.backends().as_ref().is_empty());
         router::Distribution::random_available(
             self.route
-                .targets()
+                .backends()
                 .iter()
-                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
+                .map(|profiles::Backend { addr, weight }| (addr.clone(), *weight)),
         )
         .expect("distribution must be valid")
     }

@@ -1,4 +1,4 @@
-use crate::{http, tcp, LogicalAddr, Profile, Target, Targets};
+use crate::{http, tcp, Backend, Backends, LogicalAddr, Profile};
 use linkerd2_proxy_api::destination as api;
 use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;
@@ -12,29 +12,30 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
     let name = Name::from_str(&proto.fully_qualified_name).ok();
     let addr = name.map(|n| NameAddr::from((n, port)));
 
-    let mut targets = proto
+    let mut backends = proto
         .dst_overrides
         .into_iter()
         .filter_map(convert_dst_override)
-        .collect::<Targets>();
-    if targets.is_empty() {
+        .collect::<Backends>();
+    if backends.is_empty() {
         if let Some(addr) = addr.clone() {
-            targets = std::iter::once(Target { addr, weight: 1 }).collect();
+            backends = std::iter::once(Backend { addr, weight: 1 }).collect();
         }
     }
+    let backend_addrs = backends.iter().map(|b| b.addr.clone()).collect();
 
     let http_routes = {
         // Default route used when no routes in the profile match a request.
         let default = std::iter::once((
             http::RequestMatch::default(),
-            http::Route::new(std::iter::empty(), Vec::new(), targets.clone()),
+            http::Route::new(std::iter::empty(), Vec::new(), backends.clone()),
         ));
         let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
-        let tgts = &targets;
+        let backends = &backends;
         proto
             .routes
             .into_iter()
-            .filter_map(move |orig| convert_route(orig, retry_budget.as_ref(), tgts))
+            .filter_map(move |orig| convert_route(orig, retry_budget.as_ref(), backends))
             // Populate the default route last, so that every other route is tried first.
             .chain(default)
             .collect()
@@ -45,19 +46,17 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
         resolve::to_addr_meta(e, &labels)
     });
 
-    let target_addrs = targets.iter().map(|t| t.addr.clone()).collect();
-
     // ServiceProfiles don't define TCP routes, generate a single match which
     // matches all TCP connections but still uses the list of targets from the profile.
     let tcp_routes =
-        std::iter::once((tcp::RequestMatch::default(), tcp::Route::new(targets))).collect();
+        std::iter::once((tcp::RequestMatch::default(), tcp::Route::new(backends))).collect();
 
     Profile {
         addr: addr.map(LogicalAddr),
         http_routes,
         tcp_routes,
         opaque_protocol: proto.opaque_protocol,
-        target_addrs,
+        backend_addrs,
         endpoint,
     }
 }
@@ -65,7 +64,7 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
 fn convert_route(
     orig: api::Route,
     retry_budget: Option<&Arc<Budget>>,
-    targets: &Targets,
+    targets: &Backends,
 ) -> Option<(http::RequestMatch, http::Route)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
     let rsp_classes = orig
@@ -87,12 +86,12 @@ fn convert_route(
     Some((req_match, route))
 }
 
-fn convert_dst_override(orig: api::WeightedDst) -> Option<Target> {
+fn convert_dst_override(orig: api::WeightedDst) -> Option<Backend> {
     if orig.weight == 0 {
         return None;
     }
     let addr = NameAddr::from_str(orig.authority.as_str()).ok()?;
-    Some(Target {
+    Some(Backend {
         addr,
         weight: orig.weight,
     })

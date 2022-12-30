@@ -126,7 +126,7 @@ impl<C> Outbound<C> {
 
 impl svc::Param<router::Distribution> for ProfileRoute {
     fn param(&self) -> router::Distribution {
-        let targets = self.route.targets().as_ref();
+        let targets = self.route.backends().as_ref();
         // If the route has no backend overrides, distribute all traffic to the
         // logical address.
         if targets.is_empty() {
@@ -137,7 +137,7 @@ impl svc::Param<router::Distribution> for ProfileRoute {
         router::Distribution::random_available(
             targets
                 .iter()
-                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
+                .map(|profiles::Backend { addr, weight }| (addr.clone(), *weight)),
         )
         .expect("distribution must be valid")
     }
