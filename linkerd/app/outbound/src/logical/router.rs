@@ -24,7 +24,8 @@ type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
 /// This router is similar to `linkerd_stack::NewRouter` and
 /// `linkerd_cache::Cache` with a few differences:
 ///
-/// * Routes are constructed eagerly as the profile updates;
+/// * Routes are constructed eagerly as the profile updates by a background
+///   task;
 /// * Routes are removed eagerly as the profile updates (i.e. there's no
 ///   idle-oriented eviction).
 #[derive(Debug)]
@@ -46,13 +47,23 @@ pub struct Update<InT, OutT, N, S, L, M, K, R> {
     _marker: PhantomData<fn(OutT)>,
 }
 
+/// The [`Service`] constructed by [`NewRoute`].
 #[derive(Clone, Debug)]
 pub struct Route<M, R, S> {
     matches: Matches<M, R>,
     routes: HashMap<R, S>, // TODO(ver) AHashMap?
 }
 
+/// A type which can match a request to a route.
 pub trait MatchRoute<Req>: Eq + Sized {
+    /// Given a list of (route matcher, key) pairs and a request, returns the
+    /// key matching this request according to a route matching strategy.
+    ///
+    /// If no route matches the request, this method returns `None`.
+    ///
+    /// Depending on the route matching strategy used by this type, the returned
+    /// route may be the first route to match the request (ServiceProfile
+    /// style), or the most specific route to match the request (HTTPRoute style).
     fn match_route<'matches, K>(
         matches: &'matches Matches<Self, K>,
         req: &Req,
