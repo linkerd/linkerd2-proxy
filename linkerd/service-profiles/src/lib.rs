@@ -173,6 +173,23 @@ impl Stream for ReceiverStream {
     }
 }
 
+// === impl Profile ===
+
+impl Profile {
+    /// Returns an iterator over all targets in this profile.
+    ///
+    /// Note that targets are *not* de-duplicated here. The same target may
+    /// occur multiple times in this iterator, with different or the same weights.
+    // XXX(eliza): this is kinda gross...
+    pub fn all_targets(&self) -> impl Iterator<Item = &Target> + '_ {
+        self.targets.0.iter().chain(
+            self.http_routes
+                .iter()
+                .flat_map(|(_, r)| r.targets().iter()),
+        )
+    }
+}
+
 // === impl LookupAddr ===
 
 impl fmt::Display for LookupAddr {

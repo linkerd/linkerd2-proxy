@@ -8,7 +8,7 @@ use linkerd_app_core::{
     NameAddr,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     marker::PhantomData,
     sync::Arc,
     task::{Context, Poll},
@@ -161,13 +161,18 @@ where
         let targets = profile
             .targets
             .iter()
-            .map(|profiles::Target { addr, weight }| (addr.clone(), *weight))
-            .collect::<HashMap<_, _>>();
+            .map(|profiles::Target { addr, .. }| addr.clone())
+            // The `all_targets()` iterator may contain the same backend addr
+            // multiple times; however, collecting it to a `HashSet` will
+            // de-duplicate the targets.
+            // TODO(eliza): should the profile just also contain a hashset of
+            // backend names?
+            .collect::<HashSet<_>>();
 
         let changed_backends = self.update_backends(&targets);
         let changed_routes = *self.route.matches != profile.http_routes;
         if changed_backends || changed_routes {
-            self.update_routes(&profile.http_routes, &targets);
+            self.update_routes(&profile.http_routes);
 
             Some(Route {
                 matches: self.route.matches.clone(),
@@ -189,22 +194,19 @@ where
     L::Service: NewService<(profiles::http::Route, T), Service = R>,
     R: Clone,
 {
-    fn update_backends<V>(&mut self, targets: &HashMap<NameAddr, V>) -> bool {
+    fn update_backends(&mut self, targets: &HashSet<NameAddr>) -> bool {
         let removed = {
             let init = self.backends.len();
-            self.backends.retain(|addr, _| targets.contains_key(addr));
+            self.backends.retain(|addr, _| targets.contains(addr));
             init - self.backends.len()
         };
 
-        if targets
-            .iter()
-            .all(|(addr, _)| self.backends.contains_key(addr))
-        {
+        if targets.iter().all(|addr| self.backends.contains_key(addr)) {
             return removed > 0;
         }
 
         self.backends.reserve(targets.len().max(1));
-        for addr in targets.keys() {
+        for addr in targets {
             // Skip rebuilding targets we already have a stack for.
             if self.backends.contains_key(addr) {
                 continue;
@@ -232,7 +234,6 @@ where
     fn update_routes(
         &mut self,
         http_routes: &[(profiles::http::RequestMatch, profiles::http::Route)],
-        targets: &HashMap<NameAddr, u32>,
     ) {
         let new_distribute: NewDistribute<N::Service> = self.backends.clone().into();
         self.route = Route {
@@ -240,14 +241,17 @@ where
             routes: http_routes
                 .iter()
                 .map(|(_, r)| {
-                    // TODO(ver) targets should be provided by the route
-                    // configuration.
+                    let targets = r.targets().as_ref();
+                    // TODO(eliza): have the route impl `Param<Distribution>` so
+                    // it could also provide first available.
                     let distribution = if targets.is_empty() {
                         let profiles::LogicalAddr(addr) = self.target.param();
                         Distribution::from(addr)
                     } else {
                         Distribution::random_available(
-                            targets.iter().map(|(addr, weight)| (addr.clone(), *weight)),
+                            targets
+                                .iter()
+                                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
                         )
                         .expect("distribution must be valid")
                     };

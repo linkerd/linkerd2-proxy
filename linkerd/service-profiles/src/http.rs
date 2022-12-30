@@ -108,10 +108,10 @@ impl Route {
     pub fn timeout(&self) -> Option<Duration> {
         self.timeout
     }
-
     pub fn targets(&self) -> &Targets {
         &self.targets
     }
+
     pub fn set_retries(&mut self, budget: Arc<Budget>) {
         self.retries = Some(Retries { budget });
     }
