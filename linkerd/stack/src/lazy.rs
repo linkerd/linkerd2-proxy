@@ -107,3 +107,88 @@ impl<T, N, S> Default for Shared<T, N, S> {
         Shared::Invalid
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layer::Layer;
+    use std::sync::Arc;
+    use tokio_test::{assert_pending, assert_ready_ok};
+    use tower::ServiceExt;
+    use tower_test::mock;
+
+    #[derive(Clone)]
+    struct NewOnce<T>(Arc<Mutex<Option<T>>>);
+
+    impl<T> NewService<()> for NewOnce<T> {
+        type Service = T;
+        fn new_service(&self, _: ()) -> Self::Service {
+            self.0
+                .lock()
+                .take()
+                .expect("service should only be made once")
+        }
+    }
+
+    fn new_once<T>(svc: T) -> NewOnce<T> {
+        NewOnce(Arc::new(Mutex::new(Some(svc))))
+    }
+
+    #[tokio::test]
+    async fn only_makes_service_once() {
+        let new_svc = new_once(tower::service_fn(|_: ()| async { Ok::<_, ()>(()) }));
+        let lazy = NewLazy::layer().layer(new_svc).new_service(());
+
+        let t1 = tokio::spawn(lazy.clone().oneshot(()));
+        let t2 = tokio::spawn(lazy.clone().oneshot(()));
+        let t3 = tokio::spawn(lazy.clone().oneshot(()));
+
+        t1.await.unwrap().unwrap();
+        t2.await.unwrap().unwrap();
+        t3.await.unwrap().unwrap();
+    }
+
+    /// Asserts that a `Lazy` service properly forwards the inner service's
+    /// readiness after creating it.
+    #[tokio::test]
+    async fn preserves_inner_readiness() {
+        let (svc, mut handle) = mock::pair::<(), ()>();
+        let new_svc = new_once(svc);
+        let lazy = NewLazy::layer().layer(new_svc).new_service(());
+        let mut lazy = mock::Spawn::new(lazy);
+
+        // the inner service is made, but isn't ready yet.
+        handle.allow(0);
+        assert_pending!(lazy.poll_ready());
+
+        handle.allow(1);
+        assert_ready_ok!(lazy.poll_ready());
+    }
+
+    #[tokio::test]
+    async fn reusable() {
+        let new_svc = new_once(tower::service_fn(|_: ()| async { Ok::<_, ()>(()) }));
+        let mut lazy = NewLazy::layer().layer(new_svc).new_service(());
+
+        lazy.ready()
+            .await
+            .expect("ready")
+            .call(())
+            .await
+            .expect("call");
+
+        lazy.ready()
+            .await
+            .expect("ready")
+            .call(())
+            .await
+            .expect("call");
+
+        lazy.ready()
+            .await
+            .expect("ready")
+            .call(())
+            .await
+            .expect("call");
+    }
+}
