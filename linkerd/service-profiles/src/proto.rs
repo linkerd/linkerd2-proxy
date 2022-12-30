@@ -17,19 +17,34 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
         .filter_map(convert_dst_override)
         .collect::<Targets>();
     let target_addrs = targets.iter().map(|t| t.addr.clone()).collect();
-    // This has to be borrowed here so that it's not moved into the `filter_map` closure.
-    let targets_ref = &targets;
-    let http_routes = proto
-        .routes
-        .into_iter()
-        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref(), targets_ref))
-        .collect();
+
+    let http_routes = {
+        // This has to be borrowed here so that it's not moved into the `filter_map` closure.
+        let targets_ref = &targets;
+        // Default route used when no routes in the profile match a request.
+        let default = std::iter::once((
+            http::RequestMatch::default(),
+            http::Route::new(std::iter::empty(), Vec::new(), targets.clone()),
+        ));
+        proto
+            .routes
+            .into_iter()
+            .filter_map(move |orig| convert_route(orig, retry_budget.as_ref(), targets_ref))
+            // Populate the default route last, so that every other route is tried first.
+            .chain(default)
+            .collect()
+    };
+
     let endpoint = proto.endpoint.and_then(|e| {
         let labels = std::collections::HashMap::new();
         resolve::to_addr_meta(e, &labels)
     });
-    // service profiles don't define TCP routes, generate a single match;
-    let tcp_routes = std::iter::once(((), tcp::Route::new(targets.clone()))).collect();
+
+    // ServiceProfiles don't define TCP routes, generate a single match which
+    // matches all TCP connections but still uses the list of targets from the profile.
+    let tcp_routes =
+        std::iter::once((tcp::RequestMatch::default(), tcp::Route::new(targets))).collect();
+
     Profile {
         addr: name.map(move |n| LogicalAddr(NameAddr::from((n, port)))),
         http_routes,

@@ -1,5 +1,6 @@
 mod proxy;
 
+use once_cell::sync::Lazy;
 use std::{
     fmt,
     hash::{Hash, Hasher},
@@ -134,6 +135,19 @@ impl RequestMatch {
             RequestMatch::All(ref ms) => ms.iter().all(|m| m.is_match(req)),
             RequestMatch::Any(ref ms) => ms.iter().any(|m| m.is_match(req)),
         }
+    }
+}
+
+impl Default for RequestMatch {
+    fn default() -> Self {
+        // TODO(eliza): adding a `RequestMatch::Default` variant that just
+        // always matches would be more efficient...
+        static REGEX: Lazy<Regex> = Lazy::new(|| {
+            ".*".parse::<regex::Regex>()
+                .expect("regex should always parse")
+                .into()
+        });
+        Self::Path(REGEX.clone())
     }
 }
 

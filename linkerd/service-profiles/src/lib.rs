@@ -194,9 +194,10 @@ impl linkerd_stack::Param<tcp::RouteSet> for Profile {
 
 impl Default for Profile {
     fn default() -> Self {
-        // TODO(eliza): add default route
-        static DEFAULT_HTTP_ROUTES: Lazy<http::RouteSet> = Lazy::new(|| Vec::new().into());
-        static DEFAULT_TCP_ROUTES: Lazy<tcp::RouteSet> = Lazy::new(|| Vec::new().into());
+        static DEFAULT_HTTP_ROUTES: Lazy<http::RouteSet> =
+            Lazy::new(|| vec![Default::default()].into());
+        static DEFAULT_TCP_ROUTES: Lazy<tcp::RouteSet> =
+            Lazy::new(|| vec![Default::default()].into());
         Self {
             addr: None,
             http_routes: DEFAULT_HTTP_ROUTES.clone(),
