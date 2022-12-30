@@ -1,4 +1,6 @@
+use futures::{future, TryFutureExt};
 use linkerd_app_core::{
+    Error,
     profiles::{self, Profile},
     proxy::api_resolve::ConcreteAddr,
     svc::{layer, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt, UpdateWatch},
@@ -12,6 +14,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
+use thiserror::Error;
 use tracing::{error, trace};
 
 pub(crate) type Matches<M, K> = Arc<[(M, K)]>;
@@ -69,6 +72,10 @@ pub trait MatchRoute<Req>: Eq + Sized {
         req: &Req,
     ) -> Option<&'matches K>;
 }
+
+#[derive(Debug, Error)]
+#[error("no route for request")]
+pub struct NoRouteForRequest(());
 
 // === impl NewRoute ===
 
@@ -132,14 +139,18 @@ impl<M, K, S> Default for Route<M, K, S> {
 impl<M, K, S, Req> Service<Req> for Route<M, K, S>
 where
     S: Service<Req> + Clone,
+    S::Error: Into<Error>,
     M: MatchRoute<Req>,
     K: Hash + Eq + fmt::Debug,
 {
     type Response = S::Response;
-    type Error = S::Error;
-    type Future = Oneshot<S, Req>;
+    type Error = Error;
+    type Future = future::Either<
+        future::MapErr<Oneshot<S, Req>, fn(S::Error) -> Error>,
+        future::Ready<Result<S::Response, Error>>
+    >;
 
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         // TODO(ver) figure out how backpressure should work here. Ideally, we
         // should only advertise readiness when at least one backend is ready.
         Poll::Ready(Ok(()))
@@ -150,14 +161,16 @@ where
         if let Some(route) = M::match_route(&self.matches, &req) {
             if let Some(svc) = self.routes.get(route).cloned() {
                 trace!(?route, "Using route service");
-                return svc.oneshot(req);
+                return future::Either::Left(svc.oneshot(req).map_err(Into::into));
             }
 
             debug_assert!(false, "Route not found in cache");
             error!(?route, "Route not found in cache. This is a bug.");
         }
 
-        todo!("handle no matching route");
+        // TODO(eliza): should this be a warning? or debug?
+        tracing::info!("No route for request");
+        future::Either::Right(future::ready(Err(NoRouteForRequest(()).into())))
     }
 }
 
