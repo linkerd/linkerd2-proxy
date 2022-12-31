@@ -207,24 +207,22 @@ where
     M: Clone,
     K: Hash + Eq + Clone,
 {
-    fn update_backends(&mut self, target_addrs: &ahash::AHashSet<NameAddr>) -> bool {
+    fn update_backends(&mut self, addrs: &ahash::AHashSet<NameAddr>) -> bool {
         let removed = {
             let init = self.backends.len();
-            self.backends.retain(|addr, _| target_addrs.contains(addr));
+            self.backends.retain(|addr, _| addrs.contains(addr));
             init - self.backends.len()
         };
 
-        if target_addrs
-            .iter()
-            .all(|addr| self.backends.contains_key(addr))
-            // Don't return early if we still need to populate the default backend!
-            && !target_addrs.is_empty()
-        {
+        // We just removed all backends that aren't in the new addrs, so we
+        // we can skip further processing by comparing their lengths.
+        debug_assert!(addrs.len() >= self.backends.len());
+        if addrs.len() == self.backends.len() {
             return removed > 0;
         }
 
-        self.backends.reserve(target_addrs.len().max(1));
-        for addr in target_addrs {
+        self.backends.reserve(addrs.len());
+        for addr in addrs {
             // Skip rebuilding targets we already have a stack for.
             if self.backends.contains_key(addr) {
                 continue;
