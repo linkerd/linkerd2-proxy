@@ -11,6 +11,7 @@ pub use profiles::LogicalAddr;
 use std::fmt;
 
 pub mod router;
+
 #[derive(Clone)]
 pub struct Logical<P> {
     pub profile: profiles::Receiver,
