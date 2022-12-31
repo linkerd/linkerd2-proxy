@@ -15,8 +15,8 @@ use linkerd_app_core::{
 };
 use tracing::debug_span;
 
-type NewRoute<N, R> =
-    router::NewRoute<N, R, Concrete, profiles::tcp::RouteSet, profiles::tcp::Route>;
+type NewRoute<N, R> = router::NewRoute<N, R, Concrete, RouteSet, profiles::tcp::Route>;
+type RouteSet = linkerd_client_policy::TcpRoutes<profiles::tcp::RouteSet>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ProfileRoute {

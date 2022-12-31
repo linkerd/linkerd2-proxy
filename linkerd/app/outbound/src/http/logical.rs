@@ -10,8 +10,8 @@ struct ProfileRoute {
     route: profiles::http::Route,
 }
 
-type NewRoute<N, R> =
-    router::NewRoute<N, R, Concrete, profiles::http::RouteSet, profiles::http::Route>;
+type NewRoute<N, R> = router::NewRoute<N, R, Concrete, RouteSet, profiles::http::Route>;
+type RouteSet = linkerd_client_policy::HttpRoutes<profiles::http::RouteSet>;
 
 impl<N> Outbound<N> {
     // TODO(ver) make the outer target type generic/parameterized.

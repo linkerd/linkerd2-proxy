@@ -8,7 +8,12 @@ publish = false
 
 [dependencies]
 ahash = "0.8"
+futures = { version = "0.3", default-features = false }
 http = "0.2"
 linkerd-addr = { path = "../addr" }
+linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
+linkerd-stack = { path = "../stack" }
 once_cell = "1.17"
 tower = { version = "0.4.13", features = ["ready-cache", "retry", "util"] }
+tokio = { version = "1", features = [ "sync",] }
+tokio-stream = { version = "0.1", features = ["sync"] }

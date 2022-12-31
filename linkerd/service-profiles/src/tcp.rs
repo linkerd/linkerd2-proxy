@@ -80,7 +80,8 @@ impl FromIterator<(RequestMatch, Route)> for RouteSet {
 
 impl Default for RouteSet {
     fn default() -> Self {
-        static EMPTY_ROUTES: Lazy<RouteSet> = Lazy::new(|| std::iter::empty().collect());
-        EMPTY_ROUTES.clone()
+        static DEFAULT_ROUTES: Lazy<RouteSet> =
+            Lazy::new(|| std::iter::once(Default::default()).collect());
+        DEFAULT_ROUTES.clone()
     }
 }

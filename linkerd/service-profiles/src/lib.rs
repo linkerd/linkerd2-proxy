@@ -1,20 +1,13 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use ahash::AHashSet;
-use futures::Stream;
-use linkerd_addr::NameAddr;
 pub use linkerd_client_policy::{Backend, Backends, LogicalAddr, LookupAddr};
 use linkerd_error::Error;
-use linkerd_proxy_api_resolve::Metadata;
 use std::{
     future::Future,
-    net::SocketAddr,
-    pin::Pin,
     task::{Context, Poll},
 };
 use thiserror::Error;
-use tokio::sync::watch;
 use tower::util::{Oneshot, ServiceExt};
 
 mod client;
@@ -26,24 +19,10 @@ pub mod tcp;
 
 pub use self::client::Client;
 
-#[derive(Clone, Debug)]
-pub struct Receiver(pub tokio::sync::watch::Receiver<Profile>);
+pub type Profile = linkerd_client_policy::Policy<http::RouteSet, tcp::RouteSet>;
 
-#[derive(Debug)]
-pub struct ReceiverStream {
-    inner: tokio_stream::wrappers::WatchStream<Profile>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Profile {
-    pub addr: Option<LogicalAddr>,
-    pub http_routes: http::RouteSet,
-    pub tcp_routes: tcp::RouteSet,
-    /// A list of all target backend addresses on this profile and its routes.
-    pub backend_addrs: AHashSet<NameAddr>,
-    pub opaque_protocol: bool,
-    pub endpoint: Option<(SocketAddr, Metadata)>,
-}
+pub type Receiver = linkerd_client_policy::Receiver<http::RouteSet, tcp::RouteSet>;
+pub type ReceiverStream = linkerd_client_policy::ReceiverStream<http::RouteSet, tcp::RouteSet>;
 
 #[derive(Clone, Debug)]
 pub struct GetProfileService<P>(P);
@@ -104,74 +83,6 @@ where
     #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         self.0.get_profile(target)
-    }
-}
-
-// === impl Receiver ===
-
-impl From<watch::Receiver<Profile>> for Receiver {
-    fn from(inner: watch::Receiver<Profile>) -> Self {
-        Self(inner)
-    }
-}
-
-impl From<Receiver> for watch::Receiver<Profile> {
-    fn from(Receiver(inner): Receiver) -> watch::Receiver<Profile> {
-        inner
-    }
-}
-
-impl Receiver {
-    pub fn borrow_and_update(&mut self) -> watch::Ref<'_, Profile> {
-        self.0.borrow_and_update()
-    }
-
-    pub async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
-        self.0.changed().await
-    }
-
-    pub fn logical_addr(&self) -> Option<LogicalAddr> {
-        self.0.borrow().addr.clone()
-    }
-
-    pub fn is_opaque_protocol(&self) -> bool {
-        self.0.borrow().opaque_protocol
-    }
-
-    pub fn endpoint(&self) -> Option<(SocketAddr, Metadata)> {
-        self.0.borrow().endpoint.clone()
-    }
-}
-
-// === impl ReceiverStream ===
-
-impl From<Receiver> for ReceiverStream {
-    fn from(Receiver(rx): Receiver) -> Self {
-        let inner = tokio_stream::wrappers::WatchStream::new(rx);
-        ReceiverStream { inner }
-    }
-}
-
-impl Stream for ReceiverStream {
-    type Item = Profile;
-
-    #[inline]
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.inner).poll_next(cx)
-    }
-}
-
-// === impl Profile ===
-
-impl linkerd_stack::Param<http::RouteSet> for Profile {
-    fn param(&self) -> http::RouteSet {
-        self.http_routes.clone()
-    }
-}
-
-impl linkerd_stack::Param<tcp::RouteSet> for Profile {
-    fn param(&self) -> tcp::RouteSet {
-        self.tcp_routes.clone()
     }
 }
 

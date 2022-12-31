@@ -1000,9 +1000,14 @@ name = "linkerd-client-policy"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "futures",
  "http",
  "linkerd-addr",
+ "linkerd-proxy-api-resolve",
+ "linkerd-stack",
  "once_cell",
+ "tokio",
+ "tokio-stream",
  "tower",
 ]
 
