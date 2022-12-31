@@ -20,6 +20,7 @@ bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
+linkerd-client-policy = { path = "../../client-policy" }
 linkerd-distribute = { path = "../../distribute" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-retry = { path = "../../http-retry" }

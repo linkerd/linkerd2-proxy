@@ -1,9 +1,11 @@
 mod proxy;
 pub use self::proxy::NewProxyRouter;
 pub use linkerd_client_policy::http::*;
+use once_cell::sync::Lazy;
 use std::sync::Arc;
 
-pub type RouteSet = Arc<[(RequestMatch, Route)]>;
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RouteSet(Arc<[(RequestMatch, Route)]>);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestMatch {
@@ -20,16 +22,65 @@ pub enum RequestMatch {
 #[derive(Clone, Debug)]
 pub struct Regex(regex::Regex);
 
-pub fn route_for_request<'r, R, B>(
-    http_routes: &'r [(RequestMatch, R)],
-    request: &http::Request<B>,
-) -> Option<&'r R> {
-    for (request_match, route) in http_routes {
-        if request_match.is_match(request) {
-            return Some(route);
-        }
+// === impl RouteSet ===
+
+impl RouteSet {
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
-    None
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub(crate) fn route_for_request<'route, B>(
+        &'route self,
+        request: &http::Request<B>,
+    ) -> Option<&'route Route> {
+        for (request_match, route) in self.0.iter() {
+            if request_match.is_match(request) {
+                return Some(route);
+            }
+        }
+        None
+    }
+}
+
+impl<B> linkerd_client_policy::MatchRoute<http::Request<B>> for RouteSet {
+    type Route = Route;
+    fn match_route<'route>(
+        &'route self,
+        request: &http::Request<B>,
+    ) -> Option<&'route Self::Route> {
+        self.route_for_request(request)
+    }
+}
+
+impl<'route> IntoIterator for &'route RouteSet {
+    type Item = &'route Route;
+    type IntoIter = std::iter::Map<
+        std::slice::Iter<'route, (RequestMatch, Route)>,
+        fn(&'route (RequestMatch, Route)) -> &'route Route,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().map(|(_, r)| r)
+    }
+}
+
+impl FromIterator<(RequestMatch, Route)> for RouteSet {
+    fn from_iter<T: IntoIterator<Item = (RequestMatch, Route)>>(iter: T) -> Self {
+        Self(iter.into_iter().collect::<Vec<_>>().into())
+    }
+}
+
+impl Default for RouteSet {
+    fn default() -> Self {
+        static EMPTY_ROUTES: Lazy<RouteSet> = Lazy::new(|| std::iter::empty().collect());
+        EMPTY_ROUTES.clone()
+    }
 }
 
 // === impl RequestMatch ===

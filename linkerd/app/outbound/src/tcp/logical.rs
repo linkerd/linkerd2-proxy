@@ -16,7 +16,7 @@ use linkerd_app_core::{
 use tracing::debug_span;
 
 type NewRoute<N, R> =
-    router::NewRoute<N, R, Concrete, profiles::tcp::RequestMatch, profiles::tcp::Route>;
+    router::NewRoute<N, R, Concrete, profiles::tcp::RouteSet, profiles::tcp::Route>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ProfileRoute {
@@ -140,21 +140,5 @@ impl svc::Param<router::Distribution> for ProfileRoute {
                 .map(|profiles::Backend { addr, weight }| (addr.clone(), *weight)),
         )
         .expect("distribution must be valid")
-    }
-}
-
-// === impl MatchRoute ===
-
-impl<T> router::MatchRoute<T> for profiles::tcp::RequestMatch {
-    fn match_route<'matches, K>(
-        matches: &'matches router::Matches<Self, K>,
-        _: &T,
-    ) -> Option<&'matches K> {
-        debug_assert_eq!(
-            matches.len(),
-            1,
-            "a profile should not have multiple TCP routes yet!"
-        );
-        matches.get(0).map(|(_, k)| k)
     }
 }

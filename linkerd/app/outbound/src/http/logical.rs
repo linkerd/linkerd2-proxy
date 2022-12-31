@@ -11,7 +11,7 @@ struct ProfileRoute {
 }
 
 type NewRoute<N, R> =
-    router::NewRoute<N, R, Concrete, profiles::http::RequestMatch, profiles::http::Route>;
+    router::NewRoute<N, R, Concrete, profiles::http::RouteSet, profiles::http::Route>;
 
 impl<N> Outbound<N> {
     // TODO(ver) make the outer target type generic/parameterized.
@@ -137,16 +137,5 @@ impl svc::Param<router::Distribution> for ProfileRoute {
                 .map(|profiles::Backend { addr, weight }| (addr.clone(), *weight)),
         )
         .expect("distribution must be valid")
-    }
-}
-
-// === impl MatchRoute ===
-
-impl<B> router::MatchRoute<http::Request<B>> for profiles::http::RequestMatch {
-    fn match_route<'matches, K>(
-        matches: &'matches router::Matches<Self, K>,
-        req: &http::Request<B>,
-    ) -> Option<&'matches K> {
-        profiles::http::route_for_request(matches, req)
     }
 }

@@ -61,7 +61,7 @@ where
             inner,
             target,
             rx: rx.into(),
-            http_routes: Vec::new().into(),
+            http_routes: RouteSet::default(),
             proxies: HashMap::new(),
             new_proxy: self.new_proxy.clone(),
         }
@@ -93,10 +93,7 @@ where
         // If the routes have been updated, update the cache.
         if let Poll::Ready(Some(Profile { http_routes, .. })) = self.rx.poll_next_unpin(cx) {
             debug!(routes = %http_routes.len(), "Updating HTTP routes");
-            let routes = http_routes
-                .iter()
-                .map(|(_, r)| r.clone())
-                .collect::<HashSet<_>>();
+            let routes = http_routes.into_iter().cloned().collect::<HashSet<_>>();
             self.http_routes = http_routes;
 
             // Clear out defunct routes before building any missing routes.
@@ -115,7 +112,7 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        match super::route_for_request(&self.http_routes, &req) {
+        match self.http_routes.route_for_request(&req) {
             None => future::Either::Left({
                 // Use the inner service directly if no route matches the
                 // request.

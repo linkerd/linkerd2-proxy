@@ -8,6 +8,13 @@ use std::{fmt, str::FromStr, sync::Arc};
 pub mod http;
 pub mod tcp;
 
+/// A type which can match a request to a route.
+pub trait MatchRoute<Req>: Eq + Default {
+    type Route;
+
+    fn match_route<'route>(&'route self, request: &Req) -> Option<&'route Self::Route>;
+}
+
 /// A profile lookup target.
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LookupAddr(pub Addr);

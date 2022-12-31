@@ -939,6 +939,7 @@ dependencies = [
  "hyper",
  "linkerd-app-core",
  "linkerd-app-test",
+ "linkerd-client-policy",
  "linkerd-distribute",
  "linkerd-http-classify",
  "linkerd-http-retry",

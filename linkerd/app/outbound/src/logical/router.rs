@@ -5,17 +5,16 @@ use linkerd_app_core::{
     svc::{layer, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt, UpdateWatch},
     Error, NameAddr,
 };
+use linkerd_client_policy::MatchRoute;
 use std::{
     collections::HashMap,
     fmt,
     hash::Hash,
     marker::PhantomData,
-    sync::Arc,
     task::{Context, Poll},
 };
 use tracing::{error, trace};
 
-pub(crate) type Matches<M, K> = Arc<[(M, K)]>;
 pub(crate) type Distribution = linkerd_distribute::Distribution<NameAddr>;
 type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
 
@@ -50,25 +49,9 @@ pub struct Update<InT, OutT, N, S, L, M, K, R> {
 
 /// The [`Service`] constructed by [`NewRoute`].
 #[derive(Clone, Debug)]
-pub struct Route<M, R, S> {
-    matches: Matches<M, R>,
-    routes: HashMap<R, S>, // TODO(ver) AHashMap?
-}
-
-/// A type which can match a request to a route.
-pub trait MatchRoute<Req>: Eq + Sized {
-    /// Given a list of (route matcher, key) pairs and a request, returns the
-    /// key matching this request according to a route matching strategy.
-    ///
-    /// If no route matches the request, this method returns `None`.
-    ///
-    /// Depending on the route matching strategy used by this type, the returned
-    /// route may be the first route to match the request (ServiceProfile
-    /// style), or the most specific route to match the request (HTTPRoute style).
-    fn match_route<'matches, K>(
-        matches: &'matches Matches<Self, K>,
-        req: &Req,
-    ) -> Option<&'matches K>;
+pub struct Route<M, K, S> {
+    matches: M,
+    routes: HashMap<K, S>, // TODO(ver) AHashMap?
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -77,7 +60,11 @@ pub struct NoRouteForRequest(());
 
 // === impl NewRoute ===
 
-impl<N, R: Clone, U, M, K> NewRoute<N, R, U, M, K> {
+impl<N, R: Clone, U, M, K> NewRoute<N, R, U, M, K>
+where
+    M: Default + Eq + Clone + Send + Sync + 'static,
+    for<'a> &'a M: IntoIterator<Item = &'a K>,
+{
     pub fn layer(
         route_layer: R,
     ) -> impl layer::Layer<N, Service = NewSpawnWatch<Profile, Self>> + Clone {
@@ -97,6 +84,7 @@ where
     R: layer::Layer<NewDistribute<N::Service>> + Clone,
     R::Service: NewService<(K, T), Service = S>,
     S: Clone,
+    M: Default,
     K: Clone,
 {
     type Service = Update<T, U, N, N::Service, R, M, K, S>;
@@ -125,21 +113,21 @@ impl<N: Clone, R: Clone, U, M, K> Clone for NewRoute<N, R, U, M, K> {
 
 // === impl Route ===
 
-impl<M, K, S> Default for Route<M, K, S> {
+impl<M: Default, K, S> Default for Route<M, K, S> {
     fn default() -> Self {
         Self {
-            matches: Arc::new([]),
+            matches: Default::default(),
             routes: HashMap::new(),
         }
     }
 }
 
-impl<M, K, S, Req> Service<Req> for Route<M, K, S>
+impl<M, S, Req> Service<Req> for Route<M, M::Route, S>
 where
     S: Service<Req> + Clone,
     S::Error: Into<Error>,
-    M: MatchRoute<Req>,
-    K: Hash + Eq + fmt::Debug,
+    M: MatchRoute<Req> + Eq + Clone,
+    M::Route: Hash + Eq + fmt::Debug,
 {
     type Response = S::Response;
     type Error = Error;
@@ -156,7 +144,7 @@ where
 
     fn call(&mut self, req: Req) -> Self::Future {
         // If the request matches a route, use the route's service.
-        if let Some(route) = M::match_route(&self.matches, &req) {
+        if let Some(route) = self.matches.match_route(&req) {
             if let Some(svc) = self.routes.get(route).cloned() {
                 trace!(?route, "Using route service");
                 return future::Either::Left(svc.oneshot(req).map_err(Into::into));
@@ -176,14 +164,15 @@ where
 impl<T, U, N, L, M, K, R> UpdateWatch<Profile> for Update<T, U, N, N::Service, L, M, K, R>
 where
     T: Clone + Send + Sync + 'static,
-    Profile: Param<Matches<M, K>>,
+    Profile: Param<M>,
     U: From<(ConcreteAddr, T)> + 'static,
     N: NewService<U> + Send + Sync + 'static,
     N::Service: Clone + Send + Sync + 'static,
     L: layer::Layer<NewDistribute<N::Service>> + Send + Sync + 'static,
     L::Service: NewService<(K, T), Service = R>,
     R: Clone + Send + Sync + 'static,
-    M: Eq + Clone + Send + Sync + 'static,
+    M: Default + Eq + Clone + Send + Sync + 'static,
+    for<'a> &'a M: IntoIterator<Item = &'a K>,
     K: Hash + Eq + Clone + Send + Sync + 'static,
 {
     type Service = Route<M, K, R>;
@@ -193,7 +182,7 @@ where
         let routes = profile.param();
         let changed_routes = self.route.matches != routes;
         if changed_backends || changed_routes {
-            self.update_routes(&*routes);
+            self.update_routes(&routes);
 
             Some(Route {
                 matches: self.route.matches.clone(),
@@ -214,7 +203,8 @@ where
     L: layer::Layer<NewDistribute<N::Service>>,
     L::Service: NewService<(K, T), Service = R>,
     R: Clone,
-    M: Clone,
+    M: Eq + Clone,
+    for<'a> &'a M: IntoIterator<Item = &'a K>,
     K: Hash + Eq + Clone,
 {
     fn update_backends(&mut self, addrs: &ahash::AHashSet<NameAddr>) -> bool {
@@ -248,13 +238,13 @@ where
         true
     }
 
-    fn update_routes(&mut self, routes: &[(M, K)]) {
+    fn update_routes(&mut self, matches: &M) {
         let new_distribute: NewDistribute<N::Service> = self.backends.clone().into();
         self.route = Route {
-            matches: routes.iter().cloned().collect(),
-            routes: routes
-                .iter()
-                .map(|(_, route)| {
+            matches: matches.clone(),
+            routes: matches
+                .into_iter()
+                .map(|route| {
                     let new_route = self.route_layer.layer(new_distribute.clone());
                     let svc = new_route.new_service((route.clone(), self.target.clone()));
                     (route.clone(), svc)
