@@ -1,4 +1,4 @@
-use crate::{http, LogicalAddr, Profile, Target};
+use crate::{http, LogicalAddr, Profile, Target, Targets};
 use linkerd2_proxy_api::destination as api;
 use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;
@@ -10,26 +10,41 @@ use tracing::warn;
 
 pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Profile {
     let name = Name::from_str(&proto.fully_qualified_name).ok();
-    let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
-    let http_routes = proto
-        .routes
-        .into_iter()
-        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
-        .collect();
-    let targets = proto
+    let addr = name.map(|n| NameAddr::from((n, port)));
+
+    let mut targets = proto
         .dst_overrides
         .into_iter()
         .filter_map(convert_dst_override)
-        .collect();
+        .collect::<Targets>();
+    if targets.is_empty() {
+        if let Some(addr) = addr.clone() {
+            targets = std::iter::once(Target { addr, weight: 1 }).collect();
+        }
+    }
+
+    let http_routes = {
+        let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
+
+        let ts = &targets;
+        proto
+            .routes
+            .into_iter()
+            .filter_map(move |orig| convert_route(orig, retry_budget.as_ref(), ts))
+            .collect()
+    };
+
     let endpoint = proto.endpoint.and_then(|e| {
         let labels = std::collections::HashMap::new();
         resolve::to_addr_meta(e, &labels)
     });
+
     Profile {
-        addr: name.map(move |n| LogicalAddr(NameAddr::from((n, port)))),
+        addr: addr.map(LogicalAddr),
         http_routes,
-        targets,
         opaque_protocol: proto.opaque_protocol,
+        target_addrs: targets.iter().map(|t| t.addr.clone()).collect(),
+        tcp_targets: targets,
         endpoint,
     }
 }
@@ -37,6 +52,7 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
 fn convert_route(
     orig: api::Route,
     retry_budget: Option<&Arc<Budget>>,
+    targets: &Targets,
 ) -> Option<(http::RequestMatch, http::Route)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
     let rsp_classes = orig
@@ -44,7 +60,11 @@ fn convert_route(
         .into_iter()
         .filter_map(convert_rsp_class)
         .collect();
-    let mut route = http::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
+    let mut route = http::Route::new(
+        orig.metrics_labels.into_iter(),
+        rsp_classes,
+        targets.clone(),
+    );
     if orig.is_retryable {
         set_route_retry(&mut route, retry_budget);
     }

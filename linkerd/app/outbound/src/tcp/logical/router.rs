@@ -80,20 +80,17 @@ where
     type Service = Distribute<N::Service>;
 
     fn update(&mut self, profile: &Profile) -> Option<Self::Service> {
-        let targets = profile
-            .targets
-            .iter()
-            .map(|profiles::Target { addr, weight }| (addr.clone(), *weight))
-            .collect::<HashMap<_, _>>();
-
-        if self.update_backends(&targets) {
+        if self.update_backends(&profile.target_addrs) {
             let new_distribute: NewDistribute<N::Service> = self.backends.clone().into();
-            let distribution = if targets.is_empty() {
+            let distribution = if profile.tcp_targets.as_ref().is_empty() {
                 let profiles::LogicalAddr(addr) = self.target.param();
                 Distribution::from(addr)
             } else {
                 Distribution::random_available(
-                    targets.iter().map(|(addr, weight)| (addr.clone(), *weight)),
+                    profile
+                        .tcp_targets
+                        .iter()
+                        .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
                 )
                 .expect("distribution must be valid")
             };
@@ -111,22 +108,22 @@ where
     N: NewService<U>,
     N::Service: Clone,
 {
-    fn update_backends<V>(&mut self, targets: &HashMap<NameAddr, V>) -> bool {
+    fn update_backends(&mut self, target_addrs: &ahash::AHashSet<NameAddr>) -> bool {
         // Drop all backends that are no longer in the set of targets.
         let removed = {
             let init = self.backends.len();
-            self.backends.retain(|addr, _| targets.contains_key(addr));
+            self.backends.retain(|addr, _| target_addrs.contains(addr));
             init - self.backends.len()
         };
 
         // If there aren't more targets in backends, then there is no more work
         // to be done.
-        if !targets.is_empty() && targets.len() == self.backends.len() {
+        if !target_addrs.is_empty() && target_addrs.len() == self.backends.len() {
             return removed > 0;
         }
 
-        self.backends.reserve(targets.len().max(1));
-        for addr in targets.keys() {
+        self.backends.reserve(target_addrs.len().max(1));
+        for addr in target_addrs {
             // Skip rebuilding targets we already have a stack for.
             if self.backends.contains_key(addr) {
                 continue;

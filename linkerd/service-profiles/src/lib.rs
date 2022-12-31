@@ -1,6 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
+use ahash::AHashSet;
 use futures::Stream;
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
@@ -11,6 +12,7 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     str::FromStr,
+    sync::Arc,
     task::{Context, Poll},
 };
 use thiserror::Error;
@@ -37,11 +39,17 @@ pub struct ReceiverStream {
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
     pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
-    pub targets: Vec<Target>,
+    /// A list of all target backend addresses on this profile and its routes.
+    pub target_addrs: AHashSet<NameAddr>,
+    /// Targets for TCP traffic splitting.
+    ///
+    /// Targets for HTTP traffic splitting are stored on each route in `self.http_routes`.
+    // TODO(eliza): what if we added a "TCP route" type and just generated a
+    // single one, in anticipation of supporting the Gateway API TCPRoute type?
+    pub tcp_targets: Targets,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
-
 /// A profile lookup target.
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LookupAddr(pub Addr);
@@ -50,11 +58,14 @@ pub struct LookupAddr(pub Addr);
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LogicalAddr(pub NameAddr);
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Target {
     pub addr: NameAddr,
     pub weight: u32,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Targets(Arc<[Target]>);
 
 #[derive(Clone, Debug)]
 pub struct GetProfileService<P>(P);
@@ -248,6 +259,52 @@ impl fmt::Debug for Target {
             .field("addr", &format_args!("{}", self.addr))
             .field("weight", &self.weight)
             .finish()
+    }
+}
+
+// === impl Targets ===
+
+impl Targets {
+    #[inline]
+    pub fn iter(&self) -> std::slice::Iter<'_, Target> {
+        self.0.iter()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl Default for Targets {
+    fn default() -> Self {
+        use once_cell::sync::Lazy;
+        static NO_TARGETS: Lazy<Targets> = Lazy::new(|| Targets(Arc::new([])));
+        NO_TARGETS.clone()
+    }
+}
+
+impl FromIterator<Target> for Targets {
+    fn from_iter<I: IntoIterator<Item = Target>>(iter: I) -> Self {
+        let targets = iter.into_iter().collect::<Vec<_>>().into();
+        Self(targets)
+    }
+}
+
+impl AsRef<[Target]> for Targets {
+    #[inline]
+    fn as_ref(&self) -> &[Target] {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a Targets {
+    type Item = &'a Target;
+    type IntoIter = std::slice::Iter<'a, Target>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 

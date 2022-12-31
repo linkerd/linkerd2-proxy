@@ -1,10 +1,7 @@
 use linkerd_app_core::{
     profiles::{self, Profile},
     proxy::api_resolve::ConcreteAddr,
-    svc::{
-        layer, NewCloneService, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt,
-        UpdateWatch,
-    },
+    svc::{layer, NewService, NewSpawnWatch, Oneshot, Service, ServiceExt, UpdateWatch},
     NameAddr,
 };
 use std::{
@@ -15,8 +12,7 @@ use std::{
 };
 use tracing::{error, trace};
 
-type Distribution = linkerd_distribute::Distribution<NameAddr>;
-type Distribute<S> = linkerd_distribute::Distribute<NameAddr, S>;
+pub(super) type Distribution = linkerd_distribute::Distribution<NameAddr>;
 type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
 
 type Matches<M, K> = Arc<[(M, K)]>;
@@ -74,7 +70,7 @@ impl<N, R: Clone, U> NewRoute<N, R, U> {
 impl<T, U, N, R, S> NewService<T> for NewRoute<N, R, U>
 where
     N: NewService<U> + Clone,
-    R: layer::Layer<NewCloneService<Distribute<N::Service>>> + Clone,
+    R: layer::Layer<NewDistribute<N::Service>> + Clone,
     R::Service: NewService<(profiles::http::Route, T), Service = S>,
     S: Clone,
 {
@@ -147,27 +143,21 @@ where
 
 impl<T, U, N, L, R> UpdateWatch<Profile> for Update<T, U, N, N::Service, L, R>
 where
-    T: Param<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+    T: Clone + Send + Sync + 'static,
     U: From<(ConcreteAddr, T)> + 'static,
     N: NewService<U> + Send + Sync + 'static,
     N::Service: Clone + Send + Sync + 'static,
-    L: layer::Layer<NewCloneService<Distribute<N::Service>>> + Send + Sync + 'static,
+    L: layer::Layer<NewDistribute<N::Service>> + Send + Sync + 'static,
     L::Service: NewService<(profiles::http::Route, T), Service = R>,
     R: Clone + Send + Sync + 'static,
 {
     type Service = Route<R>;
 
     fn update(&mut self, profile: &Profile) -> Option<Self::Service> {
-        let targets = profile
-            .targets
-            .iter()
-            .map(|profiles::Target { addr, weight }| (addr.clone(), *weight))
-            .collect::<HashMap<_, _>>();
-
-        let changed_backends = self.update_backends(&targets);
+        let changed_backends = self.update_backends(&profile.target_addrs);
         let changed_routes = *self.route.matches != profile.http_routes;
         if changed_backends || changed_routes {
-            self.update_routes(&profile.http_routes, &targets);
+            self.update_routes(&profile.http_routes);
 
             Some(Route {
                 matches: self.route.matches.clone(),
@@ -181,31 +171,31 @@ where
 
 impl<T, U, N, L, R> Update<T, U, N, N::Service, L, R>
 where
-    T: Param<profiles::LogicalAddr> + Clone,
+    T: Clone,
     U: From<(ConcreteAddr, T)>,
     N: NewService<U>,
     N::Service: Clone,
-    L: layer::Layer<NewCloneService<Distribute<N::Service>>>,
+    L: layer::Layer<NewDistribute<N::Service>>,
     L::Service: NewService<(profiles::http::Route, T), Service = R>,
     R: Clone,
 {
-    fn update_backends<V>(&mut self, targets: &HashMap<NameAddr, V>) -> bool {
+    fn update_backends(&mut self, addrs: &ahash::AHashSet<NameAddr>) -> bool {
         let removed = {
             let init = self.backends.len();
-            self.backends.retain(|addr, _| targets.contains_key(addr));
+            self.backends.retain(|addr, _| addrs.contains(addr));
             init - self.backends.len()
         };
 
-        if targets
-            .iter()
-            .all(|(addr, _)| self.backends.contains_key(addr))
-        {
+        // We just removed all backends that aren't in the new addrs, so we
+        // we can skip further processing by comparing their lengths.
+        debug_assert!(addrs.len() >= self.backends.len());
+        if addrs.len() == self.backends.len() {
             return removed > 0;
         }
 
-        self.backends.reserve(targets.len().max(1));
-        for addr in targets.keys() {
-            // Skip rebuilding targets we already have a stack for.
+        self.backends.reserve(addrs.len().max(1));
+        for addr in addrs {
+            // Skip rebuilding addrs we already have a stack for.
             if self.backends.contains_key(addr) {
                 continue;
             }
@@ -216,46 +206,22 @@ where
             self.backends.insert(addr.clone(), backend);
         }
 
-        // TODO(ver) we should make it a requirement of the provider that there
-        // is always at least one backend.
-        if self.backends.is_empty() {
-            let profiles::LogicalAddr(addr) = self.target.param();
-            let backend = self
-                .new_backend
-                .new_service(U::from((ConcreteAddr(addr.clone()), self.target.clone())));
-            self.backends.insert(addr, backend);
-        }
-
         true
     }
 
     fn update_routes(
         &mut self,
         http_routes: &[(profiles::http::RequestMatch, profiles::http::Route)],
-        targets: &HashMap<NameAddr, u32>,
     ) {
         let new_distribute: NewDistribute<N::Service> = self.backends.clone().into();
         self.route = Route {
             matches: http_routes.iter().cloned().collect(),
             routes: http_routes
                 .iter()
-                .map(|(_, r)| {
-                    // TODO(ver) targets should be provided by the route
-                    // configuration.
-                    let distribution = if targets.is_empty() {
-                        let profiles::LogicalAddr(addr) = self.target.param();
-                        Distribution::from(addr)
-                    } else {
-                        Distribution::random_available(
-                            targets.iter().map(|(addr, weight)| (addr.clone(), *weight)),
-                        )
-                        .expect("distribution must be valid")
-                    };
-
-                    let dist = NewCloneService::from(new_distribute.new_service(distribution));
-                    let new_route = self.route_layer.layer(dist);
-                    let svc = new_route.new_service((r.clone(), self.target.clone()));
-                    (r.clone(), svc)
+                .map(|(_, route)| {
+                    let new_route = self.route_layer.layer(new_distribute.clone());
+                    let svc = new_route.new_service((route.clone(), self.target.clone()));
+                    (route.clone(), svc)
                 })
                 .collect(),
         };

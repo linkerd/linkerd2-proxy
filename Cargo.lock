@@ -15,6 +15,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aae1277d39aeec15cb388266ecc24b11c80469deae6067e17a1a7aa9e5c1f234"
 
 [[package]]
+name = "ahash"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf6ccdb167abbf410dcb915cabd428929d7f6a04980b54a11f26a39f1c7f7107"
+dependencies = [
+ "cfg-if",
+ "getrandom",
+ "once_cell",
+ "version_check",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "0.7.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -920,6 +932,7 @@ dependencies = [
 name = "linkerd-app-outbound"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "bytes",
  "futures",
  "http",
@@ -1514,6 +1527,7 @@ dependencies = [
 name = "linkerd-service-profiles"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "bytes",
  "futures",
  "http",
@@ -1528,6 +1542,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tonic-watch",
  "linkerd2-proxy-api",
+ "once_cell",
  "parking_lot",
  "pin-project",
  "prost-types",
@@ -1877,9 +1892,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f0b0d4bf799edbc74508c1e8bf170ff5f41238e5f8225603ca7caaae2b7860"
+checksum = "6f61fba1741ea2b3d6a1e3178721804bb716a68a6aeba1149b5d52e3d464ea66"
 
 [[package]]
 name = "opencensus-proto"
