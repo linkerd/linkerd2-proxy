@@ -1,10 +1,9 @@
-use futures::{future, TryFutureExt};
+use futures::{future, prelude::*};
 use linkerd_app_core::{
-    Error,
-    profiles::{self, Profile},
+    profiles::Profile,
     proxy::api_resolve::ConcreteAddr,
     svc::{layer, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt, UpdateWatch},
-    NameAddr,
+    Error, NameAddr,
 };
 use std::{
     collections::HashMap,
@@ -14,7 +13,6 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use thiserror::Error;
 use tracing::{error, trace};
 
 pub(crate) type Matches<M, K> = Arc<[(M, K)]>;
@@ -73,7 +71,7 @@ pub trait MatchRoute<Req>: Eq + Sized {
     ) -> Option<&'matches K>;
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 #[error("no route for request")]
 pub struct NoRouteForRequest(());
 
@@ -147,7 +145,7 @@ where
     type Error = Error;
     type Future = future::Either<
         future::MapErr<Oneshot<S, Req>, fn(S::Error) -> Error>,
-        future::Ready<Result<S::Response, Error>>
+        future::Ready<Result<S::Response, Error>>,
     >;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
@@ -168,8 +166,7 @@ where
             error!(?route, "Route not found in cache. This is a bug.");
         }
 
-        // TODO(eliza): should this be a warning? or debug?
-        tracing::info!("No route for request");
+        tracing::debug!("No route for request");
         future::Either::Right(future::ready(Err(NoRouteForRequest(()).into())))
     }
 }
@@ -178,7 +175,7 @@ where
 
 impl<T, U, N, L, M, K, R> UpdateWatch<Profile> for Update<T, U, N, N::Service, L, M, K, R>
 where
-    T: Param<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+    T: Clone + Send + Sync + 'static,
     Profile: Param<Matches<M, K>>,
     U: From<(ConcreteAddr, T)> + 'static,
     N: NewService<U> + Send + Sync + 'static,
@@ -210,7 +207,7 @@ where
 
 impl<T, U, N, L, M, K, R> Update<T, U, N, N::Service, L, M, K, R>
 where
-    T: Param<profiles::LogicalAddr> + Clone,
+    T: Clone,
     U: From<(ConcreteAddr, T)>,
     N: NewService<U>,
     N::Service: Clone,
@@ -220,24 +217,22 @@ where
     M: Clone,
     K: Hash + Eq + Clone,
 {
-    fn update_backends(&mut self, target_addrs: &ahash::AHashSet<NameAddr>) -> bool {
+    fn update_backends(&mut self, addrs: &ahash::AHashSet<NameAddr>) -> bool {
         let removed = {
             let init = self.backends.len();
-            self.backends.retain(|addr, _| target_addrs.contains(addr));
+            self.backends.retain(|addr, _| addrs.contains(addr));
             init - self.backends.len()
         };
 
-        if target_addrs
-            .iter()
-            .all(|addr| self.backends.contains_key(addr))
-            // Don't return early if we still need to populate the default backend!
-            && !target_addrs.is_empty()
-        {
+        // We just removed all backends that aren't in the new addrs, so we
+        // we can skip further processing by comparing their lengths.
+        debug_assert!(addrs.len() >= self.backends.len());
+        if addrs.len() == self.backends.len() {
             return removed > 0;
         }
 
-        self.backends.reserve(target_addrs.len().max(1));
-        for addr in target_addrs {
+        self.backends.reserve(addrs.len());
+        for addr in addrs {
             // Skip rebuilding targets we already have a stack for.
             if self.backends.contains_key(addr) {
                 continue;
@@ -247,16 +242,6 @@ where
                 .new_backend
                 .new_service(U::from((ConcreteAddr(addr.clone()), self.target.clone())));
             self.backends.insert(addr.clone(), backend);
-        }
-
-        // TODO(ver) we should make it a requirement of the provider that there
-        // is always at least one backend.
-        if self.backends.is_empty() {
-            let profiles::LogicalAddr(addr) = self.target.param();
-            let backend = self
-                .new_backend
-                .new_service(U::from((ConcreteAddr(addr.clone()), self.target.clone())));
-            self.backends.insert(addr, backend);
         }
 
         true

@@ -10,26 +10,31 @@ use tracing::warn;
 
 pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Profile {
     let name = Name::from_str(&proto.fully_qualified_name).ok();
-    let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
-    let targets = proto
+    let addr = name.map(|n| NameAddr::from((n, port)));
+
+    let mut targets = proto
         .dst_overrides
         .into_iter()
         .filter_map(convert_dst_override)
         .collect::<Targets>();
-    let target_addrs = targets.iter().map(|t| t.addr.clone()).collect();
+    if targets.is_empty() {
+        if let Some(addr) = addr.clone() {
+            targets = std::iter::once(Target { addr, weight: 1 }).collect();
+        }
+    }
 
     let http_routes = {
-        // This has to be borrowed here so that it's not moved into the `filter_map` closure.
-        let targets_ref = &targets;
         // Default route used when no routes in the profile match a request.
         let default = std::iter::once((
             http::RequestMatch::default(),
             http::Route::new(std::iter::empty(), Vec::new(), targets.clone()),
         ));
+        let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
+        let tgts = &targets;
         proto
             .routes
             .into_iter()
-            .filter_map(move |orig| convert_route(orig, retry_budget.as_ref(), targets_ref))
+            .filter_map(move |orig| convert_route(orig, retry_budget.as_ref(), tgts))
             // Populate the default route last, so that every other route is tried first.
             .chain(default)
             .collect()
@@ -40,13 +45,15 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
         resolve::to_addr_meta(e, &labels)
     });
 
+    let target_addrs = targets.iter().map(|t| t.addr.clone()).collect();
+
     // ServiceProfiles don't define TCP routes, generate a single match which
     // matches all TCP connections but still uses the list of targets from the profile.
     let tcp_routes =
         std::iter::once((tcp::RequestMatch::default(), tcp::Route::new(targets))).collect();
 
     Profile {
-        addr: name.map(move |n| LogicalAddr(NameAddr::from((n, port)))),
+        addr: addr.map(LogicalAddr),
         http_routes,
         tcp_routes,
         opaque_protocol: proto.opaque_protocol,
