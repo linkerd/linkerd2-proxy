@@ -108,7 +108,7 @@ where
     type Future = S::Future;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        if dbg!(matches!(self.rx.has_changed(), Ok(true))) {
+        if matches!(self.rx.has_changed(), Ok(true)) {
             self.inner = self.rx.borrow_and_update().clone();
         }
 
