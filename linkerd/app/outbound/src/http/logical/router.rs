@@ -1,7 +1,7 @@
 use linkerd_app_core::{
     profiles::{self, Profile},
     proxy::api_resolve::ConcreteAddr,
-    svc::{layer, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt, UpdateWatch},
+    svc::{layer, NewService, NewSpawnWatch, Oneshot, Service, ServiceExt, UpdateWatch},
     NameAddr,
 };
 use std::{
@@ -143,7 +143,7 @@ where
 
 impl<T, U, N, L, R> UpdateWatch<Profile> for Update<T, U, N, N::Service, L, R>
 where
-    T: Param<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+    T: Clone + Send + Sync + 'static,
     U: From<(ConcreteAddr, T)> + 'static,
     N: NewService<U> + Send + Sync + 'static,
     N::Service: Clone + Send + Sync + 'static,
@@ -171,7 +171,7 @@ where
 
 impl<T, U, N, L, R> Update<T, U, N, N::Service, L, R>
 where
-    T: Param<profiles::LogicalAddr> + Clone,
+    T: Clone,
     U: From<(ConcreteAddr, T)>,
     N: NewService<U>,
     N::Service: Clone,
@@ -179,23 +179,23 @@ where
     L::Service: NewService<(profiles::http::Route, T), Service = R>,
     R: Clone,
 {
-    fn update_backends(&mut self, target_addrs: &ahash::AHashSet<NameAddr>) -> bool {
+    fn update_backends(&mut self, addrs: &ahash::AHashSet<NameAddr>) -> bool {
         let removed = {
             let init = self.backends.len();
-            self.backends.retain(|addr, _| target_addrs.contains(addr));
+            self.backends.retain(|addr, _| addrs.contains(addr));
             init - self.backends.len()
         };
 
-        if target_addrs
-            .iter()
-            .all(|addr| self.backends.contains_key(addr))
-        {
+        // We just removed all backends that aren't in the new addrs, so we
+        // we can skip further processing by comparing their lengths.
+        debug_assert!(addrs.len() >= self.backends.len());
+        if addrs.len() == self.backends.len() {
             return removed > 0;
         }
 
-        self.backends.reserve(target_addrs.len().max(1));
-        for addr in target_addrs {
-            // Skip rebuilding targets we already have a stack for.
+        self.backends.reserve(addrs.len().max(1));
+        for addr in addrs {
+            // Skip rebuilding addrs we already have a stack for.
             if self.backends.contains_key(addr) {
                 continue;
             }
@@ -204,16 +204,6 @@ where
                 .new_backend
                 .new_service(U::from((ConcreteAddr(addr.clone()), self.target.clone())));
             self.backends.insert(addr.clone(), backend);
-        }
-
-        // TODO(ver) we should make it a requirement of the provider that there
-        // is always at least one backend.
-        if self.backends.is_empty() {
-            let profiles::LogicalAddr(addr) = self.target.param();
-            let backend = self
-                .new_backend
-                .new_service(U::from((ConcreteAddr(addr.clone()), self.target.clone())));
-            self.backends.insert(addr, backend);
         }
 
         true

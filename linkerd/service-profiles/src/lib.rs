@@ -63,8 +63,10 @@ pub struct Target {
     pub addr: NameAddr,
     pub weight: u32,
 }
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Targets(Arc<[Target]>);
+
 #[derive(Clone, Debug)]
 pub struct GetProfileService<P>(P);
 
@@ -266,6 +268,11 @@ impl Targets {
     #[inline]
     pub fn iter(&self) -> std::slice::Iter<'_, Target> {
         self.0.iter()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 

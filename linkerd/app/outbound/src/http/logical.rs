@@ -128,16 +128,9 @@ impl classify::CanClassify for ProfileRoute {
 
 impl svc::Param<router::Distribution> for ProfileRoute {
     fn param(&self) -> router::Distribution {
-        let targets = self.route.targets().as_ref();
-        // If the route has no backend overrides, distribute all traffic to the
-        // logical address.
-        if targets.is_empty() {
-            let profiles::LogicalAddr(addr) = self.logical.param();
-            return router::Distribution::from(addr);
-        }
-
         router::Distribution::random_available(
-            targets
+            self.route
+                .targets()
                 .iter()
                 .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
         )
