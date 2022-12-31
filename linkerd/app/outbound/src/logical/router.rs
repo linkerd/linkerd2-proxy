@@ -1,5 +1,5 @@
 use linkerd_app_core::{
-    profiles::{self, Profile},
+    profiles::Profile,
     proxy::api_resolve::ConcreteAddr,
     svc::{layer, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt, UpdateWatch},
     NameAddr,
@@ -165,7 +165,7 @@ where
 
 impl<T, U, N, L, M, K, R> UpdateWatch<Profile> for Update<T, U, N, N::Service, L, M, K, R>
 where
-    T: Param<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+    T: Clone + Send + Sync + 'static,
     Profile: Param<Matches<M, K>>,
     U: From<(ConcreteAddr, T)> + 'static,
     N: NewService<U> + Send + Sync + 'static,
@@ -197,7 +197,7 @@ where
 
 impl<T, U, N, L, M, K, R> Update<T, U, N, N::Service, L, M, K, R>
 where
-    T: Param<profiles::LogicalAddr> + Clone,
+    T: Clone,
     U: From<(ConcreteAddr, T)>,
     N: NewService<U>,
     N::Service: Clone,
@@ -234,16 +234,6 @@ where
                 .new_backend
                 .new_service(U::from((ConcreteAddr(addr.clone()), self.target.clone())));
             self.backends.insert(addr.clone(), backend);
-        }
-
-        // TODO(ver) we should make it a requirement of the provider that there
-        // is always at least one backend.
-        if self.backends.is_empty() {
-            let profiles::LogicalAddr(addr) = self.target.param();
-            let backend = self
-                .new_backend
-                .new_service(U::from((ConcreteAddr(addr.clone()), self.target.clone())));
-            self.backends.insert(addr, backend);
         }
 
         true
