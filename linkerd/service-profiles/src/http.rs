@@ -1,4 +1,5 @@
 mod proxy;
+
 use std::{
     fmt,
     hash::{Hash, Hasher},
