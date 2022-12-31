@@ -6,6 +6,7 @@ use futures::Stream;
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
+use once_cell::sync::Lazy;
 use std::{
     fmt,
     future::Future,
@@ -24,6 +25,7 @@ mod default;
 pub mod discover;
 pub mod http;
 mod proto;
+pub mod tcp;
 
 pub use self::client::Client;
 
@@ -35,18 +37,13 @@ pub struct ReceiverStream {
     inner: tokio_stream::wrappers::WatchStream<Profile>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
-    pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
+    pub http_routes: http::RouteSet,
+    pub tcp_routes: tcp::RouteSet,
     /// A list of all target backend addresses on this profile and its routes.
     pub target_addrs: AHashSet<NameAddr>,
-    /// Targets for TCP traffic splitting.
-    ///
-    /// Targets for HTTP traffic splitting are stored on each route in `self.http_routes`.
-    // TODO(eliza): what if we added a "TCP route" type and just generated a
-    // single one, in anticipation of supporting the Gateway API TCPRoute type?
-    pub tcp_targets: Targets,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
@@ -183,6 +180,37 @@ impl Stream for ReceiverStream {
     }
 }
 
+// === impl Profile ===
+
+impl linkerd_stack::Param<http::RouteSet> for Profile {
+    fn param(&self) -> http::RouteSet {
+        self.http_routes.clone()
+    }
+}
+
+impl linkerd_stack::Param<tcp::RouteSet> for Profile {
+    fn param(&self) -> tcp::RouteSet {
+        self.tcp_routes.clone()
+    }
+}
+
+impl Default for Profile {
+    fn default() -> Self {
+        static DEFAULT_HTTP_ROUTES: Lazy<http::RouteSet> =
+            Lazy::new(|| vec![Default::default()].into());
+        static DEFAULT_TCP_ROUTES: Lazy<tcp::RouteSet> =
+            Lazy::new(|| vec![Default::default()].into());
+        Self {
+            addr: None,
+            http_routes: DEFAULT_HTTP_ROUTES.clone(),
+            tcp_routes: DEFAULT_TCP_ROUTES.clone(),
+            target_addrs: Default::default(),
+            opaque_protocol: false,
+            endpoint: None,
+        }
+    }
+}
+
 // === impl LookupAddr ===
 
 impl fmt::Display for LookupAddr {
@@ -278,7 +306,6 @@ impl Targets {
 
 impl Default for Targets {
     fn default() -> Self {
-        use once_cell::sync::Lazy;
         static NO_TARGETS: Lazy<Targets> = Lazy::new(|| Targets(Arc::new([])));
         NO_TARGETS.clone()
     }

@@ -1,7 +1,5 @@
-mod router;
-
-use self::router::NewRoute;
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
+use crate::logical::router;
 use crate::Outbound;
 use linkerd_app_core::{classify, metrics, profiles, proxy::http, svc, Error};
 use tracing::debug_span;
@@ -11,6 +9,9 @@ struct ProfileRoute {
     logical: Logical,
     route: profiles::http::Route,
 }
+
+type NewRoute<N, R> =
+    router::NewRoute<N, R, Concrete, profiles::http::RequestMatch, profiles::http::Route>;
 
 impl<N> Outbound<N> {
     // TODO(ver) make the outer target type generic/parameterized.
@@ -76,7 +77,7 @@ impl<N> Outbound<N> {
 
             concrete
                 .check_new_service::<Concrete, _>()
-                .push(NewRoute::<_, _, Concrete>::layer(route))
+                .push(NewRoute::layer(route))
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header. The response body is boxed
@@ -135,5 +136,16 @@ impl svc::Param<router::Distribution> for ProfileRoute {
                 .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
         )
         .expect("distribution must be valid")
+    }
+}
+
+// === impl MatchRoute ===
+
+impl<B> router::MatchRoute<http::Request<B>> for profiles::http::RequestMatch {
+    fn match_route<'matches, K>(
+        matches: &'matches router::Matches<Self, K>,
+        req: &http::Request<B>,
+    ) -> Option<&'matches K> {
+        profiles::http::route_for_request(matches, req)
     }
 }

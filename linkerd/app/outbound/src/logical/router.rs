@@ -1,21 +1,22 @@
 use linkerd_app_core::{
-    profiles::{self, Profile},
+    profiles::Profile,
     proxy::api_resolve::ConcreteAddr,
-    svc::{layer, NewService, NewSpawnWatch, Oneshot, Service, ServiceExt, UpdateWatch},
+    svc::{layer, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt, UpdateWatch},
     NameAddr,
 };
 use std::{
     collections::HashMap,
+    fmt,
+    hash::Hash,
     marker::PhantomData,
     sync::Arc,
     task::{Context, Poll},
 };
 use tracing::{error, trace};
 
-pub(super) type Distribution = linkerd_distribute::Distribution<NameAddr>;
+pub(crate) type Matches<M, K> = Arc<[(M, K)]>;
+pub(crate) type Distribution = linkerd_distribute::Distribution<NameAddr>;
 type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
-
-type Matches<M, K> = Arc<[(M, K)]>;
 
 /// A router that uses a per-route `Service` (with a fallback service when no
 /// route is matched).
@@ -23,37 +24,55 @@ type Matches<M, K> = Arc<[(M, K)]>;
 /// This router is similar to `linkerd_stack::NewRouter` and
 /// `linkerd_cache::Cache` with a few differences:
 ///
-/// * Routes are constructed eagerly as the profile updates;
+/// * Routes are constructed eagerly as the profile updates by a background
+///   task;
 /// * Routes are removed eagerly as the profile updates (i.e. there's no
 ///   idle-oriented eviction).
 #[derive(Debug)]
-pub struct NewRoute<N, R, U> {
+pub struct NewRoute<N, R, U, M, K> {
     new_backend: N,
     route_layer: R,
-    _marker: PhantomData<fn(U)>,
+    _marker: PhantomData<fn((U, M, K))>,
 }
 
-pub struct Update<InT, OutT, N, S, L, R> {
+pub struct Update<InT, OutT, N, S, L, M, K, R> {
     target: InT,
 
     new_backend: N,
     backends: HashMap<NameAddr, S>,
 
     route_layer: L,
-    route: Route<R>,
+    route: Route<M, K, R>,
 
     _marker: PhantomData<fn(OutT)>,
 }
 
+/// The [`Service`] constructed by [`NewRoute`].
 #[derive(Clone, Debug)]
-pub struct Route<S> {
-    matches: Matches<profiles::http::RequestMatch, profiles::http::Route>,
-    routes: HashMap<profiles::http::Route, S>, // TODO(ver) AHashMap?
+pub struct Route<M, R, S> {
+    matches: Matches<M, R>,
+    routes: HashMap<R, S>, // TODO(ver) AHashMap?
+}
+
+/// A type which can match a request to a route.
+pub trait MatchRoute<Req>: Eq + Sized {
+    /// Given a list of (route matcher, key) pairs and a request, returns the
+    /// key matching this request according to a route matching strategy.
+    ///
+    /// If no route matches the request, this method returns `None`.
+    ///
+    /// Depending on the route matching strategy used by this type, the returned
+    /// route may be the first route to match the request (ServiceProfile
+    /// style), or the most specific route to match the request (HTTPRoute style).
+    fn match_route<'matches, K>(
+        matches: &'matches Matches<Self, K>,
+        req: &Req,
+    ) -> Option<&'matches K>;
 }
 
 // === impl NewRoute ===
 
-impl<N, R: Clone, U> NewRoute<N, R, U> {
+impl<N, R: Clone, U, M, K> NewRoute<N, R, U, M, K> {
     pub fn layer(
         route_layer: R,
     ) -> impl layer::Layer<N, Service = NewSpawnWatch<Profile, Self>> + Clone {
@@ -67,14 +86,15 @@ impl<N, R: Clone, U> NewRoute<N, R, U> {
     }
 }
 
-impl<T, U, N, R, S> NewService<T> for NewRoute<N, R, U>
+impl<T, U, N, R, M, K, S> NewService<T> for NewRoute<N, R, U, M, K>
 where
     N: NewService<U> + Clone,
     R: layer::Layer<NewDistribute<N::Service>> + Clone,
-    R::Service: NewService<(profiles::http::Route, T), Service = S>,
+    R::Service: NewService<(K, T), Service = S>,
     S: Clone,
+    K: Clone,
 {
-    type Service = Update<T, U, N, N::Service, R, S>;
+    type Service = Update<T, U, N, N::Service, R, M, K, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
         Update {
@@ -88,7 +108,7 @@ where
     }
 }
 
-impl<N: Clone, R: Clone, U> Clone for NewRoute<N, R, U> {
+impl<N: Clone, R: Clone, U, M, K> Clone for NewRoute<N, R, U, M, K> {
     fn clone(&self) -> Self {
         Self {
             new_backend: self.new_backend.clone(),
@@ -100,7 +120,7 @@ impl<N: Clone, R: Clone, U> Clone for NewRoute<N, R, U> {
 
 // === impl Route ===
 
-impl<S> Default for Route<S> {
+impl<M, K, S> Default for Route<M, K, S> {
     fn default() -> Self {
         Self {
             matches: Arc::new([]),
@@ -109,13 +129,15 @@ impl<S> Default for Route<S> {
     }
 }
 
-impl<B, S> Service<http::Request<B>> for Route<S>
+impl<M, K, S, Req> Service<Req> for Route<M, K, S>
 where
-    S: Service<http::Request<B>> + Clone,
+    S: Service<Req> + Clone,
+    M: MatchRoute<Req>,
+    K: Hash + Eq + fmt::Debug,
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = Oneshot<S, http::Request<B>>;
+    type Future = Oneshot<S, Req>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         // TODO(ver) figure out how backpressure should work here. Ideally, we
@@ -123,9 +145,9 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+    fn call(&mut self, req: Req) -> Self::Future {
         // If the request matches a route, use the route's service.
-        if let Some(route) = profiles::http::route_for_request(&self.matches, &req) {
+        if let Some(route) = M::match_route(&self.matches, &req) {
             if let Some(svc) = self.routes.get(route).cloned() {
                 trace!(?route, "Using route service");
                 return svc.oneshot(req);
@@ -141,23 +163,27 @@ where
 
 // === impl Update ===
 
-impl<T, U, N, L, R> UpdateWatch<Profile> for Update<T, U, N, N::Service, L, R>
+impl<T, U, N, L, M, K, R> UpdateWatch<Profile> for Update<T, U, N, N::Service, L, M, K, R>
 where
     T: Clone + Send + Sync + 'static,
+    Profile: Param<Matches<M, K>>,
     U: From<(ConcreteAddr, T)> + 'static,
     N: NewService<U> + Send + Sync + 'static,
     N::Service: Clone + Send + Sync + 'static,
     L: layer::Layer<NewDistribute<N::Service>> + Send + Sync + 'static,
-    L::Service: NewService<(profiles::http::Route, T), Service = R>,
+    L::Service: NewService<(K, T), Service = R>,
     R: Clone + Send + Sync + 'static,
+    M: Eq + Clone + Send + Sync + 'static,
+    K: Hash + Eq + Clone + Send + Sync + 'static,
 {
-    type Service = Route<R>;
+    type Service = Route<M, K, R>;
 
     fn update(&mut self, profile: &Profile) -> Option<Self::Service> {
         let changed_backends = self.update_backends(&profile.target_addrs);
-        let changed_routes = *self.route.matches != profile.http_routes;
+        let routes = profile.param();
+        let changed_routes = self.route.matches != routes;
         if changed_backends || changed_routes {
-            self.update_routes(&profile.http_routes);
+            self.update_routes(&*routes);
 
             Some(Route {
                 matches: self.route.matches.clone(),
@@ -169,15 +195,17 @@ where
     }
 }
 
-impl<T, U, N, L, R> Update<T, U, N, N::Service, L, R>
+impl<T, U, N, L, M, K, R> Update<T, U, N, N::Service, L, M, K, R>
 where
     T: Clone,
     U: From<(ConcreteAddr, T)>,
     N: NewService<U>,
     N::Service: Clone,
     L: layer::Layer<NewDistribute<N::Service>>,
-    L::Service: NewService<(profiles::http::Route, T), Service = R>,
+    L::Service: NewService<(K, T), Service = R>,
     R: Clone,
+    M: Clone,
+    K: Hash + Eq + Clone,
 {
     fn update_backends(&mut self, addrs: &ahash::AHashSet<NameAddr>) -> bool {
         let removed = {
@@ -193,9 +221,9 @@ where
             return removed > 0;
         }
 
-        self.backends.reserve(addrs.len().max(1));
+        self.backends.reserve(addrs.len());
         for addr in addrs {
-            // Skip rebuilding addrs we already have a stack for.
+            // Skip rebuilding targets we already have a stack for.
             if self.backends.contains_key(addr) {
                 continue;
             }
@@ -209,14 +237,11 @@ where
         true
     }
 
-    fn update_routes(
-        &mut self,
-        http_routes: &[(profiles::http::RequestMatch, profiles::http::Route)],
-    ) {
+    fn update_routes(&mut self, routes: &[(M, K)]) {
         let new_distribute: NewDistribute<N::Service> = self.backends.clone().into();
         self.route = Route {
-            matches: http_routes.iter().cloned().collect(),
-            routes: http_routes
+            matches: routes.iter().cloned().collect(),
+            routes: routes
                 .iter()
                 .map(|(_, route)| {
                     let new_route = self.route_layer.layer(new_distribute.clone());

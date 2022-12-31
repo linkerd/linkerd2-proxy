@@ -1,12 +1,10 @@
-mod router;
 #[cfg(test)]
 mod tests;
 
-use self::router::NewRoute;
 use super::{Concrete, Endpoint, Logical};
-use crate::{endpoint, resolve, Outbound};
+use crate::{endpoint, logical::router, resolve, Outbound};
 use linkerd_app_core::{
-    drain, io,
+    drain, io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -16,6 +14,15 @@ use linkerd_app_core::{
     svc, Error, Infallible,
 };
 use tracing::debug_span;
+
+type NewRoute<N, R> =
+    router::NewRoute<N, R, Concrete, profiles::tcp::RequestMatch, profiles::tcp::Route>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct ProfileRoute {
+    logical: Logical,
+    route: profiles::tcp::Route,
+}
 
 impl<C> Outbound<C> {
     /// Constructs a TCP load balancer.
@@ -92,12 +99,15 @@ impl<C> Outbound<C> {
                 .check_new_service::<Concrete, I>()
                 .push(svc::ArcNewService::layer());
 
-            let route = concrete
-                .check_new_service::<Concrete, I>()
-                .push(NewRoute::<Concrete, svc::ArcNewService<Concrete, _>>::layer())
-                .check_new_service::<Logical, I>();
+            let route = svc::layers()
+                .push_map_target(|(route, logical)| ProfileRoute { logical, route })
+                // Only build a route service when it is used.
+                .push(svc::NewLazy::layer());
 
-            route
+            concrete
+                .check_new_service::<Concrete, I>()
+                .push(NewRoute::layer(route))
+                .check_new_service::<Logical, I>()
                 // This caches each logical stack so that it can be reused
                 // across per-connection server stacks (i.e., created by the
                 // DetectService).
@@ -109,5 +119,42 @@ impl<C> Outbound<C> {
                 .check_new_service::<Logical, I>()
                 .push(svc::ArcNewService::layer())
         })
+    }
+}
+
+// === impl ProfileRoute ===
+
+impl svc::Param<router::Distribution> for ProfileRoute {
+    fn param(&self) -> router::Distribution {
+        let targets = self.route.targets().as_ref();
+        // If the route has no backend overrides, distribute all traffic to the
+        // logical address.
+        if targets.is_empty() {
+            let profiles::LogicalAddr(addr) = self.logical.param();
+            return router::Distribution::from(addr);
+        }
+
+        router::Distribution::random_available(
+            targets
+                .iter()
+                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
+        )
+        .expect("distribution must be valid")
+    }
+}
+
+// === impl MatchRoute ===
+
+impl<T> router::MatchRoute<T> for profiles::tcp::RequestMatch {
+    fn match_route<'matches, K>(
+        matches: &'matches router::Matches<Self, K>,
+        _: &T,
+    ) -> Option<&'matches K> {
+        debug_assert_eq!(
+            matches.len(),
+            1,
+            "a profile should not have multiple TCP routes yet!"
+        );
+        matches.get(0).map(|(_, k)| k)
     }
 }
