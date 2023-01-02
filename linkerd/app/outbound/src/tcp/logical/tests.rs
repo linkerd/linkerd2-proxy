@@ -4,7 +4,7 @@ use io::AsyncWriteExt;
 use linkerd_app_core::{
     errors::FailFastError,
     io::{self, AsyncReadExt},
-    profiles::{LogicalAddr, Profile},
+    profiles::LogicalAddr,
     svc::{self, NewService, ServiceExt},
     transport::addrs::*,
 };
