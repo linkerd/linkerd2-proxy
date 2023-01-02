@@ -142,10 +142,7 @@ impl svc::Param<router::Distribution> for ProfileRoute {
 // === impl MatchRoute ===
 
 impl<B> router::MatchRoute<http::Request<B>> for profiles::http::RequestMatch {
-    fn match_route<'matches, K>(
-        matches: &'matches router::Matches<Self, K>,
-        req: &http::Request<B>,
-    ) -> Option<&'matches K> {
+    fn match_route<'m, K>(matches: &'m [(Self, K)], req: &http::Request<B>) -> Option<&'m K> {
         profiles::http::route_for_request(matches, req)
     }
 }

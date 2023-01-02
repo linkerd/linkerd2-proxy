@@ -9,7 +9,7 @@ pub use linkerd_stack::{
     self as stack, layer, ArcNewService, BoxCloneService, BoxService, BoxServiceLayer, Either,
     ExtractParam, Fail, FailFast, Filter, InsertParam, LoadShed, MakeConnection, MapErr,
     MapTargetLayer, NewCloneService, NewLazy, NewRouter, NewService, NewSpawnWatch, Oneshot, Param,
-    Predicate, SpawnWatch, UnwrapOr, UpdateWatch,
+    Predicate, SpawnWatch, UnwrapOr,
 };
 use linkerd_stack::{failfast, OnService};
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};

@@ -2,7 +2,7 @@ use rand::distributions::{WeightedError, WeightedIndex};
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 #[derive(Debug, Clone)]
-pub struct BackendAddrs<K>(pub(crate) Arc<ahash::AHashSet<K>>)
+pub struct Backends<K>(pub(crate) Arc<ahash::AHashSet<K>>)
 where
     K: Eq + Hash + Clone;
 
@@ -28,9 +28,9 @@ pub struct WeightedKeys<K> {
     index: WeightedIndex<u32>,
 }
 
-// === impl BackendAddrs ===
+// === impl Backends ===
 
-impl<K> FromIterator<K> for BackendAddrs<K>
+impl<K> FromIterator<K> for Backends<K>
 where
     K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
 {

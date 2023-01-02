@@ -1,38 +1,45 @@
 use super::{params, NewDistribute};
-use linkerd_stack::{NewService, Param};
+use linkerd_stack::{layer, NewService, Param};
 use parking_lot::Mutex;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 /// A [`NewService`] that produces [`NewDistribute`]s using a shared cache of
 /// backends.
 #[derive(Debug)]
-pub struct CacheNewDistribute<T, A, N, S> {
-    inner: Arc<Inner<T, A, N, S>>,
-}
+pub struct CacheNewDistribute<K, N, S>(Arc<Inner<K, N, S>>);
 
 #[derive(Debug)]
-pub struct Inner<T, A, N, S> {
-    target: T,
+pub struct Inner<K, N, S> {
     new_backend: N,
-    backends: Mutex<ahash::AHashMap<A, S>>,
+    backends: Mutex<ahash::AHashMap<K, S>>,
 }
 
 // === impl CacheNewDistribute ===
 
-impl<P, T, A, N> NewService<P> for CacheNewDistribute<T, A, N, N::Service>
+impl<K, N, S> CacheNewDistribute<K, N, S> {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(|new_backend| {
+            Self(Arc::new(Inner {
+                new_backend,
+                backends: Mutex::new(ahash::AHashMap::new()),
+            }))
+        })
+    }
+}
+
+impl<T, K, N> NewService<T> for CacheNewDistribute<K, N, N::Service>
 where
-    T: Clone,
-    A: Eq + Hash + Clone,
-    P: Param<params::BackendAddrs<A>>,
-    N: NewService<(A, T)>,
+    T: Param<params::Backends<K>>,
+    K: Eq + Hash + Clone,
+    N: NewService<K>,
     N::Service: Clone,
 {
-    type Service = NewDistribute<A, N::Service>;
+    type Service = NewDistribute<K, N::Service>;
 
-    fn new_service(&self, p: P) -> Self::Service {
-        let params::BackendAddrs(addrs) = p.param();
+    fn new_service(&self, target: T) -> Self::Service {
+        let params::Backends(addrs) = target.param();
 
-        let mut cache = self.inner.backends.lock();
+        let mut cache = self.0.backends.lock();
 
         // Remove all backends that aren't in the updated set of addrs.
         cache.retain(|addr, _| addrs.contains(addr));
@@ -48,10 +55,7 @@ where
                     continue;
                 }
 
-                let backend = self
-                    .inner
-                    .new_backend
-                    .new_service(((addr.clone()), self.inner.target.clone()));
+                let backend = self.0.new_backend.new_service(addr.clone());
                 cache.insert(addr.clone(), backend);
             }
         }
@@ -60,10 +64,8 @@ where
     }
 }
 
-impl<T, A, N, S> Clone for CacheNewDistribute<T, A, N, S> {
+impl<K, N, S> Clone for CacheNewDistribute<K, N, S> {
     fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
+        Self(self.0.clone())
     }
 }

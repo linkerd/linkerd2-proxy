@@ -126,16 +126,9 @@ impl<C> Outbound<C> {
 
 impl svc::Param<router::Distribution> for ProfileRoute {
     fn param(&self) -> router::Distribution {
-        let targets = self.route.targets().as_ref();
-        // If the route has no backend overrides, distribute all traffic to the
-        // logical address.
-        if targets.is_empty() {
-            let profiles::LogicalAddr(addr) = self.logical.param();
-            return router::Distribution::from(addr);
-        }
-
         router::Distribution::random_available(
-            targets
+            self.route
+                .targets()
                 .iter()
                 .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
         )
@@ -145,11 +138,10 @@ impl svc::Param<router::Distribution> for ProfileRoute {
 
 // === impl MatchRoute ===
 
-impl<T> router::MatchRoute<T> for profiles::tcp::RequestMatch {
-    fn match_route<'matches, K>(
-        matches: &'matches router::Matches<Self, K>,
-        _: &T,
-    ) -> Option<&'matches K> {
+pub struct Router;
+
+impl<T> router::MatchRoute<profiles::tcp::RequestMatch, T> for Router {
+    fn match_route<'m, K>(matches: &'m [(profiles::tcp::RequestMatch, K)], _: &T) -> Option<&'m K> {
         debug_assert_eq!(
             matches.len(),
             1,

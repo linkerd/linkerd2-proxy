@@ -3,25 +3,6 @@ use std::task::{Context, Poll};
 use tokio::sync::watch;
 use tracing::Instrument;
 
-/// Defines how to update a [`Service`] in the background as a [`watch::Receiver`].
-/// containing a `T-`typed target is updated.
-pub trait UpdateWatch<T>: Send + 'static {
-    /// The type of service built based on the watched target.
-    type Service: Clone + Default + Send + Sync + 'static;
-
-    /// Update the inner service with a new `target` value.
-    ///
-    /// If the inner service has not changed as a result of the update, this
-    /// method may return `None`. If `None` is returned, no update will be
-    /// published to the [`SpawnWatch`] service.
-    ///
-    /// This method is also called initially when the first [`SpawnWatch`]
-    /// service is constructed. In this case, it should generally not return
-    /// `None`, but if it does, the [`Default`] value of the [`Self::Service`]
-    /// type is used.
-    fn update(&mut self, target: &T) -> Option<Self::Service>;
-}
-
 /// Builds [`SpawnWatch`] services, where an inner [`Service`] is updated
 /// dynamically by a background task as a target wrapped in a
 /// [`watch::Receiver`] changes.
@@ -30,7 +11,7 @@ pub trait UpdateWatch<T>: Send + 'static {
 /// which define the logic for how to update the inner [`Service`].
 #[derive(Clone, Debug)]
 pub struct NewSpawnWatch<P, N> {
-    new_update: N,
+    inner: N,
     _marker: std::marker::PhantomData<fn(P)>,
 }
 
@@ -48,31 +29,30 @@ pub struct SpawnWatch<S> {
 // === impl NewSpawnWatch ===
 
 impl<P, N> NewSpawnWatch<P, N> {
-    pub fn new(new_update: N) -> Self {
+    pub fn new(inner: N) -> Self {
         Self {
-            new_update,
+            inner,
             _marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<T, P, N, U> NewService<T> for NewSpawnWatch<P, N>
+impl<T, P, N, S> NewService<T> for NewSpawnWatch<P, N>
 where
-    T: Param<watch::Receiver<P>> + Clone,
+    T: Param<watch::Receiver<P>>,
     P: Clone + Send + Sync + 'static,
-    N: NewService<T, Service = U> + Send + 'static,
-    U: UpdateWatch<P>,
+    N: NewService<P, Service = S> + Clone + Send + 'static,
+    S: Clone + Default + Send + Sync + 'static,
 {
-    type Service = SpawnWatch<U::Service>;
+    type Service = SpawnWatch<S>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let mut target_rx = target.param();
 
-        let mut update = self.new_update.new_service(target);
-        let inner = update
-            .update(&*target_rx.borrow_and_update())
-            .unwrap_or_default();
+        let new_inner = self.inner.clone();
+        let inner = new_inner.new_service((*target_rx.borrow_and_update()).clone());
         let (tx, rx) = watch::channel(inner.clone());
+
         tokio::spawn(
             async move {
                 loop {
@@ -85,10 +65,9 @@ where
                         }
                     }
 
-                    if let Some(inner) = update.update(&*target_rx.borrow_and_update()) {
-                        if tx.send(inner).is_err() {
-                            return;
-                        }
+                    let tgt = (*target_rx.borrow_and_update()).clone();
+                    if tx.send(new_inner.new_service(tgt)).is_err() {
+                        return;
                     }
                 }
             }
@@ -144,11 +123,11 @@ mod tests {
         }
     }
 
-    impl UpdateWatch<Mock<(), ()>> for Update {
+    impl NewService<Mock<(), ()>> for Update {
         type Service = DefaultMock;
 
-        fn update(&mut self, target: &Mock<(), ()>) -> Option<Self::Service> {
-            Some(DefaultMock(Some(target.clone())))
+        fn new_service(&self, target: Mock<(), ()>) -> Self::Service {
+            DefaultMock(Some(target))
         }
     }
 

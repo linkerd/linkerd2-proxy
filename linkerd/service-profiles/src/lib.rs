@@ -43,7 +43,7 @@ pub struct Profile {
     pub http_routes: http::RouteSet,
     pub tcp_routes: tcp::RouteSet,
     /// A list of all target backend addresses on this profile and its routes.
-    pub target_addrs: AHashSet<NameAddr>,
+    pub target_addrs: Arc<AHashSet<NameAddr>>,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
