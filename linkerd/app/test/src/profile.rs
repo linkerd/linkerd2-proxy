@@ -34,7 +34,7 @@ pub fn empty() -> Profile {
 
 pub fn with_addr(addr: &str) -> Profile {
     let na = NameAddr::from_str(addr).expect("Invalid name:port");
-    with_nameaddr(with_nameaddr(na))
+    with_nameaddr(na)
 }
 
 pub fn with_nameaddr(addr: NameAddr) -> Profile {
