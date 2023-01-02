@@ -1,0 +1,14 @@
+[package]
+name = "linkerd-router"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+ahash = "0.8"
+futures = "0.3"
+thiserror = "1"
+tracing = "0.1"
+linkerd-error = { path = "../error" }
+linkerd-stack = { path = "../stack" }
