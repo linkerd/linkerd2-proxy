@@ -34,14 +34,18 @@ pub fn empty() -> Profile {
 
 pub fn with_addr(addr: &str) -> Profile {
     let na = NameAddr::from_str(addr).expect("Invalid name:port");
+    with_nameaddr(with_nameaddr(na))
+}
+
+pub fn with_nameaddr(addr: NameAddr) -> Profile {
     let targets = std::iter::once(Target {
-        addr: na.clone(),
+        addr: addr.clone(),
         weight: 1,
     })
     .collect::<Targets>();
-    let target_addrs = std::iter::once(na.clone()).collect();
+    let target_addrs = std::iter::once(addr.clone()).collect();
     Profile {
-        addr: Some(LogicalAddr(na)),
+        addr: Some(LogicalAddr(addr)),
         http_routes: std::iter::once((
             http::RequestMatch::default(),
             http::Route::new(std::iter::empty(), Vec::new(), targets.clone()),

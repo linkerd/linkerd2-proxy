@@ -160,6 +160,13 @@ impl Profiles {
         tx
     }
 
+    pub fn profile_tx_default(&self, addr: impl Into<NameAddr>) -> ProfileSender {
+        let addr = addr.into();
+        let tx = self.profile_tx(addr.clone());
+        tx.send(crate::profile::with_nameaddr(addr));
+        tx
+    }
+
     pub fn profile(self, addr: impl Into<Addr>, profile: Profile) -> Self {
         let (tx, rx) = watch::channel(profile);
         self.state.unused_senders.lock().push(Box::new(tx));
