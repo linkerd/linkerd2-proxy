@@ -1029,8 +1029,10 @@ dependencies = [
 name = "linkerd-distribute"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "indexmap",
  "linkerd-stack",
+ "parking_lot",
  "rand",
  "tokio-test",
  "tower-test",
