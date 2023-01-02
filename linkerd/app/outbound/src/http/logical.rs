@@ -1,7 +1,15 @@
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
-use crate::logical::router;
 use crate::Outbound;
-use linkerd_app_core::{classify, metrics, profiles, proxy::http, svc, Error};
+use linkerd_app_core::{
+    classify, metrics, profiles,
+    profiles::{self, Profile},
+    proxy::http,
+    svc, Error, NameAddr,
+};
+use linkerd_distribute::{Backends, CacheNewDistribute, Distribute, Distribution};
+use linkerd_router as router;
+use std::sync::Arc;
+use tokio::sync::watch;
 use tracing::debug_span;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -9,9 +17,6 @@ struct ProfileRoute {
     logical: Logical,
     route: profiles::http::Route,
 }
-
-type NewRoute<N, R> =
-    router::NewRoute<N, R, Concrete, profiles::http::RequestMatch, profiles::http::Route>;
 
 impl<N> Outbound<N> {
     // TODO(ver) make the outer target type generic/parameterized.
@@ -127,22 +132,91 @@ impl classify::CanClassify for ProfileRoute {
     }
 }
 
-impl svc::Param<router::Distribution> for ProfileRoute {
-    fn param(&self) -> router::Distribution {
-        router::Distribution::random_available(
-            self.route
-                .targets()
-                .iter()
-                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
-        )
-        .expect("distribution must be valid")
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Target {
+    logical: NameAddr,
+    rx: watch::Receiver<Config>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Config {
+    logical: NameAddr,
+    backends: Backends<BackendConfig>,
+    route_keys: router::RouteKeys<RouteKey>,
+    routes: Arc<ahash::AHashMap<profiles::http::RequestMatch, RouteKey>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BackendConfig {
+    logical: NameAddr,
+    concrete: NameAddr,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct RouteKey {
+    logical: NameAddr,
+    config: profiles::http::Route,
+    distribution: Distribution<BackendConfig>,
+}
+
+#[derive(Clone, Debug)]
+struct NewRoute<L, N, S>(
+    router::NewRouteWatch<Profile, RouteKey, L, CacheNewDistribute<BackendConfig, N, S>>,
+);
+
+impl<T, L, N, S> svc::NewService<T> for NewRoute<L, N, S>
+where
+    T: svc::Param<profiles::LogicalAddr>,
+    T: svc::Param<watch::Receiver<Profile>>,
+    N: svc::NewService<BackendConfig>,
+    L: svc::layer::Layer<Distribute<BackendConfig, N::Service>>,
+    L::Service: svc::NewService<RouteKey, Service = S>,
+{
+    type Service = router::Route<RouteKey, Profile, S>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        let profiles::LogicalAddr(logical) = target.param();
+
+        let mut profile_rx: watch::Receiver<Profile> = target.param();
+        let (mut tx, rx) = watch::channel(Target::new(logical, &*profile_rx.borrow_and_update()));
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = tx.closed() => return,
+                    res = profile_rx.changed() => {
+                        if res.is_err() {
+                            return;
+                        }
+                    }
+                }
+
+                if tx
+                    .send(Target::new(logical, &*profile_rx.borrow_and_update()))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        });
+
+        self.0.new_service(Target { logical, rx })
     }
 }
 
-// === impl MatchRoute ===
+impl svc::Param<profiles::LogicalAddr> for Target {
+    fn param(&self) -> profiles::LogicalAddr {
+        profiles::LogicalAddr(self.logical.clone())
+    }
+}
 
-impl<B> router::MatchRoute<http::Request<B>> for profiles::http::RequestMatch {
-    fn match_route<'m, K>(matches: &'m [(Self, K)], req: &http::Request<B>) -> Option<&'m K> {
-        profiles::http::route_for_request(matches, req)
+impl svc::Param<profiles::LogicalAddr> for Config {
+    fn param(&self) -> profiles::LogicalAddr {
+        profiles::LogicalAddr(self.logical.clone())
+    }
+}
+
+impl svc::Param<Distribution<BackendConfig>> for RouteKey {
+    fn param(&self) -> Distribution<BackendConfig> {
+        self.distribution.clone()
     }
 }

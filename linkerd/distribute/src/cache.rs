@@ -17,13 +17,15 @@ pub struct Inner<K, N, S> {
 // === impl CacheNewDistribute ===
 
 impl<K, N, S> CacheNewDistribute<K, N, S> {
+    pub fn new(new_backend: N) -> Self {
+        Self(Arc::new(Inner {
+            new_backend,
+            backends: Mutex::new(ahash::AHashMap::new()),
+        }))
+    }
+
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(|new_backend| {
-            Self(Arc::new(Inner {
-                new_backend,
-                backends: Mutex::new(ahash::AHashMap::new()),
-            }))
-        })
+        layer::mk(Self::new)
     }
 }
 

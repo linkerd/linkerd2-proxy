@@ -10,7 +10,7 @@ mod stack;
 
 pub use self::{
     cache::CacheNewDistribute,
-    params::{Distribution, WeightedKeys},
+    params::{Backends, Distribution, WeightedKeys},
     service::Distribute,
     stack::NewDistribute,
 };

@@ -12,7 +12,9 @@ use std::{
 use tracing::{debug, error};
 
 #[derive(Debug, Clone)]
-pub struct RouteKeys<K>(Arc<[K]>);
+pub struct RouteKeys<K>(Arc<[K]>)
+where
+    K: Eq + Hash + Clone;
 
 pub trait SelectRoute<Req> {
     type Key: Eq + Hash + Clone + Debug + Send + Sync + 'static;
@@ -24,15 +26,17 @@ pub trait SelectRoute<Req> {
     fn select<'r>(&self, req: &'r Req) -> Result<&Self::Key, Self::Error>;
 }
 
+pub type NewRouteWatch<T, K, L, N> = NewSpawnWatch<T, NewRoute<K, L, N>>;
+
 /// A [`NewService`] that produces [`Route`]s.
 ///
 /// This is to be called by [`SpawnWatch`] with a clone of the watched value.
 ///
 /// [`SpawnWatch`]: linkerd_app_core::svc::SpawnWatch
 #[derive(Clone, Debug)]
-pub struct NewRoute<K, N, L> {
-    new_backends: N,
+pub struct NewRoute<K, L, N> {
     route_layer: L,
+    new_backends: N,
     _marker: PhantomData<fn(K)>,
 }
 
@@ -52,23 +56,25 @@ pub struct UnknownRoute<K: std::fmt::Debug>(K);
 
 // === impl NewRoute ===
 
-impl<K, N, L: Clone> NewRoute<K, N, L> {
+impl<K, L: Clone, N> NewRoute<K, L, N> {
+    pub fn watch<T>(route_layer: L, new_backends: N) -> NewSpawnWatch<T, Self> {
+        NewSpawnWatch::new(Self {
+            new_backends,
+            route_layer,
+            _marker: PhantomData,
+        })
+    }
+
     pub fn layer<T>(
         route_layer: L,
     ) -> impl layer::Layer<N, Service = NewSpawnWatch<T, Self>> + Clone {
-        layer::mk(move |new_backends| {
-            NewSpawnWatch::new(Self {
-                new_backends,
-                route_layer: route_layer.clone(),
-                _marker: PhantomData,
-            })
-        })
+        layer::mk(move |inner| Self::watch(route_layer.clone(), inner))
     }
 }
 
-impl<T, K, N, L, S> NewService<T> for NewRoute<K, N, L>
+impl<T, K, L, N, S> NewService<T> for NewRoute<K, L, N>
 where
-    K: Eq + Hash + Clone,
+    K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
     T: Param<RouteKeys<K>> + Clone,
     N: NewService<T>,
     L: layer::Layer<N::Service>,
@@ -146,5 +152,16 @@ impl<T, R: Default, S> Default for Route<T, R, S> {
             router: Default::default(),
             routes: Default::default(),
         }
+    }
+}
+
+// === impl RouteKeys ===
+
+impl<K> FromIterator<K> for RouteKeys<K>
+where
+    K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+{
+    fn from_iter<T: IntoIterator<Item = K>>(iter: T) -> Self {
+        Self(Arc::from(iter.into_iter().collect::<Vec<_>>()))
     }
 }

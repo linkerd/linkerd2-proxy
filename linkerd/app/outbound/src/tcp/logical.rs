@@ -121,32 +121,3 @@ impl<C> Outbound<C> {
         })
     }
 }
-
-// === impl ProfileRoute ===
-
-impl svc::Param<router::Distribution> for ProfileRoute {
-    fn param(&self) -> router::Distribution {
-        router::Distribution::random_available(
-            self.route
-                .targets()
-                .iter()
-                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
-        )
-        .expect("distribution must be valid")
-    }
-}
-
-// === impl MatchRoute ===
-
-pub struct Router;
-
-impl<T> router::MatchRoute<profiles::tcp::RequestMatch, T> for Router {
-    fn match_route<'m, K>(matches: &'m [(profiles::tcp::RequestMatch, K)], _: &T) -> Option<&'m K> {
-        debug_assert_eq!(
-            matches.len(),
-            1,
-            "a profile should not have multiple TCP routes yet!"
-        );
-        matches.get(0).map(|(_, k)| k)
-    }
-}
