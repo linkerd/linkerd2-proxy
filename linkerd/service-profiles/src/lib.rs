@@ -47,6 +47,7 @@ pub struct Profile {
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
+
 /// A profile lookup target.
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LookupAddr(pub Addr);
@@ -191,23 +192,6 @@ impl linkerd_stack::Param<http::RouteSet> for Profile {
 impl linkerd_stack::Param<tcp::RouteSet> for Profile {
     fn param(&self) -> tcp::RouteSet {
         self.tcp_routes.clone()
-    }
-}
-
-impl Default for Profile {
-    fn default() -> Self {
-        static DEFAULT_HTTP_ROUTES: Lazy<http::RouteSet> =
-            Lazy::new(|| vec![Default::default()].into());
-        static DEFAULT_TCP_ROUTES: Lazy<tcp::RouteSet> =
-            Lazy::new(|| vec![Default::default()].into());
-        Self {
-            addr: None,
-            http_routes: DEFAULT_HTTP_ROUTES.clone(),
-            tcp_routes: DEFAULT_TCP_ROUTES.clone(),
-            target_addrs: Default::default(),
-            opaque_protocol: false,
-            endpoint: None,
-        }
     }
 }
 

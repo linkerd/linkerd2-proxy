@@ -107,7 +107,7 @@ mod tests {
             })
         };
 
-        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        let profiles = support::profile::resolver().profile(addr, support::profile::empty());
 
         // Create a profile stack that uses the tracked inner stack.
         let (rt, _shutdown) = runtime();
@@ -174,7 +174,7 @@ mod tests {
             })
         };
 
-        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        let profiles = support::profile::resolver().profile(addr, support::profile::empty());
 
         // Create a profile stack that uses the tracked inner stack, configured to drop cached
         // service after `idle_timeout`.
@@ -285,7 +285,7 @@ mod tests {
         // XXX we should assert that the resolver isn't even invoked, but the mocked resolver
         // doesn't support that right now. So, instead, we return a profile for resolutions to
         // and assert (below) that no profile is provided.
-        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        let profiles = support::profile::resolver().profile(addr, support::profile::empty());
 
         // Mock an inner stack with a service that asserts that no profile is built.
         let stack = |(profile, _): (Option<profiles::Receiver>, _)| {

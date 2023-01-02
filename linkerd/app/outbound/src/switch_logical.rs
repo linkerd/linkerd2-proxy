@@ -150,7 +150,7 @@ mod tests {
             addr: Some(profiles::LogicalAddr(
                 NameAddr::from_str_and_port("foo.example.com", 3030).unwrap(),
             )),
-            ..Default::default()
+            ..support::profile::empty()
         });
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
@@ -181,7 +181,7 @@ mod tests {
                 NameAddr::from_str_and_port("foo.example.com", 3030).unwrap(),
             )),
             opaque_protocol: true,
-            ..Default::default()
+            ..support::profile::empty()
         });
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
@@ -213,7 +213,7 @@ mod tests {
             endpoint: None,
             opaque_protocol: true,
             addr: None,
-            ..Default::default()
+            ..support::profile::empty()
         });
 
         let orig_dst = OrigDstAddr(endpoint_addr);

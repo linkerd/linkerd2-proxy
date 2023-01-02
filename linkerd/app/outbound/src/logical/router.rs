@@ -218,6 +218,7 @@ where
     K: Hash + Eq + Clone,
 {
     fn update_backends(&mut self, addrs: &ahash::AHashSet<NameAddr>) -> bool {
+        dbg!(&addrs);
         let removed = {
             let init = self.backends.len();
             self.backends.retain(|addr, _| addrs.contains(addr));

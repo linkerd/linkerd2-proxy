@@ -152,7 +152,7 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
 
 impl Profiles {
     pub fn profile_tx(&self, addr: impl Into<Addr>) -> ProfileSender {
-        let (tx, rx) = watch::channel(Profile::default());
+        let (tx, rx) = watch::channel(crate::profile::empty());
         self.state
             .endpoints
             .lock()

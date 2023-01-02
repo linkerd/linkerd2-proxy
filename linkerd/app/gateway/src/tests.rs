@@ -26,7 +26,7 @@ async fn gateway_endpoint() {
     let addr = std::net::SocketAddr::new([192, 0, 2, 10].into(), 777);
     let profile = support::profile::only(profiles::Profile {
         endpoint: Some((addr, Metadata::default())),
-        ..profiles::Profile::default()
+        ..support::profile::empty()
     });
 
     assert_eq!(
@@ -163,7 +163,7 @@ impl Test {
         let target = self.target.clone();
         self.with_profile(support::profile::only(profiles::Profile {
             addr: Some(target.into()),
-            ..profiles::Profile::default()
+            ..support::profile::empty()
         }))
     }
 }
