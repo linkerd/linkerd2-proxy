@@ -1,7 +1,7 @@
 use rand::distributions::{WeightedError, WeightedIndex};
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backends<K>(pub(crate) Arc<ahash::AHashSet<K>>)
 where
     K: Eq + Hash + Clone;
@@ -9,7 +9,7 @@ where
 /// A parameter type that configures how a [`Distribute`] should behave.
 ///
 /// [`Distribute`]: crate::service::Distribute
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Distribution<K> {
     /// A distribution that has no backends, and therefore never becomes ready.
     Empty,
@@ -22,10 +22,10 @@ pub enum Distribution<K> {
     RandomAvailable(Arc<WeightedKeys<K>>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct WeightedKeys<K> {
     keys: Vec<K>,
-    index: WeightedIndex<u32>,
+    weights: Vec<u32>,
 }
 
 // === impl Backends ===
@@ -69,10 +69,11 @@ impl<K> Distribution<K> {
         if keys.len() < 2 {
             return Ok(Self::first_available(keys));
         }
-        let index = WeightedIndex::new(weights)?;
+        // Error if the distribution is invalid.
+        let _index = WeightedIndex::new(weights.iter().copied())?;
         Ok(Self::RandomAvailable(Arc::new(WeightedKeys {
             keys,
-            index,
+            weights,
         })))
     }
 
@@ -92,7 +93,7 @@ impl<K> WeightedKeys<K> {
         &self.keys
     }
 
-    pub(crate) fn index(&self) -> &WeightedIndex<u32> {
-        &self.index
+    pub(crate) fn index(&self) -> WeightedIndex<u32> {
+        WeightedIndex::new(self.weights.iter().copied()).expect("distribution must be valid")
     }
 }

@@ -15,9 +15,6 @@ use linkerd_app_core::{
 };
 use tracing::debug_span;
 
-type NewRoute<N, R> =
-    router::NewRoute<N, R, Concrete, profiles::tcp::RequestMatch, profiles::tcp::Route>;
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ProfileRoute {
     logical: Logical,
@@ -106,7 +103,7 @@ impl<C> Outbound<C> {
 
             concrete
                 .check_new_service::<Concrete, I>()
-                .push(NewRoute::layer(route))
+                .push(router::layer(route))
                 .check_new_service::<Logical, I>()
                 // This caches each logical stack so that it can be reused
                 // across per-connection server stacks (i.e., created by the

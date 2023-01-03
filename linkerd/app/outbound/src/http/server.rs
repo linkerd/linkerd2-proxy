@@ -119,10 +119,11 @@ impl errors::HttpRescue<Error> for ServerRescue {
         if let Some(cause) = errors::cause_ref::<errors::LoadShedError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::unavailable(cause));
         }
-        if let Some(cause) = errors::cause_ref::<crate::logical::router::NoRouteForRequest>(&*error)
-        {
-            return Ok(errors::SyntheticHttpResponse::not_found(cause));
-        }
+
+        // if let Some(cause) = errors::cause_ref::<crate::logical::router::NoRouteForRequest>(&*error)
+        // {
+        //     return Ok(errors::SyntheticHttpResponse::not_found(cause));
+        // }
 
         if errors::is_caused_by::<errors::H2Error>(&*error) {
             return Err(error);

@@ -1,12 +1,7 @@
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
 use crate::Outbound;
-use linkerd_app_core::{
-    classify, metrics, profiles,
-    profiles::{self, Profile},
-    proxy::http,
-    svc, Error, NameAddr,
-};
-use linkerd_distribute::{Backends, CacheNewDistribute, Distribute, Distribution};
+use linkerd_app_core::{classify, metrics, profiles, proxy::http, svc, Error, NameAddr};
+use linkerd_distribute as distribute;
 use linkerd_router as router;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -45,7 +40,7 @@ impl<N> Outbound<N> {
             + 'static,
         NSvc::Future: Send,
     {
-        self.map_stack(|config, rt, concrete| {
+        self.map_stack(|Params, rt, concrete| {
             let route = svc::layers()
                 .push(http::insert::NewInsert::<ProfileRoute, _>::layer())
                 .push_on_service(http::BoxRequest::layer())
@@ -97,7 +92,7 @@ impl<N> Outbound<N> {
                 // can be removed.
                 //
                 // XXX(ver) This cache key includes the HTTP version. Should it?
-                .push_cache(config.discovery_idle_timeout)
+                .push_cache(Params.discovery_idle_timeout)
                 .instrument(|l: &Logical| debug_span!("logical", service = %l.logical_addr))
                 .push(svc::ArcNewService::layer())
         })
@@ -132,22 +127,29 @@ impl classify::CanClassify for ProfileRoute {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct Target {
     logical: NameAddr,
-    rx: watch::Receiver<Config>,
+    rx: watch::Receiver<Params>,
+}
+
+pub type RouteKeys = router::RouteKeys<RouteKey>;
+pub type Backends = distribute::Backends<BackendParams>;
+pub type Distribution = distribute::Distribution<BackendParams>;
+pub type NewDistribute<S> = distribute::NewDistribute<BackendParams, S>;
+pub type CacheNewDistribute<N, S> = distribute::CacheNewDistribute<BackendParams, N, S>;
+pub type Distribute<S> = distribute::Distribute<BackendParams, S>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Params {
+    pub logical: NameAddr,
+    pub backends: Backends,
+    pub route_keys: RouteKeys,
+    pub routes: Arc<[(profiles::http::RequestMatch, RouteKey)]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Config {
-    logical: NameAddr,
-    backends: Backends<BackendConfig>,
-    route_keys: router::RouteKeys<RouteKey>,
-    routes: Arc<ahash::AHashMap<profiles::http::RequestMatch, RouteKey>>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BackendConfig {
+pub struct BackendParams {
     logical: NameAddr,
     concrete: NameAddr,
 }
@@ -155,52 +157,8 @@ pub struct BackendConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RouteKey {
     logical: NameAddr,
-    config: profiles::http::Route,
-    distribution: Distribution<BackendConfig>,
-}
-
-#[derive(Clone, Debug)]
-struct NewRoute<L, N, S>(
-    router::NewRouteWatch<Profile, RouteKey, L, CacheNewDistribute<BackendConfig, N, S>>,
-);
-
-impl<T, L, N, S> svc::NewService<T> for NewRoute<L, N, S>
-where
-    T: svc::Param<profiles::LogicalAddr>,
-    T: svc::Param<watch::Receiver<Profile>>,
-    N: svc::NewService<BackendConfig>,
-    L: svc::layer::Layer<Distribute<BackendConfig, N::Service>>,
-    L::Service: svc::NewService<RouteKey, Service = S>,
-{
-    type Service = router::Route<RouteKey, Profile, S>;
-
-    fn new_service(&self, target: T) -> Self::Service {
-        let profiles::LogicalAddr(logical) = target.param();
-
-        let mut profile_rx: watch::Receiver<Profile> = target.param();
-        let (mut tx, rx) = watch::channel(Target::new(logical, &*profile_rx.borrow_and_update()));
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = tx.closed() => return,
-                    res = profile_rx.changed() => {
-                        if res.is_err() {
-                            return;
-                        }
-                    }
-                }
-
-                if tx
-                    .send(Target::new(logical, &*profile_rx.borrow_and_update()))
-                    .is_err()
-                {
-                    return;
-                }
-            }
-        });
-
-        self.0.new_service(Target { logical, rx })
-    }
+    Params: profiles::http::Route,
+    distribution: Distribution,
 }
 
 impl svc::Param<profiles::LogicalAddr> for Target {
@@ -209,14 +167,14 @@ impl svc::Param<profiles::LogicalAddr> for Target {
     }
 }
 
-impl svc::Param<profiles::LogicalAddr> for Config {
+impl svc::Param<profiles::LogicalAddr> for Params {
     fn param(&self) -> profiles::LogicalAddr {
         profiles::LogicalAddr(self.logical.clone())
     }
 }
 
-impl svc::Param<Distribution<BackendConfig>> for RouteKey {
-    fn param(&self) -> Distribution<BackendConfig> {
+impl svc::Param<Distribution> for RouteKey {
+    fn param(&self) -> Distribution {
         self.distribution.clone()
     }
 }

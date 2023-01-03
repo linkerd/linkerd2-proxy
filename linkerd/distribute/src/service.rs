@@ -90,7 +90,7 @@ where
             } => {
                 // Clone the weighted index so that we can zero out the weights
                 // as pending services are polled.
-                let mut index = keys.index().clone();
+                let mut index = keys.index();
                 loop {
                     // Sample the weighted index to find a backend to try.
                     let idx = index.sample(rng);
