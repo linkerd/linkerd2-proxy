@@ -1566,6 +1566,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-proxy-api-resolve",
+ "linkerd-router",
  "linkerd-stack",
  "linkerd-tonic-watch",
  "linkerd2-proxy-api",

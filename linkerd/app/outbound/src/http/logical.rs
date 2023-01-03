@@ -1,10 +1,9 @@
+#![allow(warnings)]
+
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
+use crate::logical::router::{self, HttpParams};
 use crate::Outbound;
 use linkerd_app_core::{classify, metrics, profiles, proxy::http, svc, Error, NameAddr};
-use linkerd_distribute as distribute;
-use linkerd_router as router;
-use std::sync::Arc;
-use tokio::sync::watch;
 use tracing::debug_span;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -40,50 +39,50 @@ impl<N> Outbound<N> {
             + 'static,
         NSvc::Future: Send,
     {
-        self.map_stack(|Params, rt, concrete| {
+        self.map_stack(|config, rt, concrete| {
             let route = svc::layers()
                 .push(http::insert::NewInsert::<ProfileRoute, _>::layer())
-                .push_on_service(http::BoxRequest::layer())
-                .push(
-                    rt.metrics
-                        .proxy
-                        .http_profile_route_actual
-                        .to_layer::<classify::Response, _, ProfileRoute>(),
-                )
-                // Depending on whether or not the request can be
-                // retried, it may have one of two `Body` types. This
-                // layer unifies any `Body` type into `BoxBody`.
-                .push_on_service(http::BoxRequest::erased())
-                // Sets an optional retry policy.
-                .push(retry::layer(
-                    rt.metrics.proxy.http_profile_route_retry.clone(),
-                ))
-                // Sets an optional request timeout.
-                .push(http::NewTimeout::layer())
-                // Records per-route metrics.
-                .push(
-                    rt.metrics
-                        .proxy
-                        .http_profile_route
-                        .to_layer::<classify::Response, _, ProfileRoute>(),
-                )
-                // Sets the per-route response classifier as a request
-                // extension.
-                .push(classify::NewClassify::layer())
+                // .push_on_service(http::BoxRequest::layer())
+                // .push(
+                //     rt.metrics
+                //         .proxy
+                //         .http_profile_route_actual
+                //         .to_layer::<classify::Response, _, ProfileRoute>(),
+                // )
+                // // Depending on whether or not the request can be
+                // // retried, it may have one of two `Body` types. This
+                // // layer unifies any `Body` type into `BoxBody`.
+                // .push_on_service(http::BoxRequest::erased())
+                // // Sets an optional retry policy.
+                // .push(retry::layer(
+                //     rt.metrics.proxy.http_profile_route_retry.clone(),
+                // ))
+                // // Sets an optional request timeout.
+                // .push(http::NewTimeout::layer())
+                // // Records per-route metrics.
+                // .push(
+                //     rt.metrics
+                //         .proxy
+                //         .http_profile_route
+                //         .to_layer::<classify::Response, _, ProfileRoute>(),
+                // )
+                // // Sets the per-route response classifier as a request
+                // // extension.
+                // .push(classify::NewClassify::layer())
+                // .push_map_target(|(route, logical)| ProfileRoute { logical, route })
                 .push_on_service(http::BoxResponse::layer())
-                .push_map_target(|(route, logical)| ProfileRoute { logical, route })
                 // Only build a route service when it is used.
                 .push(svc::NewLazy::layer());
 
             concrete
                 .check_new_service::<Concrete, _>()
-                .push(NewRoute::layer(route))
+                .push(router::http(route))
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
-                // Strips headers that may be set by this proxy and add an
-                // outbound canonical-dst-header. The response body is boxed
-                // unify the profile stack's response type with that of to
-                // endpoint stack.
-                .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
+                // // Strips headers that may be set by this proxy and add an
+                // // outbound canonical-dst-header. The response body is boxed
+                // // unify the profile stack's response type with that of to
+                // // endpoint stack.
+                // .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
                 // This caches each logical stack so that it can be reused
                 // across per-connection HTTP server stacks (i.e. created by the
                 // `DetectService`).
@@ -92,7 +91,7 @@ impl<N> Outbound<N> {
                 // can be removed.
                 //
                 // XXX(ver) This cache key includes the HTTP version. Should it?
-                .push_cache(Params.discovery_idle_timeout)
+                .push_cache(config.discovery_idle_timeout)
                 .instrument(|l: &Logical| debug_span!("logical", service = %l.logical_addr))
                 .push(svc::ArcNewService::layer())
         })
@@ -127,54 +126,14 @@ impl classify::CanClassify for ProfileRoute {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Target {
-    logical: NameAddr,
-    rx: watch::Receiver<Params>,
-}
-
-pub type RouteKeys = router::RouteKeys<RouteKey>;
-pub type Backends = distribute::Backends<BackendParams>;
-pub type Distribution = distribute::Distribution<BackendParams>;
-pub type NewDistribute<S> = distribute::NewDistribute<BackendParams, S>;
-pub type CacheNewDistribute<N, S> = distribute::CacheNewDistribute<BackendParams, N, S>;
-pub type Distribute<S> = distribute::Distribute<BackendParams, S>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Params {
-    pub logical: NameAddr,
-    pub backends: Backends,
-    pub route_keys: RouteKeys,
-    pub routes: Arc<[(profiles::http::RequestMatch, RouteKey)]>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BackendParams {
-    logical: NameAddr,
-    concrete: NameAddr,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RouteKey {
-    logical: NameAddr,
-    Params: profiles::http::Route,
-    distribution: Distribution,
-}
-
-impl svc::Param<profiles::LogicalAddr> for Target {
-    fn param(&self) -> profiles::LogicalAddr {
-        profiles::LogicalAddr(self.logical.clone())
-    }
-}
-
-impl svc::Param<profiles::LogicalAddr> for Params {
-    fn param(&self) -> profiles::LogicalAddr {
-        profiles::LogicalAddr(self.logical.clone())
-    }
-}
-
-impl svc::Param<Distribution> for RouteKey {
-    fn param(&self) -> Distribution {
-        self.distribution.clone()
+impl svc::Param<router::Distribution> for ProfileRoute {
+    fn param(&self) -> router::Distribution {
+        router::Distribution::random_available(
+            self.route
+                .targets()
+                .iter()
+                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
+        )
+        .expect("distribution must be valid")
     }
 }

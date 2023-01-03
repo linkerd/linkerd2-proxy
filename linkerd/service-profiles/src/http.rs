@@ -67,6 +67,10 @@ pub struct Retries {
 #[derive(Clone, Default)]
 struct Labels(Arc<std::collections::BTreeMap<String, String>>);
 
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("no route matched the request")]
+pub struct NoRouteForRequest(());
+
 pub fn route_for_request<'r, R, B>(
     http_routes: &'r [(RequestMatch, R)],
     request: &http::Request<B>,
@@ -77,6 +81,15 @@ pub fn route_for_request<'r, R, B>(
         }
     }
     None
+}
+
+impl<B> linkerd_router::SelectRoute<http::Request<B>> for super::Profile {
+    type Key = Route;
+    type Error = NoRouteForRequest;
+
+    fn select<'r>(&self, req: &'r http::Request<B>) -> Result<&Self::Key, Self::Error> {
+        route_for_request(&*self.http_routes, req).ok_or(NoRouteForRequest(()))
+    }
 }
 
 // === impl Route ===

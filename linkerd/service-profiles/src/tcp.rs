@@ -1,9 +1,4 @@
 use crate::Targets;
-use std::sync::Arc;
-
-// TODO(eliza): eventually we'll actually have to match TCP routes.
-pub type RequestMatch = ();
-pub type RouteSet = Arc<[(RequestMatch, Route)]>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {

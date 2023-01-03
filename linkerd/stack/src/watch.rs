@@ -10,9 +10,9 @@ use tracing::Instrument;
 /// `N` is a [`NewService`] which produces types implementing [`UpdateWatch`],
 /// which define the logic for how to update the inner [`Service`].
 #[derive(Clone, Debug)]
-pub struct NewSpawnWatch<P, N> {
+pub struct NewSpawnWatch<U, P, N> {
     inner: N,
-    _marker: std::marker::PhantomData<fn(P)>,
+    _marker: std::marker::PhantomData<fn(P, U)>,
 }
 
 /// A `S`-typed service which is updated dynamically by a background task.
@@ -28,7 +28,7 @@ pub struct SpawnWatch<S> {
 
 // === impl NewSpawnWatch ===
 
-impl<P, N> NewSpawnWatch<P, N> {
+impl<U, P, N> NewSpawnWatch<U, P, N> {
     pub fn new(inner: N) -> Self {
         Self {
             inner,
@@ -37,11 +37,12 @@ impl<P, N> NewSpawnWatch<P, N> {
     }
 }
 
-impl<T, P, N, S> NewService<T> for NewSpawnWatch<P, N>
+impl<T, U, P, N, S> NewService<T> for NewSpawnWatch<U, P, N>
 where
-    T: Param<watch::Receiver<P>>,
+    T: Param<watch::Receiver<P>> + Clone + Send + 'static,
     P: Clone + Send + Sync + 'static,
-    N: NewService<P, Service = S> + Clone + Send + 'static,
+    U: From<(P, T)> + Send + Sync + 'static,
+    N: NewService<U, Service = S> + Clone + Send + 'static,
     S: Clone + Default + Send + Sync + 'static,
 {
     type Service = SpawnWatch<S>;
@@ -50,7 +51,10 @@ where
         let mut target_rx = target.param();
 
         let new_inner = self.inner.clone();
-        let inner = new_inner.new_service((*target_rx.borrow_and_update()).clone());
+        let inner = {
+            let p = (*target_rx.borrow_and_update()).clone();
+            new_inner.new_service((p, target.clone()).into())
+        };
         let (tx, rx) = watch::channel(inner.clone());
 
         tokio::spawn(
@@ -65,8 +69,11 @@ where
                         }
                     }
 
-                    let tgt = (*target_rx.borrow_and_update()).clone();
-                    if tx.send(new_inner.new_service(tgt)).is_err() {
+                    let inner = {
+                        let p = (*target_rx.borrow_and_update()).clone();
+                        new_inner.new_service((p, target.clone()).into())
+                    };
+                    if tx.send(inner).is_err() {
                         return;
                     }
                 }

@@ -1,8 +1,9 @@
+use ahash::AHashSet;
 use rand::distributions::{WeightedError, WeightedIndex};
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Backends<K>(pub(crate) Arc<ahash::AHashSet<K>>)
+pub struct Backends<K>(pub(crate) Arc<AHashSet<K>>)
 where
     K: Eq + Hash + Clone;
 
@@ -29,6 +30,15 @@ pub struct WeightedKeys<K> {
 }
 
 // === impl Backends ===
+
+impl<K> From<Arc<AHashSet<K>>> for Backends<K>
+where
+    K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+{
+    fn from(inner: Arc<AHashSet<K>>) -> Self {
+        Self(inner)
+    }
+}
 
 impl<K> FromIterator<K> for Backends<K>
 where

@@ -22,6 +22,7 @@ linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
 linkerd-http-box = { path = "../http-box" }
 linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
+linkerd-router = { path = "../router" }
 linkerd-stack = { path = "../stack" }
 linkerd-tonic-watch = { path = "../tonic-watch" }
 linkerd2-proxy-api = { version = "0.7", features = ["destination"] }

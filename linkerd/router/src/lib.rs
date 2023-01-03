@@ -26,7 +26,7 @@ pub trait SelectRoute<Req> {
     fn select<'r>(&self, req: &'r Req) -> Result<&Self::Key, Self::Error>;
 }
 
-pub type NewRouteWatch<T, K, L, N> = NewSpawnWatch<T, NewRoute<K, L, N>>;
+pub type NewRouteWatch<U, T, K, L, N> = NewSpawnWatch<U, T, NewRoute<K, L, N>>;
 
 /// A [`NewService`] that extracts [`RouteKeys`] from the stack target to build a
 /// set of per-route inner services. These services are built first by building
@@ -35,7 +35,7 @@ pub type NewRouteWatch<T, K, L, N> = NewSpawnWatch<T, NewRoute<K, L, N>>;
 #[derive(Clone, Debug)]
 pub struct NewRoute<K, L, N> {
     route_layer: L,
-    new_backends: N,
+    inner: N,
     _marker: PhantomData<fn(K)>,
 }
 
@@ -56,21 +56,21 @@ pub struct UnknownRoute<K: std::fmt::Debug>(K);
 // === impl NewRoute ===
 
 impl<K, L: Clone, N> NewRoute<K, L, N> {
-    pub fn new(route_layer: L, new_backends: N) -> Self {
+    pub fn new(route_layer: L, inner: N) -> Self {
         Self {
-            new_backends,
+            inner,
             route_layer,
             _marker: PhantomData,
         }
     }
 
-    pub fn watch<T>(route_layer: L, inner: N) -> NewSpawnWatch<T, Self> {
+    pub fn watch<U, T>(route_layer: L, inner: N) -> NewSpawnWatch<U, T, Self> {
         NewSpawnWatch::new(Self::new(route_layer, inner))
     }
 
-    pub fn watch_layer<T>(
+    pub fn watch_layer<U, T>(
         route_layer: L,
-    ) -> impl layer::Layer<N, Service = NewSpawnWatch<T, Self>> + Clone {
+    ) -> impl layer::Layer<N, Service = NewSpawnWatch<U, T, Self>> + Clone {
         layer::mk(move |inner| Self::watch(route_layer.clone(), inner))
     }
 }
@@ -86,8 +86,8 @@ where
     type Service = Route<T, K, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let backends = self.new_backends.new_service(target.clone());
-        let new_route = self.route_layer.layer(backends);
+        let inner = self.inner.new_service(target.clone());
+        let new_route = self.route_layer.layer(inner);
 
         let RouteKeys(keys) = target.param();
         let routes = keys

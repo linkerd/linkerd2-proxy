@@ -51,15 +51,10 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
         .map(|t| t.addr.clone())
         .collect::<AHashSet<_, _>>();
 
-    // ServiceProfiles don't define TCP routes, generate a single match which
-    // matches all TCP connections but still uses the list of targets from the profile.
-    let tcp_routes =
-        std::iter::once((tcp::RequestMatch::default(), tcp::Route::new(targets))).collect();
-
     Profile {
         addr: addr.map(LogicalAddr),
         http_routes,
-        tcp_routes,
+        tcp_route: tcp::Route::new(targets),
         opaque_protocol: proto.opaque_protocol,
         target_addrs: target_addrs.into(),
         endpoint,

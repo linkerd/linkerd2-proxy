@@ -1,120 +1,135 @@
-use std::fmt::Debug;
+use linkerd_app_core::{
+    profiles::{self, Profile},
+    proxy::api_resolve::ConcreteAddr,
+    svc::{self, layer, NewSpawnWatch},
+    NameAddr,
+};
+use linkerd_distribute::Backends;
+use linkerd_router::{NewRoute, RouteKeys, SelectRoute};
+use std::sync::Arc;
 
-use linkerd_app_core::{profiles, profiles::Profile, svc, NameAddr};
-use linkerd_distribute as distribute;
-use linkerd_router as router;
-use tokio::sync::watch;
+pub(crate) type Matches<M, K> = Arc<[(M, K)]>;
+pub(crate) type Distribution = linkerd_distribute::Distribution<NameAddr>;
+type NewDistribute<S> = linkerd_distribute::NewDistribute<NameAddr, S>;
+type CacheNewDistribute<N, S> = linkerd_distribute::CacheNewDistribute<NameAddr, N, S>;
 
-pub use linkerd_router::{RouteKeys, SelectRoute};
+pub type NewRouteDistribute<L, N, S> =
+    NewSpawnWatch<HttpParams, Profile, NewRoute<HttpRouteParams, L, CacheNewDistribute<N, S>>>;
 
-#[derive(Clone, Debug)]
-pub struct Target<T> {
-    pub logical: NameAddr,
-    // TODO(ver) we want this to be a type that can _produce_ a `Params<T>`...
-    pub rx: watch::Receiver<Params<T>>,
+// === impl NewRoute ===
+
+// TODO impl Param<RouteKeys<>> for Profile
+// TODO impl Param<Backends<ConcreteAddr>> for Profile
+// Or map here...
+pub fn http<L: Clone, N, S>(
+    route_layer: L,
+) -> impl layer::Layer<N, Service = NewRouteDistribute<L, N, S>> + Clone {
+    layer::mk(move |inner| {
+        let route = NewRoute::<HttpRouteParams, L, _>::new(
+            route_layer.clone(),
+            CacheNewDistribute::new(inner),
+        );
+        NewSpawnWatch::<HttpParams, Profile, _>::new(route)
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Params<T> {
-    pub logical: NameAddr,
-    pub backends: Backends,
-    pub routes: T,
+pub struct HttpParams {
+    logical: crate::http::Logical,
+    routes: Arc<[(profiles::http::RequestMatch, HttpRouteParams)]>,
+    keys: RouteKeys<HttpRouteParams>,
+    backends: Backends<crate::http::Concrete>,
 }
-
-// TODO(ver) this will probably need a protocol-specific dimension as well...
-// TODO(ver) change the address type
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BackendParams {
-    pub logical: NameAddr,
-    pub concrete: NameAddr,
-}
-
-pub type Backends = distribute::Backends<BackendParams>;
-pub type Distribution = distribute::Distribution<BackendParams>;
-pub type CacheNewDistribute<N, S> = distribute::CacheNewDistribute<BackendParams, N, S>;
-pub type Distribute<S> = distribute::Distribute<BackendParams, S>;
-
-pub type NewRouteDistribute<T, K, L, N, S> =
-    router::NewRouteWatch<Params<T>, K, L, CacheNewDistribute<N, S>>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RouteParams<T> {
-    pub logical: NameAddr,
-    pub distribution: Distribution,
-    pub params: T,
+pub struct HttpRouteParams {
+    logical: crate::http::Logical,
+    profile: profiles::http::Route,
+    distribution: Distribution,
 }
 
-pub fn watch<T, K, L, N, S>(route_layer: L, new_backends: N) -> NewRouteDistribute<T, K, L, N, S>
-where
-    L: Clone,
-    NewRouteDistribute<T, K, L, N, S>: svc::NewService<Target<T>>,
-{
-    // TODO(ver) we probably want to put a layer between the watch and the
-    // NewRoute that modifies the target type.
-    router::NewRoute::watch(route_layer, CacheNewDistribute::new(new_backends))
-}
-
-pub fn layer<T, K, L, N, S>(
-    route_layer: L,
-) -> impl svc::layer::Layer<N, Service = NewRouteDistribute<T, K, L, N, S>> + Clone
-where
-    L: Clone,
-    NewRouteDistribute<T, K, L, N, S>: svc::NewService<Target<T>>,
-{
-    svc::layer::mk(move |inner| watch(route_layer.clone(), inner))
-}
-
-impl<T> svc::Param<profiles::LogicalAddr> for Target<T> {
-    fn param(&self) -> profiles::LogicalAddr {
-        profiles::LogicalAddr(self.logical.clone())
-    }
-}
-
-impl<T> svc::Param<watch::Receiver<Params<T>>> for Target<T> {
-    fn param(&self) -> watch::Receiver<Params<T>> {
-        self.rx.clone()
-    }
-}
-
-impl<T> Params<T> {
-    pub fn new(logical: NameAddr, profile: &Profile, routes: T) -> Self {
+impl From<(Profile, crate::http::Logical)> for HttpParams {
+    fn from((profile, logical): (Profile, crate::http::Logical)) -> Self {
+        let routes = profile
+            .http_routes
+            .iter()
+            .cloned()
+            .map(|(m, profile)| {
+                (
+                    m,
+                    HttpRouteParams {
+                        logical: logical.clone(),
+                        distribution: Distribution::random_available(
+                            profile.targets().iter().map(|t| (t.addr.clone(), t.weight)),
+                        )
+                        .expect("distribution must be valid"),
+                        profile,
+                    },
+                )
+            })
+            .collect::<Arc<[(_, _)]>>();
         let backends = profile
             .target_addrs
             .iter()
-            .map(|concrete| BackendParams {
-                logical: logical.clone(),
-                concrete: concrete.clone(),
+            .map(|addr| super::Concrete {
+                resolve: ConcreteAddr(addr.clone()),
+                logical,
             })
             .collect();
-
         Self {
-            logical,
             backends,
+            keys: routes.iter().map(|(_, r)| r.clone()).collect(),
+            logical,
             routes,
         }
     }
 }
 
-impl<T> svc::Param<profiles::LogicalAddr> for Params<T> {
-    fn param(&self) -> profiles::LogicalAddr {
-        profiles::LogicalAddr(self.logical.clone())
+impl svc::Param<RouteKeys<HttpRouteParams>> for HttpParams {
+    fn param(&self) -> RouteKeys<HttpRouteParams> {
+        self.keys.clone()
     }
 }
 
-impl<T> svc::Param<Backends> for Params<T> {
-    fn param(&self) -> Backends {
+impl svc::Param<Backends<crate::http::Concrete>> for HttpParams {
+    fn param(&self) -> Backends<crate::http::Concrete> {
         self.backends.clone()
     }
 }
 
-impl<T> svc::Param<profiles::LogicalAddr> for RouteParams<T> {
+impl svc::Param<profiles::LogicalAddr> for HttpParams {
     fn param(&self) -> profiles::LogicalAddr {
-        profiles::LogicalAddr(self.logical.clone())
+        self.logical.logical_addr.clone()
     }
 }
 
-impl<T> svc::Param<Distribution> for RouteParams<T> {
+impl svc::Param<profiles::LogicalAddr> for HttpRouteParams {
+    fn param(&self) -> profiles::LogicalAddr {
+        self.logical.logical_addr.clone()
+    }
+}
+
+impl svc::Param<Distribution> for HttpRouteParams {
     fn param(&self) -> Distribution {
         self.distribution.clone()
+    }
+}
+
+impl svc::Param<profiles::http::Route> for HttpRouteParams {
+    fn param(&self) -> profiles::http::Route {
+        self.profile.clone()
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("no route")]
+pub struct NoRoute;
+
+impl<B> SelectRoute<http::Request<B>> for HttpParams {
+    type Key = HttpRouteParams;
+    type Error = NoRoute;
+
+    fn select<'r>(&self, req: &'r http::Request<B>) -> Result<&Self::Key, Self::Error> {
+        profiles::http::route_for_request(&*self.routes, req).ok_or(NoRoute)
     }
 }
