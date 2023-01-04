@@ -142,7 +142,10 @@ impl<N> Outbound<N> {
                 .push(CacheNewDistribute::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
-                .push(router::NewRoute::layer_cached::<RouteParams>())
+                .check_new_new::<Params, RouteParams>()
+                .push(router::NewRoute::layer_cached::<RouteParams>());
+
+            let watch = router
                 .check_new_service::<Params, I>()
                 .push_new_clone()
                 .check_new_new::<Logical, Params>()
@@ -150,7 +153,7 @@ impl<N> Outbound<N> {
                 // build a new stack by converting the profile to a `Params`.
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
 
-            router
+            watch
                 .check_new_service::<Logical, I>()
                 // This caches each logical stack so that it can be reused
                 // across per-connection server stacks (i.e., created by the

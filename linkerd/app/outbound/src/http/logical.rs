@@ -102,7 +102,10 @@ impl<N> Outbound<N> {
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(route)
-                .push(router::NewRoute::layer_cached::<RouteParams>())
+                .check_new_new::<Params, RouteParams>()
+                .push(router::NewRoute::layer_cached());
+
+            let watch = router
                 .check_new_service::<Params, http::Request<http::BoxBody>>()
                 .push_new_clone()
                 .check_new_new::<Logical, Params>()
@@ -110,7 +113,7 @@ impl<N> Outbound<N> {
                 // build a new stack by converting the profile to a `Params`.
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
 
-            router
+            watch
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header.
