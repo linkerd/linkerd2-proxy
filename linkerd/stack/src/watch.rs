@@ -240,7 +240,7 @@ mod tests {
         let (tx, rx) = watch::channel(svc1);
 
         let new_watch = NewSpawnWatch::new(Update);
-        let mut watch_svc: SpawnWatch<DefaultMock> = new_watch.new_service(rx);
+        let mut watch_svc = new_watch.new_service(rx);
 
         tokio::spawn(async move {
             handle1.allow(1);
