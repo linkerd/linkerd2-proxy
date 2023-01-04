@@ -1,3 +1,5 @@
+// TODO(ver) Replace this with the new linkerd-router impl.
+
 use crate::{layer, NewService};
 use futures::{future, TryFutureExt};
 use linkerd_error::Error;
