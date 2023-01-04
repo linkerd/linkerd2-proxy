@@ -43,7 +43,7 @@ where
     P: Clone + Send + Sync + 'static,
     U: From<(P, T)> + Send + Sync + 'static,
     N: NewService<U, Service = S> + Clone + Send + 'static,
-    S: Clone + Default + Send + Sync + 'static,
+    S: Clone + Send + Sync + 'static,
 {
     type Service = SpawnWatch<S>;
 
@@ -53,7 +53,7 @@ where
         let new_inner = self.inner.clone();
         let inner = {
             let p = (*target_rx.borrow_and_update()).clone();
-            new_inner.new_service((p, target.clone()).into())
+            new_inner.new_service(U::from((p, target.clone())))
         };
         let (tx, rx) = watch::channel(inner.clone());
 
@@ -71,7 +71,7 @@ where
 
                     let inner = {
                         let p = (*target_rx.borrow_and_update()).clone();
-                        new_inner.new_service((p, target.clone()).into())
+                        new_inner.new_service(U::from((p, target.clone())))
                     };
                     if tx.send(inner).is_err() {
                         return;
@@ -113,35 +113,38 @@ mod tests {
     use crate::NewService;
     use tokio::sync::watch;
     use tower::ServiceExt;
-    use tower_test::mock::{self, Mock};
+    use tower_test::mock;
 
     #[derive(Clone)]
     struct Update;
 
+    type Mock = mock::Mock<(), ()>;
+    type MockRx = watch::Receiver<Mock>;
+
     /// Wrapper around `tower_test::mock::Mock` to implement `Default`.
     #[derive(Clone, Default)]
-    struct DefaultMock(Option<Mock<(), ()>>);
+    struct DefaultMock(Option<Mock>);
 
-    impl NewService<watch::Receiver<Mock<(), ()>>> for Update {
+    impl NewService<MockRx> for Update {
         type Service = Update;
 
-        fn new_service(&self, _: watch::Receiver<Mock<(), ()>>) -> Self::Service {
+        fn new_service(&self, _: MockRx) -> Self::Service {
             Update
         }
     }
 
-    impl NewService<Mock<(), ()>> for Update {
+    impl NewService<(Mock, MockRx)> for Update {
         type Service = DefaultMock;
 
-        fn new_service(&self, target: Mock<(), ()>) -> Self::Service {
+        fn new_service(&self, (target, _): (Mock, MockRx)) -> Self::Service {
             DefaultMock(Some(target))
         }
     }
 
     impl Service<()> for DefaultMock {
         type Response = ();
-        type Error = <Mock<(), ()> as Service<()>>::Error;
-        type Future = <Mock<(), ()> as Service<()>>::Future;
+        type Error = <Mock as Service<()>>::Error;
+        type Future = <Mock as Service<()>>::Future;
 
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             self.0
@@ -165,8 +168,8 @@ mod tests {
         let (svc1, mut handle1) = mock::pair::<(), ()>();
         let (tx, rx) = watch::channel(svc1);
 
-        let new_watch = NewSpawnWatch::new(Update);
-        let mut watch_svc = new_watch.new_service(rx);
+        let new_watch = NewSpawnWatch::<(Mock, MockRx), _, _>::new(Update);
+        let mut watch_svc: SpawnWatch<DefaultMock> = new_watch.new_service(rx);
 
         tokio::spawn(async move {
             handle1.allow(1);

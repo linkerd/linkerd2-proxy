@@ -2,9 +2,10 @@
 mod tests;
 
 use super::{Concrete, Endpoint, Logical};
-use crate::{endpoint, logical::router, resolve, Outbound};
+use crate::{endpoint, resolve, Outbound};
 use linkerd_app_core::{
-    drain, io, profiles,
+    drain, io,
+    profiles::{self, Profile},
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -13,13 +14,36 @@ use linkerd_app_core::{
     },
     svc, Error, Infallible,
 };
+use linkerd_distribute as distribute;
+use linkerd_router as router;
 use tracing::debug_span;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct ProfileRoute {
+#[derive(Debug, thiserror::Error)]
+#[error("no route")]
+pub struct NoRoute;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Params {
     logical: Logical,
-    route: profiles::tcp::Route,
+    route: RouteParams,
+    keys: router::RouteKeys<RouteParams>,
+    backends: distribute::Backends<Concrete>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct RouteParams {
+    logical: Logical,
+    profile: profiles::tcp::Route,
+    distribution: Distribution,
+}
+
+type NewDistribute<S> = distribute::NewDistribute<Concrete, S>;
+type CacheNewDistribute<N, S> = distribute::CacheNewDistribute<Concrete, N, S>;
+type Distribution = distribute::Distribution<Concrete>;
+type NewRouteDistribute<L, N, S> =
+    svc::NewSpawnWatch<Params, Profile, router::NewRoute<RouteParams, L, CacheNewDistribute<N, S>>>;
+
+// === impl Outbound ===
 
 impl<C> Outbound<C> {
     /// Constructs a TCP load balancer.
@@ -96,14 +120,15 @@ impl<C> Outbound<C> {
                 .check_new_service::<Concrete, I>()
                 .push(svc::ArcNewService::layer());
 
-            let route = svc::layers()
-                .push_map_target(|(route, logical)| ProfileRoute { logical, route })
-                // Only build a route service when it is used.
-                .push(svc::NewLazy::layer());
+            let route = svc::layers();
 
             concrete
                 .check_new_service::<Concrete, I>()
-                .push(router::layer(route))
+                .push(svc::layer::mk(move |inner| {
+                    let cache = CacheNewDistribute::new(inner);
+                    let route = router::NewRoute::<RouteParams, _, _>::new(route.clone(), cache);
+                    svc::NewSpawnWatch::<Params, Profile, _>::new(route)
+                }))
                 .check_new_service::<Logical, I>()
                 // This caches each logical stack so that it can be reused
                 // across per-connection server stacks (i.e., created by the
@@ -119,23 +144,53 @@ impl<C> Outbound<C> {
     }
 }
 
-// === impl ProfileRoute ===
+// === impl Params ===
 
-impl svc::Param<router::Distribution> for ProfileRoute {
-    fn param(&self) -> router::Distribution {
-        let targets = self.route.targets().as_ref();
-        // If the route has no backend overrides, distribute all traffic to the
-        // logical address.
-        if targets.is_empty() {
-            let profiles::LogicalAddr(addr) = self.logical.param();
-            return router::Distribution::from(addr);
+impl From<(Profile, Logical)> for Params {
+    fn from((profile, logical): (Profile, Logical)) -> Self {
+        // Create concrete targets for all of the profile's
+        let backends = profile
+            .target_addrs
+            .iter()
+            .map(|addr| super::Concrete {
+                resolve: ConcreteAddr(addr.clone()),
+                logical: logical.clone(),
+            })
+            .collect();
+
+        let route = {
+            let distribution =
+                Distribution::random_available(profile.tcp_route.targets().iter().cloned().map(
+                    |profiles::Target { addr, weight }| {
+                        let concrete = Concrete {
+                            logical: logical.clone(),
+                            resolve: ConcreteAddr(addr),
+                        };
+                        (concrete, weight)
+                    },
+                ))
+                .expect("distribution must be valid");
+            RouteParams {
+                logical: logical.clone(),
+                distribution,
+                profile: profile.tcp_route.clone(),
+            }
+        };
+        let keys = std::iter::once(route.clone()).collect();
+
+        Self {
+            logical,
+            backends,
+            route,
+            keys,
         }
+    }
+}
 
-        router::Distribution::random_available(
-            targets
-                .iter()
-                .map(|profiles::Target { addr, weight }| (addr.clone(), *weight)),
-        )
-        .expect("distribution must be valid")
+// === impl RouteParams ===
+
+impl svc::Param<Distribution> for RouteParams {
+    fn param(&self) -> Distribution {
+        self.distribution.clone()
     }
 }

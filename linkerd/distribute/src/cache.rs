@@ -9,7 +9,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 pub struct CacheNewDistribute<K, N, S>(Arc<Inner<K, N, S>>);
 
 #[derive(Debug)]
-pub struct Inner<K, N, S> {
+struct Inner<K, N, S> {
     new_backend: N,
     backends: Mutex<ahash::AHashMap<K, S>>,
 }

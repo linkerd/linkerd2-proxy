@@ -1,7 +1,7 @@
 use super::{IdentityRequired, ProxyConnectionClose};
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{
-    errors, http_tracing, profiles,
+    errors, http_tracing,
     svc::{self, ExtractParam},
     Error, Result,
 };
@@ -120,8 +120,7 @@ impl errors::HttpRescue<Error> for ServerRescue {
             return Ok(errors::SyntheticHttpResponse::unavailable(cause));
         }
 
-        // TODO(ver) This should be a crate-local error type
-        if let Some(cause) = errors::cause_ref::<profiles::http::NoRouteForRequest>(&*error) {
+        if let Some(cause) = errors::cause_ref::<super::logical::NoRoute>(&*error) {
             return Ok(errors::SyntheticHttpResponse::not_found(cause));
         }
 
