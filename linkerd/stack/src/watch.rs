@@ -7,8 +7,9 @@ use tracing::Instrument;
 /// dynamically by a background task as a target wrapped in a
 /// [`watch::Receiver`] changes.
 ///
-/// `N` is a [`NewService`] which produces types implementing [`UpdateWatch`],
-/// which define the logic for how to update the inner [`Service`].
+/// `N` is a [`NewService`] that produces values that also implement
+/// [`NewService`], each of which implement the logic for how to update the
+/// inner [`Service`].
 #[derive(Clone, Debug)]
 pub struct NewSpawnWatch<P, N> {
     inner: N,
@@ -16,13 +17,13 @@ pub struct NewSpawnWatch<P, N> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewWatchInto<P, N> {
+pub struct NewWatchedFromTuple<P, N> {
     inner: N,
     _marker: std::marker::PhantomData<fn() -> P>,
 }
 
 #[derive(Clone, Debug)]
-pub struct NewInto<T, P, N> {
+pub struct NewFromTuple<T, P, N> {
     target: T,
     inner: N,
     _marker: std::marker::PhantomData<fn() -> P>,
@@ -54,8 +55,9 @@ impl<P, N> NewSpawnWatch<P, N> {
     }
 
     pub fn layer_into<T>(
-    ) -> impl tower::layer::Layer<N, Service = NewSpawnWatch<P, NewWatchInto<T, N>>> + Clone {
-        crate::layer::mk(|inner| NewSpawnWatch::new(NewWatchInto::new(inner)))
+    ) -> impl tower::layer::Layer<N, Service = NewSpawnWatch<P, NewWatchedFromTuple<T, N>>> + Clone
+    {
+        crate::layer::mk(|inner| NewSpawnWatch::new(NewWatchedFromTuple::new(inner)))
     }
 }
 
@@ -127,28 +129,24 @@ where
     }
 }
 
-// === impl NewWatchInto ===
+// === impl NewWatchedFromTuple ===
 
-impl<T, N> NewWatchInto<T, N> {
-    pub fn new(inner: N) -> Self {
+impl<T, N> NewWatchedFromTuple<T, N> {
+    fn new(inner: N) -> Self {
         Self {
             inner,
             _marker: std::marker::PhantomData,
         }
     }
-
-    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
-        crate::layer::mk(Self::new)
-    }
 }
 
-impl<T, P, N, M> NewService<T> for NewWatchInto<P, N>
+impl<T, P, N, M> NewService<T> for NewWatchedFromTuple<P, N>
 where
     T: Clone,
     N: NewService<T, Service = M>,
     M: NewService<P> + Send + 'static,
 {
-    type Service = NewInto<T, P, M>;
+    type Service = NewFromTuple<T, P, M>;
 
     fn new_service(&self, target: T) -> Self::Service {
         // Create a `NewService` that is used to process updates to the watched
@@ -156,7 +154,7 @@ where
         // target.
         let inner = self.inner.new_service(target.clone());
 
-        NewInto {
+        NewFromTuple {
             target,
             inner,
             _marker: std::marker::PhantomData,
@@ -164,7 +162,7 @@ where
     }
 }
 
-impl<T, U, P, N> NewService<U> for NewInto<T, P, N>
+impl<T, U, P, N> NewService<U> for NewFromTuple<T, P, N>
 where
     T: Clone,
     P: From<(U, T)>,
