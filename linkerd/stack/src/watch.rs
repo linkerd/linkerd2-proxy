@@ -52,6 +52,11 @@ impl<P, N> NewSpawnWatch<P, N> {
     pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
         crate::layer::mk(Self::new)
     }
+
+    pub fn layer_into<T>(
+    ) -> impl tower::layer::Layer<N, Service = NewSpawnWatch<P, NewWatchInto<T, N>>> + Clone {
+        crate::layer::mk(|inner| NewSpawnWatch::new(NewWatchInto::new(inner)))
+    }
 }
 
 impl<T, P, N, M, S> NewService<T> for NewSpawnWatch<P, N>

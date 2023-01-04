@@ -154,9 +154,7 @@ impl<N> Outbound<N> {
                         .push(router::NewRoute::<RouteParams, _, _>::layer(route)),
                 )
                 .check_new_new::<Logical, Params>()
-                .push(svc::NewWatchInto::<Params, _>::layer())
-                .check_new_new::<Logical, Profile>()
-                .push(svc::NewSpawnWatch::<Profile, _>::layer())
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
                 .check_new_service::<Logical, I>()
                 // This caches each logical stack so that it can be reused
                 // across per-connection server stacks (i.e., created by the
