@@ -4,14 +4,14 @@ use parking_lot::Mutex;
 use std::{fmt::Debug, hash::Hash, marker::PhantomData, sync::Arc};
 
 /// A [`NewService`] that lazy builds stacks for each `K`-typed key.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct NewCache<K, N> {
     inner: N,
     _marker: PhantomData<fn(K)>,
 }
 
 /// A [`NewService`]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Cache<K, N, S> {
     new_inner: N,
     services: Arc<Mutex<AHashMap<K, S>>>,
@@ -45,6 +45,15 @@ where
     }
 }
 
+impl<K, N: Clone> Clone for NewCache<K, N> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            _marker: self._marker,
+        }
+    }
+}
+
 // === impl Cache ===
 
 impl<K, N, S> Cache<K, N, S> {
@@ -74,5 +83,14 @@ where
             .entry(key.clone())
             .or_insert_with(|| self.new_inner.new_service(key))
             .clone()
+    }
+}
+
+impl<K, N: Clone, S> Clone for Cache<K, N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            new_inner: self.new_inner.clone(),
+            services: self.services.clone(),
+        }
     }
 }

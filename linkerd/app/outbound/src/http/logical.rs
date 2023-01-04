@@ -94,30 +94,26 @@ impl<N> Outbound<N> {
                 .push(classify::NewClassify::layer())
                 .push_on_service(http::BoxResponse::layer());
 
-            concrete
-                .check_new_service::<Concrete, _>()
-                // For each `Logical` target, build a stack that caches a
-                // `Concrete` inner services to provide a distributor to the
-                // router.
-                //
-                // Each `RouteParams` provides a `Distribution` that is used to
-                // choose a concrete service for a given route.
-                .push(svc::layer::mk(svc::NewCloneService::from))
-                .push_on_service(
-                    svc::layers()
-                        .push(CacheNewDistribute::layer())
-                        .push_on_service(route)
-                        .push(router::NewRoute::layer_cached::<RouteParams>()),
-                )
+            let router = concrete
+                .check_new_service::<Concrete, http::Request<http::BoxBody>>()
+                // Each `RouteParams` provides a `Distribution` that is
+                // used to choose a concrete service for a given route.
+                .push(CacheNewDistribute::layer())
+                // Lazily cache a service for each `RouteParams`
+                // returned from the `SelectRoute` impl.
+                .push_on_service(route)
+                .push(router::NewRoute::layer_cached::<RouteParams>())
+                .check_new_service::<Params, http::Request<http::BoxBody>>()
+                .push_new_clone()
                 .check_new_new::<Logical, Params>()
                 // Watch the `Profile` for each target. Every time it changes,
                 // build a new stack by converting the profile to a `Params`.
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
+
+            router
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // Strips headers that may be set by this proxy and add an
-                // outbound canonical-dst-header. The response body is boxed
-                // unify the profile stack's response type with that of to
-                // endpoint stack.
+                // outbound canonical-dst-header.
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
                 // This caches each logical stack so that it can be reused
                 // across per-connection HTTP server stacks (i.e. created by the

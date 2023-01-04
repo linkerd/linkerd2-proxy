@@ -176,6 +176,13 @@ impl<S> Stack<S> {
         self.push(stack::OnServiceLayer::new(layer))
     }
 
+    /// Wraps the inner `S` with `NewCloneService` so that the stack holds a
+    /// `NewService` that always returns a clone of `S` regardless of the target
+    /// value.
+    pub fn push_new_clone(self) -> Stack<NewCloneService<S>> {
+        self.push(layer::mk(NewCloneService::from))
+    }
+
     /// Wraps the inner service with a response timeout such that timeout errors are surfaced as a
     /// `ConnectTimeout` error.
     ///

@@ -135,29 +135,22 @@ impl<N> Outbound<N> {
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
     {
         self.map_stack(|config, _, concrete| {
-            let crate::Config {
-                discovery_idle_timeout,
-                ..
-            } = config;
-
-            concrete
+            let router = concrete
                 .check_new_service::<Concrete, I>()
-                // For each `Logical` target, build a stack that caches a
-                // `Concrete` inner services to provide a distributor to the
-                // router.
-                //
-                // Each `RouteParams` provides a `Distribution` that is used to
-                // choose a concrete service for a given connection.
-                .push(svc::layer::mk(svc::NewCloneService::from))
-                .push_on_service(
-                    svc::layers()
-                        .push(CacheNewDistribute::layer())
-                        .push(router::NewRoute::layer_cached::<RouteParams>()),
-                )
+                // Each `RouteParams` provides a `Distribution` that is
+                // used to choose a concrete service for a given route.
+                .push(CacheNewDistribute::layer())
+                // Lazily cache a service for each `RouteParams`
+                // returned from the `SelectRoute` impl.
+                .push(router::NewRoute::layer_cached::<RouteParams>())
+                .check_new_service::<Params, I>()
+                .push_new_clone()
                 .check_new_new::<Logical, Params>()
                 // Watch the `Profile` for each target. Every time it changes,
                 // build a new stack by converting the profile to a `Params`.
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
+
+            router
                 .check_new_service::<Logical, I>()
                 // This caches each logical stack so that it can be reused
                 // across per-connection server stacks (i.e., created by the
@@ -165,7 +158,7 @@ impl<N> Outbound<N> {
                 //
                 // TODO(ver) Update the detection stack so this dynamic caching
                 // can be removed.
-                .push_cache(*discovery_idle_timeout)
+                .push_cache(config.discovery_idle_timeout)
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()
                 .push(svc::ArcNewService::layer())
