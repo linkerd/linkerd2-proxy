@@ -1,7 +1,11 @@
+#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
+#![forbid(unsafe_code)]
+
 use ahash::AHashMap;
 use futures::{future, prelude::*};
 use linkerd_error::Error;
-use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
+use linkerd_stack::{layer, NewService, Oneshot, Service, ServiceExt};
+use parking_lot::Mutex;
 use std::{
     fmt::Debug,
     hash::Hash,
@@ -10,11 +14,6 @@ use std::{
     task::{Context, Poll},
 };
 use tracing::{debug, error};
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RouteKeys<K>(Arc<[K]>)
-where
-    K: Eq + Hash + Clone;
 
 pub trait SelectRoute<Req> {
     type Key: Eq + Hash + Clone + Debug + Send + Sync + 'static;
@@ -26,10 +25,7 @@ pub trait SelectRoute<Req> {
     fn select<'r>(&self, req: &'r Req) -> Result<&Self::Key, Self::Error>;
 }
 
-/// A [`NewService`] that extracts [`RouteKeys`] from the stack target to build a
-/// set of per-route inner services. These services are built first by building
-/// a backend stack for the target and then applying the `L`-typed router layer
-/// to the backend stack.
+/// A [`NewService`] that lazy builds stacks for each `K`-typed key.
 #[derive(Clone, Debug)]
 pub struct NewRoute<K, L, N> {
     route_layer: L,
@@ -42,9 +38,10 @@ pub struct NewRoute<K, L, N> {
 /// Each request is matched against the route table and routed to the
 /// appropriate
 #[derive(Clone, Debug)]
-pub struct Route<T, K, S> {
+pub struct Route<T, K, N, S> {
     params: T,
-    routes: Arc<AHashMap<K, S>>,
+    new_route: N,
+    routes: Arc<Mutex<AHashMap<K, S>>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -70,35 +67,29 @@ impl<K, L: Clone, N> NewRoute<K, L, N> {
 impl<T, K, L, N, S> NewService<T> for NewRoute<K, L, N>
 where
     K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
-    T: Param<RouteKeys<K>> + Clone,
+    T: Clone,
     N: NewService<T>,
     L: layer::Layer<N::Service>,
     L::Service: NewService<K, Service = S>,
 {
-    type Service = Route<T, K, S>;
+    type Service = Route<T, K, L::Service, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let inner = self.inner.new_service(target.clone());
-        let new_route = self.route_layer.layer(inner);
-
-        let RouteKeys(keys) = target.param();
-        let routes = keys
-            .iter()
-            .map(|key| (key.clone(), new_route.new_service(key.clone())))
-            .collect();
-
         Route {
+            new_route: self.route_layer.layer(inner),
             params: target,
-            routes: Arc::new(routes),
+            routes: Default::default(),
         }
     }
 }
 
 // === impl Route ===
 
-impl<T, S, Req> Service<Req> for Route<T, T::Key, S>
+impl<T, N, S, Req> Service<Req> for Route<T, T::Key, N, S>
 where
     T: SelectRoute<Req>,
+    N: NewService<T::Key, Service = S>,
     S: Service<Req> + Clone,
     S::Error: Into<Error>,
 {
@@ -116,7 +107,7 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        match self.route(&req).cloned() {
+        match self.route(&req) {
             Ok(route) => future::Either::Left(route.oneshot(req).map_err(Into::into)),
             Err(error) => future::Either::Right({
                 debug!(%error, "Failed to route request");
@@ -126,37 +117,20 @@ where
     }
 }
 
-impl<T, K, S> Route<T, K, S> {
+impl<T, K, N, S> Route<T, K, N, S> {
     #[inline]
-    fn route<Req>(&self, req: &Req) -> Result<&S, Error>
+    fn route<Req>(&self, req: &Req) -> Result<S, Error>
     where
         T: SelectRoute<Req, Key = K>,
         K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+        N: NewService<K, Service = S>,
         S: Clone,
     {
         let key = self.params.select(req)?;
-        self.routes
-            .get(key)
-            .ok_or_else(|| UnknownRoute(key.clone()).into())
-    }
-}
-
-impl<T: Default, K, S> Default for Route<T, K, S> {
-    fn default() -> Self {
-        Self {
-            params: Default::default(),
-            routes: Default::default(),
-        }
-    }
-}
-
-// === impl RouteKeys ===
-
-impl<K> FromIterator<K> for RouteKeys<K>
-where
-    K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
-{
-    fn from_iter<T: IntoIterator<Item = K>>(iter: T) -> Self {
-        Self(Arc::from(iter.into_iter().collect::<Vec<_>>()))
+        let mut routes = self.routes.lock();
+        let svc = routes
+            .entry(key.clone())
+            .or_insert_with(|| self.new_route.new_service(key.clone()));
+        Ok(svc.clone())
     }
 }

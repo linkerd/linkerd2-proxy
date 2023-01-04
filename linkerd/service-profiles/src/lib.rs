@@ -6,7 +6,6 @@ use futures::Stream;
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
-use linkerd_router::RouteKeys;
 use linkerd_stack::Param;
 use once_cell::sync::Lazy;
 use std::{
@@ -183,18 +182,6 @@ impl Stream for ReceiverStream {
 }
 
 // === impl Profile ===
-
-impl Param<RouteKeys<http::Route>> for Profile {
-    fn param(&self) -> RouteKeys<http::Route> {
-        self.http_routes.iter().map(|(_, r)| r.clone()).collect()
-    }
-}
-
-impl Param<RouteKeys<tcp::Route>> for Profile {
-    fn param(&self) -> RouteKeys<tcp::Route> {
-        std::iter::once(self.tcp_route.clone()).collect()
-    }
-}
 
 impl Param<http::RouteSet> for Profile {
     fn param(&self) -> http::RouteSet {

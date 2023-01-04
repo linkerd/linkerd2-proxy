@@ -26,7 +26,6 @@ pub struct NoRoute;
 struct Params {
     logical: Logical,
     route: RouteParams,
-    keys: router::RouteKeys<RouteParams>,
     backends: distribute::Backends<Concrete>,
 }
 
@@ -208,24 +207,16 @@ impl From<(Profile, Logical)> for Params {
                 profile: profile.tcp_route,
             }
         };
-        let keys = std::iter::once(route.clone()).collect();
 
         Self {
             logical,
             backends,
             route,
-            keys,
         }
     }
 }
 
 // === impl Params ===
-
-impl svc::Param<router::RouteKeys<RouteParams>> for Params {
-    fn param(&self) -> router::RouteKeys<RouteParams> {
-        self.keys.clone()
-    }
-}
 
 impl svc::Param<distribute::Backends<Concrete>> for Params {
     fn param(&self) -> distribute::Backends<Concrete> {

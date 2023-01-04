@@ -20,7 +20,6 @@ pub struct NoRoute;
 struct Params {
     logical: Logical,
     routes: Arc<[(profiles::http::RequestMatch, RouteParams)]>,
-    keys: router::RouteKeys<RouteParams>,
     backends: distribute::Backends<Concrete>,
 }
 
@@ -93,9 +92,7 @@ impl<N> Outbound<N> {
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
-                .push_on_service(http::BoxResponse::layer())
-                // Only build a route service when it is used.
-                .push(svc::NewLazy::layer());
+                .push_on_service(http::BoxResponse::layer());
 
             concrete
                 .check_new_service::<Concrete, _>()
@@ -174,20 +171,12 @@ impl From<(Profile, Logical)> for Params {
                 (req_match, params)
             })
             .collect::<Arc<[(_, _)]>>();
-        let keys = routes.iter().map(|(_, p)| p.clone()).collect();
 
         Self {
             logical,
             backends,
             routes,
-            keys,
         }
-    }
-}
-
-impl svc::Param<router::RouteKeys<RouteParams>> for Params {
-    fn param(&self) -> router::RouteKeys<RouteParams> {
-        self.keys.clone()
     }
 }
 

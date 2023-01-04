@@ -1532,6 +1532,7 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-stack",
+ "parking_lot",
  "thiserror",
  "tracing",
 ]
