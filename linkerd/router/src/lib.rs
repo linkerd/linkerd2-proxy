@@ -13,7 +13,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tracing::{debug, error};
+use tracing::debug;
 
 pub trait SelectRoute<Req> {
     type Key: Eq + Hash + Clone + Debug + Send + Sync + 'static;
@@ -43,10 +43,6 @@ pub struct Route<T, K, N, S> {
     new_route: N,
     routes: Arc<Mutex<AHashMap<K, S>>>,
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error("unknown route: {0:?}")]
-pub struct UnknownRoute<K: std::fmt::Debug>(K);
 
 // === impl NewRoute ===
 
