@@ -1,7 +1,7 @@
 // Possibly unused, but useful during development.
 
 pub use crate::proxy::http;
-use crate::{cache, config::BufferConfig, Error};
+use crate::{config::BufferConfig, idle_cache, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
@@ -223,13 +223,13 @@ impl<S> Stack<S> {
         self.push_on_service(buffer(name, config))
     }
 
-    pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::NewCachedService<T, S>>
+    pub fn push_cache<T>(self, idle: Duration) -> Stack<idle_cache::NewIdleCached<T, S>>
     where
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         S: NewService<T> + 'static,
         S::Service: Send + Sync + 'static,
     {
-        self.push(cache::NewCachedService::layer(idle))
+        self.push(idle_cache::NewIdleCached::layer(idle))
     }
 
     /// Push a service that either calls the inner service if it is ready, or

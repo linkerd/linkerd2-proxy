@@ -13,7 +13,7 @@ use tracing::{debug, trace};
 /// `Service`.
 ///
 /// This router is similar to `linkerd_stack::NewRouter` and
-/// `linkerd_cache::Cache` with a few differences:
+/// `linkerd_idle_cache::IdleCache` with a few differences:
 ///
 /// * It's `Proxy`-specific;
 /// * Routes are constructed eagerly as the profile updates;

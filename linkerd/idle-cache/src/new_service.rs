@@ -2,18 +2,18 @@ use super::*;
 use linkerd_stack::{layer, NewService};
 
 #[derive(Clone)]
-pub struct NewCachedService<T, N>
+pub struct NewIdleCached<T, N>
 where
     T: Eq + Hash,
     N: NewService<T>,
 {
-    cache: Cache<T, N::Service>,
+    cache: IdleCache<T, N::Service>,
     new_svc: N,
 }
 
-// === impl NewCachedService ===
+// === impl NewIdleCached ===
 
-impl<T, N> NewCachedService<T, N>
+impl<T, N> NewIdleCached<T, N>
 where
     T: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
     N: NewService<T> + 'static,
@@ -22,12 +22,12 @@ where
     pub fn layer(idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |new_svc| Self {
             new_svc,
-            cache: Cache::new(idle),
+            cache: IdleCache::new(idle),
         })
     }
 }
 
-impl<T, N> NewService<T> for NewCachedService<T, N>
+impl<T, N> NewService<T> for NewIdleCached<T, N>
 where
     T: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
     N: NewService<T> + 'static,
