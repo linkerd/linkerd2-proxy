@@ -37,11 +37,8 @@ struct RouteParams {
     distribution: Distribution,
 }
 
-type NewDistribute<S> = distribute::NewDistribute<Concrete, S>;
 type CacheNewDistribute<N, S> = distribute::CacheNewDistribute<Concrete, N, S>;
 type Distribution = distribute::Distribution<Concrete>;
-type NewRouteDistribute<L, N, S> =
-    svc::NewSpawnWatch<Params, Profile, router::NewRoute<RouteParams, L, CacheNewDistribute<N, S>>>;
 
 // === impl Outbound ===
 
@@ -138,21 +135,40 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
     {
-        self.map_stack(|config, rt, concrete| {
+        self.map_stack(|config, _, concrete| {
             let crate::Config {
                 discovery_idle_timeout,
-                tcp_connection_buffer,
                 ..
             } = config;
+
+            fn check<T, Req, N>(inner: N) -> N
+            where
+                N: svc::NewService<T>,
+                N::Service: svc::Service<Req, Response = (), Error = Error>,
+            {
+                inner
+            }
+
+            fn check_cache<N>(inner: N) -> N
+            where
+                N: svc::NewService<Params>,
+                N::Service: svc::NewService<RouteParams>,
+            {
+                inner
+            }
 
             let route = svc::layers();
 
             concrete
                 .check_new_service::<Concrete, I>()
                 .push(svc::layer::mk(move |inner| {
-                    let cache = CacheNewDistribute::new(inner);
-                    let route = router::NewRoute::<RouteParams, _, _>::new(route.clone(), cache);
-                    svc::NewSpawnWatch::<Params, Profile, _>::new(route)
+                    let inner = check::<Concrete, I, _>(inner);
+                    let cache = check_cache(CacheNewDistribute::new(inner));
+                    let route = check::<Params, I, _>(router::NewRoute::<RouteParams, _, _>::new(
+                        route.clone(),
+                        cache,
+                    ));
+                    check::<Logical, I, _>(svc::NewSpawnWatch::<Params, Profile, _>::new(route))
                 }))
                 .check_new_service::<Logical, I>()
                 // This caches each logical stack so that it can be reused
@@ -198,7 +214,7 @@ impl From<(Profile, Logical)> for Params {
             RouteParams {
                 logical: logical.clone(),
                 distribution,
-                profile: profile.tcp_route.clone(),
+                profile: profile.tcp_route,
             }
         };
         let keys = std::iter::once(route.clone()).collect();
@@ -209,6 +225,35 @@ impl From<(Profile, Logical)> for Params {
             route,
             keys,
         }
+    }
+}
+
+// === impl Params ===
+
+impl svc::Param<router::RouteKeys<RouteParams>> for Params {
+    fn param(&self) -> router::RouteKeys<RouteParams> {
+        self.keys.clone()
+    }
+}
+
+impl svc::Param<distribute::Backends<Concrete>> for Params {
+    fn param(&self) -> distribute::Backends<Concrete> {
+        self.backends.clone()
+    }
+}
+
+impl svc::Param<profiles::LogicalAddr> for Params {
+    fn param(&self) -> profiles::LogicalAddr {
+        self.logical.logical_addr.clone()
+    }
+}
+
+impl<I> router::SelectRoute<I> for Params {
+    type Key = RouteParams;
+    type Error = std::convert::Infallible;
+
+    fn select<'r>(&self, _: &'r I) -> Result<&Self::Key, Self::Error> {
+        Ok(&self.route)
     }
 }
 

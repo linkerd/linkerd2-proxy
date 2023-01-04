@@ -71,33 +71,33 @@ impl<N> Outbound<N> {
         self.map_stack(|config, rt, concrete| {
             let route = svc::layers()
                 .push_on_service(http::BoxRequest::layer())
-                // .push(http::insert::NewInsert::<RouteParams, _>::layer())
-                // .push(
-                //     rt.metrics
-                //         .proxy
-                //         .http_profile_route_actual
-                //         .to_layer::<classify::Response, _, RouteParams>(),
-                // )
-                // // Depending on whether or not the request can be
-                // // retried, it may have one of two `Body` types. This
-                // // layer unifies any `Body` type into `BoxBody`.
-                // .push_on_service(http::BoxRequest::erased())
-                // // Sets an optional retry policy.
-                // .push(retry::layer(
-                //     rt.metrics.proxy.http_profile_route_retry.clone(),
-                // ))
-                // // Sets an optional request timeout.
-                // .push(http::NewTimeout::layer())
-                // // Records per-route metrics.
-                // .push(
-                //     rt.metrics
-                //         .proxy
-                //         .http_profile_route
-                //         .to_layer::<classify::Response, _, RouteParams>(),
-                // )
-                // // Sets the per-route response classifier as a request
-                // // extension.
-                // .push(classify::NewClassify::layer())
+                .push(http::insert::NewInsert::<RouteParams, _>::layer())
+                .push(
+                    rt.metrics
+                        .proxy
+                        .http_profile_route_actual
+                        .to_layer::<classify::Response, _, RouteParams>(),
+                )
+                // Depending on whether or not the request can be
+                // retried, it may have one of two `Body` types. This
+                // layer unifies any `Body` type into `BoxBody`.
+                .push_on_service(http::BoxRequest::erased())
+                // Sets an optional retry policy.
+                .push(retry::layer(
+                    rt.metrics.proxy.http_profile_route_retry.clone(),
+                ))
+                // Sets an optional request timeout.
+                .push(http::NewTimeout::layer())
+                // Records per-route metrics.
+                .push(
+                    rt.metrics
+                        .proxy
+                        .http_profile_route
+                        .to_layer::<classify::Response, _, RouteParams>(),
+                )
+                // Sets the per-route response classifier as a request
+                // extension.
+                .push(classify::NewClassify::layer())
                 .push_on_service(http::BoxResponse::layer())
                 // Only build a route service when it is used.
                 .push(svc::NewLazy::layer());
