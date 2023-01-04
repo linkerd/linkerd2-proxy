@@ -21,7 +21,6 @@ mod new_service;
 
 pub use new_service::NewIdleCached;
 
-/// A `NewService` that
 #[derive(Clone)]
 pub struct IdleCache<K, V, S = RandomState>
 where
