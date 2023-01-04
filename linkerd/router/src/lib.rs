@@ -1,7 +1,7 @@
 use ahash::AHashMap;
 use futures::{future, prelude::*};
 use linkerd_error::Error;
-use linkerd_stack::{layer, NewService, NewSpawnWatch, Oneshot, Param, Service, ServiceExt};
+use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
     fmt::Debug,
     hash::Hash,
@@ -25,8 +25,6 @@ pub trait SelectRoute<Req> {
     /// If no route matches the request, this method returns an error.
     fn select<'r>(&self, req: &'r Req) -> Result<&Self::Key, Self::Error>;
 }
-
-pub type NewRouteWatch<U, T, K, L, N> = NewSpawnWatch<U, T, NewRoute<K, L, N>>;
 
 /// A [`NewService`] that extracts [`RouteKeys`] from the stack target to build a
 /// set of per-route inner services. These services are built first by building
@@ -64,14 +62,8 @@ impl<K, L: Clone, N> NewRoute<K, L, N> {
         }
     }
 
-    pub fn watch<U, T>(route_layer: L, inner: N) -> NewSpawnWatch<U, T, Self> {
-        NewSpawnWatch::new(Self::new(route_layer, inner))
-    }
-
-    pub fn watch_layer<U, T>(
-        route_layer: L,
-    ) -> impl layer::Layer<N, Service = NewSpawnWatch<U, T, Self>> + Clone {
-        layer::mk(move |inner| Self::watch(route_layer.clone(), inner))
+    pub fn layer(route_layer: L) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(route_layer.clone(), inner))
     }
 }
 

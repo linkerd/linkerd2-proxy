@@ -1,12 +1,12 @@
 use super::{params, NewDistribute};
 use linkerd_stack::{layer, NewService, Param};
 use parking_lot::Mutex;
-use std::{fmt::Debug, hash::Hash, sync::Arc};
+use std::{fmt::Debug, hash::Hash};
 
 /// A [`NewService`] that produces [`NewDistribute`]s using a shared cache of
 /// backends.
 #[derive(Debug)]
-pub struct CacheNewDistribute<K, N, S>(Arc<Inner<K, N, S>>);
+pub struct CacheNewDistribute<K, N, S>(Inner<K, N, S>);
 
 #[derive(Debug)]
 struct Inner<K, N, S> {
@@ -18,10 +18,10 @@ struct Inner<K, N, S> {
 
 impl<K, N, S> CacheNewDistribute<K, N, S> {
     pub fn new(new_backend: N) -> Self {
-        Self(Arc::new(Inner {
+        Self(Inner {
             new_backend,
             backends: Mutex::new(ahash::AHashMap::new()),
-        }))
+        })
     }
 
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
@@ -66,8 +66,8 @@ where
     }
 }
 
-impl<K, N, S> Clone for CacheNewDistribute<K, N, S> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
+// impl<K, N, S> Clone for CacheNewDistribute<K, N, S> {
+//     fn clone(&self) -> Self {
+//         Self(self.0.clone())
+//     }
+// }

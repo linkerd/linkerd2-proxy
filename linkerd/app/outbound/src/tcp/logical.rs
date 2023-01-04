@@ -145,31 +145,18 @@ impl<N> Outbound<N> {
 
             concrete
                 .check_new_service::<Concrete, I>()
-                .push(svc::layer::mk(move |inner| {
-                    fn check<T, Req, N>(inner: N) -> N
-                    where
-                        N: svc::NewService<T>,
-                        N::Service: svc::Service<Req, Response = (), Error = Error>,
-                    {
-                        inner
-                    }
-
-                    fn check_cache<N>(inner: N) -> N
-                    where
-                        N: svc::NewService<Params>,
-                        N::Service: svc::NewService<RouteParams>,
-                    {
-                        inner
-                    }
-
-                    let inner = check::<Concrete, I, _>(inner);
-                    let cache = check_cache(CacheNewDistribute::new(inner));
-                    let route = check::<Params, I, _>(router::NewRoute::<RouteParams, _, _>::new(
-                        route.clone(),
-                        cache,
-                    ));
-                    check::<Logical, I, _>(svc::NewSpawnWatch::<Params, Profile, _>::new(route))
-                }))
+                // Drop the `Logical` target type and clone the inner concrete
+                // stack into the distributor.
+                .push(svc::layer::mk(svc::NewCloneService::from))
+                .push_on_service(
+                    svc::layers()
+                        .push(CacheNewDistribute::layer())
+                        .push(router::NewRoute::<RouteParams, _, _>::layer(route)),
+                )
+                .check_new_new::<Logical, Params>()
+                .push(svc::NewWatchInto::<Params, _>::layer())
+                .check_new_new::<Logical, Profile>()
+                .push(svc::NewSpawnWatch::<Profile, _>::layer())
                 .check_new_service::<Logical, I>()
                 // This caches each logical stack so that it can be reused
                 // across per-connection server stacks (i.e., created by the

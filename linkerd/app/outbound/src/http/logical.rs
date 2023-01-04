@@ -99,31 +99,18 @@ impl<N> Outbound<N> {
 
             concrete
                 .check_new_service::<Concrete, _>()
-                .push(svc::layer::mk(move |inner| {
-                    fn check<T, N>(inner: N) -> N
-                    where
-                        N: svc::NewService<T>,
-                        N::Service: svc::Service<http::Request<http::BoxBody>, Error = Error>,
-                    {
-                        inner
-                    }
-
-                    fn check_cache<N>(inner: N) -> N
-                    where
-                        N: svc::NewService<Params>,
-                        N::Service: svc::NewService<RouteParams>,
-                    {
-                        inner
-                    }
-
-                    let inner = check::<Concrete, _>(inner);
-                    let cache = check_cache(CacheNewDistribute::new(inner));
-                    let route = check::<Params, _>(router::NewRoute::<RouteParams, _, _>::new(
-                        route.clone(),
-                        cache,
-                    ));
-                    check::<Logical, _>(svc::NewSpawnWatch::<Params, Profile, _>::new(route))
-                }))
+                // Drop the `Logical` target type and clone the inner concrete
+                // stack into the distributor.
+                .push(svc::layer::mk(svc::NewCloneService::from))
+                .push_on_service(
+                    svc::layers()
+                        .push(CacheNewDistribute::layer())
+                        .push(router::NewRoute::<RouteParams, _, _>::layer(route)),
+                )
+                .check_new_new::<Logical, Params>()
+                .push(svc::NewWatchInto::<Params, _>::layer())
+                .check_new_new::<Logical, Profile>()
+                .push(svc::NewSpawnWatch::<Profile, _>::layer())
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header. The response body is boxed
