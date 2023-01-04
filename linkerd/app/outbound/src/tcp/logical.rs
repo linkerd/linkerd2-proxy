@@ -135,32 +135,36 @@ impl<N> Outbound<N> {
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
     {
         self.map_stack(|config, _, concrete| {
-            let router = concrete
-                .check_new_service::<Concrete, I>()
-                // Each `RouteParams` provides a `Distribution` that is
-                // used to choose a concrete service for a given route.
+            // A `NewService`--instantiated once per logical target--that caches
+            // a set of concrete services so that, as the watch provides new
+            // `Params`, we can reuse inner services.
+            let router = svc::layers()
+                // Each `RouteParams` provides a `Distribution` that is used to
+                // choose a concrete service for a given route.
                 .push(CacheNewDistribute::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
-                .check_new_new::<Params, RouteParams>()
-                .push(router::NewRoute::layer_cached::<RouteParams>());
+                .push(router::NewRoute::layer_cached());
 
-            let watch = router
-                .check_new_service::<Params, I>()
+            // For each `Logical` target, watch its `Profile`, maintaining a
+            // cache of all concrete services used by the router.
+            let watch = concrete
+                // Share the concrete stack each router stack.
                 .push_new_clone()
+                .check_new_new::<Logical, Concrete>()
+                // Rebuild this router stack every time the profile changes.
+                .push_on_service(router)
                 .check_new_new::<Logical, Params>()
-                // Watch the `Profile` for each target. Every time it changes,
-                // build a new stack by converting the profile to a `Params`.
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
 
+            // This caches each logical stack so that it can be reused across
+            // per-connection server stacks (i.e., created by the
+            // DetectService).
+            //
+            // TODO(ver) Update the detection stack so this dynamic caching can
+            // be removed.
             watch
                 .check_new_service::<Logical, I>()
-                // This caches each logical stack so that it can be reused
-                // across per-connection server stacks (i.e., created by the
-                // DetectService).
-                //
-                // TODO(ver) Update the detection stack so this dynamic caching
-                // can be removed.
                 .push_idle_cache(config.discovery_idle_timeout)
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()

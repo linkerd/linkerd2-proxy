@@ -94,38 +94,43 @@ impl<N> Outbound<N> {
                 .push(classify::NewClassify::layer())
                 .push_on_service(http::BoxResponse::layer());
 
-            let router = concrete
-                .check_new_service::<Concrete, http::Request<http::BoxBody>>()
-                // Each `RouteParams` provides a `Distribution` that is
-                // used to choose a concrete service for a given route.
+            // A `NewService`--instantiated once per logical target--that caches
+            // a set of concrete services so that, as the watch provides new
+            // `Params`, we can reuse inner services.
+            let router = svc::layers()
+                // Each `RouteParams` provides a `Distribution` that is used to
+                // choose a concrete service for a given route.
                 .push(CacheNewDistribute::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(route)
-                .check_new_new::<Params, RouteParams>()
                 .push(router::NewRoute::layer_cached());
 
-            let watch = router
-                .check_new_service::<Params, http::Request<http::BoxBody>>()
+            // For each `Logical` target, watch its `Profile`, rebuilding a
+            // router stack.
+            let watch = concrete
+                .check_new_service::<Concrete, http::Request<http::BoxBody>>()
+                // Share the concrete stack each router stack.
                 .push_new_clone()
+                .check_new_new::<Logical, Concrete>()
+                // Rebuild this router stack every time the profile changes.
+                .push_on_service(router)
                 .check_new_new::<Logical, Params>()
-                // Watch the `Profile` for each target. Every time it changes,
-                // build a new stack by converting the profile to a `Params`.
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
 
+            // Caches each logical stack so that it can be reused across
+            // per-connection HTTP server stacks (i.e. created by the
+            // `DetectService`).
+            //
+            // TODO(ver) Update the detection stack so this dynamic caching can
+            // be removed.
+            //
+            // XXX(ver) This cache key includes the HTTP version. Should it?
             watch
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header.
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
-                // This caches each logical stack so that it can be reused
-                // across per-connection HTTP server stacks (i.e. created by the
-                // `DetectService`).
-                //
-                // TODO(ver) Update the detection stack so this dynamic caching
-                // can be removed.
-                //
-                // XXX(ver) This cache key includes the HTTP version. Should it?
                 .push_idle_cache(config.discovery_idle_timeout)
                 .instrument(|l: &Logical| debug_span!("logical", service = %l.logical_addr))
                 .push(svc::ArcNewService::layer())
