@@ -1528,11 +1528,9 @@ dependencies = [
 name = "linkerd-router"
 version = "0.1.0"
 dependencies = [
- "ahash",
  "futures",
  "linkerd-error",
  "linkerd-stack",
- "parking_lot",
  "thiserror",
  "tracing",
 ]

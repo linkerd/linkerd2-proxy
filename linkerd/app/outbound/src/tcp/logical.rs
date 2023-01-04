@@ -154,7 +154,7 @@ impl<N> Outbound<N> {
                 .push_on_service(
                     svc::layers()
                         .push(CacheNewDistribute::layer())
-                        .push(router::NewRoute::<RouteParams, _, _>::layer(route)),
+                        .push(router::NewRoute::layer_cached::<RouteParams>(route)),
                 )
                 .check_new_new::<Logical, Params>()
                 // Watch the `Profile` for each target. Every time it changes,

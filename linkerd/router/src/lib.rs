@@ -1,16 +1,12 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use ahash::AHashMap;
 use futures::{future, prelude::*};
 use linkerd_error::Error;
-use linkerd_stack::{layer, NewService, Oneshot, Service, ServiceExt};
-use parking_lot::Mutex;
+use linkerd_stack::{layer, NewCache, NewService, Oneshot, Service, ServiceExt};
 use std::{
     fmt::Debug,
     hash::Hash,
-    marker::PhantomData,
-    sync::Arc,
     task::{Context, Poll},
 };
 use tracing::debug;
@@ -25,64 +21,63 @@ pub trait SelectRoute<Req> {
     fn select<'r>(&self, req: &'r Req) -> Result<&Self::Key, Self::Error>;
 }
 
-/// A [`NewService`] that lazy builds stacks for each `K`-typed key.
+/// A [`NewService`] that builds `Route` services for targets that implement
+/// [`SelectRoute`].
 #[derive(Clone, Debug)]
-pub struct NewRoute<K, L, N> {
+pub struct NewRoute<L, N> {
     route_layer: L,
     inner: N,
-    _marker: PhantomData<fn(K)>,
 }
 
-/// The [`Service`] constructed by [`NewRoute`].
+/// Dispatches requests to a new `S`-typed inner service.
 ///
-/// Each request is matched against the route table and routed to the
-/// appropriate
+/// Each request is matched against the route table and routed to a new inner
+/// service.
 #[derive(Clone, Debug)]
-pub struct Route<T, K, N, S> {
+pub struct Route<T, N> {
     params: T,
     new_route: N,
-    routes: Arc<Mutex<AHashMap<K, S>>>,
 }
 
 // === impl NewRoute ===
 
-impl<K, L: Clone, N> NewRoute<K, L, N> {
+impl<L: Clone, N> NewRoute<L, N> {
     pub fn new(route_layer: L, inner: N) -> Self {
-        Self {
-            inner,
-            route_layer,
-            _marker: PhantomData,
-        }
+        Self { inner, route_layer }
     }
 
     pub fn layer(route_layer: L) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self::new(route_layer.clone(), inner))
     }
+
+    /// Returns a new `NewRoute` layer that retains & reuses its inner services.
+    pub fn layer_cached<K>(
+        route_layer: L,
+    ) -> impl layer::Layer<N, Service = NewRoute<L, NewCache<K, N>>> + Clone {
+        layer::mk(move |inner: N| NewRoute::new(route_layer.clone(), NewCache::new(inner)))
+    }
 }
 
-impl<T, K, L, N, S> NewService<T> for NewRoute<K, L, N>
+impl<T, L, N> NewService<T> for NewRoute<L, N>
 where
-    K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
     T: Clone,
     N: NewService<T>,
     L: layer::Layer<N::Service>,
-    L::Service: NewService<K, Service = S>,
 {
-    type Service = Route<T, K, L::Service, S>;
+    type Service = Route<T, L::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let inner = self.inner.new_service(target.clone());
         Route {
             new_route: self.route_layer.layer(inner),
             params: target,
-            routes: Default::default(),
         }
     }
 }
 
 // === impl Route ===
 
-impl<T, N, S, Req> Service<Req> for Route<T, T::Key, N, S>
+impl<T, N, S, Req> Service<Req> for Route<T, N>
 where
     T: SelectRoute<Req>,
     N: NewService<T::Key, Service = S>,
@@ -103,30 +98,16 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        match self.route(&req) {
-            Ok(route) => future::Either::Left(route.oneshot(req).map_err(Into::into)),
-            Err(error) => future::Either::Right({
+        match self.params.select(&req) {
+            Ok(key) => future::Either::Left({
+                let route = self.new_route.new_service(key.clone());
+                route.oneshot(req).map_err(Into::into)
+            }),
+            Err(e) => future::Either::Right({
+                let error = e.into();
                 debug!(%error, "Failed to route request");
                 future::err(error)
             }),
         }
-    }
-}
-
-impl<T, K, N, S> Route<T, K, N, S> {
-    #[inline]
-    fn route<Req>(&self, req: &Req) -> Result<S, Error>
-    where
-        T: SelectRoute<Req, Key = K>,
-        K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
-        N: NewService<K, Service = S>,
-        S: Clone,
-    {
-        let key = self.params.select(req)?;
-        let mut routes = self.routes.lock();
-        let svc = routes
-            .entry(key.clone())
-            .or_insert_with(|| self.new_route.new_service(key.clone()));
-        Ok(svc.clone())
     }
 }

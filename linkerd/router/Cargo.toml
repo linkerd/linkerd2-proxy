@@ -6,9 +6,7 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-ahash = "0.8"
 futures = "0.3"
-parking_lot = "0.12"
 thiserror = "1"
 tracing = "0.1"
 linkerd-error = { path = "../error" }
