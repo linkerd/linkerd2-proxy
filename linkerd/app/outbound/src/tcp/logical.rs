@@ -140,8 +140,6 @@ impl<N> Outbound<N> {
                 ..
             } = config;
 
-            let route = svc::layers();
-
             concrete
                 .check_new_service::<Concrete, I>()
                 // For each `Logical` target, build a stack that caches a
@@ -154,7 +152,7 @@ impl<N> Outbound<N> {
                 .push_on_service(
                     svc::layers()
                         .push(CacheNewDistribute::layer())
-                        .push(router::NewRoute::layer_cached::<RouteParams>(route)),
+                        .push(router::NewRoute::layer_cached::<RouteParams>()),
                 )
                 .check_new_new::<Logical, Params>()
                 // Watch the `Profile` for each target. Every time it changes,

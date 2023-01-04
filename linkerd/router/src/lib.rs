@@ -26,8 +26,7 @@ pub trait SelectRoute<Req> {
 /// A [`NewService`] that builds `Route` services for targets that implement
 /// [`SelectRoute`].
 #[derive(Clone, Debug)]
-pub struct NewRoute<L, N> {
-    route_layer: L,
+pub struct NewRoute<N> {
     inner: N,
 }
 
@@ -43,35 +42,32 @@ pub struct Route<T, N> {
 
 // === impl NewRoute ===
 
-impl<L: Clone, N> NewRoute<L, N> {
-    pub fn new(route_layer: L, inner: N) -> Self {
-        Self { inner, route_layer }
+impl<N> NewRoute<N> {
+    pub fn new(inner: N) -> Self {
+        Self { inner }
     }
 
-    pub fn layer(route_layer: L) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |inner| Self::new(route_layer.clone(), inner))
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(inner))
     }
 
     /// Returns a new `NewRoute` layer that retains & reuses its inner services.
-    pub fn layer_cached<K>(
-        route_layer: L,
-    ) -> impl layer::Layer<N, Service = NewRoute<L, NewCache<K, N>>> + Clone {
-        layer::mk(move |inner: N| NewRoute::new(route_layer.clone(), NewCache::new(inner)))
+    pub fn layer_cached<K>() -> impl layer::Layer<N, Service = NewRoute<NewCache<K, N>>> + Clone {
+        layer::mk(move |inner: N| NewRoute::new(NewCache::new(inner)))
     }
 }
 
-impl<T, L, N> NewService<T> for NewRoute<L, N>
+impl<T, N> NewService<T> for NewRoute<N>
 where
     T: Clone,
     N: NewService<T>,
-    L: layer::Layer<N::Service>,
 {
-    type Service = Route<T, L::Service>;
+    type Service = Route<T, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let inner = self.inner.new_service(target.clone());
+        let new_route = self.inner.new_service(target.clone());
         Route {
-            new_route: self.route_layer.layer(inner),
+            new_route,
             params: target,
         }
     }
