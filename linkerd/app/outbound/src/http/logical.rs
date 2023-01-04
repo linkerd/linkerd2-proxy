@@ -99,8 +99,12 @@ impl<N> Outbound<N> {
 
             concrete
                 .check_new_service::<Concrete, _>()
-                // Drop the `Logical` target type and clone the inner concrete
-                // stack into the distributor.
+                // For each `Logical` target, build a stack that caches a
+                // `Concrete` inner services to provide a distributor to the
+                // router.
+                //
+                // Each `RouteParams` provides a `Distribution` that is used to
+                // choose a concrete service for a given route.
                 .push(svc::layer::mk(svc::NewCloneService::from))
                 .push_on_service(
                     svc::layers()
@@ -108,6 +112,8 @@ impl<N> Outbound<N> {
                         .push(router::NewRoute::<RouteParams, _, _>::layer(route)),
                 )
                 .check_new_new::<Logical, Params>()
+                // Watch the `Profile` for each target. Every time it changes,
+                // build a new stack by converting the profile to a `Params`.
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // Strips headers that may be set by this proxy and add an
