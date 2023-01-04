@@ -148,7 +148,8 @@ impl<C> Outbound<C> {
             .into_inner();
 
         self.push_tcp_endpoint()
-            .push_tcp_logical(resolve)
+            .push_tcp_concrete(resolve)
+            .push_tcp_logical()
             .push_detect_http(http)
     }
 }

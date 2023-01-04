@@ -47,12 +47,12 @@ type NewRouteDistribute<L, N, S> =
 
 impl<C> Outbound<C> {
     /// Constructs a TCP load balancer.
-    pub fn push_tcp_logical<I, R>(
+    pub fn push_tcp_concrete<I, R>(
         self,
         resolve: R,
     ) -> Outbound<
         svc::ArcNewService<
-            Logical,
+            Concrete,
             impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
     >
@@ -92,7 +92,7 @@ impl<C> Outbound<C> {
                 .check_service::<Concrete>()
                 .into_inner();
 
-            let concrete = connect
+            connect
                 .push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
                 .instrument(|t: &Endpoint| debug_span!("endpoint", addr = %t.addr))
@@ -118,7 +118,32 @@ impl<C> Outbound<C> {
                         .push_buffer("TCP Concrete", tcp_connection_buffer),
                 )
                 .check_new_service::<Concrete, I>()
-                .push(svc::ArcNewService::layer());
+                .push(svc::ArcNewService::layer())
+        })
+    }
+}
+
+impl<N> Outbound<N> {
+    pub fn push_tcp_logical<I, NSvc>(
+        self,
+    ) -> Outbound<
+        svc::ArcNewService<
+            Logical,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+        >,
+    >
+    where
+        N: svc::NewService<Concrete, Service = NSvc> + Clone + Send + Sync + 'static,
+        NSvc: svc::Service<I, Response = (), Error = Error> + Clone + Send + Sync + 'static,
+        NSvc::Future: Send,
+        I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
+    {
+        self.map_stack(|config, rt, concrete| {
+            let crate::Config {
+                discovery_idle_timeout,
+                tcp_connection_buffer,
+                ..
+            } = config;
 
             let route = svc::layers();
 
