@@ -1,31 +1,32 @@
 use crate::{Distribute, Distribution};
+use ahash::AHashMap;
 use linkerd_stack::{NewService, Param};
-use std::{collections::HashMap, hash::Hash, sync::Arc};
+use std::{hash::Hash, sync::Arc};
 
 /// Builds `Distribute` services for a specific `Distribution`.
 #[derive(Clone, Debug)]
 pub struct NewDistribute<K, S> {
     /// All potential backends.
-    all_backends: Arc<HashMap<K, S>>,
+    all_backends: Arc<AHashMap<K, S>>,
 }
 
 // === impl NewDistribute ===
 
-impl<K, S> From<Arc<HashMap<K, S>>> for NewDistribute<K, S> {
-    fn from(all_backends: Arc<HashMap<K, S>>) -> Self {
+impl<K, S> From<Arc<AHashMap<K, S>>> for NewDistribute<K, S> {
+    fn from(all_backends: Arc<AHashMap<K, S>>) -> Self {
         Self { all_backends }
     }
 }
 
-impl<K, S> From<HashMap<K, S>> for NewDistribute<K, S> {
-    fn from(backends: HashMap<K, S>) -> Self {
+impl<K, S> From<AHashMap<K, S>> for NewDistribute<K, S> {
+    fn from(backends: AHashMap<K, S>) -> Self {
         Arc::new(backends).into()
     }
 }
 
 impl<K: Hash + Eq, S> FromIterator<(K, S)> for NewDistribute<K, S> {
     fn from_iter<T: IntoIterator<Item = (K, S)>>(iter: T) -> Self {
-        iter.into_iter().collect::<HashMap<_, _>>().into()
+        iter.into_iter().collect::<AHashMap<_, _>>().into()
     }
 }
 

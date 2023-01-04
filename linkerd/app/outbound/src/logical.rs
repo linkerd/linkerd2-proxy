@@ -10,8 +10,6 @@ use linkerd_app_core::{
 pub use profiles::LogicalAddr;
 use std::fmt;
 
-pub mod router;
-
 #[derive(Clone)]
 pub struct Logical<P> {
     pub profile: profiles::Receiver,
@@ -19,7 +17,7 @@ pub struct Logical<P> {
     pub protocol: P,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Concrete<P> {
     pub resolve: ConcreteAddr,
     pub logical: Logical<P>,
@@ -150,7 +148,8 @@ impl<C> Outbound<C> {
             .into_inner();
 
         self.push_tcp_endpoint()
-            .push_tcp_logical(resolve)
+            .push_tcp_concrete(resolve)
+            .push_tcp_logical()
             .push_detect_http(http)
     }
 }

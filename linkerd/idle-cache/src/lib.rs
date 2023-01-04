@@ -19,10 +19,10 @@ use tracing::{debug, instrument, trace};
 
 mod new_service;
 
-pub use new_service::NewCachedService;
+pub use new_service::NewIdleCached;
 
 #[derive(Clone)]
-pub struct Cache<K, V, S = RandomState>
+pub struct IdleCache<K, V, S = RandomState>
 where
     K: Eq + Hash,
 {
@@ -61,7 +61,7 @@ type InnerMap<K, V, S> = RwLock<HashMap<K, CacheEntry<V>, S>>;
 
 // === impl Cache ===
 
-impl<K, V> Cache<K, V>
+impl<K, V> IdleCache<K, V>
 where
     K: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
     V: Send + Sync + 'static,
@@ -71,7 +71,7 @@ where
     }
 }
 
-impl<K, V, S> Cache<K, V, BuildHasherDefault<S>>
+impl<K, V, S> IdleCache<K, V, BuildHasherDefault<S>>
 where
     K: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
     V: Send + Sync + 'static,
@@ -106,7 +106,7 @@ where
     }
 }
 
-impl<K, V, S> Cache<K, V, S>
+impl<K, V, S> IdleCache<K, V, S>
 where
     K: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
     V: Send + Sync + 'static,
@@ -329,6 +329,18 @@ impl<V> Cached<V> {
     }
 }
 
+impl<T, N> linkerd_stack::NewService<T> for Cached<N>
+where
+    N: linkerd_stack::NewService<T> + Send + Sync + 'static,
+{
+    type Service = N::Service;
+
+    #[inline]
+    fn new_service(&self, target: T) -> Self::Service {
+        self.inner.new_service(target)
+    }
+}
+
 impl<Req, S> tower::Service<Req> for Cached<S>
 where
     S: tower::Service<Req> + Send + Sync + 'static,
@@ -375,7 +387,7 @@ async fn test_idle_retain() {
     time::pause();
 
     let idle = time::Duration::from_secs(10);
-    let cache = Cache::new(idle);
+    let cache = IdleCache::new(idle);
 
     let handle = cache.spawn_idle(());
     let weak = Arc::downgrade(&handle);

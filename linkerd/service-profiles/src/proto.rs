@@ -1,4 +1,5 @@
 use crate::{http, tcp, LogicalAddr, Profile, Target, Targets};
+use ahash::AHashSet;
 use linkerd2_proxy_api::destination as api;
 use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;
@@ -45,19 +46,17 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
         resolve::to_addr_meta(e, &labels)
     });
 
-    let target_addrs = targets.iter().map(|t| t.addr.clone()).collect();
-
-    // ServiceProfiles don't define TCP routes, generate a single match which
-    // matches all TCP connections but still uses the list of targets from the profile.
-    let tcp_routes =
-        std::iter::once((tcp::RequestMatch::default(), tcp::Route::new(targets))).collect();
+    let target_addrs = targets
+        .iter()
+        .map(|t| t.addr.clone())
+        .collect::<AHashSet<_, _>>();
 
     Profile {
         addr: addr.map(LogicalAddr),
         http_routes,
-        tcp_routes,
+        tcp_route: tcp::Route::new(targets),
         opaque_protocol: proto.opaque_protocol,
-        target_addrs,
+        target_addrs: target_addrs.into(),
         endpoint,
     }
 }

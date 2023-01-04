@@ -41,9 +41,9 @@ pub struct ReceiverStream {
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
     pub http_routes: http::RouteSet,
-    pub tcp_routes: tcp::RouteSet,
+    pub tcp_route: tcp::Route,
     /// A list of all target backend addresses on this profile and its routes.
-    pub target_addrs: AHashSet<NameAddr>,
+    pub target_addrs: Arc<AHashSet<NameAddr>>,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
@@ -183,15 +183,19 @@ impl Stream for ReceiverStream {
 
 // === impl Profile ===
 
-impl linkerd_stack::Param<http::RouteSet> for Profile {
-    fn param(&self) -> http::RouteSet {
-        self.http_routes.clone()
-    }
-}
-
-impl linkerd_stack::Param<tcp::RouteSet> for Profile {
-    fn param(&self) -> tcp::RouteSet {
-        self.tcp_routes.clone()
+impl Default for Profile {
+    fn default() -> Self {
+        static DEFAULT_HTTP_ROUTES: Lazy<http::RouteSet> =
+            Lazy::new(|| vec![Default::default()].into());
+        static DEFAULT_TCP_ROUTE: Lazy<tcp::Route> = Lazy::new(Default::default);
+        Self {
+            addr: None,
+            http_routes: DEFAULT_HTTP_ROUTES.clone(),
+            tcp_route: DEFAULT_TCP_ROUTE.clone(),
+            target_addrs: Default::default(),
+            opaque_protocol: false,
+            endpoint: None,
+        }
     }
 }
 

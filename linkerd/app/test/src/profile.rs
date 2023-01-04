@@ -25,7 +25,7 @@ pub fn empty() -> Profile {
     Profile {
         addr: None,
         http_routes: std::iter::empty().collect(),
-        tcp_routes: std::iter::empty().collect(),
+        tcp_route: Default::default(),
         target_addrs: Default::default(),
         endpoint: None,
         opaque_protocol: false,
@@ -51,9 +51,8 @@ pub fn with_nameaddr(addr: NameAddr) -> Profile {
             http::Route::new(std::iter::empty(), Vec::new(), targets.clone()),
         ))
         .collect(),
-        tcp_routes: std::iter::once((tcp::RequestMatch::default(), tcp::Route::new(targets)))
-            .collect(),
-        target_addrs,
+        tcp_route: tcp::Route::new(targets),
+        target_addrs: std::sync::Arc::new(target_addrs),
         endpoint: None,
         opaque_protocol: false,
     }

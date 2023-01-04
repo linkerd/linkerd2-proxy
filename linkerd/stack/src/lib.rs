@@ -6,6 +6,7 @@
 mod arc_new_service;
 mod box_future;
 mod box_service;
+mod cache;
 mod connect;
 mod either;
 mod fail;
@@ -33,6 +34,7 @@ pub use self::{
     arc_new_service::ArcNewService,
     box_future::BoxFuture,
     box_service::{BoxService, BoxServiceLayer},
+    cache::{Cache, NewCache},
     connect::{MakeConnection, WithoutConnectionMetadata},
     either::{Either, NewEither},
     fail::Fail,
@@ -53,7 +55,7 @@ pub use self::{
     switch_ready::{NewSwitchReady, SwitchReady},
     timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,
-    watch::{NewSpawnWatch, SpawnWatch, UpdateWatch},
+    watch::{NewFromTuple, NewSpawnWatch, NewWatchedFromTuple, SpawnWatch},
 };
 pub use tower::{
     service_fn,

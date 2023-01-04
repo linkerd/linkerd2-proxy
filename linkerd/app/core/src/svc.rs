@@ -1,16 +1,11 @@
 // Possibly unused, but useful during development.
 
 pub use crate::proxy::http;
-use crate::{cache, config::BufferConfig, Error};
+use crate::{config::BufferConfig, idle_cache, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
-pub use linkerd_stack::{
-    self as stack, layer, ArcNewService, BoxCloneService, BoxService, BoxServiceLayer, Either,
-    ExtractParam, Fail, FailFast, Filter, InsertParam, LoadShed, MakeConnection, MapErr,
-    MapTargetLayer, NewCloneService, NewLazy, NewRouter, NewService, NewSpawnWatch, Oneshot, Param,
-    Predicate, SpawnWatch, UnwrapOr, UpdateWatch,
-};
+pub use linkerd_stack::{self as stack, *};
 use linkerd_stack::{failfast, OnService};
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use std::{
@@ -181,6 +176,13 @@ impl<S> Stack<S> {
         self.push(stack::OnServiceLayer::new(layer))
     }
 
+    /// Wraps the inner `S` with `NewCloneService` so that the stack holds a
+    /// `NewService` that always returns a clone of `S` regardless of the target
+    /// value.
+    pub fn push_new_clone(self) -> Stack<NewCloneService<S>> {
+        self.push(layer::mk(NewCloneService::from))
+    }
+
     /// Wraps the inner service with a response timeout such that timeout errors are surfaced as a
     /// `ConnectTimeout` error.
     ///
@@ -228,13 +230,13 @@ impl<S> Stack<S> {
         self.push_on_service(buffer(name, config))
     }
 
-    pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::NewCachedService<T, S>>
+    pub fn push_idle_cache<T>(self, idle: Duration) -> Stack<idle_cache::NewIdleCached<T, S>>
     where
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         S: NewService<T> + 'static,
         S::Service: Send + Sync + 'static,
     {
-        self.push(cache::NewCachedService::layer(idle))
+        self.push(idle_cache::NewIdleCached::layer(idle))
     }
 
     /// Push a service that either calls the inner service if it is ready, or
