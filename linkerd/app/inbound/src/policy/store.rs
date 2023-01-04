@@ -1,6 +1,6 @@
 use super::{api, AllowPolicy, DefaultPolicy, GetPolicy};
 use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error};
-use linkerd_cache::Cache;
+use linkerd_idle_cache::IdleCache;
 pub use linkerd_server_policy::{
     authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
 };
@@ -13,7 +13,7 @@ use tracing::info_span;
 
 #[derive(Clone)]
 pub struct Store<S> {
-    cache: Cache<u16, Rx, BuildHasherDefault<PortHasher>>,
+    cache: IdleCache<u16, Rx, BuildHasherDefault<PortHasher>>,
     default_rx: Rx,
     discover: Option<api::Watch<S>>,
 }
@@ -43,7 +43,7 @@ impl<S> Store<S> {
                 let (_, rx) = watch::channel(s);
                 (p, rx)
             });
-            Cache::with_permanent_from_iter(idle_timeout, rxs)
+            IdleCache::with_permanent_from_iter(idle_timeout, rxs)
         };
 
         Self {
@@ -83,7 +83,7 @@ impl<S> Store<S> {
                     .in_scope(|| discover.spawn_with_init(port, default.into()));
                 (port, rx)
             });
-            Cache::with_permanent_from_iter(idle_timeout, rxs)
+            IdleCache::with_permanent_from_iter(idle_timeout, rxs)
         };
 
         Self {

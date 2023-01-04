@@ -21,7 +21,7 @@ use linkerd_app_core::{
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
 };
-use linkerd_cache::Cached;
+use linkerd_idle_cache::Cached;
 pub use linkerd_server_policy::{
     authz::Suffix,
     grpc::Route as GrpcRoute,

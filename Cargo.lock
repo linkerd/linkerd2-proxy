@@ -390,6 +390,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00f5fb52a06bdcadeb54e8d3671f8888a39697dcb0b81b23b55174030427f4eb"
 
 [[package]]
+name = "futures-macro"
+version = "0.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdfb8ce053d86b91919aad980c220b1fb8401a9394410e1c289ed7e66b61835d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "futures-sink"
 version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -410,6 +421,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-io",
+ "futures-macro",
  "futures-sink",
  "futures-task",
  "memchr",
@@ -795,7 +807,6 @@ dependencies = [
  "hyper",
  "ipnet",
  "linkerd-addr",
- "linkerd-cache",
  "linkerd-conditional",
  "linkerd-detect",
  "linkerd-dns",
@@ -807,6 +818,7 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-http-metrics",
  "linkerd-identity",
+ "linkerd-idle-cache",
  "linkerd-io",
  "linkerd-meshtls",
  "linkerd-metrics",
@@ -876,8 +888,8 @@ dependencies = [
  "libfuzzer-sys",
  "linkerd-app-core",
  "linkerd-app-test",
- "linkerd-cache",
  "linkerd-http-access-log",
+ "linkerd-idle-cache",
  "linkerd-io",
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
@@ -947,6 +959,7 @@ dependencies = [
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
  "linkerd-retry",
+ "linkerd-router",
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
@@ -981,20 +994,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-cache"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-error",
- "linkerd-stack",
- "linkerd-tracing",
- "parking_lot",
- "tokio",
- "tower",
- "tracing",
-]
-
-[[package]]
 name = "linkerd-conditional"
 version = "0.1.0"
 
@@ -1017,8 +1016,10 @@ dependencies = [
 name = "linkerd-distribute"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "indexmap",
  "linkerd-stack",
+ "parking_lot",
  "rand",
  "tokio-test",
  "tower-test",
@@ -1190,6 +1191,20 @@ version = "0.1.0"
 dependencies = [
  "linkerd-dns-name",
  "linkerd-error",
+]
+
+[[package]]
+name = "linkerd-idle-cache"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-stack",
+ "linkerd-tracing",
+ "parking_lot",
+ "tokio",
+ "tower",
+ "tracing",
 ]
 
 [[package]]
@@ -1510,6 +1525,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-router"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-stack",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-server-policy"
 version = "0.1.0"
 dependencies = [
@@ -1539,6 +1565,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-proxy-api-resolve",
+ "linkerd-router",
  "linkerd-stack",
  "linkerd-tonic-watch",
  "linkerd2-proxy-api",
@@ -1569,6 +1596,7 @@ dependencies = [
 name = "linkerd-stack"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "futures",
  "linkerd-error",
  "linkerd-tracing",

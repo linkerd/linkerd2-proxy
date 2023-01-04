@@ -1,5 +1,5 @@
 [package]
-name = "linkerd-cache"
+name = "linkerd-idle-cache"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -14,10 +14,18 @@ futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 parking_lot = "0.12"
-tokio = { version = "1", default-features = false, features = ["macros", "rt", "sync", "time"] }
+tokio = { version = "1", default-features = false, features = [
+    "macros",
+    "rt",
+    "sync",
+    "time",
+] }
 tower = { version = "0.4", default-features = false, features = ["util"] }
 tracing = "0.1"
 
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = ["test-util", "time"] }
+tokio = { version = "1", default-features = false, features = [
+    "test-util",
+    "time",
+] }
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }

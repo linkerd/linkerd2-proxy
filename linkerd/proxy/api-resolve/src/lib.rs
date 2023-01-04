@@ -13,7 +13,7 @@ pub use self::metadata::{Metadata, ProtocolHint};
 pub use self::resolve::Resolve;
 
 // TODO(ver) this should hold a structured address reference and not just a FQDN:port.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ConcreteAddr(pub NameAddr);
 
 impl std::fmt::Display for ConcreteAddr {

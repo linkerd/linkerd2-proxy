@@ -3,35 +3,30 @@ use std::task::{Context, Poll};
 use tokio::sync::watch;
 use tracing::Instrument;
 
-/// Defines how to update a [`Service`] in the background as a [`watch::Receiver`].
-/// containing a `T-`typed target is updated.
-pub trait UpdateWatch<T>: Send + 'static {
-    /// The type of service built based on the watched target.
-    type Service: Clone + Default + Send + Sync + 'static;
-
-    /// Update the inner service with a new `target` value.
-    ///
-    /// If the inner service has not changed as a result of the update, this
-    /// method may return `None`. If `None` is returned, no update will be
-    /// published to the [`SpawnWatch`] service.
-    ///
-    /// This method is also called initially when the first [`SpawnWatch`]
-    /// service is constructed. In this case, it should generally not return
-    /// `None`, but if it does, the [`Default`] value of the [`Self::Service`]
-    /// type is used.
-    fn update(&mut self, target: &T) -> Option<Self::Service>;
-}
-
 /// Builds [`SpawnWatch`] services, where an inner [`Service`] is updated
 /// dynamically by a background task as a target wrapped in a
 /// [`watch::Receiver`] changes.
 ///
-/// `N` is a [`NewService`] which produces types implementing [`UpdateWatch`],
-/// which define the logic for how to update the inner [`Service`].
+/// `N` is a [`NewService`] that produces values that also implement
+/// [`NewService`], each of which implement the logic for how to update the
+/// inner [`Service`].
 #[derive(Clone, Debug)]
 pub struct NewSpawnWatch<P, N> {
-    new_update: N,
+    inner: N,
     _marker: std::marker::PhantomData<fn(P)>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewWatchedFromTuple<P, N> {
+    inner: N,
+    _marker: std::marker::PhantomData<fn() -> P>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewFromTuple<T, P, N> {
+    target: T,
+    inner: N,
+    _marker: std::marker::PhantomData<fn() -> P>,
 }
 
 /// A `S`-typed service which is updated dynamically by a background task.
@@ -48,31 +43,45 @@ pub struct SpawnWatch<S> {
 // === impl NewSpawnWatch ===
 
 impl<P, N> NewSpawnWatch<P, N> {
-    pub fn new(new_update: N) -> Self {
+    pub fn new(inner: N) -> Self {
         Self {
-            new_update,
+            inner,
             _marker: std::marker::PhantomData,
         }
     }
+
+    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
+        crate::layer::mk(Self::new)
+    }
+
+    pub fn layer_into<T>(
+    ) -> impl tower::layer::Layer<N, Service = NewSpawnWatch<P, NewWatchedFromTuple<T, N>>> + Clone
+    {
+        crate::layer::mk(|inner| NewSpawnWatch::new(NewWatchedFromTuple::new(inner)))
+    }
 }
 
-impl<T, P, N, U> NewService<T> for NewSpawnWatch<P, N>
+impl<T, P, N, M, S> NewService<T> for NewSpawnWatch<P, N>
 where
-    T: Param<watch::Receiver<P>> + Clone,
+    T: Param<watch::Receiver<P>> + Clone + Send + 'static,
     P: Clone + Send + Sync + 'static,
-    N: NewService<T, Service = U> + Send + 'static,
-    U: UpdateWatch<P>,
+    N: NewService<T, Service = M>,
+    M: NewService<P, Service = S> + Send + 'static,
+    S: Clone + Send + Sync + 'static,
 {
-    type Service = SpawnWatch<U::Service>;
+    type Service = SpawnWatch<S>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let mut target_rx = target.param();
 
-        let mut update = self.new_update.new_service(target);
-        let inner = update
-            .update(&*target_rx.borrow_and_update())
-            .unwrap_or_default();
+        // Create a `NewService` that is used to process updates to the watched
+        // value. This allows inner stacks to, for instance, scope caches to the
+        // target.
+        let new_inner = self.inner.new_service(target);
+
+        let inner = new_inner.new_service((*target_rx.borrow_and_update()).clone());
         let (tx, rx) = watch::channel(inner.clone());
+
         tokio::spawn(
             async move {
                 loop {
@@ -85,10 +94,9 @@ where
                         }
                     }
 
-                    if let Some(inner) = update.update(&*target_rx.borrow_and_update()) {
-                        if tx.send(inner).is_err() {
-                            return;
-                        }
+                    let inner = new_inner.new_service((*target_rx.borrow_and_update()).clone());
+                    if tx.send(inner).is_err() {
+                        return;
                     }
                 }
             }
@@ -121,41 +129,91 @@ where
     }
 }
 
+// === impl NewWatchedFromTuple ===
+
+impl<T, N> NewWatchedFromTuple<T, N> {
+    fn new(inner: N) -> Self {
+        Self {
+            inner,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T, P, N, M> NewService<T> for NewWatchedFromTuple<P, N>
+where
+    T: Clone,
+    N: NewService<T, Service = M>,
+    M: NewService<P> + Send + 'static,
+{
+    type Service = NewFromTuple<T, P, M>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        // Create a `NewService` that is used to process updates to the watched
+        // value. This allows inner stacks to, for instance, scope caches to the
+        // target.
+        let inner = self.inner.new_service(target.clone());
+
+        NewFromTuple {
+            target,
+            inner,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T, U, P, N> NewService<U> for NewFromTuple<T, P, N>
+where
+    T: Clone,
+    P: From<(U, T)>,
+    N: NewService<P>,
+{
+    type Service = N::Service;
+
+    fn new_service(&self, target: U) -> Self::Service {
+        let p = P::from((target, self.target.clone()));
+        self.inner.new_service(p)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::NewService;
     use tokio::sync::watch;
     use tower::ServiceExt;
-    use tower_test::mock::{self, Mock};
+    use tower_test::mock;
 
     #[derive(Clone)]
     struct Update;
 
+    type Mock = mock::Mock<(), ()>;
+    type MockRx = watch::Receiver<Mock>;
+
     /// Wrapper around `tower_test::mock::Mock` to implement `Default`.
     #[derive(Clone, Default)]
-    struct DefaultMock(Option<Mock<(), ()>>);
+    struct DefaultMock(Option<Mock>);
 
-    impl NewService<watch::Receiver<Mock<(), ()>>> for Update {
+    impl NewService<MockRx> for Update {
         type Service = Update;
 
-        fn new_service(&self, _: watch::Receiver<Mock<(), ()>>) -> Self::Service {
+        fn new_service(&self, _: MockRx) -> Self::Service {
             Update
         }
     }
 
-    impl UpdateWatch<Mock<(), ()>> for Update {
+    impl NewService<Mock> for Update {
         type Service = DefaultMock;
 
-        fn update(&mut self, target: &Mock<(), ()>) -> Option<Self::Service> {
-            Some(DefaultMock(Some(target.clone())))
+        fn new_service(&self, target: Mock) -> Self::Service {
+            DefaultMock(Some(target))
         }
     }
 
     impl Service<()> for DefaultMock {
         type Response = ();
-        type Error = <Mock<(), ()> as Service<()>>::Error;
-        type Future = <Mock<(), ()> as Service<()>>::Future;
+        type Error = <Mock as Service<()>>::Error;
+        type Future = <Mock as Service<()>>::Future;
 
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             self.0
