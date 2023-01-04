@@ -126,7 +126,7 @@ impl<N> Outbound<N> {
                 // can be removed.
                 //
                 // XXX(ver) This cache key includes the HTTP version. Should it?
-                .push_cache(config.discovery_idle_timeout)
+                .push_idle_cache(config.discovery_idle_timeout)
                 .instrument(|l: &Logical| debug_span!("logical", service = %l.logical_addr))
                 .push(svc::ArcNewService::layer())
         })

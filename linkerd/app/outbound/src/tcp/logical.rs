@@ -161,7 +161,7 @@ impl<N> Outbound<N> {
                 //
                 // TODO(ver) Update the detection stack so this dynamic caching
                 // can be removed.
-                .push_cache(config.discovery_idle_timeout)
+                .push_idle_cache(config.discovery_idle_timeout)
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()
                 .push(svc::ArcNewService::layer())
