@@ -141,27 +141,27 @@ impl<N> Outbound<N> {
                 ..
             } = config;
 
-            fn check<T, Req, N>(inner: N) -> N
-            where
-                N: svc::NewService<T>,
-                N::Service: svc::Service<Req, Response = (), Error = Error>,
-            {
-                inner
-            }
-
-            fn check_cache<N>(inner: N) -> N
-            where
-                N: svc::NewService<Params>,
-                N::Service: svc::NewService<RouteParams>,
-            {
-                inner
-            }
-
             let route = svc::layers();
 
             concrete
                 .check_new_service::<Concrete, I>()
                 .push(svc::layer::mk(move |inner| {
+                    fn check<T, Req, N>(inner: N) -> N
+                    where
+                        N: svc::NewService<T>,
+                        N::Service: svc::Service<Req, Response = (), Error = Error>,
+                    {
+                        inner
+                    }
+
+                    fn check_cache<N>(inner: N) -> N
+                    where
+                        N: svc::NewService<Params>,
+                        N::Service: svc::NewService<RouteParams>,
+                    {
+                        inner
+                    }
+
                     let inner = check::<Concrete, I, _>(inner);
                     let cache = check_cache(CacheNewDistribute::new(inner));
                     let route = check::<Params, I, _>(router::NewRoute::<RouteParams, _, _>::new(

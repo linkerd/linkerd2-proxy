@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
 use crate::Outbound;
 use linkerd_app_core::{
@@ -7,7 +5,7 @@ use linkerd_app_core::{
     profiles::{self, Profile},
     proxy::api_resolve::ConcreteAddr,
     proxy::http,
-    svc, Error, NameAddr,
+    svc, Error,
 };
 use linkerd_distribute as distribute;
 use linkerd_router as router;
@@ -33,11 +31,8 @@ struct RouteParams {
     distribution: Distribution,
 }
 
-type NewDistribute<S> = distribute::NewDistribute<Concrete, S>;
 type CacheNewDistribute<N, S> = distribute::CacheNewDistribute<Concrete, N, S>;
 type Distribution = distribute::Distribution<Concrete>;
-type NewRouteDistribute<L, N, S> =
-    svc::NewSpawnWatch<Params, Profile, router::NewRoute<RouteParams, L, CacheNewDistribute<N, S>>>;
 
 // === impl Outbound ===
 
@@ -105,9 +100,29 @@ impl<N> Outbound<N> {
             concrete
                 .check_new_service::<Concrete, _>()
                 .push(svc::layer::mk(move |inner| {
-                    let cache = CacheNewDistribute::new(inner);
-                    let route = router::NewRoute::<RouteParams, _, _>::new(route.clone(), cache);
-                    svc::NewSpawnWatch::<Params, Profile, _>::new(route)
+                    fn check<T, N>(inner: N) -> N
+                    where
+                        N: svc::NewService<T>,
+                        N::Service: svc::Service<http::Request<http::BoxBody>, Error = Error>,
+                    {
+                        inner
+                    }
+
+                    fn check_cache<N>(inner: N) -> N
+                    where
+                        N: svc::NewService<Params>,
+                        N::Service: svc::NewService<RouteParams>,
+                    {
+                        inner
+                    }
+
+                    let inner = check::<Concrete, _>(inner);
+                    let cache = check_cache(CacheNewDistribute::new(inner));
+                    let route = check::<Params, _>(router::NewRoute::<RouteParams, _, _>::new(
+                        route.clone(),
+                        cache,
+                    ));
+                    check::<Logical, _>(svc::NewSpawnWatch::<Params, Profile, _>::new(route))
                 }))
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // Strips headers that may be set by this proxy and add an
