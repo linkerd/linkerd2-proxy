@@ -922,7 +922,7 @@ fn convert_attributes_string_to_map(attributes: String) -> HashMap<String, Strin
         .collect()
 }
 
-// ===== impl Env =====
+// === impl Env ===
 
 impl Strings for Env {
     fn get(&self, key: &str) -> Result<Option<String>, EnvError> {
@@ -945,7 +945,7 @@ impl Env {
     }
 }
 
-// ===== Parsing =====
+// === Parsing ===
 
 /// There is a dependency on identity being enabled for tap to work. The
 /// status of tap is determined by the ENV_TAP_SVC_NAME env variable being set

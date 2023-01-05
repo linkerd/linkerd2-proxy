@@ -58,7 +58,7 @@ pub enum HttpMatch {
     Authority(observe_request::r#match::http::string_match::Match),
 }
 
-// ===== impl Match ======
+// === impl Match ===
 
 impl Match {
     fn from_seq(seq: observe_request::r#match::Seq) -> Result<Vec<Self>, InvalidMatch> {
@@ -130,7 +130,7 @@ impl TryFrom<observe_request::r#match::Match> for Match {
     }
 }
 
-// ===== impl LabelMatch ======
+// === impl LabelMatch ===
 
 impl LabelMatch {
     fn matches(&self, labels: &BTreeMap<String, String>) -> bool {
@@ -153,7 +153,7 @@ impl TryFrom<observe_request::r#match::Label> for LabelMatch {
     }
 }
 
-// ===== impl TcpMatch ======
+// === impl TcpMatch ===
 
 impl TcpMatch {
     fn matches(&self, addr: net::SocketAddr) -> bool {
@@ -196,7 +196,7 @@ impl TryFrom<observe_request::r#match::Tcp> for TcpMatch {
     }
 }
 
-// ===== impl NetMatch ======
+// === impl NetMatch ===
 
 impl NetMatch {
     fn matches(&self, addr: &net::IpAddr) -> bool {
@@ -242,7 +242,7 @@ impl TryFrom<observe_request::r#match::tcp::Netmask> for NetMatch {
     }
 }
 
-// ===== impl HttpMatch ======
+// === impl HttpMatch ===
 
 impl HttpMatch {
     fn matches<B, I: Inspect>(&self, req: &http::Request<B>, inspect: &I) -> bool {

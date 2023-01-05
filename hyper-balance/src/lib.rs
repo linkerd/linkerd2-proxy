@@ -34,7 +34,7 @@ pub struct PendingUntilEosBody<T, B> {
     body: B,
 }
 
-// ==== PendingUntilFirstData ====
+// === PendingUntilFirstData ===
 
 impl<T, B> TrackCompletion<T, http::Response<B>> for PendingUntilFirstData
 where
@@ -55,7 +55,7 @@ where
     }
 }
 
-// ==== PendingUntilEos ====
+// === PendingUntilEos ===
 
 impl<T, B> TrackCompletion<T, http::Response<B>> for PendingUntilEos
 where
@@ -76,7 +76,7 @@ where
     }
 }
 
-// ==== PendingUntilFirstDataBody ====
+// === PendingUntilFirstDataBody ===
 
 impl<T, B> Default for PendingUntilFirstDataBody<T, B>
 where
@@ -134,7 +134,7 @@ where
     }
 }
 
-// ==== PendingUntilEosBody ====
+// === PendingUntilEosBody ===
 
 impl<T, B> Default for PendingUntilEosBody<T, B>
 where
