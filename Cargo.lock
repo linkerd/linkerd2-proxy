@@ -783,7 +783,6 @@ dependencies = [
  "hyper",
  "ipnet",
  "linkerd-addr",
- "linkerd-cache",
  "linkerd-conditional",
  "linkerd-detect",
  "linkerd-dns",
@@ -795,6 +794,7 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-http-metrics",
  "linkerd-identity",
+ "linkerd-idle-cache",
  "linkerd-io",
  "linkerd-meshtls",
  "linkerd-metrics",
@@ -864,8 +864,8 @@ dependencies = [
  "libfuzzer-sys",
  "linkerd-app-core",
  "linkerd-app-test",
- "linkerd-cache",
  "linkerd-http-access-log",
+ "linkerd-idle-cache",
  "linkerd-io",
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
@@ -964,20 +964,6 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "linkerd-cache"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-error",
- "linkerd-stack",
- "linkerd-tracing",
- "parking_lot",
- "tokio",
- "tower",
- "tracing",
 ]
 
 [[package]]
@@ -1176,6 +1162,20 @@ version = "0.1.0"
 dependencies = [
  "linkerd-dns-name",
  "linkerd-error",
+]
+
+[[package]]
+name = "linkerd-idle-cache"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-stack",
+ "linkerd-tracing",
+ "parking_lot",
+ "tokio",
+ "tower",
+ "tracing",
 ]
 
 [[package]]
