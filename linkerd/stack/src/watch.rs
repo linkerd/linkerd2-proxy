@@ -1,5 +1,8 @@
 use crate::{NewService, Param, Service};
-use std::task::{Context, Poll};
+use std::{
+    marker::PhantomData,
+    task::{Context, Poll},
+};
 use tokio::sync::watch;
 use tracing::Instrument;
 
@@ -8,29 +11,10 @@ use tracing::Instrument;
 ///
 /// A background task is spawned that updates the inner service when the watch
 /// value changes.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct NewSpawnWatch<P, N> {
     inner: N,
-    _marker: std::marker::PhantomData<fn(P)>,
-}
-
-/// Builds `NewFromTuple` instances within a `NewSpawnWatchStack`.
-///
-/// When we use a `T`-typed target to produce a `U`-typed `watch::Receiver`,
-/// this module converts the `U`-typed target value to a `P`-typed target for
-/// the inner stack. `P` must implement `From<(U, T)>`.
-#[derive(Clone, Debug)]
-pub struct NewWatchedFromTuple<P, N> {
-    inner: N,
-    _marker: std::marker::PhantomData<fn() -> P>,
-}
-
-/// Builds services by passing `P` typed values to an `N`-typed inner stack.
-#[derive(Clone, Debug)]
-pub struct NewFromTuple<T, P, N> {
-    target: T,
-    inner: N,
-    _marker: std::marker::PhantomData<fn() -> P>,
+    _marker: PhantomData<fn(P)>,
 }
 
 /// A `S`-typed service which is updated dynamically by a background task.
@@ -44,13 +28,34 @@ pub struct SpawnWatch<S> {
     inner: S,
 }
 
+/// Builds `NewFromTuple` instances within a `NewSpawnWatch` stack.
+///
+/// When we use a `T`-typed target to produce a `U`-typed `watch::Receiver`,
+/// this module converts the `U`-typed target value to a `P`-typed target for
+/// the inner stack. `P` must implement `From<(U, T)>`.
+#[derive(Debug)]
+pub struct NewWatchedFromTuple<P, N> {
+    inner: N,
+    _marker: PhantomData<fn() -> P>,
+}
+
+/// Builds services by passing `P` typed values to an `N`-typed inner stack.
+#[derive(Debug)]
+pub struct NewFromTuple<T, P, N> {
+    target: T,
+    inner: N,
+    _marker: PhantomData<fn() -> P>,
+}
+
+type SpawnFromTuple<P, T, N> = NewSpawnWatch<P, NewWatchedFromTuple<T, N>>;
+
 // === impl NewSpawnWatch ===
 
 impl<P, N> NewSpawnWatch<P, N> {
     pub fn new(inner: N) -> Self {
         Self {
             inner,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         }
     }
 
@@ -58,10 +63,9 @@ impl<P, N> NewSpawnWatch<P, N> {
         crate::layer::mk(Self::new)
     }
 
-    // Creates a new `NewSpawnWatch` layer that transforms the target type to
-    // `T` for the inner stack.
-    pub fn layer_into<T>(
-    ) -> impl tower::layer::Layer<N, Service = NewSpawnWatch<P, NewWatchedFromTuple<T, N>>> + Clone
+    /// Creates a new `NewSpawnWatch` layer that transforms the target type to
+    /// `T` for the inner stack.
+    pub fn layer_into<T>() -> impl tower::layer::Layer<N, Service = SpawnFromTuple<T, P, N>> + Clone
     {
         crate::layer::mk(|inner| NewSpawnWatch::new(NewWatchedFromTuple::new(inner)))
     }
@@ -119,6 +123,17 @@ where
     }
 }
 
+impl<P, N: Clone> Clone for NewSpawnWatch<P, N> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+// === impl SpawnWatch ===
+
 impl<Req, S> Service<Req> for SpawnWatch<S>
 where
     S: Service<Req> + Clone,
@@ -147,7 +162,7 @@ impl<T, N> NewWatchedFromTuple<T, N> {
     fn new(inner: N) -> Self {
         Self {
             inner,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         }
     }
 }
@@ -169,10 +184,21 @@ where
         NewFromTuple {
             target,
             inner,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         }
     }
 }
+
+impl<P, N: Clone> Clone for NewWatchedFromTuple<P, N> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+// === impl NewFromTuple ===
 
 impl<T, U, P, N> NewService<U> for NewFromTuple<T, P, N>
 where
@@ -185,6 +211,16 @@ where
     fn new_service(&self, target: U) -> Self::Service {
         let p = P::from((target, self.target.clone()));
         self.inner.new_service(p)
+    }
+}
+
+impl<T: Clone, P, N: Clone> Clone for NewFromTuple<T, P, N> {
+    fn clone(&self) -> Self {
+        Self {
+            target: self.target.clone(),
+            inner: self.inner.clone(),
+            _marker: PhantomData,
+        }
     }
 }
 
