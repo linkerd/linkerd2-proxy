@@ -97,7 +97,8 @@ impl<N> Outbound<N> {
                                 .stack
                                 .layer(stack_labels("http", "concrete")),
                         )
-                        .push_buffer::<http::Request<http::BoxBody>>("HTTP", http_request_buffer),
+                        .push_buffer::<http::Request<http::BoxBody>>("HTTP", http_request_buffer)
+                        .push(svc::LoadShed::layer()),
                 )
                 .instrument(|c: &Concrete| tracing::debug_span!("concrete", addr = %c.resolve))
                 .push(svc::ArcNewService::layer())

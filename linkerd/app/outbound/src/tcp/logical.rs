@@ -110,7 +110,8 @@ impl<C> Outbound<C> {
                                 .stack
                                 .layer(crate::stack_labels("tcp", "concrete")),
                         )
-                        .push_buffer("TCP Concrete", tcp_connection_buffer),
+                        .push_buffer("TCP Concrete", tcp_connection_buffer)
+                        .push(svc::LoadShed::layer()),
                 )
                 .check_new_service::<Concrete, I>()
                 .push(svc::ArcNewService::layer())
