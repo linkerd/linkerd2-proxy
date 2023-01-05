@@ -116,7 +116,8 @@ impl<N> Outbound<N> {
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
                 .check_new_new::<Logical, Params>()
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
+                .check_new::<Logical>();
 
             // Caches each logical stack so that it can be reused across
             // per-connection HTTP server stacks (i.e. created by the

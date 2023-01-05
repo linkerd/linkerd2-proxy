@@ -5,7 +5,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backends<K>(pub(crate) Arc<AHashSet<K>>)
 where
-    K: Eq + Hash + Clone;
+    K: Eq + Hash + Clone + Debug;
 
 /// A parameter type that configures how a [`Distribute`] should behave.
 ///
@@ -33,7 +33,7 @@ pub struct WeightedKeys<K> {
 
 impl<K> From<Arc<AHashSet<K>>> for Backends<K>
 where
-    K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+    K: Eq + Hash + Clone + Debug,
 {
     fn from(inner: Arc<AHashSet<K>>) -> Self {
         Self(inner)
@@ -42,7 +42,7 @@ where
 
 impl<K> FromIterator<K> for Backends<K>
 where
-    K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+    K: Eq + Hash + Clone + Debug,
 {
     fn from_iter<T: IntoIterator<Item = K>>(iter: T) -> Self {
         Self(Arc::new(iter.into_iter().collect()))

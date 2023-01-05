@@ -55,7 +55,7 @@ pub use self::{
     switch_ready::{NewSwitchReady, SwitchReady},
     timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,
-    watch::{NewFromTuple, NewSpawnWatch, NewWatchedFromTuple, SpawnWatch},
+    watch::{NewSpawnWatch, SpawnWatch},
 };
 pub use tower::{
     service_fn,
