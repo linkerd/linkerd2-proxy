@@ -10,27 +10,23 @@ use tracing::warn;
 
 pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Profile {
     let name = Name::from_str(&proto.fully_qualified_name).ok();
-    let addr = name.map(|n| NameAddr::from((n, port)));
-
-    let targets = proto
-        .dst_overrides
-        .into_iter()
-        .filter_map(convert_dst_override)
-        .collect::<Arc<[_]>>();
-
     let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
     let http_routes = proto
         .routes
         .into_iter()
         .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
         .collect();
-
+    let targets = proto
+        .dst_overrides
+        .into_iter()
+        .filter_map(convert_dst_override)
+        .collect::<Arc<[_]>>();
     let endpoint = proto.endpoint.and_then(|e| {
         let labels = std::collections::HashMap::new();
         resolve::to_addr_meta(e, &labels)
     });
     Profile {
-        addr: addr.map(LogicalAddr),
+        addr: name.map(move |n| LogicalAddr(NameAddr::from((n, port)))),
         http_routes,
         targets,
         opaque_protocol: proto.opaque_protocol,
