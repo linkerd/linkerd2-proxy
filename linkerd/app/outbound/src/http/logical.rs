@@ -183,6 +183,15 @@ impl From<(Profile, Logical)> for Params {
                 };
                 (req_match, params)
             })
+            // Add a default route.
+            .chain(std::iter::once((
+                profiles::http::RequestMatch::default(),
+                RouteParams {
+                    profile: Default::default(),
+                    logical: logical.clone(),
+                    distribution: distribution.clone(),
+                },
+            )))
             .collect::<Arc<[(_, _)]>>();
 
         Self {
