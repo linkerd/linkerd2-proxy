@@ -34,15 +34,3 @@ pub fn with_addr(addr: &str) -> Profile {
         ..Default::default()
     }
 }
-
-pub fn with_nameaddr(addr: NameAddr) -> Profile {
-    Profile {
-        addr: Some(LogicalAddr(addr.clone())),
-        targets: std::iter::once(Target { addr, weight: 1 }).collect(),
-        ..Default::default()
-    }
-}
-
-pub fn empty() -> Profile {
-    Profile::default()
-}

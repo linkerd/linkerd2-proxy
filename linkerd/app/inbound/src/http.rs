@@ -50,9 +50,9 @@ pub mod fuzz {
         let connect =
             support::connect().endpoint_fn_boxed(Target::addr(), hello_fuzz_server(server));
         let profiles = profile::resolver();
-        let addr = NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap();
-        let profile_tx = profiles.profile_tx(addr.clone());
-        profile_tx.send(profile::with_nameaddr(addr)).unwrap();
+        let profile_tx = profiles
+            .profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+        profile_tx.send(profile::Profile::default()).unwrap();
 
         // Build the outbound server
         let cfg = default_config();

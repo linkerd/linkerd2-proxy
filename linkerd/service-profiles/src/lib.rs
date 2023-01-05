@@ -44,7 +44,6 @@ pub struct Profile {
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
-
 /// A profile lookup target.
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LookupAddr(pub Addr);

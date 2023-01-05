@@ -152,32 +152,27 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
 
 impl Profiles {
     pub fn profile_tx(&self, addr: impl Into<Addr>) -> ProfileSender {
-        self.channel(addr, Profile::default())
-    }
-
-    pub fn profile_tx_default(&self, addr: impl Into<NameAddr>) -> ProfileSender {
-        let addr = addr.into();
-        self.channel(addr.clone(), crate::profile::with_nameaddr(addr))
+        let (tx, rx) = watch::channel(Profile::default());
+        self.state
+            .endpoints
+            .lock()
+            .insert(addr.into(), Some(rx.into()));
+        tx
     }
 
     pub fn profile(self, addr: impl Into<Addr>, profile: Profile) -> Self {
-        let tx = self.channel(addr, profile);
+        let (tx, rx) = watch::channel(profile);
         self.state.unused_senders.lock().push(Box::new(tx));
+        self.state
+            .endpoints
+            .lock()
+            .insert(addr.into(), Some(rx.into()));
         self
     }
 
     pub fn no_profile(self, addr: impl Into<Addr>) -> Self {
         self.state.endpoints.lock().insert(addr.into(), None);
         self
-    }
-
-    fn channel(&self, addr: impl Into<Addr>, profile: Profile) -> ProfileSender {
-        let (tx, rx) = watch::channel(profile);
-        self.state
-            .endpoints
-            .lock()
-            .insert(addr.into(), Some(rx.into()));
-        tx
     }
 }
 

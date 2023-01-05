@@ -4,23 +4,25 @@ use io::AsyncWriteExt;
 use linkerd_app_core::{
     errors::FailFastError,
     io::{self, AsyncReadExt},
-    profiles::LogicalAddr,
+    profiles::{LogicalAddr, Profile},
     svc::{self, NewService, ServiceExt},
     transport::addrs::*,
 };
 use std::net::SocketAddr;
 use tokio::time;
 
-const ADDR: &str = "xyz.example.com:4444";
-
 /// Tests that the logical stack forwards connections to services with a single endpoint.
 #[tokio::test]
 async fn forward() {
     let _trace = linkerd_tracing::test::trace_init();
     time::pause();
+
     // We create a logical target to be resolved to endpoints.
-    let logical_addr = LogicalAddr(ADDR.parse().unwrap());
-    let (_tx, rx) = tokio::sync::watch::channel(support::profile::with_addr(ADDR));
+    let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
+    let (_tx, rx) = tokio::sync::watch::channel(Profile {
+        addr: Some(logical_addr.clone()),
+        ..Default::default()
+    });
     let logical = Logical {
         profile: rx.into(),
         logical_addr: logical_addr.clone(),
@@ -81,8 +83,11 @@ async fn balances() {
     time::pause();
 
     // We create a logical target to be resolved to endpoints.
-    let logical_addr = LogicalAddr(ADDR.parse().unwrap());
-    let (_tx, rx) = tokio::sync::watch::channel(support::profile::with_addr(ADDR));
+    let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
+    let (_tx, rx) = tokio::sync::watch::channel(Profile {
+        addr: Some(logical_addr.clone()),
+        ..Default::default()
+    });
     let logical = Logical {
         profile: rx.into(),
         logical_addr: logical_addr.clone(),

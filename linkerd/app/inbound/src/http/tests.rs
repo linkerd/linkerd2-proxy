@@ -52,8 +52,9 @@ async fn unmeshed_http1_hello_world() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), hello_server(server));
 
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
 
     // Build the outbound server
     let cfg = default_config();
@@ -88,8 +89,9 @@ async fn downgrade_origin_form() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), hello_server(server));
 
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 80).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 80).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
 
     // Build the outbound server
     let cfg = default_config();
@@ -125,8 +127,9 @@ async fn downgrade_absolute_form() {
     let connect = support::connect().endpoint_fn_boxed(Target::addr(), hello_server(server));
 
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 80).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 80).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
 
     // Build the outbound server
     let cfg = default_config();
@@ -161,8 +164,9 @@ async fn http1_bad_gateway_meshed_response_error_header() {
     // are BAD_GATEWAY.
     let mut client = ClientBuilder::new();
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_http1());
@@ -198,8 +202,9 @@ async fn http1_bad_gateway_unmeshed_response() {
     // are BAD_GATEWAY.
     let mut client = ClientBuilder::new();
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_HTTP1);
@@ -237,8 +242,9 @@ async fn http1_connect_timeout_meshed_response_error_header() {
     // are GATEWAY_TIMEOUT.
     let mut client = ClientBuilder::new();
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_http1());
@@ -277,8 +283,9 @@ async fn http1_connect_timeout_unmeshed_response_error_header() {
     // are GATEWAY_TIMEOUT.
     let mut client = ClientBuilder::new();
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_HTTP1);
@@ -313,8 +320,9 @@ async fn h2_response_meshed_error_header() {
     let mut client = ClientBuilder::new();
     client.http2_only(true);
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_h2());
@@ -353,8 +361,9 @@ async fn h2_response_unmeshed_error_header() {
     let mut client = ClientBuilder::new();
     client.http2_only(true);
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
@@ -392,8 +401,9 @@ async fn grpc_meshed_response_error_header() {
     let mut client = ClientBuilder::new();
     client.http2_only(true);
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_h2());
@@ -433,8 +443,9 @@ async fn grpc_unmeshed_response_error_header() {
     let mut client = ClientBuilder::new();
     client.http2_only(true);
     let profiles = profile::resolver();
-    let _profile_tx = profiles
-        .profile_tx_default(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
