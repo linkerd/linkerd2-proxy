@@ -5,7 +5,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backends<K>(pub(crate) Arc<AHashSet<K>>)
 where
-    K: Eq + Hash + Clone;
+    K: Eq + Hash + Clone + Debug;
 
 /// A parameter type that configures how a [`Distribute`] should behave.
 ///

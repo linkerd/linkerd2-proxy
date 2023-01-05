@@ -36,32 +36,43 @@ impl<K, N, S> BackendCache<K, N, S> {
 impl<T, K, N> NewService<T> for BackendCache<K, N, N::Service>
 where
     T: Param<params::Backends<K>>,
-    K: Eq + Hash + Clone,
+    K: Eq + Hash + Clone + std::fmt::Debug,
     N: NewService<K>,
     N::Service: Clone,
 {
     type Service = NewDistribute<K, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let params::Backends(addrs) = target.param();
+        let params::Backends(backends) = target.param();
 
         let mut cache = self.0.backends.lock();
 
         // Remove all backends that aren't in the updated set of addrs.
-        cache.retain(|addr, _| addrs.contains(addr));
+        cache.retain(|backend, _| {
+            if backends.contains(backend) {
+                true
+            } else {
+                tracing::debug!(?backend, "Removing");
+                false
+            }
+        });
 
         // If there are additional addrs, cache a new service for each.
-        debug_assert!(addrs.len() >= cache.len());
-        if addrs.len() > cache.len() {
-            cache.reserve(addrs.len());
-            for addr in &*addrs {
+        debug_assert!(backends.len() >= cache.len());
+        if backends.len() > cache.len() {
+            cache.reserve(backends.len());
+            for backend in &*backends {
                 // Skip rebuilding targets we already have a stack for.
-                if cache.contains_key(addr) {
+                if cache.contains_key(backend) {
+                    tracing::trace!(?backend, "Retaining");
                     continue;
                 }
 
-                let backend = self.0.new_backend.new_service(addr.clone());
-                cache.insert(addr.clone(), backend);
+                tracing::debug!(?backend, "Adding");
+                cache.insert(
+                    backend.clone(),
+                    self.0.new_backend.new_service(backend.clone()),
+                );
             }
         }
 
