@@ -5,12 +5,6 @@ pub use watch::channel;
 
 pub type Sender = watch::Sender<Profile>;
 
-/// Returns a `Receiver` that contains only the default profile, and closes when
-/// the receiver is dropped.
-pub fn only_default() -> Receiver {
-    only(Profile::default())
-}
-
 /// Returns a `Receiver` that contains only the initial value, and closes when
 /// the receiver is dropped.
 pub fn only(profile: Profile) -> Receiver {
@@ -27,10 +21,39 @@ pub fn only_with_addr(addr: &str) -> Receiver {
     only(with_addr(addr))
 }
 
+pub fn empty() -> Profile {
+    Profile {
+        addr: None,
+        http_routes: std::iter::empty().collect(),
+        tcp_route: Default::default(),
+        target_addrs: Default::default(),
+        endpoint: None,
+        opaque_protocol: false,
+    }
+}
+
 pub fn with_addr(addr: &str) -> Profile {
     let na = NameAddr::from_str(addr).expect("Invalid name:port");
+    with_nameaddr(na)
+}
+
+pub fn with_nameaddr(addr: NameAddr) -> Profile {
+    let targets = std::iter::once(Target {
+        addr: addr.clone(),
+        weight: 1,
+    })
+    .collect::<Targets>();
+    let target_addrs = std::iter::once(addr.clone()).collect();
     Profile {
-        addr: Some(LogicalAddr(na)),
-        ..Default::default()
+        addr: Some(LogicalAddr(addr)),
+        http_routes: std::iter::once((
+            http::RequestMatch::default(),
+            http::Route::new(std::iter::empty(), Vec::new(), targets.clone()),
+        ))
+        .collect(),
+        tcp_route: tcp::Route::new(targets),
+        target_addrs: std::sync::Arc::new(target_addrs),
+        endpoint: None,
+        opaque_protocol: false,
     }
 }

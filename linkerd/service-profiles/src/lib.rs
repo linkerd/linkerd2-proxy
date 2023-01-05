@@ -6,7 +6,6 @@ use futures::Stream;
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
-use linkerd_stack::Param;
 use once_cell::sync::Lazy;
 use std::{
     fmt,
@@ -48,6 +47,7 @@ pub struct Profile {
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
+
 /// A profile lookup target.
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LookupAddr(pub Addr);
@@ -182,12 +182,6 @@ impl Stream for ReceiverStream {
 }
 
 // === impl Profile ===
-
-impl Param<http::RouteSet> for Profile {
-    fn param(&self) -> http::RouteSet {
-        self.http_routes.clone()
-    }
-}
 
 impl Default for Profile {
     fn default() -> Self {
