@@ -183,8 +183,7 @@ impl From<(Profile, Logical)> for Params {
                 logical: logical.clone(),
             };
             let backends = std::iter::once(concrete.clone()).collect();
-            let distribution = Distribution::random_available(std::iter::once((concrete, 1)))
-                .expect("distribution must be valid");
+            let distribution = Distribution::first_available(std::iter::once(concrete));
             (backends, distribution)
         } else {
             let backends = profile
