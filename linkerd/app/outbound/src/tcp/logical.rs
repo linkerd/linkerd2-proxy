@@ -235,8 +235,8 @@ impl<I> router::SelectRoute<I> for Params {
     type Key = RouteParams;
     type Error = std::convert::Infallible;
 
-    fn select<'r>(&self, _: &'r I) -> Result<&Self::Key, Self::Error> {
-        Ok(&self.route)
+    fn select(&self, _: &I) -> Result<Self::Key, Self::Error> {
+        Ok(self.route.clone())
     }
 }
 

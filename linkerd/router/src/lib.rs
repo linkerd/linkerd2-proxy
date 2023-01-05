@@ -8,19 +8,18 @@ use linkerd_error::Error;
 use linkerd_stack::{layer, NewCache, NewService, Oneshot, Service, ServiceExt};
 use std::{
     fmt::Debug,
-    hash::Hash,
     task::{Context, Poll},
 };
 use tracing::debug;
 
 pub trait SelectRoute<Req> {
-    type Key: Eq + Hash + Clone + Debug + Send + Sync + 'static;
+    type Key;
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Given a a request, returns the key matching this request.
     ///
     /// If no route matches the request, this method returns an error.
-    fn select<'r>(&self, req: &'r Req) -> Result<&Self::Key, Self::Error>;
+    fn select(&self, req: &Req) -> Result<Self::Key, Self::Error>;
 }
 
 /// A [`NewService`] that builds `Route` services for targets that implement
@@ -98,7 +97,7 @@ where
     fn call(&mut self, req: Req) -> Self::Future {
         match self.params.select(&req) {
             Ok(key) => future::Either::Left({
-                let route = self.new_route.new_service(key.clone());
+                let route = self.new_route.new_service(key);
                 route.oneshot(req).map_err(Into::into)
             }),
             Err(e) => future::Either::Right({

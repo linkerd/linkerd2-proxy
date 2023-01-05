@@ -218,8 +218,10 @@ impl<B> router::SelectRoute<http::Request<B>> for Params {
     type Key = RouteParams;
     type Error = NoRoute;
 
-    fn select<'r>(&self, req: &'r http::Request<B>) -> Result<&Self::Key, Self::Error> {
-        profiles::http::route_for_request(&*self.routes, req).ok_or(NoRoute)
+    fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
+        profiles::http::route_for_request(&*self.routes, req)
+            .ok_or(NoRoute)
+            .cloned()
     }
 }
 
