@@ -49,26 +49,6 @@ where
     }
 }
 
-// === impl Backends ===
-
-impl<K> From<Arc<AHashSet<K>>> for Backends<K>
-where
-    K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
-{
-    fn from(inner: Arc<AHashSet<K>>) -> Self {
-        Self(inner)
-    }
-}
-
-impl<K> FromIterator<K> for Backends<K>
-where
-    K: Eq + Hash + Clone + Debug + Send + Sync + 'static,
-{
-    fn from_iter<T: IntoIterator<Item = K>>(iter: T) -> Self {
-        Self(Arc::new(iter.into_iter().collect()))
-    }
-}
-
 // === impl Distribution ===
 
 impl<K> From<K> for Distribution<K> {
