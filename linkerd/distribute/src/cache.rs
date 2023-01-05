@@ -36,7 +36,7 @@ impl<K, N, S> BackendCache<K, N, S> {
 impl<T, K, N> NewService<T> for BackendCache<K, N, N::Service>
 where
     T: Param<params::Backends<K>>,
-    K: Eq + Hash + Clone + std::fmt::Debug,
+    K: Eq + Hash + Clone + Debug,
     N: NewService<K>,
     N::Service: Clone,
 {
