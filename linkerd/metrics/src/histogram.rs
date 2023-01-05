@@ -48,7 +48,7 @@ pub struct Bounds(pub &'static [Bucket]);
 /// Helper that lazily formats an `{K}="{V}"`" label.
 struct Label<K: fmt::Display, V: fmt::Display>(K, V);
 
-// ===== impl Histogram =====
+// === impl Histogram ===
 
 impl<V: Into<u64>, F: Factor> Histogram<V, F> {
     pub fn new(bounds: &'static Bounds) -> Self {
@@ -220,7 +220,7 @@ impl<V: Into<u64>, F: Factor> FmtMetric for Histogram<V, F> {
     }
 }
 
-// ===== impl Label =====
+// === impl Label ===
 
 impl<K: fmt::Display, V: fmt::Display> FmtLabels for Label<K, V> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -228,7 +228,7 @@ impl<K: fmt::Display, V: fmt::Display> FmtLabels for Label<K, V> {
     }
 }
 
-// ===== impl Bucket =====
+// === impl Bucket ===
 
 impl fmt::Display for Bucket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

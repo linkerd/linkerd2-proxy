@@ -357,7 +357,7 @@ impl Param<Keepalive> for Server {
     }
 }
 
-/// === impl ServerParams ===
+// === impl ServerParams ===
 
 impl<T> ExtractParam<tls::server::Timeout, T> for ServerParams {
     fn extract_param(&self, _: &T) -> tls::server::Timeout {

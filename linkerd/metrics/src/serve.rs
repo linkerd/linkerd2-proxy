@@ -11,7 +11,7 @@ pub struct Serve<M> {
     metrics: M,
 }
 
-// ===== impl Serve =====
+// === impl Serve ===
 
 impl<M> Serve<M> {
     pub fn new(metrics: M) -> Self {

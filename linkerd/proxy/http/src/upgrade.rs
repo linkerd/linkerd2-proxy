@@ -62,7 +62,7 @@ pub struct Service<S> {
     upgrade_drain_signal: drain::Watch,
 }
 
-// ===== impl Http11Upgrade =====
+// === impl Http11Upgrade ===
 
 impl Http11Upgrade {
     /// Returns a pair of upgrade handles.
@@ -160,7 +160,7 @@ impl Drop for Inner {
     }
 }
 
-// ===== impl Service =====
+// === impl Service ===
 impl<S> Service<S> {
     pub fn new(service: S, upgrade_drain_signal: drain::Watch) -> Self {
         Self {

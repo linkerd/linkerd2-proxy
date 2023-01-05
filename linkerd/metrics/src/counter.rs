@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug)]
 pub struct Counter<F = ()>(AtomicU64, std::marker::PhantomData<F>);
 
-// ===== impl Counter =====
+// === impl Counter ===
 
 impl<F> Default for Counter<F> {
     fn default() -> Self {
