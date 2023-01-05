@@ -13,6 +13,7 @@ independently of the inbound and outbound proxy logic.
 """
 
 [dependencies]
+linkerd-conditional = { path = "../../conditional" }
 bytes = "1"
 drain = { version = "0.1", features = ["retain"] }
 http = "0.2"
@@ -21,8 +22,6 @@ hyper = { version = "0.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.7"
 linkerd-addr = { path = "../../addr" }
-linkerd-cache = { path = "../../cache" }
-linkerd-conditional = { path = "../../conditional" }
 linkerd-dns = { path = "../../dns" }
 linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
@@ -33,6 +32,7 @@ linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-metrics = { path = "../../http-metrics" }
 linkerd-identity = { path = "../../identity" }
+linkerd-idle-cache = { path = "../../idle-cache" }
 linkerd-io = { path = "../../io" }
 linkerd-meshtls = { path = "../../meshtls", default-features = false }
 linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
@@ -71,14 +71,7 @@ pin-project = "1"
 [dependencies.tower]
 version = "0.4"
 default-features = false
-features = [
-    "buffer",
-    "make",
-    "spawn-ready",
-    "timeout",
-    "util",
-    "limit",
-]
+features = ["buffer", "make", "spawn-ready", "timeout", "util", "limit"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linkerd-system = { path = "../../system" }
