@@ -11,6 +11,7 @@ indexmap = "1"
 linkerd-stack = { path = "../stack" }
 parking_lot = "0.12"
 rand = { version = "0.8", features = ["small_rng"] }
+tokio = { version = "1", features = ["macros"] }
 tracing = "0.1"
 
 [dev-dependencies]

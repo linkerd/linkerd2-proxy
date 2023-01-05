@@ -1021,6 +1021,7 @@ dependencies = [
  "linkerd-stack",
  "parking_lot",
  "rand",
+ "tokio",
  "tokio-test",
  "tower-test",
  "tracing",
