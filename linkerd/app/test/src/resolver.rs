@@ -152,7 +152,7 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
 
 impl Profiles {
     pub fn profile_tx(&self, addr: impl Into<Addr>) -> ProfileSender {
-        self.channel(addr, crate::profile::empty())
+        self.channel(addr, Profile::default())
     }
 
     pub fn profile_tx_default(&self, addr: impl Into<NameAddr>) -> ProfileSender {

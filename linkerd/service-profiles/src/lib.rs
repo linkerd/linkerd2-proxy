@@ -1,12 +1,10 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use ahash::AHashSet;
 use futures::Stream;
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
-use once_cell::sync::Lazy;
 use std::{
     fmt,
     future::Future,
@@ -25,25 +23,24 @@ mod default;
 pub mod discover;
 pub mod http;
 mod proto;
-pub mod tcp;
 
 pub use self::client::Client;
 
 #[derive(Clone, Debug)]
-pub struct Receiver(pub tokio::sync::watch::Receiver<Profile>);
+pub struct Receiver {
+    inner: tokio::sync::watch::Receiver<Profile>,
+}
 
 #[derive(Debug)]
-pub struct ReceiverStream {
+struct ReceiverStream {
     inner: tokio_stream::wrappers::WatchStream<Profile>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
-    pub http_routes: http::RouteSet,
-    pub tcp_route: tcp::Route,
-    /// A list of all target backend addresses on this profile and its routes.
-    pub target_addrs: Arc<AHashSet<NameAddr>>,
+    pub http_routes: Arc<[(self::http::RequestMatch, self::http::Route)]>,
+    pub targets: Arc<[Target]>,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
@@ -56,14 +53,11 @@ pub struct LookupAddr(pub Addr);
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LogicalAddr(pub NameAddr);
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct Target {
     pub addr: NameAddr,
     pub weight: u32,
 }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Targets(Arc<[Target]>);
 
 #[derive(Clone, Debug)]
 pub struct GetProfileService<P>(P);
@@ -131,43 +125,35 @@ where
 
 impl From<watch::Receiver<Profile>> for Receiver {
     fn from(inner: watch::Receiver<Profile>) -> Self {
-        Self(inner)
+        Self { inner }
     }
 }
 
 impl From<Receiver> for watch::Receiver<Profile> {
-    fn from(Receiver(inner): Receiver) -> watch::Receiver<Profile> {
-        inner
+    fn from(r: Receiver) -> watch::Receiver<Profile> {
+        r.inner
     }
 }
 
 impl Receiver {
-    pub fn borrow_and_update(&mut self) -> watch::Ref<'_, Profile> {
-        self.0.borrow_and_update()
-    }
-
-    pub async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
-        self.0.changed().await
-    }
-
     pub fn logical_addr(&self) -> Option<LogicalAddr> {
-        self.0.borrow().addr.clone()
+        self.inner.borrow().addr.clone()
     }
 
     pub fn is_opaque_protocol(&self) -> bool {
-        self.0.borrow().opaque_protocol
+        self.inner.borrow().opaque_protocol
     }
 
     pub fn endpoint(&self) -> Option<(SocketAddr, Metadata)> {
-        self.0.borrow().endpoint.clone()
+        self.inner.borrow().endpoint.clone()
     }
 }
 
 // === impl ReceiverStream ===
 
 impl From<Receiver> for ReceiverStream {
-    fn from(Receiver(rx): Receiver) -> Self {
-        let inner = tokio_stream::wrappers::WatchStream::new(rx);
+    fn from(Receiver { inner }: Receiver) -> Self {
+        let inner = tokio_stream::wrappers::WatchStream::new(inner);
         ReceiverStream { inner }
     }
 }
@@ -185,14 +171,14 @@ impl Stream for ReceiverStream {
 
 impl Default for Profile {
     fn default() -> Self {
-        static DEFAULT_HTTP_ROUTES: Lazy<http::RouteSet> =
-            Lazy::new(|| vec![Default::default()].into());
-        static DEFAULT_TCP_ROUTE: Lazy<tcp::Route> = Lazy::new(Default::default);
+        use once_cell::sync::Lazy;
+        static HTTP_ROUTES: Lazy<Arc<[(http::RequestMatch, http::Route)]>> =
+            Lazy::new(|| Arc::new([]));
+        static TARGETS: Lazy<Arc<[Target]>> = Lazy::new(|| Arc::new([]));
         Self {
             addr: None,
-            http_routes: DEFAULT_HTTP_ROUTES.clone(),
-            tcp_route: DEFAULT_TCP_ROUTE.clone(),
-            target_addrs: Default::default(),
+            http_routes: HTTP_ROUTES.clone(),
+            targets: TARGETS.clone(),
             opaque_protocol: false,
             endpoint: None,
         }
@@ -275,51 +261,6 @@ impl fmt::Debug for Target {
             .field("addr", &format_args!("{}", self.addr))
             .field("weight", &self.weight)
             .finish()
-    }
-}
-
-// === impl Targets ===
-
-impl Targets {
-    #[inline]
-    pub fn iter(&self) -> std::slice::Iter<'_, Target> {
-        self.0.iter()
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl Default for Targets {
-    fn default() -> Self {
-        static NO_TARGETS: Lazy<Targets> = Lazy::new(|| Targets(Arc::new([])));
-        NO_TARGETS.clone()
-    }
-}
-
-impl FromIterator<Target> for Targets {
-    fn from_iter<I: IntoIterator<Item = Target>>(iter: I) -> Self {
-        let targets = iter.into_iter().collect::<Vec<_>>().into();
-        Self(targets)
-    }
-}
-
-impl AsRef<[Target]> for Targets {
-    #[inline]
-    fn as_ref(&self) -> &[Target] {
-        &self.0
-    }
-}
-
-impl<'a> IntoIterator for &'a Targets {
-    type Item = &'a Target;
-    type IntoIter = std::slice::Iter<'a, Target>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
     }
 }
 

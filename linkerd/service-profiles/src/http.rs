@@ -10,9 +10,6 @@ use std::{
 use tower::retry::budget::Budget;
 
 pub use self::proxy::NewProxyRouter;
-use crate::Targets;
-
-pub type RouteSet = Arc<[(RequestMatch, Route)]>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {
@@ -20,8 +17,6 @@ pub struct Route {
     response_classes: ResponseClasses,
     retries: Option<Retries>,
     timeout: Option<Duration>,
-    // TODO(eliza): I would prefer to rename this to `backends`...
-    targets: Targets,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,7 +30,7 @@ pub enum RequestMatch {
     Default,
 }
 
-/// Wras a `regex::Regex` to implement `PartialEq` via the original string.
+/// Wraps a `regex::Regex` to implement `PartialEq` via the original string.
 #[derive(Clone, Debug)]
 pub struct Regex(regex::Regex);
 
@@ -67,42 +62,28 @@ pub struct Retries {
 #[derive(Clone, Default)]
 struct Labels(Arc<std::collections::BTreeMap<String, String>>);
 
-#[derive(Clone, Debug, thiserror::Error)]
-#[error("no route matched the request")]
-pub struct NoRouteForRequest(());
-
-pub fn route_for_request<'r, R, B>(
-    http_routes: &'r [(RequestMatch, R)],
+pub fn route_for_request<'r, K, B>(
+    http_routes: &'r [(RequestMatch, K)],
     request: &http::Request<B>,
-) -> Option<&'r R> {
-    for (request_match, route) in http_routes {
+) -> Option<&'r K> {
+    for (request_match, key) in http_routes {
         if request_match.is_match(request) {
-            return Some(route);
+            return Some(key);
         }
     }
     None
 }
 
-impl<B> linkerd_router::SelectRoute<http::Request<B>> for super::Profile {
-    type Key = Route;
-    type Error = NoRouteForRequest;
-
-    fn select<'r>(&self, req: &'r http::Request<B>) -> Result<&Self::Key, Self::Error> {
-        route_for_request(&*self.http_routes, req).ok_or(NoRouteForRequest(()))
-    }
-}
-
 // === impl Route ===
 
 impl Route {
-    pub fn new<I>(label_iter: I, response_classes: Vec<ResponseClass>, targets: Targets) -> Self
+    pub fn new<I>(label_iter: I, response_classes: Vec<ResponseClass>) -> Self
     where
         I: Iterator<Item = (String, String)>,
     {
         let labels = Labels(Arc::new(label_iter.collect()));
 
         Self {
-            targets,
             labels,
             response_classes: ResponseClasses(response_classes.into()),
             retries: None,
@@ -124,9 +105,6 @@ impl Route {
 
     pub fn timeout(&self) -> Option<Duration> {
         self.timeout
-    }
-    pub fn targets(&self) -> &Targets {
-        &self.targets
     }
 
     pub fn set_retries(&mut self, budget: Arc<Budget>) {

@@ -32,7 +32,6 @@ struct Params {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RouteParams {
     logical: Logical,
-    profile: profiles::tcp::Route,
     distribution: Distribution,
 }
 
@@ -177,32 +176,38 @@ impl<N> Outbound<N> {
 
 impl From<(Profile, Logical)> for Params {
     fn from((profile, logical): (Profile, Logical)) -> Self {
-        // Create concrete targets for all of the profile's
-        let backends = profile
-            .target_addrs
-            .iter()
-            .map(|addr| super::Concrete {
-                resolve: ConcreteAddr(addr.clone()),
+        // Create concrete targets for all of the profile's routes.
+        let backends = if profile.targets.is_empty() {
+            std::iter::once(super::Concrete {
+                resolve: ConcreteAddr(logical.logical_addr.clone().into()),
                 logical: logical.clone(),
             })
-            .collect();
+            .collect()
+        } else {
+            profile
+                .targets
+                .iter()
+                .map(|t| super::Concrete {
+                    resolve: ConcreteAddr(t.addr.clone()),
+                    logical: logical.clone(),
+                })
+                .collect()
+        };
 
         let route = {
-            let distribution =
-                Distribution::random_available(profile.tcp_route.targets().iter().cloned().map(
-                    |profiles::Target { addr, weight }| {
-                        let concrete = Concrete {
-                            logical: logical.clone(),
-                            resolve: ConcreteAddr(addr),
-                        };
-                        (concrete, weight)
-                    },
-                ))
-                .expect("distribution must be valid");
+            let distribution = Distribution::random_available(profile.targets.iter().cloned().map(
+                |profiles::Target { addr, weight }| {
+                    let concrete = Concrete {
+                        logical: logical.clone(),
+                        resolve: ConcreteAddr(addr),
+                    };
+                    (concrete, weight)
+                },
+            ))
+            .expect("distribution must be valid");
             RouteParams {
                 logical: logical.clone(),
                 distribution,
-                profile: profile.tcp_route,
             }
         };
 
@@ -213,8 +218,6 @@ impl From<(Profile, Logical)> for Params {
         }
     }
 }
-
-// === impl Params ===
 
 impl svc::Param<distribute::Backends<Concrete>> for Params {
     fn param(&self) -> distribute::Backends<Concrete> {

@@ -1,5 +1,4 @@
-use crate::{http, tcp, LogicalAddr, Profile, Target, Targets};
-use ahash::AHashSet;
+use crate::{http, LogicalAddr, Profile, Target};
 use linkerd2_proxy_api::destination as api;
 use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;
@@ -13,50 +12,28 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
     let name = Name::from_str(&proto.fully_qualified_name).ok();
     let addr = name.map(|n| NameAddr::from((n, port)));
 
-    let mut targets = proto
+    let targets = proto
         .dst_overrides
         .into_iter()
         .filter_map(convert_dst_override)
-        .collect::<Targets>();
-    if targets.is_empty() {
-        if let Some(addr) = addr.clone() {
-            targets = std::iter::once(Target { addr, weight: 1 }).collect();
-        }
-    }
+        .collect::<Arc<[_]>>();
 
-    let http_routes = {
-        // Default route used when no routes in the profile match a request.
-        let default = std::iter::once((
-            http::RequestMatch::default(),
-            http::Route::new(std::iter::empty(), Vec::new(), targets.clone()),
-        ));
-        let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
-        let tgts = &targets;
-        proto
-            .routes
-            .into_iter()
-            .filter_map(move |orig| convert_route(orig, retry_budget.as_ref(), tgts))
-            // Populate the default route last, so that every other route is tried first.
-            .chain(default)
-            .collect()
-    };
+    let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
+    let http_routes = proto
+        .routes
+        .into_iter()
+        .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
+        .collect();
 
     let endpoint = proto.endpoint.and_then(|e| {
         let labels = std::collections::HashMap::new();
         resolve::to_addr_meta(e, &labels)
     });
-
-    let target_addrs = targets
-        .iter()
-        .map(|t| t.addr.clone())
-        .collect::<AHashSet<_, _>>();
-
     Profile {
         addr: addr.map(LogicalAddr),
         http_routes,
-        tcp_route: tcp::Route::new(targets),
+        targets,
         opaque_protocol: proto.opaque_protocol,
-        target_addrs: target_addrs.into(),
         endpoint,
     }
 }
@@ -64,7 +41,6 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
 fn convert_route(
     orig: api::Route,
     retry_budget: Option<&Arc<Budget>>,
-    targets: &Targets,
 ) -> Option<(http::RequestMatch, http::Route)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
     let rsp_classes = orig
@@ -72,11 +48,7 @@ fn convert_route(
         .into_iter()
         .filter_map(convert_rsp_class)
         .collect();
-    let mut route = http::Route::new(
-        orig.metrics_labels.into_iter(),
-        rsp_classes,
-        targets.clone(),
-    );
+    let mut route = http::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
     if orig.is_retryable {
         set_route_retry(&mut route, retry_budget);
     }

@@ -142,36 +142,44 @@ impl<N> Outbound<N> {
 
 impl From<(Profile, Logical)> for Params {
     fn from((profile, logical): (Profile, Logical)) -> Self {
-        // Create concrete targets for all of the profile's
-        let backends = profile
-            .target_addrs
-            .iter()
-            .map(|addr| super::Concrete {
-                resolve: ConcreteAddr(addr.clone()),
+        // Create concrete targets for all of the profile's routes.
+        let backends = if profile.targets.is_empty() {
+            std::iter::once(super::Concrete {
+                resolve: ConcreteAddr(logical.logical_addr.clone().into()),
                 logical: logical.clone(),
             })
-            .collect();
+            .collect()
+        } else {
+            profile
+                .targets
+                .iter()
+                .map(|t| super::Concrete {
+                    resolve: ConcreteAddr(t.addr.clone()),
+                    logical: logical.clone(),
+                })
+                .collect()
+        };
+
+        let distribution = Distribution::random_available(profile.targets.iter().cloned().map(
+            |profiles::Target { addr, weight }| {
+                let concrete = super::Concrete {
+                    logical: logical.clone(),
+                    resolve: ConcreteAddr(addr),
+                };
+                (concrete, weight)
+            },
+        ))
+        .expect("distribution must be valid");
 
         let routes = profile
             .http_routes
             .iter()
             .cloned()
             .map(|(req_match, profile)| {
-                let distribution =
-                    Distribution::random_available(profile.targets().iter().cloned().map(
-                        |profiles::Target { addr, weight }| {
-                            let concrete = super::Concrete {
-                                logical: logical.clone(),
-                                resolve: ConcreteAddr(addr),
-                            };
-                            (concrete, weight)
-                        },
-                    ))
-                    .expect("distribution must be valid");
                 let params = RouteParams {
-                    logical: logical.clone(),
-                    distribution,
                     profile,
+                    logical: logical.clone(),
+                    distribution: distribution.clone(),
                 };
                 (req_match, params)
             })

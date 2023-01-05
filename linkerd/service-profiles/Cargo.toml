@@ -32,7 +32,7 @@ regex = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { version = "0.8", default-features = false }
-tower = { version = "0.4.13", features = ["ready-cache", "retry", "util"] }
+tower = { version = "0.4.13", features = ["retry", "util"] }
 thiserror = "1"
 tracing = "0.1"
 parking_lot = "0.12"
