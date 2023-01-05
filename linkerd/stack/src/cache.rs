@@ -10,7 +10,8 @@ pub struct NewCache<K, N> {
     _marker: PhantomData<fn(K)>,
 }
 
-/// A [`NewService`]
+/// A [`NewService`] that lazily builds an inner `S`-typed service for each
+/// `K`-typed target.
 #[derive(Debug)]
 pub struct Cache<K, N, S> {
     new_inner: N,
