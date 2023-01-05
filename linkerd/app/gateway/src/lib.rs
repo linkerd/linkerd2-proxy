@@ -154,7 +154,7 @@ where
                 )
                 .push_buffer("TCP Gateway", &outbound.config().tcp_connection_buffer),
         )
-        .push_cache(outbound.config().discovery_idle_timeout)
+        .push_idle_cache(outbound.config().discovery_idle_timeout)
         .check_new_service::<NameAddr, I>();
 
     // Cache an HTTP gateway service for each destination and HTTP version.
@@ -188,7 +188,7 @@ where
                 )
                 .push_buffer("Gateway", &inbound_config.http_request_buffer),
         )
-        .push_cache(inbound_config.discovery_idle_timeout)
+        .push_idle_cache(inbound_config.discovery_idle_timeout)
         .push_on_service(
             svc::layers()
                 .push(http::Retain::layer())
