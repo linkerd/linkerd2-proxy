@@ -103,7 +103,7 @@ impl<C> Outbound<C> {
                 )
                 // TODO(ver) Can we replace this evicting cache? The detect
                 // stack would have to hold/reuse inner stacks.
-                .push_cache(*discovery_idle_timeout)
+                .push_idle_cache(*discovery_idle_timeout)
                 .check_new_service::<Logical, I>()
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()

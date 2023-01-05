@@ -60,7 +60,7 @@ impl<N> Outbound<N> {
                         )
                         .push_buffer("TCP Server", &config.tcp_connection_buffer),
                 )
-                .push_cache(config.discovery_idle_timeout)
+                .push_idle_cache(config.discovery_idle_timeout)
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })

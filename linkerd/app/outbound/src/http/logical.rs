@@ -53,7 +53,7 @@ impl<N> Outbound<N> {
                         .push_buffer("HTTP Logical", http_request_buffer),
                 )
                 // TODO(ver) this should not be a generalized time-based evicting cache.
-                .push_cache(*discovery_idle_timeout);
+                .push_idle_cache(*discovery_idle_timeout);
 
             // If there's no route, use the logical service directly; otherwise
             // use the per-route stack.
