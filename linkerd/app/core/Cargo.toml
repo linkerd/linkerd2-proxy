@@ -13,6 +13,7 @@ independently of the inbound and outbound proxy logic.
 """
 
 [dependencies]
+linkerd-conditional = { path = "../../conditional" }
 bytes = "1"
 drain = { version = "0.1", features = ["retain"] }
 http = "0.2"
@@ -21,7 +22,6 @@ hyper = { version = "0.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 ipnet = "2.7"
 linkerd-addr = { path = "../../addr" }
-linkerd-conditional = { path = "../../conditional" }
 linkerd-dns = { path = "../../dns" }
 linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
