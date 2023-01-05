@@ -53,7 +53,7 @@ pub use self::{
     switch_ready::{NewSwitchReady, SwitchReady},
     timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,
-    watch::{NewSpawnWatch, SpawnWatch, UpdateWatch},
+    watch::{NewSpawnWatch, SpawnWatch},
 };
 pub use tower::{
     service_fn,
