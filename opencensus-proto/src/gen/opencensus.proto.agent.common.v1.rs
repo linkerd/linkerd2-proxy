@@ -97,6 +97,23 @@ pub mod library_info {
                 Language::WebJs => "WEB_JS",
             }
         }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "LANGUAGE_UNSPECIFIED" => Some(Self::Unspecified),
+                "CPP" => Some(Self::Cpp),
+                "C_SHARP" => Some(Self::CSharp),
+                "ERLANG" => Some(Self::Erlang),
+                "GO_LANG" => Some(Self::GoLang),
+                "JAVA" => Some(Self::Java),
+                "NODE_JS" => Some(Self::NodeJs),
+                "PHP" => Some(Self::Php),
+                "PYTHON" => Some(Self::Python),
+                "RUBY" => Some(Self::Ruby),
+                "WEB_JS" => Some(Self::WebJs),
+                _ => None,
+            }
+        }
     }
 }
 /// Additional service information.
