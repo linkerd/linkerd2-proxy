@@ -53,7 +53,7 @@ pub struct HyperConnectFuture<F> {
     inner: F,
     absolute_form: bool,
 }
-// ===== impl UpgradeBody =====
+// === impl UpgradeBody ===
 
 impl HttpBody for UpgradeBody {
     type Data = Bytes;
@@ -132,7 +132,7 @@ impl PinnedDrop for UpgradeBody {
     }
 }
 
-// ===== impl HyperServerSvc =====
+// === impl HyperServerSvc ===
 
 impl<S> HyperServerSvc<S> {
     pub fn new(service: S) -> Self {
@@ -157,7 +157,7 @@ where
     }
 }
 
-// ===== impl HyperConnect =====
+// === impl HyperConnect ===
 
 impl<C, T> HyperConnect<C, T> {
     pub(super) fn new(connect: C, target: T, absolute_form: bool) -> Self {

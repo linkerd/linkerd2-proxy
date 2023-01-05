@@ -71,7 +71,7 @@ pub struct Metric<'a, N: fmt::Display, M: FmtMetric> {
     pub _p: PhantomData<M>,
 }
 
-// ===== impl Metric =====
+// === impl Metric ===
 
 impl<'a, N: fmt::Display, M: FmtMetric> Metric<'a, N, M> {
     pub fn new(name: N, help: &'a str) -> Self {
@@ -146,7 +146,7 @@ impl<N: Clone + fmt::Display, M: FmtMetric> Clone for Metric<'_, N, M> {
 
 impl<N: Copy + fmt::Display, M: FmtMetric> Copy for Metric<'_, N, M> {}
 
-// ===== impl FmtLabels =====
+// === impl FmtLabels ===
 
 impl<'a, A: FmtLabels + 'a> FmtLabels for &'a A {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -188,7 +188,7 @@ impl<A: FmtLabels, B: FmtLabels> FmtLabels for (Option<A>, B) {
     }
 }
 
-// ===== impl FmtMetrics =====
+// === impl FmtMetrics ===
 
 impl<'a, A: FmtMetrics + 'a> FmtMetrics for &'a A {
     #[inline]
