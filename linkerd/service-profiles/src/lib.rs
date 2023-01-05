@@ -11,6 +11,7 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     str::FromStr,
+    sync::Arc,
     task::{Context, Poll},
 };
 use thiserror::Error;
@@ -36,15 +37,14 @@ struct ReceiverStream {
     inner: tokio_stream::wrappers::WatchStream<Profile>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Profile {
     pub addr: Option<LogicalAddr>,
-    pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
-    pub targets: Vec<Target>,
+    pub http_routes: Arc<[(self::http::RequestMatch, self::http::Route)]>,
+    pub targets: Arc<[Target]>,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
-
 /// A profile lookup target.
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LookupAddr(pub Addr);
@@ -129,6 +129,12 @@ impl From<watch::Receiver<Profile>> for Receiver {
     }
 }
 
+impl From<Receiver> for watch::Receiver<Profile> {
+    fn from(r: Receiver) -> watch::Receiver<Profile> {
+        r.inner
+    }
+}
+
 impl Receiver {
     pub fn logical_addr(&self) -> Option<LogicalAddr> {
         self.inner.borrow().addr.clone()
@@ -142,7 +148,7 @@ impl Receiver {
         self.inner.borrow().endpoint.clone()
     }
 
-    fn targets(&self) -> Vec<Target> {
+    fn targets(&self) -> Arc<[Target]> {
         self.inner.borrow().targets.clone()
     }
 }
@@ -162,6 +168,24 @@ impl Stream for ReceiverStream {
     #[inline]
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Pin::new(&mut self.inner).poll_next(cx)
+    }
+}
+
+// === impl Profile ===
+
+impl Default for Profile {
+    fn default() -> Self {
+        use once_cell::sync::Lazy;
+        static HTTP_ROUTES: Lazy<Arc<[(http::RequestMatch, http::Route)]>> =
+            Lazy::new(|| Arc::new([]));
+        static TARGETS: Lazy<Arc<[Target]>> = Lazy::new(|| Arc::new([]));
+        Self {
+            addr: None,
+            http_routes: HTTP_ROUTES.clone(),
+            targets: TARGETS.clone(),
+            opaque_protocol: false,
+            endpoint: None,
+        }
     }
 }
 

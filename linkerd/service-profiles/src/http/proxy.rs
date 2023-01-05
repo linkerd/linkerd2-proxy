@@ -5,6 +5,7 @@ use linkerd_error::{Error, Result};
 use linkerd_stack::{layer, NewService, Param, Proxy, Service};
 use std::{
     collections::{hash_map, HashMap, HashSet},
+    sync::Arc,
     task::{Context, Poll},
 };
 use tracing::{debug, trace};
@@ -31,7 +32,7 @@ pub struct ProxyRouter<T, N, P, S> {
     inner: S,
     target: T,
     rx: ReceiverStream,
-    http_routes: Vec<(RequestMatch, Route)>,
+    http_routes: Arc<[(RequestMatch, Route)]>,
     proxies: HashMap<Route, P>,
 }
 
@@ -61,7 +62,7 @@ where
             inner,
             target,
             rx: rx.into(),
-            http_routes: Vec::new(),
+            http_routes: std::iter::empty().collect(),
             proxies: HashMap::new(),
             new_proxy: self.new_proxy.clone(),
         }

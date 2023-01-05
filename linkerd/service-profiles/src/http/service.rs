@@ -4,6 +4,7 @@ use futures::prelude::*;
 use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
     collections::{hash_map, HashMap, HashSet},
+    sync::Arc,
     task::{Context, Poll},
 };
 use tracing::{debug, trace};
@@ -32,14 +33,14 @@ pub struct ServiceRouter<T, N, S> {
 
 #[derive(Clone, Debug)]
 struct Routes<S> {
-    matches: Vec<(RequestMatch, Route)>,
+    matches: Arc<[(RequestMatch, Route)]>,
     services: HashMap<Route, S>,
 }
 
 impl<S> Default for Routes<S> {
     fn default() -> Self {
         Self {
-            matches: Vec::new(),
+            matches: Profile::default().http_routes,
             services: HashMap::new(),
         }
     }

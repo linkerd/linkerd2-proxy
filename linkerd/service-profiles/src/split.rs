@@ -62,24 +62,27 @@ where
 
     fn new_service(&self, target: T) -> Self::Service {
         let rx: Receiver = target.param();
-        let mut targets = rx.targets();
-        if targets.is_empty() {
-            let LogicalAddr(addr) = target.param();
-            targets.push(Target { addr, weight: 1 })
-        }
+        let targets = rx.targets();
         trace!(?targets, "Building split service");
-
         let mut addrs = IndexSet::with_capacity(targets.len());
         let mut weights = Vec::with_capacity(targets.len());
         let mut services = ReadyCache::default();
         let new_service = self.inner.clone();
-        for Target { weight, addr } in targets.into_iter() {
+        for Target { weight, addr } in targets.iter() {
             services.push(
                 addr.clone(),
                 new_service.new_service((ConcreteAddr(addr.clone()), target.clone())),
             );
+            addrs.insert(addr.clone());
+            weights.push(*weight);
+        }
+
+        if services.is_empty() {
+            let LogicalAddr(addr) = target.param();
+            let svc = new_service.new_service((ConcreteAddr(addr.clone()), target.clone()));
+            services.push(addr.clone(), svc);
             addrs.insert(addr);
-            weights.push(weight);
+            weights.push(1);
         }
 
         Split {
@@ -121,7 +124,7 @@ where
         if let Some(Profile { mut targets, .. }) = update {
             if targets.is_empty() {
                 let LogicalAddr(addr) = self.target.param();
-                targets.push(Target { addr, weight: 1 })
+                targets = std::iter::once(Target { addr, weight: 1 }).collect();
             }
             debug!(?targets, "Updating");
 
@@ -134,9 +137,9 @@ where
             let mut weights = Vec::with_capacity(targets.len());
 
             // Create an updated distribution and set of services.
-            for Target { weight, addr } in targets.into_iter() {
+            for Target { weight, addr } in targets.iter() {
                 // Reuse the prior services whenever possible.
-                if !prior_addrs.remove(&addr) {
+                if !prior_addrs.remove(addr) {
                     debug!(%addr, "Creating target");
                     let svc = self
                         .new_service
@@ -145,8 +148,8 @@ where
                 } else {
                     trace!(%addr, "Target already exists");
                 }
-                self.addrs.insert(addr);
-                weights.push(weight);
+                self.addrs.insert(addr.clone());
+                weights.push(*weight);
             }
 
             self.distribution = WeightedIndex::new(weights).unwrap();
