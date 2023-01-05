@@ -177,24 +177,24 @@ impl<N> Outbound<N> {
 impl From<(Profile, Logical)> for Params {
     fn from((profile, logical): (Profile, Logical)) -> Self {
         // Create concrete targets for all of the profile's routes.
-        let backends = if profile.targets.is_empty() {
-            std::iter::once(super::Concrete {
+        let (backends, distribution) = if profile.targets.is_empty() {
+            let concrete = super::Concrete {
                 resolve: ConcreteAddr(logical.logical_addr.clone().into()),
                 logical: logical.clone(),
-            })
-            .collect()
+            };
+            let backends = std::iter::once(concrete.clone()).collect();
+            let distribution = Distribution::random_available(std::iter::once((concrete, 1)))
+                .expect("distribution must be valid");
+            (backends, distribution)
         } else {
-            profile
+            let backends = profile
                 .targets
                 .iter()
                 .map(|t| super::Concrete {
                     resolve: ConcreteAddr(t.addr.clone()),
                     logical: logical.clone(),
                 })
-                .collect()
-        };
-
-        let route = {
+                .collect();
             let distribution = Distribution::random_available(profile.targets.iter().cloned().map(
                 |profiles::Target { addr, weight }| {
                     let concrete = Concrete {
@@ -205,10 +205,13 @@ impl From<(Profile, Logical)> for Params {
                 },
             ))
             .expect("distribution must be valid");
-            RouteParams {
-                logical: logical.clone(),
-                distribution,
-            }
+
+            (backends, distribution)
+        };
+
+        let route = RouteParams {
+            logical: logical.clone(),
+            distribution,
         };
 
         Self {
