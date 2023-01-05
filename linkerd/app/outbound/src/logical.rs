@@ -37,12 +37,6 @@ impl Logical<()> {
     }
 }
 
-impl<P> svc::Param<profiles::Receiver> for Logical<P> {
-    fn param(&self) -> profiles::Receiver {
-        self.profile.clone()
-    }
-}
-
 impl<P> svc::Param<tokio::sync::watch::Receiver<profiles::Profile>> for Logical<P> {
     fn param(&self) -> tokio::sync::watch::Receiver<profiles::Profile> {
         self.profile.clone().into()
