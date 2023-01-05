@@ -5,8 +5,12 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 /// A [`NewService`] that produces [`NewDistribute`]s using a shared cache of
 /// backends.
+///
+/// On each call to [`NewService::new_service`], the cache extracts a new set of
+/// [`params::Backends`] from the target to determine which
+/// services should be added/removed from the cache.
 #[derive(Debug)]
-pub struct CacheNewDistribute<K, N, S>(Arc<Inner<K, N, S>>);
+pub struct BackendCache<K, N, S>(Arc<Inner<K, N, S>>);
 
 #[derive(Debug)]
 struct Inner<K, N, S> {
@@ -14,9 +18,9 @@ struct Inner<K, N, S> {
     backends: Mutex<ahash::AHashMap<K, S>>,
 }
 
-// === impl CacheNewDistribute ===
+// === impl BackendCache ===
 
-impl<K, N, S> CacheNewDistribute<K, N, S> {
+impl<K, N, S> BackendCache<K, N, S> {
     pub fn new(new_backend: N) -> Self {
         Self(Arc::new(Inner {
             new_backend,
@@ -29,7 +33,7 @@ impl<K, N, S> CacheNewDistribute<K, N, S> {
     }
 }
 
-impl<T, K, N> NewService<T> for CacheNewDistribute<K, N, N::Service>
+impl<T, K, N> NewService<T> for BackendCache<K, N, N::Service>
 where
     T: Param<params::Backends<K>>,
     K: Eq + Hash + Clone,
@@ -46,8 +50,7 @@ where
         // Remove all backends that aren't in the updated set of addrs.
         cache.retain(|addr, _| addrs.contains(addr));
 
-        // If there are additional addrs, build new services for each and add
-        // them to the cache.
+        // If there are additional addrs, cache a new service for each.
         debug_assert!(addrs.len() >= cache.len());
         if addrs.len() > cache.len() {
             cache.reserve(addrs.len());
@@ -66,7 +69,7 @@ where
     }
 }
 
-impl<K, N, S> Clone for CacheNewDistribute<K, N, S> {
+impl<K, N, S> Clone for BackendCache<K, N, S> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }

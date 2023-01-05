@@ -35,7 +35,7 @@ struct RouteParams {
     distribution: Distribution,
 }
 
-type CacheNewDistribute<N, S> = distribute::CacheNewDistribute<Concrete, N, S>;
+type BackendCache<N, S> = distribute::BackendCache<Concrete, N, S>;
 type Distribution = distribute::Distribution<Concrete>;
 
 // === impl Outbound ===
@@ -140,7 +140,7 @@ impl<N> Outbound<N> {
             let router = svc::layers()
                 // Each `RouteParams` provides a `Distribution` that is used to
                 // choose a concrete service for a given route.
-                .push(CacheNewDistribute::layer())
+                .push(BackendCache::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push(router::NewRoute::layer_cached());
