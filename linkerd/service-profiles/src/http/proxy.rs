@@ -13,8 +13,8 @@ use tracing::{debug, trace};
 /// A router that uses a per-route `Proxy` to wrap a common underlying
 /// `Service`.
 ///
-/// This router is similar to `linkerd_stack::NewRouter` and
-/// `linkerd_cache::Cache` with a few differences:
+/// This router is similar to `linkerd_router::NewOneshotRoute` and
+/// `linkerd_router::Cache` with a few differences:
 ///
 /// * It's `Proxy`-specific;
 /// * Routes are constructed eagerly as the profile updates;

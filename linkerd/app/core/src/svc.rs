@@ -5,11 +5,8 @@ use crate::{config::BufferConfig, idle_cache, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
-pub use linkerd_stack::{
-    self as stack, layer, ArcNewService, BoxCloneService, BoxService, BoxServiceLayer, Either,
-    ExtractParam, Fail, FailFast, Filter, InsertParam, LoadShed, MakeConnection, MapErr,
-    MapTargetLayer, NewRouter, NewService, Param, Predicate, UnwrapOr,
-};
+pub use linkerd_router::{self as router, NewOneshotRoute};
+pub use linkerd_stack::{self as stack, *};
 use linkerd_stack::{failfast, OnService};
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use std::{
@@ -175,6 +172,13 @@ impl<S> Stack<S> {
         self.push(stack::OnServiceLayer::new(layer))
     }
 
+    /// Wraps the inner `S` with `NewCloneService` so that the stack holds a
+    /// `NewService` that always returns a clone of `S` regardless of the target
+    /// value.
+    pub fn push_new_clone(self) -> Stack<NewCloneService<S>> {
+        self.push(layer::mk(NewCloneService::from))
+    }
+
     /// Wraps the inner service with a response timeout such that timeout errors are surfaced as a
     /// `ConnectTimeout` error.
     ///
@@ -261,6 +265,14 @@ impl<S> Stack<S> {
     pub fn check_new<T>(self) -> Self
     where
         S: NewService<T>,
+    {
+        self
+    }
+
+    pub fn check_new_new<T, U>(self) -> Self
+    where
+        S: NewService<T>,
+        S::Service: NewService<U>,
     {
         self
     }

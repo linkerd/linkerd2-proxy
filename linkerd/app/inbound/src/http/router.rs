@@ -71,7 +71,9 @@ impl<C> Inbound<C> {
                     Response = http::Response<http::BoxBody>,
                     Error = Error,
                     Future = impl Send,
-                > + Clone,
+                > + Clone
+                + Send
+                + Unpin,
         >,
     >
     where
@@ -80,8 +82,8 @@ impl<C> Inbound<C> {
             + Param<Remote<ClientAddr>>
             + Param<tls::ConditionalServerTls>
             + Param<policy::AllowPolicy>,
-        T: Clone + Send + 'static,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
+        T: Clone + Send + Unpin + 'static,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
         C: svc::MakeConnection<Http> + Clone + Send + Sync + Unpin + 'static,
@@ -222,10 +224,14 @@ impl<C> Inbound<C> {
                     }
                 })
                 // Routes each request to a target, obtains a service for that target, and
-                // dispatches the request. NewRouter moves the NewService into the service type, so
-                // minimize it's type footprint with a Box.
-                .push(svc::ArcNewService::layer())
-                .push(svc::NewRouter::layer(LogicalPerRequest::from))
+                // dispatches the request.
+                .check_new_service::<Logical, http::Request<http::BoxBody>>()
+                .push_new_clone()
+                .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
+                .push(svc::NewOneshotRoute::layer(|(permit, t): &(policy::HttpRoutePermit, T)| {
+                    LogicalPerRequest::from((permit.clone(), t.clone()))
+                }))
+                .check_new_service::<(policy::HttpRoutePermit, T), http::Request<http::BoxBody>>()
                 .push(policy::NewHttpPolicy::layer(rt.metrics.http_authz.clone()))
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
@@ -267,10 +273,11 @@ where
     }
 }
 
-impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
+impl<B> svc::router::SelectRoute<http::Request<B>> for LogicalPerRequest {
     type Key = Logical;
+    type Error = Infallible;
 
-    fn recognize(&self, req: &http::Request<A>) -> Result<Self::Key> {
+    fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Infallible> {
         use linkerd_app_core::{
             http_request_authority_addr, http_request_host_addr, CANONICAL_DST_HEADER,
         };
