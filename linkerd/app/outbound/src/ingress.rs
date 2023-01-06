@@ -197,7 +197,6 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     // allows us to avoid buffering requests to these endpoints.
                     .check_new_service::<Http<Target>, http::Request<_>>()
                     .push_on_service(svc::LoadShed::layer())
-                    .check_clone()
                     .push_new_clone()
                     .check_new_new::<http::Accept, Http<Target>>()
                     .push(router::NewOneshotRoute::layer_via(|a: &http::Accept| {
@@ -209,7 +208,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                         svc::layers()
                             .push(http::MarkAbsoluteForm::layer())
                             .push(svc::ConcurrencyLimitLayer::new(*max_in_flight_requests))
-                            // TODO(ver) shed load when the limiit is hit
+                            .push(svc::LoadShed::layer())
                             .push(rt.metrics.http_errors.to_layer()),
                     )
                     .push(http::ServerRescue::layer(config.emit_headers))
@@ -255,8 +254,8 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         Ok(Http {
             version: self.0.protocol,
-            // Use either the override header or the
-            // original destination address.
+            // Use either the override header or the original destination
+            // address.
             target: http::authority_from_header(req, DST_OVERRIDE_HEADER)
                 .map(|a| {
                     NameAddr::from_authority_with_default_port(&a, 80)
