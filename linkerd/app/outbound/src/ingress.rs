@@ -196,6 +196,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     // are no real resources we need to share across connections. This
                     // allows us to avoid buffering requests to these endpoints.
                     .check_new_service::<Http<Target>, http::Request<_>>()
+                    .push_on_service(svc::LoadShed::layer())
                     .check_clone()
                     .push_new_clone()
                     .check_new_new::<http::Accept, Http<Target>>()

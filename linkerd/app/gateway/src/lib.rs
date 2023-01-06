@@ -203,7 +203,8 @@ where
         .with_stack(
             // A router is needed so that we use each request's HTTP version
             // (i.e. after server-side orig-proto downgrading).
-            http.push_new_clone()
+            http.push_on_service(svc::LoadShed::layer())
+                .push_new_clone()
                 .push(svc::NewOneshotRoute::layer_via(
                     |(_, target): &(_, HttpTransportHeader)| RouteHttp(target.clone()),
                 ))

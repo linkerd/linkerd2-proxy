@@ -226,6 +226,7 @@ impl<C> Inbound<C> {
                 // Routes each request to a target, obtains a service for that target, and
                 // dispatches the request.
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
+                .push_on_service(svc::LoadShed::layer())
                 .push_new_clone()
                 .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
                 .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {
