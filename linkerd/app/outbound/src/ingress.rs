@@ -199,7 +199,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     .check_clone()
                     .push_new_clone()
                     .check_new_new::<http::Accept, Http<Target>>()
-                    .push(router::NewOneshotRoute::layer(|a: &http::Accept| {
+                    .push(router::NewOneshotRoute::layer_via(|a: &http::Accept| {
                         SelectTarget(*a)
                     }))
                     .check_new_service::<http::Accept, http::Request<_>>()

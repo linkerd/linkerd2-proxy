@@ -204,7 +204,7 @@ where
             // A router is needed so that we use each request's HTTP version
             // (i.e. after server-side orig-proto downgrading).
             http.push_new_clone()
-                .push(svc::NewOneshotRoute::layer(
+                .push(svc::NewOneshotRoute::layer_via(
                     |(_, target): &(_, HttpTransportHeader)| RouteHttp(target.clone()),
                 ))
                 .push(inbound.authorize_http())

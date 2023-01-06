@@ -3,7 +3,7 @@ use ahash::AHashMap;
 use parking_lot::Mutex;
 use std::{fmt::Debug, hash::Hash, marker::PhantomData, sync::Arc};
 
-/// A [`NewService`] that lazy builds stacks for each `K`-typed key.
+/// A [`NewService`] that produces [`Cache`]s.
 #[derive(Debug)]
 pub struct NewCache<K, N> {
     inner: N,
@@ -12,6 +12,10 @@ pub struct NewCache<K, N> {
 
 /// A [`NewService`] that lazily builds an inner `S`-typed service for each
 /// `K`-typed target.
+///
+/// An inner service is built once for each `K`-typed target. The inner service
+/// is then cloned for each `K` value. It is not dropped until all clones of the
+/// cache are dropped.
 #[derive(Debug)]
 pub struct Cache<K, N, S> {
     new_inner: N,

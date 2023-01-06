@@ -228,7 +228,7 @@ impl<C> Inbound<C> {
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_new_clone()
                 .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
-                .push(svc::NewOneshotRoute::layer(|(permit, t): &(policy::HttpRoutePermit, T)| {
+                .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {
                     LogicalPerRequest::from((permit.clone(), t.clone()))
                 }))
                 .check_new_service::<(policy::HttpRoutePermit, T), http::Request<http::BoxBody>>()

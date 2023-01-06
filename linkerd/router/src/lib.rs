@@ -25,8 +25,10 @@ pub trait SelectRoute<Req> {
     fn select(&self, req: &Req) -> Result<Self::Key, Self::Error>;
 }
 
-/// A [`NewService`] that builds `Route` services for targets that implement
+/// A [`NewService`] that builds `Route` services for targets that provide a
 /// [`SelectRoute`].
+///
+/// The selector is built with an `X`-typed [`ExtractParam`] implementation.
 #[derive(Debug)]
 pub struct NewOneshotRoute<Sel, X, N> {
     extract: X,
@@ -46,7 +48,7 @@ pub struct OneshotRoute<Sel, N> {
 
 // === impl NewOneshotRoute ===
 
-impl<Sel, X: Clone, N> NewOneshotRoute<Sel, X, N> {
+impl<Sel, X, N> NewOneshotRoute<Sel, X, N> {
     pub fn new(extract: X, inner: N) -> Self {
         Self {
             extract,
@@ -54,16 +56,34 @@ impl<Sel, X: Clone, N> NewOneshotRoute<Sel, X, N> {
             _marker: PhantomData,
         }
     }
+}
 
-    pub fn layer(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
+impl<Sel, X: Clone, N> NewOneshotRoute<Sel, X, N> {
+    /// Builds a [`layer::Layer`] that produces `NewOneshotRoute`s.
+    ///
+    /// Targets must produce a `Sel` via the provided `X`-typed
+    /// [`ExtractParam`].
+    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self::new(extract.clone(), inner))
     }
+}
 
-    /// Returns a new `NewOneshotRoute` layer that retains & reuses its inner services.
-    pub fn layer_cached<K>(
-        extract: X,
-    ) -> impl layer::Layer<N, Service = NewOneshotRoute<Sel, X, NewCache<K, N>>> + Clone {
-        layer::mk(move |inner: N| NewOneshotRoute::new(extract.clone(), NewCache::new(inner)))
+impl<Sel, N> NewOneshotRoute<Sel, (), N> {
+    /// Builds a [`layer::Layer`] that produces `NewOneshotRoute`s.
+    ///
+    /// Target types must implement `Param<Sel>`.
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via(())
+    }
+}
+
+impl<Sel, K, N> NewOneshotRoute<Sel, (), NewCache<K, N>> {
+    /// Builds a [`layer::Layer`] that produces `NewOneshotRoute`s using a cache
+    /// of inner services.
+    ///
+    /// Target types must implement `Param<Sel>`.
+    pub fn layer_cached() -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner: N| Self::new((), NewCache::new(inner)))
     }
 }
 
