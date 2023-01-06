@@ -1559,7 +1559,6 @@ dependencies = [
  "linkerd-tonic-watch",
  "linkerd2-proxy-api",
  "once_cell",
- "parking_lot",
  "pin-project",
  "prost-types",
  "quickcheck",
