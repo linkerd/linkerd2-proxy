@@ -933,7 +933,6 @@ dependencies = [
 name = "linkerd-app-outbound"
 version = "0.1.0"
 dependencies = [
- "ahash",
  "bytes",
  "futures",
  "http",
