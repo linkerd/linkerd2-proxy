@@ -41,6 +41,7 @@ where
 {
     type Service = Cache<K, M, M::Service>;
 
+    #[inline]
     fn new_service(&self, target: T) -> Self::Service {
         Cache::new(self.inner.new_service(target))
     }
