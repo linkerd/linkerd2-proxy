@@ -1,9 +1,9 @@
-use crate::{layer, NewService};
+use crate::NewService;
 use ahash::AHashMap;
 use parking_lot::Mutex;
 use std::{fmt::Debug, hash::Hash, marker::PhantomData, sync::Arc};
 
-/// A [`NewService`] that lazy builds stacks for each `K`-typed key.
+/// A [`NewService`] that produces [`Cache`]s.
 #[derive(Debug)]
 pub struct NewCache<K, N> {
     inner: N,
@@ -12,6 +12,10 @@ pub struct NewCache<K, N> {
 
 /// A [`NewService`] that lazily builds an inner `S`-typed service for each
 /// `K`-typed target.
+///
+/// An inner service is built once for each `K`-typed target. The inner service
+/// is then cloned for each `K` value. It is not dropped until all clones of the
+/// cache are dropped.
 #[derive(Debug)]
 pub struct Cache<K, N, S> {
     new_inner: N,
@@ -27,10 +31,6 @@ impl<K, N> NewCache<K, N> {
             _marker: PhantomData,
         }
     }
-
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(Self::new)
-    }
 }
 
 impl<T, K, N, M> NewService<T> for NewCache<K, N>
@@ -41,6 +41,7 @@ where
 {
     type Service = Cache<K, M, M::Service>;
 
+    #[inline]
     fn new_service(&self, target: T) -> Self::Service {
         Cache::new(self.inner.new_service(target))
     }
@@ -58,15 +59,11 @@ impl<K, N: Clone> Clone for NewCache<K, N> {
 // === impl Cache ===
 
 impl<K, N, S> Cache<K, N, S> {
-    pub fn new(new_inner: N) -> Self {
+    pub(super) fn new(new_inner: N) -> Self {
         Self {
             new_inner,
             services: Default::default(),
         }
-    }
-
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(Self::new)
     }
 }
 

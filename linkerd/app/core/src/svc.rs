@@ -5,6 +5,7 @@ use crate::{config::BufferConfig, idle_cache, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
+pub use linkerd_router::{self as router, NewOneshotRoute};
 pub use linkerd_stack::{self as stack, *};
 use linkerd_stack::{failfast, OnService};
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};

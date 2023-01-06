@@ -144,7 +144,7 @@ impl<N> Outbound<N> {
                 .push(BackendCache::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
-                .push(router::NewRoute::layer_cached());
+                .push(router::NewOneshotRoute::<Params, _, _>::layer_cached());
 
             // For each `Logical` target, watch its `Profile`, maintaining a
             // cache of all concrete services used by the router.

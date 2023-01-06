@@ -822,6 +822,7 @@ dependencies = [
  "linkerd-proxy-tcp",
  "linkerd-proxy-transport",
  "linkerd-reconnect",
+ "linkerd-router",
  "linkerd-server-policy",
  "linkerd-service-profiles",
  "linkerd-stack",
@@ -1517,9 +1518,11 @@ dependencies = [
 name = "linkerd-router"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "futures",
  "linkerd-error",
  "linkerd-stack",
+ "parking_lot",
  "thiserror",
  "tracing",
 ]
@@ -1584,7 +1587,6 @@ dependencies = [
 name = "linkerd-stack"
 version = "0.1.0"
 dependencies = [
- "ahash",
  "futures",
  "linkerd-error",
  "linkerd-tracing",
@@ -2014,9 +2016,9 @@ checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
 
 [[package]]
 name = "prettyplease"
-version = "0.1.22"
+version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c8992a85d8e93a28bdf76137db888d3874e3b230dee5ed8bebac4c9f7617773"
+checksum = "e97e3215779627f01ee256d2fad52f3d95e8e1c11e9fc6fd08f7cd455d5d5c78"
 dependencies = [
  "proc-macro2",
  "syn",
@@ -2447,9 +2449,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.23.1"
+version = "1.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38a54aca0c15d014013256222ba0ebed095673f89345dd79119d912eb561b7a8"
+checksum = "7125661431c26622a80ca5051a2f936c9a678318e0351007b0cc313143024e5c"
 dependencies = [
  "autocfg",
  "bytes",

@@ -6,7 +6,6 @@
 mod arc_new_service;
 mod box_future;
 mod box_service;
-mod cache;
 mod connect;
 mod either;
 mod fail;
@@ -24,7 +23,6 @@ pub mod new_service;
 mod on_service;
 pub mod proxy;
 mod result;
-mod router;
 mod switch_ready;
 mod timeout;
 mod unwrap_or;
@@ -34,7 +32,6 @@ pub use self::{
     arc_new_service::ArcNewService,
     box_future::BoxFuture,
     box_service::{BoxService, BoxServiceLayer},
-    cache::{Cache, NewCache},
     connect::{MakeConnection, WithoutConnectionMetadata},
     either::{Either, NewEither},
     fail::Fail,
@@ -51,7 +48,6 @@ pub use self::{
     on_service::{OnService, OnServiceLayer},
     proxy::Proxy,
     result::ResultService,
-    router::{NewRouter, RecognizeRoute},
     switch_ready::{NewSwitchReady, SwitchReady},
     timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,
