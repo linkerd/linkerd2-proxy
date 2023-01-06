@@ -20,7 +20,7 @@ pub(super) fn convert_profile(proto: api::DestinationProfile, port: u16) -> Prof
         .dst_overrides
         .into_iter()
         .filter_map(convert_dst_override)
-        .collect();
+        .collect::<Arc<[_]>>();
     let endpoint = proto.endpoint.and_then(|e| {
         let labels = std::collections::HashMap::new();
         resolve::to_addr_meta(e, &labels)
@@ -116,7 +116,7 @@ fn convert_req_match(orig: api::RequestMatch) -> Option<http::RequestMatch> {
                     Regex::new(&re).ok()?
                 }
             };
-            http::RequestMatch::Path(Box::new(re))
+            http::RequestMatch::Path(re.into())
         }
         api::request_match::Match::Method(mm) => {
             let m = mm.r#type.and_then(|m| m.try_into().ok())?;
