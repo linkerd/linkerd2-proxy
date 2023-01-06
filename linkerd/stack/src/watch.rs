@@ -47,7 +47,7 @@ pub struct NewFromTuple<T, P, N> {
     _marker: PhantomData<fn() -> P>,
 }
 
-type SpawnFromTuple<P, T, N> = NewSpawnWatch<P, NewWatchedFromTuple<T, N>>;
+type SpawnFromTuple<T, P, N> = NewSpawnWatch<P, NewWatchedFromTuple<T, N>>;
 
 // === impl NewSpawnWatch ===
 
@@ -167,13 +167,12 @@ impl<T, N> NewWatchedFromTuple<T, N> {
     }
 }
 
-impl<T, P, N, M> NewService<T> for NewWatchedFromTuple<P, N>
+impl<T, P, N> NewService<T> for NewWatchedFromTuple<P, N>
 where
     T: Clone,
-    N: NewService<T, Service = M>,
-    M: NewService<P> + Send + 'static,
+    N: NewService<T>,
 {
-    type Service = NewFromTuple<T, P, M>;
+    type Service = NewFromTuple<T, P, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         // Create a `NewService` that is used to process updates to the watched
