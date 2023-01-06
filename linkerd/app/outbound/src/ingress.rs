@@ -11,6 +11,7 @@ use linkerd_app_core::{
     transport::{OrigDstAddr, Remote, ServerAddr},
     AddrMatch, Error, Infallible, NameAddr,
 };
+use linkerd_router as router;
 use thiserror::Error;
 use tracing::{debug, debug_span, info_span};
 
@@ -194,36 +195,20 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     // many times. Forwarding stacks are not cached explicitly, as there
                     // are no real resources we need to share across connections. This
                     // allows us to avoid buffering requests to these endpoints.
-                    .push(svc::NewRouter::layer(
-                        |http::Accept { orig_dst, protocol }| {
-                            move |req: &http::Request<_>| {
-                                // Use either the override header or the original destination address.
-                                let target =
-                                    match http::authority_from_header(req, DST_OVERRIDE_HEADER) {
-                                        None => Target::Forward(orig_dst),
-                                        Some(a) => {
-                                            let dst =
-                                                NameAddr::from_authority_with_default_port(&a, 80)
-                                                    .map_err(|_| InvalidOverrideHeader)?;
-                                            Target::Override(dst)
-                                        }
-                                    };
-                                Ok(Http {
-                                    target,
-                                    version: protocol,
-                                })
-                            }
-                        },
-                    ))
+                    .check_new_service::<Http<Target>, http::Request<_>>()
+                    .push_on_service(svc::LoadShed::layer())
+                    .push_new_clone()
+                    .check_new_new::<http::Accept, Http<Target>>()
+                    .push(router::NewOneshotRoute::layer_via(|a: &http::Accept| {
+                        SelectTarget(*a)
+                    }))
+                    .check_new_service::<http::Accept, http::Request<_>>()
                     .push(http::NewNormalizeUri::layer())
                     .push_on_service(
                         svc::layers()
                             .push(http::MarkAbsoluteForm::layer())
-                            // The concurrency-limit can force the service into
-                            // fail-fast, but it need not be driven to readiness on a
-                            // background task (i.e., by `SpawnReady`).  Otherwise, the
-                            // inner service is always ready (because it's a router).
                             .push(svc::ConcurrencyLimitLayer::new(*max_in_flight_requests))
+                            .push(svc::LoadShed::layer())
                             .push(rt.metrics.http_errors.to_layer()),
                     )
                     .push(http::ServerRescue::layer(config.emit_headers))
@@ -256,5 +241,29 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     .push(svc::ArcNewService::layer())
                     .check_new_service::<T, I>()
             })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SelectTarget(http::Accept);
+
+impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
+    type Key = Http<Target>;
+    type Error = InvalidOverrideHeader;
+
+    fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
+        Ok(Http {
+            version: self.0.protocol,
+            // Use either the override header or the original destination
+            // address.
+            target: http::authority_from_header(req, DST_OVERRIDE_HEADER)
+                .map(|a| {
+                    NameAddr::from_authority_with_default_port(&a, 80)
+                        .map_err(|_| InvalidOverrideHeader)
+                        .map(Target::Override)
+                })
+                .transpose()?
+                .unwrap_or(Target::Forward(self.0.orig_dst)),
+        })
     }
 }

@@ -9,11 +9,11 @@ use std::{
 };
 use tracing::{debug, trace};
 
-/// A router that uses a per-route `Service` (with a fallback service when no
+/// A router that uses a per-route [`Service`] (with a fallback service when no
 /// route is matched).
 ///
-/// This router is similar to `linkerd_stack::NewRouter` and
-/// `linkerd_cache::Cache` with a few differences:
+/// This router is similar to `linkerd_router::NewOneshotRoute` and
+/// `linkerd_router::Cache` with a few differences:
 ///
 /// * Routes are constructed eagerly as the profile updates;
 /// * Routes are removed eagerly as the profile updates (i.e. there's no

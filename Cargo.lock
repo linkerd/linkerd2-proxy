@@ -822,6 +822,7 @@ dependencies = [
  "linkerd-proxy-tcp",
  "linkerd-proxy-transport",
  "linkerd-reconnect",
+ "linkerd-router",
  "linkerd-server-policy",
  "linkerd-service-profiles",
  "linkerd-stack",
@@ -945,6 +946,7 @@ dependencies = [
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
  "linkerd-retry",
+ "linkerd-router",
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
@@ -1507,6 +1509,19 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-router"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "futures",
+ "linkerd-error",
+ "linkerd-stack",
+ "parking_lot",
+ "thiserror",
  "tracing",
 ]
 

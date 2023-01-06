@@ -18,6 +18,9 @@ pub struct FromMakeService<S> {
     make_service: S,
 }
 
+#[derive(Clone, Debug)]
+pub struct NewCloneService<S>(S);
+
 // === impl NewService ===
 
 impl<F, T, S> NewService<T> for F
@@ -47,5 +50,21 @@ where
 
     fn new_service(&self, target: T) -> Self::Service {
         FutureService::new(self.make_service.clone().oneshot(target))
+    }
+}
+
+// === impl NewCloneService ===
+
+impl<S> From<S> for NewCloneService<S> {
+    fn from(inner: S) -> Self {
+        Self(inner)
+    }
+}
+
+impl<T, S: Clone> NewService<T> for NewCloneService<S> {
+    type Service = S;
+
+    fn new_service(&self, _: T) -> Self::Service {
+        self.0.clone()
     }
 }

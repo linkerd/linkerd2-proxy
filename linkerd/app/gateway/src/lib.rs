@@ -203,7 +203,11 @@ where
         .with_stack(
             // A router is needed so that we use each request's HTTP version
             // (i.e. after server-side orig-proto downgrading).
-            http.push(svc::NewRouter::layer(|(_, target)| RouteHttp(target)))
+            http.push_on_service(svc::LoadShed::layer())
+                .push_new_clone()
+                .push(svc::NewOneshotRoute::layer_via(
+                    |(_, target): &(_, HttpTransportHeader)| RouteHttp(target.clone()),
+                ))
                 .push(inbound.authorize_http())
                 .push_http_insert_target::<tls::ClientId>(),
         )
@@ -297,10 +301,11 @@ impl Param<policy::ServerLabel> for HttpTransportHeader {
 
 // === impl RouteHttp ===
 
-impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttp<HttpTransportHeader> {
+impl<B> svc::router::SelectRoute<http::Request<B>> for RouteHttp<HttpTransportHeader> {
     type Key = HttpTarget;
+    type Error = Error;
 
-    fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
+    fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
         let target = self.0.target.clone();
         let version = req.version().try_into()?;
         Ok(HttpTarget { target, version })

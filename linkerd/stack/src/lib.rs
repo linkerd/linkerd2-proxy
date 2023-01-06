@@ -23,7 +23,6 @@ pub mod new_service;
 mod on_service;
 pub mod proxy;
 mod result;
-mod router;
 mod switch_ready;
 mod timeout;
 mod unwrap_or;
@@ -45,11 +44,10 @@ pub use self::{
     map_err::MapErr,
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
-    new_service::NewService,
+    new_service::{NewCloneService, NewService},
     on_service::{OnService, OnServiceLayer},
     proxy::Proxy,
     result::ResultService,
-    router::{NewRouter, RecognizeRoute},
     switch_ready::{NewSwitchReady, SwitchReady},
     timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,
