@@ -96,7 +96,8 @@ where
     let logical = outbound
         .clone()
         .push_tcp_endpoint()
-        .push_tcp_logical(resolve.clone());
+        .push_tcp_concrete(resolve.clone())
+        .push_tcp_logical();
     let endpoint = outbound
         .clone()
         .push_tcp_endpoint()

@@ -124,7 +124,11 @@ impl<C> Outbound<C> {
         C::Connection: Send + Unpin,
         C::Future: Send + Unpin,
         R: Clone + Send + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Sync,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -143,7 +147,8 @@ impl<C> Outbound<C> {
             .into_inner();
 
         self.push_tcp_endpoint()
-            .push_tcp_logical(resolve)
+            .push_tcp_concrete(resolve)
+            .push_tcp_logical()
             .push_detect_http(http)
     }
 }
