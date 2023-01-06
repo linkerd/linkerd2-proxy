@@ -1,7 +1,6 @@
 mod proxy;
 mod service;
 
-use regex::Regex;
 use std::{
     fmt,
     hash::{Hash, Hasher},
@@ -21,14 +20,20 @@ pub struct Route {
     timeout: Option<Duration>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestMatch {
     All(Vec<RequestMatch>),
     Any(Vec<RequestMatch>),
     Not(Box<RequestMatch>),
-    Path(Box<Regex>),
+    Path(Regex),
     Method(http::Method),
+    /// The default route always matches all requests.
+    Default,
 }
+
+/// Wraps a `regex::Regex` to implement `PartialEq` via the original string.
+#[derive(Clone, Debug)]
+pub struct Regex(regex::Regex);
 
 #[derive(Clone, Debug)]
 pub struct ResponseClass {
@@ -58,13 +63,13 @@ pub struct Retries {
 #[derive(Clone, Default)]
 struct Labels(Arc<std::collections::BTreeMap<String, String>>);
 
-fn route_for_request<'r, B>(
-    http_routes: &'r [(RequestMatch, Route)],
+pub fn route_for_request<'r, K, B>(
+    http_routes: &'r [(RequestMatch, K)],
     request: &http::Request<B>,
-) -> Option<&'r Route> {
-    for (request_match, route) in http_routes {
+) -> Option<&'r K> {
+    for (request_match, key) in http_routes {
         if request_match.is_match(request) {
-            return Some(route);
+            return Some(key);
         }
     }
     None
@@ -118,11 +123,18 @@ impl RequestMatch {
     fn is_match<B>(&self, req: &http::Request<B>) -> bool {
         match self {
             RequestMatch::Method(ref method) => req.method() == *method,
-            RequestMatch::Path(ref re) => re.is_match(req.uri().path()),
+            RequestMatch::Path(Regex(ref re)) => re.is_match(req.uri().path()),
             RequestMatch::Not(ref m) => !m.is_match(req),
             RequestMatch::All(ref ms) => ms.iter().all(|m| m.is_match(req)),
             RequestMatch::Any(ref ms) => ms.iter().any(|m| m.is_match(req)),
+            RequestMatch::Default => true,
         }
+    }
+}
+
+impl Default for RequestMatch {
+    fn default() -> Self {
+        Self::Default
     }
 }
 
@@ -230,3 +242,19 @@ impl fmt::Debug for Labels {
         self.0.fmt(f)
     }
 }
+
+// === impl Regex ===
+
+impl From<regex::Regex> for Regex {
+    fn from(regex: regex::Regex) -> Self {
+        Self(regex)
+    }
+}
+
+impl PartialEq for Regex {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_str() == other.0.as_str()
+    }
+}
+
+impl Eq for Regex {}

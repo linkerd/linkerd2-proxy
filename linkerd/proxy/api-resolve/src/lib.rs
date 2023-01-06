@@ -12,9 +12,8 @@ mod resolve;
 pub use self::metadata::{Metadata, ProtocolHint};
 pub use self::resolve::Resolve;
 
-// TODO this should hold a `NameAddr`; but this currently isn't possible due to
-// outbound target types.
-#[derive(Clone, Debug)]
+// TODO(ver) this should hold a structured address reference and not just a FQDN:port.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ConcreteAddr(pub NameAddr);
 
 impl std::fmt::Display for ConcreteAddr {
