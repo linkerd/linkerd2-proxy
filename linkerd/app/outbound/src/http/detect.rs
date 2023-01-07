@@ -36,6 +36,8 @@ impl<N> Outbound<N> {
         self.map_stack(|config, rt, tcp| {
             let ServerConfig { h2_settings, .. } = config.proxy.server;
 
+            let tcp = tcp.instrument(|_: &_| debug_span!("opaque"));
+
             svc::stack(http)
                 .push_on_service(
                     svc::layers()

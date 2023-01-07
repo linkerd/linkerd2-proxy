@@ -10,7 +10,6 @@ use linkerd_app_core::{
     Error,
 };
 use std::task::{Context, Poll};
-use tracing::debug_span;
 
 #[derive(Clone, Debug)]
 pub struct Connect {
@@ -96,7 +95,6 @@ impl<C> Outbound<C> {
             conn.push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
                 .push_on_service(super::Forward::layer())
-                .instrument(|_: &_| debug_span!("tcp.forward"))
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })

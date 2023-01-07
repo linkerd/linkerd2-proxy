@@ -9,7 +9,6 @@ use linkerd_app_core::{
 };
 use linkerd_distribute as distribute;
 use std::sync::Arc;
-use tracing::debug_span;
 
 #[derive(Debug, thiserror::Error)]
 #[error("no route")]
@@ -61,9 +60,16 @@ impl<N> Outbound<N> {
             + 'static,
         NSvc::Future: Send,
     {
-        self.map_stack(|config, rt, concrete| {
+        self.map_stack(|_, rt, concrete| {
             let route = svc::layers()
-                .push_on_service(http::BoxRequest::layer())
+                .push_on_service(
+                    svc::layers()
+                        .push(http::BoxRequest::layer())
+                        // The router does not take the backend's availability into
+                        // consideration, so we must eagerly fail requests to prevent
+                        // leaking tasks onto the runtime.
+                        .push(svc::LoadShed::layer()),
+                )
                 .push(http::insert::NewInsert::<RouteParams, _>::layer())
                 .push(
                     rt.metrics
@@ -107,27 +113,19 @@ impl<N> Outbound<N> {
 
             // For each `Logical` target, watch its `Profile`, rebuilding a
             // router stack.
-            let watch = concrete
+            concrete
                 // Share the concrete stack each router stack.
                 .push_new_clone()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
-
-            // Caches each logical stack so that it can be reused across
-            // per-connection HTTP server stacks (i.e. created by the
-            // `DetectService`).
-            //
-            // TODO(ver) Update the detection stack so this dynamic caching can
-            // be removed.
-            //
-            // XXX(ver) This cache key includes the HTTP version. Should it?
-            watch
-                // Strips headers that may be set by this proxy and add an
-                // outbound canonical-dst-header.
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
+                // Add l5d-dst-canonical header to requests.
+                //
+                // TODO(ver) move this into the endpoint stack so that we can only
+                // set this on meshed connections.
+                //
+                // TODO(ver) do we need to strip headers here?
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
-                .push_idle_cache(config.discovery_idle_timeout)
-                .instrument(|l: &Logical| debug_span!("logical", service = %l.logical_addr))
                 .push(svc::ArcNewService::layer())
         })
     }

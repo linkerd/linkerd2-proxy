@@ -1,4 +1,4 @@
-use crate::{http, logical::Concrete, tcp, Outbound};
+use crate::{http, logical::Concrete, stack_labels, tcp, Outbound};
 use linkerd_app_core::{
     io, metrics,
     profiles::LogicalAddr,
@@ -13,6 +13,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
+use tracing::info_span;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint<P> {
@@ -211,19 +212,38 @@ impl<S> Outbound<S> {
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: fmt::Debug + Send + Sync + Unpin + 'static,
     {
+        // The forwarding stacks are **NOT** cached, since they don't do any
+        // external discovery.
         let http = self
             .clone()
             .push_tcp_endpoint::<http::Connect>()
             .push_http_endpoint()
-            .map_stack(|config, _, stk| {
-                stk.push_buffer_on_service("HTTP Server", &config.http_request_buffer)
+            .map_stack(|config, rt, stk| {
+                stk.push_on_service(
+                    svc::layers()
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .stack
+                                .layer(stack_labels("http", "forward")),
+                        )
+                        // TODO(ver): This buffer config should be distinct from
+                        // that in the concrete stack. It should probably be
+                        // derived from the target so that we can configure it
+                        // via the API.
+                        .push_buffer("HTTP Forward", &config.http_request_buffer),
+                )
             })
             .push_http_server()
             .into_inner();
 
-        self.push_tcp_endpoint()
-            .push_tcp_forward()
-            .push_detect_http(http)
+        let opaque = self.push_tcp_endpoint().push_tcp_forward();
+
+        opaque.push_detect_http(http).map_stack(|_, _, stk| {
+            stk.instrument(|e: &tcp::Endpoint| info_span!("forward", endpoint = %e.addr))
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer())
+        })
     }
 }
 

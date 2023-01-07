@@ -1,5 +1,5 @@
 use super::{Concrete, Endpoint};
-use crate::{endpoint, resolve, Outbound};
+use crate::{endpoint, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     drain, io,
     proxy::{
@@ -10,7 +10,7 @@ use linkerd_app_core::{
     },
     svc, Error, Infallible,
 };
-use tracing::debug_span;
+use tracing::info_span;
 
 // === impl Outbound ===
 
@@ -60,7 +60,13 @@ impl<C> Outbound<C> {
             connect
                 .push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
-                .instrument(|t: &Endpoint| debug_span!("endpoint", addr = %t.addr))
+                .push_on_service(
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(stack_labels("http", "endpoint")),
+                )
+                .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
                 .push(resolve::layer(resolve, *discovery_idle_timeout * 2))
                 .push_on_service(
                     svc::layers()
@@ -78,11 +84,11 @@ impl<C> Outbound<C> {
                             rt.metrics
                                 .proxy
                                 .stack
-                                .layer(crate::stack_labels("tcp", "concrete")),
+                                .layer(stack_labels("opaque", "concrete")),
                         )
-                        .push_buffer("TCP Concrete", tcp_connection_buffer)
-                        .push(svc::LoadShed::layer()),
+                        .push_buffer("Opaque Concrete", tcp_connection_buffer),
                 )
+                .instrument(|c: &Concrete| tracing::info_span!("concrete", addr = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
     }

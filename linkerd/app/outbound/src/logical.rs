@@ -9,6 +9,7 @@ use linkerd_app_core::{
 };
 pub use profiles::LogicalAddr;
 use std::fmt;
+use tracing::info_span;
 
 #[derive(Clone)]
 pub struct Logical<P> {
@@ -139,15 +140,31 @@ impl<C> Outbound<C> {
             .push_http_endpoint()
             .push_http_concrete(resolve.clone())
             .push_http_logical()
-            .map_stack(|config, _, stk| {
-                stk.push_buffer_on_service("HTTP Server", &config.http_request_buffer)
-            })
             .push_http_server()
+            // The detect stack doesn't cache its inner service, so we need a
+            // process-global cache of logical HTTP stacks.
+            .map_stack(|config, _, stk| {
+                stk.push_idle_cache(config.discovery_idle_timeout)
+                    .push_on_service(
+                        svc::layers()
+                            .push(http::Retain::layer())
+                            .push(http::BoxResponse::layer()),
+                    )
+            })
             .into_inner();
 
-        self.push_tcp_endpoint()
+        let opaque = self
+            .push_tcp_endpoint()
             .push_tcp_concrete(resolve)
             .push_tcp_logical()
-            .push_detect_http(http)
+            // The detect stack doesn't cache its inner service, so we need a
+            // process-global cache of logical TCP stacks.
+            .map_stack(|config, _, stk| stk.push_idle_cache(config.discovery_idle_timeout));
+
+        opaque.push_detect_http(http).map_stack(|_, _, stk| {
+            stk.instrument(|l: &tcp::Logical| info_span!("logical",  svc = %l.logical_addr))
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer())
+        })
     }
 }

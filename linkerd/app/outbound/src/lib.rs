@@ -126,7 +126,7 @@ impl Outbound<()> {
         self.runtime.metrics.clone()
     }
 
-    pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
+    fn with_stack<S>(self, stack: S) -> Outbound<S> {
         self.map_stack(move |_, _, _| svc::stack(stack))
     }
 }

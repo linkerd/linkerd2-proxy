@@ -184,9 +184,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                 }))
                             }
                         },
-                        http_endpoint
-                            .instrument(|_: &_| info_span!("forward"))
-                            .into_inner(),
+                        http_endpoint.into_inner(),
                     )
                     .push(svc::ArcNewService::layer())
                     // Obtain a new inner service for each request. Override stacks are

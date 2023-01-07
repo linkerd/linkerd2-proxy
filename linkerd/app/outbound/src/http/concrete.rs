@@ -9,6 +9,7 @@ use linkerd_app_core::{
     },
     svc, Error, Infallible,
 };
+use tracing::info_span;
 
 impl<N> Outbound<N> {
     // TODO(ver) make the outer target type generic/parameterized.
@@ -39,12 +40,6 @@ impl<N> Outbound<N> {
         R::Future: Send + Unpin,
     {
         self.map_stack(|config, rt, endpoint| {
-            let crate::Config {
-                discovery_idle_timeout,
-                http_request_buffer,
-                ..
-            } = config;
-
             let resolve = svc::stack(resolve.into_service())
                 .push_request_filter(|c: Concrete| Ok::<_, Infallible>(c.resolve))
                 .push(svc::layer::mk(move |inner| {
@@ -63,9 +58,9 @@ impl<N> Outbound<N> {
                     rt.metrics
                         .proxy
                         .stack
-                        .layer(stack_labels("http", "concrete.endpoint")),
+                        .layer(stack_labels("http", "endpoint")),
                 )
-                .instrument(|t: &Endpoint| tracing::debug_span!("endpoint", addr = %t.addr))
+                .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
                 // Resolve the service to its endpoints and balance requests over them.
                 //
                 // We *don't* ensure that the endpoint is driven to readiness here, because this
@@ -75,7 +70,7 @@ impl<N> Outbound<N> {
                 // decision to attempt the connection must be driven by the balancer.
                 //
                 // TODO(ver) remove the watchdog timeout.
-                .push(resolve::layer(resolve, *discovery_idle_timeout * 2))
+                .push(resolve::layer(resolve, config.discovery_idle_timeout * 2))
                 .push_on_service(http::balance::layer(
                     crate::EWMA_DEFAULT_RTT,
                     crate::EWMA_DECAY,
@@ -93,10 +88,9 @@ impl<N> Outbound<N> {
                                 .stack
                                 .layer(stack_labels("http", "concrete")),
                         )
-                        .push_buffer::<http::Request<http::BoxBody>>("HTTP", http_request_buffer)
-                        .push(svc::LoadShed::layer()),
+                        .push_buffer("HTTP Concrete", &config.http_request_buffer),
                 )
-                .instrument(|c: &Concrete| tracing::debug_span!("concrete", addr = %c.resolve))
+                .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
     }

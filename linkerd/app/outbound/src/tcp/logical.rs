@@ -6,7 +6,6 @@ use linkerd_app_core::{
     svc, Error,
 };
 use linkerd_distribute as distribute;
-use tracing::debug_span;
 
 #[derive(Debug, thiserror::Error)]
 #[error("no route")]
@@ -45,7 +44,13 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
     {
-        self.map_stack(|config, _, concrete| {
+        self.map_stack(|_, _, concrete| {
+            let route = svc::layers()
+                // The router does not take the backend's availability into
+                // consideration, so we must eagerly fail requests to prevent
+                // leaking tasks onto the runtime.
+                .push_on_service(svc::LoadShed::layer());
+
             // A `NewService`--instantiated once per logical target--that caches
             // a set of concrete services so that, as the watch provides new
             // `Params`, we can reuse inner services.
@@ -55,26 +60,17 @@ impl<N> Outbound<N> {
                 .push(BackendCache::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
+                .push_on_service(route)
                 .push(svc::NewOneshotRoute::<Params, _, _>::layer_cached());
 
             // For each `Logical` target, watch its `Profile`, maintaining a
             // cache of all concrete services used by the router.
-            let watch = concrete
+            concrete
                 // Share the concrete stack each router stack.
                 .push_new_clone()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
-
-            // This caches each logical stack so that it can be reused across
-            // per-connection server stacks (i.e., created by the
-            // DetectService).
-            //
-            // TODO(ver) Update the detection stack so this dynamic caching can
-            // be removed.
-            watch
-                .push_idle_cache(config.discovery_idle_timeout)
-                .instrument(|_: &Logical| debug_span!("tcp"))
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
                 .push(svc::ArcNewService::layer())
         })
     }
