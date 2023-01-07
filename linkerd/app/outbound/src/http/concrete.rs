@@ -46,7 +46,6 @@ impl<N> Outbound<N> {
             } = config;
 
             let resolve = svc::stack(resolve.into_service())
-                .check_service::<ConcreteAddr>()
                 .push_request_filter(|c: Concrete| Ok::<_, Infallible>(c.resolve))
                 .push(svc::layer::mk(move |inner| {
                     map_endpoint::Resolve::new(
@@ -60,7 +59,6 @@ impl<N> Outbound<N> {
                 .into_inner();
 
             endpoint
-                .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 .push_on_service(
                     rt.metrics
                         .proxy
@@ -68,8 +66,6 @@ impl<N> Outbound<N> {
                         .layer(stack_labels("http", "concrete.endpoint")),
                 )
                 .instrument(|t: &Endpoint| tracing::debug_span!("endpoint", addr = %t.addr))
-                .check_new_service::<Endpoint, http::Request<_>>()
-                .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 // Resolve the service to its endpoints and balance requests over them.
                 //
                 // We *don't* ensure that the endpoint is driven to readiness here, because this

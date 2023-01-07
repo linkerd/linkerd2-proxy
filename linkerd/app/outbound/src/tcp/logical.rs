@@ -62,10 +62,8 @@ impl<N> Outbound<N> {
             let watch = concrete
                 // Share the concrete stack each router stack.
                 .push_new_clone()
-                .check_new_new::<Logical, Concrete>()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .check_new_new::<Logical, Params>()
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
 
             // This caches each logical stack so that it can be reused across
@@ -75,10 +73,8 @@ impl<N> Outbound<N> {
             // TODO(ver) Update the detection stack so this dynamic caching can
             // be removed.
             watch
-                .check_new_service::<Logical, I>()
                 .push_idle_cache(config.discovery_idle_timeout)
                 .instrument(|_: &Logical| debug_span!("tcp"))
-                .check_new_service::<Logical, I>()
                 .push(svc::ArcNewService::layer())
         })
     }

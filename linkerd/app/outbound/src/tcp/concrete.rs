@@ -45,7 +45,6 @@ impl<C> Outbound<C> {
             } = config;
 
             let resolve = svc::stack(resolve.into_service())
-                .check_service::<ConcreteAddr>()
                 .push_request_filter(|c: Concrete| Ok::<_, Infallible>(c.resolve))
                 .push(svc::layer::mk(move |inner| {
                     map_endpoint::Resolve::new(
@@ -84,7 +83,6 @@ impl<C> Outbound<C> {
                         .push_buffer("TCP Concrete", tcp_connection_buffer)
                         .push(svc::LoadShed::layer()),
                 )
-                .check_new_service::<Concrete, I>()
                 .push(svc::ArcNewService::layer())
         })
     }

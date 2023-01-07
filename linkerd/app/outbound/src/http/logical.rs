@@ -108,15 +108,11 @@ impl<N> Outbound<N> {
             // For each `Logical` target, watch its `Profile`, rebuilding a
             // router stack.
             let watch = concrete
-                .check_new_service::<Concrete, http::Request<http::BoxBody>>()
                 // Share the concrete stack each router stack.
                 .push_new_clone()
-                .check_new_new::<Logical, Concrete>()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .check_new_new::<Logical, Params>()
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
-                .check_new::<Logical>();
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>());
 
             // Caches each logical stack so that it can be reused across
             // per-connection HTTP server stacks (i.e. created by the
@@ -127,7 +123,6 @@ impl<N> Outbound<N> {
             //
             // XXX(ver) This cache key includes the HTTP version. Should it?
             watch
-                .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // Strips headers that may be set by this proxy and add an
                 // outbound canonical-dst-header.
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
