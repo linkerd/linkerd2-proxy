@@ -8,7 +8,6 @@ use linkerd_app_core::{
     svc, Error,
 };
 use linkerd_distribute as distribute;
-use linkerd_router as router;
 use std::sync::Arc;
 use tracing::debug_span;
 
@@ -104,7 +103,7 @@ impl<N> Outbound<N> {
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(route)
-                .push(router::NewOneshotRoute::<Params, _, _>::layer_cached());
+                .push(svc::NewOneshotRoute::<Params, _, _>::layer_cached());
 
             // For each `Logical` target, watch its `Profile`, rebuilding a
             // router stack.
@@ -218,7 +217,7 @@ impl svc::Param<profiles::LogicalAddr> for Params {
     }
 }
 
-impl<B> router::SelectRoute<http::Request<B>> for Params {
+impl<B> svc::router::SelectRoute<http::Request<B>> for Params {
     type Key = RouteParams;
     type Error = NoRoute;
 

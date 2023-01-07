@@ -947,7 +947,6 @@ dependencies = [
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
  "linkerd-retry",
- "linkerd-router",
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
