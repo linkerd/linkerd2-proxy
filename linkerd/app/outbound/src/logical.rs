@@ -123,7 +123,11 @@ impl<C> Outbound<C> {
         C::Connection: Send + Unpin,
         C::Future: Send + Unpin,
         R: Clone + Send + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Sync,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,

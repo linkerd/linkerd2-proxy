@@ -1,4 +1,5 @@
 use super::*;
+use crate::tcp::Endpoint;
 use crate::test_util::*;
 use io::AsyncWriteExt;
 use linkerd_app_core::{

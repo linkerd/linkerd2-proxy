@@ -6,6 +6,7 @@ use linkerd_app_core::{
     Error,
 };
 
+pub mod concrete;
 pub mod connect;
 pub mod logical;
 pub mod opaque_transport;
