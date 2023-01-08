@@ -1,6 +1,6 @@
 use linkerd_app_core::{
-    proxy::discover::{self, Buffer},
-    svc::{layer, NewService},
+    proxy::discover::{buffer, Buffer, FromResolve, MakeEndpoint},
+    svc::{layer, FutureService, NewService},
 };
 use std::time::Duration;
 
@@ -36,10 +36,17 @@ where
     R::Future: Send,
     N: NewService<R::Endpoint>,
 {
-    type Service = Buffer<discover::Stack<N, R, R::Endpoint>>;
+    type Service = discover::Buffer<R::Endpoint, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let disco = discover::resolve(self.inner.clone(), self.resolve.clone());
-        Buffer::new(ENDPOINT_BUFFER_CAPACITY, disco)
+        let resolve = self.resolve.clone().resolve(target);
+
+        buffer::spawn(
+            ENDPOINT_BUFFER_CAPACITY,
+            MakeEndpoint::new(
+                self.inner.clone(),
+                FromResolve::new(FutureService::new(resolve)),
+            ),
+        )
     }
 }

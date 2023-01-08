@@ -38,6 +38,9 @@ type BalanceBody =
 
 pub type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 
+// const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
+// const EWMA_DECAY: Duration = Duration::from_secs(10);
+
 impl Config {
     pub fn build(
         self,
@@ -184,13 +187,11 @@ mod resolve {
         R::Backoff: Unpin,
     {
         svc::layer::mk(move |endpoint| {
-            discover::resolve(
-                endpoint,
-                map_endpoint::Resolve::new(
-                    IntoTarget(()),
-                    recover::Resolve::new(recover.clone(), DnsResolve::new(dns.clone())),
-                ),
-            )
+            let resolve = map_endpoint::Resolve::new(
+                IntoTarget(()),
+                recover::Resolve::new(recover.clone(), DnsResolve::new(dns.clone())),
+            );
+            discover::MakeEndpoint::new(discover::FromResolve::new(resolve), endpoint)
         })
     }
 
@@ -212,14 +213,6 @@ mod resolve {
             Target::new(addr, control.identity.clone())
         }
     }
-}
-
-mod balance {
-    use crate::proxy::http;
-    // use std::time::Duration;
-
-    // const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
-    // const EWMA_DECAY: Duration = Duration::from_secs(10);
 }
 
 /// Creates a client suitable for gRPC.
