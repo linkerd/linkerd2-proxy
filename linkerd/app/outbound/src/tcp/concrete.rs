@@ -72,7 +72,7 @@ impl<C> Outbound<C> {
                     rt.metrics
                         .proxy
                         .stack
-                        .layer(stack_labels("http", "endpoint")),
+                        .layer(stack_labels("tcp", "endpoint")),
                 )
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
                 .push(resolve::layer(resolve, *discovery_idle_timeout * 2))
