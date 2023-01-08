@@ -115,7 +115,7 @@ impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
 
 // === impl Outbound ===
 
-impl<C> Outbound<C>
+impl<C> Outbound<C> {
     /// Builds a stack that handles protocol detection as well as routing and
     /// load balancing for a single logical destination.
     ///
