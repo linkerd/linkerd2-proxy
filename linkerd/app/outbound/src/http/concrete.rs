@@ -1,14 +1,6 @@
 use super::{Concrete, Endpoint};
 use crate::{endpoint, resolve, stack_labels, Outbound};
-use linkerd_app_core::{
-    proxy::{
-        api_resolve::{ConcreteAddr, Metadata},
-        core::Resolve,
-        http,
-        resolve::map_endpoint,
-    },
-    svc, Error, Infallible,
-};
+use linkerd_app_core::{proxy::http, svc, Error, Infallible};
 use tracing::info_span;
 
 impl<N> Outbound<N> {
@@ -51,7 +43,7 @@ impl<N> Outbound<N> {
             let resolve = svc::stack(resolve.into_service())
                 .push_request_filter(|c: Concrete| Ok::<_, Infallible>(c.resolve))
                 .push(svc::layer::mk(move |inner| {
-                    map_endpoint::Resolve::new(
+                    resolve::map_endpoint::Resolve::new(
                         endpoint::FromMetadata {
                             inbound_ips: config.inbound_ips.clone(),
                         },
@@ -69,24 +61,10 @@ impl<N> Outbound<N> {
                         .layer(stack_labels("http", "endpoint")),
                 )
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
-                // Resolve the service to its endpoints and balance requests over them.
-                //
-                // We *don't* ensure that the endpoint is driven to readiness here, because this
-                // might cause us to continually attempt to reestablish connections without
-                // consulting discovery to see whether the endpoint has been removed. Instead, the
-                // endpoint stack spawns each _connection_ attempt on a background task, but the
-                // decision to attempt the connection must be driven by the balancer.
-                //
-                // TODO(ver) remove the watchdog timeout.
-                .push(resolve::layer(resolve, config.discovery_idle_timeout * 2))
-                .push_on_service(http::balance::layer(
-                    crate::EWMA_DEFAULT_RTT,
-                    crate::EWMA_DECAY,
-                ))
-                .check_make_service::<Concrete, http::Request<http::BoxBody>>()
+                .push(resolve::NewResolve::layer(resolve))
+                .push(http::NewBalance::layer())
                 .push(svc::MapErr::layer(Into::into))
                 // Drives the initial resolution via the service's readiness.
-                .into_new_service()
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxResponse::layer())

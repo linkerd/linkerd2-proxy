@@ -107,19 +107,19 @@ where
     }
 }
 
-impl<D, E> Stream for Discover<D, E>
+impl<D, N> Stream for Discover<D, N>
 where
     D: discover::Discover,
     D::Key: Hash + Clone,
     D::Error: Into<Error>,
-    E: NewService<D::Service>,
+    N: NewService<D::Service>,
 {
-    type Item = Result<Change<D::Key, E::Service>, Error>;
+    type Item = Result<Change<D::Key, N::Service>, Error>;
 
     fn poll_next(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Change<D::Key, E::Service>, Error>>> {
+    ) -> Poll<Option<Result<Change<D::Key, N::Service>, Error>>> {
         let this = self.as_mut().project();
         match ready!(this.discover.poll_discover(cx)) {
             Some(change) => Poll::Ready(Some(Ok(match change.map_err(Into::into)? {

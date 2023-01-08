@@ -91,8 +91,7 @@ impl Config {
             .push_new_reconnect(self.connect.backoff)
             .instrument(|t: &self::client::Target| tracing::info_span!("endpoint", addr = %t.addr))
             .push(self::resolve::layer(dns, resolve_backoff))
-            .push_on_service(self::control::balance::layer())
-            .into_new_service()
+            .push(http::NewBalance::layer())
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
             .push_buffer_on_service("Controller client", &self.buffer)
@@ -217,14 +216,10 @@ mod resolve {
 
 mod balance {
     use crate::proxy::http;
-    use std::time::Duration;
+    // use std::time::Duration;
 
-    const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
-    const EWMA_DECAY: Duration = Duration::from_secs(10);
-
-    pub fn layer<A, B>() -> http::balance::Layer<A, B> {
-        http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY)
-    }
+    // const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
+    // const EWMA_DECAY: Duration = Duration::from_secs(10);
 }
 
 /// Creates a client suitable for gRPC.

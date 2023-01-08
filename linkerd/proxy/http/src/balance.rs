@@ -1,59 +1,76 @@
 use crate::Error;
 use hyper::body::HttpBody;
 pub use hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
+use linkerd_stack::{layer, NewService, Param};
 use rand::thread_rng;
 use std::{hash::Hash, marker::PhantomData, time::Duration};
-use tower::discover::Discover;
-pub use tower::{
-    balance::p2c::Balance,
-    load::{Load, PeakEwmaDiscover},
-};
+use tower::{balance::p2c, discover::Discover};
+
+pub use tower::load::{Load, PeakEwmaDiscover};
+
+#[derive(Clone, Debug)]
+pub struct EwmaConfig {
+    pub default_rtt: Duration,
+    pub decay: Duration,
+}
 
 /// Configures a stack to resolve `T` typed targets to balance requests over
 /// `M`-typed endpoint stacks.
 #[derive(Debug)]
-pub struct Layer<A, B> {
-    decay: Duration,
-    default_rtt: Duration,
-    _marker: PhantomData<fn(A) -> B>,
+pub struct NewBalance<ReqB, RspB, N> {
+    inner: N,
+    _marker: PhantomData<fn(ReqB) -> RspB>,
 }
 
-// === impl Layer ===
+pub type Balance<D, B> = p2c::Balance<PeakEwmaDiscover<D, PendingUntilFirstData>, http::Request<B>>;
 
-pub fn layer<A, B>(default_rtt: Duration, decay: Duration) -> Layer<A, B> {
-    Layer {
-        decay,
-        default_rtt,
-        _marker: PhantomData,
-    }
-}
+// === impl NewBalance ===
 
-impl<A, B> Clone for Layer<A, B> {
-    fn clone(&self) -> Self {
+impl<ReqB, RspB, N> NewBalance<ReqB, RspB, N> {
+    pub fn new(inner: N) -> Self {
         Self {
-            decay: self.decay,
-            default_rtt: self.default_rtt,
+            inner,
             _marker: PhantomData,
         }
     }
+
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone + Copy {
+        layer::mk(Self::new)
+    }
 }
 
-impl<D, S, A, B> tower::layer::Layer<D> for Layer<A, B>
+impl<T, ReqB, RspB, N, D, S> NewService<T> for NewBalance<ReqB, RspB, N>
 where
-    A: HttpBody,
-    B: HttpBody,
+    T: Param<EwmaConfig>,
+    ReqB: HttpBody,
+    RspB: HttpBody,
+    N: NewService<T, Service = D>,
     D: Discover<Service = S>,
     D::Key: Hash,
-    S: tower::Service<http::Request<A>, Response = http::Response<B>>,
+    S: tower::Service<http::Request<ReqB>, Response = http::Response<RspB>>,
     S::Error: Into<Error>,
-    Balance<PeakEwmaDiscover<D, PendingUntilFirstData>, http::Request<A>>:
-        tower::Service<http::Request<A>>,
+    Balance<PeakEwmaDiscover<D, PendingUntilFirstData>, http::Request<ReqB>>:
+        tower::Service<http::Request<ReqB>>,
 {
-    type Service = Balance<PeakEwmaDiscover<D, PendingUntilFirstData>, http::Request<A>>;
+    type Service = Balance<D, ReqB>;
 
-    fn layer(&self, discover: D) -> Self::Service {
-        let instrument = PendingUntilFirstData::default();
-        let loaded = PeakEwmaDiscover::new(discover, self.default_rtt, self.decay, instrument);
-        Balance::from_rng(loaded, &mut thread_rng()).expect("RNG must be valid")
+    fn new_service(&self, target: T) -> Self::Service {
+        let EwmaConfig { default_rtt, decay } = target.param();
+        let disco = PeakEwmaDiscover::new(
+            self.inner.new_service(target),
+            default_rtt,
+            decay,
+            PendingUntilFirstData::default(),
+        );
+        Balance::from_rng(disco, &mut thread_rng()).expect("RNG must be valid")
+    }
+}
+
+impl<ReqB, RspB, N: Clone> Clone for NewBalance<ReqB, RspB, N> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            _marker: PhantomData,
+        }
     }
 }
