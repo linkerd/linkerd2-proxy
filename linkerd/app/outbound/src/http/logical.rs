@@ -34,6 +34,14 @@ type Distribution = distribute::Distribution<Concrete>;
 // === impl Outbound ===
 
 impl<N> Outbound<N> {
+    /// Builds a `NewService` that produces a router service for each logical
+    /// target.
+    ///
+    /// The router uses discovery information (provided on the target) to
+    /// support per-request routing over a set of concrete inner services.
+    /// Only available inner services are used for routing. When there are no
+    /// available backends, requests are failed with a [`svc::stack::LoadShedError`].
+    ///
     // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_http_logical<NSvc>(
         self,

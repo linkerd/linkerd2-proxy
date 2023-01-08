@@ -12,6 +12,14 @@ use linkerd_app_core::{
 use tracing::info_span;
 
 impl<N> Outbound<N> {
+    /// Builds a [`svc::NewService`] stack that builds buffered HTTP load
+    /// balancer services for [`Concrete`] targets.
+    ///
+    /// When a balancer has no available inner services, it goes into
+    /// 'failfast'. While in failfast, buffered requests are failed and the
+    /// service becomes unavailable so callers may choose alternate concrete
+    /// services.
+    //
     // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_http_concrete<NSvc, R>(
         self,

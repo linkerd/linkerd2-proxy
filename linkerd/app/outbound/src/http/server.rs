@@ -12,6 +12,13 @@ pub(crate) struct ServerRescue {
 }
 
 impl<N> Outbound<N> {
+    ///  Builds a [`svc::NewService`] stack that prepares HTTP requests to be
+    ///  proxied.
+    ///
+    /// The services produced by this stack handle errors, converting them into
+    /// HTTP responses.
+    ///
+    /// Inner services must be available, otherwise load shedding is applied.
     pub fn push_http_server<T, NSvc>(
         self,
     ) -> Outbound<
@@ -55,7 +62,8 @@ impl<N> Outbound<N> {
                             config.proxy.max_in_flight_requests,
                         ))
                         // Shed load by failing requests when the concurrency
-                        // limit is reached.
+                        // limit is reached or the inner service is otherwise
+                        // not ready for requests.
                         .push(svc::LoadShed::layer())
                         .push(rt.metrics.http_errors.to_layer())
                         // Tear down server connections when a peer proxy generates an error.

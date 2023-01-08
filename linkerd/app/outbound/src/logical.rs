@@ -115,7 +115,12 @@ impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
 
 // === impl Outbound ===
 
-impl<C> Outbound<C> {
+impl<C> Outbound<C>
+    /// Builds a stack that handles protocol detection as well as routing and
+    /// load balancing for a single logical destination.
+    ///
+    /// This stack uses caching so that a router/load-balancer may be reused
+    /// across multiple connections.
     pub fn push_logical<R, I>(self, resolve: R) -> Outbound<svc::ArcNewTcp<tcp::Logical, I>>
     where
         Self: Clone + 'static,

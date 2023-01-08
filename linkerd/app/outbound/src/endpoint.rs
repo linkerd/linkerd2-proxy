@@ -202,7 +202,14 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
 // === Outbound ===
 
 impl<S> Outbound<S> {
-    pub fn push_endpoint<I>(self) -> Outbound<svc::ArcNewTcp<tcp::Endpoint, I>>
+    /// Builds a stack that handles forwarding a connection to a single endpoint
+    /// (i.e. without routing and load balancing).
+    ///
+    /// HTTP protocol detection may still be performed on the connection.
+    ///
+    /// A service produced by this stack is used for a single connection (i.e.
+    /// without any form of caching for reuse across connections).
+    pub fn push_forward<I>(self) -> Outbound<svc::ArcNewTcp<tcp::Endpoint, I>>
     where
         Self: Clone + 'static,
         S: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
@@ -276,7 +283,7 @@ pub mod tests {
                         "i don't like you, go away",
                     ))
                 }))
-                .push_endpoint()
+                .push_forward()
                 .into_inner()
                 .new_service(tcp::Endpoint::forward(
                     OrigDstAddr(addr),

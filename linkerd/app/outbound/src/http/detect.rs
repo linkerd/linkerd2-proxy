@@ -11,11 +11,18 @@ use tracing::debug_span;
 pub struct Skip;
 
 impl<N> Outbound<N> {
-    // TODO(ver) This stack creates a new service for each connection, which
-    // needlessly busts caching. We can be smarter about reusing inner services
-    // across connections by moving caching into this stack. On the other hand,
-    // it's not clear whether this sharing/reuse should be done with endpoint
-    // stacks...
+    /// Builds a `NewService` that produces services that optionally (depending
+    /// on the target) perform HTTP protocol detection on sockets.
+    ///
+    /// When HTTP is detected, an HTTP service is build from the provided HTTP
+    /// stack. In either case, the inner service is built for each connection so
+    /// inner services must implement caching as needed.
+    //
+    // TODO(ver) We can be smarter about reusing inner services across
+    // connections by moving caching into this stack...
+    //
+    // TODO(ver) Let discovery influence whether we assume an HTTP protocol
+    // without deteciton.
     pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
