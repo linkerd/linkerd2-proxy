@@ -52,7 +52,7 @@ jobs:
     strategy:
       matrix:
         arch: [amd64, arm64, arm]
-        libc: [gnu, musl]
+        libc: [gnu] # musl
 
     # If we're not actually building on a release tag, don't short-circuit on
     # errors. This helps us know whether a failure is platform-specific.
