@@ -5,7 +5,8 @@ use std::{
 };
 use tokio::sync::watch;
 use tracing::Instrument;
-
+mod target;
+pub use self::target::NewWatchTarget;
 /// Builds [`SpawnWatch`] services from a target that produces a `P`-typed
 /// [`watch::Receiver`].
 ///
