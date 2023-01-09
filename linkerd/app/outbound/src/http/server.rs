@@ -12,8 +12,8 @@ pub(crate) struct ServerRescue {
 }
 
 impl<N> Outbound<N> {
-    ///  Builds a [`svc::NewService`] stack that prepares HTTP requests to be
-    ///  proxied.
+    /// Builds a [`svc::NewService`] stack that prepares HTTP requests to be
+    /// proxied.
     ///
     /// The services produced by this stack handle errors, converting them into
     /// HTTP responses.

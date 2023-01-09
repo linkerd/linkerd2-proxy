@@ -72,7 +72,7 @@ impl<C> Outbound<C> {
                         )
                         .push_buffer("Opaque Concrete", tcp_connection_buffer),
                 )
-                .instrument(|c: &Concrete| tracing::info_span!("concrete", addr = %c.resolve))
+                .instrument(|c: &Concrete| info_span!("concrete", addr = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
     }
