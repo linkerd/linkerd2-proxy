@@ -1,6 +1,6 @@
 use crate::{
-    classify, config, control, dns, identity, metrics, proxy::http, svc, tls,
-    transport::ConnectTcp, Addr, Error,
+    classify, config, dns, identity, metrics, proxy::http, svc, tls, transport::ConnectTcp, Addr,
+    Error,
 };
 use futures::future::Either;
 use std::fmt;
@@ -93,8 +93,10 @@ impl Config {
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .push_new_reconnect(self.connect.backoff)
             .instrument(|t: &self::client::Target| tracing::info_span!("endpoint", addr = %t.addr))
-            .push(self::resolve::layer(dns, resolve_backoff))
-            .push(http::NewBalance::layer())
+            .push(http::NewBalance::layer(self::resolve::new(
+                dns,
+                resolve_backoff,
+            )))
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
             .push_buffer_on_service("Controller client", &self.buffer)
@@ -178,30 +180,18 @@ mod resolve {
     use linkerd_error::Recover;
     use std::net::SocketAddr;
 
-    pub fn layer<M, R>(
-        dns: dns::Resolver,
-        recover: R,
-    ) -> impl svc::Layer<M, Service = Discover<M, R>>
+    pub fn new<M, R>(dns: dns::Resolver, recover: R) -> Discover<M, R>
     where
         R: Recover + Clone,
         R::Backoff: Unpin,
     {
-        svc::layer::mk(move |endpoint| {
-            let resolve = map_endpoint::Resolve::new(
-                IntoTarget(()),
-                recover::Resolve::new(recover.clone(), DnsResolve::new(dns.clone())),
-            );
-            discover::MakeEndpoint::new(discover::FromResolve::new(resolve), endpoint)
-        })
+        map_endpoint::Resolve::new(
+            IntoTarget(()),
+            recover::Resolve::new(recover.clone(), DnsResolve::new(dns.clone())),
+        )
     }
 
-    type Discover<M, R> = discover::MakeEndpoint<
-        discover::FromResolve<
-            map_endpoint::Resolve<IntoTarget, recover::Resolve<R, DnsResolve>>,
-            Target,
-        >,
-        M,
-    >;
+    type Discover<M, R> = map_endpoint::Resolve<IntoTarget, recover::Resolve<R, DnsResolve>>;
 
     #[derive(Copy, Clone, Debug)]
     pub struct IntoTarget(());

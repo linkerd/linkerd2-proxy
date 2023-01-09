@@ -3,7 +3,6 @@ use linkerd_error::Error;
 use linkerd_stack::NewService;
 use pin_project::pin_project;
 use std::{
-    hash::Hash,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -12,36 +11,26 @@ use tower::discover::{self, Change};
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
 #[pin_project]
-pub struct MakeEndpoint<D: discover::Discover, E: NewService<D::Service>> {
+pub struct DiscoverNew<D, N> {
     #[pin]
     discover: D,
-    new_endpoint: E,
+    new: N,
 }
 
-// === impl MakeEndpoint ===
+// === impl DiscoverNew ===
 
-impl<D, E> MakeEndpoint<D, E>
-where
-    D: discover::Discover,
-    D::Key: Hash + Clone,
-    D::Error: Into<Error>,
-    E: NewService<D::Service>,
-{
-    pub fn new(discover: D, new_endpoint: E) -> Self {
-        Self {
-            discover,
-            new_endpoint,
-        }
+impl<D, N> DiscoverNew<D, N> {
+    pub fn new(discover: D, new: N) -> Self {
+        Self { discover, new }
     }
 }
 
-impl<D, N> Stream for MakeEndpoint<D, N>
+impl<D, N> Stream for DiscoverNew<D, N>
 where
     D: discover::Discover,
-    D::Key: Hash + Clone,
+    D::Key: Clone,
     D::Error: Into<Error>,
-    N: NewService<D::Service>,
-    // TODO(ver) N: NewService<(D::Key, D::Service)>,
+    N: NewService<(D::Key, D::Service)>,
 {
     type Item = Result<Change<D::Key, N::Service>, Error>;
 
@@ -53,8 +42,8 @@ where
         match ready!(this.discover.poll_discover(cx)) {
             Some(change) => Poll::Ready(Some(Ok(match change.map_err(Into::into)? {
                 Change::Insert(key, target) => {
-                    let endpoint = this.new_endpoint.new_service(target);
-                    Change::Insert(key, endpoint)
+                    let svc = this.new.new_service((key.clone(), target));
+                    Change::Insert(key, svc)
                 }
                 Change::Remove(key) => Change::Remove(key),
             }))),

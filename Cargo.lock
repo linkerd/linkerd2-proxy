@@ -1395,6 +1395,8 @@ dependencies = [
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-io",
+ "linkerd-proxy-core",
+ "linkerd-proxy-discover",
  "linkerd-stack",
  "linkerd-tracing",
  "pin-project",

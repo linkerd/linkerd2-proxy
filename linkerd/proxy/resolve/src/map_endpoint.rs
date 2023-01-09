@@ -60,8 +60,8 @@ where
     type Future = ResolveFuture<T, R::Future, M>;
 
     #[inline]
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.resolve.poll_ready(cx)
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     #[inline]

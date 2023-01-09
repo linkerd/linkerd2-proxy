@@ -1,13 +1,13 @@
 use futures_util::future::poll_fn;
 use linkerd_error::Error;
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 use tower::discover;
 use tracing::instrument::Instrument;
 
-pub type Buffer<K, S> = ReceiverStream<Result<discover::Change<K, S>, Error>>;
+pub type Result<K, S> = std::result::Result<discover::Change<K, S>, Error>;
+pub type Buffer<K, S> = tokio_stream::wrappers::ReceiverStream<Result<K, S>>;
 
-pub fn spawn<K, S, D>(capacity: usize, inner: D) -> Buffer<D::Key, D::Service>
+pub fn spawn<D>(capacity: usize, inner: D) -> Buffer<D::Key, D::Service>
 where
     D: discover::Discover + Send + 'static,
     D::Error: Into<Error> + Send,
@@ -48,5 +48,5 @@ where
         .in_current_span(),
     );
 
-    ReceiverStream::new(rx)
+    Buffer::new(rx)
 }
