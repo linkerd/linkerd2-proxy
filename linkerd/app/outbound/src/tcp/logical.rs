@@ -76,7 +76,7 @@ impl<N> Outbound<N> {
             // For each `Logical` target, watch its `Profile`, maintaining a
             // cache of all concrete services used by the router.
             concrete
-                // Share the concrete stack each router stack.
+                // Share the concrete stack with each router stack.
                 .push_new_clone()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
