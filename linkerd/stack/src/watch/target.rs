@@ -12,9 +12,13 @@ impl<W, U, N> NewWatchTarget<W, U, N>
 where
     U: Clone,
 {
-    pub fn layer(
+    pub fn layer<F, T>(
         start_watch: U,
-    ) -> impl crate::layer::Layer<N, Service = NewWatchTarget<W, U, N>> + Clone {
+    ) -> impl crate::layer::Layer<N, Service = NewWatchTarget<W, U, N>> + Clone
+    where
+        U: Fn(T, watch::Sender<W>) -> F + Clone,
+        F: Future + Send + 'static,
+    {
         crate::layer::mk(move |inner| Self::new(start_watch.clone(), inner))
     }
 
