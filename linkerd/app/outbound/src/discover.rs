@@ -35,6 +35,8 @@ impl<N> Outbound<N> {
         self.map_stack(|config, rt, inner| {
             let allow = config.allow_discovery.clone();
             inner
+                // TODO(eliza): add `WatchTarget` layer here
+                // TODO(eliza): add `Join` to combine profile and client policy discovery
                 .push(profiles::discover::layer(profiles, move |t: T| {
                     let OrigDstAddr(addr) = t.param();
                     if allow.matches_ip(addr.ip()) {
@@ -50,7 +52,9 @@ impl<N> Outbound<N> {
                         "not in discoverable networks",
                     ))
                 }))
+                .check_make_service::<T, I>()
                 .push(svc::new_service::FromMakeService::layer())
+                .check_new_service::<T, I>()
                 .push_on_service(
                     svc::layers()
                         .push(
