@@ -2,6 +2,7 @@
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
+#![recursion_limit = "256"]
 
 // Emit a compile-time error if no TLS implementations are enabled. When adding
 // new implementations, add their feature flags here!
