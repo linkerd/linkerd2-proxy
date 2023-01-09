@@ -29,7 +29,7 @@ impl svc::Param<Addr> for ControlAddr {
 
 impl svc::Param<http::balance::EwmaConfig> for ControlAddr {
     fn param(&self) -> http::balance::EwmaConfig {
-        EWMA_CONFIG.clone()
+        EWMA_CONFIG
     }
 }
 
@@ -39,10 +39,8 @@ impl fmt::Display for ControlAddr {
     }
 }
 
-type BalanceBody =
-    http::balance::PendingUntilFirstDataBody<tower::load::peak_ewma::Handle, hyper::Body>;
-
-pub type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
+pub type RspBody =
+    linkerd_http_metrics::requests::ResponseBody<http::balance::Body<hyper::Body>, classify::Eos>;
 
 const EWMA_CONFIG: http::balance::EwmaConfig = http::balance::EwmaConfig {
     default_rtt: time::Duration::from_millis(30),
@@ -106,7 +104,7 @@ impl Config {
             .check_new_service::<(_, self::client::Target), _>()
             .push_new_clone()
             .check_new_new::<ControlAddr, (_, self::client::Target)>()
-            .push(http::NewBalance::layer(self::resolve::new(
+            .push(http::NewP2cPeakEwma::layer(self::resolve::new(
                 dns,
                 resolve_backoff,
             )))

@@ -1,0 +1,156 @@
+use linkerd_error::Error;
+use linkerd_proxy_core::Resolve;
+use linkerd_proxy_discover::{self as discover, NewSpawnDiscover};
+use linkerd_stack::{layer, NewService, Param, Service};
+use rand::thread_rng;
+use std::{marker::PhantomData, net::SocketAddr, time::Duration};
+use tower::{
+    balance::p2c,
+    load::{self, PeakEwma},
+};
+
+pub use tower::load::peak_ewma::Handle;
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct EwmaConfig {
+    pub default_rtt: Duration,
+    pub decay: Duration,
+}
+
+/// Configures a stack to resolve `T` typed targets to balance requests over
+/// `M`-typed endpoint stacks.
+#[derive(Debug)]
+pub struct NewP2cPeakEwma<C, Req, R, N> {
+    discover: NewSpawnDiscover<R, NewNewInner<C, Req, N>>,
+}
+
+type Buffer<C, S> = discover::Buffer<PeakEwma<S, C>>;
+pub type Balance<C, Req, S> = p2c::Balance<Buffer<C, S>, Req>;
+
+/// Constructs an inner stack that wraps inner services in a `PeakEwma` load
+/// middleware.
+#[derive(Debug)]
+pub struct NewNewInner<C, Req, N> {
+    inner: N,
+    _marker: PhantomData<fn(Req) -> C>,
+}
+
+#[derive(Debug)]
+pub struct NewInner<C, Req, N> {
+    config: EwmaConfig,
+    inner: N,
+    _marker: PhantomData<fn(Req) -> C>,
+}
+
+// === impl NewP2cPeakEwma ===
+
+impl<C, Req, R, N> NewP2cPeakEwma<C, Req, R, N> {
+    // FIXME(ver)
+    const CAPACITY: usize = 1_000;
+
+    pub fn new(inner: N, resolve: R) -> Self {
+        let ewma = NewNewInner {
+            inner,
+            _marker: PhantomData,
+        };
+
+        Self {
+            discover: NewSpawnDiscover::new(Self::CAPACITY, resolve, ewma),
+        }
+    }
+
+    pub fn layer(resolve: R) -> impl layer::Layer<N, Service = Self> + Clone
+    where
+        R: Clone,
+    {
+        layer::mk(move |inner| Self::new(inner, resolve.clone()))
+    }
+}
+
+impl<C, T, Req, R, M, N, S> NewService<T> for NewP2cPeakEwma<C, Req, R, M>
+where
+    R: Resolve<T>,
+    M: NewService<T, Service = N> + Clone,
+    N: NewService<(SocketAddr, R::Endpoint), Service = S>,
+    S: Service<Req>,
+    S::Error: Into<Error>,
+    C: load::TrackCompletion<load::peak_ewma::Handle, S::Response> + Default,
+    NewSpawnDiscover<R, NewNewInner<C, Req, M>>: NewService<T, Service = Buffer<C, S>>,
+    Balance<C, Req, S>: Service<Req>,
+{
+    type Service = Balance<C, Req, S>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        let disco = self.discover.new_service(target);
+        Balance::from_rng(disco, &mut thread_rng()).expect("RNG must be valid")
+    }
+}
+
+impl<C, Req, R: Clone, N: Clone> Clone for NewP2cPeakEwma<C, Req, R, N> {
+    fn clone(&self) -> Self {
+        Self {
+            discover: self.discover.clone(),
+        }
+    }
+}
+
+// === impl NewNewInner ===
+
+impl<C, T, N, Req> NewService<T> for NewNewInner<C, Req, N>
+where
+    T: Param<EwmaConfig>,
+    N: NewService<T>,
+{
+    type Service = NewInner<C, Req, N::Service>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        let config = target.param();
+        let inner = self.inner.new_service(target);
+        NewInner {
+            config,
+            inner,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<C, Req, N: Clone> Clone for NewNewInner<C, Req, N> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            _marker: self._marker,
+        }
+    }
+}
+
+// === impl NewInner ===
+
+impl<C, T, N, Req, S> NewService<T> for NewInner<C, Req, N>
+where
+    C: load::TrackCompletion<load::peak_ewma::Handle, S::Response> + Default,
+    N: NewService<T, Service = S>,
+    S: Service<Req>,
+{
+    type Service = PeakEwma<S, C>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        // Converts durations to nanos in f64.
+        //
+        // Due to a lossy transformation, the maximum value that can be represented
+        // is ~585 years, which, I hope, is more than enough to represent request
+        // latencies.
+        fn nanos(d: Duration) -> f64 {
+            const NANOS_PER_SEC: u64 = 1_000_000_000;
+            let n = f64::from(d.subsec_nanos());
+            let s = d.as_secs().saturating_mul(NANOS_PER_SEC) as f64;
+            n + s
+        }
+
+        PeakEwma::new(
+            self.inner.new_service(target),
+            self.config.default_rtt,
+            nanos(self.config.decay),
+            C::default(),
+        )
+    }
+}

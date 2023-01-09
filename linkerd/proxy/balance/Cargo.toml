@@ -1,0 +1,18 @@
+[package]
+name = "linkerd-proxy-balance"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+linkerd-error = { path = "../../error" }
+linkerd-proxy-core = { path = "../../proxy/core" }
+linkerd-proxy-discover = { path = "../../proxy/discover" }
+linkerd-stack = { path = "../../stack" }
+rand = "0.8"
+
+[dependencies.tower]
+version = "0.4.13"
+default-features = false
+features = ["balance", "load"]

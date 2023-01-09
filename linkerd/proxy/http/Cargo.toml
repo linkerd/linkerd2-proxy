@@ -34,17 +34,12 @@ linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }
 linkerd-http-box = { path = "../../http-box" }
 linkerd-io = { path = "../../io" }
-linkerd-proxy-core = { path = "../../proxy/core" }
-linkerd-proxy-discover = { path = "../../proxy/discover" }
+linkerd-proxy-balance = { path = "../../proxy/balance" }
 linkerd-stack = { path = "../../stack" }
 rand = "0.8"
 thiserror = "1"
 tokio = { version = "1", features = ["time", "rt"] }
-tower = { version = "0.4.13", default-features = false, features = [
-    "balance",
-    "load",
-    "discover",
-] }
+tower = { version = "0.4.13", default-features = false }
 tracing = "0.1"
 try-lock = "0.2"
 pin-project = "1"

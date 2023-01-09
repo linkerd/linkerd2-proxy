@@ -59,7 +59,7 @@ impl<C> Outbound<C> {
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
                 .push_new_clone()
                 .push(endpoint::NewFromMetadata::layer(config.inbound_ips.clone()))
-                .push(tcp::NewBalance::layer(resolve))
+                .push(tcp::NewP2cPeakEwma::layer(resolve))
                 .push_on_service(
                     svc::layers()
                         .push(tcp::Forward::layer())

@@ -825,7 +825,6 @@ dependencies = [
  "linkerd-opencensus",
  "linkerd-proxy-api-resolve",
  "linkerd-proxy-core",
- "linkerd-proxy-discover",
  "linkerd-proxy-dns-resolve",
  "linkerd-proxy-http",
  "linkerd-proxy-identity-client",
@@ -1334,6 +1333,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-proxy-balance"
+version = "0.1.0"
+dependencies = [
+ "linkerd-error",
+ "linkerd-proxy-core",
+ "linkerd-proxy-discover",
+ "linkerd-stack",
+ "rand",
+ "tower",
+]
+
+[[package]]
 name = "linkerd-proxy-core"
 version = "0.1.0"
 dependencies = [
@@ -1395,8 +1406,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-io",
- "linkerd-proxy-core",
- "linkerd-proxy-discover",
+ "linkerd-proxy-balance",
  "linkerd-stack",
  "linkerd-tracing",
  "pin-project",
@@ -1476,8 +1486,7 @@ dependencies = [
  "futures",
  "linkerd-duplex",
  "linkerd-error",
- "linkerd-proxy-core",
- "linkerd-proxy-discover",
+ "linkerd-proxy-balance",
  "linkerd-stack",
  "pin-project",
  "rand",
