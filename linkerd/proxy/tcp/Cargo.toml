@@ -11,8 +11,14 @@ publish = false
 futures = { version = "0.3", default-features = false }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }
+linkerd-proxy-core = { path = "../../proxy/core" }
+linkerd-proxy-discover = { path = "../../proxy/discover" }
 linkerd-stack = { path = "../../stack" }
 rand = "0.8"
 tokio = { version = "1" }
-tower = { version = "0.4.13", default-features = false, features = ["balance", "load", "discover"] }
+tower = { version = "0.4.13", default-features = false, features = [
+    "balance",
+    "load",
+    "discover",
+] }
 pin-project = "1"

@@ -1,15 +1,14 @@
-use crate::Error;
-use discover::NewSpawnDiscover;
 use hyper::body::HttpBody;
+use hyper_balance::PendingUntilFirstData;
+use linkerd_error::Error;
 use linkerd_proxy_core::Resolve;
-use linkerd_proxy_discover as discover;
+use linkerd_proxy_discover::{self as discover, NewSpawnDiscover};
 use linkerd_stack::{layer, NewService, Param, Service};
 use rand::thread_rng;
-use std::{hash::Hash, marker::PhantomData, net::SocketAddr, time::Duration};
-use tower::{balance::p2c, discover::Discover};
+use std::{marker::PhantomData, net::SocketAddr, time::Duration};
+use tower::{balance::p2c, load::PeakEwmaDiscover};
 
-pub use hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
-pub use tower::load::{Load, PeakEwmaDiscover};
+pub use hyper_balance::PendingUntilFirstDataBody;
 
 #[derive(Clone, Debug)]
 pub struct EwmaConfig {
@@ -26,12 +25,13 @@ pub struct NewBalance<ReqB, RspB, R, N> {
     _marker: PhantomData<fn(ReqB) -> RspB>,
 }
 
-pub type Balance<S, B> =
+pub type Balance<B, S> =
     p2c::Balance<PeakEwmaDiscover<discover::Buffer<S>, PendingUntilFirstData>, http::Request<B>>;
 
 // === impl NewBalance ===
 
 impl<ReqB, RspB, R, N> NewBalance<ReqB, RspB, R, N> {
+    // FIXME(ver)
     const CAPACITY: usize = 1_000;
 
     pub fn new(inner: N, resolve: R) -> Self {
@@ -58,12 +58,13 @@ where
     R: Resolve<T>,
     M: NewService<T, Service = N> + Clone,
     N: NewService<(SocketAddr, R::Endpoint), Service = S>,
-    S: Service<http::Request<ReqB>, Response = http::Response<RspB>, Error = Error>,
+    S: Service<http::Request<ReqB>, Response = http::Response<RspB>>,
+    S::Error: Into<Error>,
     NewSpawnDiscover<R, M>: NewService<T, Service = discover::Buffer<S>>,
     discover::Buffer<S>: futures::Stream<Item = discover::Result<S>>,
-    Balance<N::Service, ReqB>: tower::Service<http::Request<ReqB>>,
+    Balance<ReqB, S>: tower::Service<http::Request<ReqB>>,
 {
-    type Service = Balance<S, ReqB>;
+    type Service = Balance<ReqB, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let EwmaConfig { default_rtt, decay } = target.param();
@@ -71,6 +72,7 @@ where
             .new_service(target);
         let disco =
             PeakEwmaDiscover::new(disco, default_rtt, decay, PendingUntilFirstData::default());
+
         Balance::from_rng(disco, &mut thread_rng()).expect("RNG must be valid")
     }
 }

@@ -27,6 +27,12 @@ impl svc::Param<Addr> for ControlAddr {
     }
 }
 
+impl svc::Param<http::balance::EwmaConfig> for ControlAddr {
+    fn param(&self) -> http::balance::EwmaConfig {
+        EWMA_CONFIG.clone()
+    }
+}
+
 impl fmt::Display for ControlAddr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.addr, f)
@@ -38,8 +44,10 @@ type BalanceBody =
 
 pub type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 
-// const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
-// const EWMA_DECAY: Duration = Duration::from_secs(10);
+const EWMA_CONFIG: http::balance::EwmaConfig = http::balance::EwmaConfig {
+    default_rtt: time::Duration::from_millis(30),
+    decay: time::Duration::from_secs(10),
+};
 
 impl Config {
     pub fn build(
@@ -93,10 +101,16 @@ impl Config {
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .push_new_reconnect(self.connect.backoff)
             .instrument(|t: &self::client::Target| tracing::info_span!("endpoint", addr = %t.addr))
+            .check_new_service::<self::client::Target, _>()
+            .push_map_target(|(_, t): (_, self::client::Target)| t)
+            .check_new_service::<(_, self::client::Target), _>()
+            .push_new_clone()
+            .check_new_new::<ControlAddr, (_, self::client::Target)>()
             .push(http::NewBalance::layer(self::resolve::new(
                 dns,
                 resolve_backoff,
             )))
+            .check_new_service::<ControlAddr, _>()
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
             .push_buffer_on_service("Controller client", &self.buffer)
@@ -171,27 +185,25 @@ mod resolve {
     use crate::{
         dns,
         proxy::{
-            discover,
             dns_resolve::DnsResolve,
             resolve::{map_endpoint, recover},
         },
-        svc,
     };
     use linkerd_error::Recover;
     use std::net::SocketAddr;
 
-    pub fn new<M, R>(dns: dns::Resolver, recover: R) -> Discover<M, R>
+    pub fn new<R>(dns: dns::Resolver, recover: R) -> Discover<R>
     where
         R: Recover + Clone,
         R::Backoff: Unpin,
     {
         map_endpoint::Resolve::new(
             IntoTarget(()),
-            recover::Resolve::new(recover.clone(), DnsResolve::new(dns.clone())),
+            recover::Resolve::new(recover, DnsResolve::new(dns)),
         )
     }
 
-    type Discover<M, R> = map_endpoint::Resolve<IntoTarget, recover::Resolve<R, DnsResolve>>;
+    type Discover<R> = map_endpoint::Resolve<IntoTarget, recover::Resolve<R, DnsResolve>>;
 
     #[derive(Copy, Clone, Debug)]
     pub struct IntoTarget(());

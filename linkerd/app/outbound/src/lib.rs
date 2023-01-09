@@ -11,7 +11,6 @@ pub mod http;
 mod ingress;
 pub mod logical;
 mod metrics;
-mod resolve;
 mod switch_logical;
 pub mod tcp;
 #[cfg(test)]
@@ -24,11 +23,7 @@ use linkerd_app_core::{
     drain,
     http_tracing::OpenCensusSink,
     identity, io, profiles,
-    proxy::{
-        api_resolve::{ConcreteAddr, Metadata},
-        core::Resolve,
-        tap,
-    },
+    proxy::{api_resolve::Metadata, core::Resolve, tap},
     serve,
     svc::{self, stack::Param},
     tls,
@@ -43,9 +38,6 @@ use std::{
     time::Duration,
 };
 use tracing::{info, info_span};
-
-const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
-const EWMA_DECAY: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -177,9 +169,12 @@ impl Outbound<()> {
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R::Resolution: Send,
-        R::Future: Send + Unpin,
+        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<tcp::Concrete>>::Resolution: Send,
+        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
+        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<http::Concrete>>::Resolution: Send,
+        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
@@ -201,10 +196,13 @@ impl Outbound<()> {
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R: Clone + Send + Sync + Unpin + 'static,
-        R::Resolution: Send,
-        R::Future: Send + Unpin,
+        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<tcp::Concrete>>::Resolution: Send,
+        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
+        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<http::Concrete>>::Resolution: Send,
+        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
@@ -229,9 +227,12 @@ impl Outbound<()> {
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R::Resolution: Send,
-        R::Future: Send + Unpin,
+        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<tcp::Concrete>>::Resolution: Send,
+        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
+        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<http::Concrete>>::Resolution: Send,
+        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,

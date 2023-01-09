@@ -1476,6 +1476,8 @@ dependencies = [
  "futures",
  "linkerd-duplex",
  "linkerd-error",
+ "linkerd-proxy-core",
+ "linkerd-proxy-discover",
  "linkerd-stack",
  "pin-project",
  "rand",

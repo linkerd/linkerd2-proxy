@@ -2,7 +2,7 @@ use crate::{http, logical::Concrete, stack_labels, tcp, Outbound};
 use linkerd_app_core::{
     io, metrics,
     profiles::LogicalAddr,
-    proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
+    proxy::api_resolve::Metadata,
     svc, tls,
     transport::{self, addrs::*},
     transport_header, Conditional,
@@ -25,9 +25,17 @@ pub struct Endpoint<P> {
     pub opaque_protocol: bool,
 }
 
-#[derive(Clone)]
-pub struct FromMetadata {
-    pub inbound_ips: Arc<HashSet<IpAddr>>,
+#[derive(Clone, Debug)]
+pub struct NewFromMetadata<N> {
+    inbound_ips: Arc<HashSet<IpAddr>>,
+    inner: N,
+}
+
+#[derive(Clone, Debug)]
+pub struct FromMetadata<P, N> {
+    inbound_ips: Arc<HashSet<IpAddr>>,
+    concrete: Concrete<P>,
+    inner: N,
 }
 
 // === impl Endpoint ===
@@ -61,7 +69,7 @@ impl Endpoint<()> {
             tracing::debug!(%addr, ?metadata, ?addr, ?inbound_ips, "Target is local");
             tls::ConditionalClientTls::None(tls::NoClientTls::Loopback)
         } else {
-            FromMetadata::client_tls(&metadata, reason)
+            client_tls(&metadata, reason)
         };
 
         Self {
@@ -141,61 +149,85 @@ impl<P> svc::Param<metrics::EndpointLabels> for Endpoint<P> {
     }
 }
 
-// === EndpointFromMetadata ===
-impl FromMetadata {
-    fn client_tls(metadata: &Metadata, reason: tls::NoClientTls) -> tls::ConditionalClientTls {
-        // If we're transporting an opaque protocol OR we're communicating with
-        // a gateway, then set an ALPN value indicating support for a transport
-        // header.
-        let use_transport_header =
-            metadata.opaque_transport_port().is_some() || metadata.authority_override().is_some();
+// === NewFromMetadata ===
 
-        metadata
-            .identity()
-            .cloned()
-            .map(move |server_id| {
-                Conditional::Some(tls::ClientTls {
-                    server_id,
-                    alpn: if use_transport_header {
-                        Some(tls::client::AlpnProtocols(vec![
-                            transport_header::PROTOCOL.into()
-                        ]))
-                    } else {
-                        None
-                    },
-                })
+fn client_tls(metadata: &Metadata, reason: tls::NoClientTls) -> tls::ConditionalClientTls {
+    // If we're transporting an opaque protocol OR we're communicating with
+    // a gateway, then set an ALPN value indicating support for a transport
+    // header.
+    let use_transport_header =
+        metadata.opaque_transport_port().is_some() || metadata.authority_override().is_some();
+
+    metadata
+        .identity()
+        .cloned()
+        .map(move |server_id| {
+            Conditional::Some(tls::ClientTls {
+                server_id,
+                alpn: if use_transport_header {
+                    Some(tls::client::AlpnProtocols(vec![
+                        transport_header::PROTOCOL.into()
+                    ]))
+                } else {
+                    None
+                },
             })
-            .unwrap_or(Conditional::None(reason))
+        })
+        .unwrap_or(Conditional::None(reason))
+}
+
+impl<N> NewFromMetadata<N> {
+    pub fn new(inbound_ips: Arc<HashSet<IpAddr>>, inner: N) -> Self {
+        Self { inbound_ips, inner }
+    }
+
+    pub fn layer(inbound_ips: Arc<HashSet<IpAddr>>) -> impl svc::Layer<N, Service = Self> + Clone {
+        svc::layer::mk(move |inner| Self::new(inbound_ips.clone(), inner))
     }
 }
 
-impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetadata {
-    type Out = Endpoint<P>;
+impl<P, N> svc::NewService<Concrete<P>> for NewFromMetadata<N>
+where
+    P: Copy + std::fmt::Debug,
+    N: svc::NewService<Concrete<P>>,
+{
+    type Service = FromMetadata<P, N::Service>;
 
-    fn map_endpoint(
-        &self,
-        concrete: &Concrete<P>,
-        addr: SocketAddr,
-        mut metadata: Metadata,
-    ) -> Self::Out {
-        tracing::trace!(%addr, ?metadata, ?concrete, "Resolved endpoint");
+    fn new_service(&self, concrete: Concrete<P>) -> Self::Service {
+        FromMetadata {
+            concrete,
+            inner: self.inner.new_service(concrete),
+            inbound_ips: self.inbound_ips.clone(),
+        }
+    }
+}
+
+impl<P, N> svc::NewService<(SocketAddr, Metadata)> for FromMetadata<P, N>
+where
+    P: Copy + std::fmt::Debug,
+    N: svc::NewService<Endpoint<P>>,
+{
+    type Service = N::Service;
+
+    fn new_service(&self, (addr, metadata): (SocketAddr, Metadata)) -> Self::Service {
+        tracing::trace!(%addr, ?metadata, concrete = ?self.concrete, "Resolved endpoint");
         let tls = if self.inbound_ips.contains(&addr.ip()) {
             metadata.clear_upgrade();
             tracing::debug!(%addr, ?metadata, ?addr, ?self.inbound_ips, "Target is local");
             tls::ConditionalClientTls::None(tls::NoClientTls::Loopback)
         } else {
-            Self::client_tls(&metadata, tls::NoClientTls::NotProvidedByServiceDiscovery)
+            client_tls(&metadata, tls::NoClientTls::NotProvidedByServiceDiscovery)
         };
-        Endpoint {
+        self.inner.new_service(Endpoint {
             addr: Remote(ServerAddr(addr)),
             tls,
             metadata,
-            logical_addr: Some(concrete.logical.logical_addr.clone()),
-            protocol: concrete.logical.protocol,
+            logical_addr: Some(self.concrete.logical.logical_addr.clone()),
+            protocol: self.concrete.logical.protocol,
             // XXX We never do protocol detection after resolving a concrete address to endpoints.
             // We should differentiate these target types statically.
             opaque_protocol: false,
-        }
+        })
     }
 }
 

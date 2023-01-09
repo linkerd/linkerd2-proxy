@@ -1,6 +1,10 @@
 use super::{Concrete, Endpoint};
-use crate::{endpoint, resolve, stack_labels, Outbound};
-use linkerd_app_core::{proxy::http, svc, Error, Infallible};
+use crate::{endpoint, stack_labels, Outbound};
+use linkerd_app_core::{
+    proxy::{api_resolve::Metadata, core::Resolve, http},
+    svc, Error,
+};
+use std::time;
 use tracing::info_span;
 
 impl<N> Outbound<N> {
@@ -34,25 +38,12 @@ impl<N> Outbound<N> {
             + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
-        R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
         R: Clone + Send + Sync + 'static,
+        R: Resolve<Concrete, Error = Error, Endpoint = Metadata>,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {
         self.map_stack(|config, rt, endpoint| {
-            let resolve = svc::stack(resolve.into_service())
-                .push_request_filter(|c: Concrete| Ok::<_, Infallible>(c.resolve))
-                .push(svc::layer::mk(move |inner| {
-                    resolve::map_endpoint::Resolve::new(
-                        endpoint::FromMetadata {
-                            inbound_ips: config.inbound_ips.clone(),
-                        },
-                        inner,
-                    )
-                }))
-                .check_service::<Concrete>()
-                .into_inner();
-
             endpoint
                 .push_on_service(
                     rt.metrics
@@ -61,9 +52,16 @@ impl<N> Outbound<N> {
                         .layer(stack_labels("http", "endpoint")),
                 )
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
-                .push(resolve::NewResolve::layer(resolve))
-                .push(http::NewBalance::layer())
-                .push(svc::MapErr::layer(Into::into))
+                .check_new_service::<Endpoint, http::Request<_>>()
+                .push_new_clone()
+                .check_new_new::<Concrete, Endpoint>()
+                .check_new_new_service::<Concrete, Endpoint, http::Request<_>>()
+                .push(endpoint::NewFromMetadata::layer(config.inbound_ips.clone()))
+                .check_new_new_service::<Concrete, (_, _), http::Request<_>>()
+                .push(http::NewBalance::layer(resolve))
+                .check_clone()
+                .check_new::<Concrete>()
+                .check_new_service::<Concrete, http::Request<_>>()
                 // Drives the initial resolution via the service's readiness.
                 .push_on_service(
                     svc::layers()
@@ -79,5 +77,14 @@ impl<N> Outbound<N> {
                 .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
+    }
+}
+
+impl svc::Param<http::balance::EwmaConfig> for Concrete {
+    fn param(&self) -> http::balance::EwmaConfig {
+        http::balance::EwmaConfig {
+            default_rtt: time::Duration::from_millis(30),
+            decay: time::Duration::from_secs(10),
+        }
     }
 }

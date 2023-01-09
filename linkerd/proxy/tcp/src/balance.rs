@@ -1,28 +1,87 @@
 use linkerd_error::Error;
-use linkerd_stack::layer;
+use linkerd_proxy_core::Resolve;
+use linkerd_proxy_discover::{self as discover, NewSpawnDiscover};
+use linkerd_stack::{layer, NewService, Param, Service};
 use rand::thread_rng;
-use std::{hash::Hash, time::Duration};
-pub use tower::{
-    balance::p2c::Balance,
-    load::{Load, PeakEwmaDiscover},
+use std::{marker::PhantomData, net::SocketAddr, time::Duration};
+use tower::{
+    balance::p2c,
+    load::{CompleteOnResponse, PeakEwmaDiscover},
 };
-use tower::{discover::Discover, load::CompleteOnResponse};
 
-/// Produces a PeakEWMA balancer that uses connect latency (and pending
-/// connections) as its load metric.
-pub fn layer<T, D>(
-    default_rtt: Duration,
-    decay: Duration,
-) -> impl tower::layer::Layer<D, Service = Balance<PeakEwmaDiscover<D, CompleteOnResponse>, T>> + Clone
+#[derive(Clone, Debug)]
+pub struct EwmaConfig {
+    pub default_rtt: Duration,
+    pub decay: Duration,
+}
+
+/// Configures a stack to resolve `T` typed targets to balance requests over
+/// `M`-typed endpoint stacks.
+#[derive(Debug)]
+pub struct NewBalance<I, R, N> {
+    resolve: R,
+    inner: N,
+    _marker: PhantomData<fn(I)>,
+}
+
+pub type Balance<I, S> = p2c::Balance<PeakEwmaDiscover<discover::Buffer<S>, CompleteOnResponse>, I>;
+
+// === impl NewBalance ===
+
+impl<I, R, N> NewBalance<I, R, N> {
+    // FIXME(ver)
+    const CAPACITY: usize = 1_000;
+
+    pub fn new(inner: N, resolve: R) -> Self {
+        Self {
+            resolve,
+            inner,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn layer<T>(resolve: R) -> impl layer::Layer<N, Service = Self> + Clone
+    where
+        R: Clone,
+        NewBalance<I, R, N>: NewService<T>,
+    {
+        layer::mk(move |inner| Self::new(inner, resolve.clone()))
+    }
+}
+
+impl<T, I, R, M, N, S> NewService<T> for NewBalance<I, R, M>
 where
-    D: Discover,
-    D::Key: Hash,
-    D::Service: tower::Service<T>,
-    <D::Service as tower::Service<T>>::Error: Into<Error>,
+    T: Param<EwmaConfig>,
+    R: Resolve<T>,
+    M: NewService<T, Service = N> + Clone,
+    N: NewService<(SocketAddr, R::Endpoint), Service = S>,
+    S: Service<I>,
+    S::Error: Into<Error>,
+    NewSpawnDiscover<R, M>: NewService<T, Service = discover::Buffer<S>>,
+    discover::Buffer<S>: futures::Stream<Item = discover::Result<S>>,
+    Balance<N::Service, I>: tower::Service<I>,
 {
-    layer::mk(move |discover| {
-        let loaded =
-            PeakEwmaDiscover::new(discover, default_rtt, decay, CompleteOnResponse::default());
-        Balance::from_rng(loaded, &mut thread_rng()).expect("RNG must be valid")
-    })
+    type Service = Balance<I, S>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        let EwmaConfig { default_rtt, decay } = target.param();
+        let disco = NewSpawnDiscover::new(Self::CAPACITY, self.resolve.clone(), self.inner.clone())
+            .new_service(target);
+        let disco = PeakEwmaDiscover::new(disco, default_rtt, decay, CompleteOnResponse::default());
+
+        fn check<I, S: tower::Service<I>>(s: S) -> S {
+            s
+        }
+        check(Balance::from_rng(disco, &mut thread_rng()).expect("RNG must be valid"))
+    }
+}
+
+impl<I, R: Clone, N: Clone> Clone for NewBalance<I, R, N> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            resolve: self.resolve.clone(),
+            _marker: PhantomData,
+        }
+    }
 }
