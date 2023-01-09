@@ -50,6 +50,7 @@ impl<N> Outbound<N> {
                         "not in discoverable networks",
                     ))
                 }))
+                .push(svc::new_service::FromMakeService::layer())
                 .push_on_service(
                     svc::layers()
                         .push(

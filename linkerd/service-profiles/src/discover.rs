@@ -1,14 +1,13 @@
 use super::{default::RecoverDefault, GetProfile, GetProfileService, Receiver};
 use futures::prelude::*;
-use linkerd_stack::{layer, Filter, FutureService, NewService, Predicate};
+use linkerd_stack::{layer, Filter, FutureService, NewService, Predicate, Service};
 use std::{future::Future, pin::Pin};
 
-type Service<F, G, M> = Discover<RecoverDefault<Filter<GetProfileService<G>, F>>, M>;
-
+type Svc<F, G, M> = Discover<RecoverDefault<Filter<GetProfileService<G>, F>>, M>;
 pub fn layer<T, G, F, M>(
     get_profile: G,
     filter: F,
-) -> impl layer::Layer<M, Service = Service<F, G, M>> + Clone
+) -> impl layer::Layer<M, Service = Svc<F, G, M>> + Clone
 where
     F: Predicate<T> + Clone,
     G: GetProfile<F::Request> + Clone,
@@ -27,6 +26,36 @@ pub struct Discover<G, M> {
 }
 
 type MakeFuture<S, E> = Pin<Box<dyn Future<Output = Result<S, E>> + Send + 'static>>;
+
+impl<T, G, M> Service<T> for Discover<G, M>
+where
+    T: Clone + Send + 'static,
+    G: GetProfile<T> + Clone,
+    G::Future: Send + 'static,
+    G::Error: Send,
+    M: NewService<(Option<Receiver>, T)> + Clone + Send + 'static,
+{
+    type Response = M::Service;
+    type Error = G::Error;
+    type Future = MakeFuture<M::Service, G::Error>;
+
+    fn poll_ready(
+        &mut self,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let inner = self.inner.clone();
+        Box::pin(
+            self.get_profile
+                .clone()
+                .get_profile(target.clone())
+                .map_ok(move |rx| inner.new_service((rx, target))),
+        )
+    }
+}
 
 impl<T, G, M> NewService<T> for Discover<G, M>
 where
