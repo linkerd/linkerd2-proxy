@@ -1,4 +1,4 @@
-use crate::{http, logical::Concrete, tcp, Outbound};
+use crate::{http, logical::Concrete, stack_labels, tcp, Outbound};
 use linkerd_app_core::{
     io, metrics,
     profiles::LogicalAddr,
@@ -13,6 +13,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
+use tracing::info_span;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint<P> {
@@ -201,7 +202,14 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
 // === Outbound ===
 
 impl<S> Outbound<S> {
-    pub fn push_endpoint<I>(self) -> Outbound<svc::ArcNewTcp<tcp::Endpoint, I>>
+    /// Builds a stack that handles forwarding a connection to a single endpoint
+    /// (i.e. without routing and load balancing).
+    ///
+    /// HTTP protocol detection may still be performed on the connection.
+    ///
+    /// A service produced by this stack is used for a single connection (i.e.
+    /// without any form of caching for reuse across connections).
+    pub fn push_forward<I>(self) -> Outbound<svc::ArcNewTcp<tcp::Endpoint, I>>
     where
         Self: Clone + 'static,
         S: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
@@ -211,19 +219,38 @@ impl<S> Outbound<S> {
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: fmt::Debug + Send + Sync + Unpin + 'static,
     {
+        // The forwarding stacks are **NOT** cached, since they don't do any
+        // external discovery.
         let http = self
             .clone()
             .push_tcp_endpoint::<http::Connect>()
             .push_http_endpoint()
-            .map_stack(|config, _, stk| {
-                stk.push_buffer_on_service("HTTP Server", &config.http_request_buffer)
+            .map_stack(|config, rt, stk| {
+                stk.push_on_service(
+                    svc::layers()
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .stack
+                                .layer(stack_labels("http", "forward")),
+                        )
+                        // TODO(ver): This buffer config should be distinct from
+                        // that in the concrete stack. It should probably be
+                        // derived from the target so that we can configure it
+                        // via the API.
+                        .push_buffer("HTTP Forward", &config.http_request_buffer),
+                )
             })
             .push_http_server()
             .into_inner();
 
-        self.push_tcp_endpoint()
-            .push_tcp_forward()
-            .push_detect_http(http)
+        let opaque = self.push_tcp_endpoint().push_tcp_forward();
+
+        opaque.push_detect_http(http).map_stack(|_, _, stk| {
+            stk.instrument(|e: &tcp::Endpoint| info_span!("forward", endpoint = %e.addr))
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer())
+        })
     }
 }
 
@@ -256,7 +283,7 @@ pub mod tests {
                         "i don't like you, go away",
                     ))
                 }))
-                .push_endpoint()
+                .push_forward()
                 .into_inner()
                 .new_service(tcp::Endpoint::forward(
                     OrigDstAddr(addr),

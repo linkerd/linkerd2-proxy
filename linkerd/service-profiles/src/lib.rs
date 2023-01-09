@@ -23,7 +23,6 @@ mod default;
 pub mod discover;
 pub mod http;
 mod proto;
-pub mod split;
 
 pub use self::client::Client;
 
@@ -146,10 +145,6 @@ impl Receiver {
 
     pub fn endpoint(&self) -> Option<(SocketAddr, Metadata)> {
         self.inner.borrow().endpoint.clone()
-    }
-
-    fn targets(&self) -> Arc<[Target]> {
-        self.inner.borrow().targets.clone()
     }
 }
 

@@ -1,81 +1,98 @@
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
-use crate::{stack_labels, Outbound};
+use crate::Outbound;
 use linkerd_app_core::{
-    classify, metrics, profiles,
-    proxy::{api_resolve::ConcreteAddr, http},
-    svc, Error, Infallible,
+    classify, metrics,
+    profiles::{self, Profile},
+    proxy::api_resolve::ConcreteAddr,
+    proxy::http,
+    svc, Error,
 };
-use tracing::debug_span;
+use linkerd_distribute as distribute;
+use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct ProfileRoute {
+#[derive(Debug, thiserror::Error)]
+#[error("no route")]
+pub struct NoRoute;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Params {
     logical: Logical,
-    route: profiles::http::Route,
+    routes: Arc<[(profiles::http::RequestMatch, RouteParams)]>,
+    backends: distribute::Backends<Concrete>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct RouteParams {
+    logical: Logical,
+    profile: profiles::http::Route,
+    distribution: Distribution,
+}
+
+type BackendCache<N, S> = distribute::BackendCache<Concrete, N, S>;
+type Distribution = distribute::Distribution<Concrete>;
+
+// === impl Outbound ===
+
 impl<N> Outbound<N> {
-    pub fn push_http_logical<NSvc>(self) -> Outbound<svc::ArcNewHttp<Logical>>
+    /// Builds a `NewService` that produces a router service for each logical
+    /// target.
+    ///
+    /// The router uses discovery information (provided on the target) to
+    /// support per-request routing over a set of concrete inner services.
+    /// Only available inner services are used for routing. When there are no
+    /// available backends, requests are failed with a [`svc::stack::LoadShedError`].
+    ///
+    // TODO(ver) make the outer target type generic/parameterized.
+    pub fn push_http_logical<NSvc>(
+        self,
+    ) -> Outbound<
+        svc::ArcNewService<
+            Logical,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    >
     where
         N: svc::NewService<Concrete, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+        NSvc: svc::Service<
+                http::Request<http::BoxBody>,
+                Response = http::Response<http::BoxBody>,
+                Error = Error,
+            > + Clone
             + Send
+            + Sync
             + 'static,
-        NSvc::Error: Into<Error>,
         NSvc::Future: Send,
     {
-        self.map_stack(|config, rt, concrete| {
-            let crate::Config {
-                discovery_idle_timeout,
-                http_request_buffer,
-                ..
-            } = config;
-
-            let split = concrete
-                .push_map_target(Concrete::from)
-                // This failfast is needed to ensure that a single unavailable
-                // balancer doesn't block the entire split.
-                //
-                // TODO(ver) remove this when we replace `split` with
-                // `distribute`.
-                .push_on_service(svc::FailFast::layer(http_request_buffer.failfast_timeout))
-                .check_new_service::<(ConcreteAddr, Logical), _>()
-                // Distribute requests over a distribution of balancers via a
-                // traffic split.
-                .push(profiles::split::layer())
+        self.map_stack(|_, rt, concrete| {
+            let route = svc::layers()
                 .push_on_service(
                     svc::layers()
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(stack_labels("http", "logical")),
-                        )
-                        .push_buffer("HTTP Logical", http_request_buffer),
+                        .push(http::BoxRequest::layer())
+                        // The router does not take the backend's availability into
+                        // consideration, so we must eagerly fail requests to prevent
+                        // leaking tasks onto the runtime.
+                        .push(svc::LoadShed::layer()),
                 )
-                // TODO(ver) this should not be a generalized time-based evicting cache.
-                .push_idle_cache(*discovery_idle_timeout);
-
-            // If there's no route, use the logical service directly; otherwise
-            // use the per-route stack.
-            let route = split.clone()
-                .check_new_service::<Logical, http::Request<http::BoxBody>>()
-                .push_map_target(|r: ProfileRoute| r.logical)
-                .push_on_service(http::BoxRequest::layer())
+                .push(http::insert::NewInsert::<RouteParams, _>::layer())
                 .push(
                     rt.metrics
                         .proxy
                         .http_profile_route_actual
-                        .to_layer::<classify::Response, _, ProfileRoute>(),
+                        .to_layer::<classify::Response, _, RouteParams>(),
                 )
-                .check_new_service::<ProfileRoute, http::Request<_>>()
                 // Depending on whether or not the request can be
                 // retried, it may have one of two `Body` types. This
                 // layer unifies any `Body` type into `BoxBody`.
                 .push_on_service(http::BoxRequest::erased())
-                .push_http_insert_target::<profiles::http::Route>()
                 // Sets an optional retry policy.
-                .push(retry::layer(rt.metrics.proxy.http_profile_route_retry.clone()))
-                .check_new_service::<ProfileRoute, http::Request<http::BoxBody>>()
+                .push(retry::layer(
+                    rt.metrics.proxy.http_profile_route_retry.clone(),
+                ))
                 // Sets an optional request timeout.
                 .push(http::NewTimeout::layer())
                 // Records per-route metrics.
@@ -83,61 +100,171 @@ impl<N> Outbound<N> {
                     rt.metrics
                         .proxy
                         .http_profile_route
-                        .to_layer::<classify::Response, _, _>(),
+                        .to_layer::<classify::Response, _, RouteParams>(),
                 )
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
-                .push_on_service(http::BoxResponse::layer())
-                .check_new_service::<ProfileRoute, http::Request<http::BoxBody>>();
+                .push_on_service(http::BoxResponse::layer());
 
-            split
-                .push_switch(
-                    |(route, logical): (Option<profiles::http::Route>, Logical)| -> Result<_, Infallible> {
-                        Ok(match route {
-                            None => svc::Either::A(logical),
-                            Some(route) => svc::Either::B(ProfileRoute { route, logical }),
-                        })
-                    },
-                    route.into_inner(),
-                )
-                .push(profiles::http::NewServiceRouter::layer())
-                // Strips headers that may be set by this proxy and add an
-                // outbound canonical-dst-header. The response body is boxed
-                // unify the profile stack's response type with that of to
-                // endpoint stack.
+            // A `NewService`--instantiated once per logical target--that caches
+            // a set of concrete services so that, as the watch provides new
+            // `Params`, we can reuse inner services.
+            let router = svc::layers()
+                // Each `RouteParams` provides a `Distribution` that is used to
+                // choose a concrete service for a given route.
+                .push(BackendCache::layer())
+                // Lazily cache a service for each `RouteParams`
+                // returned from the `SelectRoute` impl.
+                .push_on_service(route)
+                .push(svc::NewOneshotRoute::<Params, _, _>::layer_cached());
+
+            // For each `Logical` target, watch its `Profile`, rebuilding a
+            // router stack.
+            concrete
+                // Share the concrete stack with each router stack.
+                .push_new_clone()
+                // Rebuild this router stack every time the profile changes.
+                .push_on_service(router)
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
+                // Add l5d-dst-canonical header to requests.
+                //
+                // TODO(ver) move this into the endpoint stack so that we can only
+                // set this on meshed connections.
+                //
+                // TODO(ver) do we need to strip headers here?
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
-                .instrument(|l: &Logical| debug_span!("logical", service = %l.logical_addr))
-                .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
     }
 }
 
-// === impl ProfileRoute ===
+// === impl Params ===
 
-impl svc::Param<profiles::http::Route> for ProfileRoute {
+impl From<(Profile, Logical)> for Params {
+    fn from((profile, logical): (Profile, Logical)) -> Self {
+        // Create concrete targets for all of the profile's routes.
+        let (backends, distribution) = if profile.targets.is_empty() {
+            let concrete = super::Concrete {
+                resolve: ConcreteAddr(logical.logical_addr.clone().into()),
+                logical: logical.clone(),
+            };
+            let backends = std::iter::once(concrete.clone()).collect();
+            let distribution = Distribution::first_available(std::iter::once(concrete));
+            (backends, distribution)
+        } else {
+            let backends = profile
+                .targets
+                .iter()
+                .map(|t| super::Concrete {
+                    resolve: ConcreteAddr(t.addr.clone()),
+                    logical: logical.clone(),
+                })
+                .collect();
+            let distribution = Distribution::random_available(profile.targets.iter().cloned().map(
+                |profiles::Target { addr, weight }| {
+                    let concrete = Concrete {
+                        logical: logical.clone(),
+                        resolve: ConcreteAddr(addr),
+                    };
+                    (concrete, weight)
+                },
+            ))
+            .expect("distribution must be valid");
+
+            (backends, distribution)
+        };
+
+        let routes = profile
+            .http_routes
+            .iter()
+            .cloned()
+            .map(|(req_match, profile)| {
+                let params = RouteParams {
+                    profile,
+                    logical: logical.clone(),
+                    distribution: distribution.clone(),
+                };
+                (req_match, params)
+            })
+            // Add a default route.
+            .chain(std::iter::once((
+                profiles::http::RequestMatch::default(),
+                RouteParams {
+                    profile: Default::default(),
+                    logical: logical.clone(),
+                    distribution: distribution.clone(),
+                },
+            )))
+            .collect::<Arc<[(_, _)]>>();
+
+        Self {
+            logical,
+            backends,
+            routes,
+        }
+    }
+}
+
+impl svc::Param<distribute::Backends<Concrete>> for Params {
+    fn param(&self) -> distribute::Backends<Concrete> {
+        self.backends.clone()
+    }
+}
+
+impl svc::Param<profiles::LogicalAddr> for Params {
+    fn param(&self) -> profiles::LogicalAddr {
+        self.logical.logical_addr.clone()
+    }
+}
+
+impl<B> svc::router::SelectRoute<http::Request<B>> for Params {
+    type Key = RouteParams;
+    type Error = NoRoute;
+
+    fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
+        profiles::http::route_for_request(&*self.routes, req)
+            .ok_or(NoRoute)
+            .cloned()
+    }
+}
+
+// === impl RouteParams ===
+
+impl svc::Param<profiles::LogicalAddr> for RouteParams {
+    fn param(&self) -> profiles::LogicalAddr {
+        self.logical.logical_addr.clone()
+    }
+}
+
+impl svc::Param<Distribution> for RouteParams {
+    fn param(&self) -> Distribution {
+        self.distribution.clone()
+    }
+}
+
+impl svc::Param<profiles::http::Route> for RouteParams {
     fn param(&self) -> profiles::http::Route {
-        self.route.clone()
+        self.profile.clone()
     }
 }
 
-impl svc::Param<metrics::ProfileRouteLabels> for ProfileRoute {
+impl svc::Param<metrics::ProfileRouteLabels> for RouteParams {
     fn param(&self) -> metrics::ProfileRouteLabels {
-        metrics::ProfileRouteLabels::outbound(self.logical.logical_addr.clone(), &self.route)
+        metrics::ProfileRouteLabels::outbound(self.logical.logical_addr.clone(), &self.profile)
     }
 }
 
-impl svc::Param<http::ResponseTimeout> for ProfileRoute {
+impl svc::Param<http::ResponseTimeout> for RouteParams {
     fn param(&self) -> http::ResponseTimeout {
-        http::ResponseTimeout(self.route.timeout())
+        http::ResponseTimeout(self.profile.timeout())
     }
 }
 
-impl classify::CanClassify for ProfileRoute {
+impl classify::CanClassify for RouteParams {
     type Classify = classify::Request;
 
     fn classify(&self) -> classify::Request {
-        self.route.response_classes().clone().into()
+        self.profile.response_classes().clone().into()
     }
 }

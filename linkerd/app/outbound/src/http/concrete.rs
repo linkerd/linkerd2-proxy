@@ -9,8 +9,18 @@ use linkerd_app_core::{
     },
     svc, Error, Infallible,
 };
+use tracing::info_span;
 
 impl<N> Outbound<N> {
+    /// Builds a [`svc::NewService`] stack that builds buffered HTTP load
+    /// balancer services for [`Concrete`] targets.
+    ///
+    /// When a balancer has no available inner services, it goes into
+    /// 'failfast'. While in failfast, buffered requests are failed and the
+    /// service becomes unavailable so callers may choose alternate concrete
+    /// services.
+    //
+    // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_http_concrete<NSvc, R>(
         self,
         resolve: R,
@@ -18,11 +28,11 @@ impl<N> Outbound<N> {
         svc::ArcNewService<
             Concrete,
             impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-                Future = impl Send,
-            >,
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
         >,
     >
     where
@@ -38,14 +48,7 @@ impl<N> Outbound<N> {
         R::Future: Send + Unpin,
     {
         self.map_stack(|config, rt, endpoint| {
-            let crate::Config {
-                discovery_idle_timeout,
-                ..
-            } = config;
-            let watchdog = *discovery_idle_timeout * 2;
-
             let resolve = svc::stack(resolve.into_service())
-                .check_service::<ConcreteAddr>()
                 .push_request_filter(|c: Concrete| Ok::<_, Infallible>(c.resolve))
                 .push(svc::layer::mk(move |inner| {
                     map_endpoint::Resolve::new(
@@ -59,51 +62,43 @@ impl<N> Outbound<N> {
                 .into_inner();
 
             endpoint
-                .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 .push_on_service(
-                    svc::layers().push(http::BoxRequest::layer()).push(
-                        rt.metrics
-                            .proxy
-                            .stack
-                            .layer(stack_labels("http", "balance.endpoint")),
-                    ),
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(stack_labels("http", "endpoint")),
                 )
-                .instrument(|t: &Endpoint| tracing::debug_span!("endpoint", addr = %t.addr))
-                .check_new_service::<Endpoint, http::Request<_>>()
+                .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
                 // Resolve the service to its endpoints and balance requests over them.
-                //
-                // If the balancer has been empty/unavailable, eagerly fail requests.
-                // When the balancer is in failfast, spawn the service in a background
-                // task so it becomes ready without new requests.
                 //
                 // We *don't* ensure that the endpoint is driven to readiness here, because this
                 // might cause us to continually attempt to reestablish connections without
                 // consulting discovery to see whether the endpoint has been removed. Instead, the
-                // endpoint layer spawns each _connection_ attempt on a background task, but the
+                // endpoint stack spawns each _connection_ attempt on a background task, but the
                 // decision to attempt the connection must be driven by the balancer.
-                .push(resolve::layer(resolve, watchdog))
+                //
+                // TODO(ver) remove the watchdog timeout.
+                .push(resolve::layer(resolve, config.discovery_idle_timeout * 2))
+                .push_on_service(http::balance::layer(
+                    crate::EWMA_DEFAULT_RTT,
+                    crate::EWMA_DECAY,
+                ))
+                .check_make_service::<Concrete, http::Request<http::BoxBody>>()
+                .push(svc::MapErr::layer(Into::into))
+                // Drives the initial resolution via the service's readiness.
+                .into_new_service()
                 .push_on_service(
                     svc::layers()
-                        .push(http::balance::layer(
-                            crate::EWMA_DEFAULT_RTT,
-                            crate::EWMA_DECAY,
-                        ))
+                        .push(http::BoxResponse::layer())
                         .push(
                             rt.metrics
                                 .proxy
                                 .stack
-                                .layer(stack_labels("http", "balancer")),
+                                .layer(stack_labels("http", "concrete")),
                         )
-                        .push(http::BoxResponse::layer()),
+                        .push_buffer("HTTP Concrete", &config.http_request_buffer),
                 )
-                .check_make_service::<Concrete, http::Request<_>>()
-                .push(svc::MapErr::layer(Into::into))
-                // Drives the initial resolution via the service's readiness.
-                .into_new_service()
-                // The concrete address is only set when the profile could be
-                // resolved. Endpoint resolution is skipped when there is no
-                // concrete address.
-                .instrument(|c: &Concrete| tracing::debug_span!("concrete", service = %c.resolve))
+                .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
     }

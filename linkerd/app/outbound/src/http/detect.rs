@@ -11,6 +11,18 @@ use tracing::debug_span;
 pub struct Skip;
 
 impl<N> Outbound<N> {
+    /// Builds a `NewService` that produces services that optionally (depending
+    /// on the target) perform HTTP protocol detection on sockets.
+    ///
+    /// When HTTP is detected, an HTTP service is build from the provided HTTP
+    /// stack. In either case, the inner service is built for each connection so
+    /// inner services must implement caching as needed.
+    //
+    // TODO(ver) We can be smarter about reusing inner services across
+    // connections by moving caching into this stack...
+    //
+    // TODO(ver) Let discovery influence whether we assume an HTTP protocol
+    // without deteciton.
     pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -31,6 +43,8 @@ impl<N> Outbound<N> {
         self.map_stack(|config, rt, tcp| {
             let ServerConfig { h2_settings, .. } = config.proxy.server;
 
+            let tcp = tcp.instrument(|_: &_| debug_span!("opaque"));
+
             svc::stack(http)
                 .push_on_service(
                     svc::layers()
@@ -46,7 +60,14 @@ impl<N> Outbound<N> {
                         .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
                         .into_inner(),
                 ))
-                .push_on_service(svc::BoxService::layer())
+                .push_on_service(
+                    svc::layers()
+                        // `DetectService` oneshots the inner service, so we add
+                        // a loadshed to prevent leaking tasks if (for some
+                        // unexpected reason) the inner service is not ready.
+                        .push(svc::LoadShed::layer())
+                        .push(svc::BoxService::layer()),
+                )
                 .check_new_service::<(Option<http::Version>, T), _>()
                 .push_map_target(detect::allow_timeout)
                 .push(svc::ArcNewService::layer())

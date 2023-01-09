@@ -19,11 +19,11 @@ bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
+linkerd-distribute = { path = "../../distribute" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
 linkerd-retry = { path = "../../retry" }
-linkerd-router = { path = "../../router" }
 parking_lot = "0.12"
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }

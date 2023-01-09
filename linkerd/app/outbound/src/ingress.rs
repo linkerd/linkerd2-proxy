@@ -11,7 +11,6 @@ use linkerd_app_core::{
     transport::{OrigDstAddr, Remote, ServerAddr},
     AddrMatch, Error, Infallible, NameAddr,
 };
-use linkerd_router as router;
 use thiserror::Error;
 use tracing::{debug, debug_span, info_span};
 
@@ -185,9 +184,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                 }))
                             }
                         },
-                        http_endpoint
-                            .instrument(|_: &_| info_span!("forward"))
-                            .into_inner(),
+                        http_endpoint.into_inner(),
                     )
                     .push(svc::ArcNewService::layer())
                     // Obtain a new inner service for each request. Override stacks are
@@ -199,7 +196,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     .push_on_service(svc::LoadShed::layer())
                     .push_new_clone()
                     .check_new_new::<http::Accept, Http<Target>>()
-                    .push(router::NewOneshotRoute::layer_via(|a: &http::Accept| {
+                    .push(svc::NewOneshotRoute::layer_via(|a: &http::Accept| {
                         SelectTarget(*a)
                     }))
                     .check_new_service::<http::Accept, http::Request<_>>()

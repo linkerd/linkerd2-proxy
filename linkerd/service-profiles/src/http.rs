@@ -1,5 +1,4 @@
 mod proxy;
-mod service;
 
 use std::{
     fmt,
@@ -10,7 +9,7 @@ use std::{
 };
 use tower::retry::budget::Budget;
 
-pub use self::{proxy::NewProxyRouter, service::NewServiceRouter};
+pub use self::proxy::NewProxyRouter;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {

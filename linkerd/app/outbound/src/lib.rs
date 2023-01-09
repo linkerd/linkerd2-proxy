@@ -210,8 +210,8 @@ impl Outbound<()> {
         P::Error: Send,
     {
         let logical = self.to_tcp_connect().push_logical(resolve);
-        let endpoint = self.to_tcp_connect().push_endpoint();
-        endpoint
+        let forward = self.to_tcp_connect().push_forward();
+        forward
             .push_switch_logical(logical.into_inner())
             .push_discover(profiles)
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
@@ -241,8 +241,8 @@ impl Outbound<()> {
         // on this ingress stack.
         let fallback = {
             let logical = self.to_tcp_connect().push_logical(resolve.clone());
-            let endpoint = self.to_tcp_connect().push_endpoint();
-            endpoint
+            let forward = self.to_tcp_connect().push_forward();
+            forward
                 .push_switch_logical(logical.into_inner())
                 .push_discover(profiles.clone())
                 .into_inner()
