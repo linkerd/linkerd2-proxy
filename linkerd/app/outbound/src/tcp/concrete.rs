@@ -43,7 +43,6 @@ impl<C> Outbound<C> {
     {
         self.map_stack(|config, rt, connect| {
             let crate::Config {
-                discovery_idle_timeout,
                 tcp_connection_buffer,
                 ..
             } = config;
@@ -58,12 +57,9 @@ impl<C> Outbound<C> {
                         .layer(stack_labels("tcp", "endpoint")),
                 )
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
-                .check_new_service::<Endpoint, _>()
                 .push_new_clone()
-                .check_new_new_service::<Concrete, Endpoint, _>()
                 .push(endpoint::NewFromMetadata::layer(config.inbound_ips.clone()))
-                .push(tcp::NewBalance::layer::<Concrete>(resolve))
-                .check_new_service::<Concrete, _>()
+                .push(tcp::NewBalance::layer(resolve))
                 .push_on_service(
                     svc::layers()
                         .push(tcp::Forward::layer())

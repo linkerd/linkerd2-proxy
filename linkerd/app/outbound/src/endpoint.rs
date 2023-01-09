@@ -195,8 +195,8 @@ where
 
     fn new_service(&self, concrete: Concrete<P>) -> Self::Service {
         FromMetadata {
+            inner: self.inner.new_service(concrete.clone()),
             concrete,
-            inner: self.inner.new_service(concrete),
             inbound_ips: self.inbound_ips.clone(),
         }
     }
@@ -209,7 +209,7 @@ where
 {
     type Service = N::Service;
 
-    fn new_service(&self, (addr, metadata): (SocketAddr, Metadata)) -> Self::Service {
+    fn new_service(&self, (addr, mut metadata): (SocketAddr, Metadata)) -> Self::Service {
         tracing::trace!(%addr, ?metadata, concrete = ?self.concrete, "Resolved endpoint");
         let tls = if self.inbound_ips.contains(&addr.ip()) {
             metadata.clear_upgrade();

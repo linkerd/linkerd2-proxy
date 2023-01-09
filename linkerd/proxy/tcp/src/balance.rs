@@ -40,10 +40,9 @@ impl<I, R, N> NewBalance<I, R, N> {
         }
     }
 
-    pub fn layer<T>(resolve: R) -> impl layer::Layer<N, Service = Self> + Clone
+    pub fn layer(resolve: R) -> impl layer::Layer<N, Service = Self> + Clone
     where
         R: Clone,
-        NewBalance<I, R, N>: NewService<T>,
     {
         layer::mk(move |inner| Self::new(inner, resolve.clone()))
     }
@@ -59,7 +58,7 @@ where
     S::Error: Into<Error>,
     NewSpawnDiscover<R, M>: NewService<T, Service = discover::Buffer<S>>,
     discover::Buffer<S>: futures::Stream<Item = discover::Result<S>>,
-    Balance<N::Service, I>: tower::Service<I>,
+    Balance<I, N::Service>: tower::Service<I>,
 {
     type Service = Balance<I, S>;
 
