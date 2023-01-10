@@ -6,7 +6,7 @@ use futures::future::Either;
 use std::fmt;
 use tokio::time;
 use tokio_stream::{wrappers::IntervalStream, StreamExt};
-use tracing::warn;
+use tracing::{info_span, warn};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -91,22 +91,24 @@ impl Config {
             .push(self::client::layer())
             .push_on_service(svc::MapErr::layer(Into::into))
             .into_new_service()
-            // Ensure that connection is driven independently of the load balancer; but don't drive
-            // reconnection independently of the balancer. This ensures that new connections are
-            // only initiated when the balancer tries to move pending endpoints to ready (i.e. after
-            // checking for discovery updates); but we don't want to continually reconnect without
-            // checking for discovery updates.
+            // Ensure that connection is driven independently of the load
+            // balancer; but don't drive reconnection independently of the
+            // balancer. This ensures that new connections are only initiated
+            // when the balancer tries to move pending endpoints to ready (i.e.
+            // after checking for discovery updates); but we don't want to
+            // continually reconnect without checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .push_new_reconnect(self.connect.backoff)
-            .instrument(|t: &self::client::Target| tracing::info_span!("endpoint", addr = %t.addr))
-            .check_new_service::<self::client::Target, http::Request<_>>()
+            .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr))
             .push_new_clone()
             .push(self::balance::layer(dns, resolve_backoff))
-            .check_new_service::<ControlAddr, _>()
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
+            // This buffer allows a resolver client to be shared across stacks.
+            // No load shed is applied here, however, so backpressure may leak
+            // into the caller task.
             .push_buffer_on_service("Controller client", &self.buffer)
-            .instrument(|c: &ControlAddr| tracing::info_span!("controller", addr = %c.addr))
+            .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
             .push(svc::ArcNewService::layer())
             .into_inner()
