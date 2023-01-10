@@ -9,11 +9,7 @@ use self::gateway::NewGateway;
 use linkerd_app_core::{
     identity, io, metrics,
     profiles::{self, DiscoveryRejected},
-    proxy::{
-        api_resolve::{ConcreteAddr, Metadata},
-        core::Resolve,
-        http,
-    },
+    proxy::{api_resolve::Metadata, core::Resolve, http},
     svc::{self, Param},
     tls,
     transport::{ClientAddr, Local, OrigDstAddr, Remote},
@@ -76,9 +72,12 @@ where
     P::Future: Send + 'static,
     P::Error: Send,
     R: Clone + Send + Sync + Unpin + 'static,
-    R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-    R::Resolution: Send,
-    R::Future: Send + Unpin,
+    R: Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
+    <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,
+    <R as Resolve<outbound::tcp::Concrete>>::Future: Send + Unpin,
+    R: Resolve<outbound::http::Concrete, Endpoint = Metadata, Error = Error>,
+    <R as Resolve<outbound::http::Concrete>>::Resolution: Send,
+    <R as Resolve<outbound::http::Concrete>>::Future: Send + Unpin,
 {
     let inbound_config = inbound.config().clone();
     let local_id = identity::LocalId(inbound.identity().name().clone());

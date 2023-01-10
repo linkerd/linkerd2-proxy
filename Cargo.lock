@@ -390,6 +390,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00f5fb52a06bdcadeb54e8d3671f8888a39697dcb0b81b23b55174030427f4eb"
 
 [[package]]
+name = "futures-macro"
+version = "0.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdfb8ce053d86b91919aad980c220b1fb8401a9394410e1c289ed7e66b61835d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "futures-sink"
 version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -410,6 +421,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-io",
+ "futures-macro",
  "futures-sink",
  "futures-task",
  "memchr",
@@ -813,7 +825,6 @@ dependencies = [
  "linkerd-opencensus",
  "linkerd-proxy-api-resolve",
  "linkerd-proxy-core",
- "linkerd-proxy-discover",
  "linkerd-proxy-dns-resolve",
  "linkerd-proxy-http",
  "linkerd-proxy-identity-client",
@@ -1322,29 +1333,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-proxy-balance"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "futures-util",
+ "indexmap",
+ "linkerd-error",
+ "linkerd-proxy-core",
+ "linkerd-stack",
+ "pin-project",
+ "rand",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-proxy-core"
 version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-error",
  "tower",
-]
-
-[[package]]
-name = "linkerd-proxy-discover"
-version = "0.1.0"
-dependencies = [
- "futures",
- "indexmap",
- "linkerd-error",
- "linkerd-proxy-core",
- "linkerd-stack",
- "pin-project",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tower",
- "tracing",
 ]
 
 [[package]]
@@ -1382,6 +1395,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-io",
+ "linkerd-proxy-balance",
  "linkerd-stack",
  "linkerd-tracing",
  "pin-project",
@@ -1461,6 +1475,7 @@ dependencies = [
  "futures",
  "linkerd-duplex",
  "linkerd-error",
+ "linkerd-proxy-balance",
  "linkerd-stack",
  "pin-project",
  "rand",

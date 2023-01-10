@@ -1,15 +1,11 @@
 use super::{Concrete, Endpoint};
-use crate::{endpoint, resolve, stack_labels, Outbound};
+use crate::{endpoint, stack_labels, Outbound};
 use linkerd_app_core::{
     drain, io,
-    proxy::{
-        api_resolve::{ConcreteAddr, Metadata},
-        core::Resolve,
-        resolve::map_endpoint,
-        tcp,
-    },
-    svc, Error, Infallible,
+    proxy::{api_resolve::Metadata, core::Resolve, tcp},
+    svc, Error,
 };
+use std::time;
 use tracing::info_span;
 
 // === impl Outbound ===
@@ -40,30 +36,16 @@ impl<C> Outbound<C> {
         C::Future: Send,
         C: Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
-        R: Clone + Send + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Sync,
+        R: Clone + Send + Sync + 'static,
+        R: Resolve<Concrete, Endpoint = Metadata, Error = Error> + Sync,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {
         self.map_stack(|config, rt, connect| {
             let crate::Config {
-                discovery_idle_timeout,
                 tcp_connection_buffer,
                 ..
             } = config;
-
-            let resolve = svc::stack(resolve.into_service())
-                .push_request_filter(|c: Concrete| Ok::<_, Infallible>(c.resolve))
-                .push(svc::layer::mk(move |inner| {
-                    map_endpoint::Resolve::new(
-                        endpoint::FromMetadata {
-                            inbound_ips: config.inbound_ips.clone(),
-                        },
-                        inner,
-                    )
-                }))
-                .check_service::<Concrete>()
-                .into_inner();
 
             connect
                 .push(svc::stack::WithoutConnectionMetadata::layer())
@@ -75,19 +57,13 @@ impl<C> Outbound<C> {
                         .layer(stack_labels("tcp", "endpoint")),
                 )
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
-                .push(resolve::layer(resolve, *discovery_idle_timeout * 2))
+                .push_new_clone()
+                .push(endpoint::NewFromMetadata::layer(config.inbound_ips.clone()))
+                .push(tcp::NewBalancePeakEwma::layer(resolve))
                 .push_on_service(
                     svc::layers()
-                        .push(tcp::balance::layer(
-                            crate::EWMA_DEFAULT_RTT,
-                            crate::EWMA_DECAY,
-                        ))
                         .push(tcp::Forward::layer())
-                        .push(drain::Retain::layer(rt.drain.clone())),
-                )
-                .into_new_service()
-                .push_on_service(
-                    svc::layers()
+                        .push(drain::Retain::layer(rt.drain.clone()))
                         .push(
                             rt.metrics
                                 .proxy
@@ -96,8 +72,17 @@ impl<C> Outbound<C> {
                         )
                         .push_buffer("Opaque Concrete", tcp_connection_buffer),
                 )
-                .instrument(|c: &Concrete| tracing::info_span!("concrete", addr = %c.resolve))
+                .instrument(|c: &Concrete| info_span!("concrete", addr = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
+    }
+}
+
+impl svc::Param<tcp::balance::EwmaConfig> for Concrete {
+    fn param(&self) -> tcp::balance::EwmaConfig {
+        tcp::balance::EwmaConfig {
+            default_rtt: time::Duration::from_millis(30),
+            decay: time::Duration::from_secs(10),
+        }
     }
 }
