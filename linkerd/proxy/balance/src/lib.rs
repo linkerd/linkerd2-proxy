@@ -95,14 +95,14 @@ where
     type Service = Balance<C, Req, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let ewma = NewNewPeakEwma {
+        let new = NewNewPeakEwma {
             inner: self.inner.clone(),
             _marker: PhantomData,
         };
-        let disco = discover::spawn_new(
+        let disco = discover::spawn_new_from_resolve(
             self.update_queue_capacity,
             self.resolve.clone(),
-            ewma,
+            new,
             target,
         );
 

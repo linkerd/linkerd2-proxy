@@ -11,7 +11,7 @@ pub use self::{from_resolve::FromResolve, new::DiscoverNew};
 
 pub type Buffer<S> = buffer::Buffer<SocketAddr, S>;
 
-pub(crate) fn spawn_new<T, R, M, N>(
+pub(crate) fn spawn_new_from_resolve<T, R, M, N>(
     capacity: usize,
     resolve: R,
     new_service: M,
