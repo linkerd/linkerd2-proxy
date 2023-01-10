@@ -1,6 +1,3 @@
-#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
-#![forbid(unsafe_code)]
-
 use futures::prelude::*;
 use linkerd_proxy_core::Resolve;
 use linkerd_stack::{layer, NewService};
@@ -12,7 +9,6 @@ pub mod new;
 
 pub use self::{from_resolve::FromResolve, new::DiscoverNew};
 
-pub type Result<S> = buffer::Result<SocketAddr, S>;
 pub type Buffer<S> = buffer::Buffer<SocketAddr, S>;
 
 #[derive(Clone, Debug)]

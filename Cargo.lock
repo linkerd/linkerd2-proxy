@@ -1336,12 +1336,19 @@ dependencies = [
 name = "linkerd-proxy-balance"
 version = "0.1.0"
 dependencies = [
+ "futures",
+ "futures-util",
+ "indexmap",
  "linkerd-error",
  "linkerd-proxy-core",
- "linkerd-proxy-discover",
  "linkerd-stack",
+ "pin-project",
  "rand",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
  "tower",
+ "tracing",
 ]
 
 [[package]]
@@ -1351,24 +1358,6 @@ dependencies = [
  "futures",
  "linkerd-error",
  "tower",
-]
-
-[[package]]
-name = "linkerd-proxy-discover"
-version = "0.1.0"
-dependencies = [
- "futures",
- "futures-util",
- "indexmap",
- "linkerd-error",
- "linkerd-proxy-core",
- "linkerd-stack",
- "pin-project",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tower",
- "tracing",
 ]
 
 [[package]]

@@ -42,7 +42,6 @@ members = [
     "linkerd/proxy/balance",
     "linkerd/proxy/core",
     "linkerd/proxy/dns-resolve",
-    "linkerd/proxy/discover",
     "linkerd/proxy/http",
     "linkerd/proxy/identity-client",
     "linkerd/proxy/resolve",

@@ -1,6 +1,8 @@
+mod discover;
+
+use self::discover::NewSpawnDiscover;
 use linkerd_error::Error;
 use linkerd_proxy_core::Resolve;
-use linkerd_proxy_discover::{self as discover, NewSpawnDiscover};
 use linkerd_stack::{layer, NewService, Param, Service};
 use rand::thread_rng;
 use std::{marker::PhantomData, net::SocketAddr, time::Duration};
