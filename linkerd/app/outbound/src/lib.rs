@@ -266,7 +266,7 @@ impl Outbound<()> {
             let forward = self.to_tcp_connect().push_forward();
             forward
                 .push_switch_logical(logical.into_inner())
-                .push_discover(profiles.clone(), policies.clone())
+                .push_discover(profiles.clone(), policies)
                 .into_inner()
         };
 
