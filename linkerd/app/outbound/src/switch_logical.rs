@@ -1,5 +1,6 @@
 use crate::{endpoint::Endpoint, logical::Logical, tcp, transport::OrigDstAddr, Outbound};
 use linkerd_app_core::{io, profiles, svc, Error, Infallible};
+use linkerd_client_policy as policy;
 use std::fmt;
 
 impl<S> Outbound<S> {
@@ -13,7 +14,7 @@ impl<S> Outbound<S> {
     pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
         self,
         logical: N,
-    ) -> Outbound<svc::ArcNewTcp<(Option<profiles::Receiver>, T), I>>
+    ) -> Outbound<svc::ArcNewTcp<(Option<profiles::Receiver>, Option<policy::Receiver>, T), I>>
     where
         Self: Clone + 'static,
         T: svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
@@ -30,7 +31,14 @@ impl<S> Outbound<S> {
             let inbound_ips = config.inbound_ips.clone();
             endpoint
                 .push_switch(
-                    move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Infallible> {
+                    move |(profile, policy, target): (
+                        Option<profiles::Receiver>,
+                        Option<policy::Receiver>,
+                        T,
+                    )|
+                          -> Result<_, Infallible> {
+                        // TODO(eliza): actually consume the client-policy rx
+                        // here as well.
                         if let Some(rx) = profile {
                             let is_opaque = rx.is_opaque_protocol();
 

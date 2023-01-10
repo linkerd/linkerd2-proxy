@@ -1,3 +1,4 @@
+use crate::policy;
 use crate::Outbound;
 use linkerd_app_core::{
     io, profiles,
@@ -11,9 +12,10 @@ impl<N> Outbound<N> {
     /// Discovers the profile for a TCP endpoint.
     ///
     /// Resolved services are cached and buffered.
-    pub fn push_discover<T, I, NSvc, P>(
+    pub fn push_discover<T, I, NSvc, P, C>(
         self,
         profiles: P,
+        policies: C,
     ) -> Outbound<
         svc::ArcNewService<
             T,
@@ -24,55 +26,27 @@ impl<N> Outbound<N> {
         T: Param<OrigDstAddr>,
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        N: svc::NewService<(Option<profiles::Receiver>, T), Service = NSvc>,
+        N: svc::NewService<
+            // TODO(eliza): maybe this ought to be a struct lol
+            (Option<profiles::Receiver>, Option<policy::Receiver>, T),
+            Service = NSvc,
+        >,
         N: Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
         P::Error: Send,
+        C: svc::Service<OrigDstAddr, Response = policy::Receiver>,
+        C: Clone + Send + Sync + 'static,
+        C::Future: Send,
+        Error: From<C::Error>,
     {
         self.map_stack(|config, rt, inner| {
             let allow = config.allow_discovery.clone();
-            inner
-                // .push_map_target(
-                //     |((orig_profile, target), profile): ((Option<profiles::Receiver>, T), _)| {
-                //         // XXX(eliza): this is gross but is only temporary
-                //         let profile = orig_profile.map(|_| profiles::Receiver::from(profile));
-                //         (profile, target)
-                //     },
-                // )
-                // .push(svc::NewWatchTarget::layer(
-                //     |(profile, _): (Option<profiles::Receiver>, T),
-                //     tx: watch::Sender<profiles::Profile>| {
-                //         async move {
-                //             let mut rx = match profile {
-                //                 Some(profile) => watch::Receiver::from(profile),
-                //                 None => {
-                //                     debug!("No profile for target, ending watch task");
-                //                     return;
-                //                 }
-                //             };
-                //             loop {
-                //                 {
-                //                     let profile = rx.borrow_and_update();
-                //                     // TODO(eliza): here is where we would construct a
-                //                     // policy from the profile and client policy watches...
-                //                     if tx.send(profile.clone()).is_err() {
-                //                         debug!("All recievers dropped, ending watch task.");
-                //                         return;
-                //                     }
-                //                 }
-                //                 if rx.changed().await.is_err() {
-                //                     debug!("Profile sender dropped, ending watch task.");
-                //                     return;
-                //                 }
-                //             }
-                //         }
-                //     },
-                // ))
-                // TODO(eliza): add `Join` to combine profile and client policy discovery
-                .push(profiles::discover::layer(profiles, move |t: T| {
+            let discover = {
+                use svc::ServiceExt;
+                let profiles = profiles::discover::filtered_service(profiles, move |t: T| {
                     let OrigDstAddr(addr) = t.param();
                     if allow.matches_ip(addr.ip()) {
                         debug!("Allowing profile lookup");
@@ -86,7 +60,16 @@ impl<N> Outbound<N> {
                     Err(profiles::DiscoveryRejected::new(
                         "not in discoverable networks",
                     ))
-                }))
+                })
+                .map_err(Into::into);
+                let policies = policies.map_err(Into::into).map_response(Some).map_request(|t: T| t.param());
+                svc::Join::new(profiles, policies)
+            };
+
+            inner
+                .push_map_target(|((profile, policy), target)| (profile, policy, target))
+                .check_new_service::<((Option<profiles::Receiver>, Option<policy::Receiver>), _), _>()
+                .push(svc::MakeNewService::layer(discover))
                 .check_make_service::<T, I>()
                 .push(svc::new_service::FromMakeService::layer())
                 .check_new_service::<T, I>()
