@@ -25,7 +25,7 @@ pub mod upgrade;
 mod version;
 
 pub use self::{
-    balance::NewP2cPeakEwma,
+    balance::NewBalancePeakEwma,
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
     glue::{HyperServerSvc, UpgradeBody},

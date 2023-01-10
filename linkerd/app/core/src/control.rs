@@ -283,11 +283,11 @@ mod balance {
         recover: R,
     ) -> impl svc::Layer<
         N,
-        Service = http::NewP2cPeakEwma<B, recover::Resolve<R, DnsResolve>, NewIntoTarget<N>>,
+        Service = http::NewBalancePeakEwma<B, recover::Resolve<R, DnsResolve>, NewIntoTarget<N>>,
     > {
         let resolve = recover::Resolve::new(recover, DnsResolve::new(dns));
         svc::layer::mk(move |inner| {
-            http::NewP2cPeakEwma::new(NewIntoTarget { inner }, resolve.clone())
+            http::NewBalancePeakEwma::new(NewIntoTarget { inner }, resolve.clone())
         })
     }
 

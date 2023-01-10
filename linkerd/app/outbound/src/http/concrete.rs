@@ -58,7 +58,7 @@ impl<N> Outbound<N> {
                 .check_new_new_service::<Concrete, Endpoint, http::Request<_>>()
                 .push(endpoint::NewFromMetadata::layer(config.inbound_ips.clone()))
                 .check_new_new_service::<Concrete, (_, _), http::Request<_>>()
-                .push(http::NewP2cPeakEwma::layer(resolve))
+                .push(http::NewBalancePeakEwma::layer(resolve))
                 .check_clone()
                 .check_new::<Concrete>()
                 .check_new_service::<Concrete, http::Request<_>>()

@@ -20,7 +20,7 @@ pub struct EwmaConfig {
 /// Configures a stack to resolve `T` typed targets to balance requests over
 /// `M`-typed endpoint stacks.
 #[derive(Debug)]
-pub struct NewP2cPeakEwma<C, Req, R, N> {
+pub struct NewBalancePeakEwma<C, Req, R, N> {
     discover: NewSpawnDiscover<R, NewNewPeakEwma<C, Req, N>>,
 }
 
@@ -42,9 +42,9 @@ pub struct NewPeakEwma<C, Req, N> {
     _marker: PhantomData<fn(Req) -> C>,
 }
 
-// === impl NewP2cPeakEwma ===
+// === impl NewBalancePeakEwma ===
 
-impl<C, Req, R, N> NewP2cPeakEwma<C, Req, R, N> {
+impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
     // FIXME(ver)
     const CAPACITY: usize = 1_000;
 
@@ -67,7 +67,7 @@ impl<C, Req, R, N> NewP2cPeakEwma<C, Req, R, N> {
     }
 }
 
-impl<C, T, Req, R, M, N, S> NewService<T> for NewP2cPeakEwma<C, Req, R, M>
+impl<C, T, Req, R, M, N, S> NewService<T> for NewBalancePeakEwma<C, Req, R, M>
 where
     R: Resolve<T>,
     M: NewService<T, Service = N> + Clone,
@@ -86,7 +86,7 @@ where
     }
 }
 
-impl<C, Req, R: Clone, N: Clone> Clone for NewP2cPeakEwma<C, Req, R, N> {
+impl<C, Req, R: Clone, N: Clone> Clone for NewBalancePeakEwma<C, Req, R, N> {
     fn clone(&self) -> Self {
         Self {
             discover: self.discover.clone(),
