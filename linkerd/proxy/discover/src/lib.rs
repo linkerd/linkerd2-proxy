@@ -8,9 +8,9 @@ use std::{fmt::Debug, net::SocketAddr};
 
 pub mod buffer;
 pub mod from_resolve;
-pub mod make_endpoint;
+pub mod new;
 
-pub use self::{from_resolve::FromResolve, make_endpoint::DiscoverNew};
+pub use self::{from_resolve::FromResolve, new::DiscoverNew};
 
 pub type Result<S> = buffer::Result<SocketAddr, S>;
 pub type Buffer<S> = buffer::Buffer<SocketAddr, S>;
