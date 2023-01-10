@@ -153,8 +153,7 @@ async fn header_based_routing() {
                                 }],
                             },
                         ],
-                    }]
-                    .into(),
+                    }],
                 },
             )),
         }),
