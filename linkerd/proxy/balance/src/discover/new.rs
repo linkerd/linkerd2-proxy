@@ -20,7 +20,7 @@ pub struct DiscoverNew<D, N> {
 // === impl DiscoverNew ===
 
 impl<D, N> DiscoverNew<D, N> {
-    pub fn new(discover: D, new: N) -> Self {
+    pub(super) fn new(discover: D, new: N) -> Self {
         Self { discover, new }
     }
 }

@@ -1,11 +1,10 @@
 mod discover;
 
-use self::discover::NewSpawnDiscover;
 use linkerd_error::Error;
 use linkerd_proxy_core::Resolve;
 use linkerd_stack::{layer, NewService, Param, Service};
 use rand::thread_rng;
-use std::{marker::PhantomData, net::SocketAddr, time::Duration};
+use std::{fmt::Debug, marker::PhantomData, net::SocketAddr, time::Duration};
 use tower::{
     balance::p2c,
     load::{self, PeakEwma},
@@ -23,20 +22,24 @@ pub struct EwmaConfig {
 /// endpoint stacks.
 #[derive(Debug)]
 pub struct NewBalancePeakEwma<C, Req, R, N> {
-    discover: NewSpawnDiscover<R, NewNewPeakEwma<C, Req, N>>,
+    update_queue_capacity: usize,
+    resolve: R,
+    inner: N,
+    _marker: PhantomData<fn(Req) -> C>,
 }
 
 type Buffer<C, S> = discover::Buffer<PeakEwma<S, C>>;
 pub type Balance<C, Req, S> = p2c::Balance<Buffer<C, S>, Req>;
 
-/// Constructs an inner stack that wraps inner services in a `PeakEwma`
-/// load-tracking middleware.
+/// Wraps the inner stack in [`NewPeakEwma`] to produce [`PeakEwma`] services.
 #[derive(Debug)]
 pub struct NewNewPeakEwma<C, Req, N> {
     inner: N,
     _marker: PhantomData<fn(Req) -> C>,
 }
 
+/// Wraps the inner services in [`PeakEwma`] services so their load is tracked
+/// for the p2c balancer.
 #[derive(Debug)]
 pub struct NewPeakEwma<C, Req, N> {
     config: EwmaConfig,
@@ -47,7 +50,7 @@ pub struct NewPeakEwma<C, Req, N> {
 // === impl NewBalancePeakEwma ===
 
 impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
-    /// Limits the number of endpint updates that can be buffered by a discover
+    /// Limits the number of endpoint updates that can be buffered by a discover
     /// stream.
     ///
     /// The buffering task ensures that discovery updates are processed (i.e.,
@@ -55,15 +58,14 @@ impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
     /// requests.
     ///
     /// 1K updates should be more than enough for most load balancers.
-    const CAPACITY: usize = 1_000;
+    const UPDATE_QUEUE_CAPACITY: usize = 1_000;
 
     pub fn new(inner: N, resolve: R) -> Self {
-        let ewma = NewNewPeakEwma {
+        Self {
+            update_queue_capacity: Self::UPDATE_QUEUE_CAPACITY,
+            resolve,
             inner,
             _marker: PhantomData,
-        };
-        Self {
-            discover: NewSpawnDiscover::new(Self::CAPACITY, resolve, ewma),
         }
     }
 
@@ -77,19 +79,33 @@ impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
 
 impl<C, T, Req, R, M, N, S> NewService<T> for NewBalancePeakEwma<C, Req, R, M>
 where
+    T: Param<EwmaConfig> + Clone + Send,
     R: Resolve<T>,
+    R::Endpoint: Clone + Debug + Eq + Send + 'static,
+    R::Resolution: Send,
+    R::Future: Send + 'static,
     M: NewService<T, Service = N> + Clone,
-    N: NewService<(SocketAddr, R::Endpoint), Service = S>,
-    S: Service<Req>,
+    N: NewService<(SocketAddr, R::Endpoint), Service = S> + Send + 'static,
+    S: Service<Req> + Send,
     S::Error: Into<Error>,
-    C: load::TrackCompletion<load::peak_ewma::Handle, S::Response> + Default,
-    NewSpawnDiscover<R, NewNewPeakEwma<C, Req, M>>: NewService<T, Service = Buffer<C, S>>,
+    C: load::TrackCompletion<load::peak_ewma::Handle, S::Response> + Default + Send + 'static,
+    Req: 'static,
     Balance<C, Req, S>: Service<Req>,
 {
     type Service = Balance<C, Req, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let disco = self.discover.new_service(target);
+        let ewma = NewNewPeakEwma {
+            inner: self.inner.clone(),
+            _marker: PhantomData,
+        };
+        let disco = discover::spawn_new(
+            self.update_queue_capacity,
+            self.resolve.clone(),
+            ewma,
+            target,
+        );
+
         Balance::from_rng(disco, &mut thread_rng()).expect("RNG must be valid")
     }
 }
@@ -97,7 +113,10 @@ where
 impl<C, Req, R: Clone, N: Clone> Clone for NewBalancePeakEwma<C, Req, R, N> {
     fn clone(&self) -> Self {
         Self {
-            discover: self.discover.clone(),
+            update_queue_capacity: self.update_queue_capacity,
+            resolve: self.resolve.clone(),
+            inner: self.inner.clone(),
+            _marker: self._marker,
         }
     }
 }
