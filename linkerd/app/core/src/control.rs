@@ -99,11 +99,9 @@ impl Config {
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .push_new_reconnect(self.connect.backoff)
             .instrument(|t: &self::client::Target| tracing::info_span!("endpoint", addr = %t.addr))
-            .check_new_service::<self::client::Target, _>()
-            .push_map_target(|(_, t): (_, self::client::Target)| t)
-            .check_new_service::<(_, self::client::Target), _>()
+            .check_new_service::<self::client::Target, http::Request<_>>()
             .push_new_clone()
-            .check_new_new::<ControlAddr, (_, self::client::Target)>()
+            .push(self::client::NewIntoTarget::layer())
             .push(http::NewP2cPeakEwma::layer(self::resolve::new(
                 dns,
                 resolve_backoff,
@@ -179,44 +177,21 @@ mod add_origin {
 }
 
 mod resolve {
-    use super::client::Target;
     use crate::{
         dns,
-        proxy::{
-            dns_resolve::DnsResolve,
-            resolve::{map_endpoint, recover},
-        },
+        proxy::{dns_resolve::DnsResolve, resolve::recover},
     };
-    use linkerd_error::Recover;
-    use std::net::SocketAddr;
 
-    pub fn new<R>(dns: dns::Resolver, recover: R) -> Discover<R>
-    where
-        R: Recover + Clone,
-        R::Backoff: Unpin,
-    {
-        map_endpoint::Resolve::new(
-            IntoTarget(()),
-            recover::Resolve::new(recover, DnsResolve::new(dns)),
-        )
-    }
+    type Discover<R> = recover::Resolve<R, DnsResolve>;
 
-    type Discover<R> = map_endpoint::Resolve<IntoTarget, recover::Resolve<R, DnsResolve>>;
-
-    #[derive(Copy, Clone, Debug)]
-    pub struct IntoTarget(());
-
-    impl map_endpoint::MapEndpoint<super::ControlAddr, ()> for IntoTarget {
-        type Out = Target;
-
-        fn map_endpoint(&self, control: &super::ControlAddr, addr: SocketAddr, _: ()) -> Self::Out {
-            Target::new(addr, control.identity.clone())
-        }
+    pub fn new<R>(dns: dns::Resolver, recover: R) -> Discover<R> {
+        recover::Resolve::new(recover, DnsResolve::new(dns))
     }
 }
 
 /// Creates a client suitable for gRPC.
 mod client {
+    use super::ControlAddr;
     use crate::{
         proxy::http,
         svc, tls,
@@ -243,6 +218,17 @@ mod client {
     #[derive(Debug)]
     pub struct Client<C, B> {
         inner: http::h2::Connect<C, B>,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct NewIntoTarget<N> {
+        inner: N,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct IntoTarget<N> {
+        inner: N,
+        server_id: tls::ConditionalClientTls,
     }
 
     // === impl Target ===
@@ -308,6 +294,36 @@ mod client {
             Client {
                 inner: self.inner.clone(),
             }
+        }
+    }
+
+    // === impl NewIntoTarget ===
+
+    impl<N> NewIntoTarget<N> {
+        pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
+            svc::layer::mk(|inner| NewIntoTarget { inner })
+        }
+    }
+
+    impl<N: svc::NewService<ControlAddr>> svc::NewService<super::ControlAddr> for NewIntoTarget<N> {
+        type Service = IntoTarget<N::Service>;
+
+        fn new_service(&self, control: super::ControlAddr) -> Self::Service {
+            IntoTarget {
+                server_id: control.identity.clone(),
+                inner: self.inner.new_service(control),
+            }
+        }
+    }
+
+    // === impl IntoTarget ===
+
+    impl<N: svc::NewService<Target>> svc::NewService<(SocketAddr, ())> for IntoTarget<N> {
+        type Service = N::Service;
+
+        fn new_service(&self, (addr, ()): (SocketAddr, ())) -> Self::Service {
+            self.inner
+                .new_service(Target::new(addr, self.server_id.clone()))
         }
     }
 }
