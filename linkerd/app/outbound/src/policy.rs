@@ -1,4 +1,4 @@
-pub use self::{config::Config, discover::Discover};
+pub use self::config::Config;
 use crate::Outbound;
 use linkerd_app_core::{
     dns, metrics,
@@ -10,7 +10,6 @@ pub use linkerd_client_policy::*;
 
 pub mod api;
 mod config;
-mod discover;
 
 impl Outbound<()> {
     pub fn build_policies(
