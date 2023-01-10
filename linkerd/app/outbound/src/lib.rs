@@ -79,6 +79,9 @@ pub struct Config {
 
     // Whether the proxy may include informational headers on HTTP responses.
     pub emit_headers: bool,
+
+    /// Configures client policy discovery.
+    pub policy: Option<policy::Config>,
 }
 
 #[derive(Clone, Debug)]
@@ -168,10 +171,11 @@ impl<S> Outbound<S> {
 }
 
 impl Outbound<()> {
-    pub async fn serve<A, I, P, R>(
+    pub async fn serve<A, I, P, R, C>(
         self,
         listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
         profiles: P,
+        policies: C,
         resolve: R,
     ) where
         A: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + Sync + 'static,
@@ -182,22 +186,26 @@ impl Outbound<()> {
         R::Resolution: Send,
         R::Future: Send + Unpin,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
-        P::Future: Send,
+        P::Future: Send + Unpin,
         P::Error: Send,
+        C: svc::Service<OrigDstAddr, Response = policy::Receiver>,
+        C: Clone + Send + Sync + 'static,
+        C::Future: Send + Unpin,
+        Error: From<C::Error>,
     {
         if self.config.ingress_mode {
             info!("Outbound routing in ingress-mode");
-            let server = self.mk_ingress(profiles, resolve);
+            let server = self.mk_ingress(profiles, policies, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, server, shutdown).await;
         } else {
-            let proxy = self.mk_proxy(profiles, resolve);
+            let proxy = self.mk_proxy(profiles, policies, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, proxy, shutdown).await;
         }
     }
 
-    fn mk_proxy<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
+    fn mk_proxy<T, I, P, R, C>(&self, profiles: P, policies: C, resolve: R) -> svc::ArcNewTcp<T, I>
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
@@ -207,14 +215,18 @@ impl Outbound<()> {
         R::Resolution: Send,
         R::Future: Send + Unpin,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
-        P::Future: Send,
+        P::Future: Send + Unpin,
         P::Error: Send,
+        C: svc::Service<OrigDstAddr, Response = policy::Receiver>,
+        C: Clone + Send + Sync + 'static,
+        C::Future: Send + Unpin,
+        Error: From<C::Error>,
     {
         let logical = self.to_tcp_connect().push_logical(resolve);
         let forward = self.to_tcp_connect().push_forward();
         forward
             .push_switch_logical(logical.into_inner())
-            .push_discover(profiles)
+            .push_discover(profiles, policies)
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }
@@ -224,7 +236,12 @@ impl Outbound<()> {
     /// Ingress-mode proxies route based on request headers instead of using the
     /// original destination. Protocol detection is **always** performed. If it
     /// fails, we revert to using the normal IP-based discovery
-    fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
+    fn mk_ingress<T, I, P, R, C>(
+        &self,
+        profiles: P,
+        policies: C,
+        resolve: R,
+    ) -> svc::ArcNewTcp<T, I>
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
@@ -234,8 +251,12 @@ impl Outbound<()> {
         R::Resolution: Send,
         R::Future: Send + Unpin,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
-        P::Future: Send,
+        P::Future: Send + Unpin,
         P::Error: Send,
+        C: svc::Service<OrigDstAddr, Response = policy::Receiver>,
+        C: Clone + Send + Sync + 'static,
+        C::Future: Send + Unpin,
+        Error: From<C::Error>,
     {
         // The fallback stack is the same thing as the normal proxy stack, but
         // it doesn't include TCP metrics, since they are already instrumented
@@ -245,7 +266,7 @@ impl Outbound<()> {
             let forward = self.to_tcp_connect().push_forward();
             forward
                 .push_switch_logical(logical.into_inner())
-                .push_discover(profiles.clone())
+                .push_discover(profiles.clone(), policies.clone())
                 .into_inner()
         };
 

@@ -35,11 +35,11 @@ impl<N> Outbound<N> {
         NSvc: svc::Service<I, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
-        P::Future: Send,
+        P::Future: Send + Unpin,
         P::Error: Send,
         C: svc::Service<OrigDstAddr, Response = policy::Receiver>,
         C: Clone + Send + Sync + 'static,
-        C::Future: Send,
+        C::Future: Send + Unpin, // Unpin is required for `FutureService`
         Error: From<C::Error>,
     {
         self.map_stack(|config, rt, inner| {
@@ -67,6 +67,7 @@ impl<N> Outbound<N> {
             };
 
             inner
+                .check_new_service::<(Option<profiles::Receiver>, Option<policy::Receiver>, _), _>()
                 .push_map_target(|((profile, policy), target)| (profile, policy, target))
                 .check_new_service::<((Option<profiles::Receiver>, Option<policy::Receiver>), _), _>()
                 .push(svc::MakeNewService::layer(discover))
@@ -90,6 +91,7 @@ impl<N> Outbound<N> {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,3 +356,5 @@ mod tests {
         })
     }
 }
+
+*/

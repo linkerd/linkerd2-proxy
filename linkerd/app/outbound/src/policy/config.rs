@@ -1,14 +1,13 @@
-use super::{api::Api, ClientPolicy};
+use super::{api::Api, Policy};
 
 use linkerd_app_core::{
     control, dns, identity, metrics,
-    svc::{self, NewService},
+    svc::{self, NewService, ServiceExt},
     transport::OrigDstAddr,
     Error,
 };
 use std::sync::Arc;
 use tokio::sync::watch;
-use tower::ServiceExt;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -24,7 +23,7 @@ impl Config {
         identity: identity::NewClient,
     ) -> impl svc::Service<
         OrigDstAddr,
-        Response = watch::Receiver<ClientPolicy>,
+        Response = watch::Receiver<Policy>,
         Future = impl Send,
         Error = Error,
     > + Clone

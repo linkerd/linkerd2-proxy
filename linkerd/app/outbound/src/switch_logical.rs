@@ -126,7 +126,7 @@ mod tests {
             .into_inner();
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((None, orig_dst));
+        let svc = stack.new_service((None, None, orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -162,7 +162,7 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((Some(profile.into()), orig_dst));
+        let svc = stack.new_service((Some(profile.into()), None, orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -193,7 +193,7 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((Some(profile.into()), orig_dst));
+        let svc = stack.new_service((Some(profile.into()), None, orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -225,7 +225,7 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(endpoint_addr);
-        let svc = stack.new_service((Some(profile.into()), orig_dst));
+        let svc = stack.new_service((Some(profile.into()), None, orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }

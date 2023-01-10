@@ -9,7 +9,7 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct MakeNewService<N, S> {
     new_svc: N,
-    target: S,
+    get_target: S,
 }
 
 #[derive(Debug, Clone)]
@@ -23,11 +23,11 @@ pub struct ResponseFuture<T, F, N> {
 
 // === impl MakeNewService ===
 
-impl<N: Clone, S> MakeNewService<N, S> {
-    pub fn layer(new_svc: N) -> impl crate::layer::Layer<S, Service = Self> + Clone {
-        crate::layer::mk(move |target| Self {
-            target,
-            new_svc: new_svc.clone(),
+impl<N: Clone, S: Clone> MakeNewService<N, S> {
+    pub fn layer(get_target: S) -> impl crate::layer::Layer<N, Service = Self> + Clone {
+        crate::layer::mk(move |new_svc| Self {
+            get_target: get_target.clone(),
+            new_svc,
         })
     }
 }
@@ -43,11 +43,11 @@ where
     type Future = ResponseFuture<T, S::Future, N>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.target.poll_ready(cx)
+        self.get_target.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let future = self.target.call(target.clone());
+        let future = self.get_target.call(target.clone());
         ResponseFuture {
             future,
             new_svc: self.new_svc.clone(),
