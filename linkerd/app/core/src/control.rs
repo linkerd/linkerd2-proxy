@@ -174,6 +174,64 @@ mod add_origin {
     }
 }
 
+mod balance {
+    use super::{client::Target, ControlAddr};
+    use crate::{
+        dns,
+        proxy::{dns_resolve::DnsResolve, http, resolve::recover},
+        svc, tls,
+    };
+    use std::net::SocketAddr;
+
+    pub fn layer<B, R: Clone, N>(
+        dns: dns::Resolver,
+        recover: R,
+    ) -> impl svc::Layer<
+        N,
+        Service = http::NewBalancePeakEwma<B, recover::Resolve<R, DnsResolve>, NewIntoTarget<N>>,
+    > {
+        let resolve = recover::Resolve::new(recover, DnsResolve::new(dns));
+        svc::layer::mk(move |inner| {
+            http::NewBalancePeakEwma::new(NewIntoTarget { inner }, resolve.clone())
+        })
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct NewIntoTarget<N> {
+        inner: N,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct IntoTarget<N> {
+        inner: N,
+        server_id: tls::ConditionalClientTls,
+    }
+
+    // === impl NewIntoTarget ===
+
+    impl<N: svc::NewService<ControlAddr>> svc::NewService<ControlAddr> for NewIntoTarget<N> {
+        type Service = IntoTarget<N::Service>;
+
+        fn new_service(&self, control: ControlAddr) -> Self::Service {
+            IntoTarget {
+                server_id: control.identity.clone(),
+                inner: self.inner.new_service(control),
+            }
+        }
+    }
+
+    // === impl IntoTarget ===
+
+    impl<N: svc::NewService<Target>> svc::NewService<(SocketAddr, ())> for IntoTarget<N> {
+        type Service = N::Service;
+
+        fn new_service(&self, (addr, ()): (SocketAddr, ())) -> Self::Service {
+            self.inner
+                .new_service(Target::new(addr, self.server_id.clone()))
+        }
+    }
+}
+
 /// Creates a client suitable for gRPC.
 mod client {
     use crate::{
@@ -267,64 +325,6 @@ mod client {
             Client {
                 inner: self.inner.clone(),
             }
-        }
-    }
-}
-
-mod balance {
-    use super::{client::Target, ControlAddr};
-    use crate::{
-        dns,
-        proxy::{dns_resolve::DnsResolve, http, resolve::recover},
-        svc, tls,
-    };
-    use std::net::SocketAddr;
-
-    pub fn layer<B, R: Clone, N>(
-        dns: dns::Resolver,
-        recover: R,
-    ) -> impl svc::Layer<
-        N,
-        Service = http::NewBalancePeakEwma<B, recover::Resolve<R, DnsResolve>, NewIntoTarget<N>>,
-    > {
-        let resolve = recover::Resolve::new(recover, DnsResolve::new(dns));
-        svc::layer::mk(move |inner| {
-            http::NewBalancePeakEwma::new(NewIntoTarget { inner }, resolve.clone())
-        })
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct NewIntoTarget<N> {
-        inner: N,
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct IntoTarget<N> {
-        inner: N,
-        server_id: tls::ConditionalClientTls,
-    }
-
-    // === impl NewIntoTarget ===
-
-    impl<N: svc::NewService<ControlAddr>> svc::NewService<ControlAddr> for NewIntoTarget<N> {
-        type Service = IntoTarget<N::Service>;
-
-        fn new_service(&self, control: ControlAddr) -> Self::Service {
-            IntoTarget {
-                server_id: control.identity.clone(),
-                inner: self.inner.new_service(control),
-            }
-        }
-    }
-
-    // === impl IntoTarget ===
-
-    impl<N: svc::NewService<Target>> svc::NewService<(SocketAddr, ())> for IntoTarget<N> {
-        type Service = N::Service;
-
-        fn new_service(&self, (addr, ()): (SocketAddr, ())) -> Self::Service {
-            self.inner
-                .new_service(Target::new(addr, self.server_id.clone()))
         }
     }
 }
