@@ -37,7 +37,7 @@ impl<N> Outbound<N> {
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send + Unpin,
         P::Error: Send,
-        C: svc::Service<OrigDstAddr, Response = policy::Receiver>,
+        C: svc::Service<OrigDstAddr, Response = Option<policy::Receiver>>,
         C: Clone + Send + Sync + 'static,
         C::Future: Send + Unpin, // Unpin is required for `FutureService`
         Error: From<C::Error>,
@@ -62,7 +62,7 @@ impl<N> Outbound<N> {
                     ))
                 })
                 .map_err(Into::into);
-                let policies = policies.map_err(Into::into).map_response(Some).map_request(|t: T| t.param());
+                let policies = policies.map_err(Into::into).map_request(|t: T| t.param());
                 svc::Join::new(profiles, policies)
             };
 
