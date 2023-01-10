@@ -34,6 +34,7 @@ thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
 tokio-util = { version = "0.7.4" }
 tonic = { version = "0.8", default-features = false }
+tower = { version = "0.4", features = ["util"] }
 tracing = "0.1"
 
 [dev-dependencies]

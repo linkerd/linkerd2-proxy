@@ -162,9 +162,15 @@ impl Config {
         let outbound = Outbound::new(outbound, runtime);
 
         let inbound_policies = {
+            let dns = dns.resolver.clone();
+            let metrics = metrics.control.clone();
+            info_span!("server_policy").in_scope(|| inbound.build_policies(dns, metrics))
+        };
+
+        let outbound_policies = {
             let dns = dns.resolver;
             let metrics = metrics.control;
-            info_span!("policy").in_scope(|| inbound.build_policies(dns, metrics))
+            info_span!("client_policy").in_scope(|| outbound.build_policies(dns, metrics))
         };
 
         let admin = {
@@ -220,7 +226,12 @@ impl Config {
 
                 tokio::spawn(
                     outbound
-                        .serve(outbound_listen, profiles.clone(), resolve)
+                        .serve(
+                            outbound_listen,
+                            profiles.clone(),
+                            outbound_policies,
+                            resolve,
+                        )
                         .instrument(info_span!("outbound").or_current()),
                 );
 

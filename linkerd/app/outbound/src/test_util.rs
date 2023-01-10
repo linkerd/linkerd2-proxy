@@ -50,6 +50,7 @@ pub(crate) fn default_config() -> Config {
         discovery_idle_timeout: Duration::from_secs(60),
         tcp_connection_buffer: buffer,
         http_request_buffer: buffer,
+        policy: None, // TODO(eliza): add client policy discovery to tests
     }
 }
 
