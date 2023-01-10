@@ -52,16 +52,9 @@ impl<N> Outbound<N> {
                         .layer(stack_labels("http", "endpoint")),
                 )
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
-                .check_new_service::<Endpoint, http::Request<_>>()
                 .push_new_clone()
-                .check_new_new::<Concrete, Endpoint>()
-                .check_new_new_service::<Concrete, Endpoint, http::Request<_>>()
                 .push(endpoint::NewFromMetadata::layer(config.inbound_ips.clone()))
-                .check_new_new_service::<Concrete, (_, _), http::Request<_>>()
                 .push(http::NewBalancePeakEwma::layer(resolve))
-                .check_clone()
-                .check_new::<Concrete>()
-                .check_new_service::<Concrete, http::Request<_>>()
                 // Drives the initial resolution via the service's readiness.
                 .push_on_service(
                     svc::layers()
