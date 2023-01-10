@@ -8,6 +8,13 @@ use linkerd_app_core::{
 };
 use tracing::debug;
 
+#[derive(Clone, Debug)]
+pub struct Discovered<T> {
+    pub(crate) profile: Option<profiles::Receiver>,
+    pub(crate) policy: Option<policy::Receiver>,
+    pub(crate) target: T,
+}
+
 impl<N> Outbound<N> {
     /// Discovers the profile for a TCP endpoint.
     ///
@@ -26,11 +33,7 @@ impl<N> Outbound<N> {
         T: Param<OrigDstAddr>,
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        N: svc::NewService<
-            // TODO(eliza): maybe this ought to be a struct lol
-            (Option<profiles::Receiver>, Option<policy::Receiver>, T),
-            Service = NSvc,
-        >,
+        N: svc::NewService<Discovered<T>, Service = NSvc>,
         N: Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
@@ -67,8 +70,7 @@ impl<N> Outbound<N> {
             };
 
             inner
-                .check_new_service::<(Option<profiles::Receiver>, Option<policy::Receiver>, _), _>()
-                .push_map_target(|((profile, policy), target)| (profile, policy, target))
+                .push_map_target(|((profile, policy), target)| Discovered { policy, profile, target })
                 .check_new_service::<((Option<profiles::Receiver>, Option<policy::Receiver>), _), _>()
                 .push(svc::MakeNewService::layer(discover))
                 .check_make_service::<T, I>()

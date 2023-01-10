@@ -1,6 +1,8 @@
-use crate::{endpoint::Endpoint, logical::Logical, tcp, transport::OrigDstAddr, Outbound};
-use linkerd_app_core::{io, profiles, svc, Error, Infallible};
-use linkerd_client_policy as policy;
+use crate::{
+    discover::Discovered, endpoint::Endpoint, logical::Logical, tcp, transport::OrigDstAddr,
+    Outbound,
+};
+use linkerd_app_core::{io, svc, Error, Infallible};
 use std::fmt;
 
 impl<S> Outbound<S> {
@@ -14,7 +16,7 @@ impl<S> Outbound<S> {
     pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
         self,
         logical: N,
-    ) -> Outbound<svc::ArcNewTcp<(Option<profiles::Receiver>, Option<policy::Receiver>, T), I>>
+    ) -> Outbound<svc::ArcNewTcp<Discovered<T>, I>>
     where
         Self: Clone + 'static,
         T: svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
@@ -31,14 +33,16 @@ impl<S> Outbound<S> {
             let inbound_ips = config.inbound_ips.clone();
             endpoint
                 .push_switch(
-                    move |(profile, policy, target): (
-                        Option<profiles::Receiver>,
-                        Option<policy::Receiver>,
-                        T,
-                    )|
+                    move |Discovered {
+                              policy,
+                              profile,
+                              target,
+                          }: Discovered<T>|
                           -> Result<_, Infallible> {
                         // TODO(eliza): actually consume the client-policy rx
                         // here as well.
+                        let _ = policy;
+
                         if let Some(rx) = profile {
                             let is_opaque = rx.is_opaque_protocol();
 
@@ -95,7 +99,7 @@ impl<S> Outbound<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::*;
+    use crate::{profiles, test_util::*};
     use linkerd_app_core::{
         proxy::api_resolve::Metadata,
         svc::{NewService, Param, ServiceExt},
@@ -126,7 +130,11 @@ mod tests {
             .into_inner();
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((None, None, orig_dst));
+        let svc = stack.new_service(Discovered {
+            policy: None,
+            profile: None,
+            target: orig_dst,
+        });
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -162,7 +170,11 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((Some(profile.into()), None, orig_dst));
+        let svc = stack.new_service(Discovered {
+            profile: Some(profile.into()),
+            policy: None,
+            target: orig_dst,
+        });
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -193,7 +205,11 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((Some(profile.into()), None, orig_dst));
+        let svc = stack.new_service(Discovered {
+            profile: Some(profile.into()),
+            policy: None,
+            target: orig_dst,
+        });
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -225,7 +241,11 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(endpoint_addr);
-        let svc = stack.new_service((Some(profile.into()), None, orig_dst));
+        let svc = stack.new_service(Discovered {
+            profile: Some(profile.into()),
+            policy: None,
+            target: orig_dst,
+        });
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
