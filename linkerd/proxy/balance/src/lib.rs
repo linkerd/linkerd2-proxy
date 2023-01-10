@@ -18,7 +18,7 @@ pub struct EwmaConfig {
 }
 
 /// Configures a stack to resolve `T` typed targets to balance requests over
-/// `M`-typed endpoint stacks.
+/// `N`-typed endpoint stacks.
 #[derive(Debug)]
 pub struct NewBalancePeakEwma<C, Req, R, N> {
     discover: NewSpawnDiscover<R, NewNewPeakEwma<C, Req, N>>,
