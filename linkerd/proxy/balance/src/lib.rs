@@ -19,8 +19,8 @@ pub struct EwmaConfig {
     pub decay: Duration,
 }
 
-/// Configures a stack to resolve `T` typed targets to balance requests over
-/// `N`-typed endpoint stacks.
+/// Configures a stack to resolve targets to balance requests over `N`-typed
+/// endpoint stacks.
 #[derive(Debug)]
 pub struct NewBalancePeakEwma<C, Req, R, N> {
     discover: NewSpawnDiscover<R, NewNewPeakEwma<C, Req, N>>,
@@ -47,7 +47,14 @@ pub struct NewPeakEwma<C, Req, N> {
 // === impl NewBalancePeakEwma ===
 
 impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
-    // FIXME(ver)
+    /// Limits the number of endpint updates that can be buffered by a discover
+    /// stream.
+    ///
+    /// The buffering task ensures that discovery updates are processed (i.e.,
+    /// from the controller client) even when the balancer is not processing new
+    /// requests.
+    ///
+    /// 1K updates should be more than enough for most load balancers.
     const CAPACITY: usize = 1_000;
 
     pub fn new(inner: N, resolve: R) -> Self {
@@ -55,7 +62,6 @@ impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
             inner,
             _marker: PhantomData,
         };
-
         Self {
             discover: NewSpawnDiscover::new(Self::CAPACITY, resolve, ewma),
         }
@@ -138,9 +144,9 @@ where
     fn new_service(&self, target: T) -> Self::Service {
         // Converts durations to nanos in f64.
         //
-        // Due to a lossy transformation, the maximum value that can be represented
-        // is ~585 years, which, I hope, is more than enough to represent request
-        // latencies.
+        // Due to a lossy transformation, the maximum value that can be
+        // represented is ~585 years, which, I hope, is more than enough to
+        // represent request latencies.
         fn nanos(d: Duration) -> f64 {
             const NANOS_PER_SEC: u64 = 1_000_000_000;
             let n = f64::from(d.subsec_nanos());
