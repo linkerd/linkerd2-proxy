@@ -1,6 +1,7 @@
 mod discovery;
 mod identity;
 mod orig_proto;
+mod outbound_policy;
 mod profile_dst_overrides;
 mod profiles;
 mod shutdown;

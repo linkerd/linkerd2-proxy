@@ -25,6 +25,10 @@ pub fn identity() -> identity::Controller {
     identity::Controller::default()
 }
 
+pub fn policy() -> policy::Controller {
+    policy::Controller::default()
+}
+
 pub type Labels = HashMap<String, String>;
 
 pub type DstReceiver = UnboundedReceiverStream<Result<pb::Update, grpc::Status>>;
@@ -345,7 +349,7 @@ pub(crate) async fn run<T, B>(
 ) -> Listening
 where
     T: tower::Service<http::Request<hyper::body::Body>, Response = http::Response<B>>,
-    T: Clone + Send + Sync + 'static,
+    T: Clone + Send + 'static,
     T::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     T::Future: Send,
     B: http_body::Body + Send + 'static,
