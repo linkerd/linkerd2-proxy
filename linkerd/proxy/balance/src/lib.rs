@@ -50,12 +50,15 @@ pub struct NewPeakEwma<C, Req, N> {
 // === impl NewBalancePeakEwma ===
 
 impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
-    /// Limits the number of endpoint updates that can be buffered by a discover
-    /// stream.
+    /// Limits the number of endpoint updates that can be buffered by a
+    /// discovery stream (i.e., for a specific service resolution).
     ///
     /// The buffering task ensures that discovery updates are processed (i.e.,
     /// from the controller client) even when the balancer is not processing new
-    /// requests.
+    /// requests. If the buffer fills up, we'll stop polling the discovery
+    /// stream. When the stream represents an gRPC streaming response, the
+    /// server may become unable to write further updates when the buffer is
+    /// full.
     ///
     /// 1K updates should be more than enough for most load balancers.
     const UPDATE_QUEUE_CAPACITY: usize = 1_000;
