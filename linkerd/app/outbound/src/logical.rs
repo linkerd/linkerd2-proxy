@@ -128,14 +128,13 @@ impl<C> Outbound<C> {
         C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
         C::Connection: Send + Unpin,
         C::Future: Send + Unpin,
-        R: Clone + Send + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        R::Resolution: Send,
-        R::Future: Send + Unpin,
+        R: Clone + Send + Sync + Unpin + 'static,
+        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<tcp::Concrete>>::Resolution: Send,
+        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
+        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<http::Concrete>>::Resolution: Send,
+        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: fmt::Debug + Send + Sync + Unpin + 'static,
     {

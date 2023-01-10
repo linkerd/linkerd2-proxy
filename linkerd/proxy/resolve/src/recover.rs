@@ -84,8 +84,8 @@ where
     type Future = ResolveFuture<T, E, R>;
 
     #[inline]
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.resolve.poll_ready(cx).map_err(Into::into)
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     #[inline]
@@ -220,7 +220,6 @@ where
                 // backoff in case this connection attempt fails.
                 State::Disconnected { ref mut backoff } => {
                     tracing::trace!("connecting");
-                    ready!(self.resolve.poll_ready(cx).map_err(Into::into))?;
                     let future = self.resolve.resolve(self.target.clone());
                     let backoff = backoff.take();
                     State::Connecting { future, backoff }

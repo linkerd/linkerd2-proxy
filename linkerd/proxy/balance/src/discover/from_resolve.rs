@@ -1,10 +1,9 @@
 use futures::{prelude::*, ready};
 use indexmap::{map::Entry, IndexMap};
-use linkerd_proxy_core::resolve::{Resolve, Update};
+use linkerd_proxy_core::resolve::Update;
 use pin_project::pin_project;
 use std::{
     collections::VecDeque,
-    future::Future,
     net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
@@ -12,89 +11,26 @@ use std::{
 use tower::discover::Change;
 use tracing::{debug, trace};
 
-#[derive(Clone, Debug)]
-pub struct FromResolve<R, E> {
-    resolve: R,
-    _marker: std::marker::PhantomData<fn(E)>,
-}
-
-#[pin_project]
-#[derive(Debug)]
-pub struct DiscoverFuture<F, E> {
-    #[pin]
-    future: F,
-    _marker: std::marker::PhantomData<fn(E)>,
-}
-
 /// Observes an `R`-typed resolution stream, using an `M`-typed endpoint stack to
 /// build a service for each endpoint.
 #[pin_project]
-pub struct Discover<R: TryStream, E> {
+pub struct FromResolve<T, R: TryStream> {
     #[pin]
     resolution: R,
 
     /// Changes that have been received but not yet emitted.
-    pending: VecDeque<Change<SocketAddr, E>>,
+    pending: VecDeque<Change<SocketAddr, T>>,
 
     /// The current state of resolved endpoints that have been observed. This is
     /// an `IndexMap` so that the order of observed addresses is preserved
     /// (mostly for tests).
-    active: IndexMap<SocketAddr, E>,
+    active: IndexMap<SocketAddr, T>,
 }
 
 // === impl FromResolve ===
 
-impl<R, E> FromResolve<R, E> {
-    pub fn new(resolve: R) -> Self {
-        Self {
-            resolve,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T, R, E> tower::Service<T> for FromResolve<R, E>
-where
-    R: Resolve<T> + Clone,
-{
-    type Response = Discover<R::Resolution, E>;
-    type Error = R::Error;
-    type Future = DiscoverFuture<R::Future, E>;
-
-    #[inline]
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.resolve.poll_ready(cx)
-    }
-
-    #[inline]
-    fn call(&mut self, target: T) -> Self::Future {
-        Self::Future {
-            future: self.resolve.resolve(target),
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-// === impl DiscoverFuture ===
-
-impl<F, E> Future for DiscoverFuture<F, E>
-where
-    F: TryFuture,
-    F::Ok: TryStream,
-{
-    type Output = Result<Discover<F::Ok, E>, F::Error>;
-
-    #[inline]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let resolution = ready!(self.project().future.try_poll(cx))?;
-        Poll::Ready(Ok(Discover::new(resolution)))
-    }
-}
-
-// === impl Discover ===
-
-impl<R: TryStream, E> Discover<R, E> {
-    pub fn new(resolution: R) -> Self {
+impl<T, R: TryStream> FromResolve<T, R> {
+    pub(super) fn new(resolution: R) -> Self {
         Self {
             resolution,
             active: IndexMap::default(),
@@ -103,12 +39,12 @@ impl<R: TryStream, E> Discover<R, E> {
     }
 }
 
-impl<R, E> Stream for Discover<R, E>
+impl<T, R> Stream for FromResolve<T, R>
 where
-    R: TryStream<Ok = Update<E>>,
-    E: Clone + Eq + std::fmt::Debug,
+    T: Clone + Eq + std::fmt::Debug,
+    R: TryStream<Ok = Update<T>>,
 {
-    type Item = Result<Change<SocketAddr, E>, R::Error>;
+    type Item = Result<Change<SocketAddr, T>, R::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
@@ -189,7 +125,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::Discover;
+    use super::FromResolve;
     use futures::prelude::*;
     use linkerd_error::Infallible;
     use linkerd_proxy_core::resolve::Update;
@@ -205,7 +141,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn reset() {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
-        let mut disco = Discover::new(ReceiverStream::new(rx));
+        let mut disco = FromResolve::new(ReceiverStream::new(rx));
 
         // Use reset to set a new state with 3 addresses.
         tx.try_send(Ok::<_, Infallible>(Update::Reset(
@@ -251,7 +187,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn deduplicate_redundant() {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
-        let mut disco = Discover::new(ReceiverStream::new(rx));
+        let mut disco = FromResolve::new(ReceiverStream::new(rx));
 
         // The initial update is observed.
         tx.try_send(Ok::<_, Infallible>(Update::Add(vec![(addr(1), "a")])))

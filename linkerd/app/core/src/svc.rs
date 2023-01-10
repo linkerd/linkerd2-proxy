@@ -277,6 +277,15 @@ impl<S> Stack<S> {
         self
     }
 
+    pub fn check_new_new_service<T, U, Req>(self) -> Self
+    where
+        S: NewService<T>,
+        S::Service: NewService<U>,
+        <S::Service as NewService<U>>::Service: Service<Req>,
+    {
+        self
+    }
+
     pub fn check_new_clone<T>(self) -> Self
     where
         S: NewService<T>,

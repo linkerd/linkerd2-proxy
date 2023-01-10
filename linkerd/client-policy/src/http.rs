@@ -54,6 +54,7 @@ pub mod proto {
             .collect::<Result<Vec<_>, InvalidHostMatch>>()?;
 
         // let meta = Arc::new(Meta::try_from(metadata.ok_or(InvalidMeta::Missing)?)?);
+        #[allow(clippy::redundant_closure)]
         let rules = rules
             .into_iter()
             .map(|r| try_rule(/* meta.clone(), */ r))

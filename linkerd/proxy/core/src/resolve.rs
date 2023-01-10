@@ -1,19 +1,20 @@
 use futures::prelude::*;
 use linkerd_error::Error;
-use std::future::Future;
-use std::net::SocketAddr;
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    net::SocketAddr,
+    task::{Context, Poll},
+};
+use tower::util::Oneshot;
 
 /// Resolves `T`-typed names/addresses as an infinite stream of `Update<Self::Endpoint>`.
-pub trait Resolve<T> {
+pub trait Resolve<T>: Clone {
     type Endpoint;
     type Error: Into<Error>;
     type Resolution: Stream<Item = Result<Update<Self::Endpoint>, Self::Error>>;
     type Future: Future<Output = Result<Self::Resolution, Self::Error>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
-
-    fn resolve(&mut self, target: T) -> Self::Future;
+    fn resolve(&self, target: T) -> Self::Future;
 
     fn into_service(self) -> ResolveService<Self>
     where
@@ -38,23 +39,18 @@ pub enum Update<T> {
 
 impl<S, T, R, E> Resolve<T> for S
 where
-    S: tower::Service<T, Response = R>,
+    S: tower::Service<T, Response = R> + Clone,
     S::Error: Into<Error>,
     R: Stream<Item = Result<Update<E>, S::Error>>,
 {
     type Endpoint = E;
     type Error = S::Error;
     type Resolution = S::Response;
-    type Future = S::Future;
+    type Future = Oneshot<S, T>;
 
     #[inline]
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        tower::Service::poll_ready(self, cx)
-    }
-
-    #[inline]
-    fn resolve(&mut self, target: T) -> Self::Future {
-        tower::Service::call(self, target)
+    fn resolve(&self, target: T) -> Self::Future {
+        Oneshot::new(self.clone(), target)
     }
 }
 
@@ -70,8 +66,8 @@ where
     type Future = R::Future;
 
     #[inline]
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.0.poll_ready(cx)
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     #[inline]

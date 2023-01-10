@@ -1,12 +1,12 @@
 use crate::{
-    classify, config, control, dns, identity, metrics, proxy::http, svc, tls,
-    transport::ConnectTcp, Addr, Error,
+    classify, config, dns, identity, metrics, proxy::http, svc, tls, transport::ConnectTcp, Addr,
+    Error,
 };
 use futures::future::Either;
 use std::fmt;
 use tokio::time;
 use tokio_stream::{wrappers::IntervalStream, StreamExt};
-use tracing::warn;
+use tracing::{info_span, warn};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -27,16 +27,25 @@ impl svc::Param<Addr> for ControlAddr {
     }
 }
 
+impl svc::Param<http::balance::EwmaConfig> for ControlAddr {
+    fn param(&self) -> http::balance::EwmaConfig {
+        EWMA_CONFIG
+    }
+}
+
 impl fmt::Display for ControlAddr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.addr, f)
     }
 }
 
-type BalanceBody =
-    http::balance::PendingUntilFirstDataBody<tower::load::peak_ewma::Handle, hyper::Body>;
+pub type RspBody =
+    linkerd_http_metrics::requests::ResponseBody<http::balance::Body<hyper::Body>, classify::Eos>;
 
-pub type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
+const EWMA_CONFIG: http::balance::EwmaConfig = http::balance::EwmaConfig {
+    default_rtt: time::Duration::from_millis(30),
+    decay: time::Duration::from_secs(10),
+};
 
 impl Config {
     pub fn build(
@@ -82,21 +91,24 @@ impl Config {
             .push(self::client::layer())
             .push_on_service(svc::MapErr::layer(Into::into))
             .into_new_service()
-            // Ensure that connection is driven independently of the load balancer; but don't drive
-            // reconnection independently of the balancer. This ensures that new connections are
-            // only initiated when the balancer tries to move pending endpoints to ready (i.e. after
-            // checking for discovery updates); but we don't want to continually reconnect without
-            // checking for discovery updates.
+            // Ensure that connection is driven independently of the load
+            // balancer; but don't drive reconnection independently of the
+            // balancer. This ensures that new connections are only initiated
+            // when the balancer tries to move pending endpoints to ready (i.e.
+            // after checking for discovery updates); but we don't want to
+            // continually reconnect without checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .push_new_reconnect(self.connect.backoff)
-            .instrument(|t: &self::client::Target| tracing::info_span!("endpoint", addr = %t.addr))
-            .push(self::resolve::layer(dns, resolve_backoff))
-            .push_on_service(self::control::balance::layer())
-            .into_new_service()
+            .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr))
+            .push_new_clone()
+            .push(self::balance::layer(dns, resolve_backoff))
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
+            // This buffer allows a resolver client to be shared across stacks.
+            // No load shed is applied here, however, so backpressure may leak
+            // into the caller task.
             .push_buffer_on_service("Controller client", &self.buffer)
-            .instrument(|c: &ControlAddr| tracing::info_span!("controller", addr = %c.addr))
+            .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
             .push(svc::ArcNewService::layer())
             .into_inner()
@@ -162,68 +174,61 @@ mod add_origin {
     }
 }
 
-mod resolve {
-    use super::client::Target;
+mod balance {
+    use super::{client::Target, ControlAddr};
     use crate::{
         dns,
-        proxy::{
-            discover,
-            dns_resolve::DnsResolve,
-            resolve::{map_endpoint, recover},
-        },
-        svc,
+        proxy::{dns_resolve::DnsResolve, http, resolve::recover},
+        svc, tls,
     };
-    use linkerd_error::Recover;
     use std::net::SocketAddr;
 
-    pub fn layer<M, R>(
+    pub fn layer<B, R: Clone, N>(
         dns: dns::Resolver,
         recover: R,
-    ) -> impl svc::Layer<M, Service = Discover<M, R>>
-    where
-        R: Recover + Clone,
-        R::Backoff: Unpin,
-    {
-        svc::layer::mk(move |endpoint| {
-            discover::resolve(
-                endpoint,
-                map_endpoint::Resolve::new(
-                    IntoTarget(()),
-                    recover::Resolve::new(recover.clone(), DnsResolve::new(dns.clone())),
-                ),
-            )
+    ) -> impl svc::Layer<
+        N,
+        Service = http::NewBalancePeakEwma<B, recover::Resolve<R, DnsResolve>, NewIntoTarget<N>>,
+    > {
+        let resolve = recover::Resolve::new(recover, DnsResolve::new(dns));
+        svc::layer::mk(move |inner| {
+            http::NewBalancePeakEwma::new(NewIntoTarget { inner }, resolve.clone())
         })
     }
 
-    type Discover<M, R> = discover::MakeEndpoint<
-        discover::FromResolve<
-            map_endpoint::Resolve<IntoTarget, recover::Resolve<R, DnsResolve>>,
-            Target,
-        >,
-        M,
-    >;
+    #[derive(Clone, Debug)]
+    pub struct NewIntoTarget<N> {
+        inner: N,
+    }
 
-    #[derive(Copy, Clone, Debug)]
-    pub struct IntoTarget(());
+    #[derive(Clone, Debug)]
+    pub struct IntoTarget<N> {
+        inner: N,
+        server_id: tls::ConditionalClientTls,
+    }
 
-    impl map_endpoint::MapEndpoint<super::ControlAddr, ()> for IntoTarget {
-        type Out = Target;
+    // === impl NewIntoTarget ===
 
-        fn map_endpoint(&self, control: &super::ControlAddr, addr: SocketAddr, _: ()) -> Self::Out {
-            Target::new(addr, control.identity.clone())
+    impl<N: svc::NewService<ControlAddr>> svc::NewService<ControlAddr> for NewIntoTarget<N> {
+        type Service = IntoTarget<N::Service>;
+
+        fn new_service(&self, control: ControlAddr) -> Self::Service {
+            IntoTarget {
+                server_id: control.identity.clone(),
+                inner: self.inner.new_service(control),
+            }
         }
     }
-}
 
-mod balance {
-    use crate::proxy::http;
-    use std::time::Duration;
+    // === impl IntoTarget ===
 
-    const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
-    const EWMA_DECAY: Duration = Duration::from_secs(10);
+    impl<N: svc::NewService<Target>> svc::NewService<(SocketAddr, ())> for IntoTarget<N> {
+        type Service = N::Service;
 
-    pub fn layer<A, B>() -> http::balance::Layer<A, B> {
-        http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY)
+        fn new_service(&self, (addr, ()): (SocketAddr, ())) -> Self::Service {
+            self.inner
+                .new_service(Target::new(addr, self.server_id.clone()))
+        }
     }
 }
 

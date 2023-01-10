@@ -39,7 +39,6 @@ linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
-linkerd-proxy-discover = { path = "../../proxy/discover" }
 linkerd-proxy-identity-client = { path = "../../proxy/identity-client" }
 linkerd-proxy-http = { path = "../../proxy/http" }
 linkerd-proxy-resolve = { path = "../../proxy/resolve" }
