@@ -14,6 +14,7 @@ members = [
     "linkerd/app/outbound",
     "linkerd/app/test",
     "linkerd/app",
+    "linkerd/client-policy",
     "linkerd/conditional",
     "linkerd/distribute",
     "linkerd/detect",
@@ -82,3 +83,4 @@ lto = true
 
 [patch.crates-io]
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.22" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "alex/outbound" }

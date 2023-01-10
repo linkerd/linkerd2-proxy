@@ -390,6 +390,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00f5fb52a06bdcadeb54e8d3671f8888a39697dcb0b81b23b55174030427f4eb"
 
 [[package]]
+name = "futures-macro"
+version = "0.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdfb8ce053d86b91919aad980c220b1fb8401a9394410e1c289ed7e66b61835d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "futures-sink"
 version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -410,6 +421,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-io",
+ "futures-macro",
  "futures-sink",
  "futures-task",
  "memchr",
@@ -939,6 +951,7 @@ dependencies = [
  "hyper",
  "linkerd-app-core",
  "linkerd-app-test",
+ "linkerd-client-policy",
  "linkerd-distribute",
  "linkerd-http-classify",
  "linkerd-http-retry",
@@ -947,7 +960,9 @@ dependencies = [
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
  "linkerd-retry",
+ "linkerd-tonic-watch",
  "linkerd-tracing",
+ "linkerd2-proxy-api",
  "parking_lot",
  "pin-project",
  "thiserror",
@@ -978,6 +993,29 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "linkerd-client-policy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "futures",
+ "http",
+ "indexmap",
+ "linkerd-addr",
+ "linkerd-error",
+ "linkerd-http-route",
+ "linkerd-proxy-api-resolve",
+ "linkerd-stack",
+ "linkerd2-proxy-api",
+ "once_cell",
+ "prost-types",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
 ]
 
 [[package]]
@@ -1548,6 +1586,7 @@ dependencies = [
  "http",
  "http-body",
  "linkerd-addr",
+ "linkerd-client-policy",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-http-box",
@@ -1747,8 +1786,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9461e1bf61263ffa493117f2177c15a470b4b66f6b58c74e548401293f9ea639"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=alex/outbound#4a25c25fd1a3dd705925d41a9edc744fe09782f4"
 dependencies = [
  "h2",
  "http",

@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 use futures::Stream;
-use linkerd_addr::{Addr, NameAddr};
+use linkerd_addr::NameAddr;
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
 use std::{
@@ -10,7 +10,6 @@ use std::{
     future::Future,
     net::SocketAddr,
     pin::Pin,
-    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -25,6 +24,7 @@ pub mod http;
 mod proto;
 
 pub use self::client::Client;
+pub use linkerd_client_policy::{LogicalAddr, LookupAddr};
 
 #[derive(Clone, Debug)]
 pub struct Receiver {
@@ -44,13 +44,6 @@ pub struct Profile {
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
-/// A profile lookup target.
-#[derive(Clone, Hash, Eq, PartialEq)]
-pub struct LookupAddr(pub Addr);
-
-/// A bound logical service address
-#[derive(Clone, Hash, Eq, PartialEq)]
-pub struct LogicalAddr(pub NameAddr);
 
 #[derive(Clone)]
 pub struct Target {
@@ -181,74 +174,6 @@ impl Default for Profile {
             opaque_protocol: false,
             endpoint: None,
         }
-    }
-}
-
-// === impl LookupAddr ===
-
-impl fmt::Display for LookupAddr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl fmt::Debug for LookupAddr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LookupAddr({})", self.0)
-    }
-}
-
-impl FromStr for LookupAddr {
-    type Err = <Addr as FromStr>::Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Addr::from_str(s).map(LookupAddr)
-    }
-}
-
-impl From<Addr> for LookupAddr {
-    fn from(a: Addr) -> Self {
-        Self(a)
-    }
-}
-
-impl From<LookupAddr> for Addr {
-    fn from(LookupAddr(addr): LookupAddr) -> Addr {
-        addr
-    }
-}
-
-// === impl LogicalAddr ===
-
-impl fmt::Display for LogicalAddr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl fmt::Debug for LogicalAddr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LogicalAddr({})", self.0)
-    }
-}
-
-impl FromStr for LogicalAddr {
-    type Err = <NameAddr as FromStr>::Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        NameAddr::from_str(s).map(LogicalAddr)
-    }
-}
-
-impl From<NameAddr> for LogicalAddr {
-    fn from(na: NameAddr) -> Self {
-        Self(na)
-    }
-}
-
-impl From<LogicalAddr> for NameAddr {
-    fn from(LogicalAddr(na): LogicalAddr) -> NameAddr {
-        na
     }
 }
 

@@ -32,47 +32,45 @@ impl<N> Outbound<N> {
         P::Future: Send,
         P::Error: Send,
     {
-        use tokio::sync::watch;
         self.map_stack(|config, rt, inner| {
             let allow = config.allow_discovery.clone();
             inner
-                .push_map_target(
-                    |((orig_profile, target), profile): ((Option<profiles::Receiver>, T), _)| {
-                        // XXX(eliza): this is gross but is only temporary
-                        let profile = orig_profile.map(|_| profiles::Receiver::from(profile));
-                        (profile, target)
-                    },
-                )
-                .push(svc::NewWatchTarget::layer(
-                    |(profile, _): (Option<profiles::Receiver>, T),
-                     tx: watch::Sender<profiles::Profile>| {
-                        async move {
-                            let mut rx = match profile {
-                                Some(profile) => watch::Receiver::from(profile),
-                                None => {
-                                    debug!("No profile for target, ending watch task");
-                                    return;
-                                }
-                            };
-                            loop {
-                                {
-                                    let profile = rx.borrow_and_update();
-                                    // TODO(eliza): here is where we would construct a
-                                    // policy from the profile and client policy watches...
-                                    if tx.send(profile.clone()).is_err() {
-                                        debug!("All recievers dropped, ending watch task.");
-                                        return;
-                                    }
-                                }
-
-                                if rx.changed().await.is_err() {
-                                    debug!("Profile sender dropped, ending watch task.");
-                                    return;
-                                }
-                            }
-                        }
-                    },
-                ))
+                // .push_map_target(
+                //     |((orig_profile, target), profile): ((Option<profiles::Receiver>, T), _)| {
+                //         // XXX(eliza): this is gross but is only temporary
+                //         let profile = orig_profile.map(|_| profiles::Receiver::from(profile));
+                //         (profile, target)
+                //     },
+                // )
+                // .push(svc::NewWatchTarget::layer(
+                //     |(profile, _): (Option<profiles::Receiver>, T),
+                //     tx: watch::Sender<profiles::Profile>| {
+                //         async move {
+                //             let mut rx = match profile {
+                //                 Some(profile) => watch::Receiver::from(profile),
+                //                 None => {
+                //                     debug!("No profile for target, ending watch task");
+                //                     return;
+                //                 }
+                //             };
+                //             loop {
+                //                 {
+                //                     let profile = rx.borrow_and_update();
+                //                     // TODO(eliza): here is where we would construct a
+                //                     // policy from the profile and client policy watches...
+                //                     if tx.send(profile.clone()).is_err() {
+                //                         debug!("All recievers dropped, ending watch task.");
+                //                         return;
+                //                     }
+                //                 }
+                //                 if rx.changed().await.is_err() {
+                //                     debug!("Profile sender dropped, ending watch task.");
+                //                     return;
+                //                 }
+                //             }
+                //         }
+                //     },
+                // ))
                 // TODO(eliza): add `Join` to combine profile and client policy discovery
                 .push(profiles::discover::layer(profiles, move |t: T| {
                     let OrigDstAddr(addr) = t.param();

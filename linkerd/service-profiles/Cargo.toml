@@ -15,6 +15,7 @@ futures = { version = "0.3", default-features = false }
 http = "0.2"
 http-body = "0.4"
 linkerd-addr = { path = "../addr" }
+linkerd-client-policy = { path = "../client-policy" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
 linkerd-http-box = { path = "../http-box" }
