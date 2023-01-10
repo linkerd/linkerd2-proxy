@@ -16,6 +16,7 @@ mod join;
 pub mod layer;
 mod lazy;
 mod loadshed;
+mod make_new_service;
 mod make_thunk;
 mod map_err;
 mod map_target;
@@ -42,6 +43,7 @@ pub use self::{
     join::Join,
     lazy::{Lazy, NewLazy},
     loadshed::{LoadShed, LoadShedError},
+    make_new_service::MakeNewService,
     make_thunk::MakeThunk,
     map_err::MapErr,
     map_target::{MapTarget, MapTargetLayer, MapTargetService},

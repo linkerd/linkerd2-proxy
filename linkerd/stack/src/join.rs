@@ -12,6 +12,10 @@ impl<A, B: Clone> Join<A, B> {
     pub fn layer(b: B) -> impl crate::layer::Layer<A, Service = Join<A, B>> + Clone {
         crate::layer::mk(move |a| Join { a, b: b.clone() })
     }
+
+    pub fn new(a: A, b: B) -> Self {
+        Self { a, b }
+    }
 }
 
 impl<A, B, T> NewService<T> for Join<A, B>

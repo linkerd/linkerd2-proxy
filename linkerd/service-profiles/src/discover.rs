@@ -3,20 +3,29 @@ use futures::prelude::*;
 use linkerd_stack::{layer, Filter, FutureService, NewService, Predicate, Service};
 use std::{future::Future, pin::Pin};
 
-type Svc<F, G, M> = Discover<RecoverDefault<Filter<GetProfileService<G>, F>>, M>;
+type Svc<F, G> = RecoverDefault<Filter<GetProfileService<G>, F>>;
+
 pub fn layer<T, G, F, M>(
     get_profile: G,
     filter: F,
-) -> impl layer::Layer<M, Service = Svc<F, G, M>> + Clone
+) -> impl layer::Layer<M, Service = Discover<Svc<F, G>, M>> + Clone
 where
     F: Predicate<T> + Clone,
     G: GetProfile<F::Request> + Clone,
 {
-    let get_profile = RecoverDefault::new(Filter::new(get_profile.into_service(), filter));
+    let get_profile = filtered_service::<_, _, T>(get_profile, filter);
     layer::mk(move |inner| Discover {
         get_profile: get_profile.clone(),
         inner,
     })
+}
+
+pub fn filtered_service<F, G, T>(get_profile: G, filter: F) -> Svc<F, G>
+where
+    F: Predicate<T> + Clone,
+    G: GetProfile<F::Request> + Clone,
+{
+    RecoverDefault::new(Filter::new(get_profile.into_service(), filter))
 }
 
 #[derive(Clone, Debug)]

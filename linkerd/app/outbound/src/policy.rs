@@ -34,11 +34,9 @@ impl Outbound<()> {
                 tracing::info!("No policy service configured, using default client policy.");
 
                 static DEFAULT_POLICY: once_cell::sync::Lazy<(
-                    watch::Sender<ClientPolicy>,
-                    watch::Receiver<ClientPolicy>,
-                )> = once_cell::sync::Lazy::new(|| {
-                    tokio::sync::watch::channel(ClientPolicy::default())
-                });
+                    watch::Sender<Policy>,
+                    watch::Receiver<Policy>,
+                )> = once_cell::sync::Lazy::new(|| tokio::sync::watch::channel(Policy::default()));
 
                 svc::Either::B(svc::mk(|_| {
                     futures::future::ready::<Result<_, Error>>(Ok(DEFAULT_POLICY.1.clone().into()))

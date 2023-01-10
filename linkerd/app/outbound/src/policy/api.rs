@@ -80,9 +80,10 @@ where
                         // doesn't cause an internal error, because we don't have
                         // filters in client policy rules yet...
                         // TODO(eliza): this should get an internal error filter...
-                        let policy = ClientPolicy::try_from(up).unwrap_or_else(|error| {
+                        let policy = Policy::try_from(up).unwrap_or_else(|error| {
                             tracing::warn!(%error, "Client policy misconfigured");
-                            ClientPolicy::invalid()
+                            // Policy::invalid()
+                            todo!("eliza")
                         });
                         tracing::debug!(?policy);
                         policy
