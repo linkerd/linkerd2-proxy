@@ -101,11 +101,7 @@ impl Config {
             .instrument(|t: &self::client::Target| tracing::info_span!("endpoint", addr = %t.addr))
             .check_new_service::<self::client::Target, http::Request<_>>()
             .push_new_clone()
-            .push(self::client::NewIntoTarget::layer())
-            .push(http::NewP2cPeakEwma::layer(self::resolve::new(
-                dns,
-                resolve_backoff,
-            )))
+            .push(self::balance::layer(dns, resolve_backoff))
             .check_new_service::<ControlAddr, _>()
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
@@ -176,22 +172,8 @@ mod add_origin {
     }
 }
 
-mod resolve {
-    use crate::{
-        dns,
-        proxy::{dns_resolve::DnsResolve, resolve::recover},
-    };
-
-    type Discover<R> = recover::Resolve<R, DnsResolve>;
-
-    pub fn new<R>(dns: dns::Resolver, recover: R) -> Discover<R> {
-        recover::Resolve::new(recover, DnsResolve::new(dns))
-    }
-}
-
 /// Creates a client suitable for gRPC.
 mod client {
-    use super::ControlAddr;
     use crate::{
         proxy::http,
         svc, tls,
@@ -218,17 +200,6 @@ mod client {
     #[derive(Debug)]
     pub struct Client<C, B> {
         inner: http::h2::Connect<C, B>,
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct NewIntoTarget<N> {
-        inner: N,
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct IntoTarget<N> {
-        inner: N,
-        server_id: tls::ConditionalClientTls,
     }
 
     // === impl Target ===
@@ -296,19 +267,47 @@ mod client {
             }
         }
     }
+}
+
+mod balance {
+    use super::{client::Target, ControlAddr};
+    use crate::{
+        dns,
+        proxy::{dns_resolve::DnsResolve, http, resolve::recover},
+        svc, tls,
+    };
+    use std::net::SocketAddr;
+
+    pub fn layer<B, R: Clone, N>(
+        dns: dns::Resolver,
+        recover: R,
+    ) -> impl svc::Layer<
+        N,
+        Service = http::NewP2cPeakEwma<B, recover::Resolve<R, DnsResolve>, NewIntoTarget<N>>,
+    > {
+        let resolve = recover::Resolve::new(recover, DnsResolve::new(dns));
+        svc::layer::mk(move |inner| {
+            http::NewP2cPeakEwma::new(NewIntoTarget { inner }, resolve.clone())
+        })
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct NewIntoTarget<N> {
+        inner: N,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct IntoTarget<N> {
+        inner: N,
+        server_id: tls::ConditionalClientTls,
+    }
 
     // === impl NewIntoTarget ===
 
-    impl<N> NewIntoTarget<N> {
-        pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
-            svc::layer::mk(|inner| NewIntoTarget { inner })
-        }
-    }
-
-    impl<N: svc::NewService<ControlAddr>> svc::NewService<super::ControlAddr> for NewIntoTarget<N> {
+    impl<N: svc::NewService<ControlAddr>> svc::NewService<ControlAddr> for NewIntoTarget<N> {
         type Service = IntoTarget<N::Service>;
 
-        fn new_service(&self, control: super::ControlAddr) -> Self::Service {
+        fn new_service(&self, control: ControlAddr) -> Self::Service {
             IntoTarget {
                 server_id: control.identity.clone(),
                 inner: self.inner.new_service(control),

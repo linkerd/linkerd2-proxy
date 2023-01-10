@@ -21,22 +21,22 @@ pub struct EwmaConfig {
 /// `M`-typed endpoint stacks.
 #[derive(Debug)]
 pub struct NewP2cPeakEwma<C, Req, R, N> {
-    discover: NewSpawnDiscover<R, NewNewInner<C, Req, N>>,
+    discover: NewSpawnDiscover<R, NewNewPeakEwma<C, Req, N>>,
 }
 
 type Buffer<C, S> = discover::Buffer<PeakEwma<S, C>>;
 pub type Balance<C, Req, S> = p2c::Balance<Buffer<C, S>, Req>;
 
-/// Constructs an inner stack that wraps inner services in a `PeakEwma` load
-/// middleware.
+/// Constructs an inner stack that wraps inner services in a `PeakEwma`
+/// load-tracking middleware.
 #[derive(Debug)]
-pub struct NewNewInner<C, Req, N> {
+pub struct NewNewPeakEwma<C, Req, N> {
     inner: N,
     _marker: PhantomData<fn(Req) -> C>,
 }
 
 #[derive(Debug)]
-pub struct NewInner<C, Req, N> {
+pub struct NewPeakEwma<C, Req, N> {
     config: EwmaConfig,
     inner: N,
     _marker: PhantomData<fn(Req) -> C>,
@@ -49,7 +49,7 @@ impl<C, Req, R, N> NewP2cPeakEwma<C, Req, R, N> {
     const CAPACITY: usize = 1_000;
 
     pub fn new(inner: N, resolve: R) -> Self {
-        let ewma = NewNewInner {
+        let ewma = NewNewPeakEwma {
             inner,
             _marker: PhantomData,
         };
@@ -75,7 +75,7 @@ where
     S: Service<Req>,
     S::Error: Into<Error>,
     C: load::TrackCompletion<load::peak_ewma::Handle, S::Response> + Default,
-    NewSpawnDiscover<R, NewNewInner<C, Req, M>>: NewService<T, Service = Buffer<C, S>>,
+    NewSpawnDiscover<R, NewNewPeakEwma<C, Req, M>>: NewService<T, Service = Buffer<C, S>>,
     Balance<C, Req, S>: Service<Req>,
 {
     type Service = Balance<C, Req, S>;
@@ -94,19 +94,19 @@ impl<C, Req, R: Clone, N: Clone> Clone for NewP2cPeakEwma<C, Req, R, N> {
     }
 }
 
-// === impl NewNewInner ===
+// === impl NewNewPeakEwma ===
 
-impl<C, T, N, Req> NewService<T> for NewNewInner<C, Req, N>
+impl<C, T, N, Req> NewService<T> for NewNewPeakEwma<C, Req, N>
 where
     T: Param<EwmaConfig>,
     N: NewService<T>,
 {
-    type Service = NewInner<C, Req, N::Service>;
+    type Service = NewPeakEwma<C, Req, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let config = target.param();
         let inner = self.inner.new_service(target);
-        NewInner {
+        NewPeakEwma {
             config,
             inner,
             _marker: PhantomData,
@@ -114,7 +114,7 @@ where
     }
 }
 
-impl<C, Req, N: Clone> Clone for NewNewInner<C, Req, N> {
+impl<C, Req, N: Clone> Clone for NewNewPeakEwma<C, Req, N> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -123,9 +123,9 @@ impl<C, Req, N: Clone> Clone for NewNewInner<C, Req, N> {
     }
 }
 
-// === impl NewInner ===
+// === impl NewPeakEwma ===
 
-impl<C, T, N, Req, S> NewService<T> for NewInner<C, Req, N>
+impl<C, T, N, Req, S> NewService<T> for NewPeakEwma<C, Req, N>
 where
     C: load::TrackCompletion<load::peak_ewma::Handle, S::Response> + Default,
     N: NewService<T, Service = S>,
