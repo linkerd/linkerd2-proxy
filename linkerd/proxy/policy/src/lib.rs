@@ -31,7 +31,7 @@ pub enum Protocol<D> {
         timeout: time::Duration,
         /// HTTP routes to use when protocol detection identifies an HTTP
         http: Arc<[http::Route<D>]>,
-        opaque: Arc<[OpaqueRoute<D>]>,
+        opaque: Arc<[opaque::Route<D>]>,
     },
     Http1(Arc<[http::Route<D>]>),
     Http2(Arc<[http::Route<D>]>),
@@ -139,6 +139,7 @@ pub mod proto {
                         .ok_or(InvalidServer::MissingDetectTimeout)?
                         .try_into()?,
                     tcp_authorizations: authorizations,
+                    opaque: todo!("eliza"),
                 },
 
                 api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { routes }) => {
