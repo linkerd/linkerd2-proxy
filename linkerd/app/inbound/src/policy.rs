@@ -22,7 +22,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
 };
 use linkerd_idle_cache::Cached;
-pub use linkerd_server_policy::{
+pub use linkerd_proxy_policy::{
     authz::Suffix,
     grpc::Route as GrpcRoute,
     http::{filter::Redirection, Route as HttpRoute},

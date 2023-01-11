@@ -1,23 +1,24 @@
-pub use linkerd_http_route::grpc::{filter, r#match, RouteMatch};
-use linkerd_http_route::{grpc, http};
+use linkerd_http_route::http;
+pub use linkerd_http_route::http::{filter, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter>;
-pub type Route = grpc::Route<Policy>;
-pub type Rule = grpc::Rule<Policy>;
+pub type Policy<D> = crate::RoutePolicy<Filter, D>;
+pub type Route<D> = http::Route<Policy<D>>;
+pub type Rule<D> = http::Rule<Policy<D>>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Filter {
     InjectFailure(filter::InjectFailure),
-    RequestHeaders(http::filter::ModifyHeader),
+    Redirect(filter::RedirectRequest),
+    RequestHeaders(filter::ModifyHeader),
     InternalError(&'static str),
 }
 
 #[inline]
-pub fn find<'r, B>(
-    routes: &'r [Route],
+pub fn find<'r, B, D>(
+    routes: &'r [Route<D>],
     req: &::http::Request<B>,
-) -> Option<(RouteMatch, &'r Policy)> {
-    grpc::find(routes, req)
+) -> Option<(http::RouteMatch, &'r Policy<D>)> {
+    http::find(routes, req)
 }
 
 pub fn default(authorizations: std::sync::Arc<[crate::Authorization]>) -> Route {
@@ -43,20 +44,17 @@ pub mod proto {
         Authorization, Meta,
     };
     use linkerd2_proxy_api::inbound as api;
-    use linkerd_http_route::{
-        grpc::{
-            filter::inject_failure::proto::InvalidFailureResponse,
-            r#match::proto::InvalidRouteMatch,
+    use linkerd_http_route::http::{
+        filter::{
+            inject_failure::proto::InvalidFailureResponse,
+            modify_header::proto::InvalidModifyHeader, redirect::proto::InvalidRequestRedirect,
         },
-        http::{
-            filter::modify_header::proto::InvalidModifyHeader,
-            r#match::host::proto::InvalidHostMatch,
-        },
+        r#match::{host::proto::InvalidHostMatch, proto::InvalidRouteMatch},
     };
     use std::sync::Arc;
 
     #[derive(Debug, thiserror::Error)]
-    pub enum InvalidGrpcRoute {
+    pub enum InvalidHttpRoute {
         #[error("invalid host match: {0}")]
         HostMatch(#[from] InvalidHostMatch),
 
@@ -66,21 +64,24 @@ pub mod proto {
         #[error("invalid request header modifier: {0}")]
         RequestHeaderModifier(#[from] InvalidModifyHeader),
 
+        #[error("invalid request redirect: {0}")]
+        Redirect(#[from] InvalidRequestRedirect),
+
         #[error("invalid error responder: {0}")]
         ErrorRespnder(#[from] InvalidFailureResponse),
 
         #[error("invalid authorization: {0}")]
         Authz(#[from] InvalidAuthz),
 
-        #[error("invalid metadata: {0}")]
+        #[error("invalid labels: {0}")]
         Meta(#[from] InvalidMeta),
     }
 
     pub fn try_route(
-        proto: api::GrpcRoute,
+        proto: api::HttpRoute,
         server_authorizations: &[Authorization],
-    ) -> Result<Route, InvalidGrpcRoute> {
-        let api::GrpcRoute {
+    ) -> Result<Route, InvalidHttpRoute> {
+        let api::HttpRoute {
             hosts,
             authorizations,
             rules,
@@ -89,7 +90,7 @@ pub mod proto {
 
         let hosts = hosts
             .into_iter()
-            .map(http::r#match::MatchHost::try_from)
+            .map(r#match::MatchHost::try_from)
             .collect::<Result<Vec<_>, InvalidHostMatch>>()?;
 
         let authzs = authz::proto::mk_authorizations(authorizations, server_authorizations)?;
@@ -97,7 +98,7 @@ pub mod proto {
         let rules = rules
             .into_iter()
             .map(|r| try_rule(authzs.clone(), meta.clone(), r))
-            .collect::<Result<Vec<_>, InvalidGrpcRoute>>()?;
+            .collect::<Result<Vec<_>, InvalidHttpRoute>>()?;
 
         Ok(Route { hosts, rules })
     }
@@ -105,32 +106,33 @@ pub mod proto {
     fn try_rule(
         authorizations: Arc<[authz::Authorization]>,
         meta: Arc<Meta>,
-        proto: api::grpc_route::Rule,
-    ) -> Result<Rule, InvalidGrpcRoute> {
+        proto: api::http_route::Rule,
+    ) -> Result<Rule, InvalidHttpRoute> {
         let matches = proto
             .matches
             .into_iter()
-            .map(r#match::MatchRoute::try_from)
+            .map(r#match::MatchRequest::try_from)
             .collect::<Result<Vec<_>, InvalidRouteMatch>>()?;
 
         let policy = {
-            use api::grpc_route::filter;
+            use api::http_route::filter;
 
             let filters = proto
                 .filters
                 .into_iter()
                 .map(|f| match f.kind {
-                    Some(filter::Kind::FailureInjector(rsp)) => {
-                        Ok(Filter::InjectFailure(rsp.try_into()?))
-                    }
                     Some(filter::Kind::RequestHeaderModifier(rhm)) => {
                         Ok(Filter::RequestHeaders(rhm.try_into()?))
+                    }
+                    Some(filter::Kind::Redirect(rr)) => Ok(Filter::Redirect(rr.try_into()?)),
+                    Some(filter::Kind::FailureInjector(rsp)) => {
+                        Ok(Filter::InjectFailure(rsp.try_into()?))
                     }
                     None => Ok(Filter::InternalError(
                         "server policy configured with unknown filter",
                     )),
                 })
-                .collect::<Result<Vec<_>, InvalidGrpcRoute>>()?;
+                .collect::<Result<Vec<_>, InvalidHttpRoute>>()?;
 
             crate::RoutePolicy {
                 authorizations,

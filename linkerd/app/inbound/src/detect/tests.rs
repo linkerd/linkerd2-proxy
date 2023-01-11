@@ -6,7 +6,7 @@ use linkerd_app_core::{
     svc::{NewService, ServiceExt},
     trace, Error,
 };
-use linkerd_server_policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
+use linkerd_proxy_policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
 use std::sync::Arc;
 
 const HTTP1: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
@@ -68,7 +68,7 @@ async fn detect_http_non_http() {
         }),
         policy: allow(Protocol::Detect {
             timeout: std::time::Duration::from_secs(10),
-            http: Arc::new([linkerd_server_policy::http::default(authzs())]),
+            http: Arc::new([linkerd_proxy_policy::http::default(authzs())]),
             tcp_authorizations: authzs(),
         }),
     };
@@ -99,7 +99,7 @@ async fn detect_http() {
         }),
         policy: allow(Protocol::Detect {
             timeout: std::time::Duration::from_secs(10),
-            http: Arc::new([linkerd_server_policy::http::default(authzs())]),
+            http: Arc::new([linkerd_proxy_policy::http::default(authzs())]),
             tcp_authorizations: authzs(),
         }),
     };

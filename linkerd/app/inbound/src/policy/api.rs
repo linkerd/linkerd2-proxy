@@ -8,7 +8,7 @@ use linkerd_app_core::{
     svc::Service,
     Error, Recover, Result,
 };
-use linkerd_server_policy::ServerPolicy;
+use linkerd_proxy_policy::ServerPolicy;
 use linkerd_tonic_watch::StreamWatch;
 use std::time;
 

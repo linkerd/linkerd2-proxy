@@ -63,7 +63,7 @@ macro_rules! new_svc {
 
 #[tokio::test(flavor = "current_thread")]
 async fn http_route() {
-    use linkerd_server_policy::http::{r#match::MatchRequest, Policy, Route, Rule};
+    use linkerd_proxy_policy::http::{r#match::MatchRequest, Policy, Route, Rule};
 
     let rmeta = Arc::new(Meta::Resource {
         group: "gateway.networking.k8s.io".into(),
@@ -239,7 +239,7 @@ async fn http_route() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn http_filter_header() {
-    use linkerd_server_policy::http::{filter, r#match::MatchRequest, Filter, Policy, Route, Rule};
+    use linkerd_proxy_policy::http::{filter, r#match::MatchRequest, Filter, Policy, Route, Rule};
 
     let rmeta = Arc::new(Meta::Resource {
         group: "gateway.networking.k8s.io".into(),
@@ -302,7 +302,7 @@ async fn http_filter_header() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn http_filter_inject_failure() {
-    use linkerd_server_policy::http::{filter, r#match::MatchRequest, Filter, Policy, Route, Rule};
+    use linkerd_proxy_policy::http::{filter, r#match::MatchRequest, Filter, Policy, Route, Rule};
 
     let rmeta = Arc::new(Meta::Resource {
         group: "gateway.networking.k8s.io".into(),
@@ -361,7 +361,7 @@ async fn http_filter_inject_failure() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn grpc_route() {
-    use linkerd_server_policy::grpc::{
+    use linkerd_proxy_policy::grpc::{
         r#match::{MatchRoute, MatchRpc},
         Policy, Route, Rule,
     };
@@ -456,7 +456,7 @@ async fn grpc_route() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn grpc_filter_header() {
-    use linkerd_server_policy::{
+    use linkerd_proxy_policy::{
         grpc::{
             r#match::{MatchRoute, MatchRpc},
             Filter, Policy, Route, Rule,
@@ -531,7 +531,7 @@ async fn grpc_filter_header() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn grpc_filter_inject_failure() {
-    use linkerd_server_policy::grpc::{
+    use linkerd_proxy_policy::grpc::{
         filter,
         r#match::{MatchRoute, MatchRpc},
         Filter, Policy, Route, Rule,

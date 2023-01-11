@@ -43,12 +43,12 @@ linkerd-proxy-identity-client = { path = "../../proxy/identity-client" }
 linkerd-proxy-http = { path = "../../proxy/http" }
 linkerd-proxy-resolve = { path = "../../proxy/resolve" }
 linkerd-proxy-dns-resolve = { path = "../../proxy/dns-resolve" }
+linkerd-proxy-policy = { path = "../../proxy/policy" }
 linkerd-proxy-tap = { path = "../../proxy/tap" }
 linkerd-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-reconnect = { path = "../../reconnect" }
 linkerd-router = { path = "../../router" }
-linkerd-server-policy = { path = "../../server-policy" }
 linkerd-service-profiles = { path = "../../service-profiles" }
 linkerd-stack = { path = "../../stack" }
 linkerd-stack-metrics = { path = "../../stack/metrics" }

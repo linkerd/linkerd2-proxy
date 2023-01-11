@@ -1,7 +1,7 @@
 use super::*;
 use crate::policy::*;
 use linkerd_app_core::{proxy::http, Error};
-use linkerd_server_policy::{authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy};
+use linkerd_proxy_policy::{authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy};
 use std::{collections::BTreeSet, sync::Arc};
 
 #[derive(Clone)]

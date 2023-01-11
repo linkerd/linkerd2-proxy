@@ -1,5 +1,5 @@
 use linkerd_app_core::{IpNet, Ipv4Net, Ipv6Net};
-use linkerd_server_policy::{
+use linkerd_proxy_policy::{
     authz::Suffix, http, Authentication, Authorization, Meta, Protocol, ServerPolicy,
 };
 use std::{sync::Arc, time::Duration};

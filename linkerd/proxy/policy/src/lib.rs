@@ -4,9 +4,12 @@
 use std::{hash::Hash, sync::Arc, time};
 
 pub mod authz;
+pub mod client;
 pub mod grpc;
 pub mod http;
 pub mod meta;
+pub mod opaque;
+pub mod server;
 
 pub use self::{
     authz::{Authentication, Authorization},
@@ -14,59 +17,35 @@ pub use self::{
 };
 pub use linkerd_http_route as route;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ServerPolicy {
-    pub protocol: Protocol,
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Policy<D> {
+    pub protocol: Protocol<D>,
     pub meta: Arc<Meta>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Protocol {
+pub enum Protocol<D> {
+    // TODO: buffer size?
     Detect {
-        http: Arc<[http::Route]>,
+        /// Protocol detection timeout.
         timeout: time::Duration,
-        tcp_authorizations: Arc<[Authorization]>,
+        /// HTTP routes to use when protocol detection identifies an HTTP
+        http: Arc<[http::Route<D>]>,
+        opaque: Arc<[OpaqueRoute<D>]>,
     },
-    Http1(Arc<[http::Route]>),
-    Http2(Arc<[http::Route]>),
-    Grpc(Arc<[grpc::Route]>),
+    Http1(Arc<[http::Route<D>]>),
+    Http2(Arc<[http::Route<D>]>),
+    Grpc(Arc<[grpc::Route<D>]>),
     Tls(Arc<[Authorization]>),
     Opaque(Arc<[Authorization]>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RoutePolicy<T> {
+pub struct RoutePolicy<T, D> {
     pub meta: Arc<Meta>,
     pub authorizations: Arc<[Authorization]>,
     pub filters: Vec<T>,
-}
-
-impl ServerPolicy {
-    pub fn invalid(timeout: time::Duration) -> Self {
-        let meta = Arc::new(Meta::Default {
-            name: "invalid".into(),
-        });
-        Self {
-            meta: meta.clone(),
-            protocol: Protocol::Detect {
-                timeout,
-                http: Arc::new([http::Route {
-                    hosts: vec![],
-                    rules: vec![http::Rule {
-                        matches: vec![http::r#match::MatchRequest::default()],
-                        policy: http::Policy {
-                            meta,
-                            authorizations: Arc::new([]),
-                            filters: vec![http::Filter::InternalError(
-                                "invalid server configuration",
-                            )],
-                        },
-                    }],
-                }]),
-                tcp_authorizations: Arc::new([]),
-            },
-        }
-    }
+    pub distribution: D,
 }
 
 #[cfg(feature = "proto")]

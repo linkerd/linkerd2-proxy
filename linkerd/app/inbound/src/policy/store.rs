@@ -1,7 +1,7 @@
 use super::{api, AllowPolicy, DefaultPolicy, GetPolicy};
 use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error};
 use linkerd_idle_cache::IdleCache;
-pub use linkerd_server_policy::{
+pub use linkerd_proxy_policy::{
     authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
 };
 use std::{
