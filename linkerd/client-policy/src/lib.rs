@@ -9,7 +9,7 @@ pub mod proto;
 use linkerd_addr::{Addr, NameAddr};
 // pub use linkerd_policy_core::{meta, Meta};
 use linkerd_proxy_api_resolve as resolve;
-use std::{fmt, net::SocketAddr, str::FromStr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::watch;
 
 type Backends = Arc<[Backend]>;
@@ -23,7 +23,7 @@ pub struct Receiver {
 // generic eventually...
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Policy {
-    pub addr: Option<LogicalAddr>,
+    pub addr: Option<NameAddr>,
     pub http_routes: Arc<[http::Route]>,
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, resolve::Metadata)>,
@@ -41,14 +41,6 @@ pub struct Backend {
     pub addr: Addr,
 }
 
-/// A profile lookup target.
-#[derive(Clone, Hash, Eq, PartialEq)]
-pub struct LookupAddr(pub Addr);
-
-/// A bound logical service address
-#[derive(Clone, Hash, Eq, PartialEq)]
-pub struct LogicalAddr(pub NameAddr);
-
 // === impl Receiver ===
 
 impl From<watch::Receiver<Policy>> for Receiver {
@@ -64,7 +56,7 @@ impl From<Receiver> for watch::Receiver<Policy> {
 }
 
 impl Receiver {
-    pub fn logical_addr(&self) -> Option<LogicalAddr> {
+    pub fn logical_addr(&self) -> Option<NameAddr> {
         self.inner.borrow().addr.clone()
     }
 
@@ -74,73 +66,5 @@ impl Receiver {
 
     pub fn endpoint(&self) -> Option<(SocketAddr, resolve::Metadata)> {
         self.inner.borrow().endpoint.clone()
-    }
-}
-
-// === impl LookupAddr ===
-
-impl fmt::Display for LookupAddr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl fmt::Debug for LookupAddr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LookupAddr({})", self.0)
-    }
-}
-
-impl FromStr for LookupAddr {
-    type Err = <Addr as FromStr>::Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Addr::from_str(s).map(LookupAddr)
-    }
-}
-
-impl From<Addr> for LookupAddr {
-    fn from(a: Addr) -> Self {
-        Self(a)
-    }
-}
-
-impl From<LookupAddr> for Addr {
-    fn from(LookupAddr(addr): LookupAddr) -> Addr {
-        addr
-    }
-}
-
-// === impl LogicalAddr ===
-
-impl fmt::Display for LogicalAddr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl fmt::Debug for LogicalAddr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LogicalAddr({})", self.0)
-    }
-}
-
-impl FromStr for LogicalAddr {
-    type Err = <NameAddr as FromStr>::Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        NameAddr::from_str(s).map(LogicalAddr)
-    }
-}
-
-impl From<NameAddr> for LogicalAddr {
-    fn from(na: NameAddr) -> Self {
-        Self(na)
-    }
-}
-
-impl From<LogicalAddr> for NameAddr {
-    fn from(LogicalAddr(na): LogicalAddr) -> NameAddr {
-        na
     }
 }

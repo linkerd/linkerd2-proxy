@@ -1656,7 +1656,6 @@ dependencies = [
  "http",
  "http-body",
  "linkerd-addr",
- "linkerd-client-policy",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-http-box",
