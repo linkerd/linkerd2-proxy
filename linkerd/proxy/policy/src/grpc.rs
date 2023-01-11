@@ -20,7 +20,7 @@ pub fn find<'r, B, D>(
     grpc::find(routes, req)
 }
 
-pub fn default(authorizations: std::sync::Arc<[crate::Authorization]>) -> Route {
+pub fn default<D: Default>(authorizations: std::sync::Arc<[crate::Authorization]>) -> Route<D> {
     Route {
         hosts: vec![],
         rules: vec![Rule {
@@ -29,6 +29,7 @@ pub fn default(authorizations: std::sync::Arc<[crate::Authorization]>) -> Route 
                 meta: crate::Meta::new_default("default"),
                 authorizations,
                 filters: vec![],
+                distribution: D::default(),
             },
         }],
     }
@@ -79,7 +80,7 @@ pub mod proto {
     pub fn try_route(
         proto: api::GrpcRoute,
         server_authorizations: &[Authorization],
-    ) -> Result<Route, InvalidGrpcRoute> {
+    ) -> Result<Route<()>, InvalidGrpcRoute> {
         let api::GrpcRoute {
             hosts,
             authorizations,
@@ -106,7 +107,7 @@ pub mod proto {
         authorizations: Arc<[authz::Authorization]>,
         meta: Arc<Meta>,
         proto: api::grpc_route::Rule,
-    ) -> Result<Rule, InvalidGrpcRoute> {
+    ) -> Result<Rule<()>, InvalidGrpcRoute> {
         let matches = proto
             .matches
             .into_iter()
@@ -136,6 +137,8 @@ pub mod proto {
                 authorizations,
                 filters,
                 meta,
+                // server policy, no distribution
+                distribution: (),
             }
         };
 
