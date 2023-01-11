@@ -8,6 +8,8 @@ use linkerd_app_core::{
 };
 pub use linkerd_client_policy::*;
 
+pub type Receiver = tokio::sync::watch::Receiver<Policy>;
+
 pub mod api;
 mod config;
 
