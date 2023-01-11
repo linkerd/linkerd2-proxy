@@ -6,7 +6,7 @@ use linkerd_app_core::{
     svc::{NewService, ServiceExt},
     trace, Error,
 };
-use linkerd_proxy_policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
+use linkerd_proxy_policy::{server, Authentication, Authorization, Meta, Protocol};
 use std::sync::Arc;
 
 const HTTP1: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
@@ -25,10 +25,10 @@ fn authzs() -> Arc<[Authorization]> {
     }])
 }
 
-fn allow(protocol: Protocol) -> AllowPolicy {
+fn allow(protocol: server::Protocol) -> AllowPolicy {
     let (allow, _tx) = AllowPolicy::for_test(
         orig_dst_addr(),
-        ServerPolicy {
+        server::Policy {
             protocol,
             meta: Arc::new(Meta::Resource {
                 group: "policy.linkerd.io".into(),
@@ -66,10 +66,10 @@ async fn detect_http_non_http() {
             client_id: Some(client_id()),
             negotiated_protocol: None,
         }),
-        policy: allow(Protocol::Detect {
+        policy: allow(server::Protocol::Detect {
             timeout: std::time::Duration::from_secs(10),
             http: Arc::new([linkerd_proxy_policy::http::default(authzs())]),
-            tcp_authorizations: authzs(),
+            opaque: Arc::new([linkerd_proxy_policy::opaque::default(authzs())]),
         }),
     };
 
@@ -100,7 +100,7 @@ async fn detect_http() {
         policy: allow(Protocol::Detect {
             timeout: std::time::Duration::from_secs(10),
             http: Arc::new([linkerd_proxy_policy::http::default(authzs())]),
-            tcp_authorizations: authzs(),
+            opaque: Arc::new([linkerd_proxy_policy::opaque::default(authzs())]),
         }),
     };
 

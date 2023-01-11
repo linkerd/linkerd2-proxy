@@ -186,9 +186,13 @@ impl<T, N> HttpPolicyService<T, N> {
     /// authorization.
     fn authorize<'m, M: super::route::Match + 'm, P, B>(
         &self,
-        routes: &'m [super::route::Route<M, RoutePolicy<P>>],
+        routes: &'m [super::route::Route<M, RoutePolicy<P, ()>>],
         req: &::http::Request<B>,
-    ) -> Result<(HttpRoutePermit, RouteMatch<M::Summary>, &'m RoutePolicy<P>)> {
+    ) -> Result<(
+        HttpRoutePermit,
+        RouteMatch<M::Summary>,
+        &'m RoutePolicy<P, ()>,
+    )> {
         let (r#match, route) =
             super::route::find(routes, req).ok_or_else(|| self.mk_route_not_found())?;
 
@@ -260,7 +264,7 @@ impl<T, N> HttpPolicyService<T, N> {
 
 fn apply_http_filters<B>(
     r#match: http::RouteMatch,
-    route: &http::Policy,
+    route: &http::Policy<()>,
     req: &mut ::http::Request<B>,
 ) -> Result<()> {
     // TODO Do any metrics apply here?
@@ -299,7 +303,7 @@ fn apply_http_filters<B>(
     Ok(())
 }
 
-fn apply_grpc_filters<B>(route: &grpc::Policy, req: &mut ::http::Request<B>) -> Result<()> {
+fn apply_grpc_filters<B>(route: &grpc::Policy<()>, req: &mut ::http::Request<B>) -> Result<()> {
     for filter in &route.filters {
         match filter {
             grpc::Filter::InjectFailure(fail) => {

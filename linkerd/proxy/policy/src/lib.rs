@@ -137,19 +137,7 @@ pub mod proto {
                     timeout: timeout
                         .ok_or(InvalidServer::MissingDetectTimeout)?
                         .try_into()?,
-                    // TODO(eliza): since there's currently only one opaque
-                    // route, it ought to live in a static that gets cloned...
-                    opaque: Arc::from(vec![opaque::Route {
-                        rules: vec![route::Rule {
-                            matches: vec![()],
-                            policy: RoutePolicy {
-                                meta: Meta::new_default("opaque"),
-                                authorizations,
-                                filters: Vec::default(),
-                                distribution: (),
-                            },
-                        }],
-                    }]),
+                    opaque: Arc::new([opaque::default(authorizations)]),
                 },
 
                 api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { routes }) => {

@@ -1,9 +1,7 @@
 use super::{api, AllowPolicy, DefaultPolicy, GetPolicy};
 use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error};
 use linkerd_idle_cache::IdleCache;
-pub use linkerd_proxy_policy::{
-    authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
-};
+pub use linkerd_proxy_policy::{authz::Suffix, server, Authentication, Authorization, Protocol};
 use std::{
     collections::HashSet,
     hash::{BuildHasherDefault, Hasher},
@@ -18,7 +16,7 @@ pub struct Store<S> {
     discover: Option<api::Watch<S>>,
 }
 
-type Rx = watch::Receiver<ServerPolicy>;
+type Rx = watch::Receiver<server::Policy>;
 
 /// A hasher for ports.
 ///
@@ -33,7 +31,7 @@ impl<S> Store<S> {
     pub(crate) fn spawn_fixed(
         default: DefaultPolicy,
         idle_timeout: Duration,
-        ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
+        ports: impl IntoIterator<Item = (u16, server::Policy)>,
     ) -> Self {
         let cache = {
             let rxs = ports.into_iter().map(|(p, s)| {
@@ -94,7 +92,7 @@ impl<S> Store<S> {
     }
 
     fn spawn_default(default: DefaultPolicy) -> Rx {
-        let (tx, rx) = watch::channel(ServerPolicy::from(default));
+        let (tx, rx) = watch::channel(server::Policy::from(default));
         // Hold the sender until all of the receivers are dropped. This ensures
         // that receivers can be watched like any other policy.
         tokio::spawn(async move {

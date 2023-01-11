@@ -1,7 +1,7 @@
 use super::*;
 use crate::policy::*;
 use linkerd_app_core::{proxy::http, Error};
-use linkerd_proxy_policy::{authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy};
+use linkerd_proxy_policy::{authz::Suffix, server, Authentication, Authorization, Protocol};
 use std::{collections::BTreeSet, sync::Arc};
 
 #[derive(Clone)]
@@ -9,7 +9,7 @@ pub(crate) struct MockSvc;
 
 #[tokio::test(flavor = "current_thread")]
 async fn unauthenticated_allowed() {
-    let policy = ServerPolicy {
+    let policy = server::Policy {
         protocol: Protocol::Opaque(
             vec![Authorization {
                 authentication: Authentication::Unauthenticated,
@@ -55,7 +55,7 @@ async fn unauthenticated_allowed() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn authenticated_identity() {
-    let policy = ServerPolicy {
+    let policy = server::Policy {
         protocol: Protocol::Opaque(
             vec![Authorization {
                 authentication: Authentication::TlsAuthenticated {
@@ -118,7 +118,7 @@ async fn authenticated_identity() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn authenticated_suffix() {
-    let policy = ServerPolicy {
+    let policy = server::Policy {
         protocol: Protocol::Opaque(
             vec![Authorization {
                 authentication: Authentication::TlsAuthenticated {
@@ -180,7 +180,7 @@ async fn authenticated_suffix() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn tls_unauthenticated() {
-    let policy = ServerPolicy {
+    let policy = server::Policy {
         protocol: Protocol::Opaque(
             vec![Authorization {
                 authentication: Authentication::TlsUnauthenticated,
@@ -268,7 +268,7 @@ impl tonic::client::GrpcService<tonic::body::BoxBody> for MockSvc {
 impl Store<MockSvc> {
     pub(crate) fn for_test(
         default: impl Into<DefaultPolicy>,
-        ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
+        ports: impl IntoIterator<Item = (u16, server::Policy)>,
     ) -> Self {
         Self::spawn_fixed(default.into(), std::time::Duration::MAX, ports)
     }

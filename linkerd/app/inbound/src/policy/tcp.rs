@@ -8,7 +8,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
-use linkerd_proxy_policy::{Protocol, ServerPolicy};
+use linkerd_proxy_policy::{server, Protocol};
 use std::{future::Future, pin::Pin, task};
 #[cfg(test)]
 mod tests;
@@ -180,22 +180,25 @@ where
 /// Checks whether the destination port's `AllowPolicy` is authorized to
 /// accept connections given the provided TLS state.
 fn check_authorized(
-    server: &ServerPolicy,
+    server: &server::Policy,
     dst: OrigDstAddr,
     client_addr: Remote<ClientAddr>,
     tls: &tls::ConditionalServerTls,
 ) -> Result<ServerPermit, ServerUnauthorized> {
-    if let Protocol::Detect {
-        tcp_authorizations: authzs,
-        ..
-    }
-    | Protocol::Tls(authzs)
-    | Protocol::Opaque(authzs) = &server.protocol
-    {
-        for authz in &**authzs {
-            if super::is_authorized(authz, client_addr, tls) {
-                return Ok(ServerPermit::new(dst, server, authz));
-            }
+    let authzs = match &server.protocol {
+        Protocol::Opaque(authzs) => Some(authzs),
+        Protocol::Tls(authzs) => Some(authzs),
+        // TODO(eliza): if we want to have multiple opaque routes, we would need
+        // to actually match them here...punt on that because there's currently
+        // only ever one opaque route.
+        Protocol::Detect { opaque, .. } => opaque
+            .get(0)
+            .and_then(|rt| rt.rules.get(0).map(|rule| &rule.policy.authorizations)),
+        _ => None,
+    };
+    for authz in authzs.into_iter().flat_map(|authzs| authzs.iter()) {
+        if super::is_authorized(authz, client_addr, tls) {
+            return Ok(ServerPermit::new(dst, server, authz));
         }
     }
 

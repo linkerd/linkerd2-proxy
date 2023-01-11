@@ -13,3 +13,17 @@ pub struct Route<D> {
     /// Must not be empty.
     pub rules: Vec<Rule<RouteMatch, Policy<D>>>,
 }
+
+pub fn default<D: Default>(authorizations: std::sync::Arc<[crate::Authorization]>) -> Route<D> {
+    Route {
+        rules: vec![Rule {
+            matches: vec![],
+            policy: Policy {
+                meta: crate::Meta::new_default("default"),
+                authorizations,
+                filters: vec![],
+                distribution: D::default(),
+            },
+        }],
+    }
+}

@@ -614,7 +614,7 @@ impl svc::Param<policy::AllowPolicy> for Target {
         }]);
         let (policy, _) = policy::AllowPolicy::for_test(
             self.param(),
-            policy::ServerPolicy {
+            policy::server::Policy {
                 protocol: policy::Protocol::Http1(Arc::new([linkerd_proxy_policy::http::default(
                     authorizations,
                 )])),

@@ -708,14 +708,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                                     .cloned()
                                     .unwrap_or_else(|| default_allow.clone());
                                 sp.protocol = match sp.protocol {
-                                    inbound::policy::Protocol::Detect { tcp_authorizations, .. } => {
-                                        inbound::policy::Protocol::Opaque(tcp_authorizations)
+                                    inbound::policy::Protocol::Detect { opaque, .. } => {
+                                        inbound::policy::Protocol::Opaque(opaque[0].rules[0].policy.authorizations.clone())
                                     }
                                     _ => unreachable!("port must have been configured to detect prior to marking it opaque"),
                                 };
                                 (p, sp)
                             })
-                            .collect::<HashMap<_, inbound::policy::ServerPolicy>>();
+                            .collect::<HashMap<_, inbound::policy::server::Policy>>();
                         // Ensure that the inbound port does not disable protocol detection, as
                         if ports.contains_key(&inbound_port) {
                             error!(

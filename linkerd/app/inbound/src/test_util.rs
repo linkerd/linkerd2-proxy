@@ -14,7 +14,7 @@ use linkerd_app_core::{
     ProxyRuntime,
 };
 pub use linkerd_app_test as support;
-use linkerd_proxy_policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
+use linkerd_proxy_policy::{server, Authentication, Authorization, Meta, Protocol};
 use std::{sync::Arc, time::Duration};
 
 pub fn default_config() -> Config {
@@ -33,11 +33,11 @@ pub fn default_config() -> Config {
     }]);
     let policy = policy::Config::Fixed {
         cache_max_idle_age: Duration::from_secs(20),
-        default: ServerPolicy {
+        default: server::Policy {
             protocol: Protocol::Detect {
                 timeout: std::time::Duration::from_secs(10),
                 http: Arc::new([linkerd_proxy_policy::http::default(authorizations.clone())]),
-                tcp_authorizations: authorizations,
+                opaque: Arc::new([linkerd_proxy_policy::opaque::default(authorizations)]),
             },
             meta: Arc::new(Meta::Resource {
                 group: "policy.linkerd.io".into(),

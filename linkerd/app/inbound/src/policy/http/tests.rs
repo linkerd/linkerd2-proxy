@@ -1,5 +1,5 @@
 use super::*;
-use crate::policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
+use crate::policy::{server, Authentication, Authorization, Meta, Protocol};
 use linkerd_app_core::{svc::Service, Infallible};
 use std::sync::Arc;
 
@@ -23,7 +23,7 @@ macro_rules! new_svc {
     ($proto:expr, $conn:expr, $rsp:expr) => {{
         let (policy, tx) = AllowPolicy::for_test(
             $conn.dst,
-            ServerPolicy {
+            server::Policy {
                 protocol: $proto,
                 meta: Arc::new(Meta::Resource {
                     group: "policy.linkerd.io".into(),
@@ -90,6 +90,7 @@ async fn http_route() {
                     }]),
                     filters: vec![],
                     meta: rmeta.clone(),
+                    distribution: (),
                 },
             },
             Rule {
@@ -101,6 +102,7 @@ async fn http_route() {
                     authorizations: Arc::new([]),
                     filters: vec![],
                     meta: rmeta.clone(),
+                    distribution: (),
                 },
             }
         ],
@@ -148,7 +150,7 @@ async fn http_route() {
     // Update all of the policies and then test the same requests to ensure that
     // the requests are handled differently after an update.
 
-    tx.send(ServerPolicy {
+    tx.send(server::Policy {
         meta: Arc::new(Meta::Resource {
             group: "policy.linkerd.io".into(),
             kind: "Server".into(),
@@ -174,6 +176,7 @@ async fn http_route() {
                         }]),
                         filters: vec![],
                         meta: rmeta.clone(),
+                        distribution: (),
                     },
                 },
                 Rule {
@@ -193,6 +196,7 @@ async fn http_route() {
                         }]),
                         filters: vec![],
                         meta: rmeta.clone(),
+                        distribution: (),
                     },
                 },
             ],
@@ -268,6 +272,7 @@ async fn http_filter_header() {
                     ..filter::ModifyHeader::default()
                 })],
                 meta: rmeta.clone(),
+                distribution: (),
             },
         }],
     }]));
@@ -334,6 +339,7 @@ async fn http_filter_inject_failure() {
                     },
                 })],
                 meta: rmeta.clone(),
+                distribution: (),
             },
         }],
     }]));
@@ -394,6 +400,7 @@ async fn grpc_route() {
                     }]),
                     filters: vec![],
                     meta: rmeta.clone(),
+                    distribution: (),
                 },
             },
             Rule {
@@ -408,6 +415,7 @@ async fn grpc_route() {
                     authorizations: Arc::new([]),
                     filters: vec![],
                     meta: rmeta.clone(),
+                    distribution: (),
                 },
             }
         ],
@@ -495,6 +503,7 @@ async fn grpc_filter_header() {
                     ..http::filter::ModifyHeader::default()
                 })],
                 meta: rmeta.clone(),
+                distribution: (),
             },
         }],
     }]));
@@ -571,6 +580,7 @@ async fn grpc_filter_inject_failure() {
                     },
                 })],
                 meta: rmeta.clone(),
+                distribution: (),
             },
         }],
     }]));

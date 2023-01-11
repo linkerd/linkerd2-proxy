@@ -1,4 +1,4 @@
-use super::{api::Api, DefaultPolicy, GetPolicy, Protocol, ServerPolicy, Store};
+use super::{api::Api, server, DefaultPolicy, GetPolicy, Store};
 use linkerd_app_core::{control, dns, identity, metrics, svc::NewService};
 use std::collections::{HashMap, HashSet};
 use tokio::time::Duration;
@@ -20,7 +20,7 @@ pub enum Config {
     Fixed {
         default: DefaultPolicy,
         cache_max_idle_age: Duration,
-        ports: HashMap<u16, ServerPolicy>,
+        ports: HashMap<u16, server::Policy>,
     },
 }
 
@@ -51,8 +51,8 @@ impl Config {
                     let backoff = control.connect.backoff;
                     let client = control.build(dns, metrics, identity).new_service(());
                     let detect_timeout = match default {
-                        DefaultPolicy::Allow(ServerPolicy {
-                            protocol: Protocol::Detect { timeout, .. },
+                        DefaultPolicy::Allow(server::Policy {
+                            protocol: server::Protocol::Detect { timeout, .. },
                             ..
                         }) => timeout,
                         _ => Duration::from_secs(10),

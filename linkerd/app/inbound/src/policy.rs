@@ -26,7 +26,7 @@ pub use linkerd_proxy_policy::{
     authz::Suffix,
     grpc::Route as GrpcRoute,
     http::{filter::Redirection, Route as HttpRoute},
-    route, Authentication, Authorization, Meta, Protocol, RoutePolicy, ServerPolicy,
+    route, server, Authentication, Authorization, Meta, Protocol, RoutePolicy,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -45,21 +45,21 @@ pub trait GetPolicy {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DefaultPolicy {
-    Allow(ServerPolicy),
+    Allow(server::Policy),
     Deny,
 }
 
 #[derive(Clone, Debug)]
 pub struct AllowPolicy {
     dst: OrigDstAddr,
-    server: Cached<watch::Receiver<ServerPolicy>>,
+    server: Cached<watch::Receiver<server::Policy>>,
 }
 
 // Describes an authorized non-HTTP connection.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ServerPermit {
     pub dst: OrigDstAddr,
-    pub protocol: Protocol,
+    pub protocol: server::Protocol,
     pub labels: ServerAuthzLabels,
 }
 
@@ -71,23 +71,23 @@ pub struct HttpRoutePermit {
 }
 
 pub enum Routes {
-    Http(Arc<[HttpRoute]>),
-    Grpc(Arc<[GrpcRoute]>),
+    Http(Arc<[HttpRoute<()>]>),
+    Grpc(Arc<[GrpcRoute<()>]>),
 }
 
 // === impl DefaultPolicy ===
 
-impl From<ServerPolicy> for DefaultPolicy {
-    fn from(p: ServerPolicy) -> Self {
+impl From<server::Policy> for DefaultPolicy {
+    fn from(p: server::Policy) -> Self {
         DefaultPolicy::Allow(p)
     }
 }
 
-impl From<DefaultPolicy> for ServerPolicy {
+impl From<DefaultPolicy> for server::Policy {
     fn from(d: DefaultPolicy) -> Self {
         match d {
             DefaultPolicy::Allow(p) => p,
-            DefaultPolicy::Deny => ServerPolicy {
+            DefaultPolicy::Deny => server::Policy {
                 protocol: Protocol::Opaque(Arc::new([])),
                 meta: Meta::new_default("deny"),
             },
@@ -101,8 +101,8 @@ impl AllowPolicy {
     #[cfg(any(test, fuzzing))]
     pub(crate) fn for_test(
         dst: OrigDstAddr,
-        server: ServerPolicy,
-    ) -> (Self, watch::Sender<ServerPolicy>) {
+        server: server::Policy,
+    ) -> (Self, watch::Sender<server::Policy>) {
         let (tx, server) = watch::channel(server);
         let server = Cached::uncached(server);
         let p = Self { dst, server };
@@ -110,12 +110,12 @@ impl AllowPolicy {
     }
 
     #[inline]
-    pub(crate) fn borrow(&self) -> tokio::sync::watch::Ref<'_, ServerPolicy> {
+    pub(crate) fn borrow(&self) -> tokio::sync::watch::Ref<'_, server::Policy> {
         self.server.borrow()
     }
 
     #[inline]
-    pub(crate) fn protocol(&self) -> Protocol {
+    pub(crate) fn protocol(&self) -> server::Protocol {
         self.server.borrow().protocol.clone()
     }
 
@@ -190,7 +190,7 @@ fn is_authorized(
 // === impl Permit ===
 
 impl ServerPermit {
-    fn new(dst: OrigDstAddr, server: &ServerPolicy, authz: &Authorization) -> Self {
+    fn new(dst: OrigDstAddr, server: &server::Policy, authz: &Authorization) -> Self {
         Self {
             dst,
             protocol: server.protocol.clone(),

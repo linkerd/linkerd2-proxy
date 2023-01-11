@@ -8,7 +8,7 @@ use linkerd_app_core::{
     svc::Service,
     Error, Recover, Result,
 };
-use linkerd_proxy_policy::ServerPolicy;
+use linkerd_proxy_policy::server;
 use linkerd_tonic_watch::StreamWatch;
 use std::time;
 
@@ -26,7 +26,7 @@ pub(super) type Watch<S> = StreamWatch<GrpcRecover, Api<S>>;
 
 /// If an invalid policy is encountered, then this will be updated to hold a
 /// default, invalid policy.
-static INVALID_POLICY: once_cell::sync::OnceCell<ServerPolicy> = once_cell::sync::OnceCell::new();
+static INVALID_POLICY: once_cell::sync::OnceCell<server::Policy> = once_cell::sync::OnceCell::new();
 
 impl<S> Api<S>
 where
@@ -56,7 +56,7 @@ where
     S::Future: Send + 'static,
 {
     type Response =
-        tonic::Response<futures::stream::BoxStream<'static, Result<ServerPolicy, tonic::Status>>>;
+        tonic::Response<futures::stream::BoxStream<'static, Result<server::Policy, tonic::Status>>>;
     type Error = tonic::Status;
     type Future = futures::future::BoxFuture<'static, Result<Self::Response, tonic::Status>>;
 
@@ -82,10 +82,10 @@ where
                         // If the server returned an invalid server policy, we
                         // default to using an invalid policy that causes all
                         // requests to report an internal error.
-                        let policy = ServerPolicy::try_from(up).unwrap_or_else(|error| {
+                        let policy = server::Policy::try_from(up).unwrap_or_else(|error| {
                             tracing::warn!(%error, "Server misconfigured");
                             INVALID_POLICY
-                                .get_or_init(|| ServerPolicy::invalid(detect_timeout))
+                                .get_or_init(|| server::Policy::invalid_http(detect_timeout))
                                 .clone()
                         });
                         tracing::debug!(?policy);

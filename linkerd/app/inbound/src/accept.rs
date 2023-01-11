@@ -118,14 +118,14 @@ mod tests {
         svc::{NewService, ServiceExt},
         Error,
     };
-    use linkerd_proxy_policy::{Authentication, Authorization, Meta, ServerPolicy};
+    use linkerd_proxy_policy::{server, Authentication, Authorization, Meta};
     use std::sync::Arc;
 
     #[tokio::test(flavor = "current_thread")]
     async fn default_allow() {
         let (io, _) = io::duplex(1);
         let policies = Store::for_test(
-            ServerPolicy {
+            server::Policy {
                 protocol: linkerd_proxy_policy::Protocol::Opaque(Arc::new([Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![Default::default()],
