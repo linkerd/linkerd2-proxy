@@ -16,7 +16,6 @@ pub use self::{
     meta::Meta,
 };
 pub use linkerd_http_route as route;
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Policy<D> {
     pub protocol: Protocol<D>,
@@ -78,7 +77,7 @@ pub mod proto {
         HttpRoute(#[from] http::proto::InvalidHttpRoute),
     }
 
-    // === impl ServerPolicy ===
+    // === impl server::Policy ===
 
     macro_rules! mk_routes {
         ($kind:ident, $routes:ident, $server_authzs:expr) => {{
@@ -99,7 +98,7 @@ pub mod proto {
         }};
     }
 
-    impl TryFrom<api::Server> for ServerPolicy {
+    impl TryFrom<api::Server> for server::Policy {
         type Error = InvalidServer;
 
         fn try_from(proto: api::Server) -> Result<Self, Self::Error> {
@@ -138,8 +137,19 @@ pub mod proto {
                     timeout: timeout
                         .ok_or(InvalidServer::MissingDetectTimeout)?
                         .try_into()?,
-                    tcp_authorizations: authorizations,
-                    opaque: todo!("eliza"),
+                    // TODO(eliza): since there's currently only one opaque
+                    // route, it ought to live in a static that gets cloned...
+                    opaque: Arc::from(vec![opaque::Route {
+                        rules: vec![route::Rule {
+                            matches: vec![()],
+                            policy: RoutePolicy {
+                                meta: Meta::new_default("opaque"),
+                                authorizations,
+                                filters: Vec::default(),
+                                distribution: (),
+                            },
+                        }],
+                    }]),
                 },
 
                 api::proxy_protocol::Kind::Http1(api::proxy_protocol::Http1 { routes }) => {
@@ -162,7 +172,7 @@ pub mod proto {
             // avoid label inference.
             let meta = Meta::try_new_with_default(labels, "policy.linkerd.io", "server")?;
 
-            Ok(ServerPolicy { protocol, meta })
+            Ok(Policy { protocol, meta })
         }
     }
 }
