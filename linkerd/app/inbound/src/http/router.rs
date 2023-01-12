@@ -227,9 +227,7 @@ impl<C> Inbound<C> {
                 // dispatches the request.
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_service(svc::LoadShed::layer())
-                    // TODO(eliza): what additional error context do we want here?
-                // just the port?
-                .push(svc::NewAnnotateError::<_, u16>::layer_named("HTTP logical"))
+                .push(svc::NewAnnotateError::layer_with(|t: &Logical| svc::annotate_error::named("HTTP logical", t.addr)))
                 .push_new_clone()
                 .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
                 .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {
