@@ -9,12 +9,21 @@ use std::{
     task::{Context, Poll},
 };
 
+/// Wraps the [`Service`]s produced by an inner [`NewService`] with
+/// [`AnnotateError`] middleware that enriches errors returned by those
+/// [`Service`]s with a formatted context based on a `C`-typed `Param` extracted
+/// from the `target` type used to construct that [`Service`].
+///
+/// A type implementing [`ExtractParam`] may be used to configure how the
+/// formatted context is generated from the `target` type.
 pub struct NewAnnotateError<N, C, X = ()> {
     inner: N,
     extract: X,
     _cx: PhantomData<fn(C)>,
 }
 
+/// Annotates errors returned by an inner [`Service`] with context formatted
+/// from the `target` that this stack was constructed from.
 #[derive(Debug, Clone)]
 pub struct AnnotateError<S> {
     inner: S,
@@ -42,11 +51,21 @@ pub struct Named<P> {
     param: P,
 }
 
+/// An [`ExtractParam`] implementation which wraps a param type in [`Named`],
+/// adding a string prefix to its [`fmt::Display`] representation.
 #[derive(Clone, Debug)]
 pub struct ExtractNamed {
     name: &'static str,
 }
 
+/// Wraps a `param` which implements [`fmt::Display`] with a string prefix
+/// describing the stack which produced an error.
+///
+/// The resulting `Named` param's [`fmt::Display`] implementation will output
+/// the following format:
+/// ```
+/// "{name} ({param})"
+/// ```
 pub fn named<P>(name: &'static str, param: P) -> Named<P> {
     Named { name, param }
 }
@@ -54,14 +73,20 @@ pub fn named<P>(name: &'static str, param: P) -> Named<P> {
 // === impl NewAnnotateError ===
 
 impl<N, C: fmt::Display> NewAnnotateError<N, C> {
+    /// Returns a `Layer` that produces a `NewAnnotateError` which annotates
+    /// errors with the formatted representation of a `C`-typed param extracted
+    /// from the target.
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(|inner| Self::new(inner, ()))
+        NewAnnotateError::layer_with(())
     }
 
+    /// Returns a `Layer` that produces a `NewAnnotateError` which annotates
+    /// errors with the formatted representation of a `C`-typed param extracted
+    /// from the target, prefixed with the provided `name`.
     pub fn layer_named(
         name: &'static str,
     ) -> impl layer::Layer<N, Service = NewAnnotateError<N, Named<C>, ExtractNamed>> + Clone {
-        layer::mk(move |inner| NewAnnotateError::new(inner, ExtractNamed { name }))
+        NewAnnotateError::layer_with(ExtractNamed { name })
     }
 }
 
@@ -70,6 +95,9 @@ where
     C: fmt::Display,
     X: Clone,
 {
+    /// Returns a `Layer` that produces a `NewAnnotateError` which annotates
+    /// errors with the formatted representation of a `C`-typed param extracted
+    /// from the target by the provided [`ExtractParam`] implementation.
     pub fn layer_with(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self::new(inner, extract.clone()))
     }
