@@ -144,7 +144,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                     .stack
                                     .layer(stack_labels("http", "logical")),
                             )
-                            .push_buffer("HTTP Logical", http_request_buffer),
+                            .push_buffer(http_request_buffer),
                     )
                     // Caches the profile-based stack so that it can be reused across
                     // multiple requests to the same canonical destination.
@@ -155,6 +155,9 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             .push(http::Retain::layer())
                             .push(http::BoxResponse::layer()),
                     )
+                    .push(svc::NewAnnotateError::layer_with(|h: &Http<NameAddr>| {
+                        svc::annotate_error::named("HTTP override", h.target.clone())
+                    }))
                     .instrument(|h: &Http<NameAddr>| info_span!("override", dst = %h.target))
                     // Route requests with destinations that can be discovered via the
                     // `l5d-dst-override` header through the (load balanced) logical

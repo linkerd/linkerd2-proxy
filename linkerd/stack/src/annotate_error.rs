@@ -47,6 +47,10 @@ pub struct ExtractNamed {
     name: &'static str,
 }
 
+pub fn named<P>(name: &'static str, param: P) -> Named<P> {
+    Named { name, param }
+}
+
 // === impl NewAnnotateError ===
 
 impl<N, C: fmt::Display> NewAnnotateError<N, C> {

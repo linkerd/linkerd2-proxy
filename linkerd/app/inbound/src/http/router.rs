@@ -207,7 +207,7 @@ impl<C> Inbound<C> {
                 .push_on_service(
                     svc::layers()
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
-                        .push_buffer("HTTP Logical", &config.http_request_buffer),
+                        .push_buffer(&config.http_request_buffer),
                 )
                 .push_idle_cache(config.discovery_idle_timeout)
                 .push_on_service(
@@ -227,6 +227,9 @@ impl<C> Inbound<C> {
                 // dispatches the request.
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_service(svc::LoadShed::layer())
+                    // TODO(eliza): what additional error context do we want here?
+                // just the port?
+                .push(svc::NewAnnotateError::<_, u16>::layer_named("HTTP logical"))
                 .push_new_clone()
                 .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
                 .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {

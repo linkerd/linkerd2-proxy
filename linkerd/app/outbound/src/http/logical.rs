@@ -9,7 +9,7 @@ use linkerd_app_core::{
     svc, Error,
 };
 use linkerd_distribute as distribute;
-use std::{fmt, sync::Arc};
+use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 #[error("no route")]

@@ -152,8 +152,11 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 )
-                .push_buffer("TCP Gateway", &outbound.config().tcp_connection_buffer),
+                .push_buffer(&outbound.config().tcp_connection_buffer),
         )
+        .push(svc::NewAnnotateError::layer_with(|addr: &NameAddr| {
+            svc::annotate_error::named("opaque gateway", addr.clone())
+        }))
         .push_idle_cache(outbound.config().discovery_idle_timeout)
         .check_new_service::<NameAddr, I>();
 
@@ -186,8 +189,11 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("http", "gateway")),
                 )
-                .push_buffer("Gateway", &inbound_config.http_request_buffer),
+                .push_buffer(&inbound_config.http_request_buffer),
         )
+        .push(svc::NewAnnotateError::layer_with(|h: &HttpTarget| {
+            svc::annotate_error::named("HTTP gateway", h.target.clone())
+        }))
         .push_idle_cache(inbound_config.discovery_idle_timeout)
         .push_on_service(
             svc::layers()

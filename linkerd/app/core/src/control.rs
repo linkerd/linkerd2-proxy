@@ -99,6 +99,7 @@ impl Config {
             // continually reconnect without checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .push_new_reconnect(self.connect.backoff)
+            .push(svc::NewAnnotateError::<_, std::net::SocketAddr>::layer_named("endpoint"))
             .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr))
             .push_new_clone()
             .push(self::balance::layer(dns, resolve_backoff))
@@ -107,7 +108,10 @@ impl Config {
             // This buffer allows a resolver client to be shared across stacks.
             // No load shed is applied here, however, so backpressure may leak
             // into the caller task.
-            .push_buffer_on_service("Controller client", &self.buffer)
+            .push_buffer_on_service(&self.buffer)
+            .push(svc::NewAnnotateError::<_, Addr>::layer_named(
+                "controller client",
+            ))
             .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
             .push(svc::ArcNewService::layer())

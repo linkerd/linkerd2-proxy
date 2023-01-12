@@ -1,8 +1,10 @@
 use super::{Concrete, Endpoint};
-use crate::{endpoint, stack_labels, Outbound};
+use crate::{endpoint, logical::ConcreteAddr, stack_labels, Outbound};
 use linkerd_app_core::{
     proxy::{api_resolve::Metadata, core::Resolve, http},
-    svc, Error,
+    svc,
+    transport::{Remote, ServerAddr},
+    Error,
 };
 use std::time;
 use tracing::info_span;
@@ -51,6 +53,9 @@ impl<N> Outbound<N> {
                         .stack
                         .layer(stack_labels("http", "endpoint")),
                 )
+                .push(svc::NewAnnotateError::<_, Remote<ServerAddr>>::layer_named(
+                    "HTTP endpoint",
+                ))
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
                 .push_new_clone()
                 .push(endpoint::NewFromMetadata::layer(config.inbound_ips.clone()))
@@ -65,8 +70,11 @@ impl<N> Outbound<N> {
                                 .stack
                                 .layer(stack_labels("http", "concrete")),
                         )
-                        .push_buffer("HTTP Concrete", &config.http_request_buffer),
+                        .push_buffer(&config.http_request_buffer),
                 )
+                .push(svc::NewAnnotateError::<_, ConcreteAddr>::layer_named(
+                    "HTTP concrete",
+                ))
                 .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })

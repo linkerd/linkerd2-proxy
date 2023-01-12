@@ -30,7 +30,6 @@ pub struct AlwaysReconnect(ExponentialBackoff);
 pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
 
 pub struct BufferLayer<Req> {
-    name: &'static str,
     capacity: usize,
     failfast_timeout: Duration,
     _marker: PhantomData<fn(Req)>,
@@ -94,15 +93,11 @@ impl<L> Layers<L> {
     ///
     /// If the inner service is not ready for `config.failfast_timeout`, then
     /// the service becomes unavailable and requests in the buffer are failed.
-    pub fn push_buffer<Req>(
-        self,
-        name: &'static str,
-        config: &BufferConfig,
-    ) -> Layers<Pair<L, BufferLayer<Req>>>
+    pub fn push_buffer<Req>(self, config: &BufferConfig) -> Layers<Pair<L, BufferLayer<Req>>>
     where
         Req: Send + 'static,
     {
-        self.push(buffer(name, config))
+        self.push(buffer(config))
     }
 
     pub fn push_on_service<U>(self, layer: U) -> Layers<Pair<L, stack::OnServiceLayer<U>>> {
@@ -217,13 +212,12 @@ impl<S> Stack<S> {
     /// the service becomes unavailable and requests in the buffer are failed.
     pub fn push_buffer_on_service<Req>(
         self,
-        name: &'static str,
         config: &BufferConfig,
     ) -> Stack<OnService<BufferLayer<Req>, S>>
     where
         Req: Send + 'static,
     {
-        self.push_on_service(buffer(name, config))
+        self.push_on_service(buffer(config))
     }
 
     pub fn push_idle_cache<T>(self, idle: Duration) -> Stack<idle_cache::NewIdleCached<T, S>>
@@ -425,10 +419,8 @@ impl<E: Into<Error>> Recover<E> for AlwaysReconnect {
 
 // === impl BufferLayer ===
 
-fn buffer<Req>(name: &'static str, config: &BufferConfig) -> BufferLayer<Req> {
+fn buffer<Req>(config: &BufferConfig) -> BufferLayer<Req> {
     BufferLayer {
-        // TODO(ver) remove this.
-        name,
         capacity: config.capacity,
         failfast_timeout: config.failfast_timeout,
         _marker: PhantomData,
@@ -454,7 +446,6 @@ impl<Req> Clone for BufferLayer<Req> {
     fn clone(&self) -> Self {
         Self {
             capacity: self.capacity,
-            name: self.name,
             failfast_timeout: self.failfast_timeout,
             _marker: self._marker,
         }
