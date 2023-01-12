@@ -11,7 +11,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
-use linkerd_server_policy::{grpc, http, route::RouteMatch};
+use linkerd_proxy_server_policy::{grpc, http, route::RouteMatch};
 use std::{sync::Arc, task};
 
 #[cfg(test)]

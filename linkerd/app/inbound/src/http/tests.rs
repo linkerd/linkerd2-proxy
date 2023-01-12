@@ -616,7 +616,7 @@ impl svc::Param<policy::AllowPolicy> for Target {
             self.param(),
             policy::ServerPolicy {
                 protocol: policy::Protocol::Http1(Arc::new([
-                    linkerd_server_policy::http::default(authorizations),
+                    linkerd_proxy_server_policy::http::default(authorizations),
                 ])),
                 meta: Arc::new(policy::Meta::Resource {
                     group: "policy.linkerd.io".into(),

@@ -16,7 +16,7 @@ use crate::{
 };
 use linkerd_addr::Addr;
 pub use linkerd_metrics::*;
-use linkerd_server_policy as policy;
+use linkerd_proxy_server_policy as policy;
 use std::{
     fmt::{self, Write},
     net::SocketAddr,

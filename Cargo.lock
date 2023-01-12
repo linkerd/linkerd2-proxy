@@ -829,12 +829,12 @@ dependencies = [
  "linkerd-proxy-http",
  "linkerd-proxy-identity-client",
  "linkerd-proxy-resolve",
+ "linkerd-proxy-server-policy",
  "linkerd-proxy-tap",
  "linkerd-proxy-tcp",
  "linkerd-proxy-transport",
  "linkerd-reconnect",
  "linkerd-router",
- "linkerd-server-policy",
  "linkerd-service-profiles",
  "linkerd-stack",
  "linkerd-stack-metrics",
@@ -893,7 +893,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
- "linkerd-server-policy",
+ "linkerd-proxy-server-policy",
  "linkerd-tonic-watch",
  "linkerd-tracing",
  "linkerd2-proxy-api",
@@ -1441,6 +1441,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-proxy-server-policy"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "ipnet",
+ "linkerd-http-route",
+ "linkerd2-proxy-api",
+ "maplit",
+ "prost-types",
+ "quickcheck",
+ "thiserror",
+]
+
+[[package]]
 name = "linkerd-proxy-tap"
 version = "0.1.0"
 dependencies = [
@@ -1538,20 +1552,6 @@ dependencies = [
  "parking_lot",
  "thiserror",
  "tracing",
-]
-
-[[package]]
-name = "linkerd-server-policy"
-version = "0.1.0"
-dependencies = [
- "http",
- "ipnet",
- "linkerd-http-route",
- "linkerd2-proxy-api",
- "maplit",
- "prost-types",
- "quickcheck",
- "thiserror",
 ]
 
 [[package]]
