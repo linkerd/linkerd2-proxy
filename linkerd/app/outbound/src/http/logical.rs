@@ -136,8 +136,8 @@ impl<N> Outbound<N> {
                 // TODO(ver) do we need to strip headers here?
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
                 // Annotate errors with the logical address.
-                .push(svc::NewAnnotateError::<_, LogicalAddr>::layer_with(
-                    svc::annotate_error::named("HTTP logical"),
+                .push(svc::NewAnnotateError::<_, LogicalAddr>::layer_named(
+                    "HTTP logical",
                 ))
                 .push(svc::ArcNewService::layer())
         })
@@ -271,19 +271,5 @@ impl classify::CanClassify for RouteParams {
 
     fn classify(&self) -> classify::Request {
         self.profile.response_classes().clone().into()
-    }
-}
-
-struct ErrorContext(LogicalAddr);
-
-impl fmt::Display for ErrorContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "HTTP logical ({})", self.0)
-    }
-}
-
-impl svc::Param<ErrorContext> for Logical {
-    fn param(&self) -> ErrorContext {
-        ErrorContext(self.logical_addr.clone())
     }
 }

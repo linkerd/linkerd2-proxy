@@ -1,4 +1,4 @@
-use crate::{layer, ExtractParam, NewService, Service};
+use crate::{layer, ExtractParam, NewService, Param, Service};
 use std::{
     error::Error,
     fmt,
@@ -36,11 +36,28 @@ pub struct ResponseFuture<F> {
     context: Option<Arc<str>>,
 }
 
+#[derive(Clone, Debug)]
+pub struct Named<P> {
+    name: &'static str,
+    param: P,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtractNamed {
+    name: &'static str,
+}
+
 // === impl NewAnnotateError ===
 
 impl<N, C: fmt::Display> NewAnnotateError<N, C> {
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(|inner| Self::new(inner, ()))
+    }
+
+    pub fn layer_named(
+        name: &'static str,
+    ) -> impl layer::Layer<N, Service = NewAnnotateError<N, Named<C>, ExtractNamed>> + Clone {
+        layer::mk(move |inner| NewAnnotateError::new(inner, ExtractNamed { name }))
     }
 }
 
@@ -53,6 +70,8 @@ where
         layer::mk(move |inner| Self::new(inner, extract.clone()))
     }
 }
+
+impl<N, C> NewAnnotateError<N, Named<C>, ExtractNamed> where C: fmt::Display {}
 
 impl<N, C, X> NewAnnotateError<N, C, X> {
     fn new(inner: N, extract: X) -> Self {
@@ -168,5 +187,24 @@ where
             }
             .into()
         })
+    }
+}
+
+// === impl Named ===
+
+impl<P: fmt::Display> fmt::Display for Named<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.name, self.param)
+    }
+}
+
+// === impl ExtractNamed ===
+
+impl<P, T: Param<P>> ExtractParam<Named<P>, T> for ExtractNamed {
+    fn extract_param(&self, t: &T) -> Named<P> {
+        Named {
+            name: self.name,
+            param: t.param(),
+        }
     }
 }

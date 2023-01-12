@@ -3,7 +3,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-mod annotate_error;
+pub mod annotate_error;
 mod arc_new_service;
 mod box_future;
 mod box_service;
