@@ -198,7 +198,7 @@ where
 
 impl<P: fmt::Display> fmt::Display for Named<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}", self.name, self.param)
+        write!(f, "{} ({})", self.name, self.param)
     }
 }
 
