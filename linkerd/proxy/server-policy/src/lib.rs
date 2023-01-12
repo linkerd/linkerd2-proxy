@@ -17,6 +17,7 @@ pub struct ServerPolicy {
     pub meta: Arc<Meta>,
 }
 
+// TODO additional server configs (e.g. concurrency limits, window sizes, etc)
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Protocol {
     Detect {
@@ -27,6 +28,7 @@ pub enum Protocol {
     Http1(Arc<[http::Route]>),
     Http2(Arc<[http::Route]>),
     Grpc(Arc<[grpc::Route]>),
+
     Tls(Arc<[Authorization]>),
     Opaque(Arc<[Authorization]>),
 }
