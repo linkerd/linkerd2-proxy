@@ -128,14 +128,14 @@ impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ClientRescue {
 
 impl errors::HttpRescue<Error> for ClientRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if let Some(cause) = errors::cause_ref::<http::orig_proto::DowngradedH2Error>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        if errors::is_caused_by::<http::orig_proto::DowngradedH2Error>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
-        if let Some(cause) = errors::cause_ref::<std::io::Error>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        if errors::is_caused_by::<std::io::Error>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
-        if let Some(cause) = errors::cause_ref::<errors::ConnectTimeout>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        if errors::is_caused_by::<errors::ConnectTimeout>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
         }
 
         Err(error)
