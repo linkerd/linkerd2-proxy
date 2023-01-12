@@ -40,8 +40,7 @@ pub mod proto {
     use super::*;
     use crate::{
         authz::{self, proto::InvalidAuthz},
-        meta::proto::InvalidMeta,
-        Authorization, Meta,
+        Authorization,
     };
     use linkerd2_proxy_api::inbound as api;
     use linkerd_http_route::http::{
@@ -51,6 +50,7 @@ pub mod proto {
         },
         r#match::{host::proto::InvalidHostMatch, proto::InvalidRouteMatch},
     };
+    use linkerd_proxy_core::meta::{proto::InvalidMeta, Meta};
     use std::sync::Arc;
 
     #[derive(Debug, thiserror::Error)]

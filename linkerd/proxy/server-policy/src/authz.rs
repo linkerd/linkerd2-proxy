@@ -1,4 +1,4 @@
-use super::Meta;
+use linkerd_proxy_core::Meta;
 use std::{collections::BTreeSet, sync::Arc};
 
 mod network;
@@ -50,8 +50,9 @@ impl Suffix {
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
-    use crate::{authz::Network, meta::proto::InvalidMeta};
+    use crate::authz::Network;
     use linkerd2_proxy_api::{inbound as api, net::InvalidIpNetwork};
+    use linkerd_proxy_core::meta::proto::InvalidMeta;
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidAuthz {

@@ -6,13 +6,10 @@ use std::{hash::Hash, sync::Arc, time};
 pub mod authz;
 pub mod grpc;
 pub mod http;
-pub mod meta;
 
-pub use self::{
-    authz::{Authentication, Authorization},
-    meta::Meta,
-};
+pub use self::authz::{Authentication, Authorization};
 pub use linkerd_http_route as route;
+pub use linkerd_proxy_core::{meta, Meta};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerPolicy {
@@ -72,8 +69,8 @@ impl ServerPolicy {
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
-    use crate::meta::proto::InvalidMeta;
     use linkerd2_proxy_api::inbound as api;
+    use linkerd_proxy_core::meta::proto::InvalidMeta;
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidServer {
