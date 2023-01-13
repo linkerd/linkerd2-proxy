@@ -62,31 +62,33 @@ type NewFromTarget<N, T, E> = NewAnnotateError<N, FromTarget<T, E>, fn(&T) -> Fr
 
 // === impl NewAnnotateError ===
 
-/// Returns a `Layer` that produces [`NewAnnotateError`] middleware which
-/// annotate errors by constructing an `E`-typed error that implements
-/// `From<(&T, Error)>`, where `T` is a stack target.
-///
-/// `T` must implement [`Clone`]
-pub fn layer_from_target<E, T, N>() -> impl layer::Layer<N, Service = NewFromTarget<N, T, E>> + Clone
-where
-    T: Clone,
-    E: for<'a> From<(&'a T, linkerd_error::Error)>,
-    E: Error + Send + Sync + 'static,
-{
-    NewAnnotateError::layer_with(
-        (|target: &T| FromTarget {
-            target: target.clone(),
-            _err: PhantomData,
-        }) as fn(&T) -> FromTarget<T, E>,
-    )
-}
-
 impl<N, C: ErrorContext> NewAnnotateError<N, C> {
     /// Returns a `Layer` that produces [`NewAnnotateError`] middleware which
     /// annotate errors using an `C`-typed [`Param`](super::Param) type's
     /// [`ErrorContext`] implementation.
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
         NewAnnotateError::layer_with(())
+    }
+}
+
+impl<N, T, E> NewFromTarget<N, T, E> {
+    /// Returns a `Layer` that produces [`NewAnnotateError`] middleware which
+    /// annotate errors by constructing an `E`-typed error that implements
+    /// `From<(&T, Error)>`, where `T` is a stack target.
+    ///
+    /// `T` must implement [`Clone`]
+    pub fn layer_from_target() -> impl layer::Layer<N, Service = Self> + Clone
+    where
+        T: Clone,
+        E: for<'a> From<(&'a T, linkerd_error::Error)>,
+        E: Error + Send + Sync + 'static,
+    {
+        NewAnnotateError::layer_with(
+            (|target: &T| FromTarget {
+                target: target.clone(),
+                _err: PhantomData,
+            }) as fn(&T) -> FromTarget<T, E>,
+        )
     }
 }
 
