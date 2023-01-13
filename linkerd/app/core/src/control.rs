@@ -21,6 +21,14 @@ pub struct ControlAddr {
     pub identity: tls::ConditionalClientTls,
 }
 
+#[derive(Debug, Error)]
+#[error("controller client ({}): {}", .addr, .source)]
+pub struct ControlError {
+    addr: Addr,
+    #[source]
+    source: Error,
+}
+
 impl svc::Param<Addr> for ControlAddr {
     fn param(&self) -> Addr {
         self.addr.clone()
@@ -58,7 +66,7 @@ impl Config {
         impl svc::Service<
                 http::Request<tonic::body::BoxBody>,
                 Response = http::Response<RspBody>,
-                Error = Error,
+                Error = ControlError,
                 Future = impl Send,
             > + Clone,
     > {
@@ -99,7 +107,7 @@ impl Config {
             // continually reconnect without checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .push_new_reconnect(self.connect.backoff)
-            .push(svc::NewAnnotateError::<_, std::net::SocketAddr>::layer_named("endpoint"))
+            // .push(svc::NewAnnotateError::<_, std::net::SocketAddr>::layer_named("endpoint"))
             .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr))
             .push_new_clone()
             .push(self::balance::layer(dns, resolve_backoff))
@@ -109,13 +117,23 @@ impl Config {
             // No load shed is applied here, however, so backpressure may leak
             // into the caller task.
             .push_buffer_on_service(&self.buffer)
-            .push(svc::NewAnnotateError::<_, Addr>::layer_named(
-                "controller client",
-            ))
+            .push(svc::annotate_error::layer_from_target::<ControlError, _, _>())
             .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
             .push(svc::ArcNewService::layer())
             .into_inner()
+    }
+}
+
+impl<E> From<(&ControlAddr, E)> for ControlError
+where
+    E: Into<Error>,
+{
+    fn from((addr, e): (&ControlAddr, E)) -> Self {
+        Self {
+            addr: addr.addr.clone(),
+            source: e.into(),
+        }
     }
 }
 

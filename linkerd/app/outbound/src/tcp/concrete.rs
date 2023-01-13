@@ -1,11 +1,9 @@
 use super::{Concrete, Endpoint};
-use crate::{endpoint, logical::ConcreteAddr, stack_labels, Outbound};
+use crate::{endpoint, logical::ConcreteError, stack_labels, Outbound};
 use linkerd_app_core::{
     drain, io,
     proxy::{api_resolve::Metadata, core::Resolve, tcp},
-    svc,
-    transport::{Remote, ServerAddr},
-    Error,
+    svc, Error,
 };
 use std::time;
 use tracing::info_span;
@@ -28,7 +26,7 @@ impl<C> Outbound<C> {
     ) -> Outbound<
         svc::ArcNewService<
             Concrete,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+            impl svc::Service<I, Response = (), Error = ConcreteError, Future = impl Send> + Clone,
         >,
     >
     where
@@ -58,9 +56,6 @@ impl<C> Outbound<C> {
                         .stack
                         .layer(stack_labels("tcp", "endpoint")),
                 )
-                .push(svc::NewAnnotateError::<_, Remote<ServerAddr>>::layer_named(
-                    "opaque endpoint",
-                ))
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
                 .push_new_clone()
                 .push(endpoint::NewFromMetadata::layer(config.inbound_ips.clone()))
@@ -77,9 +72,8 @@ impl<C> Outbound<C> {
                         )
                         .push_buffer(tcp_connection_buffer),
                 )
-                .push(svc::NewAnnotateError::<_, ConcreteAddr>::layer_named(
-                    "opaque concrete",
-                ))
+                .push(svc::annotate_error::layer_from_target::<ConcreteError, _, _>())
+                .check_new_service::<Concrete, _>()
                 .instrument(|c: &Concrete| info_span!("concrete", addr = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })

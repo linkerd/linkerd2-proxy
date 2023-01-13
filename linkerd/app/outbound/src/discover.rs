@@ -60,9 +60,6 @@ impl<N> Outbound<N> {
                         )
                         .push_buffer(&config.tcp_connection_buffer),
                 )
-                .push(svc::NewAnnotateError::<_, OrigDstAddr>::layer_named(
-                    "TCP server",
-                ))
                 .push_idle_cache(config.discovery_idle_timeout)
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()

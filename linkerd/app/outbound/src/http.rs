@@ -19,7 +19,7 @@ use linkerd_app_core::{
     profiles::{self, LogicalAddr},
     proxy::{api_resolve::ProtocolHint, tap},
     svc::Param,
-    tls, Addr, Conditional, CANONICAL_DST_HEADER,
+    tls, Addr, Conditional, Error, CANONICAL_DST_HEADER,
 };
 use std::{net::SocketAddr, str::FromStr};
 
@@ -173,5 +173,31 @@ impl tap::Inspect for Endpoint {
 
     fn is_outbound<B>(&self, _: &Request<B>) -> bool {
         true
+    }
+}
+
+impl<E> From<(&Concrete, E)> for crate::logical::ConcreteError
+where
+    E: Into<Error>,
+{
+    fn from((concrete, source): (&Concrete, E)) -> Self {
+        Self {
+            addr: concrete.resolve.clone(),
+            source: source.into(),
+            protocol: "HTTP",
+        }
+    }
+}
+
+impl<E> From<(&Logical, E)> for crate::logical::LogicalError
+where
+    E: Into<Error>,
+{
+    fn from((logical, source): (&Logical, E)) -> Self {
+        Self {
+            addr: logical.logical_addr.clone(),
+            source: source.into(),
+            protocol: "HTTP",
+        }
     }
 }

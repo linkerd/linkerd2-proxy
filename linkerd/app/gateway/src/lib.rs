@@ -30,6 +30,16 @@ pub struct Config {
     pub allow_discovery: NameMatch,
 }
 
+#[derive(Debug, Error)]
+#[error("{} gateway ({}): {}", .protocol, .target, .source)]
+
+pub struct GatewayError {
+    #[source]
+    source: Error,
+    target: NameAddr,
+    protocol: &'static str,
+}
+
 #[derive(Clone, Debug)]
 struct HttpTransportHeader {
     target: NameAddr,
@@ -154,9 +164,7 @@ where
                 )
                 .push_buffer(&outbound.config().tcp_connection_buffer),
         )
-        .push(svc::NewAnnotateError::layer_with(|addr: &NameAddr| {
-            svc::annotate_error::named("opaque gateway", addr.clone())
-        }))
+        .push(svc::annotate_error::layer_from_target::<GatewayError, _, _>())
         .push_idle_cache(outbound.config().discovery_idle_timeout)
         .check_new_service::<NameAddr, I>();
 
@@ -191,9 +199,7 @@ where
                 )
                 .push_buffer(&inbound_config.http_request_buffer),
         )
-        .push(svc::NewAnnotateError::layer_with(|h: &HttpTarget| {
-            svc::annotate_error::named("HTTP gateway", h.target.clone())
-        }))
+        .push(svc::annotate_error::layer_from_target::<GatewayError, _, _>())
         .push_idle_cache(inbound_config.discovery_idle_timeout)
         .push_on_service(
             svc::layers()
@@ -315,5 +321,36 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for RouteHttp<HttpTransportHe
         let target = self.0.target.clone();
         let version = req.version().try_into()?;
         Ok(HttpTarget { target, version })
+    }
+}
+
+// === impl GatewayError ===
+
+impl<E> From<(&NameAddr, E)> for GatewayError
+where
+    E: Into<Error>,
+{
+    fn from((target, error): (&NameAddr, E)) -> Self {
+        Self {
+            target: target.clone(),
+            source: error.into(),
+            protocol: "TCP",
+        }
+    }
+}
+
+impl<E> From<(&HttpTarget, E)> for GatewayError
+where
+    E: Into<Error>,
+{
+    fn from((target, error): (&HttpTarget, E)) -> Self {
+        Self {
+            target: target.target.clone(),
+            source: error.into(),
+            protocol: match target.version {
+                http::Version::Http1 => "HTTP/1",
+                http::Version::H2 => "HTTP/2",
+            },
+        }
     }
 }

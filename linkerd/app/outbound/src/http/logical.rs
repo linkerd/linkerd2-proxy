@@ -1,5 +1,5 @@
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
-use crate::logical::LogicalAddr;
+use crate::logical::LogicalError;
 use crate::Outbound;
 use linkerd_app_core::{
     classify, metrics,
@@ -52,21 +52,19 @@ impl<N> Outbound<N> {
             impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
-                    Error = Error,
+                    Error = LogicalError,
                     Future = impl Send,
                 > + Clone,
         >,
     >
     where
         N: svc::NewService<Concrete, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-            > + Clone
+        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Clone
             + Send
             + Sync
             + 'static,
+        NSvc::Error: Into<Error>,
         NSvc::Future: Send,
     {
         self.map_stack(|_, rt, concrete| {
@@ -136,9 +134,7 @@ impl<N> Outbound<N> {
                 // TODO(ver) do we need to strip headers here?
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
                 // Annotate errors with the logical address.
-                .push(svc::NewAnnotateError::<_, LogicalAddr>::layer_named(
-                    "HTTP logical",
-                ))
+                .push(svc::annotate_error::layer_from_target::<LogicalError, _, _>())
                 .push(svc::ArcNewService::layer())
         })
     }

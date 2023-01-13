@@ -5,7 +5,7 @@ use linkerd_app_core::{
     proxy::api_resolve::Metadata,
     svc, tls,
     transport::{self, addrs::*},
-    transport_header, Conditional,
+    transport_header, Conditional, Error,
 };
 use std::{
     collections::HashSet,
@@ -13,6 +13,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
+use thiserror::Error;
 use tracing::info_span;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,6 +37,17 @@ pub struct FromMetadata<P, N> {
     inbound_ips: Arc<HashSet<IpAddr>>,
     concrete: Concrete<P>,
     inner: N,
+}
+
+#[derive(Debug, Error)]
+#[error("{} endpoint ({}): {}", .protocol, .addr, .source)]
+pub struct EndpointError {
+    // TODO(eliza): we could stick all kinds of endpoint metadata, like metrics
+    // labels, and TLS, here if we wanted...
+    addr: Remote<ServerAddr>,
+    protocol: &'static str,
+    #[source]
+    source: Error,
 }
 
 // === impl Endpoint ===
@@ -272,20 +284,58 @@ impl<S> Outbound<S> {
                         // via the API.
                         .push_buffer(&config.http_request_buffer),
                 )
-                .push(svc::NewAnnotateError::<_, Remote<ServerAddr>>::layer_named(
-                    "HTTP forward",
-                ))
+                .push(svc::annotate_error::layer_from_target::<EndpointError, _, _>())
             })
             .push_http_server()
             .into_inner();
 
-        let opaque = self.push_tcp_endpoint().push_tcp_forward();
+        let opaque = self
+            .push_tcp_endpoint()
+            .push_tcp_forward()
+            .map_stack(|_, _, stk| {
+                stk.push(svc::annotate_error::layer_from_target::<EndpointError, _, _>())
+            });
 
         opaque.push_detect_http(http).map_stack(|_, _, stk| {
             stk.instrument(|e: &tcp::Endpoint| info_span!("forward", endpoint = %e.addr))
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
+    }
+}
+
+// === impl EndpointError ===
+
+impl<E> From<(&Endpoint<()>, E)> for EndpointError
+where
+    E: Into<Error>,
+{
+    fn from((endpoint, source): (&Endpoint<()>, E)) -> Self {
+        Self {
+            addr: endpoint.addr,
+            protocol: if endpoint.opaque_protocol {
+                "TCP (opaque)"
+            } else {
+                "TCP"
+            },
+            source: source.into(),
+        }
+    }
+}
+
+impl<E> From<(&Endpoint<http::Version>, E)> for EndpointError
+where
+    E: Into<Error>,
+{
+    fn from((endpoint, source): (&Endpoint<http::Version>, E)) -> Self {
+        Self {
+            addr: endpoint.addr,
+            protocol: match endpoint.protocol {
+                http::Version::Http1 => "HTTP/1",
+                http::Version::H2 => "HTTP/2",
+            },
+            source: source.into(),
+        }
     }
 }
 

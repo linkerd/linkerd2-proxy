@@ -9,6 +9,7 @@ use linkerd_app_core::{
 };
 pub use profiles::LogicalAddr;
 use std::fmt;
+use thiserror::Error;
 use tracing::info_span;
 
 #[derive(Clone)]
@@ -25,6 +26,24 @@ pub struct Concrete<P> {
 }
 
 pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
+
+#[derive(Debug, Error)]
+#[error("{} logical ({}): {}", .protocol, .addr, .source)]
+pub struct LogicalError {
+    pub(crate) addr: LogicalAddr,
+    #[source]
+    pub(crate) source: Error,
+    pub(crate) protocol: &'static str,
+}
+
+#[derive(Debug, Error)]
+#[error("{} concrete ({}): {}", .protocol, .addr, .source)]
+pub struct ConcreteError {
+    pub(crate) addr: ConcreteAddr,
+    #[source]
+    pub(crate) source: Error,
+    pub(crate) protocol: &'static str,
+}
 
 // === impl Logical ===
 

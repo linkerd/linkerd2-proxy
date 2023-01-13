@@ -1,5 +1,6 @@
 use linkerd_app_core::{
-    control, dns,
+    control::{self, ControlError},
+    dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     identity, metrics,
     profiles::{self, DiscoveryRejected},
@@ -42,7 +43,7 @@ impl Config {
             impl svc::Service<
                     http::Request<tonic::body::BoxBody>,
                     Response = http::Response<control::RspBody>,
-                    Error = Error,
+                    Error = ControlError,
                     Future = impl Send,
                 > + Clone,
         >,

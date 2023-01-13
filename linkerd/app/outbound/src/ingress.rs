@@ -8,6 +8,7 @@ use linkerd_app_core::{
     transport::{OrigDstAddr, Remote, ServerAddr},
     AddrMatch, Error, Infallible, NameAddr,
 };
+use std::fmt;
 use thiserror::Error;
 use tracing::{debug, debug_span, info_span};
 
@@ -37,6 +38,23 @@ struct InvalidOverrideHeader;
 const DST_OVERRIDE_HEADER: &str = "l5d-dst-override";
 
 type DetectIo<I> = io::PrefixedIo<I>;
+
+#[derive(Debug, Error)]
+#[error("{}: {}", .target, .source)]
+pub struct HttpError {
+    #[source]
+    source: Error,
+    target: Target,
+}
+
+#[derive(Debug, Error)]
+#[error("{} ingress ({}): {}", .protocol, .orig_dst, .source)]
+pub struct IngressError {
+    #[source]
+    source: Error,
+    protocol: &'static str,
+    orig_dst: OrigDstAddr,
+}
 
 // === impl Outbound ===
 
@@ -73,6 +91,11 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
         FSvc::Future: Send,
     {
         let http_endpoint = self.clone().into_stack();
+
+        let fallback = svc::stack(fallback)
+            .push(svc::annotate_error::layer_from_target::<IngressError, _, _>())
+            .push_on_service(svc::MapErr::layer(Error::from))
+            .push(svc::ArcNewService::layer());
 
         self.push_http_concrete(resolve)
             .push_http_logical()
@@ -155,9 +178,6 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             .push(http::Retain::layer())
                             .push(http::BoxResponse::layer()),
                     )
-                    .push(svc::NewAnnotateError::layer_with(|h: &Http<NameAddr>| {
-                        svc::annotate_error::named("HTTP override", h.target.clone())
-                    }))
                     .instrument(|h: &Http<NameAddr>| info_span!("override", dst = %h.target))
                     // Route requests with destinations that can be discovered via the
                     // `l5d-dst-override` header through the (load balanced) logical
@@ -186,6 +206,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                         },
                         http_endpoint.into_inner(),
                     )
+                    .push(svc::annotate_error::layer_from_target::<HttpError, _, _>())
                     .push(svc::ArcNewService::layer())
                     // Obtain a new inner service for each request. Override stacks are
                     // cached, as they depend on discovery that should not be performed
@@ -215,6 +236,8 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             .push(http::BoxResponse::layer())
                             .push(http::BoxRequest::layer()),
                     )
+                    .push(svc::annotate_error::layer_from_target::<IngressError, _, _>())
+                    .push_on_service(svc::MapErr::layer(Error::from))
                     .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol));
 
                 // HTTP detection is **always** performed. If detection fails, then we
@@ -262,5 +285,57 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
                 .transpose()?
                 .unwrap_or(Target::Forward(self.0.orig_dst)),
         })
+    }
+}
+
+// === impl Target ===
+
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Target::Override(addr) => write!(f, "override ({})", addr),
+            Target::Forward(addr) => write!(f, "forward ({})", addr),
+        }
+    }
+}
+
+impl<E> From<(&Http<Target>, E)> for HttpError
+where
+    E: Into<Error>,
+{
+    fn from((http, error): (&Http<Target>, E)) -> Self {
+        Self {
+            target: http.target.clone(),
+            source: error.into(),
+        }
+    }
+}
+
+impl<E> From<(&tcp::Accept, E)> for IngressError
+where
+    E: Into<Error>,
+{
+    fn from((accept, error): (&tcp::Accept, E)) -> Self {
+        Self {
+            orig_dst: accept.orig_dst,
+            source: error.into(),
+            protocol: "TCP",
+        }
+    }
+}
+
+impl<E> From<(&http::Accept, E)> for IngressError
+where
+    E: Into<Error>,
+{
+    fn from((accept, error): (&http::Accept, E)) -> Self {
+        Self {
+            orig_dst: accept.orig_dst,
+            source: error.into(),
+            protocol: match accept.protocol {
+                http::Version::H2 => "HTTP/2",
+                http::Version::Http1 => "HTTP/1",
+            },
+        }
     }
 }

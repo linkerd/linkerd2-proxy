@@ -19,6 +19,15 @@ pub struct Http {
     permit: policy::HttpRoutePermit,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("HTTP logical (remote: {}, logical: {:?}): {}", .addr, .logical, .source)]
+pub struct LogicalError {
+    #[source]
+    source: Error,
+    addr: Remote<ServerAddr>,
+    logical: Option<NameAddr>,
+}
+
 /// Builds `Logical` targets for each HTTP request.
 #[derive(Clone, Debug)]
 struct LogicalPerRequest {
@@ -227,7 +236,7 @@ impl<C> Inbound<C> {
                 // dispatches the request.
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_service(svc::LoadShed::layer())
-                .push(svc::NewAnnotateError::layer_with(|t: &Logical| svc::annotate_error::named("HTTP logical", t.addr)))
+                .push(svc::annotate_error::layer_from_target::<LogicalError, _, _>())
                 .push_new_clone()
                 .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
                 .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {
@@ -499,5 +508,20 @@ impl errors::HttpRescue<Error> for ClientRescue {
         }
 
         Err(error)
+    }
+}
+
+// === impl LogicalError ===
+
+impl<E> From<(&Logical, E)> for LogicalError
+where
+    E: Into<Error>,
+{
+    fn from((logical, error): (&Logical, E)) -> Self {
+        Self {
+            source: error.into(),
+            addr: logical.addr,
+            logical: logical.logical.clone(),
+        }
     }
 }

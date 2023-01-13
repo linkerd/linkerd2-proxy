@@ -66,3 +66,29 @@ impl<N> Outbound<N> {
         })
     }
 }
+
+impl<E> From<(&Concrete, E)> for crate::logical::ConcreteError
+where
+    E: Into<Error>,
+{
+    fn from((concrete, source): (&Concrete, E)) -> Self {
+        Self {
+            addr: concrete.resolve.clone(),
+            source: source.into(),
+            protocol: "TCP",
+        }
+    }
+}
+
+impl<E> From<(&Logical, E)> for crate::logical::LogicalError
+where
+    E: Into<Error>,
+{
+    fn from((logical, source): (&Logical, E)) -> Self {
+        Self {
+            addr: logical.logical_addr.clone(),
+            source: source.into(),
+            protocol: "TCP",
+        }
+    }
+}

@@ -30,7 +30,7 @@ mod unwrap_or;
 mod watch;
 
 pub use self::{
-    annotate_error::{AnnotateError, NewAnnotateError},
+    annotate_error::{AnnotateErrorService, NewAnnotateError},
     arc_new_service::ArcNewService,
     box_future::BoxFuture,
     box_service::{BoxService, BoxServiceLayer},
