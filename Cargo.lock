@@ -1352,6 +1352,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-proxy-client-policy"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "ipnet",
+ "linkerd-http-route",
+ "linkerd-proxy-core",
+ "maplit",
+ "quickcheck",
+]
+
+[[package]]
 name = "linkerd-proxy-core"
 version = "0.1.0"
 dependencies = [

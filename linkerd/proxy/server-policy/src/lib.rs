@@ -13,8 +13,8 @@ pub use linkerd_proxy_core::{meta, Meta};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerPolicy {
-    pub protocol: Protocol,
     pub meta: Arc<Meta>,
+    pub protocol: Protocol,
 }
 
 // TODO additional server configs (e.g. concurrency limits, window sizes, etc)
