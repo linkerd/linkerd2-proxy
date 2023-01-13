@@ -12,7 +12,7 @@ use std::{
 /// A [`NewService`] that extracts an [`ErrorContext`] implementation from its target,
 /// and produces an [`AnnotateError`] middleware which wraps an inner [`Service`]'s
 /// error type with that [`ErrorContext`].
-pub struct NewAnnotateError<N, C, X = ()> {
+pub struct NewAnnotateError<C, X, N> {
     inner: N,
     extract: X,
     _cx: PhantomData<fn(C)>,
@@ -58,11 +58,11 @@ pub struct FromTarget<T, E> {
     _err: PhantomData<fn(E)>,
 }
 
-type NewFromTarget<N, T, E> = NewAnnotateError<N, FromTarget<T, E>, fn(&T) -> FromTarget<T, E>>;
+type NewFromTarget<E, T, N> = NewAnnotateError<FromTarget<T, E>, fn(&T) -> FromTarget<T, E>, N>;
 
 // === impl NewAnnotateError ===
 
-impl<N, C: ErrorContext> NewAnnotateError<N, C> {
+impl<C: ErrorContext, N> NewAnnotateError<C, (), N> {
     /// Returns a `Layer` that produces [`NewAnnotateError`] middleware which
     /// annotate errors using an `C`-typed [`Param`](super::Param) type's
     /// [`ErrorContext`] implementation.
@@ -71,7 +71,7 @@ impl<N, C: ErrorContext> NewAnnotateError<N, C> {
     }
 }
 
-impl<N, T, E> NewFromTarget<N, T, E> {
+impl<E, T, N> NewFromTarget<E, T, N> {
     /// Returns a `Layer` that produces [`NewAnnotateError`] middleware which
     /// annotate errors by constructing an `E`-typed error that implements
     /// `From<(&T, Error)>`, where `T` is a stack target.
@@ -92,7 +92,7 @@ impl<N, T, E> NewFromTarget<N, T, E> {
     }
 }
 
-impl<N, C, X> NewAnnotateError<N, C, X>
+impl<C, X, N> NewAnnotateError<C, X, N>
 where
     C: ErrorContext,
     X: Clone,
@@ -105,7 +105,7 @@ where
     }
 }
 
-impl<N, C, X> NewAnnotateError<N, C, X> {
+impl<C, X, N> NewAnnotateError<C, X, N> {
     fn new(inner: N, extract: X) -> Self {
         Self {
             inner,
@@ -115,7 +115,7 @@ impl<N, C, X> NewAnnotateError<N, C, X> {
     }
 }
 
-impl<N, C, X> Clone for NewAnnotateError<N, C, X>
+impl<C, X, N> Clone for NewAnnotateError<C, X, N>
 where
     N: Clone,
     X: Clone,
@@ -125,7 +125,7 @@ where
     }
 }
 
-impl<N, C, X> fmt::Debug for NewAnnotateError<N, C, X>
+impl<C, X, N> fmt::Debug for NewAnnotateError<C, X, N>
 where
     N: fmt::Debug,
     X: fmt::Debug,
@@ -143,7 +143,7 @@ where
     }
 }
 
-impl<T, N, C, X> NewService<T> for NewAnnotateError<N, C, X>
+impl<T, C, X, N> NewService<T> for NewAnnotateError<C, X, N>
 where
     N: NewService<T>,
     X: ExtractParam<C, T>,
