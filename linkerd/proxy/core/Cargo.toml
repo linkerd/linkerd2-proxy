@@ -9,9 +9,6 @@ description = """
 Core interfaces needed to implement proxy components
 """
 
-[features]
-proto = ["linkerd2-proxy-api"]
-
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
