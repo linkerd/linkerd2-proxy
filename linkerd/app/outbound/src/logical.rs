@@ -9,6 +9,7 @@ use linkerd_app_core::{
 };
 pub use profiles::LogicalAddr;
 use std::fmt;
+use tokio::sync::watch;
 use tracing::info_span;
 
 #[derive(Clone)]
@@ -38,8 +39,8 @@ impl Logical<()> {
     }
 }
 
-impl<P> svc::Param<tokio::sync::watch::Receiver<profiles::Profile>> for Logical<P> {
-    fn param(&self) -> tokio::sync::watch::Receiver<profiles::Profile> {
+impl<P> svc::Param<watch::Receiver<profiles::Profile>> for Logical<P> {
+    fn param(&self) -> watch::Receiver<profiles::Profile> {
         self.profile.clone().into()
     }
 }

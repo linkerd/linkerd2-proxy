@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 pub type Labels = std::sync::Arc<BTreeMap<String, String>>;
 
 /// Metadata describing an endpoint.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Metadata {
     /// Arbitrary endpoint labels. Primarily used for telemetry.
     labels: Labels,
@@ -24,7 +24,7 @@ pub struct Metadata {
     authority_override: Option<Authority>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum ProtocolHint {
     /// We don't know what the destination understands, so forward messages in the
     /// protocol we received them in.

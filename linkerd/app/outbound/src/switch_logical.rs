@@ -1,6 +1,8 @@
 use crate::{endpoint::Endpoint, logical::Logical, tcp, transport::OrigDstAddr, Outbound};
 use linkerd_app_core::{io, profiles, svc, Error, Infallible};
+use linkerd_proxy_client_policy::ClientPolicy;
 use std::fmt;
+use tokio::sync::watch;
 
 impl<S> Outbound<S> {
     /// Wraps an endpoint stack to switch to an alternate logical stack when an appropriate profile
@@ -10,15 +12,25 @@ impl<S> Outbound<S> {
     /// - Otherwise, if the profile indicates the target is logical, a logical stack is built;
     /// - Otherwise, we assume the target is not part of the mesh and we should connect to the
     ///   original destination.
-    pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
+    pub fn push_switch_profile<T, I, N, NSvc, SSvc>(
         self,
-        logical: N,
-    ) -> Outbound<svc::ArcNewTcp<(Option<profiles::Receiver>, T), I>>
+        profile: N,
+    ) -> Outbound<
+        svc::ArcNewTcp<
+            (
+                Option<watch::Receiver<ClientPolicy>>,
+                Option<profiles::Receiver>,
+                T,
+            ),
+            I,
+        >,
+    >
     where
         Self: Clone + 'static,
         T: svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Unpin + 'static,
-        N: svc::NewService<tcp::Logical, Service = NSvc> + Clone + Send + Sync + 'static,
+        N: Clone + Send + Sync + 'static,
+        N: svc::NewService<(watch::Receiver<ClientPolicy>, T), Service = NSvc>,
         NSvc: svc::Service<I, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
         S: svc::NewService<tcp::Endpoint, Service = SSvc> + Clone + Send + Sync + 'static,
@@ -26,45 +38,23 @@ impl<S> Outbound<S> {
         SSvc::Future: Send,
     {
         let no_tls_reason = self.no_tls_reason();
-        self.map_stack(|config, _, endpoint| {
+        self.map_stack(|config, _, policy| {
             let inbound_ips = config.inbound_ips.clone();
-            endpoint
+            policy
                 .push_switch(
-                    move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Infallible> {
+                    move |(policy, profile, target): (
+                        watch::Receiver<ClientPolicy>,
+                        Option<profiles::Receiver>,
+                        T,
+                    )|
+                          -> Result<_, Infallible> {
                         if let Some(rx) = profile {
-                            let is_opaque = rx.is_opaque_protocol();
-
-                            // If the profile provides an endpoint, then the target is single
-                            // endpoint and not a logical/load-balanced service.
-                            if let Some((addr, metadata)) = rx.endpoint() {
-                                tracing::debug!(%is_opaque, "Profile describes an endpoint");
-                                return Ok(svc::Either::A(Endpoint::from_metadata(
-                                    addr,
-                                    metadata,
-                                    no_tls_reason,
-                                    is_opaque,
-                                    &*inbound_ips,
-                                )));
-                            }
-
                             // If the profile provides a (named) logical address, then we build a
                             // logical stack so we apply routes, traffic splits, and load balancing.
                             if let Some(logical_addr) = rx.logical_addr() {
                                 tracing::debug!("Profile describes a logical service");
                                 return Ok(svc::Either::B(Logical::new(logical_addr, rx)));
                             }
-
-                            // Otherwise, if there was a profile but it didn't include an endpoint or logical
-                            // address, create a bare endpoint from the original destination address
-                            // using the profile-provided opaqueness. This applies for targets that
-                            // aren't known by the destination controller that may target ports
-                            // included in the cluster-wide default opaque list.
-                            tracing::debug!("Unknown endpoint");
-                            return Ok(svc::Either::A(Endpoint::forward(
-                                target.param(),
-                                no_tls_reason,
-                                is_opaque,
-                            )));
                         }
 
                         // If there was no profile, create a bare endpoint from the original
@@ -76,7 +66,7 @@ impl<S> Outbound<S> {
                             false,
                         )))
                     },
-                    logical,
+                    profile,
                 )
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
@@ -114,7 +104,7 @@ mod tests {
         let (rt, _shutdown) = runtime();
         let stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
-            .push_switch_logical(svc::Fail::<_, WrongStack>::default())
+            .push_switch_profile(svc::Fail::<_, WrongStack>::default())
             .into_inner();
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
@@ -137,7 +127,7 @@ mod tests {
         let (rt, _shutdown) = runtime();
         let stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
-            .push_switch_logical(svc::Fail::<_, WrongStack>::default())
+            .push_switch_profile(svc::Fail::<_, WrongStack>::default())
             .into_inner();
 
         let (_tx, profile) = tokio::sync::watch::channel(profiles::Profile {
@@ -173,7 +163,7 @@ mod tests {
         let (rt, _shutdown) = runtime();
         let stack = Outbound::new(default_config(), rt)
             .with_stack(svc::Fail::<_, WrongStack>::default())
-            .push_switch_logical(logical)
+            .push_switch_profile(logical)
             .into_inner();
 
         let (_tx, profile) = tokio::sync::watch::channel(profiles::Profile {
@@ -206,7 +196,7 @@ mod tests {
         let (rt, _shutdown) = runtime();
         let stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
-            .push_switch_logical(svc::Fail::<_, WrongStack>::default())
+            .push_switch_profile(svc::Fail::<_, WrongStack>::default())
             .into_inner();
 
         let (_tx, profile) = tokio::sync::watch::channel(profiles::Profile {

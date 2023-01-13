@@ -5,6 +5,8 @@ use linkerd_app_core::{
     transport::OrigDstAddr,
     Error,
 };
+use linkerd_proxy_client_policy::ClientPolicy;
+use tokio::sync::watch;
 use tracing::debug;
 
 impl<N> Outbound<N> {
@@ -24,7 +26,14 @@ impl<N> Outbound<N> {
         T: Param<OrigDstAddr>,
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        N: svc::NewService<(Option<profiles::Receiver>, T), Service = NSvc>,
+        N: svc::NewService<
+            (
+                Option<watch::Receiver<ClientPolicy>>,
+                Option<profiles::Receiver>,
+                T,
+            ),
+            Service = NSvc,
+        >,
         N: Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
@@ -35,6 +44,7 @@ impl<N> Outbound<N> {
         self.map_stack(|config, rt, inner| {
             let allow = config.allow_discovery.clone();
             inner
+                .push_map_target(|(profile, t): (Option<profiles::Receiver>, T)| (None, profile, t))
                 .push(profiles::discover::layer(profiles, move |t: T| {
                     let OrigDstAddr(addr) = t.param();
                     if allow.matches_ip(addr.ip()) {
@@ -288,7 +298,7 @@ mod tests {
         let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
 
         // Mock an inner stack with a service that asserts that no profile is built.
-        let stack = |(profile, _): (Option<profiles::Receiver>, _)| {
+        let stack = |(_, profile, _): (_, Option<profiles::Receiver>, _)| {
             assert!(profile.is_none(), "profile must not resolve");
             svc::mk(move |_: io::DuplexStream| future::ok::<(), Error>(()))
         };

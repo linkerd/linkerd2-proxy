@@ -17,6 +17,7 @@ publish = false
 [dependencies]
 ipnet = "2"
 http = "0.2"
+linkerd-proxy-api-resolve = { path = "../api-resolve" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-http-route = { path = "../../http-route" }
 # prost-types = { version = "0.11", optional = true }
