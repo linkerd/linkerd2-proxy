@@ -1,4 +1,5 @@
 use super::{Concrete, Logical, Outbound};
+use crate::logical::LogicalError;
 use linkerd_app_core::{
     io,
     profiles::{self, Profile},
@@ -45,13 +46,14 @@ impl<N> Outbound<N> {
     ) -> Outbound<
         svc::ArcNewService<
             Logical,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+            impl svc::Service<I, Response = (), Error = LogicalError, Future = impl Send> + Clone,
         >,
     >
     where
         N: svc::NewService<Concrete, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<I, Response = (), Error = Error> + Clone + Send + Sync + 'static,
+        NSvc: svc::Service<I, Response = ()> + Clone + Send + Sync + 'static,
         NSvc::Future: Send,
+        NSvc::Error: Into<Error>,
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
     {
         self.map_stack(|_, _, concrete| {
@@ -81,6 +83,7 @@ impl<N> Outbound<N> {
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
+                .push(svc::NewAnnotateError::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }

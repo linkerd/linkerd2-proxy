@@ -1,5 +1,5 @@
 use super::{Concrete, Endpoint};
-use crate::{endpoint, stack_labels, Outbound};
+use crate::{endpoint, logical::ConcreteError, stack_labels, Outbound};
 use linkerd_app_core::{
     proxy::{api_resolve::Metadata, core::Resolve, http},
     svc, Error,
@@ -26,7 +26,7 @@ impl<N> Outbound<N> {
             impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
-                    Error = Error,
+                    Error = ConcreteError,
                     Future = impl Send,
                 > + Clone,
         >,
@@ -68,6 +68,7 @@ impl<N> Outbound<N> {
                         .push_buffer("HTTP Concrete", &config.http_request_buffer),
                 )
                 .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
+                .push(svc::NewAnnotateError::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }

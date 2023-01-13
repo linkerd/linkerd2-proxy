@@ -35,11 +35,8 @@ impl<N> Outbound<N> {
     where
         T: svc::Param<http::normalize_uri::DefaultAuthority>,
         N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-            > + Clone
+        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Clone
             + Send
             + 'static,
         NSvc::Error: Into<Error>,

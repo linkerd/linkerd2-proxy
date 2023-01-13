@@ -85,6 +85,12 @@ impl Param<Version> for Logical {
     }
 }
 
+impl Param<Option<Version>> for Logical {
+    fn param(&self) -> Option<Version> {
+        Some(self.protocol)
+    }
+}
+
 impl Param<normalize_uri::DefaultAuthority> for Logical {
     fn param(&self) -> normalize_uri::DefaultAuthority {
         normalize_uri::DefaultAuthority(Some(
