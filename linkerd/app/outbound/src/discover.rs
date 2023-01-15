@@ -15,11 +15,11 @@ use tracing::debug;
 pub struct Discovery<T> {
     inner: T,
     policy: watch::Receiver<ClientPolicy>,
-    profile: Option<Profile>,
+    profile: Option<LogicalProfile>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Profile {
+pub struct LogicalProfile {
     pub addr: profiles::LogicalAddr,
     pub rx: watch::Receiver<profiles::Profile>,
 }
@@ -36,8 +36,8 @@ impl<T> Param<watch::Receiver<ClientPolicy>> for Discovery<T> {
     }
 }
 
-impl<T> Param<Option<Profile>> for Discovery<T> {
-    fn param(&self) -> Option<Profile> {
+impl<T> Param<Option<LogicalProfile>> for Discovery<T> {
+    fn param(&self) -> Option<LogicalProfile> {
         self.profile.clone()
     }
 }
@@ -71,14 +71,14 @@ impl<N> Outbound<N> {
             // orig-dst address.
             //
             // This currently bootstraps the configuration using a profile (so
-            // we can start to integrate teh rest of the stack around these
+            // we can start to integrate the rest of the stack around these
             // types). In the future, we'll stop using profiles for this.
             // Instead, we'll discover policies from an API and make this
             // default be based on configuration.
             let mk_default_client_policy = {
                 let detect_timeout = config.proxy.detect_protocol_timeout;
                 let http_request_buffer = config.http_request_buffer;
-                move |OrigDstAddr(addr), profile: Option<&Profile>| -> ClientPolicy {
+                move |OrigDstAddr(addr), profile: Option<&LogicalProfile>| -> ClientPolicy {
                     let dispatcher = if let Some(service) =
                         profile.as_ref().and_then(|p| p.rx.borrow().addr.clone())
                     {
@@ -158,7 +158,7 @@ impl<N> Outbound<N> {
                     let profile = profile.and_then(|p| {
                         let rx: watch::Receiver<_> = p.into();
                         let addr = rx.borrow().addr.clone()?;
-                        Some(Profile { addr, rx })
+                        Some(LogicalProfile { addr, rx })
                     });
                     let policy = {
                         let default = mk_default_client_policy(inner.param(), profile.as_ref());

@@ -206,21 +206,20 @@ impl Outbound<()> {
         P::Future: Send,
         P::Error: Send,
     {
-        let opaque = self
+        let tcp = self.to_tcp_connect();
+
+        let opaque = tcp
             .clone()
             .push_tcp_endpoint()
             .push_tcp_concrete(resolve)
             .push_tcp_logical();
 
-        let http = self
+        let http = tcp
             .push_tcp_endpoint()
             .push_http_endpoint()
             .push_http_concrete(resolve.clone())
             .push_http_logical()
             .push_http_server()
-            // The detect stack doesn't cache its inner service, so we need a
-            // process-global cache of logical HTTP stacks.
-            .map_stack(|config, _, stk| stk.push_on_service(http::BoxResponse::layer()))
             .into_inner();
 
         opaque

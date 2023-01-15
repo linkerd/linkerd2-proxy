@@ -62,6 +62,8 @@ pub struct RoutePolicy<T> {
 // HTTPRoute.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum RouteDistribution<T> {
+    Empty,
+
     FirstAvailable(Arc<[RouteBackend<T>]>),
 
     RandomAvailable(Arc<[(RouteBackend<T>, u32)]>),
