@@ -65,6 +65,7 @@ pub fn allow_timeout<P, T>((p, t): (DetectResult<P>, T)) -> (Option<P>, T) {
 
 impl<D: Default> Config<D> {
     const DEFAULT_CAPACITY: usize = 1024;
+    const DEFAULT_TIMEOUT: time::Duration = time::Duration::from_secs(10);
 
     pub fn from_timeout(timeout: time::Duration) -> Self {
         Self {
@@ -72,6 +73,12 @@ impl<D: Default> Config<D> {
             capacity: Self::DEFAULT_CAPACITY,
             timeout,
         }
+    }
+}
+
+impl<D: Default> Default for Config<D> {
+    fn default() -> Self {
+        Self::from_timeout(Self::DEFAULT_TIMEOUT)
     }
 }
 

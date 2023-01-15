@@ -11,7 +11,6 @@ pub mod http;
 mod ingress;
 pub mod logical;
 mod metrics;
-mod switch_logical;
 pub mod tcp;
 #[cfg(test)]
 pub(crate) mod test_util;
@@ -207,10 +206,25 @@ impl Outbound<()> {
         P::Future: Send,
         P::Error: Send,
     {
-        let logical = self.to_tcp_connect().push_logical(resolve);
-        let forward = self.to_tcp_connect().push_forward();
-        forward
-            .push_switch_profile(logical.into_inner())
+        let opaque = self
+            .clone()
+            .push_tcp_endpoint()
+            .push_tcp_concrete(resolve)
+            .push_tcp_logical();
+
+        let http = self
+            .push_tcp_endpoint()
+            .push_http_endpoint()
+            .push_http_concrete(resolve.clone())
+            .push_http_logical()
+            .push_http_server()
+            // The detect stack doesn't cache its inner service, so we need a
+            // process-global cache of logical HTTP stacks.
+            .map_stack(|config, _, stk| stk.push_on_service(http::BoxResponse::layer()))
+            .into_inner();
+
+        opaque
+            .push_detect_http(http)
             .push_discover(profiles)
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()

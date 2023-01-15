@@ -1,6 +1,6 @@
-use crate::{http, logical::Concrete, stack_labels, tcp, Outbound};
+use crate::{http, logical::Concrete, tcp};
 use linkerd_app_core::{
-    io, metrics,
+    metrics,
     profiles::LogicalAddr,
     proxy::api_resolve::Metadata,
     svc, tls,
@@ -9,11 +9,9 @@ use linkerd_app_core::{
 };
 use std::{
     collections::HashSet,
-    fmt,
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
-use tracing::info_span;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint<P> {
@@ -92,16 +90,6 @@ impl<P> svc::Param<Remote<ServerAddr>> for Endpoint<P> {
 impl<P> svc::Param<tls::ConditionalClientTls> for Endpoint<P> {
     fn param(&self) -> tls::ConditionalClientTls {
         self.tls.clone()
-    }
-}
-
-impl<P> svc::Param<Option<http::detect::Skip>> for Endpoint<P> {
-    fn param(&self) -> Option<http::detect::Skip> {
-        if self.opaque_protocol {
-            Some(http::detect::Skip)
-        } else {
-            None
-        }
     }
 }
 
@@ -228,131 +216,5 @@ where
             // We should differentiate these target types statically.
             opaque_protocol: false,
         })
-    }
-}
-
-// === Outbound ===
-
-impl<S> Outbound<S> {
-    /// Builds a stack that handles forwarding a connection to a single endpoint
-    /// (i.e. without routing and load balancing).
-    ///
-    /// HTTP protocol detection may still be performed on the connection.
-    ///
-    /// A service produced by this stack is used for a single connection (i.e.
-    /// without any form of caching for reuse across connections).
-    pub fn push_forward<I>(self) -> Outbound<svc::ArcNewTcp<tcp::Endpoint, I>>
-    where
-        Self: Clone + 'static,
-        S: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
-        S: Clone + Send + Sync + Unpin + 'static,
-        S::Connection: Send + Unpin + 'static,
-        S::Future: Send,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
-        I: fmt::Debug + Send + Sync + Unpin + 'static,
-    {
-        // The forwarding stacks are **NOT** cached, since they don't do any
-        // external discovery.
-        let http = self
-            .clone()
-            .push_tcp_endpoint::<http::Connect>()
-            .push_http_endpoint()
-            .map_stack(|config, rt, stk| {
-                stk.push_on_service(
-                    svc::layers()
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(stack_labels("http", "forward")),
-                        )
-                        // TODO(ver): This buffer config should be distinct from
-                        // that in the concrete stack. It should probably be
-                        // derived from the target so that we can configure it
-                        // via the API.
-                        .push_buffer("HTTP Forward", &config.http_request_buffer),
-                )
-            })
-            .push_http_server()
-            .into_inner();
-
-        let opaque = self.push_tcp_endpoint().push_tcp_forward();
-
-        opaque.push_detect_http(http).map_stack(|_, _, stk| {
-            stk.instrument(|e: &tcp::Endpoint| info_span!("forward", endpoint = %e.addr))
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
-        })
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-    use crate::test_util::*;
-    use hyper::{client::conn::Builder as ClientBuilder, Body, Request};
-    use linkerd_app_core::{
-        svc::{NewService, Service, ServiceExt},
-        Error,
-    };
-    use tokio::time;
-
-    /// Tests that socket errors cause HTTP clients to be disconnected.
-    #[tokio::test(flavor = "current_thread")]
-    async fn propagates_http_errors() {
-        let _trace = linkerd_tracing::test::trace_init();
-        time::pause();
-
-        let (rt, shutdown) = runtime();
-
-        let (mut client, task) = {
-            let addr = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-            let stack = Outbound::new(default_config(), rt)
-                // Fails connection attempts
-                .with_stack(support::connect().endpoint_fn(addr, |_| {
-                    Err(io::Error::new(
-                        io::ErrorKind::ConnectionReset,
-                        "i don't like you, go away",
-                    ))
-                }))
-                .push_forward()
-                .into_inner()
-                .new_service(tcp::Endpoint::forward(
-                    OrigDstAddr(addr),
-                    tls::NoClientTls::Disabled,
-                    false,
-                ));
-
-            let (client_io, server_io) = support::io::duplex(4096);
-            tokio::spawn(async move {
-                let res = stack.oneshot(server_io).err_into::<Error>().await;
-                tracing::info!(?res, "Server complete");
-                res
-            });
-
-            let (client, conn) = ClientBuilder::new().handshake(client_io).await.unwrap();
-            let client_task = tokio::spawn(async move {
-                let res = conn.await;
-                tracing::info!(?res, "Client complete");
-                res
-            });
-            (client, client_task)
-        };
-
-        let status = {
-            let req = Request::builder().body(Body::default()).unwrap();
-            let rsp = client.ready().await.unwrap().call(req).await.unwrap();
-            rsp.status()
-        };
-        assert_eq!(status, http::StatusCode::BAD_GATEWAY);
-
-        // Ensure the client task completes, indicating that it has been disconnected.
-        time::resume();
-        time::timeout(time::Duration::from_secs(10), task)
-            .await
-            .expect("Timeout")
-            .expect("Client task must not fail")
-            .expect("Client must close gracefully");
-        drop((client, shutdown));
     }
 }

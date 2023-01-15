@@ -226,11 +226,14 @@ impl<S> Stack<S> {
         self.push_on_service(buffer(name, config))
     }
 
-    pub fn push_idle_cache<T>(self, idle: Duration) -> Stack<idle_cache::NewIdleCached<T, S>>
+    pub fn push_idle_cache<K, T, Svc>(
+        self,
+        idle: Duration,
+    ) -> Stack<idle_cache::NewIdleCached<K, S, Svc>>
     where
-        T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-        S: NewService<T> + 'static,
-        S::Service: Send + Sync + 'static,
+        K: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+        S: NewService<T, Service = Svc> + 'static,
+        Svc: Clone + Send + Sync + 'static,
     {
         self.push(idle_cache::NewIdleCached::layer(idle))
     }

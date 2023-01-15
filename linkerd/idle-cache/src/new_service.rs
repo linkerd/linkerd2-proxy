@@ -1,23 +1,22 @@
 use super::*;
-use linkerd_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService, Param};
 
 #[derive(Clone)]
-pub struct NewIdleCached<T, N>
+pub struct NewIdleCached<K, N, S>
 where
-    T: Eq + Hash,
-    N: NewService<T>,
+    K: Eq + Hash,
 {
-    cache: IdleCache<T, N::Service>,
+    cache: IdleCache<K, S>,
     new_svc: N,
 }
 
 // === impl NewIdleCached ===
 
-impl<T, N> NewIdleCached<T, N>
+impl<K, N, S> NewIdleCached<K, N, S>
 where
-    T: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
-    N: NewService<T> + 'static,
-    N::Service: Send + Sync + 'static,
+    K: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
+    N: 'static,
+    S: Send + Sync + 'static,
 {
     pub fn layer(idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |new_svc| Self {
@@ -27,9 +26,10 @@ where
     }
 }
 
-impl<T, N> NewService<T> for NewIdleCached<T, N>
+impl<T, K, N> NewService<T> for NewIdleCached<K, N, N::Service>
 where
-    T: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
+    T: Param<K>,
+    K: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
     N: NewService<T> + 'static,
     N::Service: Clone + Send + Sync + 'static,
 {
@@ -37,6 +37,6 @@ where
 
     fn new_service(&self, target: T) -> Cached<N::Service> {
         self.cache
-            .get_or_insert_with(target, |target| self.new_svc.new_service(target.clone()))
+            .get_or_insert_with(target.param(), |_| self.new_svc.new_service(target))
     }
 }

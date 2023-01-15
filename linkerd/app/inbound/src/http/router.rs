@@ -209,7 +209,7 @@ impl<C> Inbound<C> {
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
                         .push_buffer("HTTP Logical", &config.http_request_buffer),
                 )
-                .push_idle_cache(config.discovery_idle_timeout)
+                .push_idle_cache::<Logical, _, _>(config.discovery_idle_timeout)
                 .push_on_service(
                     svc::layers()
                         .push(http::Retain::layer())

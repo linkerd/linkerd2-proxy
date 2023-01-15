@@ -1,16 +1,7 @@
-use crate::{http, tcp, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
-use linkerd_app_core::{
-    io, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve},
-    svc,
-    transport::{ClientAddr, Local},
-    Addr, Error,
-};
+use linkerd_app_core::{profiles, svc, Addr};
 pub use profiles::LogicalAddr;
-use std::fmt;
 use tokio::sync::watch;
-use tracing::info_span;
 
 #[derive(Clone)]
 pub struct Logical<P> {
@@ -58,17 +49,6 @@ impl<P> svc::Param<LogicalAddr> for Logical<P> {
     }
 }
 
-// Used for skipping HTTP detection
-impl svc::Param<Option<http::detect::Skip>> for Logical<()> {
-    fn param(&self) -> Option<http::detect::Skip> {
-        if self.profile.is_opaque_protocol() {
-            Some(http::detect::Skip)
-        } else {
-            None
-        }
-    }
-}
-
 impl<P> Logical<P> {
     pub fn addr(&self) -> Addr {
         Addr::from(self.logical_addr.clone().0)
@@ -111,65 +91,5 @@ impl<P> From<(ConcreteAddr, Logical<P>)> for Concrete<P> {
 impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
     fn param(&self) -> ConcreteAddr {
         self.resolve.clone()
-    }
-}
-
-// === impl Outbound ===
-
-impl<C> Outbound<C> {
-    /// Builds a stack that handles protocol detection as well as routing and
-    /// load balancing for a single logical destination.
-    ///
-    /// This stack uses caching so that a router/load-balancer may be reused
-    /// across multiple connections.
-    pub fn push_logical<R, I>(self, resolve: R) -> Outbound<svc::ArcNewTcp<tcp::Logical, I>>
-    where
-        Self: Clone + 'static,
-        C: Clone + Send + Sync + Unpin + 'static,
-        C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
-        C::Connection: Send + Unpin,
-        C::Future: Send + Unpin,
-        R: Clone + Send + Sync + Unpin + 'static,
-        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<tcp::Concrete>>::Resolution: Send,
-        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<http::Concrete>>::Resolution: Send,
-        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
-        I: fmt::Debug + Send + Sync + Unpin + 'static,
-    {
-        let http = self
-            .clone()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
-            .push_http_concrete(resolve.clone())
-            .push_http_logical()
-            .push_http_server()
-            // The detect stack doesn't cache its inner service, so we need a
-            // process-global cache of logical HTTP stacks.
-            .map_stack(|config, _, stk| {
-                stk.push_idle_cache(config.discovery_idle_timeout)
-                    .push_on_service(
-                        svc::layers()
-                            .push(http::Retain::layer())
-                            .push(http::BoxResponse::layer()),
-                    )
-            })
-            .into_inner();
-
-        let opaque = self
-            .push_tcp_endpoint()
-            .push_tcp_concrete(resolve)
-            .push_tcp_logical()
-            // The detect stack doesn't cache its inner service, so we need a
-            // process-global cache of logical TCP stacks.
-            .map_stack(|config, _, stk| stk.push_idle_cache(config.discovery_idle_timeout));
-
-        opaque.push_detect_http(http).map_stack(|_, _, stk| {
-            stk.instrument(|l: &tcp::Logical| info_span!("logical",  svc = %l.logical_addr))
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
-        })
     }
 }
