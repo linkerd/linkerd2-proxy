@@ -1,7 +1,6 @@
-use crate::Meta;
-use std::sync::Arc;
+use crate::RoutePolicy;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Opaque {
-    pub route: Arc<Meta>,
+    pub policy: Option<RoutePolicy<()>>,
 }

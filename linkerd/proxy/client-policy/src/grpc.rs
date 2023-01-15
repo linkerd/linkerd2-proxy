@@ -28,16 +28,24 @@ pub fn find<'r, B>(
     grpc::find(routes, req)
 }
 
-// pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
-//     Route {
-//         hosts: vec![],
-//         rules: vec![Rule {
-//             matches: vec![],
-//             policy: Policy {
-//                 meta: crate::Meta::new_default("default"),
-//                 filters: Arc::new([]),
-//                 distribution,
-//             },
-//         }],
-//     }
-// }
+pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
+    Route {
+        hosts: vec![],
+        rules: vec![Rule {
+            matches: vec![],
+            policy: Policy {
+                meta: crate::Meta::new_default("default"),
+                filters: Arc::new([]),
+                distribution,
+            },
+        }],
+    }
+}
+
+impl Default for Grpc {
+    fn default() -> Self {
+        Self {
+            routes: Arc::new([]),
+        }
+    }
+}

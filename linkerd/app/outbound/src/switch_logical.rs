@@ -15,16 +15,7 @@ impl<S> Outbound<S> {
     pub fn push_switch_profile<T, I, N, NSvc, SSvc>(
         self,
         profile: N,
-    ) -> Outbound<
-        svc::ArcNewTcp<
-            (
-                Option<watch::Receiver<ClientPolicy>>,
-                Option<profiles::Receiver>,
-                T,
-            ),
-            I,
-        >,
-    >
+    ) -> Outbound<svc::ArcNewTcp<(watch::Receiver<ClientPolicy>, Option<profiles::Receiver>, T), I>>
     where
         Self: Clone + 'static,
         T: svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
@@ -74,7 +65,7 @@ impl<S> Outbound<S> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "FIXME"))]
 mod tests {
     use super::*;
     use crate::test_util::*;

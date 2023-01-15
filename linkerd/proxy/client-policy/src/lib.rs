@@ -8,7 +8,7 @@ pub mod http;
 pub mod opaque;
 
 pub use linkerd_http_route as route;
-use linkerd_proxy_api_resolve::Metadata;
+pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
@@ -60,7 +60,6 @@ pub struct RoutePolicy<T> {
 
 // TODO(ver) Weighted random WITHOUT availability awareness, as required by
 // HTTPRoute.
-// Random(Arc<[(Backend<T>, u32)]>),
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum RouteDistribution<T> {
     FirstAvailable(Arc<[RouteBackend<T>]>),
@@ -90,7 +89,7 @@ pub struct Queue {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum BackendDispatcher {
-    Forward(SocketAddr, Metadata),
+    Forward(SocketAddr, EndpointMetadata),
     BalanceP2c(Load, EndpointDiscovery),
 }
 

@@ -35,16 +35,32 @@ pub fn find<'r, B>(
     http::find(routes, req)
 }
 
-// pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
-//     Route {
-//         hosts: vec![],
-//         rules: vec![Rule {
-//             matches: vec![],
-//             policy: Policy {
-//                 meta: crate::Meta::new_default("default"),
-//                 filters: Arc::new([]),
-//                 distribution,
-//             },
-//         }],
-//     }
-// }
+pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
+    Route {
+        hosts: vec![],
+        rules: vec![Rule {
+            matches: vec![],
+            policy: Policy {
+                meta: crate::Meta::new_default("default"),
+                filters: Arc::new([]),
+                distribution,
+            },
+        }],
+    }
+}
+
+impl Default for Http1 {
+    fn default() -> Self {
+        Self {
+            routes: Arc::new([]),
+        }
+    }
+}
+
+impl Default for Http2 {
+    fn default() -> Self {
+        Self {
+            routes: Arc::new([]),
+        }
+    }
+}

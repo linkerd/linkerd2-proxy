@@ -5,7 +5,8 @@ use linkerd_app_core::{
     transport::OrigDstAddr,
     Error,
 };
-use linkerd_proxy_client_policy::ClientPolicy;
+use linkerd_proxy_client_policy::{self as policy, BackendDispatcher, ClientPolicy};
+use std::sync::Arc;
 use tokio::sync::watch;
 use tracing::debug;
 
@@ -27,11 +28,7 @@ impl<N> Outbound<N> {
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<
-            (
-                Option<watch::Receiver<ClientPolicy>>,
-                Option<profiles::Receiver>,
-                T,
-            ),
+            (watch::Receiver<ClientPolicy>, Option<profiles::Receiver>, T),
             Service = NSvc,
         >,
         N: Clone + Send + Sync + 'static,
@@ -42,9 +39,72 @@ impl<N> Outbound<N> {
         P::Error: Send,
     {
         self.map_stack(|config, rt, inner| {
+            let timeout = config.proxy.detect_protocol_timeout;
+            let http_request_buffer = config.http_request_buffer;
+            let default_client_policy =
+                move |OrigDstAddr(addr), _profile: Option<&profiles::Receiver>| -> ClientPolicy {
+                    let backend = policy::Backend {
+                        meta: policy::Meta::new_default("default"),
+                        queue: policy::Queue {
+                            capacity: http_request_buffer.capacity,
+                            failfast_timeout: http_request_buffer.failfast_timeout,
+                        },
+                        dispatcher: BackendDispatcher::Forward(
+                            addr,
+                            policy::EndpointMetadata::default(),
+                        ),
+                    };
+                    let routes = std::iter::once(policy::http::default(
+                        policy::RouteDistribution::FirstAvailable(
+                            std::iter::once(policy::RouteBackend {
+                                backend: backend.clone(),
+                                filters: Arc::new([]),
+                            })
+                            .collect(),
+                        ),
+                    ))
+                    .collect::<Arc<[_]>>();
+                    ClientPolicy {
+                        addr,
+                        backends: Arc::new([backend.clone()]),
+                        protocol: policy::Protocol::Detect {
+                            timeout,
+                            http1: policy::http::Http1 {
+                                routes: routes.clone(),
+                            },
+                            http2: policy::http::Http2 { routes },
+                            opaque: policy::opaque::Opaque {
+                                policy: Some(policy::RoutePolicy {
+                                    meta: policy::Meta::new_default("default"),
+                                    filters: Arc::new([]),
+                                    distribution: policy::RouteDistribution::FirstAvailable(
+                                        std::iter::once(policy::RouteBackend {
+                                            backend: backend.clone(),
+                                            filters: Arc::new([]),
+                                        })
+                                        .collect(),
+                                    ),
+                                }),
+                            },
+                        },
+                    }
+                };
+
             let allow = config.allow_discovery.clone();
             inner
-                .push_map_target(|(profile, t): (Option<profiles::Receiver>, T)| (None, profile, t))
+                .push_map_target(
+                    move |(profile, t): (Option<profiles::Receiver>, T)| -> (
+                        watch::Receiver<ClientPolicy>,
+                        Option<profiles::Receiver>,
+                        T,
+                    ) {
+                        let (tx, rx) = watch::channel(default_client_policy(t.param(), profile.as_ref()));
+                        tokio::spawn(async move {
+                            tx.closed().await;
+                        });
+                        (rx, profile, t)
+                    },
+                )
                 .push(profiles::discover::layer(profiles, move |t: T| {
                     let OrigDstAddr(addr) = t.param();
                     if allow.matches_ip(addr.ip()) {
