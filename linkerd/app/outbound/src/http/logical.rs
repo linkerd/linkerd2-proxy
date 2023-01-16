@@ -59,7 +59,6 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        T: svc::Param<CanonicalDstHeader>,
         T: svc::Param<watch::Receiver<ClientPolicy>>,
         T: Clone + Send + Sync + 'static,
         N: svc::NewService<policy::Backend, Service = NSvc> + Clone + Send + Sync + 'static,
@@ -131,14 +130,14 @@ impl<N> Outbound<N> {
                 .push_new_clone()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .push(svc::NewSpawnWatch::<ClientPolicy, _>::layer_into::<Params>())
                 // Add l5d-dst-canonical header to requests.
                 //
                 // TODO(ver) move this into the endpoint stack so that we can only
                 // set this on meshed connections.
                 //
                 // TODO(ver) do we need to strip headers here?
-                .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
+                .push_on_service(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
+                .push(svc::NewSpawnWatch::<ClientPolicy, _>::layer_into::<Params>())
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -224,6 +223,12 @@ impl svc::Param<profiles::LogicalAddr> for Params {
     }
 }
 */
+
+impl svc::Param<CanonicalDstHeader> for Params {
+    fn param(&self) -> CanonicalDstHeader {
+        CanonicalDstHeader(self.policy.addr.into())
+    }
+}
 
 impl svc::Param<distribute::Backends<policy::Backend>> for Params {
     fn param(&self) -> distribute::Backends<policy::Backend> {

@@ -1,10 +1,11 @@
+use super::opaque_transport;
 use crate::{stack_labels, Outbound};
 use linkerd_app_core::{
-    drain, io,
-    proxy::{api_resolve::Metadata, core::Resolve, tcp},
+    drain, io, metrics,
+    proxy::{api_resolve::Metadata, core::Resolve, http, tcp},
     svc::{self, NewService},
     tls,
-    transport::{Remote, ServerAddr},
+    transport::{self, Remote, ServerAddr},
     transport_header, Error, Infallible,
 };
 use linkerd_proxy_client_policy::{self as policy};
@@ -77,11 +78,56 @@ impl svc::Param<Remote<ServerAddr>> for Endpoint {
     }
 }
 
-impl svc::Param<Option<super::opaque_transport::PortOverride>> for Endpoint {
-    fn param(&self) -> Option<super::opaque_transport::PortOverride> {
+impl svc::Param<Option<opaque_transport::PortOverride>> for Endpoint {
+    fn param(&self) -> Option<opaque_transport::PortOverride> {
         self.metadata
             .opaque_transport_port()
-            .map(super::opaque_transport::PortOverride)
+            .map(opaque_transport::PortOverride)
+    }
+}
+
+impl svc::Param<Option<transport_header::SessionProtocol>> for Endpoint {
+    fn param(&self) -> Option<transport_header::SessionProtocol> {
+        None
+    }
+}
+
+impl svc::Param<tls::ConditionalClientTls> for Endpoint {
+    fn param(&self) -> tls::ConditionalClientTls {
+        self.tls.clone()
+    }
+}
+
+impl svc::Param<Option<http::AuthorityOverride>> for Endpoint {
+    fn param(&self) -> Option<http::AuthorityOverride> {
+        self.metadata
+            .authority_override()
+            .cloned()
+            .map(http::AuthorityOverride)
+    }
+}
+
+impl svc::Param<transport::labels::Key> for Endpoint {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::OutboundClient(self.param())
+    }
+}
+
+impl svc::Param<metrics::OutboundEndpointLabels> for Endpoint {
+    fn param(&self) -> metrics::OutboundEndpointLabels {
+        let authority = None; // FIXME
+        metrics::OutboundEndpointLabels {
+            authority,
+            labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
+            server_id: self.tls.clone(),
+            target_addr: self.addr.into(),
+        }
+    }
+}
+
+impl svc::Param<metrics::EndpointLabels> for Endpoint {
+    fn param(&self) -> metrics::EndpointLabels {
+        svc::Param::<metrics::OutboundEndpointLabels>::param(self).into()
     }
 }
 
@@ -95,8 +141,6 @@ impl<C> Outbound<C> {
     /// 'failfast'. While in failfast, buffered requests are failed and the
     /// service becomes unavailable so callers may choose alternate concrete
     /// services.
-    //
-    // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_tcp_concrete<T, I, R>(
         self,
         resolve: R,

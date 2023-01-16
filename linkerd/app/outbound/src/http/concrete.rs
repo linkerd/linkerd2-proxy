@@ -1,8 +1,9 @@
-use crate::{stack_labels, Outbound};
+use crate::{stack_labels, tcp::opaque_transport, Outbound};
 use linkerd_app_core::{
-    proxy::{api_resolve::Metadata, core::Resolve, http},
+    metrics,
+    proxy::{api_resolve::Metadata, core::Resolve, http, tap},
     svc, tls,
-    transport::{Remote, ServerAddr},
+    transport::{self, Remote, ServerAddr},
     transport_header, Error, Infallible,
 };
 use linkerd_proxy_client_policy::{self as policy};
@@ -72,6 +73,87 @@ impl svc::Param<http::balance::EwmaConfig> for Balance {
 impl svc::Param<Remote<ServerAddr>> for Endpoint {
     fn param(&self) -> Remote<ServerAddr> {
         self.addr
+    }
+}
+
+impl svc::Param<tls::ConditionalClientTls> for Endpoint {
+    fn param(&self) -> tls::ConditionalClientTls {
+        self.tls.clone()
+    }
+}
+
+impl svc::Param<Option<opaque_transport::PortOverride>> for Endpoint {
+    fn param(&self) -> Option<opaque_transport::PortOverride> {
+        self.metadata
+            .opaque_transport_port()
+            .map(opaque_transport::PortOverride)
+    }
+}
+
+impl svc::Param<Option<http::AuthorityOverride>> for Endpoint {
+    fn param(&self) -> Option<http::AuthorityOverride> {
+        self.metadata
+            .authority_override()
+            .cloned()
+            .map(http::AuthorityOverride)
+    }
+}
+
+impl svc::Param<transport::labels::Key> for Endpoint {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::OutboundClient(self.param())
+    }
+}
+
+impl svc::Param<metrics::OutboundEndpointLabels> for Endpoint {
+    fn param(&self) -> metrics::OutboundEndpointLabels {
+        let authority = None; // FIXME
+        metrics::OutboundEndpointLabels {
+            authority,
+            labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
+            server_id: self.tls.clone(),
+            target_addr: self.addr.into(),
+        }
+    }
+}
+
+impl svc::Param<metrics::EndpointLabels> for Endpoint {
+    fn param(&self) -> metrics::EndpointLabels {
+        svc::Param::<metrics::OutboundEndpointLabels>::param(self).into()
+    }
+}
+
+impl tap::Inspect for Endpoint {
+    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
+        req.extensions().get::<http::ClientHandle>().map(|c| c.addr)
+    }
+
+    fn src_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::None(tls::NoServerTls::Loopback)
+    }
+
+    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
+        Some(self.addr.into())
+    }
+
+    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<tap::Labels> {
+        Some(self.metadata.labels())
+    }
+
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalClientTls {
+        self.tls.clone()
+    }
+
+    // FIXME
+    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<tap::Labels> {
+        // req.extensions()
+        //     .get::<profiles::http::Route>()
+        //     .map(|r| r.labels().clone())
+        None
+    }
+
+    fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
+        true
     }
 }
 
