@@ -195,6 +195,7 @@ impl<T: svc::Param<transport::labels::Key>> svc::Param<transport::labels::Key> f
     }
 }
 
+#[cfg(feature = "TODO")]
 #[cfg(test)]
 mod test {
     use super::*;

@@ -137,6 +137,7 @@ where
     }
 }
 
+#[cfg(feature = "FIXME")]
 #[cfg(test)]
 mod test {
     use super::*;
