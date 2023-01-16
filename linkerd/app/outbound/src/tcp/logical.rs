@@ -1,19 +1,22 @@
-use crate::discover;
-
-use super::{Logical, Outbound};
-use linkerd_app_core::{
-    io,
-    profiles::{self, Profile},
-    proxy::api_resolve::ConcreteAddr,
-    svc, Error, Infallible,
-};
+use super::Outbound;
+use linkerd_app_core::{io, svc, Error};
 use linkerd_distribute as distribute;
 use linkerd_proxy_client_policy::{self as policy, ClientPolicy};
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("opaque connection has no routes")]
+pub struct NoRoute(());
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Concrete<T> {
+    parent: T,
+    backend: policy::Backend,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Params<T: Eq + Hash + Clone + Debug> {
+struct Params<T> {
     parent: T,
     policy: ClientPolicy,
 }
@@ -22,12 +25,6 @@ struct Params<T: Eq + Hash + Clone + Debug> {
 struct RouteParams<T> {
     parent: T,
     policy: policy::opaque::Policy,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Concrete<T> {
-    parent: T,
-    backend: policy::Backend,
 }
 
 type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
@@ -55,9 +52,9 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        T: svc::Param<Option<discover::LogicalProfile>>,
         T: svc::Param<watch::Receiver<ClientPolicy>>,
-        T: Eq + Clone + Debug + Hash,
+        // T: svc::Param<Option<discover::LogicalProfile>>,
+        T: Eq + Clone + Debug + Hash + Send + Sync + 'static,
         N: svc::NewService<Concrete<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = (), Error = Error> + Clone + Send + Sync + 'static,
         NSvc::Future: Send,
@@ -80,7 +77,7 @@ impl<N> Outbound<N> {
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(route)
-                .push(svc::NewOneshotRoute::<Params<T>, _, _>::layer_cached());
+                .push(svc::NewOneshotRoute::<Params<T>, (), _>::layer_cached());
 
             // For each `Logical` target, watch its `Profile`, maintaining a
             // cache of all concrete services used by the router.
@@ -89,7 +86,10 @@ impl<N> Outbound<N> {
                 .push_new_clone()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
+                .check_new_new_service::<T, Params<T>, I>()
                 .push(svc::NewSpawnWatch::<ClientPolicy, _>::layer_into::<Params<T>>())
+                .check_new::<T>()
+                .check_new_service::<T, I>()
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -97,12 +97,41 @@ impl<N> Outbound<N> {
 
 // === impl Params ===
 
-impl<T> From<(ClientPolicy, T)> for Params<T>
+impl<T> From<(ClientPolicy, T)> for Params<T> {
+    fn from((policy, parent): (ClientPolicy, T)) -> Self {
+        Params { parent, policy }
+    }
+}
+
+impl<T> svc::Param<distribute::Backends<Concrete<T>>> for Params<T>
 where
     T: Eq + Clone + Debug + Hash,
 {
-    fn from((policy, parent): (ClientPolicy, T)) -> Self {
-        Params { parent, policy }
+    fn param(&self) -> distribute::Backends<Concrete<T>> {
+        distribute::Backends::from_iter(self.policy.backends.iter().cloned().map(|backend| {
+            Concrete {
+                backend,
+                parent: self.parent.clone(),
+            }
+        }))
+    }
+}
+
+impl<I, T: Clone> svc::router::SelectRoute<I> for Params<T> {
+    type Key = RouteParams<T>;
+    type Error = NoRoute;
+
+    fn select(&self, _: &I) -> Result<Self::Key, Self::Error> {
+        let policy = match self.policy.protocol {
+            policy::Protocol::Detect { opaque, .. } | policy::Protocol::Opaque(opaque) => {
+                opaque.policy.clone().ok_or(NoRoute(()))?
+            }
+            _ => return Err(NoRoute(())),
+        };
+        Ok(RouteParams {
+            parent: self.parent.clone(),
+            policy,
+        })
     }
 }
 
@@ -155,51 +184,9 @@ impl<T> From<(Profile, T)> for Params<T> {
 }
 */
 
-impl<T> svc::Param<distribute::Backends<Concrete<T>>> for Params<T>
-where
-    T: Eq + Clone + Debug + Hash,
-{
-    fn param(&self) -> distribute::Backends<Concrete<T>> {
-        distribute::Backends::from_iter(self.policy.backends.iter().cloned().map(|backend| {
-            Concrete {
-                backend,
-                parent: self.parent.clone(),
-            }
-        }))
-    }
-}
-
-#[derive(Clone, Debug, thiserror::Error)]
-#[error("opaque connection has no routes")]
-pub struct NoRoute(());
-
-impl<I, T> svc::router::SelectRoute<I> for Params<T>
-where
-    T: Eq + Clone + Debug + Hash,
-{
-    type Key = RouteParams<T>;
-    type Error = NoRoute;
-
-    fn select(&self, _: &I) -> Result<Self::Key, Self::Error> {
-        let policy = match self.policy.protocol {
-            policy::Protocol::Detect { opaque, .. } | policy::Protocol::Opaque(opaque) => {
-                opaque.policy.clone().ok_or(NoRoute(()))?
-            }
-            _ => return Err(NoRoute(())),
-        };
-        Ok(RouteParams {
-            parent: self.parent.clone(),
-            policy,
-        })
-    }
-}
-
 // === impl RouteParams ===
 
-impl<T> svc::Param<Distribution<T>> for RouteParams<T>
-where
-    T: Eq + Clone + Debug + Hash,
-{
+impl<T: Clone> svc::Param<Distribution<T>> for RouteParams<T> {
     fn param(&self) -> Distribution<T> {
         match self.policy.distribution {
             policy::RouteDistribution::Empty => Distribution::Empty,
