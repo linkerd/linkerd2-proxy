@@ -18,6 +18,7 @@ pub(crate) use self::{require_id_header::IdentityRequired, server::ServerRescue}
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{Addr, CANONICAL_DST_HEADER};
 use std::str::FromStr;
+
 #[derive(Clone, Debug)]
 pub struct CanonicalDstHeader(pub Addr);
 
