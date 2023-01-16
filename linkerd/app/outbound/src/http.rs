@@ -1,4 +1,4 @@
-mod concrete;
+pub(crate) mod concrete;
 pub mod detect;
 mod endpoint;
 pub mod logical;
