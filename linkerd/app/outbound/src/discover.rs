@@ -57,7 +57,7 @@ impl<N> Outbound<N> {
     >
     where
         T: Param<OrigDstAddr>,
-        T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+        T: Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<Discovery<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = (), Error = Error> + Send + 'static,

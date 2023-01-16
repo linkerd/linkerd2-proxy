@@ -47,6 +47,17 @@ impl<T> Param<http::Version> for Http<T> {
     }
 }
 
+impl<T: Param<OrigDstAddr>> Param<http::normalize_uri::DefaultAuthority> for Http<T> {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        let OrigDstAddr(addr) = self.parent.param();
+        http::normalize_uri::DefaultAuthority(Some(
+            addr.to_string()
+                .parse()
+                .expect("address must be a valid authority"),
+        ))
+    }
+}
+
 impl<T: Param<OrigDstAddr>> Param<CacheKey> for Http<T> {
     fn param(&self) -> CacheKey {
         CacheKey(Some(self.version), self.parent.param())
@@ -94,7 +105,7 @@ impl<N> Outbound<N> {
     //
     // TODO(ver) Let discovery influence whether we assume an HTTP protocol
     // without deteciton.
-    pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
+    pub fn push_detect_http<T, NSvc, H, HSvc, I>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         T: Param<OrigDstAddr>,
         T: Param<watch::Receiver<ClientPolicy>>,

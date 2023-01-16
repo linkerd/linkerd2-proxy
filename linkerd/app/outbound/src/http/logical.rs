@@ -22,16 +22,24 @@ struct Params {
     // routes: Arc<[(profiles::http::RequestMatch, RouteParams)]>,
     // profile: Option<discover::LogicalProfile>,
     policy: ClientPolicy,
+    version: http::Version,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RouteParams {
     // profile: profiles::http::Route,
     policy: policy::http::Policy,
+    version: http::Version,
 }
 
-type BackendCache<N, S> = distribute::BackendCache<policy::Backend, N, S>;
-type Distribution = distribute::Distribution<policy::Backend>;
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Concrete {
+    backend: policy::Backend,
+    version: http::Version,
+}
+
+type BackendCache<N, S> = distribute::BackendCache<Concrete, N, S>;
+type Distribution = distribute::Distribution<Concrete>;
 
 // === impl Outbound ===
 
@@ -60,8 +68,9 @@ impl<N> Outbound<N> {
     >
     where
         T: svc::Param<watch::Receiver<ClientPolicy>>,
+        T: svc::Param<http::Version>,
         T: Clone + Send + Sync + 'static,
-        N: svc::NewService<policy::Backend, Service = NSvc> + Clone + Send + Sync + 'static,
+        N: svc::NewService<Concrete, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<
                 http::Request<http::BoxBody>,
                 Response = http::Response<http::BoxBody>,
@@ -145,9 +154,12 @@ impl<N> Outbound<N> {
 
 // === impl Params ===
 
-impl<T> From<(ClientPolicy, T)> for Params {
-    fn from((policy, _): (ClientPolicy, T)) -> Self {
-        Params { policy }
+impl<T: svc::Param<http::Version>> From<(ClientPolicy, T)> for Params {
+    fn from((policy, target): (ClientPolicy, T)) -> Self {
+        Params {
+            policy,
+            version: target.param(),
+        }
     }
 }
 
@@ -230,9 +242,14 @@ impl svc::Param<CanonicalDstHeader> for Params {
     }
 }
 
-impl svc::Param<distribute::Backends<policy::Backend>> for Params {
-    fn param(&self) -> distribute::Backends<policy::Backend> {
-        distribute::Backends::from_iter(self.policy.backends.iter().cloned())
+impl svc::Param<distribute::Backends<Concrete>> for Params {
+    fn param(&self) -> distribute::Backends<Concrete> {
+        distribute::Backends::from_iter(self.policy.backends.iter().cloned().map(|backend| {
+            Concrete {
+                backend,
+                version: self.version,
+            }
+        }))
     }
 }
 
@@ -252,7 +269,10 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for Params {
             }
             _ => return Err(NoRoute(())),
         };
-        Ok(RouteParams { policy })
+        Ok(RouteParams {
+            policy,
+            version: self.version,
+        })
     }
 }
 
@@ -269,15 +289,21 @@ impl svc::Param<Distribution> for RouteParams {
         match self.policy.distribution {
             policy::RouteDistribution::Empty => Distribution::Empty,
             policy::RouteDistribution::FirstAvailable(backends) => {
-                Distribution::first_available(backends.iter().cloned().map(|rb| rb.backend))
+                Distribution::first_available(backends.iter().cloned().map(|rb| Concrete {
+                    backend: rb.backend,
+                    version: self.version,
+                }))
             }
-            policy::RouteDistribution::RandomAvailable(backends) => Distribution::random_available(
-                backends
-                    .iter()
-                    .cloned()
-                    .map(|(rb, weight)| (rb.backend, weight)),
-            )
-            .expect("distribution must be valid"),
+            policy::RouteDistribution::RandomAvailable(backends) => {
+                Distribution::random_available(backends.iter().cloned().map(|(rb, weight)| {
+                    let c = Concrete {
+                        backend: rb.backend,
+                        version: self.version,
+                    };
+                    (c, weight)
+                }))
+                .expect("distribution must be valid")
+            }
         }
     }
 }
@@ -307,3 +333,17 @@ impl svc::Param<Distribution> for RouteParams {
 //         self.profile.response_classes().clone().into()
 //     }
 // }
+
+// === impl Concrete ===
+
+impl svc::Param<policy::Backend> for Concrete {
+    fn param(&self) -> policy::Backend {
+        self.backend.into()
+    }
+}
+
+impl svc::Param<http::Version> for Concrete {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}

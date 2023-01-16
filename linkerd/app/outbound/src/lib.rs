@@ -165,7 +165,7 @@ impl Outbound<()> {
         resolve: R,
     ) where
         A: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<tcp::concrete::Balance, Endpoint = Metadata, Error = Error>,
@@ -191,10 +191,19 @@ impl Outbound<()> {
         }
     }
 
-    fn mk_proxy<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
+    fn push_proxy<T, I, P, R>(
+        self,
+        profiles: P,
+        resolve: R,
+    ) -> Outbound<
+        svc::ArcNewService<
+            T,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+        >,
+    >
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<tcp::concrete::Balance, Endpoint = Metadata, Error = Error>,
@@ -212,33 +221,24 @@ impl Outbound<()> {
         let opaque = tcp
             .clone()
             .push_tcp_endpoint()
-            .push_tcp_concrete(resolve)
+            .push_tcp_concrete(resolve.clone())
             .push_tcp_logical();
 
         let http = tcp
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_http_concrete(resolve.clone())
+            .push_http_concrete(resolve)
             .push_http_logical()
             .push_http_server()
             .into_inner();
 
-        opaque
-            .push_detect_http(http)
-            .push_discover(profiles)
-            .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
-            .into_inner()
+        opaque.push_detect_http(http).push_discover(profiles)
     }
 
-    /// Builds a an "ingress mode" proxy.
-    ///
-    /// Ingress-mode proxies route based on request headers instead of using the
-    /// original destination. Protocol detection is **always** performed. If it
-    /// fails, we revert to using the normal IP-based discovery
-    fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
+    fn mk_proxy<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<tcp::concrete::Balance, Endpoint = Metadata, Error = Error>,
@@ -251,17 +251,37 @@ impl Outbound<()> {
         P::Future: Send,
         P::Error: Send,
     {
-        // The fallback stack is the same thing as the normal proxy stack, but
-        // it doesn't include TCP metrics, since they are already instrumented
-        // on this ingress stack.
-        let fallback = {
-            let logical = self.to_tcp_connect().push_logical(resolve.clone());
-            let forward = self.to_tcp_connect().push_forward();
-            forward
-                .push_switch_profile(logical.into_inner())
-                .push_discover(profiles.clone())
-                .into_inner()
-        };
+        self.push_proxy(profiles, resolve)
+            .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
+            .into_inner()
+    }
+
+    /// Builds a an "ingress mode" proxy.
+    ///
+    /// Ingress-mode proxies route based on request headers instead of using the
+    /// original destination. Protocol detection is **always** performed. If it
+    /// fails, we revert to using the normal IP-based discovery
+    fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
+    where
+        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
+        I: Debug + Unpin + Send + Sync + 'static,
+        R: Clone + Send + Sync + Unpin + 'static,
+        R: Resolve<tcp::concrete::Balance, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<tcp::concrete::Balance>>::Resolution: Send,
+        <R as Resolve<tcp::concrete::Balance>>::Future: Send + Unpin,
+        R: Resolve<http::concrete::Balance, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<http::concrete::Balance>>::Resolution: Send,
+        <R as Resolve<http::concrete::Balance>>::Future: Send + Unpin,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
+        P::Future: Send,
+        P::Error: Send,
+    {
+        // The fallback stack is the same as the normal proxy stack.
+        let fallback = self
+            .clone()
+            .push_proxy(profiles.clone(), resolve.clone())
+            .into_inner();
 
         self.to_tcp_connect()
             .push_tcp_endpoint()

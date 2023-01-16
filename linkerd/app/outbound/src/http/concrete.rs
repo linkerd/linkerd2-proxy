@@ -1,7 +1,11 @@
 use crate::{stack_labels, tcp::opaque_transport, Outbound};
 use linkerd_app_core::{
     metrics,
-    proxy::{api_resolve::Metadata, core::Resolve, http, tap},
+    proxy::{
+        api_resolve::{Metadata, ProtocolHint},
+        core::Resolve,
+        http, tap,
+    },
     svc, tls,
     transport::{self, Remote, ServerAddr},
     transport_header, Error, Infallible,
@@ -17,12 +21,14 @@ use tracing::info_span;
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Params {
     backend: policy::Backend,
+    version: http::Version,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Balance {
     ewma: policy::PeakEwma,
     destination_get_path: String,
+    version: http::Version,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,6 +36,7 @@ pub struct Endpoint {
     addr: Remote<ServerAddr>,
     tls: tls::ConditionalClientTls,
     metadata: Metadata,
+    version: http::Version,
 }
 
 #[derive(Clone, Debug)]
@@ -42,6 +49,7 @@ struct NewBalanceEndpoint<N> {
 struct NewEndpoint<N> {
     inbound_ips: Arc<HashSet<IpAddr>>,
     inner: N,
+    version: http::Version,
 }
 
 // === impl Params ===
@@ -50,14 +58,22 @@ impl Params {
     fn new<T>(target: T) -> Self
     where
         T: svc::Param<policy::Backend>,
+        T: svc::Param<http::Version>,
     {
         Self {
             backend: target.param(),
+            version: target.param(),
         }
     }
 }
 
 // === impl Balance ===
+
+impl svc::Param<http::Version> for Balance {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
 
 impl svc::Param<http::balance::EwmaConfig> for Balance {
     fn param(&self) -> http::balance::EwmaConfig {
@@ -73,6 +89,18 @@ impl svc::Param<http::balance::EwmaConfig> for Balance {
 impl svc::Param<Remote<ServerAddr>> for Endpoint {
     fn param(&self) -> Remote<ServerAddr> {
         self.addr
+    }
+}
+
+impl svc::Param<http::client::Settings> for Endpoint {
+    fn param(&self) -> http::client::Settings {
+        match self.version {
+            http::Version::H2 => http::client::Settings::H2,
+            http::Version::Http1 => match self.metadata.protocol_hint() {
+                ProtocolHint::Unknown => http::client::Settings::Http1,
+                ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
+            },
+        }
     }
 }
 
@@ -184,6 +212,7 @@ impl<N> Outbound<N> {
         >,
     >
     where
+        T: svc::Param<http::Version>,
         T: svc::Param<policy::Backend>,
         T: Clone + Send + Sync + 'static,
         N: svc::NewService<Endpoint, Service = NSvc> + Clone + Send + Sync + 'static,
@@ -224,7 +253,7 @@ impl<N> Outbound<N> {
                 .push_switch(
                     {
                         let inbound_ips = inbound_ips.clone();
-                        move |Params { backend }| -> Result<_, Infallible> {
+                        move |Params { backend, version }| -> Result<_, Infallible> {
                             Ok(match backend.dispatcher {
                                 policy::BackendDispatcher::BalanceP2c(
                                     policy::Load::PeakEwma(ewma),
@@ -232,6 +261,7 @@ impl<N> Outbound<N> {
                                 ) => svc::Either::A(Balance {
                                     ewma,
                                     destination_get_path: path,
+                                    version,
                                 }),
 
                                 policy::BackendDispatcher::Forward(addr, mut metadata) => {
@@ -246,6 +276,7 @@ impl<N> Outbound<N> {
                                         addr: Remote(ServerAddr(addr)),
                                         metadata,
                                         tls,
+                                        version,
                                     })
                                 }
                             })
@@ -291,12 +322,14 @@ impl<N> NewBalanceEndpoint<N> {
 
 impl<T, N> svc::NewService<T> for NewBalanceEndpoint<N>
 where
+    T: svc::Param<http::Version>,
     N: svc::NewService<T>,
 {
     type Service = NewEndpoint<N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         NewEndpoint {
+            version: target.param(),
             inner: self.inner.new_service(target),
             inbound_ips: self.inbound_ips.clone(),
         }
@@ -324,6 +357,7 @@ where
             addr: Remote(ServerAddr(addr)),
             metadata,
             tls,
+            version: self.version,
         };
         self.inner.new_service(endpoint)
     }
