@@ -9,26 +9,67 @@ use tokio::sync::watch;
 #[error("opaque connection has no routes")]
 pub struct NoRoute(());
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Concrete<T> {
-    parent: T,
-    backend: policy::Backend,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Params<T> {
-    parent: T,
+struct Params {
     policy: ClientPolicy,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct RouteParams<T> {
-    parent: T,
+struct RouteParams {
     policy: policy::opaque::Policy,
 }
 
-type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
-type Distribution<T> = distribute::Distribution<Concrete<T>>;
+type BackendCache<N, S> = distribute::BackendCache<policy::Backend, N, S>;
+type Distribution = distribute::Distribution<policy::Backend>;
+
+// === impl Params ===
+
+impl<T> From<(ClientPolicy, T)> for Params {
+    fn from((policy, _): (ClientPolicy, T)) -> Self {
+        Params { policy }
+    }
+}
+
+impl svc::Param<distribute::Backends<policy::Backend>> for Params {
+    fn param(&self) -> distribute::Backends<policy::Backend> {
+        distribute::Backends::from_iter(self.policy.backends.iter().cloned())
+    }
+}
+
+impl<I> svc::router::SelectRoute<I> for Params {
+    type Key = RouteParams;
+    type Error = NoRoute;
+
+    fn select(&self, _: &I) -> Result<Self::Key, Self::Error> {
+        let policy = match self.policy.protocol {
+            policy::Protocol::Detect { opaque, .. } | policy::Protocol::Opaque(opaque) => {
+                opaque.policy.clone().ok_or(NoRoute(()))?
+            }
+            _ => return Err(NoRoute(())),
+        };
+        Ok(RouteParams { policy })
+    }
+}
+
+// === impl RouteParams ===
+
+impl svc::Param<Distribution> for RouteParams {
+    fn param(&self) -> Distribution {
+        match self.policy.distribution {
+            policy::RouteDistribution::Empty => Distribution::Empty,
+            policy::RouteDistribution::FirstAvailable(backends) => {
+                Distribution::first_available(backends.iter().cloned().map(|rb| rb.backend))
+            }
+            policy::RouteDistribution::RandomAvailable(backends) => Distribution::random_available(
+                backends
+                    .iter()
+                    .cloned()
+                    .map(|(rb, weight)| (rb.backend, weight)),
+            )
+            .expect("distribution must be valid"),
+        }
+    }
+}
 
 // === impl Outbound ===
 
@@ -54,8 +95,9 @@ impl<N> Outbound<N> {
     where
         T: svc::Param<watch::Receiver<ClientPolicy>>,
         // T: svc::Param<Option<discover::LogicalProfile>>,
-        T: Eq + Clone + Debug + Hash + Send + Sync + 'static,
-        N: svc::NewService<Concrete<T>, Service = NSvc> + Clone + Send + Sync + 'static,
+        // T: Eq + Clone + Debug + Hash + Send + Sync + 'static,
+        T: Clone + Send + Sync + 'static,
+        N: svc::NewService<policy::Backend, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = (), Error = Error> + Clone + Send + Sync + 'static,
         NSvc::Future: Send,
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
@@ -77,17 +119,19 @@ impl<N> Outbound<N> {
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(route)
-                .push(svc::NewOneshotRoute::<Params<T>, (), _>::layer_cached());
+                .push(svc::NewOneshotRoute::<Params, _, _>::layer_cached());
 
             // For each `Logical` target, watch its `Profile`, maintaining a
             // cache of all concrete services used by the router.
             concrete
+                .check_new_service::<policy::Backend, I>()
                 // Share the concrete stack with each router stack.
                 .push_new_clone()
+                .check_new_new_service::<Params, policy::Backend, I>()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .check_new_new_service::<T, Params<T>, I>()
-                .push(svc::NewSpawnWatch::<ClientPolicy, _>::layer_into::<Params<T>>())
+                .check_new_new_service::<T, Params, I>()
+                .push(svc::NewSpawnWatch::<ClientPolicy, _>::layer_into::<Params>())
                 .check_new::<T>()
                 .check_new_service::<T, I>()
                 .push(svc::ArcNewService::layer())
@@ -95,48 +139,8 @@ impl<N> Outbound<N> {
     }
 }
 
-// === impl Params ===
-
-impl<T> From<(ClientPolicy, T)> for Params<T> {
-    fn from((policy, parent): (ClientPolicy, T)) -> Self {
-        Params { parent, policy }
-    }
-}
-
-impl<T> svc::Param<distribute::Backends<Concrete<T>>> for Params<T>
-where
-    T: Eq + Clone + Debug + Hash,
-{
-    fn param(&self) -> distribute::Backends<Concrete<T>> {
-        distribute::Backends::from_iter(self.policy.backends.iter().cloned().map(|backend| {
-            Concrete {
-                backend,
-                parent: self.parent.clone(),
-            }
-        }))
-    }
-}
-
-impl<I, T: Clone> svc::router::SelectRoute<I> for Params<T> {
-    type Key = RouteParams<T>;
-    type Error = NoRoute;
-
-    fn select(&self, _: &I) -> Result<Self::Key, Self::Error> {
-        let policy = match self.policy.protocol {
-            policy::Protocol::Detect { opaque, .. } | policy::Protocol::Opaque(opaque) => {
-                opaque.policy.clone().ok_or(NoRoute(()))?
-            }
-            _ => return Err(NoRoute(())),
-        };
-        Ok(RouteParams {
-            parent: self.parent.clone(),
-            policy,
-        })
-    }
-}
-
 /*
-impl<T> From<(Profile, T)> for Params<T> {
+impl<T> From<(Profile, T)> for Params {
     fn from((profile, inner): (Profile, T)) -> Self {
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if profile.targets.is_empty() {
@@ -183,29 +187,3 @@ impl<T> From<(Profile, T)> for Params<T> {
     }
 }
 */
-
-// === impl RouteParams ===
-
-impl<T: Clone> svc::Param<Distribution<T>> for RouteParams<T> {
-    fn param(&self) -> Distribution<T> {
-        match self.policy.distribution {
-            policy::RouteDistribution::Empty => Distribution::Empty,
-            policy::RouteDistribution::FirstAvailable(backends) => {
-                Distribution::first_available(backends.iter().cloned().map(|rb| Concrete {
-                    backend: rb.backend,
-                    parent: self.parent.clone(),
-                }))
-            }
-            policy::RouteDistribution::RandomAvailable(backends) => {
-                Distribution::random_available(backends.iter().cloned().map(|(rb, weight)| {
-                    let c = Concrete {
-                        backend: rb.backend,
-                        parent: self.parent.clone(),
-                    };
-                    (c, weight)
-                }))
-                .expect("distribution must be valid")
-            }
-        }
-    }
-}

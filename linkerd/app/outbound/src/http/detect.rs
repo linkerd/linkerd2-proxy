@@ -11,7 +11,7 @@ use tokio::sync::watch;
 use tracing::debug_span;
 #[derive(Clone, Debug)]
 pub struct Http<T> {
-    inner: T,
+    parent: T,
     version: http::Version,
 }
 
@@ -27,8 +27,17 @@ struct DetectFromPolicy;
 type DetectHttp = detect::Config<svc::http::DetectHttp>;
 
 impl<T> From<(http::Version, T)> for Http<T> {
-    fn from((version, inner): (http::Version, T)) -> Self {
-        Self { inner, version }
+    fn from((version, parent): (http::Version, T)) -> Self {
+        Self { parent, version }
+    }
+}
+
+impl<T> Param<watch::Receiver<ClientPolicy>> for Http<T>
+where
+    T: Param<watch::Receiver<ClientPolicy>>,
+{
+    fn param(&self) -> watch::Receiver<ClientPolicy> {
+        self.parent.param()
     }
 }
 
@@ -40,13 +49,22 @@ impl<T> Param<http::Version> for Http<T> {
 
 impl<T: Param<OrigDstAddr>> Param<CacheKey> for Http<T> {
     fn param(&self) -> CacheKey {
-        CacheKey(Some(self.version), self.inner.param())
+        CacheKey(Some(self.version), self.parent.param())
     }
 }
 
 impl<T: Param<OrigDstAddr>> Param<CacheKey> for Opaque<T> {
     fn param(&self) -> CacheKey {
         CacheKey(None, self.0.param())
+    }
+}
+
+impl<T> Param<watch::Receiver<ClientPolicy>> for Opaque<T>
+where
+    T: Param<watch::Receiver<ClientPolicy>>,
+{
+    fn param(&self) -> watch::Receiver<ClientPolicy> {
+        self.0.param()
     }
 }
 

@@ -1,35 +1,37 @@
-use super::{retry, CanonicalDstHeader, Concrete, Logical};
+#![allow(warnings)]
+
+use super::{retry, CanonicalDstHeader};
 use crate::Outbound;
 use linkerd_app_core::{
     classify, metrics,
     profiles::{self, Profile},
-    proxy::api_resolve::ConcreteAddr,
     proxy::http,
     svc, Error,
 };
 use linkerd_distribute as distribute;
+use linkerd_proxy_client_policy::{self as policy, ClientPolicy};
 use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 #[error("no route")]
-pub struct NoRoute;
+pub struct NoRoute(());
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Params {
-    logical: Logical,
-    routes: Arc<[(profiles::http::RequestMatch, RouteParams)]>,
-    backends: distribute::Backends<Concrete>,
+    // routes: Arc<[(profiles::http::RequestMatch, RouteParams)]>,
+    // profile: Option<discover::LogicalProfile>,
+    policy: ClientPolicy,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RouteParams {
-    logical: Logical,
-    profile: profiles::http::Route,
+    // profile: profiles::http::Route,
+    routes: Arc<[policy::http::Route]>,
     distribution: Distribution,
 }
 
-type BackendCache<N, S> = distribute::BackendCache<Concrete, N, S>;
-type Distribution = distribute::Distribution<Concrete>;
+type BackendCache<N, S> = distribute::BackendCache<policy::Backend, N, S>;
+type Distribution = distribute::Distribution<policy::Backend>;
 
 // === impl Outbound ===
 
@@ -43,11 +45,11 @@ impl<N> Outbound<N> {
     /// available backends, requests are failed with a [`svc::stack::LoadShedError`].
     ///
     // TODO(ver) make the outer target type generic/parameterized.
-    pub fn push_http_logical<NSvc>(
+    pub fn push_http_logical<T, NSvc>(
         self,
     ) -> Outbound<
         svc::ArcNewService<
-            Logical,
+            T,
             impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
@@ -57,7 +59,8 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        N: svc::NewService<Concrete, Service = NSvc> + Clone + Send + Sync + 'static,
+        T: Clone + Send + Sync + 'static,
+        N: svc::NewService<policy::Backend, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<
                 http::Request<http::BoxBody>,
                 Response = http::Response<http::BoxBody>,
@@ -78,33 +81,33 @@ impl<N> Outbound<N> {
                         // leaking tasks onto the runtime.
                         .push(svc::LoadShed::layer()),
                 )
-                .push(http::insert::NewInsert::<RouteParams, _>::layer())
-                .push(
-                    rt.metrics
-                        .proxy
-                        .http_profile_route_actual
-                        .to_layer::<classify::Response, _, RouteParams>(),
-                )
-                // Depending on whether or not the request can be
-                // retried, it may have one of two `Body` types. This
-                // layer unifies any `Body` type into `BoxBody`.
-                .push_on_service(http::BoxRequest::erased())
-                // Sets an optional retry policy.
-                .push(retry::layer(
-                    rt.metrics.proxy.http_profile_route_retry.clone(),
-                ))
-                // Sets an optional request timeout.
-                .push(http::NewTimeout::layer())
-                // Records per-route metrics.
-                .push(
-                    rt.metrics
-                        .proxy
-                        .http_profile_route
-                        .to_layer::<classify::Response, _, RouteParams>(),
-                )
-                // Sets the per-route response classifier as a request
-                // extension.
-                .push(classify::NewClassify::layer())
+                // .push(http::insert::NewInsert::<RouteParams, _>::layer())
+                // .push(
+                //     rt.metrics
+                //         .proxy
+                //         .http_profile_route_actual
+                //         .to_layer::<classify::Response, _, RouteParams>(),
+                // )
+                // // Depending on whether or not the request can be
+                // // retried, it may have one of two `Body` types. This
+                // // layer unifies any `Body` type into `BoxBody`.
+                // .push_on_service(http::BoxRequest::erased())
+                // // Sets an optional retry policy.
+                // .push(retry::layer(
+                //     rt.metrics.proxy.http_profile_route_retry.clone(),
+                // ))
+                // // Sets an optional request timeout.
+                // .push(http::NewTimeout::layer())
+                // // Records per-route metrics.
+                // .push(
+                //     rt.metrics
+                //         .proxy
+                //         .http_profile_route
+                //         .to_layer::<classify::Response, _, RouteParams>(),
+                // )
+                // // Sets the per-route response classifier as a request
+                // // extension.
+                // .push(classify::NewClassify::layer())
                 .push_on_service(http::BoxResponse::layer());
 
             // A `NewService`--instantiated once per logical target--that caches
@@ -126,7 +129,7 @@ impl<N> Outbound<N> {
                 .push_new_clone()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
+                .push(svc::NewSpawnWatch::<ClientPolicy, _>::layer_into::<Params>())
                 // Add l5d-dst-canonical header to requests.
                 //
                 // TODO(ver) move this into the endpoint stack so that we can only
@@ -141,6 +144,13 @@ impl<N> Outbound<N> {
 
 // === impl Params ===
 
+impl<T> From<(ClientPolicy, T)> for Params {
+    fn from((policy, _): (ClientPolicy, T)) -> Self {
+        Params { policy }
+    }
+}
+
+/*
 impl From<(Profile, Logical)> for Params {
     fn from((profile, logical): (Profile, Logical)) -> Self {
         // Create concrete targets for all of the profile's routes.
@@ -206,15 +216,16 @@ impl From<(Profile, Logical)> for Params {
     }
 }
 
-impl svc::Param<distribute::Backends<Concrete>> for Params {
-    fn param(&self) -> distribute::Backends<Concrete> {
-        self.backends.clone()
-    }
-}
-
 impl svc::Param<profiles::LogicalAddr> for Params {
     fn param(&self) -> profiles::LogicalAddr {
         self.logical.logical_addr.clone()
+    }
+}
+*/
+
+impl svc::Param<distribute::Backends<policy::Backend>> for Params {
+    fn param(&self) -> distribute::Backends<policy::Backend> {
+        distribute::Backends::from_iter(self.policy.backends.iter().cloned())
     }
 }
 
@@ -223,9 +234,15 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for Params {
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
-        profiles::http::route_for_request(&*self.routes, req)
-            .ok_or(NoRoute)
-            .cloned()
+        // profiles::http::route_for_request(&*self.routes, req)
+        //     .ok_or(NoRoute)
+        //     .cloned()
+        let policy = match self.policy.protocol {
+            policy::Protocol::Detect { opaque, .. } | policy::Protocol::Opaque(opaque) => {
+                opaque.policy.clone().ok_or(NoRoute(()))?
+            }
+            _ => return Err(NoRoute(())),
+        };
     }
 }
 
