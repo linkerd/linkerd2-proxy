@@ -1320,7 +1320,6 @@ dependencies = [
  "futures",
  "http",
  "http-body",
- "linkerd-addr",
  "linkerd-error",
  "linkerd-proxy-core",
  "linkerd-stack",

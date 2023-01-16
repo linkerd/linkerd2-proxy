@@ -85,7 +85,8 @@ where
 {
     fn extract_param(&self, t: &T) -> DetectHttp {
         let rx = t.param();
-        match rx.borrow().protocol {
+        let p = rx.borrow();
+        match p.protocol {
             Protocol::Detect { timeout, .. } => DetectHttp::from_timeout(timeout),
             _ => DetectHttp::default(),
         }

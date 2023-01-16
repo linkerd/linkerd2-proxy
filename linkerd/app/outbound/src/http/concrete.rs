@@ -2,7 +2,7 @@ use crate::{stack_labels, tcp::opaque_transport, Outbound};
 use linkerd_app_core::{
     metrics,
     proxy::{
-        api_resolve::{Metadata, ProtocolHint},
+        api_resolve::{DestinationGetPath, Metadata, ProtocolHint},
         core::Resolve,
         http, tap,
     },
@@ -81,6 +81,12 @@ impl svc::Param<http::balance::EwmaConfig> for Balance {
             decay: self.ewma.decay,
             default_rtt: self.ewma.default_rtt,
         }
+    }
+}
+
+impl svc::Param<DestinationGetPath> for Balance {
+    fn param(&self) -> DestinationGetPath {
+        DestinationGetPath(self.destination_get_path.clone())
     }
 }
 
@@ -173,7 +179,7 @@ impl tap::Inspect for Endpoint {
     }
 
     // FIXME
-    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<tap::Labels> {
+    fn route_labels<B>(&self, _req: &http::Request<B>) -> Option<tap::Labels> {
         // req.extensions()
         //     .get::<profiles::http::Route>()
         //     .map(|r| r.labels().clone())
@@ -227,11 +233,7 @@ impl<N> Outbound<N> {
         R::Future: Send + Unpin,
     {
         self.map_stack(|config, rt, endpoint| {
-            let crate::Config {
-                tcp_connection_buffer,
-                inbound_ips,
-                ..
-            } = config;
+            let crate::Config { inbound_ips, .. } = config;
 
             let balance = endpoint
                 .clone()

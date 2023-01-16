@@ -2,7 +2,11 @@ use super::opaque_transport;
 use crate::{stack_labels, Outbound};
 use linkerd_app_core::{
     drain, io, metrics,
-    proxy::{api_resolve::Metadata, core::Resolve, http, tcp},
+    proxy::{
+        api_resolve::{DestinationGetPath, Metadata},
+        core::Resolve,
+        http, tcp,
+    },
     svc::{self, NewService},
     tls,
     transport::{self, Remote, ServerAddr},
@@ -67,6 +71,12 @@ impl svc::Param<tcp::balance::EwmaConfig> for Balance {
             decay: self.ewma.decay,
             default_rtt: self.ewma.default_rtt,
         }
+    }
+}
+
+impl svc::Param<DestinationGetPath> for Balance {
+    fn param(&self) -> DestinationGetPath {
+        DestinationGetPath(self.destination_get_path.clone())
     }
 }
 

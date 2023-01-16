@@ -1,13 +1,13 @@
 pub use crate::profile::Sender as ProfileSender;
 use futures::future;
 pub use linkerd_app_core::proxy::{
-    api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
+    api_resolve::{DestinationGetPath, Metadata, ProtocolHint},
     core::resolve::{Resolve, Update},
 };
 use linkerd_app_core::{
     profiles::{self, Profile},
     svc::Param,
-    Addr, Error, NameAddr,
+    Addr, Error,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -25,7 +25,7 @@ pub struct Resolver<A, E> {
     state: Arc<State<A, E>>,
 }
 
-pub type Dst<E> = Resolver<NameAddr, DstReceiver<E>>;
+pub type Dst<E> = Resolver<String, DstReceiver<E>>;
 
 pub type Profiles = Resolver<Addr, Option<profiles::Receiver>>;
 
@@ -96,23 +96,23 @@ impl<A, E> Clone for Resolver<A, E> {
 // === destination resolver ===
 
 impl<E> Dst<E> {
-    pub fn endpoint_tx(&self, addr: impl Into<NameAddr>) -> DstSender<E> {
+    pub fn endpoint_tx(&self, addr: impl ToString) -> DstSender<E> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.state
             .endpoints
             .lock()
-            .insert(addr.into(), UnboundedReceiverStream::new(rx));
+            .insert(addr.to_string(), UnboundedReceiverStream::new(rx));
         DstSender(tx)
     }
 
-    pub fn endpoint_exists(self, target: impl Into<NameAddr>, addr: SocketAddr, meta: E) -> Self {
+    pub fn endpoint_exists(self, target: impl ToString, addr: SocketAddr, meta: E) -> Self {
         let mut tx = self.endpoint_tx(target);
         tx.add(vec![(addr, meta)]).unwrap();
         self
     }
 }
 
-impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
+impl<T: Param<DestinationGetPath>, E> tower::Service<T> for Dst<E> {
     type Response = DstReceiver<E>;
     type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
     type Error = Error;
@@ -122,7 +122,7 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let ConcreteAddr(addr) = target.param();
+        let DestinationGetPath(addr) = target.param();
         let span = tracing::trace_span!("mock_resolver", ?addr);
         let _e = span.enter();
 
@@ -262,7 +262,7 @@ impl<A, E> Handle<A, E> {
 
 // === impl NoDst ===
 
-impl<T: Param<ConcreteAddr>, E> tower::Service<T> for NoDst<E> {
+impl<T: Param<DestinationGetPath>, E> tower::Service<T> for NoDst<E> {
     type Response = DstReceiver<E>;
     type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
     type Error = Error;
@@ -272,7 +272,7 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for NoDst<E> {
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let ConcreteAddr(addr) = target.param();
+        let DestinationGetPath(addr) = target.param();
         panic!(
             "no destination resolutions were expected in this test, but tried to resolve {}",
             addr

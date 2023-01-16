@@ -42,7 +42,7 @@ impl<I> svc::router::SelectRoute<I> for Params {
 
     fn select(&self, _: &I) -> Result<Self::Key, Self::Error> {
         let policy = match self.policy.protocol {
-            policy::Protocol::Detect { opaque, .. } | policy::Protocol::Opaque(opaque) => {
+            policy::Protocol::Detect { ref opaque, .. } | policy::Protocol::Opaque(ref opaque) => {
                 opaque.policy.clone().ok_or(NoRoute(()))?
             }
             _ => return Err(NoRoute(())),
@@ -57,16 +57,18 @@ impl svc::Param<Distribution> for RouteParams {
     fn param(&self) -> Distribution {
         match self.policy.distribution {
             policy::RouteDistribution::Empty => Distribution::Empty,
-            policy::RouteDistribution::FirstAvailable(backends) => {
+            policy::RouteDistribution::FirstAvailable(ref backends) => {
                 Distribution::first_available(backends.iter().cloned().map(|rb| rb.backend))
             }
-            policy::RouteDistribution::RandomAvailable(backends) => Distribution::random_available(
-                backends
-                    .iter()
-                    .cloned()
-                    .map(|(rb, weight)| (rb.backend, weight)),
-            )
-            .expect("distribution must be valid"),
+            policy::RouteDistribution::RandomAvailable(ref backends) => {
+                Distribution::random_available(
+                    backends
+                        .iter()
+                        .cloned()
+                        .map(|(rb, weight)| (rb.backend, weight)),
+                )
+                .expect("distribution must be valid")
+            }
         }
     }
 }

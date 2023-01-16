@@ -65,7 +65,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
         P::Error: Send,
         P::Future: Send,
         R: Clone + Send + Sync + 'static,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        R: Resolve<http::concrete::Balance, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,
         R::Future: Send + Unpin,
         F: svc::NewService<tcp::Accept, Service = FSvc> + Clone + Send + Sync + 'static,

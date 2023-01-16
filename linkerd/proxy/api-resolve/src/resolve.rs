@@ -2,7 +2,7 @@ use crate::{
     api::destination as api,
     core::resolve::{self, Update},
     metadata::Metadata,
-    pb, ConcreteAddr,
+    pb, DestinationGetPath,
 };
 use api::destination_client::DestinationClient;
 use async_stream::try_stream;
@@ -48,7 +48,7 @@ type ResolveFuture =
 
 impl<T, S> Service<T> for Resolve<S>
 where
-    T: Param<ConcreteAddr>,
+    T: Param<DestinationGetPath>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::Error: Into<Error> + Send,
     S::ResponseBody: Default + Body<Data = tonic::codegen::Bytes> + Send + 'static,
@@ -64,11 +64,11 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let ConcreteAddr(addr) = target.param();
-        debug!(dst = %addr, context = %self.context_token, "Resolving");
+        let DestinationGetPath(path) = target.param();
+        debug!(%path, context = %self.context_token, "Resolving");
 
         let req = api::GetDestination {
-            path: addr.to_string(),
+            path,
             context_token: self.context_token.clone(),
             ..Default::default()
         };

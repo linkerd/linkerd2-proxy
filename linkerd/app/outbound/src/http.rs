@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 pub(crate) mod concrete;
 pub mod detect;
 mod endpoint;
@@ -13,25 +15,20 @@ use self::{
     strip_proxy_error::NewStripProxyError,
 };
 pub(crate) use self::{require_id_header::IdentityRequired, server::ServerRescue};
-use crate::tcp;
 pub use linkerd_app_core::proxy::http::*;
-use linkerd_app_core::{
-    profiles::{self, LogicalAddr},
-    proxy::{api_resolve::ProtocolHint, tap},
-    svc::Param,
-    tls, Addr, Conditional, CANONICAL_DST_HEADER,
-};
-use std::{net::SocketAddr, str::FromStr};
+use linkerd_app_core::{Addr, CANONICAL_DST_HEADER};
+use std::str::FromStr;
+#[derive(Clone, Debug)]
+pub struct CanonicalDstHeader(pub Addr);
 
+/*
 pub type Accept = crate::Accept<Version>;
 pub type Logical = crate::logical::Logical<Version>;
 pub type Concrete = crate::logical::Concrete<Version>;
 pub type Endpoint = crate::endpoint::Endpoint<Version>;
 
 pub type Connect = self::endpoint::Connect<Endpoint>;
-
-#[derive(Clone, Debug)]
-pub struct CanonicalDstHeader(pub Addr);
+*/
 
 // === impl CanonicalDstHeader ===
 
@@ -46,6 +43,7 @@ impl From<CanonicalDstHeader> for HeaderPair {
 
 // === impl Accept ===
 
+/*
 impl Param<Version> for Accept {
     fn param(&self) -> Version {
         self.protocol
@@ -175,3 +173,4 @@ impl tap::Inspect for Endpoint {
         true
     }
 }
+*/

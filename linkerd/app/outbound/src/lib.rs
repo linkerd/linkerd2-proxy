@@ -6,10 +6,8 @@
 #![forbid(unsafe_code)]
 
 mod discover;
-pub mod endpoint;
 pub mod http;
-mod ingress;
-pub mod logical;
+// FIXME mod ingress;
 mod metrics;
 pub mod tcp;
 #[cfg(test)]
@@ -135,10 +133,6 @@ impl<S> Outbound<S> {
         self.stack.into_inner()
     }
 
-    fn no_tls_reason(&self) -> tls::NoClientTls {
-        tls::NoClientTls::NotProvidedByServiceDiscovery
-    }
-
     pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
         self.map_stack(move |_, _, stack| stack.push(layer))
     }
@@ -174,7 +168,6 @@ impl Outbound<()> {
         R: Resolve<http::concrete::Balance, Endpoint = Metadata, Error = Error>,
         <R as Resolve<http::concrete::Balance>>::Resolution: Send,
         <R as Resolve<http::concrete::Balance>>::Future: Send + Unpin,
-
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
@@ -251,7 +244,8 @@ impl Outbound<()> {
         P::Future: Send,
         P::Error: Send,
     {
-        self.push_proxy(profiles, resolve)
+        self.clone()
+            .push_proxy(profiles, resolve)
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }
@@ -261,6 +255,7 @@ impl Outbound<()> {
     /// Ingress-mode proxies route based on request headers instead of using the
     /// original destination. Protocol detection is **always** performed. If it
     /// fails, we revert to using the normal IP-based discovery
+    #[allow(unused_variables)] // FIXME
     fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
@@ -277,18 +272,18 @@ impl Outbound<()> {
         P::Future: Send,
         P::Error: Send,
     {
-        // The fallback stack is the same as the normal proxy stack.
-        let fallback = self
-            .clone()
-            .push_proxy(profiles.clone(), resolve.clone())
-            .into_inner();
-
-        self.to_tcp_connect()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
-            .push_ingress(profiles, resolve, fallback)
-            .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
-            .into_inner()
+        // // The fallback stack is the same as the normal proxy stack.
+        // let fallback = self
+        //     .clone()
+        //     .push_proxy(profiles.clone(), resolve.clone())
+        //     .into_inner();
+        // self.to_tcp_connect()
+        //     .push_tcp_endpoint()
+        //     .push_http_endpoint()
+        //     .push_ingress(profiles, resolve, fallback)
+        //     .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
+        //     .into_inner()
+        todo!()
     }
 }
 

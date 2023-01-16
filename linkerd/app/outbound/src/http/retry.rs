@@ -16,6 +16,7 @@ use linkerd_http_retry::{
 use linkerd_retry as retry;
 use std::sync::Arc;
 
+#[allow(dead_code)]
 pub fn layer<N>(
     metrics: metrics::HttpProfileRouteRetry,
 ) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N, EraseResponse<()>>> + Clone {

@@ -2,7 +2,6 @@
 #![forbid(unsafe_code)]
 
 use linkerd2_proxy_api as api;
-use linkerd_addr::NameAddr;
 use linkerd_proxy_core as core;
 
 mod metadata;
@@ -12,11 +11,10 @@ mod resolve;
 pub use self::metadata::{Metadata, ProtocolHint};
 pub use self::resolve::Resolve;
 
-// TODO(ver) this should hold a structured address reference and not just a FQDN:port.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ConcreteAddr(pub NameAddr);
+pub struct DestinationGetPath(pub String);
 
-impl std::fmt::Display for ConcreteAddr {
+impl std::fmt::Display for DestinationGetPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }

@@ -17,6 +17,12 @@ use tokio::sync::watch;
 #[error("no route")]
 pub struct NoRoute(());
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Concrete {
+    backend: policy::Backend,
+    version: http::Version,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Params {
     // routes: Arc<[(profiles::http::RequestMatch, RouteParams)]>,
@@ -29,12 +35,6 @@ struct Params {
 struct RouteParams {
     // profile: profiles::http::Route,
     policy: policy::http::Policy,
-    version: http::Version,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Concrete {
-    backend: policy::Backend,
     version: http::Version,
 }
 
@@ -262,8 +262,8 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for Params {
         //     .ok_or(NoRoute)
         //     .cloned()
         let policy = match self.policy.protocol {
-            policy::Protocol::Http1(policy::http::Http1 { routes })
-            | policy::Protocol::Http2(policy::http::Http2 { routes }) => {
+            policy::Protocol::Http1(policy::http::Http1 { ref routes })
+            | policy::Protocol::Http2(policy::http::Http2 { ref routes }) => {
                 let (_, policy) = policy::http::find(&*routes, req).ok_or(NoRoute(()))?;
                 policy.clone()
             }
@@ -288,13 +288,13 @@ impl svc::Param<Distribution> for RouteParams {
     fn param(&self) -> Distribution {
         match self.policy.distribution {
             policy::RouteDistribution::Empty => Distribution::Empty,
-            policy::RouteDistribution::FirstAvailable(backends) => {
+            policy::RouteDistribution::FirstAvailable(ref backends) => {
                 Distribution::first_available(backends.iter().cloned().map(|rb| Concrete {
                     backend: rb.backend,
                     version: self.version,
                 }))
             }
-            policy::RouteDistribution::RandomAvailable(backends) => {
+            policy::RouteDistribution::RandomAvailable(ref backends) => {
                 Distribution::random_available(backends.iter().cloned().map(|(rb, weight)| {
                     let c = Concrete {
                         backend: rb.backend,
@@ -338,7 +338,7 @@ impl svc::Param<Distribution> for RouteParams {
 
 impl svc::Param<policy::Backend> for Concrete {
     fn param(&self) -> policy::Backend {
-        self.backend.into()
+        self.backend.clone()
     }
 }
 
