@@ -34,7 +34,7 @@ pub struct Endpoint {
 }
 
 #[derive(Clone, Debug)]
-struct NewNewEndpoint<N> {
+struct NewBalanceEndpoint<N> {
     inbound_ips: Arc<HashSet<IpAddr>>,
     inner: N,
 }
@@ -143,7 +143,7 @@ impl<C> Outbound<C> {
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
                 .push_new_clone()
                 .check_new::<Endpoint>()
-                .push(NewNewEndpoint::layer(config.inbound_ips.clone()))
+                .push(NewBalanceEndpoint::layer(config.inbound_ips.clone()))
                 .check_new_new::<Balance, (SocketAddr, Metadata)>()
                 .push(tcp::NewBalancePeakEwma::layer(resolve))
                 .check_new::<Balance>();
@@ -207,9 +207,9 @@ impl<C> Outbound<C> {
     }
 }
 
-// === impl NewNewEndpoint ===
+// === impl NewBalanceEndpoint ===
 
-impl<N> NewNewEndpoint<N> {
+impl<N> NewBalanceEndpoint<N> {
     fn layer(inbound_ips: Arc<HashSet<IpAddr>>) -> impl svc::Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self {
             inbound_ips: inbound_ips.clone(),
@@ -218,7 +218,7 @@ impl<N> NewNewEndpoint<N> {
     }
 }
 
-impl<T, N> svc::NewService<T> for NewNewEndpoint<N>
+impl<T, N> svc::NewService<T> for NewBalanceEndpoint<N>
 where
     N: NewService<T>,
 {

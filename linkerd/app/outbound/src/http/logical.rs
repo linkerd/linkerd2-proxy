@@ -11,6 +11,7 @@ use linkerd_app_core::{
 use linkerd_distribute as distribute;
 use linkerd_proxy_client_policy::{self as policy, ClientPolicy};
 use std::sync::Arc;
+use tokio::sync::watch;
 
 #[derive(Debug, thiserror::Error)]
 #[error("no route")]
@@ -26,8 +27,7 @@ struct Params {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RouteParams {
     // profile: profiles::http::Route,
-    routes: Arc<[policy::http::Route]>,
-    distribution: Distribution,
+    policy: policy::http::Policy,
 }
 
 type BackendCache<N, S> = distribute::BackendCache<policy::Backend, N, S>;
@@ -59,6 +59,8 @@ impl<N> Outbound<N> {
         >,
     >
     where
+        T: svc::Param<CanonicalDstHeader>,
+        T: svc::Param<watch::Receiver<ClientPolicy>>,
         T: Clone + Send + Sync + 'static,
         N: svc::NewService<policy::Backend, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<
@@ -238,50 +240,65 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for Params {
         //     .ok_or(NoRoute)
         //     .cloned()
         let policy = match self.policy.protocol {
-            policy::Protocol::Detect { opaque, .. } | policy::Protocol::Opaque(opaque) => {
-                opaque.policy.clone().ok_or(NoRoute(()))?
+            policy::Protocol::Http1(policy::http::Http1 { routes })
+            | policy::Protocol::Http2(policy::http::Http2 { routes }) => {
+                let (_, policy) = policy::http::find(&*routes, req).ok_or(NoRoute(()))?;
+                policy.clone()
             }
             _ => return Err(NoRoute(())),
         };
+        Ok(RouteParams { policy })
     }
 }
 
 // === impl RouteParams ===
 
-impl svc::Param<profiles::LogicalAddr> for RouteParams {
-    fn param(&self) -> profiles::LogicalAddr {
-        self.logical.logical_addr.clone()
-    }
-}
+// impl svc::Param<profiles::LogicalAddr> for RouteParams {
+//     fn param(&self) -> profiles::LogicalAddr {
+//         self.logical.logical_addr.clone()
+//     }
+// }
 
 impl svc::Param<Distribution> for RouteParams {
     fn param(&self) -> Distribution {
-        self.distribution.clone()
+        match self.policy.distribution {
+            policy::RouteDistribution::Empty => Distribution::Empty,
+            policy::RouteDistribution::FirstAvailable(backends) => {
+                Distribution::first_available(backends.iter().cloned().map(|rb| rb.backend))
+            }
+            policy::RouteDistribution::RandomAvailable(backends) => Distribution::random_available(
+                backends
+                    .iter()
+                    .cloned()
+                    .map(|(rb, weight)| (rb.backend, weight)),
+            )
+            .expect("distribution must be valid"),
+        }
     }
 }
 
-impl svc::Param<profiles::http::Route> for RouteParams {
-    fn param(&self) -> profiles::http::Route {
-        self.profile.clone()
-    }
-}
+// impl svc::Param<profiles::http::Route> for RouteParams {
+//     fn param(&self) -> profiles::http::Route {
+//         self.profile.clone()
+//     }
+// }
 
-impl svc::Param<metrics::ProfileRouteLabels> for RouteParams {
-    fn param(&self) -> metrics::ProfileRouteLabels {
-        metrics::ProfileRouteLabels::outbound(self.logical.logical_addr.clone(), &self.profile)
-    }
-}
+// impl svc::Param<metrics::ProfileRouteLabels> for RouteParams {
+//     fn param(&self) -> metrics::ProfileRouteLabels {
+//         metrics::ProfileRouteLabels::outbound(self.logical.logical_addr.clone(), &self.profile)
+//     }
+// }
 
-impl svc::Param<http::ResponseTimeout> for RouteParams {
-    fn param(&self) -> http::ResponseTimeout {
-        http::ResponseTimeout(self.profile.timeout())
-    }
-}
+// impl svc::Param<http::ResponseTimeout> for RouteParams {
+//     fn param(&self) -> http::ResponseTimeout {
+//         http::ResponseTimeout(self.profile.timeout())
+//     }
+// }
 
-impl classify::CanClassify for RouteParams {
-    type Classify = classify::Request;
+// impl classify::CanClassify for RouteParams {
+//     type Classify = classify::Request;
 
-    fn classify(&self) -> classify::Request {
-        self.profile.response_classes().clone().into()
-    }
-}
+//     fn classify(&self) -> classify::Request {
+//         self.profile.response_classes().clone().into()
+//     }
+// }
