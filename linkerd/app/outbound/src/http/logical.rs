@@ -1,6 +1,7 @@
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
 use crate::logical::LogicalError;
 use crate::Outbound;
+use core::fmt;
 use linkerd_app_core::{
     classify, metrics,
     profiles::{self, Profile},
@@ -27,6 +28,13 @@ struct RouteParams {
     logical: Logical,
     profile: profiles::http::Route,
     distribution: Distribution,
+}
+
+#[derive(Debug, thiserror::Error)]
+struct RouteError {
+    #[source]
+    source: Error,
+    route_labels: Arc<std::collections::BTreeMap<String, String>>,
 }
 
 type BackendCache<N, S> = distribute::BackendCache<Concrete, N, S>;
@@ -101,6 +109,11 @@ impl<N> Outbound<N> {
                         .http_profile_route
                         .to_layer::<classify::Response, _, RouteParams>(),
                 )
+                .push(svc::NewAnnotateError::<
+                    svc::annotate_error::FromTarget<_, RouteError>,
+                    _,
+                    _,
+                >::layer_from_target())
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
@@ -266,5 +279,29 @@ impl classify::CanClassify for RouteParams {
 
     fn classify(&self) -> classify::Request {
         self.profile.response_classes().clone().into()
+    }
+}
+
+// === impl RouteError ===
+
+impl fmt::Display for RouteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            route_labels,
+            source,
+        } = self;
+        write!(f, "route ({route_labels:?}): {source}")
+    }
+}
+
+impl<T> From<(&T, Error)> for RouteError
+where
+    T: svc::Param<profiles::http::Route>,
+{
+    fn from((route, source): (&T, Error)) -> Self {
+        Self {
+            route_labels: route.param().labels().clone(),
+            source,
+        }
     }
 }
