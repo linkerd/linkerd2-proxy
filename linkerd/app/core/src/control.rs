@@ -21,6 +21,22 @@ pub struct ControlAddr {
     pub identity: tls::ConditionalClientTls,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("controller ({}): {}", .addr, .source)]
+pub struct ControlError {
+    addr: Addr,
+    #[source]
+    source: Error,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("endpoint ({}): {}", .addr, .source)]
+struct EndpointError {
+    addr: std::net::SocketAddr,
+    #[source]
+    source: Error,
+}
+
 impl svc::Param<Addr> for ControlAddr {
     fn param(&self) -> Addr {
         self.addr.clone()
@@ -58,7 +74,7 @@ impl Config {
         impl svc::Service<
                 http::Request<tonic::body::BoxBody>,
                 Response = http::Response<RspBody>,
-                Error = Error,
+                Error = ControlError,
                 Future = impl Send,
             > + Clone,
     > {
@@ -98,6 +114,11 @@ impl Config {
             // after checking for discovery updates); but we don't want to
             // continually reconnect without checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
+            .push(svc::NewAnnotateError::<
+                svc::annotate_error::FromTarget<_, EndpointError>,
+                _,
+                _,
+            >::layer_from_target())
             .push_new_reconnect(self.connect.backoff)
             .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr))
             .push_new_clone()
@@ -108,10 +129,29 @@ impl Config {
             // No load shed is applied here, however, so backpressure may leak
             // into the caller task.
             .push_buffer_on_service(&self.buffer)
+            .push(svc::NewAnnotateError::layer_from_target())
             .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
             .push(svc::ArcNewService::layer())
             .into_inner()
+    }
+}
+
+impl From<(&ControlAddr, Error)> for ControlError {
+    fn from((controller, source): (&ControlAddr, Error)) -> Self {
+        Self {
+            addr: controller.addr.clone(),
+            source,
+        }
+    }
+}
+
+impl From<(&self::client::Target, Error)> for EndpointError {
+    fn from((target, source): (&self::client::Target, Error)) -> Self {
+        Self {
+            addr: target.addr,
+            source,
+        }
     }
 }
 
