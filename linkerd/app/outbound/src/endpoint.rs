@@ -46,6 +46,14 @@ pub struct EndpointError {
     protocol: Option<http::Version>,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("forward ({}): {}", addr, source)]
+pub struct ForwardError {
+    addr: Remote<ServerAddr>,
+    #[source]
+    source: Error,
+}
+
 // === impl Endpoint ===
 
 impl Endpoint<()> {
@@ -300,6 +308,12 @@ impl<S> Outbound<S> {
 
         opaque.push_detect_http(http).map_stack(|_, _, stk| {
             stk.instrument(|e: &tcp::Endpoint| info_span!("forward", endpoint = %e.addr))
+                .push(svc::NewAnnotateError::<
+                    svc::annotate_error::FromTarget<_, ForwardError>,
+                    _,
+                    _,
+                >::layer_from_target())
+                .push_on_service(svc::MapErr::layer(Error::from))
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
@@ -332,6 +346,20 @@ where
         Self {
             addr: target.param(),
             protocol: target.param(),
+            source,
+        }
+    }
+}
+
+// === impl ForwardError ===
+
+impl<T> From<(&T, Error)> for ForwardError
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
             source,
         }
     }
