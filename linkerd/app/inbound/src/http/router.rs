@@ -550,8 +550,8 @@ impl fmt::Display for LogicalError {
         };
 
         match logical {
-            Some(logical) => write!(f, "{version} logical ({addr}, logical={logical}): {source}"),
-            None => write!(f, "{version} logical ({addr}): {source}"),
+            Some(logical) => write!(f, "{version} logical ({logical}, addr={addr}): {source}"),
+            None => write!(f, "{version} ({addr}): {source}"),
         }
     }
 }
