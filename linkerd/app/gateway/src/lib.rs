@@ -72,12 +72,12 @@ where
     P::Future: Send + 'static,
     P::Error: Send,
     R: Clone + Send + Sync + Unpin + 'static,
-    R: Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
-    <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,
-    <R as Resolve<outbound::tcp::Concrete>>::Future: Send + Unpin,
-    R: Resolve<outbound::http::Concrete, Endpoint = Metadata, Error = Error>,
-    <R as Resolve<outbound::http::Concrete>>::Resolution: Send,
-    <R as Resolve<outbound::http::Concrete>>::Future: Send + Unpin,
+    R: Resolve<outbound::tcp::Balance, Endpoint = Metadata, Error = Error>,
+    <R as Resolve<outbound::tcp::Balance>>::Resolution: Send,
+    <R as Resolve<outbound::tcp::Balance>>::Future: Send + Unpin,
+    R: Resolve<outbound::http::Balance, Endpoint = Metadata, Error = Error>,
+    <R as Resolve<outbound::http::Balance>>::Resolution: Send,
+    <R as Resolve<outbound::http::Balance>>::Future: Send + Unpin,
 {
     let inbound_config = inbound.config().clone();
     let local_id = identity::LocalId(inbound.identity().name().clone());
@@ -92,16 +92,7 @@ where
     // TODO: We should use another target type that actually reflects
     // reality. But the outbound stack is currently pretty tightly
     // coupled to its target types.
-    let logical = outbound
-        .clone()
-        .push_tcp_endpoint()
-        .push_tcp_concrete(resolve.clone())
-        .push_tcp_logical();
-    let endpoint = outbound
-        .clone()
-        .push_tcp_endpoint()
-        .push_tcp_forward()
-        .into_stack();
+    let opaque = outbound.clone().push_opaque(resolve.clone());
     let inbound_ips = outbound.config().inbound_ips.clone();
     let tcp = endpoint
         .push_switch(

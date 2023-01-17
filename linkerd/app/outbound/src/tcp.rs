@@ -1,6 +1,6 @@
 use crate::Outbound;
 use linkerd_app_core::{
-    io, svc,
+    io, profiles, svc,
     transport::{metrics, OrigDstAddr},
     Error,
 };
@@ -10,7 +10,7 @@ pub mod connect;
 pub mod logical;
 pub mod opaque_transport;
 
-pub use self::connect::Connect;
+pub use self::{concrete::Balance, connect::Connect};
 pub use linkerd_app_core::proxy::tcp::Forward;
 
 pub type Accept = crate::Accept<()>;
@@ -30,6 +30,12 @@ impl<P> From<(P, Accept)> for crate::Accept<P> {
     }
 }
 
+impl svc::Param<profiles::LookupAddr> for Accept {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr((*self.orig_dst).into())
+    }
+}
+
 /*
 pub type Logical = crate::logical::Logical<()>;
 pub type Concrete = crate::logical::Concrete<()>;
@@ -46,7 +52,8 @@ impl<N> Outbound<N> {
     /// Wraps a TCP accept stack with tracing and metrics instrumentation.
     pub fn push_tcp_instrument<T, I, G, NSvc>(self, mk_span: G) -> Outbound<svc::ArcNewTcp<T, I>>
     where
-        T: svc::Param<OrigDstAddr> + Clone + Send + 'static,
+        T: svc::Param<OrigDstAddr>,
+        T: Clone + Send + 'static,
         G: svc::GetSpan<T> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<Accept, Service = NSvc> + Clone + Send + Sync + 'static,

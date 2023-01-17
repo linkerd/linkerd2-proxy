@@ -1,10 +1,9 @@
 use crate::Outbound;
 use linkerd_app_core::{
-    io,
     profiles::{self},
     svc::{self, Param},
     transport::OrigDstAddr,
-    Error,
+    Addr, Error,
 };
 use linkerd_proxy_client_policy::{self as policy, BackendDispatcher, ClientPolicy};
 use std::{sync::Arc, time};
@@ -46,21 +45,21 @@ impl<N> Outbound<N> {
     /// Discovers the profile for a TCP endpoint.
     ///
     /// Resolved services are cached and buffered.
-    pub fn push_discover<T, I, NSvc, P>(
+    pub fn push_discover<T, Req, P, NSvc>(
         self,
         profiles: P,
     ) -> Outbound<
         svc::ArcNewService<
             T,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+            impl svc::Service<Req, Response = NSvc::Response, Error = Error, Future = impl Send> + Clone,
         >,
     >
     where
-        T: Param<OrigDstAddr>,
+        T: Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
+        Req: Send + Unpin + 'static,
         N: svc::NewService<Discovery<T>, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<I, Response = (), Error = Error> + Send + 'static,
+        NSvc: svc::Service<Req, Error = Error> + Send + 'static,
         NSvc::Future: Send,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
@@ -78,7 +77,9 @@ impl<N> Outbound<N> {
             let mk_default_client_policy = {
                 let detect_timeout = config.proxy.detect_protocol_timeout;
                 let http_request_buffer = config.http_request_buffer;
-                move |OrigDstAddr(addr), profile: Option<&LogicalProfile>| -> ClientPolicy {
+                move |profiles::LookupAddr(addr),
+                      profile: Option<&LogicalProfile>|
+                      -> ClientPolicy {
                     let dispatcher = if let Some(service) =
                         profile.as_ref().and_then(|p| p.rx.borrow().addr.clone())
                     {
@@ -92,7 +93,21 @@ impl<N> Outbound<N> {
                             },
                         )
                     } else {
-                        BackendDispatcher::Forward(addr, policy::EndpointMetadata::default())
+                        match addr {
+                            Addr::Socket(addr) => BackendDispatcher::Forward(
+                                addr,
+                                policy::EndpointMetadata::default(),
+                            ),
+                            Addr::Name(addr) => BackendDispatcher::BalanceP2c(
+                                policy::Load::PeakEwma(policy::PeakEwma {
+                                    decay: time::Duration::from_secs(10),
+                                    default_rtt: time::Duration::from_millis(30),
+                                }),
+                                policy::EndpointDiscovery::DestinationGet {
+                                    path: addr.to_string(),
+                                },
+                            ),
+                        }
                     };
 
                     let backend = policy::Backend {
@@ -144,7 +159,6 @@ impl<N> Outbound<N> {
                     };
 
                     ClientPolicy {
-                        addr,
                         protocol,
                         backends: Arc::new([backend]),
                     }
@@ -152,8 +166,8 @@ impl<N> Outbound<N> {
             };
 
             let allow = config.allow_discovery.clone();
-            inner
-                .check_new_service::<Discovery<T>, I>()
+            let discover = inner
+                .check_new_service::<Discovery<T>, Req>()
                 .push_map_target(move |(profile, inner): (Option<profiles::Receiver>, T)| {
                     let profile = profile.and_then(|p| {
                         let rx: watch::Receiver<_> = p.into();
@@ -175,20 +189,19 @@ impl<N> Outbound<N> {
                     }
                 })
                 .push(profiles::discover::layer(profiles, move |t: T| {
-                    let OrigDstAddr(addr) = t.param();
-                    if allow.matches_ip(addr.ip()) {
-                        debug!("Allowing profile lookup");
-                        return Ok(profiles::LookupAddr(addr.into()));
+                    let profiles::LookupAddr(addr) = t.param();
+                    if !allow.matches(&addr) {
+                        debug!(%addr, ?allow, "Address is not in discoverable networks");
+                        return Err(profiles::DiscoveryRejected::new(
+                            "not in discoverable networks",
+                        ));
                     }
-                    debug!(
-                        %addr,
-                        networks = %allow.nets(),
-                        "Address is not in discoverable networks",
-                    );
-                    Err(profiles::DiscoveryRejected::new(
-                        "not in discoverable networks",
-                    ))
-                }))
+                    debug!(%addr, "Allowing profile lookup");
+                    Ok(profiles::LookupAddr(addr))
+                }));
+
+            // FIXME this stack metric/name doesn't make sense here.
+            discover
                 .push_on_service(
                     svc::layers()
                         .push(
@@ -201,7 +214,7 @@ impl<N> Outbound<N> {
                 )
                 .push_idle_cache(config.discovery_idle_timeout)
                 .push(svc::ArcNewService::layer())
-                .check_new_service::<T, I>()
+                .check_new_service::<T, Req>()
         })
     }
 }

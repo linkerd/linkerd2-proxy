@@ -27,6 +27,7 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     AddrMatch, Error, ProxyRuntime, Result,
 };
+use linkerd_proxy_client_policy::ClientPolicy;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -34,6 +35,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use tokio::sync::watch;
 use tracing::{info, info_span};
 
 #[derive(Clone, Debug)]
@@ -162,12 +164,12 @@ impl Outbound<()> {
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
-        R: Resolve<tcp::concrete::Balance, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<tcp::concrete::Balance>>::Resolution: Send,
-        <R as Resolve<tcp::concrete::Balance>>::Future: Send + Unpin,
-        R: Resolve<http::concrete::Balance, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<http::concrete::Balance>>::Resolution: Send,
-        <R as Resolve<http::concrete::Balance>>::Future: Send + Unpin,
+        R: Resolve<tcp::Balance, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<tcp::Balance>>::Resolution: Send,
+        <R as Resolve<tcp::Balance>>::Future: Send + Unpin,
+        R: Resolve<http::Balance, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<http::Balance>>::Resolution: Send,
+        <R as Resolve<http::Balance>>::Future: Send + Unpin,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
@@ -184,68 +186,29 @@ impl Outbound<()> {
         }
     }
 
-    fn push_proxy<T, I, P, R>(
-        self,
-        profiles: P,
-        resolve: R,
-    ) -> Outbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
-        >,
-    >
+    fn mk_proxy<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
     where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        T: Param<OrigDstAddr>,
+        T: Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
-        R: Resolve<tcp::concrete::Balance, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<tcp::concrete::Balance>>::Resolution: Send,
-        <R as Resolve<tcp::concrete::Balance>>::Future: Send + Unpin,
-        R: Resolve<http::concrete::Balance, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<http::concrete::Balance>>::Resolution: Send,
-        <R as Resolve<http::concrete::Balance>>::Future: Send + Unpin,
+        R: Resolve<tcp::Balance, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<tcp::Balance>>::Resolution: Send,
+        <R as Resolve<tcp::Balance>>::Future: Send + Unpin,
+        R: Resolve<http::Balance, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<http::Balance>>::Resolution: Send,
+        <R as Resolve<http::Balance>>::Future: Send + Unpin,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
     {
         let tcp = self.to_tcp_connect();
-
-        let opaque = tcp
-            .clone()
-            .push_tcp_endpoint()
-            .push_tcp_concrete(resolve.clone())
-            .push_tcp_logical();
-
-        let http = tcp
-            .push_tcp_endpoint()
-            .push_http_endpoint()
-            .push_http_concrete(resolve)
-            .push_http_logical()
-            .push_http_server()
-            .into_inner();
-
-        opaque.push_detect_http(http).push_discover(profiles)
-    }
-
-    fn mk_proxy<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
-    where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
-        I: Debug + Unpin + Send + Sync + 'static,
-        R: Clone + Send + Sync + Unpin + 'static,
-        R: Resolve<tcp::concrete::Balance, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<tcp::concrete::Balance>>::Resolution: Send,
-        <R as Resolve<tcp::concrete::Balance>>::Future: Send + Unpin,
-        R: Resolve<http::concrete::Balance, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<http::concrete::Balance>>::Resolution: Send,
-        <R as Resolve<http::concrete::Balance>>::Future: Send + Unpin,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
-        P::Future: Send,
-        P::Error: Send,
-    {
-        self.clone()
-            .push_proxy(profiles, resolve)
+        let http = tcp.clone().push_http(resolve.clone());
+        let opaque = tcp.push_opaque(resolve);
+        opaque
+            .push_detect_http(http.into_inner())
+            .push_discover(profiles)
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }
@@ -284,6 +247,73 @@ impl Outbound<()> {
         //     .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
         //     .into_inner()
         todo!()
+    }
+}
+
+impl<S> Outbound<S> {
+    pub fn push_http<T, R>(
+        self,
+        resolve: R,
+    ) -> Outbound<
+        svc::ArcNewService<
+            T,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    >
+    where
+        T: Param<watch::Receiver<ClientPolicy>>,
+        T: Param<http::Version>,
+        T: svc::Param<http::normalize_uri::DefaultAuthority>,
+        T: Clone + Send + Sync + 'static,
+        R: Clone + Send + Sync + Unpin + 'static,
+        R: Resolve<http::Balance, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Send,
+        R::Future: Send + Unpin,
+        S: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+        S: Clone + Send + Sync + Unpin + 'static,
+        S::Connection: Send + Unpin,
+        S::Metadata: Send + Unpin,
+        S::Future: Send + 'static,
+    {
+        self.push_tcp_endpoint()
+            .push_http_endpoint()
+            .push_http_concrete(resolve)
+            .push_http_logical()
+            .push_http_server()
+    }
+
+    pub fn push_opaque<T, I, R>(
+        self,
+        resolve: R,
+    ) -> Outbound<
+        svc::ArcNewService<
+            T,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+        >,
+    >
+    where
+        T: Param<watch::Receiver<ClientPolicy>>,
+        T: Clone + Send + Sync + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
+        I: Debug + Unpin + Send + Sync + 'static,
+        R: Clone + Send + Sync + Unpin + 'static,
+        R: Resolve<tcp::Balance, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Send,
+        R::Future: Send + Unpin,
+        S: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+        S: Clone + Send + Sync + 'static,
+        S::Connection: Send + Unpin,
+        S::Metadata: Send + Unpin,
+        S::Future: Send + 'static,
+    {
+        self.push_tcp_endpoint()
+            .push_tcp_concrete(resolve)
+            .push_tcp_logical()
     }
 }
 

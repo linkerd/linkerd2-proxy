@@ -10,6 +10,7 @@ mod retry;
 mod server;
 mod strip_proxy_error;
 
+pub use self::concrete::Balance;
 use self::{
     proxy_connection_close::ProxyConnectionClose, require_id_header::NewRequireIdentity,
     strip_proxy_error::NewStripProxyError,

@@ -12,7 +12,6 @@ pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
-    pub addr: SocketAddr,
     pub protocol: Protocol,
     pub backends: Arc<[Backend]>,
 }

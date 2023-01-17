@@ -64,9 +64,15 @@ impl<T: Param<OrigDstAddr>> Param<CacheKey> for Http<T> {
     }
 }
 
+impl<T: Param<OrigDstAddr>> Param<OrigDstAddr> for Opaque<T> {
+    fn param(&self) -> OrigDstAddr {
+        self.0.param()
+    }
+}
+
 impl<T: Param<OrigDstAddr>> Param<CacheKey> for Opaque<T> {
     fn param(&self) -> CacheKey {
-        CacheKey(None, self.0.param())
+        CacheKey(None, self.param())
     }
 }
 
@@ -106,7 +112,15 @@ impl<N> Outbound<N> {
     //
     // TODO(ver) Let discovery influence whether we assume an HTTP protocol
     // without deteciton.
-    pub fn push_detect_http<T, NSvc, H, HSvc, I>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
+    pub fn push_detect_http<T, NSvc, H, HSvc, I>(
+        self,
+        http: H,
+    ) -> Outbound<
+        svc::ArcNewService<
+            T,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+        >,
+    >
     where
         T: Param<OrigDstAddr>,
         T: Param<watch::Receiver<ClientPolicy>>,
@@ -192,7 +206,6 @@ impl<N> Outbound<N> {
                         .into_inner(),
                 )
                 .check_new_service::<T, _>()
-                .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
     }

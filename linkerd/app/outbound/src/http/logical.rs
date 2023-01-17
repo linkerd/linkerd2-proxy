@@ -6,7 +6,9 @@ use linkerd_app_core::{
     classify, metrics,
     profiles::{self, Profile},
     proxy::http,
-    svc, Error,
+    svc,
+    transport::OrigDstAddr,
+    Error,
 };
 use linkerd_distribute as distribute;
 use linkerd_proxy_client_policy::{self as policy, ClientPolicy};
@@ -238,7 +240,7 @@ impl svc::Param<profiles::LogicalAddr> for Params {
 
 impl svc::Param<CanonicalDstHeader> for Params {
     fn param(&self) -> CanonicalDstHeader {
-        CanonicalDstHeader(self.policy.addr.into())
+        todo!()
     }
 }
 
