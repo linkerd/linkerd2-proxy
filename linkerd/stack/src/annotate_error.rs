@@ -1,4 +1,4 @@
-use crate::{layer, ExtractParam, NewService, Service};
+use crate::{layer, ExtractParam, NewService, Proxy, Service};
 use std::{
     error::Error,
     fmt,
@@ -180,6 +180,27 @@ where
     fn call(&mut self, request: Req) -> Self::Future {
         ResponseFuture {
             f: self.inner.call(request),
+            context: self.context.clone(),
+        }
+    }
+}
+
+impl<S, P, C, Req> Proxy<Req, S> for AnnotateError<C, P>
+where
+    S: Service<P::Request>,
+    P: Proxy<Req, S>,
+    P::Error: Into<linkerd_error::Error>,
+    C: ErrorContext,
+{
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = C::Error;
+    type Future = ResponseFuture<P::Future, C>;
+
+    fn proxy(&self, svc: &mut S, req: Req) -> Self::Future {
+        let f = self.inner.proxy(svc, req);
+        ResponseFuture {
+            f,
             context: self.context.clone(),
         }
     }

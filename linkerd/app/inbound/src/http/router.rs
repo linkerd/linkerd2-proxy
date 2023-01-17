@@ -8,7 +8,7 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, Remote, ServerAddr},
     Error, Infallible, NameAddr, Result,
 };
-use std::net::SocketAddr;
+use std::{fmt, net::SocketAddr, sync::Arc};
 use tracing::{debug, debug_span};
 
 /// Describes an HTTP client target.
@@ -56,6 +56,23 @@ struct ProfileRoute {
 
 #[derive(Copy, Clone, Debug)]
 struct ClientRescue;
+
+#[derive(Debug, thiserror::Error)]
+struct LogicalError {
+    logical: Option<NameAddr>,
+    addr: Remote<ServerAddr>,
+    http: http::Version,
+    #[source]
+    source: Error,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("route ({:?}): {}", .route_labels, .source)]
+struct RouteError {
+    route_labels: Arc<std::collections::BTreeMap<String, String>>,
+    #[source]
+    source: Error,
+}
 
 // === impl Inbound ===
 
@@ -161,7 +178,10 @@ impl<C> Inbound<C> {
                         .push_on_service(http::BoxResponse::layer())
                         .push(classify::NewClassify::layer())
                         .push_http_insert_target::<profiles::http::Route>()
+                        .push(svc::NewAnnotateError::<
+                            svc::annotate_error::FromTarget<_, RouteError>, _, _>::layer_from_target())
                         .push_map_target(|(route, profile)| ProfileRoute { route, profile })
+                        .push_on_service(svc::MapErr::layer(Error::from))
                         .into_inner(),
                 ))
                 .push_switch(
@@ -181,6 +201,7 @@ impl<C> Inbound<C> {
                         Ok(svc::Either::B(logical))
                     },
                     http.clone()
+                    .push_on_service(svc::MapErr::layer(Error::from))
                         .check_new_service::<Logical, http::Request<_>>()
                         .into_inner(),
                 )
@@ -227,6 +248,7 @@ impl<C> Inbound<C> {
                 // dispatches the request.
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_service(svc::LoadShed::layer())
+                .push(svc::NewAnnotateError::<svc::annotate_error::FromTarget<_, LogicalError>, _, _>::layer_from_target())
                 .push_new_clone()
                 .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
                 .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {
@@ -498,5 +520,49 @@ impl errors::HttpRescue<Error> for ClientRescue {
         }
 
         Err(error)
+    }
+}
+
+// === impl LogicalError ===
+
+impl From<(&Logical, Error)> for LogicalError {
+    fn from((logical, source): (&Logical, Error)) -> Self {
+        Self {
+            logical: logical.logical.clone(),
+            addr: logical.addr,
+            http: logical.http,
+            source,
+        }
+    }
+}
+
+impl fmt::Display for LogicalError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            logical,
+            addr,
+            http,
+            source,
+        } = self;
+        let version = match http {
+            http::Version::H2 => "HTTP/2",
+            http::Version::Http1 => "HTTP/1",
+        };
+
+        match logical {
+            Some(logical) => write!(f, "{version} logical ({addr}, logical={logical}): {source}"),
+            None => write!(f, "{version} logical ({addr}): {source}"),
+        }
+    }
+}
+
+// === impl RouteError ===
+
+impl From<(&ProfileRoute, Error)> for RouteError {
+    fn from((route, source): (&ProfileRoute, Error)) -> Self {
+        Self {
+            route_labels: route.route.labels().clone(),
+            source,
+        }
     }
 }

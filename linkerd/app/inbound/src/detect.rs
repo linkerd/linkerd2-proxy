@@ -80,7 +80,8 @@ impl<N> Inbound<N> {
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
         F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
-        FSvc: svc::Service<io::BoxedIo, Response = (), Error = Error> + Send + 'static,
+        FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
+        FSvc::Error: Into<Error>,
         FSvc::Future: Send,
     {
         self.push_detect_http(forward.clone())
@@ -103,8 +104,9 @@ impl<N> Inbound<N> {
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
         F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
-        FSvc: svc::Service<io::BoxedIo, Response = (), Error = Error> + Send + 'static,
+        FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
         FSvc::Future: Send,
+        FSvc::Error: Into<Error>,
     {
         self.map_stack(|cfg, rt, detect| {
             let forward = svc::stack(forward)
@@ -191,8 +193,9 @@ impl<N> Inbound<N> {
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
         F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
-        FSvc: svc::Service<io::BoxedIo, Response = (), Error = Error> + Send + 'static,
+        FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
         FSvc::Future: Send,
+        FSvc::Error: Into<Error>,
     {
         self.map_stack(|cfg, rt, http| {
             let forward = svc::stack(forward)
