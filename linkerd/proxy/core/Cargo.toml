@@ -12,4 +12,8 @@ Core interfaces needed to implement proxy components
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
-tower = { version = "0.4", default-features = false }
+
+[dependencies.tower]
+version = "0.4"
+default-features = false
+features = ["util"]
