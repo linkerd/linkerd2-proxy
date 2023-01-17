@@ -290,7 +290,7 @@ impl<S> Outbound<S> {
                         // that in the concrete stack. It should probably be
                         // derived from the target so that we can configure it
                         // via the API.
-                        .push_buffer("HTTP Forward", &config.http_request_buffer),
+                        .push_buffer(&config.http_request_buffer),
                 )
             })
             .push_http_server()

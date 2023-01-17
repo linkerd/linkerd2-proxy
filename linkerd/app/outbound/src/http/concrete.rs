@@ -65,7 +65,7 @@ impl<N> Outbound<N> {
                                 .stack
                                 .layer(stack_labels("http", "concrete")),
                         )
-                        .push_buffer("HTTP Concrete", &config.http_request_buffer),
+                        .push_buffer(&config.http_request_buffer),
                 )
                 .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
                 .push(svc::NewAnnotateError::layer_from_target())

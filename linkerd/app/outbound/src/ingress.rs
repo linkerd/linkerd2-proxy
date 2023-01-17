@@ -144,7 +144,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                     .stack
                                     .layer(stack_labels("http", "logical")),
                             )
-                            .push_buffer("HTTP Logical", http_request_buffer),
+                            .push_buffer(http_request_buffer),
                     )
                     // Caches the profile-based stack so that it can be reused across
                     // multiple requests to the same canonical destination.
