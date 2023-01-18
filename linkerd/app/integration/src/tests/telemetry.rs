@@ -440,7 +440,9 @@ where
 
     // assert the >=1000ms bucket is incremented by our request with 500ms
     // extra latency.
-    let labels = labels.label("status_code", 200);
+    let labels = labels
+        .label("status_code", 200)
+        .label("classification", "success");
     let mut bucket_1000 = labels
         .clone()
         .metric("response_latency_ms_bucket")

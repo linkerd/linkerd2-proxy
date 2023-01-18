@@ -4,7 +4,7 @@ use std::env;
 /// By default, disable logging in modules that are expected to error in tests.
 pub const DEFAULT_LOG: &str = "warn,\
                            linkerd=debug,\
-                           linkerd_proxy_http=error,\
+                           linkerd_proxy_http=debug,\
                            linkerd_proxy_transport=error";
 
 pub fn trace_subscriber(default: impl ToString) -> (Dispatch, Handle) {

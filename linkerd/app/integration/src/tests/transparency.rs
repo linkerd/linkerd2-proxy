@@ -361,6 +361,7 @@ macro_rules! http1_tests {
             let srv = server::http1()
                 .route_fn("/", |req| {
                     assert!(!req.headers().contains_key("x-foo-bar"));
+                    tracing::info!("request headers: {:?}", req.headers());
                     Response::builder()
                         .header("x-server-quux", "lorem ipsum")
                         .header("connection", "close, x-server-quux")

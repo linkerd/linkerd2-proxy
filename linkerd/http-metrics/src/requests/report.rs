@@ -1,4 +1,4 @@
-use super::{ClassMetrics, Metrics, StatusMetrics};
+use super::{ClassMetrics, Metrics};
 use crate::{Prefixed, Report};
 use linkerd_metrics::{
     latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric, Store,
@@ -59,28 +59,6 @@ where
         registry.fmt_by_locked(f, metric, get_metric)
     }
 
-    fn fmt_by_status<N, M>(
-        registry: &Store<T, Mutex<Metrics<C>>>,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, M>,
-        get_metric: impl Fn(&StatusMetrics<C>) -> &M,
-    ) -> fmt::Result
-    where
-        N: fmt::Display,
-        M: FmtMetric,
-    {
-        for (tgt, tm) in registry.iter() {
-            let tm = tm.lock();
-            for (status, m) in &tm.by_status {
-                let status = status.as_ref().map(|s| Status(*s));
-                let labels = (tgt, status);
-                get_metric(m).fmt_metric_labeled(f, &metric.name, labels)?;
-            }
-        }
-
-        Ok(())
-    }
-
     fn fmt_by_class<N, M>(
         registry: &Store<T, Mutex<Metrics<C>>>,
         f: &mut fmt::Formatter<'_>,
@@ -131,7 +109,7 @@ where
         if self.include_latencies {
             let metric = self.response_latency_ms();
             metric.fmt_help(f)?;
-            Self::fmt_by_status(&registry, f, metric, |s| &s.latency)?;
+            Self::fmt_by_class(&registry, f, metric, |c| &c.latency)?;
         }
 
         let metric = self.response_total();

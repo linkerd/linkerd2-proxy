@@ -32,13 +32,13 @@ struct StatusMetrics<C>
 where
     C: Hash + Eq,
 {
-    latency: Histogram<latency::Ms>,
     by_class: HashMap<C, ClassMetrics>,
 }
 
 #[derive(Debug, Default)]
 pub struct ClassMetrics {
     total: Counter,
+    latency: Histogram<latency::Ms>,
 }
 
 // === impl Requests ===
@@ -99,7 +99,6 @@ where
 {
     fn default() -> Self {
         Self {
-            latency: Histogram::default(),
             by_class: HashMap::default(),
         }
     }

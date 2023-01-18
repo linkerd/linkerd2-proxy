@@ -14,6 +14,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 use tokio::time::Instant;
 
@@ -72,7 +73,7 @@ where
     classify: Option<C>,
     metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
     stream_open_at: Instant,
-    latency_recorded: bool,
+    latency: Option<Duration>,
     #[pin]
     inner: B,
 }
@@ -228,7 +229,7 @@ where
                     classify,
                     metrics,
                     stream_open_at: *this.stream_open_at,
-                    latency_recorded: false,
+                    latency: None,
                     inner,
                 };
                 Ok(http::Response::from_parts(head, body))
@@ -238,7 +239,7 @@ where
                 if let Some(lock) = metrics {
                     if let Some(classify) = classify {
                         let class = classify.error(&e);
-                        measure_class(&lock, class, None);
+                        measure_class(&lock, class, None, None);
                     }
                 }
                 Err(e)
@@ -315,7 +316,7 @@ where
             stream_open_at: Instant::now(),
             classify: None,
             metrics: None,
-            latency_recorded: false,
+            latency: None,
         }
     }
 }
@@ -330,29 +331,19 @@ where
         let this = self.project();
         let now = Instant::now();
 
-        let lock = match this.metrics.as_mut() {
-            Some(lock) => lock,
-            None => return,
-        };
-        let mut metrics = lock.lock();
-
-        (*metrics).last_update = now;
-
-        let status_metrics = metrics
-            .by_status
-            .entry(Some(*this.status))
-            .or_insert_with(StatusMetrics::default);
-
         let elapsed = now.saturating_duration_since(*this.stream_open_at);
-        status_metrics.latency.add(elapsed);
 
-        *this.latency_recorded = true;
+        // Latency is recorded when the last data frame is read. However, we
+        // want to label latencies by response classification, which requires
+        // reading trailers. Therefore, store the body's latency temporarily and
+        // add it to the metrics when the response classification is determined.
+        *this.latency = Some(elapsed);
     }
 
     fn record_class(self: Pin<&mut Self>, class: C::Class) {
         let this = self.project();
         if let Some(lock) = this.metrics.take() {
-            measure_class(&lock, class, Some(*this.status));
+            measure_class(&lock, class, Some(*this.status), *this.latency);
         }
     }
 
@@ -374,6 +365,7 @@ fn measure_class<C: Hash + Eq>(
     lock: &Arc<Mutex<Metrics<C>>>,
     class: C,
     status: Option<http::StatusCode>,
+    latency: Option<Duration>,
 ) {
     let now = Instant::now();
     let mut metrics = lock.lock();
@@ -391,6 +383,9 @@ fn measure_class<C: Hash + Eq>(
         .or_insert_with(ClassMetrics::default);
 
     class_metrics.total.incr();
+    if let Some(latency) = latency {
+        class_metrics.latency.add(latency);
+    }
 }
 
 impl<B, C> Body for ResponseBody<B, C>
@@ -414,7 +409,7 @@ where
         let poll = ready!(self.as_mut().project().inner.poll_data(cx));
         let frame = poll.map(|opt| opt.map_err(|e| self.as_mut().measure_err(e.into())));
 
-        if !(*self.as_mut().project().latency_recorded) {
+        if self.as_mut().project().latency.is_none() {
             self.record_latency();
         }
 
@@ -455,8 +450,13 @@ where
     C::Class: Hash + Eq,
 {
     fn drop(mut self: Pin<&mut Self>) {
-        if !self.as_ref().latency_recorded {
+        if self.as_ref().latency.is_none() {
             self.as_mut().record_latency();
+            debug_assert!(
+                self.as_ref().project_ref().classify.is_some(),
+                "if latency has not been recorded when dropping a `ResponseBody`, \
+                the response should not have been classified yet"
+            )
         }
 
         if let Some(c) = self.as_mut().project().classify.take().map(|c| c.eos(None)) {
