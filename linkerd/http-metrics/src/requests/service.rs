@@ -1,4 +1,4 @@
-use super::{ClassMetrics, Metrics, StatusMetrics};
+use super::{ClassMetrics, Metrics};
 use futures::{ready, TryFuture};
 use http_body::Body;
 use linkerd_error::Error;
@@ -372,14 +372,9 @@ fn measure_class<C: Hash + Eq>(
 
     (*metrics).last_update = now;
 
-    let status_metrics = metrics
-        .by_status
-        .entry(status)
-        .or_insert_with(StatusMetrics::default);
-
-    let class_metrics = status_metrics
+    let class_metrics = metrics
         .by_class
-        .entry(class)
+        .entry((status, class))
         .or_insert_with(ClassMetrics::default);
 
     class_metrics.total.incr();

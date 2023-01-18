@@ -24,15 +24,7 @@ where
 {
     last_update: Instant,
     total: Counter,
-    by_status: HashMap<Option<http::StatusCode>, StatusMetrics<C>>,
-}
-
-#[derive(Debug)]
-struct StatusMetrics<C>
-where
-    C: Hash + Eq,
-{
-    by_class: HashMap<C, ClassMetrics>,
+    by_class: HashMap<(Option<http::StatusCode>, C), ClassMetrics>,
 }
 
 #[derive(Debug, Default)]
@@ -82,7 +74,7 @@ impl<C: Hash + Eq> Default for Metrics<C> {
         Self {
             last_update: Instant::now(),
             total: Counter::default(),
-            by_status: HashMap::default(),
+            by_class: HashMap::default(),
         }
     }
 }
@@ -92,18 +84,6 @@ impl<C: Hash + Eq> LastUpdate for Metrics<C> {
         self.last_update
     }
 }
-
-impl<C> Default for StatusMetrics<C>
-where
-    C: Hash + Eq,
-{
-    fn default() -> Self {
-        Self {
-            by_class: HashMap::default(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #[test]

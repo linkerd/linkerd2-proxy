@@ -71,12 +71,10 @@ where
     {
         for (tgt, tm) in registry.iter() {
             let tm = tm.lock();
-            for (status, sm) in &tm.by_status {
-                for (cls, m) in &sm.by_class {
-                    let status = status.as_ref().map(|s| Status(*s));
-                    let labels = (tgt, (status, cls));
-                    get_metric(m).fmt_metric_labeled(f, &metric.name, labels)?;
-                }
+            for ((status, cls), m) in &tm.by_class {
+                let status = status.as_ref().map(|s| Status(*s));
+                let labels = (tgt, (status, cls));
+                get_metric(m).fmt_metric_labeled(f, &metric.name, labels)?;
             }
         }
 
