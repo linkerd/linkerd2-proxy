@@ -2,7 +2,7 @@ use crate::svc;
 use http::header::{HeaderValue, LOCATION};
 use linkerd_error::{Error, Result};
 use linkerd_error_respond as respond;
-pub use linkerd_proxy_http::{ClientHandle, HasH2Reason};
+pub use linkerd_proxy_http::{orig_proto::L5D_PROXY_CONNECTION, ClientHandle, HasH2Reason};
 use linkerd_stack::ExtractParam;
 use pin_project::pin_project;
 use std::{
@@ -12,7 +12,6 @@ use std::{
 };
 use tracing::{debug, info_span, warn};
 
-pub const L5D_PROXY_CONNECTION: &str = "l5d-proxy-connection";
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
 pub fn layer<R, P: Clone, N>(
@@ -225,7 +224,7 @@ impl SyntheticHttpResponse {
 
         if self.close_connection && emit_headers {
             // TODO only set when meshed.
-            rsp = rsp.header(L5D_PROXY_CONNECTION, "close");
+            rsp = rsp.header(L5D_PROXY_CONNECTION.clone(), "close");
         }
 
         rsp.body(B::default())
@@ -263,7 +262,7 @@ impl SyntheticHttpResponse {
             // application, i.e. so the application can choose another replica.
             if emit_headers {
                 // TODO only set when meshed.
-                rsp = rsp.header(L5D_PROXY_CONNECTION, "close");
+                rsp = rsp.header(L5D_PROXY_CONNECTION.clone(), "close");
             }
         }
 
