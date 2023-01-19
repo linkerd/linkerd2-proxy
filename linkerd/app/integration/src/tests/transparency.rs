@@ -1264,7 +1264,7 @@ mod proxy_to_proxy {
         }
     }
 
-    http1_tests! { proxy: |srv: server::Listening| ProxyToProxy::mk(srv) }
+    http1_tests! { proxy: ProxyToProxy::mk }
 
     /// Reproduces https://github.com/linkerd/linkerd2/issues/10090 --- an error
     /// is logged by the inbound proxy's Hyper server due to the presence of a
