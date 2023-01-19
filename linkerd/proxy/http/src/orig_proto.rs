@@ -1,6 +1,6 @@
 use super::{h1, h2, upgrade};
 use futures::{future, prelude::*};
-use http::header::{HeaderName, HeaderValue, CONNECTION, TRANSFER_ENCODING};
+use http::header::{HeaderValue, TRANSFER_ENCODING};
 use hyper::body::HttpBody;
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
@@ -14,7 +14,6 @@ use thiserror::Error;
 use tracing::{debug, trace, warn};
 
 pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
-pub static L5D_PROXY_CONNECTION: HeaderName = HeaderName::from_static("l5d-orig-proto");
 
 /// Upgrades HTTP requests from their original protocol to HTTP2.
 #[derive(Debug)]
@@ -39,6 +38,10 @@ pub struct UpgradeResponseBody {
 pub struct Downgrade<S> {
     inner: S,
 }
+
+/// Extension that indicates a request was an orig-proto upgrade.
+#[derive(Clone, Debug)]
+pub struct WasUpgrade(());
 
 // === impl Upgrade ===
 
@@ -267,6 +270,7 @@ where
                 if was_absolute_form(val) {
                     req.extensions_mut().insert(h1::WasAbsoluteForm(()));
                 }
+                req.extensions_mut().insert(WasUpgrade(()));
                 upgrade_response = true;
             }
         }
@@ -286,17 +290,6 @@ where
 
                 // transfer-encoding is illegal in HTTP2
                 res.headers_mut().remove(TRANSFER_ENCODING);
-                // `connection` headers are illegal in HTTP/2, but if a
-                // `connection: close` is present, we can use
-                // `l5d-proxy-connection` to tell the upgrading proxy to close
-                // the connection.
-                if let Some(connection) = res.headers_mut().remove(CONNECTION) {
-                    static CLOSE: HeaderValue = HeaderValue::from_static("close");
-                    if connection == CLOSE {
-                        res.headers_mut()
-                            .insert(L5D_PROXY_CONNECTION.clone(), CLOSE.clone());
-                    }
-                }
 
                 *res.version_mut() = http::Version::HTTP_2;
                 res
