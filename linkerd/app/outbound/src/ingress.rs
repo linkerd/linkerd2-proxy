@@ -38,6 +38,30 @@ const DST_OVERRIDE_HEADER: &str = "l5d-dst-override";
 
 type DetectIo<I> = io::PrefixedIo<I>;
 
+impl<T> Param<http::Version> for Http<T> {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+impl Param<profiles::LookupAddr> for Http<NameAddr> {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(self.target.clone().into())
+    }
+}
+
+impl Param<http::normalize_uri::DefaultAuthority> for Http<tcp::Accept> {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(Some(
+            self.target
+                .orig_dst
+                .to_string()
+                .parse()
+                .expect("Address must be a valid authority"),
+        ))
+    }
+}
+
 // === impl Outbound ===
 
 impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
@@ -61,7 +85,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
+        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
         P::Error: Send,
         P::Future: Send,
         R: Clone + Send + Sync + 'static,
@@ -92,7 +116,8 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                 } = config;
                 let profile_domains = allow_discovery.names().clone();
 
-                let new_http = http_logical
+                let discover = http_logical
+                    .check_new_service::<http::Logical, http::Request<_>>()
                     // If a profile was discovered, use it to build a logical stack.
                     // Otherwise, the override header was present but no profile
                     // information could be discovered, so fail the request.
@@ -111,26 +136,28 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             Err(ProfileRequired)
                         },
                     )
-                    .push(profiles::discover::layer(
-                        profiles,
-                        move |h: Http<NameAddr>| {
-                            // Lookup the profile if the override header was set and it
-                            // is in the configured profile domains. Otherwise, profile
-                            // discovery is skipped.
-                            if profile_domains.matches(h.target.name()) {
-                                return Ok(profiles::LookupAddr(h.target.into()));
-                            }
+                    .lift_new_with_target()
+                    .check_new_new_service::<Http<NameAddr>, Option<profiles::Receiver>, http::Request<_>>()
+                    .push(profiles::Discover::layer(profiles))
+                    .check_new_service::<Http<NameAddr>, http::Request<_>>()
+                    .push_request_filter(move |h: Http<NameAddr>| {
+                        // Lookup the profile if the override header was set and it
+                        // is in the configured profile domains. Otherwise, profile
+                        // discovery is skipped.
+                        if profile_domains.matches(h.target.name()) {
+                            return Ok(h);
+                        }
 
-                            debug!(
-                                dst = %h.target,
-                                domains = %profile_domains,
-                                "Address not in discoverable domains",
-                            );
-                            Err(profiles::DiscoveryRejected::new(
-                                "not in discoverable domains",
-                            ))
-                        },
-                    ))
+                        debug!(
+                            dst = %h.target,
+                            domains = %profile_domains,
+                            "Address not in discoverable domains",
+                        );
+                        Err(ProfileRequired)
+                    })
+                    .check_new_service::<Http<NameAddr>, http::Request<_>>();
+
+                let ingress_override = discover
                     // This service is buffered because it needs to initialize the
                     // profile resolution and a fail-fast is instrumented in case it
                     // becomes unavailable. When this service is in fail-fast, ensure
@@ -155,14 +182,16 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             .push(http::Retain::layer())
                             .push(http::BoxResponse::layer()),
                     )
-                    .instrument(|h: &Http<NameAddr>| info_span!("override", dst = %h.target))
-                    // Route requests with destinations that can be discovered via the
-                    // `l5d-dst-override` header through the (load balanced) logical
-                    // stack. Route requests without the header through the endpoint
-                    // stack.
-                    //
-                    // Stacks with an override are cached and reused. Endpoint stacks
-                    // are not.
+                    .instrument(|h: &Http<NameAddr>| info_span!("override", dst = %h.target));
+
+                // Route requests with destinations that can be discovered via the
+                // `l5d-dst-override` header through the (load balanced) logical
+                // stack. Route requests without the header through the endpoint
+                // stack.
+                //
+                // Stacks with an override are cached and reused. Endpoint stacks
+                // are not.
+                let new_http = ingress_override
                     .push_switch(
                         |Http { target, version }: Http<Target>| match target {
                             Target::Override(target) => {
@@ -191,12 +220,12 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     // allows us to avoid buffering requests to these endpoints.
                     .check_new_service::<Http<Target>, http::Request<_>>()
                     .push_on_service(svc::LoadShed::layer())
-                    .push_new_clone()
-                    .check_new_new::<http::Accept, Http<Target>>()
-                    .push(svc::NewOneshotRoute::layer_via(|a: &http::Accept| {
-                        SelectTarget(*a)
+                    .lift_new()
+                    .check_new_new::<Http<tcp::Accept>, Http<Target>>()
+                    .push(svc::NewOneshotRoute::layer_via(|a: &Http<tcp::Accept>| {
+                        SelectTarget(a.clone())
                     }))
-                    .check_new_service::<http::Accept, http::Request<_>>()
+                    .check_new_service::<Http<tcp::Accept>, http::Request<_>>()
                     .push(http::NewNormalizeUri::layer())
                     .push_on_service(
                         svc::layers()
@@ -212,25 +241,29 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             .push(http::BoxResponse::layer())
                             .push(http::BoxRequest::layer()),
                     )
-                    .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol));
+                    .check_new_service::<Http<tcp::Accept>, http::Request<_>>()
+                    .instrument(|a: &Http<tcp::Accept>| debug_span!("http", v = %a.version));
 
                 // HTTP detection is **always** performed. If detection fails, then we
                 // use the `fallback` stack to process the connection by its original
                 // destination address.
                 new_http
+                    .check_new_service::<Http<tcp::Accept>, http::Request<_>>()
                     .push(http::NewServeHttp::layer(*h2_settings, rt.drain.clone()))
+                    .check_new_service::<Http<tcp::Accept>, I>()
                     .push_switch(
                         |(http, t): (Option<http::Version>, T)| -> Result<_, Infallible> {
-                            let accept = tcp::Accept::from(t.param());
+                            let target = tcp::Accept::from(t.param());
                             if let Some(version) = http {
-                                return Ok(svc::Either::A(http::Accept::from((version, accept))));
+                                return Ok(svc::Either::A(Http { version, target }));
                             }
-                            Ok(svc::Either::B(accept))
+                            Ok(svc::Either::B(target))
                         },
                         fallback,
                     )
                     .push_map_target(detect::allow_timeout)
                     .push(detect::NewDetectService::layer(detect_http))
+                    .check_new_service::<T, I>()
                     .push_on_service(svc::BoxService::layer())
                     .push(svc::ArcNewService::layer())
                     .check_new_service::<T, I>()
@@ -239,7 +272,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
 }
 
 #[derive(Clone, Debug)]
-struct SelectTarget(http::Accept);
+struct SelectTarget(Http<tcp::Accept>);
 
 impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
     type Key = Http<Target>;
@@ -247,7 +280,7 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         Ok(Http {
-            version: self.0.protocol,
+            version: self.0.version,
             // Use either the override header or the original destination
             // address.
             target: http::authority_from_header(req, DST_OVERRIDE_HEADER)
@@ -257,7 +290,7 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
                         .map(Target::Override)
                 })
                 .transpose()?
-                .unwrap_or(Target::Forward(self.0.orig_dst)),
+                .unwrap_or(Target::Forward(self.0.target.orig_dst)),
         })
     }
 }

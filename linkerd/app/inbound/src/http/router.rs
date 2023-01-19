@@ -1,7 +1,6 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, errors, http_tracing, metrics,
-    profiles::{self, DiscoveryRejected},
+    classify, errors, http_tracing, metrics, profiles,
     proxy::{http, tap},
     svc::{self, ExtractParam, Param},
     tls,
@@ -83,7 +82,7 @@ impl<C> Inbound<C> {
             + Param<tls::ConditionalServerTls>
             + Param<policy::AllowPolicy>,
         T: Clone + Send + Unpin + 'static,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
+        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
         C: svc::MakeConnection<Http> + Clone + Send + Sync + Unpin + 'static,
@@ -143,7 +142,7 @@ impl<C> Inbound<C> {
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
             // request has not been received for `cache_max_idle_age`.
-            http.clone()
+            let router = http.clone()
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_map_target(|p: Profile| p.logical)
                 .push(profiles::http::NewProxyRouter::layer(
@@ -184,24 +183,42 @@ impl<C> Inbound<C> {
                         .check_new_service::<Logical, http::Request<_>>()
                         .into_inner(),
                 )
-                .push(profiles::discover::layer(profiles, move |t: Logical| {
-                    // If the target includes a logical named address and it exists in the set of
-                    // allowed discovery suffixes, use that address for discovery. Otherwise, fail
-                    // discovery (so that we skip the profile stack above).
-                    let addr = t.logical.ok_or_else(|| {
-                        DiscoveryRejected::new("inbound profile discovery requires DNS names")
-                    })?;
-                    if !allow_profile.matches(addr.name()) {
-                        tracing::debug!(
-                            %addr,
-                            suffixes = %allow_profile,
-                            "Rejecting discovery, address not in configured DNS suffixes",
-                        );
-                        return Err(DiscoveryRejected::new("address not in search DNS suffixes"));
-                    }
-                    Ok(profiles::LookupAddr(addr.into()))
-                }))
-                .instrument(|_: &Logical| debug_span!("profile"))
+                .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
+                ;
+
+            let discover = router.clone()
+                .lift_new_with_target()
+                .check_new_new::<Logical, Option<profiles::Receiver>>()
+                .check_new_new_service::<Logical, Option<profiles::Receiver>, http::Request<_>>()
+                .push(profiles::Discover::layer(profiles))
+                .check_new_service::<Logical, http::Request<_>>()
+                .push_switch(
+                    move |logical: Logical| -> Result<_, Infallible> {
+                        // If the target includes a logical named address and it exists in the set of
+                        // allowed discovery suffixes, use that address for discovery. Otherwise, fail
+                        // discovery (so that we skip the profile stack above).
+                        let addr = match logical.logical.clone() {
+                            Some(addr) => addr,
+                            None => return Ok(svc::Either::B((None, logical))),
+                        };
+                        if !allow_profile.matches(addr.name()) {
+                            tracing::debug!(
+                                %addr,
+                                suffixes = %allow_profile,
+                                "Skipping discovery, address not in configured DNS suffixes",
+                            );
+                            return Ok(svc::Either::B((None, logical)));
+                        }
+                        Ok(svc::Either::A(logical))
+                    },
+                    router
+                        .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
+                        .into_inner()
+                )
+                .check_new_service::<Logical, http::Request<_>>()
+                .instrument(|_: &Logical| debug_span!("profile"));
+
+            discover
                 // Skip the profile stack if it takes too long to become ready.
                 .push_when_unready(config.profile_skip_timeout, http.into_inner())
                 .push_on_service(
@@ -227,7 +244,7 @@ impl<C> Inbound<C> {
                 // dispatches the request.
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_service(svc::LoadShed::layer())
-                .push_new_clone()
+                .lift_new()
                 .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
                 .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {
                     LogicalPerRequest::from((permit.clone(), t.clone()))
@@ -362,6 +379,17 @@ impl From<Profile> for Logical {
 impl Param<u16> for Logical {
     fn param(&self) -> u16 {
         self.addr.port()
+    }
+}
+
+impl Param<profiles::LookupAddr> for Logical {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(
+            self.logical
+                .clone()
+                .map(Into::into)
+                .unwrap_or_else(|| (*self.addr).into()),
+        )
     }
 }
 

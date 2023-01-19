@@ -46,7 +46,7 @@ pub use self::{
     map_err::MapErr,
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
-    new_service::{NewCloneService, NewService},
+    new_service::{NewCloneService, NewFromTargets, NewFromTargetsInner, NewService},
     on_service::{OnService, OnServiceLayer},
     proxy::Proxy,
     result::ResultService,

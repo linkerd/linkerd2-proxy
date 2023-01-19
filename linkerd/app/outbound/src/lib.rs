@@ -88,12 +88,6 @@ struct Runtime {
     drain: drain::Watch,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Accept<P> {
-    pub orig_dst: OrigDstAddr,
-    pub protocol: P,
-}
-
 pub type ConnectMeta = tls::ConnectMeta<Local<ClientAddr>>;
 
 // === impl Outbound ===
@@ -175,7 +169,7 @@ impl Outbound<()> {
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<http::Concrete>>::Resolution: Send,
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
+        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
     {
@@ -203,7 +197,7 @@ impl Outbound<()> {
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<http::Concrete>>::Resolution: Send,
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
+        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
     {
@@ -212,6 +206,7 @@ impl Outbound<()> {
         forward
             .push_switch_logical(logical.into_inner())
             .push_discover(profiles)
+            .push_discover_cache()
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }
@@ -233,7 +228,7 @@ impl Outbound<()> {
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<http::Concrete>>::Resolution: Send,
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
+        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
     {
@@ -246,6 +241,7 @@ impl Outbound<()> {
             forward
                 .push_switch_logical(logical.into_inner())
                 .push_discover(profiles.clone())
+                .push_discover_cache()
                 .into_inner()
         };
 
@@ -255,20 +251,6 @@ impl Outbound<()> {
             .push_ingress(profiles, resolve, fallback)
             .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
             .into_inner()
-    }
-}
-
-// === impl Accept ===
-
-impl<P> Param<transport::labels::Key> for Accept<P> {
-    fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::outbound_server(self.orig_dst.into())
-    }
-}
-
-impl<P> Param<OrigDstAddr> for Accept<P> {
-    fn param(&self) -> OrigDstAddr {
-        self.orig_dst
     }
 }
 

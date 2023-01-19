@@ -57,7 +57,7 @@ impl<C> Outbound<C> {
                         .layer(stack_labels("tcp", "endpoint")),
                 )
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
-                .push_new_clone()
+                .lift_new()
                 .push(endpoint::NewFromMetadata::layer(config.inbound_ips.clone()))
                 .push(tcp::NewBalancePeakEwma::layer(resolve))
                 .push_on_service(

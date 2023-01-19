@@ -68,7 +68,7 @@ where
     O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
     O::Connection: Send + Unpin,
     O::Future: Send + Unpin + 'static,
-    P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
+    P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,
     P::Error: Send,
     R: Clone + Send + Sync + Unpin + 'static,
@@ -92,20 +92,20 @@ where
     // TODO: We should use another target type that actually reflects
     // reality. But the outbound stack is currently pretty tightly
     // coupled to its target types.
-    let logical = outbound
-        .clone()
-        .push_tcp_endpoint()
-        .push_tcp_concrete(resolve.clone())
-        .push_tcp_logical();
-    let endpoint = outbound
-        .clone()
-        .push_tcp_endpoint()
-        .push_tcp_forward()
-        .into_stack();
-    let inbound_ips = outbound.config().inbound_ips.clone();
-    let tcp = endpoint
-        .push_switch(
-            move |(profile, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
+    let opaque = {
+        let logical = outbound
+            .clone()
+            .push_tcp_endpoint()
+            .push_tcp_concrete(resolve.clone())
+            .push_tcp_logical();
+        let endpoint = outbound
+            .clone()
+            .push_tcp_endpoint()
+            .push_tcp_forward()
+            .into_stack();
+        let inbound_ips = outbound.config().inbound_ips.clone();
+        let stack = endpoint.push_switch(
+            move |profile: Option<profiles::Receiver>| -> Result<_, Error> {
                 let profile = profile.ok_or_else(|| {
                     DiscoveryRejected::new("no profile discovered for gateway target")
                 })?;
@@ -133,78 +133,105 @@ where
                 }))
             },
             logical.into_inner(),
-        )
-        .push(profiles::discover::layer(profiles.clone(), {
-            let allow = allow_discovery.clone();
-            move |addr: NameAddr| {
-                if allow.matches(addr.name()) {
-                    Ok(profiles::LookupAddr(addr.into()))
-                } else {
-                    Err(RefusedNotResolved(addr))
-                }
-            }
-        }))
-        .push_on_service(
-            svc::layers()
-                .push(
-                    inbound
-                        .proxy_metrics()
-                        .stack
-                        .layer(metrics::StackLabels::inbound("tcp", "gateway")),
-                )
-                .push_buffer("TCP Gateway", &outbound.config().tcp_connection_buffer),
-        )
-        .push_idle_cache(outbound.config().discovery_idle_timeout)
-        .check_new_service::<NameAddr, I>();
+        );
+
+        let allow = allow_discovery.clone();
+        let discover = stack
+            .clone()
+            .check_new::<Option<profiles::Receiver>>()
+            .lift_new()
+            .push(profiles::Discover::layer(profiles.clone()))
+            .check_new_service::<profiles::LookupAddr, I>()
+            .push_switch(
+                move |addr: NameAddr| -> Result<_, Infallible> {
+                    if !allow.matches(addr.name()) {
+                        return Ok(svc::Either::B(None));
+                    }
+                    Ok(svc::Either::A(profiles::LookupAddr(addr.into())))
+                },
+                stack,
+            )
+            .check_new_service::<NameAddr, I>();
+
+        discover
+            .push_on_service(
+                svc::layers()
+                    .push(
+                        inbound
+                            .proxy_metrics()
+                            .stack
+                            .layer(metrics::StackLabels::inbound("tcp", "gateway")),
+                    )
+                    .push_buffer("TCP Gateway", &outbound.config().tcp_connection_buffer),
+            )
+            .push_idle_cache(outbound.config().discovery_idle_timeout)
+            .check_new_service::<NameAddr, I>()
+    };
 
     // Cache an HTTP gateway service for each destination and HTTP version.
     //
     // The client's ID is set as a request extension, as required by the
     // gateway. This permits gateway services (and profile resolutions) to be
     // cached per target, shared across clients.
-    let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
-    let http = endpoint
-        .clone()
-        .push_http_concrete(resolve)
-        .push_http_logical()
-        .into_stack()
-        .push_switch(Ok::<_, Infallible>, endpoint.into_stack())
-        .push(NewGateway::layer(local_id))
-        .push(profiles::discover::layer(profiles, move |t: HttpTarget| {
-            if allow_discovery.matches(t.target.name()) {
-                Ok(profiles::LookupAddr(t.target.into()))
-            } else {
-                Err(RefusedNotResolved(t.target))
-            }
-        }))
-        .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
-        .push_on_service(
-            svc::layers()
-                .push(
-                    inbound
-                        .proxy_metrics()
-                        .stack
-                        .layer(metrics::StackLabels::inbound("http", "gateway")),
-                )
-                .push_buffer("Gateway", &inbound_config.http_request_buffer),
-        )
-        .push_idle_cache(inbound_config.discovery_idle_timeout)
-        .push_on_service(
-            svc::layers()
-                .push(http::Retain::layer())
-                .push(http::BoxResponse::layer()),
-        )
-        .push(svc::ArcNewService::layer());
+    let http = {
+        let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
+        let stack = endpoint
+            .clone()
+            .push_http_concrete(resolve)
+            .push_http_logical()
+            .into_stack();
+
+        let gateway = stack
+            .push_switch(Ok::<_, Infallible>, endpoint.into_stack())
+            .push(NewGateway::layer(local_id))
+            .check_new::<(Option<profiles::Receiver>, HttpTarget)>();
+
+        let discover = gateway
+            .clone()
+            .check_new::<(Option<profiles::Receiver>, HttpTarget)>()
+            .lift_new_with_target()
+            .check_new_new::<HttpTarget, Option<profiles::Receiver>>()
+            .push(profiles::Discover::layer(profiles))
+            .push_switch(
+                move |t: HttpTarget| -> Result<_, Infallible> {
+                    if !allow_discovery.matches(t.target.name()) {
+                        return Ok(svc::Either::B((None, t)));
+                    }
+                    Ok(svc::Either::A(t))
+                },
+                gateway,
+            );
+
+        discover
+            .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
+            .push_on_service(
+                svc::layers()
+                    .push(
+                        inbound
+                            .proxy_metrics()
+                            .stack
+                            .layer(metrics::StackLabels::inbound("http", "gateway")),
+                    )
+                    .push_buffer("Gateway", &inbound_config.http_request_buffer),
+            )
+            .push_idle_cache(inbound_config.discovery_idle_timeout)
+            .push_on_service(
+                svc::layers()
+                    .push(http::Retain::layer())
+                    .push(http::BoxResponse::layer()),
+            )
+            .push(svc::ArcNewService::layer())
+    };
 
     // When a transported connection is received, use the header's target to
     // drive routing.
-    inbound
+    let http_server = inbound
         .clone()
         .with_stack(
             // A router is needed so that we use each request's HTTP version
             // (i.e. after server-side orig-proto downgrading).
             http.push_on_service(svc::LoadShed::layer())
-                .push_new_clone()
+                .lift_new()
                 .push(svc::NewOneshotRoute::layer_via(
                     |(_, target): &(_, HttpTransportHeader)| RouteHttp(target.clone()),
                 ))
@@ -212,7 +239,9 @@ where
                 .push_http_insert_target::<tls::ClientId>(),
         )
         .push_http_server()
-        .into_stack()
+        .into_stack();
+
+    http_server
         .push_on_service(svc::BoxService::layer())
         .push(svc::ArcNewService::layer())
         .push_switch(
@@ -228,7 +257,8 @@ where
                 })),
                 None => Ok::<_, Infallible>(svc::Either::B(gth)),
             },
-            tcp.push_map_target(|(_permit, gth): (_, GatewayTransportHeader)| gth.target)
+            opaque
+                .push_map_target(|(_permit, gth): (_, GatewayTransportHeader)| gth.target)
                 .push(inbound.authorize_tcp())
                 .check_new_service::<GatewayTransportHeader, I>()
                 .push_on_service(svc::BoxService::layer())
@@ -296,6 +326,20 @@ impl Param<policy::AllowPolicy> for HttpTransportHeader {
 impl Param<policy::ServerLabel> for HttpTransportHeader {
     fn param(&self) -> policy::ServerLabel {
         self.policy.server_label()
+    }
+}
+
+// === impl HttpTarget ===
+
+impl Param<profiles::LookupAddr> for HttpTarget {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(self.target.clone().into())
+    }
+}
+
+impl Param<http::Version> for HttpTarget {
+    fn param(&self) -> http::Version {
+        self.version
     }
 }
 

@@ -123,7 +123,7 @@ impl<N> Outbound<N> {
             // router stack.
             concrete
                 // Share the concrete stack with each router stack.
-                .push_new_clone()
+                .lift_new()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())

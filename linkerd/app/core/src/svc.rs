@@ -109,6 +109,13 @@ impl<L> Layers<L> {
         self.push(stack::OnServiceLayer::new(layer))
     }
 
+    /// Wraps the inner `N` with `NewCloneService` so that the stack holds a
+    /// `NewService` that always returns a clone of `N` regardless of the target
+    /// value.
+    pub fn lift_new<N>(self) -> Layers<Pair<L, impl Layer<N, Service = NewCloneService<N>>>> {
+        self.push(layer::mk(NewCloneService::from))
+    }
+
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, NewInstrumentLayer<G>>> {
         self.push(NewInstrumentLayer::new(get_span))
     }
@@ -172,11 +179,17 @@ impl<S> Stack<S> {
         self.push(stack::OnServiceLayer::new(layer))
     }
 
-    /// Wraps the inner `S` with `NewCloneService` so that the stack holds a
+    /// Lifts the inner `S` with `NewCloneService` so that the stack holds a
     /// `NewService` that always returns a clone of `S` regardless of the target
     /// value.
-    pub fn push_new_clone(self) -> Stack<NewCloneService<S>> {
+    pub fn lift_new(self) -> Stack<NewCloneService<S>> {
         self.push(layer::mk(NewCloneService::from))
+    }
+
+    /// Lifts the inner stack via [`Self::lift_new`], but combines both target
+    /// types into a new `P`-typed value via `From`.
+    pub fn lift_new_with_target<P>(self) -> Stack<NewFromTargets<P, NewCloneService<S>>> {
+        self.lift_new().push(NewFromTargets::layer())
     }
 
     /// Wraps the inner service with a response timeout such that timeout errors are surfaced as a
