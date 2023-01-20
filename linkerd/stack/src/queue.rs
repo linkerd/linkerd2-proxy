@@ -1,7 +1,7 @@
 use crate::{
     failfast::{self, FailFast},
     layer::{self, Layer},
-    BoxService, ExtractParam, NewService, Param, Service,
+    BoxService, CloneParam, ExtractParam, NewService, Param, Service,
 };
 use linkerd_error::Error;
 use std::{fmt, marker::PhantomData, time::Duration};
@@ -23,9 +23,6 @@ pub struct NewQueue<N, Req, X = ()> {
     extract: X,
     _req: PhantomData<fn(Req)>,
 }
-
-#[derive(Debug, Copy, Clone)]
-pub struct FixedParams(QueueParams);
 
 pub type Queue<Req, Rsp> = failfast::Gate<Buffer<BoxService<Req, Rsp, Error>, Req>>;
 
@@ -64,13 +61,13 @@ impl<T: Param<QueueParams>, Req> NewQueue<T, Req> {
     }
 }
 
-impl<T, Req> NewQueue<T, Req, FixedParams> {
+impl<T, Req> NewQueue<T, Req, CloneParam<QueueParams>> {
     /// Returns a [`Layer`] that constructs new [`Queue`]s using a fixed set of
     /// [`QueueParams`] regardless of the target.
     #[inline]
     #[must_use]
     pub fn layer_fixed(params: QueueParams) -> impl Layer<T, Service = Self> + Clone {
-        Self::layer_with(FixedParams(params))
+        Self::layer_with(CloneParam(params))
     }
 }
 
@@ -116,13 +113,5 @@ where
             .field("inner", &self.inner)
             .field("extract", &self.extract)
             .finish()
-    }
-}
-
-// === impl ExtractParams ===
-
-impl<T> ExtractParam<QueueParams, T> for FixedParams {
-    fn extract_param(&self, _: &T) -> QueueParams {
-        self.0
     }
 }
