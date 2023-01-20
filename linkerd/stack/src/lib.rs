@@ -23,6 +23,7 @@ pub mod monitor;
 pub mod new_service;
 mod on_service;
 pub mod proxy;
+pub mod queue;
 mod result;
 mod switch_ready;
 mod timeout;
