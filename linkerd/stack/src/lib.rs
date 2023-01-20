@@ -23,7 +23,7 @@ pub mod monitor;
 pub mod new_service;
 mod on_service;
 pub mod proxy;
-pub mod queue;
+mod queue;
 mod result;
 mod switch_ready;
 mod timeout;
@@ -50,6 +50,7 @@ pub use self::{
     new_service::{NewCloneService, NewService},
     on_service::{OnService, OnServiceLayer},
     proxy::Proxy,
+    queue::{NewQueue, QueueParams},
     result::ResultService,
     switch_ready::{NewSwitchReady, SwitchReady},
     timeout::{Timeout, TimeoutError},
