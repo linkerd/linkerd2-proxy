@@ -2,6 +2,7 @@ use crate::svc;
 use http::header::{HeaderValue, LOCATION};
 use linkerd_error::{Error, Result};
 use linkerd_error_respond as respond;
+use linkerd_proxy_http::orig_proto;
 pub use linkerd_proxy_http::{ClientHandle, HasH2Reason};
 use linkerd_stack::ExtractParam;
 use pin_project::pin_project;
@@ -56,6 +57,7 @@ pub struct Respond<R> {
     rescue: R,
     version: http::Version,
     is_grpc: bool,
+    is_orig_proto_upgrade: bool,
     client: Option<ClientHandle>,
     emit_headers: bool,
 }
@@ -237,6 +239,7 @@ impl SyntheticHttpResponse {
         &self,
         version: http::Version,
         emit_headers: bool,
+        is_orig_proto_upgrade: bool,
     ) -> http::Response<B> {
         debug!(
             status = %self.http_status,
@@ -254,7 +257,7 @@ impl SyntheticHttpResponse {
         }
 
         if self.close_connection {
-            if version == http::Version::HTTP_11 {
+            if version == http::Version::HTTP_11 && !is_orig_proto_upgrade {
                 // Notify the (proxy or non-proxy) client that the connection will be closed.
                 rsp = rsp.header(http::header::CONNECTION, "close");
             }
@@ -319,17 +322,22 @@ where
                     client,
                     rescue,
                     is_grpc,
+                    is_orig_proto_upgrade: false,
                     version: http::Version::HTTP_2,
                     emit_headers,
                 }
             }
-            version => Respond {
-                client,
-                rescue,
-                version,
-                is_grpc: false,
-                emit_headers,
-            },
+            version => {
+                let is_h2_upgrade = req.extensions().get::<orig_proto::WasUpgrade>().is_some();
+                Respond {
+                    client,
+                    rescue,
+                    version,
+                    is_grpc: false,
+                    is_orig_proto_upgrade: is_h2_upgrade,
+                    emit_headers,
+                }
+            }
         }
     }
 }
@@ -392,7 +400,7 @@ where
         let rsp = if self.is_grpc {
             rsp.grpc_response(self.emit_headers)
         } else {
-            rsp.http_response(self.version, self.emit_headers)
+            rsp.http_response(self.version, self.emit_headers, self.is_orig_proto_upgrade)
         };
 
         Ok(rsp)
