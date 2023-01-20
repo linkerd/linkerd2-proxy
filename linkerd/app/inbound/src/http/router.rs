@@ -183,8 +183,7 @@ impl<C> Inbound<C> {
                         .check_new_service::<Logical, http::Request<_>>()
                         .into_inner(),
                 )
-                .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
-                ;
+                .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>();
 
             let discover = router.clone()
                 .lift_new_with_target()
