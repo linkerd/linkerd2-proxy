@@ -71,7 +71,7 @@ pin-project = "1"
 [dependencies.tower]
 version = "0.4"
 default-features = false
-features = ["buffer", "make", "spawn-ready", "timeout", "util", "limit"]
+features = ["make", "spawn-ready", "timeout", "util", "limit"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linkerd-system = { path = "../../system" }
