@@ -1,4 +1,5 @@
 pub use crate::exp_backoff::ExponentialBackoff;
+pub use crate::svc::stack::QueueConfig;
 use crate::{
     proxy::http::{self, h1, h2},
     svc::{stack::CloneParam, Param},
@@ -11,17 +12,6 @@ pub struct ServerConfig {
     pub addr: ListenAddr,
     pub keepalive: Keepalive,
     pub h2_settings: h2::Settings,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct BufferConfig {
-    /// The number of requests (or connections, depending on the context) that
-    /// may be buffered
-    pub capacity: usize,
-
-    /// The maximum amount of time a request may be buffered before failfast
-    /// errors are emitted.
-    pub failfast_timeout: Duration,
 }
 
 #[derive(Clone, Debug)]

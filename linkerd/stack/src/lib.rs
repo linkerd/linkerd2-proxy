@@ -50,7 +50,7 @@ pub use self::{
     new_service::{NewCloneService, NewService},
     on_service::{OnService, OnServiceLayer},
     proxy::Proxy,
-    queue::{NewQueue, QueueParams},
+    queue::{NewQueue, QueueConfig},
     result::ResultService,
     switch_ready::{NewSwitchReady, SwitchReady},
     timeout::{Timeout, TimeoutError},

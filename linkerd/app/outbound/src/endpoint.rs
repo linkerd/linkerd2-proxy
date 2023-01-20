@@ -259,19 +259,16 @@ impl<S> Outbound<S> {
             .push_http_endpoint()
             .map_stack(|config, rt, stk| {
                 stk.push_on_service(
-                    svc::layers()
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(stack_labels("http", "forward")),
-                        )
-                        // TODO(ver): This buffer config should be distinct from
-                        // that in the concrete stack. It should probably be
-                        // derived from the target so that we can configure it
-                        // via the API.
-                        .push_buffer("HTTP Forward", &config.http_request_buffer),
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(stack_labels("http", "forward")),
                 )
+                // TODO(ver): This buffer config should be distinct from
+                // that in the concrete stack. It should probably be
+                // derived from the target so that we can configure it
+                // via the API.
+                .push(svc::NewQueue::layer_fixed(config.http_request_buffer))
             })
             .push_http_server()
             .into_inner();

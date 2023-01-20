@@ -8,7 +8,7 @@ use std::{fmt, marker::PhantomData, time::Duration};
 use tower::buffer::Buffer;
 
 #[derive(Debug, Copy, Clone)]
-pub struct QueueParams {
+pub struct QueueConfig {
     /// The number of requests (or connections, depending on the context) that
     /// may be buffered
     pub capacity: usize,
@@ -31,7 +31,7 @@ pub type Queue<Req, Rsp> = failfast::Gate<Buffer<BoxService<Req, Rsp, Error>, Re
 impl<T, N, X, Req> NewService<T> for NewQueue<N, Req, X>
 where
     Req: Send + 'static,
-    X: ExtractParam<QueueParams, T>,
+    X: ExtractParam<QueueConfig, T>,
     N: NewService<T>,
     N::Service: Service<Req> + Send + 'static,
     <N::Service as Service<Req>>::Future: Send,
@@ -41,7 +41,7 @@ where
     type Service = Queue<Req, <N::Service as Service<Req>>::Response>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let QueueParams {
+        let QueueConfig {
             capacity,
             failfast_timeout,
         } = self.extract.extract_param(&target);
@@ -51,9 +51,9 @@ where
     }
 }
 
-impl<T: Param<QueueParams>, Req> NewQueue<T, Req> {
+impl<T: Param<QueueConfig>, Req> NewQueue<T, Req> {
     /// Returns a [`Layer`] that constructs new [`Queue`]s configured by a
-    /// `T`-typed target that implements [`Param`]`<`[`QueueParams`]`>`.
+    /// `T`-typed target that implements [`Param`]`<`[`QueueConfig`]`>`.
     #[inline]
     #[must_use]
     pub fn layer() -> impl Layer<T, Service = Self> + Clone {
@@ -61,22 +61,22 @@ impl<T: Param<QueueParams>, Req> NewQueue<T, Req> {
     }
 }
 
-impl<T, Req> NewQueue<T, Req, CloneParam<QueueParams>> {
+impl<T, Req> NewQueue<T, Req, CloneParam<QueueConfig>> {
     /// Returns a [`Layer`] that constructs new [`Queue`]s using a fixed set of
-    /// [`QueueParams`] regardless of the target.
+    /// [`QueueConfig`] regardless of the target.
     #[inline]
     #[must_use]
-    pub fn layer_fixed(params: QueueParams) -> impl Layer<T, Service = Self> + Clone {
+    pub fn layer_fixed(params: QueueConfig) -> impl Layer<T, Service = Self> + Clone {
         Self::layer_with(CloneParam(params))
     }
 }
 
 impl<T, Req, X> NewQueue<T, Req, X>
 where
-    X: ExtractParam<QueueParams, T> + Clone,
+    X: ExtractParam<QueueConfig, T> + Clone,
 {
     /// Returns a [`Layer`] that constructs new [`Queue`]s using an `X`-typed
-    /// [`ExtractParam`] implementation to extract [`QueueParams`] from a
+    /// [`ExtractParam`] implementation to extract [`QueueConfig`] from a
     /// `T`-typed target.
     #[inline]
     #[must_use]
