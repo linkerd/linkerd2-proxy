@@ -131,21 +131,18 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             ))
                         },
                     ))
+                    .push_on_service(
+                        rt.metrics
+                            .proxy
+                            .stack
+                            .layer(stack_labels("http", "logical")),
+                    )
                     // This service is buffered because it needs to initialize the
                     // profile resolution and a fail-fast is instrumented in case it
                     // becomes unavailable. When this service is in fail-fast, ensure
                     // that we drive the inner service to readiness even if new requests
                     // aren't received.
-                    .push_on_service(
-                        svc::layers()
-                            .push(
-                                rt.metrics
-                                    .proxy
-                                    .stack
-                                    .layer(stack_labels("http", "logical")),
-                            )
-                            .push_buffer(http_request_buffer),
-                    )
+                    .push(svc::NewQueue::layer_fixed(*http_request_buffer))
                     // Caches the profile-based stack so that it can be reused across
                     // multiple requests to the same canonical destination.
                     .push_idle_cache(*discovery_idle_timeout)

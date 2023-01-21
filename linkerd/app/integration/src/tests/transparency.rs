@@ -1224,43 +1224,74 @@ mod proxy_to_proxy {
                 self.out_proxy.join_servers(),
             };
         }
+
+        async fn mk(srv: server::Listening) -> Self {
+            let ctrl = controller::new();
+            let srv_addr = srv.addr;
+            let dst = format!("transparency.test.svc.cluster.local:{}", srv_addr.port());
+            let _profile_in = ctrl.profile_tx_default(&dst, "transparency.test.svc.cluster.local");
+            let ctrl = ctrl
+                .run()
+                .instrument(tracing::info_span!("ctrl", "inbound"))
+                .await;
+            let inbound = proxy::new().controller(ctrl).inbound(srv).run().await;
+
+            let ctrl = controller::new();
+            let _profile_out =
+                ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
+            let dst = ctrl.destination_tx(dst);
+            dst.send_h2_hinted(inbound.inbound);
+
+            let ctrl = ctrl
+                .run()
+                .instrument(tracing::info_span!("ctrl", "outbound"))
+                .await;
+            let outbound = proxy::new()
+                .controller(ctrl)
+                .outbound_ip(srv_addr)
+                .run()
+                .await;
+
+            let addr = outbound.outbound;
+            ProxyToProxy {
+                _dst: dst,
+                _profile_in,
+                _profile_out,
+                in_proxy: inbound,
+                out_proxy: outbound,
+                inbound: addr,
+            }
+        }
     }
 
-    http1_tests! { proxy: |srv: server::Listening| async move {
-        let ctrl = controller::new();
-        let srv_addr = srv.addr;
-        let dst = format!("transparency.test.svc.cluster.local:{}", srv_addr.port());
-        let _profile_in = ctrl.profile_tx_default(&dst, "transparency.test.svc.cluster.local");
-        let ctrl = ctrl
-            .run()
-            .instrument(tracing::info_span!("ctrl", "inbound"))
+    http1_tests! { proxy: ProxyToProxy::mk }
+
+    /// Reproduces https://github.com/linkerd/linkerd2/issues/10090 --- an error
+    /// is logged by the inbound proxy's Hyper server due to the presence of a
+    /// `connection: close` header on the HTTP response, which is invalid in HTTP/2.
+    ///
+    /// Unfortunately, this test cannot actually *panic* when this error is
+    /// logged, but the test still exercises the behavior.
+    #[tokio::test]
+    async fn http1_inbound_timeout() {
+        let _trace = trace_init();
+
+        // server will always time out
+        let srv = server::http1()
+            .delay_listen(futures::future::pending())
             .await;
-        let inbound = proxy::new().controller(ctrl).inbound(srv).run().await;
+        let proxies = ProxyToProxy::mk(srv).await;
+        let client = client::http1(
+            proxies.out_proxy.outbound,
+            "transparency.test.svc.cluster.local",
+        );
+        let res = client.request(client.request_builder("/")).await.unwrap();
+        // tracing::info!(res);
+        assert_eq!(res.status(), http::StatusCode::BAD_GATEWAY);
 
-        let ctrl = controller::new();
-        let _profile_out = ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
-        let dst = ctrl.destination_tx(dst);
-        dst.send_h2_hinted(inbound.inbound);
-
-        let ctrl = ctrl
-            .run()
-            .instrument(tracing::info_span!("ctrl", "outbound"))
-            .await;
-        let outbound = proxy::new()
-            .controller(ctrl)
-            .outbound_ip(srv_addr)
-            .run().await;
-
-        let addr = outbound.outbound;
-        ProxyToProxy {
-            _dst: dst,
-            _profile_in,
-            _profile_out,
-            in_proxy: inbound,
-            out_proxy: outbound,
-            inbound: addr,
-        }
-    } }
+        // ensure panics from the server are propagated
+        proxies.join_servers().await;
+    }
 }
 
 #[tokio::test]

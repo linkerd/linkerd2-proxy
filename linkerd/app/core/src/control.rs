@@ -12,7 +12,7 @@ use tracing::{info_span, warn};
 pub struct Config {
     pub addr: ControlAddr,
     pub connect: config::ConnectConfig,
-    pub buffer: config::BufferConfig,
+    pub buffer: config::QueueConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -128,7 +128,7 @@ impl Config {
             // This buffer allows a resolver client to be shared across stacks.
             // No load shed is applied here, however, so backpressure may leak
             // into the caller task.
-            .push_buffer_on_service(&self.buffer)
+            .push(svc::NewQueue::layer_fixed(self.buffer))
             .push(svc::NewAnnotateError::layer_from_target())
             .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())

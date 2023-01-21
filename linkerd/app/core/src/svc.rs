@@ -1,21 +1,18 @@
 // Possibly unused, but useful during development.
 
 pub use crate::proxy::http;
-use crate::{config::BufferConfig, idle_cache, Error};
+use crate::{idle_cache, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_router::{self as router, NewOneshotRoute};
 pub use linkerd_stack::{self as stack, *};
-use linkerd_stack::{failfast, OnService};
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use std::{
-    marker::PhantomData,
     task::{Context, Poll},
     time::Duration,
 };
 use tower::{
-    buffer::Buffer as TowerBuffer,
     layer::util::{Identity, Stack as Pair},
     make::MakeService,
 };
@@ -26,14 +23,6 @@ pub use tower::{
 
 #[derive(Copy, Clone, Debug)]
 pub struct AlwaysReconnect(ExponentialBackoff);
-
-pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
-
-pub struct BufferLayer<Req> {
-    capacity: usize,
-    failfast_timeout: Duration,
-    _marker: PhantomData<fn(Req)>,
-}
 
 pub type BoxHttp<B = http::BoxBody> =
     BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>;
@@ -82,22 +71,6 @@ impl<L> Layers<L> {
 
     pub fn push_map_target<M>(self, map_target: M) -> Layers<Pair<L, stack::MapTargetLayer<M>>> {
         self.push(stack::MapTargetLayer::new(map_target))
-    }
-
-    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated
-    /// task.
-
-    ///
-    /// The service admits `config.capacity` requests before it returns
-    /// `Poll::Pending`.
-    ///
-    /// If the inner service is not ready for `config.failfast_timeout`, then
-    /// the service becomes unavailable and requests in the buffer are failed.
-    pub fn push_buffer<Req>(self, config: &BufferConfig) -> Layers<Pair<L, BufferLayer<Req>>>
-    where
-        Req: Send + 'static,
-    {
-        self.push(buffer(config))
     }
 
     pub fn push_on_service<U>(self, layer: U) -> Layers<Pair<L, stack::OnServiceLayer<U>>> {
@@ -200,24 +173,6 @@ impl<S> Stack<S> {
         self,
     ) -> Stack<http::insert::NewResponseInsert<P, S>> {
         self.push(http::insert::NewResponseInsert::layer())
-    }
-
-    /// Buffers requests in an mpsc, spawning the inner service onto a dedicated
-    /// task.
-    ///
-    /// The service admits `config.capacity` requests before it returns
-    /// `Poll::Pending`.
-    ///
-    /// If the inner service is not ready for `config.failfast_timeout`, then
-    /// the service becomes unavailable and requests in the buffer are failed.
-    pub fn push_buffer_on_service<Req>(
-        self,
-        config: &BufferConfig,
-    ) -> Stack<OnService<BufferLayer<Req>, S>>
-    where
-        Req: Send + 'static,
-    {
-        self.push_on_service(buffer(config))
     }
 
     pub fn push_idle_cache<T>(self, idle: Duration) -> Stack<idle_cache::NewIdleCached<T, S>>
@@ -414,40 +369,5 @@ impl<E: Into<Error>> Recover<E> for AlwaysReconnect {
 
     fn recover(&self, _: E) -> Result<Self::Backoff, E> {
         Ok(self.0.stream())
-    }
-}
-
-// === impl BufferLayer ===
-
-fn buffer<Req>(config: &BufferConfig) -> BufferLayer<Req> {
-    BufferLayer {
-        capacity: config.capacity,
-        failfast_timeout: config.failfast_timeout,
-        _marker: PhantomData,
-    }
-}
-
-impl<Req, S> Layer<S> for BufferLayer<Req>
-where
-    Req: Send + 'static,
-    S: Service<Req, Error = Error> + Send + 'static,
-    S::Future: Send,
-{
-    type Service = failfast::Gate<Buffer<Req, S::Response, Error>>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        let buf = layer::mk(move |inner| Buffer::new(BoxService::new(inner), self.capacity));
-        let buf = FailFast::layer_gated(self.failfast_timeout, buf);
-        buf.layer(inner)
-    }
-}
-
-impl<Req> Clone for BufferLayer<Req> {
-    fn clone(&self) -> Self {
-        Self {
-            capacity: self.capacity,
-            failfast_timeout: self.failfast_timeout,
-            _marker: self._marker,
-        }
     }
 }

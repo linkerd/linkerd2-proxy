@@ -39,6 +39,10 @@ pub struct Downgrade<S> {
     inner: S,
 }
 
+/// Extension that indicates a request was an orig-proto upgrade.
+#[derive(Clone, Debug)]
+pub struct WasUpgrade(());
+
 // === impl Upgrade ===
 
 impl<C, T, B> Upgrade<C, T, B> {
@@ -266,6 +270,7 @@ where
                 if was_absolute_form(val) {
                     req.extensions_mut().insert(h1::WasAbsoluteForm(()));
                 }
+                req.extensions_mut().insert(WasUpgrade(()));
                 upgrade_response = true;
             }
         }

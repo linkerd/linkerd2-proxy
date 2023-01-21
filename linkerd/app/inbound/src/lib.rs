@@ -18,7 +18,7 @@ pub(crate) mod test_util;
 
 pub use self::{metrics::Metrics, policy::DefaultPolicy};
 use linkerd_app_core::{
-    config::{BufferConfig, ConnectConfig, ProxyConfig},
+    config::{ConnectConfig, ProxyConfig, QueueConfig},
     drain,
     http_tracing::OpenCensusSink,
     identity, io,
@@ -50,7 +50,7 @@ pub struct Config {
     pub discovery_idle_timeout: Duration,
 
     /// Configures how HTTP requests are buffered *for each inbound port*.
-    pub http_request_buffer: BufferConfig,
+    pub http_request_buffer: QueueConfig,
 }
 
 #[derive(Clone)]
