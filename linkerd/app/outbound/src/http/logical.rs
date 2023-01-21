@@ -109,11 +109,7 @@ impl<N> Outbound<N> {
                         .http_profile_route
                         .to_layer::<classify::Response, _, RouteParams>(),
                 )
-                .push(svc::NewAnnotateError::<
-                    svc::annotate_error::FromTarget<_, RouteError>,
-                    _,
-                    _,
-                >::layer_from_target())
+                .push(svc::map_err::layer_new_from_target::<RouteError, _, _>())
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
@@ -146,7 +142,7 @@ impl<N> Outbound<N> {
                 //
                 // TODO(ver) do we need to strip headers here?
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
-                .push(svc::NewAnnotateError::layer_from_target())
+                .push(svc::map_err::layer_new_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }

@@ -100,13 +100,21 @@ impl Config {
             }
         };
 
-        svc::stack(ConnectTcp::new(self.connect.keepalive))
+        let client = svc::stack(ConnectTcp::new(self.connect.keepalive))
+            .check_service::<self::client::Target>()
             .push(tls::Client::layer(identity))
+            .check_service::<self::client::Target>()
             .push_connect_timeout(self.connect.timeout)
+            .check_service::<self::client::Target>()
             .push_map_target(|(_version, target)| target)
             .push(self::client::layer())
-            .push_on_service(svc::MapErr::layer(Into::into))
-            .into_new_service()
+            .check_service::<self::client::Target>()
+            .push_on_service(svc::MapErr::layer_boxed())
+            .into_new_service();
+
+        let endpoint = client
+            .check_new::<self::client::Target>()
+            .check_new_service::<self::client::Target, _>()
             // Ensure that connection is driven independently of the load
             // balancer; but don't drive reconnection independently of the
             // balancer. This ensures that new connections are only initiated
@@ -114,22 +122,28 @@ impl Config {
             // after checking for discovery updates); but we don't want to
             // continually reconnect without checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
-            .push(svc::NewAnnotateError::<
-                svc::annotate_error::FromTarget<_, EndpointError>,
-                _,
-                _,
-            >::layer_from_target())
+            .check_new_service::<self::client::Target, _>()
+            .push(svc::map_err::layer_new_from_target::<EndpointError, _, _>())
+            .check_new_service::<self::client::Target, _>()
             .push_new_reconnect(self.connect.backoff)
-            .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr))
+            .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr));
+
+        let balance = endpoint
+            .check_new::<self::client::Target>()
+            .check_new_service::<self::client::Target, _>()
             .push_new_clone()
+            .check_new_new::<ControlAddr, self::client::Target>()
             .push(self::balance::layer(dns, resolve_backoff))
+            .check_new::<ControlAddr>()
             .push(metrics.to_layer::<classify::Response, _, _>())
-            .push(self::add_origin::layer())
             // This buffer allows a resolver client to be shared across stacks.
             // No load shed is applied here, however, so backpressure may leak
             // into the caller task.
-            .push(svc::NewQueue::layer_fixed(self.buffer))
-            .push(svc::NewAnnotateError::layer_from_target())
+            .push(svc::NewQueue::layer_fixed(self.buffer));
+
+        balance
+            .push(self::add_origin::layer())
+            .push(svc::map_err::layer_new_from_target::<ControlError, _, _>())
             .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
             .push(svc::ArcNewService::layer())

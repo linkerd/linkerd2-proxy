@@ -293,11 +293,7 @@ impl<S> Outbound<S> {
 
         opaque.push_detect_http(http).map_stack(|_, _, stk| {
             stk.instrument(|e: &tcp::Endpoint| info_span!("forward", endpoint = %e.addr))
-                .push(svc::NewAnnotateError::<
-                    svc::annotate_error::FromTarget<_, ForwardError>,
-                    _,
-                    _,
-                >::layer_from_target())
+                .push(svc::map_err::layer_new_from_target::<ForwardError, _, _>())
                 .push_on_service(svc::MapErr::layer(Error::from))
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())

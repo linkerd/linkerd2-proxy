@@ -83,7 +83,7 @@ impl<N> Outbound<N> {
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
-                .push(svc::NewAnnotateError::layer_from_target())
+                .push(svc::map_err::layer_new_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }

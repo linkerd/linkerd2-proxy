@@ -178,8 +178,7 @@ impl<C> Inbound<C> {
                         .push_on_service(http::BoxResponse::layer())
                         .push(classify::NewClassify::layer())
                         .push_http_insert_target::<profiles::http::Route>()
-                        .push(svc::NewAnnotateError::<
-                            svc::annotate_error::FromTarget<_, RouteError>, _, _>::layer_from_target())
+                        .push(svc::map_err::layer_new_from_target::<RouteError, _, _>())
                         .push_map_target(|(route, profile)| ProfileRoute { route, profile })
                         .push_on_service(svc::MapErr::layer(Error::from))
                         .into_inner(),
@@ -248,7 +247,7 @@ impl<C> Inbound<C> {
                 // dispatches the request.
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_service(svc::LoadShed::layer())
-                .push(svc::NewAnnotateError::<svc::annotate_error::FromTarget<_, LogicalError>, _, _>::layer_from_target())
+                .push(svc::map_err::layer_new_from_target::<LogicalError, _, _>())
                 .push_new_clone()
                 .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
                 .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {
