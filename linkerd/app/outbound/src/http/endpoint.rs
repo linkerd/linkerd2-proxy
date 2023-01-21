@@ -26,7 +26,6 @@ impl<C> Outbound<C> {
     where
         T: Clone + Send + Sync + 'static,
         T: svc::Param<http::client::Settings>
-            + svc::Param<Option<http::Version>>
             + svc::Param<Remote<ServerAddr>>
             + svc::Param<Option<http::AuthorityOverride>>
             + svc::Param<metrics::EndpointLabels>

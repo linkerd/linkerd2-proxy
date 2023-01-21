@@ -39,15 +39,15 @@ pub struct FromMetadata<P, N> {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[error("endpoint {addr}: {source}")]
 pub struct EndpointError {
     addr: Remote<ServerAddr>,
     #[source]
     source: Error,
-    protocol: Option<http::Version>,
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("forward ({}): {}", addr, source)]
+#[error("forwarding to {addr}: {source}")]
 pub struct ForwardError {
     addr: Remote<ServerAddr>,
     #[source]
@@ -162,18 +162,6 @@ impl<P> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
 impl<P> svc::Param<metrics::EndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::EndpointLabels {
         svc::Param::<metrics::OutboundEndpointLabels>::param(self).into()
-    }
-}
-
-impl svc::Param<Option<http::Version>> for Endpoint<()> {
-    fn param(&self) -> Option<http::Version> {
-        None
-    }
-}
-
-impl svc::Param<Option<http::Version>> for Endpoint<http::Version> {
-    fn param(&self) -> Option<http::Version> {
-        Some(self.protocol)
     }
 }
 
@@ -319,30 +307,13 @@ impl<S> Outbound<S> {
 
 // === impl EndpointError ===
 
-impl fmt::Display for EndpointError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self {
-            addr,
-            protocol,
-            source,
-        } = self;
-        let protocol = match protocol {
-            Some(http::Version::Http1) => "HTTP/1",
-            Some(http::Version::H2) => "HTTP/2",
-            None => "opaque",
-        };
-        write!(f, "{protocol} endpoint ({addr}): {source}")
-    }
-}
-
 impl<T> From<(&T, Error)> for EndpointError
 where
-    T: svc::Param<Option<http::Version>> + svc::Param<Remote<ServerAddr>>,
+    T: svc::Param<Remote<ServerAddr>>,
 {
     fn from((target, source): (&T, Error)) -> Self {
         Self {
             addr: target.param(),
-            protocol: target.param(),
             source,
         }
     }

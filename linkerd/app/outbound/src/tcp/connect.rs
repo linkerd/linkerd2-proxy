@@ -84,12 +84,7 @@ impl<C> Outbound<C> {
         >,
     >
     where
-        T: svc::Param<Remote<ServerAddr>>
-            + svc::Param<Option<http::Version>>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        T: svc::Param<Remote<ServerAddr>> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
         C::Connection: Send + Unpin,
