@@ -1,7 +1,7 @@
 use crate::{
     failfast::{self, FailFast},
     layer::{self, Layer},
-    BoxService, CloneParam, ExtractParam, NewService, Param, Service,
+    BoxService, CloneParam, ExtractParam, NewService, Service,
 };
 use linkerd_error::Error;
 use std::{fmt, marker::PhantomData, time::Duration};
@@ -18,7 +18,7 @@ pub struct QueueConfig {
     pub failfast_timeout: Duration,
 }
 
-pub struct NewQueue<N, Req, X = ()> {
+pub struct NewQueue<X, Req, N> {
     inner: N,
     extract: X,
     _req: PhantomData<fn(Req)>,
@@ -28,7 +28,7 @@ pub type Queue<Req, Rsp> = failfast::Gate<Buffer<BoxService<Req, Rsp, Error>, Re
 
 // === impl NewQueue ===
 
-impl<T, N, X, Req> NewService<T> for NewQueue<N, Req, X>
+impl<T, X, Req, N> NewService<T> for NewQueue<X, Req, N>
 where
     Req: Send + 'static,
     X: ExtractParam<QueueConfig, T>,
@@ -51,36 +51,13 @@ where
     }
 }
 
-impl<T: Param<QueueConfig>, Req> NewQueue<T, Req> {
-    /// Returns a [`Layer`] that constructs new [`Queue`]s configured by a
-    /// `T`-typed target that implements [`Param`]`<`[`QueueConfig`]`>`.
+impl<X: Clone, Req, N> NewQueue<X, Req, N> {
+    /// Returns a [`Layer`] that constructs new [`failfast::Gate`]d [`Buffer`]s
+    /// using an `X`-typed [`ExtractParam`] implementation to extract
+    /// [`QueueConfig`] from a `T`-typed target.
     #[inline]
     #[must_use]
-    pub fn layer() -> impl Layer<T, Service = Self> + Clone {
-        Self::layer_with(())
-    }
-}
-
-impl<T, Req> NewQueue<T, Req, CloneParam<QueueConfig>> {
-    /// Returns a [`Layer`] that constructs new [`Queue`]s using a fixed set of
-    /// [`QueueConfig`] regardless of the target.
-    #[inline]
-    #[must_use]
-    pub fn layer_fixed(params: QueueConfig) -> impl Layer<T, Service = Self> + Clone {
-        Self::layer_with(CloneParam(params))
-    }
-}
-
-impl<T, Req, X> NewQueue<T, Req, X>
-where
-    X: ExtractParam<QueueConfig, T> + Clone,
-{
-    /// Returns a [`Layer`] that constructs new [`Queue`]s using an `X`-typed
-    /// [`ExtractParam`] implementation to extract [`QueueConfig`] from a
-    /// `T`-typed target.
-    #[inline]
-    #[must_use]
-    pub fn layer_with(extract: X) -> impl Layer<T, Service = Self> + Clone {
+    pub fn layer_with(extract: X) -> impl Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
             extract: extract.clone(),
@@ -89,10 +66,31 @@ where
     }
 }
 
-impl<N, Req, X> Clone for NewQueue<N, Req, X>
+impl<Req, N> NewQueue<(), Req, N> {
+    /// Returns a [`Layer`] that constructs new [`failfast::Gate`]d [`Buffer`]s
+    /// configured by a target that implements
+    /// [`crate::Param`]`<`[`QueueConfig`]`>`.
+    #[inline]
+    #[must_use]
+    pub fn layer() -> impl Layer<N, Service = Self> + Clone {
+        Self::layer_with(())
+    }
+}
+
+impl<Req, N> NewQueue<CloneParam<QueueConfig>, Req, N> {
+    /// Returns a [`Layer`] that constructs new [`failfast::Gate`]d [`Buffer`]s
+    /// using a fixed [`QueueConfig`] regardless of the target.
+    #[inline]
+    #[must_use]
+    pub fn layer_fixed(params: QueueConfig) -> impl Layer<N, Service = Self> + Clone {
+        Self::layer_with(CloneParam(params))
+    }
+}
+
+impl<X, Req, N> Clone for NewQueue<X, Req, N>
 where
-    N: Clone,
     X: Clone,
+    N: Clone,
 {
     fn clone(&self) -> Self {
         Self {
@@ -103,10 +101,10 @@ where
     }
 }
 
-impl<N, Req, X> fmt::Debug for NewQueue<N, Req, X>
+impl<X, Req, N> fmt::Debug for NewQueue<X, Req, N>
 where
-    N: fmt::Debug,
     X: fmt::Debug,
+    N: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NewQueue")

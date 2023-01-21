@@ -1,5 +1,5 @@
 pub use crate::exp_backoff::ExponentialBackoff;
-pub use crate::svc::stack::QueueConfig;
+pub use crate::svc::QueueConfig;
 use crate::{
     proxy::http::{self, h1, h2},
     svc::{stack::CloneParam, Param},
