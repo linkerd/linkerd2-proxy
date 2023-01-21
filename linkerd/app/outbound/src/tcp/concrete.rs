@@ -69,9 +69,9 @@ impl<C> Outbound<C> {
                                 .proxy
                                 .stack
                                 .layer(stack_labels("opaque", "concrete")),
-                        )
-                        .push_buffer("Opaque Concrete", tcp_connection_buffer),
+                        ),
                 )
+                .push(svc::NewQueue::layer_fixed(*tcp_connection_buffer))
                 .instrument(|c: &Concrete| info_span!("concrete", addr = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })

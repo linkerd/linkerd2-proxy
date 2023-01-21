@@ -145,15 +145,14 @@ where
             }
         }))
         .push_on_service(
-            svc::layers()
-                .push(
-                    inbound
-                        .proxy_metrics()
-                        .stack
-                        .layer(metrics::StackLabels::inbound("tcp", "gateway")),
-                )
-                .push_buffer("TCP Gateway", &outbound.config().tcp_connection_buffer),
+            inbound
+                .proxy_metrics()
+                .stack
+                .layer(metrics::StackLabels::inbound("tcp", "gateway")),
         )
+        .push(svc::NewQueue::layer_fixed(
+            outbound.config().tcp_connection_buffer,
+        ))
         .push_idle_cache(outbound.config().discovery_idle_timeout)
         .check_new_service::<NameAddr, I>();
 
@@ -179,15 +178,14 @@ where
         }))
         .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
         .push_on_service(
-            svc::layers()
-                .push(
-                    inbound
-                        .proxy_metrics()
-                        .stack
-                        .layer(metrics::StackLabels::inbound("http", "gateway")),
-                )
-                .push_buffer("Gateway", &inbound_config.http_request_buffer),
+            inbound
+                .proxy_metrics()
+                .stack
+                .layer(metrics::StackLabels::inbound("http", "gateway")),
         )
+        .push(svc::NewQueue::layer_fixed(
+            inbound_config.http_request_buffer,
+        ))
         .push_idle_cache(inbound_config.discovery_idle_timeout)
         .push_on_service(
             svc::layers()

@@ -51,15 +51,12 @@ impl<N> Outbound<N> {
                     ))
                 }))
                 .push_on_service(
-                    svc::layers()
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(crate::stack_labels("tcp", "server")),
-                        )
-                        .push_buffer("TCP Server", &config.tcp_connection_buffer),
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(crate::stack_labels("tcp", "server")),
                 )
+                .push(svc::NewQueue::layer_fixed(config.tcp_connection_buffer))
                 .push_idle_cache(config.discovery_idle_timeout)
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
