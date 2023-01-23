@@ -253,6 +253,14 @@ where
     }
 }
 
+impl<T: fmt::Debug, E> fmt::Debug for WrapFromTarget<T, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WrapFromTarget")
+            .field("target", &self.target)
+            .finish()
+    }
+}
+
 impl<T: Clone, E> Clone for WrapFromTarget<T, E> {
     fn clone(&self) -> Self {
         Self {
