@@ -10,10 +10,6 @@ compile_error!(
     "at least one of the following TLS implementations must be enabled: 'meshtls-boring', 'meshtls-rustls'"
 );
 
-// Emit a compile-time error if FIPS mode is enabled but meshtls-boring is not
-#[cfg(all(not(feature = "meshtls-boring"), all(feature = "meshtls-fips")))]
-compile_error!("'meshtls-boring' needs to be enabled to support FIPS mode");
-
 use linkerd_app::{
     core::{telemetry::StartTime, transport::BindTcp},
     trace, Config,
