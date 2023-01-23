@@ -510,11 +510,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             },
             inbound_ips: inbound_ips.clone(),
             discovery_idle_timeout,
-            tcp_connection_buffer: BufferConfig {
+            tcp_connection_buffer: QueueConfig {
                 capacity: tcp_buffer_capacity,
                 failfast_timeout: tcp_failfast_timeout,
             },
-            http_request_buffer: BufferConfig {
+            http_request_buffer: QueueConfig {
                 capacity: http_buffer_capacity,
                 failfast_timeout: http_failfast_timeout,
             },
@@ -636,7 +636,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         ControlConfig {
                             addr,
                             connect,
-                            buffer: BufferConfig {
+                            buffer: QueueConfig {
                                 capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
                                 failfast_timeout: DEFAULT_CONTROL_FAILFAST_TIMEOUT,
                             },
@@ -757,7 +757,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             allowed_ips: inbound_ips.into(),
 
             discovery_idle_timeout,
-            http_request_buffer: BufferConfig {
+            http_request_buffer: QueueConfig {
                 capacity: inbound_http_buffer_capacity?
                     .unwrap_or(DEFAULT_INBOUND_HTTP_QUEUE_CAPACITY),
                 failfast_timeout: inbound_http_failfast_timeout?
@@ -783,7 +783,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             control: ControlConfig {
                 addr,
                 connect,
-                buffer: BufferConfig {
+                buffer: QueueConfig {
                     capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
                     failfast_timeout,
                 },
@@ -834,7 +834,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 control: ControlConfig {
                     addr,
                     connect,
-                    buffer: BufferConfig {
+                    buffer: QueueConfig {
                         capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
                         failfast_timeout,
                     },
@@ -872,7 +872,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             control: ControlConfig {
                 addr,
                 connect,
-                buffer: BufferConfig {
+                buffer: QueueConfig {
                     capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
                     failfast_timeout,
                 },

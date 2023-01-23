@@ -1,7 +1,7 @@
 use crate::Config;
 pub use futures::prelude::*;
 use linkerd_app_core::{
-    config::{self, BufferConfig},
+    config::{self, QueueConfig},
     drain, exp_backoff, metrics,
     proxy::{
         http::{h1, h2},
@@ -14,7 +14,7 @@ pub use linkerd_app_test as support;
 use std::{str::FromStr, time::Duration};
 
 pub(crate) fn default_config() -> Config {
-    let buffer = BufferConfig {
+    let buffer = QueueConfig {
         capacity: 10_000,
         failfast_timeout: Duration::from_secs(3),
     };

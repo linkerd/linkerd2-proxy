@@ -57,16 +57,14 @@ impl<N> Outbound<N> {
                 .push(http::NewBalancePeakEwma::layer(resolve))
                 // Drives the initial resolution via the service's readiness.
                 .push_on_service(
-                    svc::layers()
-                        .push(http::BoxResponse::layer())
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(stack_labels("http", "concrete")),
-                        )
-                        .push_buffer("HTTP Concrete", &config.http_request_buffer),
+                    svc::layers().push(http::BoxResponse::layer()).push(
+                        rt.metrics
+                            .proxy
+                            .stack
+                            .layer(stack_labels("http", "concrete")),
+                    ),
                 )
+                .push(svc::NewQueue::layer_fixed(config.http_request_buffer))
                 .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })

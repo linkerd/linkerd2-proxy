@@ -220,11 +220,9 @@ impl<C> Inbound<C> {
             discover
                 // Skip the profile stack if it takes too long to become ready.
                 .push_when_unready(config.profile_skip_timeout, http.into_inner())
-                .push_on_service(
-                    svc::layers()
-                        .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
-                        .push_buffer("HTTP Logical", &config.http_request_buffer),
+                .push_on_service(rt.metrics.proxy.stack.layer(stack_labels("http", "logical"))
                 )
+                .push(svc::NewQueue::layer_fixed(config.http_request_buffer))
                 .push_idle_cache(config.discovery_idle_timeout)
                 .push_on_service(
                     svc::layers()

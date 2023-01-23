@@ -19,7 +19,7 @@ pub(crate) mod test_util;
 pub use self::metrics::Metrics;
 use futures::Stream;
 use linkerd_app_core::{
-    config::{BufferConfig, ProxyConfig},
+    config::{ProxyConfig, QueueConfig},
     drain,
     http_tracing::OpenCensusSink,
     identity, io, profiles,
@@ -54,13 +54,13 @@ pub struct Config {
     ///
     /// A buffer capacity of 100 means that 100 connections may be buffered for
     /// each IP:port to which an application attempts to connect.
-    pub tcp_connection_buffer: BufferConfig,
+    pub tcp_connection_buffer: QueueConfig,
 
     /// Configures how HTTP requests are buffered *for each outbound address*.
     ///
     /// A buffer capacity of 100 means that 100 requests may be buffered for
     /// each IP:port to which an application has opened an outbound TCP connection.
-    pub http_request_buffer: BufferConfig,
+    pub http_request_buffer: QueueConfig,
 
     // In "ingress mode", we assume we are always routing HTTP requests and do
     // not perform per-target-address discovery. Non-HTTP connections are

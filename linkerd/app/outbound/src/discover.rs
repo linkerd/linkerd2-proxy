@@ -77,15 +77,14 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, rt, stk| {
             stk.push_on_service(
-                svc::layers()
-                    .push(
-                        rt.metrics
-                            .proxy
-                            .stack
-                            .layer(crate::stack_labels("tcp", "discover")),
-                    )
-                    .push_buffer("discover", &config.tcp_connection_buffer),
+                svc::layers().push(
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(crate::stack_labels("tcp", "discover")),
+                ),
             )
+            .push(svc::NewQueue::layer_fixed(config.tcp_connection_buffer))
             .push_idle_cache(config.discovery_idle_timeout)
             .push(svc::ArcNewService::layer())
         })
