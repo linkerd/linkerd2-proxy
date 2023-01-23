@@ -49,7 +49,7 @@ pub struct MapErr<W, S> {
     wrap: W,
 }
 
-/// Futures returned by [`AnnotateError`].
+/// Future returned by [`MapErr`].
 #[derive(Debug)]
 #[pin_project::pin_project]
 pub struct ResponseFuture<W, F> {
