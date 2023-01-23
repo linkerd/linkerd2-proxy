@@ -157,6 +157,16 @@ impl<S> Stack<S> {
     /// Lifts the inner stack via [`Self::lift_new`], but combines both target
     /// types into a new `P`-typed value via `From`.
     pub fn lift_new_with_target<P>(self) -> Stack<NewFromTargets<P, NewCloneService<S>>> {
+        // `lift_new` takes a NewService<P> and returns a NewService<T, Service =
+        // NewService<P>> -- turning it into a double-NewService that ignores
+        // the `T`-typed target.
+        //
+        // `NewFromTargets` wraps that and returns a NewService<T, Service =
+        // NewService<(U, T)> -- so that first target is cloned and
+        // combined with the second target via `P::from`.
+        //
+        // The result is that we expose NewService<T, Service = NewService<U>>
+        // over an inner NewService<P>
         self.lift_new().push(NewFromTargets::layer())
     }
 
