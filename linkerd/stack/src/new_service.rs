@@ -23,13 +23,16 @@ pub struct FromMakeService<S> {
 #[derive(Clone, Debug)]
 pub struct NewCloneService<S>(S);
 
+// A double-layered `NewService` that wraps NewServices produced by the inner
+// stack in `NewFromTargetsInner`.
 #[derive(Debug)]
 pub struct NewFromTargets<P, N> {
     inner: N,
     _marker: PhantomData<fn() -> P>,
 }
 
-/// Builds services by passing `P` typed values to an `N`-typed inner stack.
+/// A `NewService` that builds inner services from a `P`-typed target. P is
+/// constructed using `From<(U, T)>` where `U` is the provided target type.
 #[derive(Debug)]
 pub struct NewFromTargetsInner<T, P, N> {
     target: T,

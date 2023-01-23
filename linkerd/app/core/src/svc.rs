@@ -166,7 +166,7 @@ impl<S> Stack<S> {
         // combined with the second target via `P::from`.
         //
         // The result is that we expose NewService<T, Service = NewService<U>>
-        // over an inner NewService<P>
+        // over an inner NewService<P>.
         self.lift_new().push(NewFromTargets::layer())
     }
 
