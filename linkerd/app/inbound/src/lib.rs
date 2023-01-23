@@ -255,7 +255,7 @@ impl<S> Inbound<S> {
                         .push(drain::Retain::layer(rt.drain.clone())),
                 )
                 .instrument(|_: &_| debug_span!("tcp"))
-                .push(svc::map_err::layer_new_from_target::<ForwardError, _, _>())
+                .push(svc::NewMapErr::layer_from_target::<ForwardError, _>())
                 .push(svc::ArcNewService::layer())
                 .check_new::<T>()
         })

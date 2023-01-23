@@ -16,7 +16,7 @@ pub mod layer;
 mod lazy;
 mod loadshed;
 mod make_thunk;
-pub mod map_err;
+mod map_err;
 mod map_target;
 pub mod monitor;
 pub mod new_service;

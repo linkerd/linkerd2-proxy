@@ -95,21 +95,26 @@ impl<W, N> NewMapErr<W, (), N> {
 
 type ExtractWrapFromTarget<T, E> = fn(&T) -> WrapFromTarget<T, E>;
 
-/// A `NewService` layer that converts inner errors to an `E`-typed error via
-/// `From<(&T, Error)`, where `T` is a stack target.
-pub fn layer_new_from_target<E, T, N>(
-) -> impl layer::Layer<N, Service = NewMapErr<WrapFromTarget<T, E>, ExtractWrapFromTarget<T, E>, N>>
-       + Clone
-where
-    T: Clone,
-    WrapFromTarget<T, E>: WrapErr<Error> + Clone,
-{
-    NewMapErr::layer_with(
-        (|t: &T| WrapFromTarget {
-            target: t.clone(),
-            _err: PhantomData,
-        }) as ExtractWrapFromTarget<T, E>,
-    )
+// We don't actually care about the `()` types here, but they help avoid
+// inference problems.
+impl<N> NewMapErr<(), (), N> {
+    /// A `NewService` layer that converts inner errors to an `E`-typed error via
+    /// `From<(&T, Error)`, where `T` is a stack target.
+    pub fn layer_from_target<E, T>() -> impl layer::Layer<
+        N,
+        Service = NewMapErr<WrapFromTarget<T, E>, ExtractWrapFromTarget<T, E>, N>,
+    > + Clone
+    where
+        T: Clone,
+        WrapFromTarget<T, E>: WrapErr<Error> + Clone,
+    {
+        NewMapErr::layer_with(
+            (|t: &T| WrapFromTarget {
+                target: t.clone(),
+                _err: PhantomData,
+            }) as ExtractWrapFromTarget<T, E>,
+        )
+    }
 }
 
 impl<T, W, X, N> NewService<T> for NewMapErr<W, X, N>

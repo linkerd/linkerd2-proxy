@@ -66,7 +66,7 @@ impl<N> Outbound<N> {
                 )
                 .push(svc::NewQueue::layer_fixed(config.http_request_buffer))
                 .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
-                .push(svc::map_err::layer_new_from_target())
+                .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }

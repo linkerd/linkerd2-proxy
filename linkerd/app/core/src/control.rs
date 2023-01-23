@@ -123,7 +123,7 @@ impl Config {
             // continually reconnect without checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .check_new_service::<self::client::Target, _>()
-            .push(svc::map_err::layer_new_from_target::<EndpointError, _, _>())
+            .push(svc::NewMapErr::layer_from_target::<EndpointError, _>())
             .check_new_service::<self::client::Target, _>()
             .push_new_reconnect(self.connect.backoff)
             .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr));
@@ -143,7 +143,7 @@ impl Config {
 
         balance
             .push(self::add_origin::layer())
-            .push(svc::map_err::layer_new_from_target::<ControlError, _, _>())
+            .push(svc::NewMapErr::layer_from_target::<ControlError, _>())
             .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
             .push(svc::ArcNewService::layer())

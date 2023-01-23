@@ -63,7 +63,7 @@ impl<C> Outbound<C> {
                 // Set the TLS status on responses so that the stack can detect whether the request
                 // was sent over a meshed connection.
                 .push_http_response_insert_target::<tls::ConditionalClientTls>()
-                .push(svc::map_err::layer_new_from_target::<EndpointError, _, _>())
+                .push(svc::NewMapErr::layer_from_target::<EndpointError, _>())
                 // If the outbound proxy is not configured to emit headers, then strip the
                 // `l5d-proxy-errors` header if set by the peer.
                 .push(NewStripProxyError::layer(config.emit_headers))
