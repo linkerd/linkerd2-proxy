@@ -79,7 +79,7 @@ impl<W, X, N> NewMapErr<W, X, N> {
 
 impl<W, X: Clone, N> NewMapErr<W, X, N> {
     /// A `NewService` layer that extracts a `WrapErr` implementation via the
-    /// `X`-typex `ExtractParam`.
+    /// `X`-typed `ExtractParam`.
     pub fn layer_with(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self::new(inner, extract.clone()))
     }
