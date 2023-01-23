@@ -84,12 +84,7 @@ impl<C> Outbound<C> {
         >,
     >
     where
-        T: svc::Param<Remote<ServerAddr>>
-            + svc::Param<Option<http::Version>>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        T: svc::Param<Remote<ServerAddr>> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
         C::Connection: Send + Unpin,
@@ -100,7 +95,7 @@ impl<C> Outbound<C> {
             conn.push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
                 .push_on_service(super::Forward::layer())
-                .push(svc::NewAnnotateError::layer_from_target())
+                .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })

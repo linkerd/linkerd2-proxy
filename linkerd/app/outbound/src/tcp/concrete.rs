@@ -73,7 +73,7 @@ impl<C> Outbound<C> {
                 )
                 .push(svc::NewQueue::layer_fixed(*tcp_connection_buffer))
                 .instrument(|c: &Concrete| info_span!("concrete", addr = %c.resolve))
-                .push(svc::NewAnnotateError::layer_from_target())
+                .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }
