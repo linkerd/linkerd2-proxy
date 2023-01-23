@@ -10,6 +10,8 @@ const HTTP_TRACE_ID_HEADER: &str = "x-b3-traceid";
 const HTTP_SPAN_ID_HEADER: &str = "x-b3-spanid";
 const HTTP_SAMPLED_HEADER: &str = "x-b3-sampled";
 
+const W3C_HTTP_TRACEPARENT: &str = "traceparent";
+
 const GRPC_TRACE_HEADER: &str = "grpc-trace-bin";
 const GRPC_TRACE_FIELD_TRACE_ID: u8 = 0;
 const GRPC_TRACE_FIELD_SPAN_ID: u8 = 1;
@@ -17,8 +19,9 @@ const GRPC_TRACE_FIELD_TRACE_OPTIONS: u8 = 2;
 
 #[derive(Debug)]
 pub enum Propagation {
-    Http,
-    Grpc,
+    B3Http,
+    B3Grpc,
+    TraceContext,
 }
 
 #[derive(Debug)]
@@ -42,16 +45,131 @@ impl TraceContext {
 }
 
 pub fn unpack_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
-    unpack_grpc_trace_context(request).or_else(|| unpack_http_trace_context(request))
+    // Attempt to parse as w3c first since it's the newest interface in
+    // distributed tracing ecosystem
+    unpack_w3c_trace_context(request)
+        .or_else(|| unpack_grpc_trace_context(request))
+        .or_else(|| unpack_http_trace_context(request))
 }
 
 // Generates a new span id, writes it to the request in the appropriate
 // propagation format and returns the generated span id.
 pub fn increment_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
     match context.propagation {
-        Propagation::Grpc => increment_grpc_span_id(request, context),
-        Propagation::Http => increment_http_span_id(request),
+        Propagation::B3Grpc => increment_grpc_span_id(request, context),
+        Propagation::B3Http => increment_http_span_id(request),
+        Propagation::TraceContext => {
+            increment_w3c_http_span_id(request, context.trace_id.clone(), context.flags.clone())
+        }
     }
+}
+
+fn unpack_w3c_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
+    get_header_str(request, W3C_HTTP_TRACEPARENT).and_then(parse_w3c_context)
+}
+
+fn parse_w3c_context(header_value: &str) -> Option<TraceContext> {
+    let mut iter = header_value.split('-');
+    // First, process header.
+    //
+    if let Some(version) = iter.next() {
+        // probably don't need to decode from hex here
+        // Version (version) is 1 byte representing an 8-bit unsigned integer.
+        // Version ff is invalid. The current specification assumes the version
+        // is set to 00.
+        if version != "00" {
+            warn!(
+                "trace header {} contains invalid version value: {}",
+                W3C_HTTP_TRACEPARENT, header_value
+            );
+            // According to spec, we should create new traceparent here
+            // and clear out tracestate
+            return None;
+        }
+    }
+
+    let trace_id = if let Some(trace_id) = iter
+        .next()
+        .and_then(check_valid_w3c_id)
+        .and_then(|id| parse_w3c_id(id, 16))
+    {
+        trace_id
+    } else {
+        return None;
+    };
+
+    let parent_id = if let Some(parent_id) = iter
+        .next()
+        .and_then(check_valid_w3c_id)
+        .and_then(|id| parse_w3c_id(id, 8))
+    {
+        parent_id
+    } else {
+        return None;
+    };
+
+    let flags = if let Some(flag) = iter.next().and_then(|flag| hex::decode(flag).ok()) {
+        // Value will be 1 if last bit in flag is 1.
+        Flags(flag[0] & 0x1)
+    } else {
+        // the above branch should be infallible, we shouldn't hit this if
+        // parsing works.
+        // need to check spec to see what happens if it's missing the flags
+        Flags(0)
+    };
+
+    Some(TraceContext {
+        propagation: Propagation::TraceContext,
+        trace_id,
+        parent_id,
+        flags,
+    })
+}
+
+fn parse_w3c_id(id: &str, pad_to: usize) -> Option<Id> {
+    hex::decode(id)
+        .map(|mut data| {
+            if data.len() < pad_to {
+                let padding = pad_to - data.len();
+                let mut padded = vec![0u8; padding];
+                padded.append(&mut data);
+                Id(padded)
+            } else {
+                Id(data)
+            }
+        })
+        .map_err(|e| warn!("Value {} does not contain a hex value: {}", id, e))
+        .ok()
+}
+
+fn check_valid_w3c_id(id: &str) -> Option<&str> {
+    if id.chars().all(|c| c == '0') {
+        warn!(
+            "trace header {} contains invalid trace id: {}",
+            W3C_HTTP_TRACEPARENT, id
+        );
+        None
+    } else {
+        Some(id)
+    }
+}
+
+fn increment_w3c_http_span_id<B>(request: &mut http::Request<B>, trace_id: Id, flags: Flags) -> Id {
+    let span_id = Id::new_span_id(&mut thread_rng());
+
+    trace!("incremented span id: {}", span_id);
+
+    let span_str = hex::encode(span_id.as_ref());
+    let trace_str = hex::encode(trace_id);
+    let flag_str = hex::encode(vec![flags.0]);
+
+    let final_str = format!("{}-{}-{}-{}", "00", trace_str, span_str, flag_str);
+    if let Result::Ok(hv) = HeaderValue::from_str(&final_str) {
+        request.headers_mut().insert(W3C_HTTP_TRACEPARENT, hv);
+    } else {
+        warn!("invalid {} header: {:?}", W3C_HTTP_TRACEPARENT, span_str);
+    }
+    span_id
 }
 
 fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
@@ -78,7 +196,7 @@ fn parse_grpc_trace_context_fields(buf: &mut Bytes) -> Option<TraceContext> {
     let _version = try_split_to(buf, 1).ok()?;
 
     let mut context = TraceContext {
-        propagation: Propagation::Grpc,
+        propagation: Propagation::B3Grpc,
         trace_id: Default::default(),
         parent_id: Default::default(),
         flags: Default::default(),
@@ -180,7 +298,7 @@ fn unpack_http_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
         _ => Flags(0),
     };
     Some(TraceContext {
-        propagation: Propagation::Http,
+        propagation: Propagation::B3Http,
         trace_id,
         parent_id,
         flags,
