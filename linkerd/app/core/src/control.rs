@@ -22,7 +22,7 @@ pub struct ControlAddr {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("controller ({}): {}", .addr, .source)]
+#[error("controller {addr}: {source}")]
 pub struct ControlError {
     addr: Addr,
     #[source]
@@ -30,7 +30,7 @@ pub struct ControlError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("endpoint ({}): {}", .addr, .source)]
+#[error("endpoint {addr}: {source}")]
 struct EndpointError {
     addr: std::net::SocketAddr,
     #[source]
@@ -101,20 +101,14 @@ impl Config {
         };
 
         let client = svc::stack(ConnectTcp::new(self.connect.keepalive))
-            .check_service::<self::client::Target>()
             .push(tls::Client::layer(identity))
-            .check_service::<self::client::Target>()
             .push_connect_timeout(self.connect.timeout)
-            .check_service::<self::client::Target>()
             .push_map_target(|(_version, target)| target)
             .push(self::client::layer())
-            .check_service::<self::client::Target>()
             .push_on_service(svc::MapErr::layer_boxed())
             .into_new_service();
 
         let endpoint = client
-            .check_new::<self::client::Target>()
-            .check_new_service::<self::client::Target, _>()
             // Ensure that connection is driven independently of the load
             // balancer; but don't drive reconnection independently of the
             // balancer. This ensures that new connections are only initiated
@@ -122,19 +116,13 @@ impl Config {
             // after checking for discovery updates); but we don't want to
             // continually reconnect without checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
-            .check_new_service::<self::client::Target, _>()
             .push(svc::NewMapErr::layer_from_target::<EndpointError, _>())
-            .check_new_service::<self::client::Target, _>()
             .push_new_reconnect(self.connect.backoff)
             .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr));
 
         let balance = endpoint
-            .check_new::<self::client::Target>()
-            .check_new_service::<self::client::Target, _>()
             .lift_new()
-            .check_new_new::<ControlAddr, self::client::Target>()
             .push(self::balance::layer(dns, resolve_backoff))
-            .check_new::<ControlAddr>()
             .push(metrics.to_layer::<classify::Response, _, _>())
             // This buffer allows a resolver client to be shared across stacks.
             // No load shed is applied here, however, so backpressure may leak

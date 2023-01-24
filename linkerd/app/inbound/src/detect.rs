@@ -105,8 +105,8 @@ impl<N> Inbound<N> {
         NSvc::Future: Send,
         F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
         FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
-        FSvc::Future: Send,
         FSvc::Error: Into<Error>,
+        FSvc::Future: Send,
     {
         self.map_stack(|cfg, rt, detect| {
             let forward = svc::stack(forward)
@@ -194,8 +194,8 @@ impl<N> Inbound<N> {
         NSvc::Future: Send,
         F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
         FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
-        FSvc::Future: Send,
         FSvc::Error: Into<Error>,
+        FSvc::Future: Send,
     {
         self.map_stack(|cfg, rt, http| {
             let forward = svc::stack(forward)

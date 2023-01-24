@@ -1,6 +1,5 @@
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
 use crate::Outbound;
-use core::fmt;
 use linkerd_app_core::{
     classify, metrics,
     profiles::{self, Profile},
@@ -16,10 +15,9 @@ use std::sync::Arc;
 pub struct NoRoute;
 
 #[derive(Debug, thiserror::Error)]
-#[error("logical {version:?} service {addr}: {source}")]
+#[error("logical service {addr}: {source}")]
 pub struct LogicalError {
     addr: profiles::LogicalAddr,
-    version: http::Version,
     #[source]
     source: Error,
 }
@@ -36,13 +34,6 @@ struct RouteParams {
     logical: Logical,
     profile: profiles::http::Route,
     distribution: Distribution,
-}
-
-#[derive(Debug, thiserror::Error)]
-struct RouteError {
-    #[source]
-    source: Error,
-    route_labels: Arc<std::collections::BTreeMap<String, String>>,
 }
 
 type BackendCache<N, S> = distribute::BackendCache<Concrete, N, S>;
@@ -117,10 +108,10 @@ impl<N> Outbound<N> {
                         .http_profile_route
                         .to_layer::<classify::Response, _, RouteParams>(),
                 )
-                .push(svc::NewMapErr::layer_from_target::<RouteError, _>())
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
+                // TODO(ver) .push(svc::NewMapErr::layer_from_target::<RouteError, _>())
                 .push_on_service(http::BoxResponse::layer());
 
             // A `NewService`--instantiated once per logical target--that caches
@@ -286,40 +277,12 @@ impl classify::CanClassify for RouteParams {
     }
 }
 
-// === impl RouteError ===
-
-impl fmt::Display for RouteError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self {
-            route_labels,
-            source,
-        } = self;
-        write!(f, "route ({route_labels:?}): {source}")
-    }
-}
-
-impl<T> From<(&T, Error)> for RouteError
-where
-    T: svc::Param<profiles::http::Route>,
-{
-    fn from((route, source): (&T, Error)) -> Self {
-        Self {
-            route_labels: route.param().labels().clone(),
-            source,
-        }
-    }
-}
-
 // === impl LogicalError ===
 
-impl<T> From<(&T, Error)> for LogicalError
-where
-    T: svc::Param<profiles::LogicalAddr> + svc::Param<http::Version>,
-{
+impl<T: svc::Param<profiles::LogicalAddr>> From<(&T, Error)> for LogicalError {
     fn from((target, source): (&T, Error)) -> Self {
         Self {
             addr: target.param(),
-            version: target.param(),
             source,
         }
     }

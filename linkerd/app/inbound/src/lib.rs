@@ -85,7 +85,7 @@ pub struct GatewayDomainInvalid;
 pub struct GatewayLoop;
 
 #[derive(Debug, thiserror::Error)]
-#[error("opaque forward ({}): {}", .addr, .source)]
+#[error("server {addr}: {source}")]
 pub struct ForwardError {
     addr: Remote<ServerAddr>,
     source: Error,
