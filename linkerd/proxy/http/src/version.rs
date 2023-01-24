@@ -21,12 +21,12 @@ impl std::convert::TryFrom<http::Version> for Version {
     }
 }
 
-// A convenience for tracing contexts.
+// A convenience for tracing/logging.
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Http1 => write!(f, "1.x"),
-            Self::H2 => write!(f, "h2"),
+            Self::Http1 => write!(f, "HTTP/1"),
+            Self::H2 => write!(f, "HTTP/2"),
         }
     }
 }

@@ -1,5 +1,4 @@
 use super::{retry, CanonicalDstHeader, Concrete, Logical};
-use crate::logical::LogicalError;
 use crate::Outbound;
 use core::fmt;
 use linkerd_app_core::{
@@ -15,6 +14,15 @@ use std::sync::Arc;
 #[derive(Debug, thiserror::Error)]
 #[error("no route")]
 pub struct NoRoute;
+
+#[derive(Debug, thiserror::Error)]
+#[error("logical {version} service {addr}: {source}")]
+pub struct LogicalError {
+    addr: profiles::LogicalAddr,
+    version: http::Version,
+    #[source]
+    source: Error,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Params {
@@ -297,6 +305,21 @@ where
     fn from((route, source): (&T, Error)) -> Self {
         Self {
             route_labels: route.param().labels().clone(),
+            source,
+        }
+    }
+}
+
+// === impl LogicalError ===
+
+impl<T> From<(&T, Error)> for LogicalError
+where
+    T: svc::Param<profiles::LogicalAddr> + svc::Param<http::Version>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            version: target.param(),
             source,
         }
     }
