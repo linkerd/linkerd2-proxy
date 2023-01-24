@@ -52,7 +52,7 @@ impl<C> Outbound<C> {
                 .check_service::<Connect<T>>()
                 .push_map_target(|(version, inner)| Connect { version, inner })
                 .push(http::client::layer(h1_settings, h2_settings))
-                .push_on_service(svc::MapErr::layer(Into::<Error>::into))
+                .push_on_service(svc::MapErr::layer_boxed())
                 .check_service::<T>()
                 .into_new_service()
                 // Drive the connection to completion regardless of whether the reconnect is being

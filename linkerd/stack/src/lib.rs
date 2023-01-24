@@ -3,7 +3,6 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-pub mod annotate_error;
 mod arc_new_service;
 mod box_future;
 mod box_service;
@@ -31,7 +30,6 @@ mod unwrap_or;
 mod watch;
 
 pub use self::{
-    annotate_error::NewAnnotateError,
     arc_new_service::ArcNewService,
     box_future::BoxFuture,
     box_service::{BoxService, BoxServiceLayer},
@@ -44,7 +42,7 @@ pub use self::{
     lazy::{Lazy, NewLazy},
     loadshed::{LoadShed, LoadShedError},
     make_thunk::MakeThunk,
-    map_err::MapErr,
+    map_err::{MapErr, NewMapErr, WrapErr},
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
     new_service::{NewCloneService, NewService},
