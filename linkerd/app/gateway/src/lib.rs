@@ -204,7 +204,7 @@ where
             );
 
         discover
-            .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
+            .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target))
             .push_on_service(
                 svc::layers().push(
                     inbound
