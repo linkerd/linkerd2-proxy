@@ -33,7 +33,7 @@ where
     T: Param<ResponseTimeout>,
     M: NewService<T>,
 {
-    type Service = MapErr<Timeout<M::Service>, fn(Error) -> Error>;
+    type Service = MapErr<fn(Error) -> Error, Timeout<M::Service>>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let svc = match target.param() {

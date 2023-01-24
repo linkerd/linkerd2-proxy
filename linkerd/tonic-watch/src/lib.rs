@@ -252,8 +252,8 @@ mod tests {
 
     fn mk_svc<T, U>() -> (
         MapErr<
-            mock::Mock<T, InnerRsp<U>>,
             impl Clone + Send + Sync + 'static + Fn(Error) -> tonic::Status,
+            mock::Mock<T, InnerRsp<U>>,
         >,
         mock::Handle<T, InnerRsp<U>>,
     ) {

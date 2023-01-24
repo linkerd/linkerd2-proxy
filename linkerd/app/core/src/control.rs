@@ -89,7 +89,7 @@ impl Config {
             .push_connect_timeout(self.connect.timeout)
             .push_map_target(|(_version, target)| target)
             .push(self::client::layer())
-            .push_on_service(svc::MapErr::layer(Into::into))
+            .push_on_service(svc::MapErr::layer_boxed())
             .into_new_service()
             // Ensure that connection is driven independently of the load
             // balancer; but don't drive reconnection independently of the

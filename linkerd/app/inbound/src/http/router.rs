@@ -107,7 +107,7 @@ impl<C> Inbound<C> {
                     config.proxy.connect.h2_settings,
                 ))
                 .check_service::<Http>()
-                .push_on_service(svc::MapErr::layer(Into::into))
+                .push_on_service(svc::MapErr::layer_boxed())
                 .into_new_service()
                 .push_new_reconnect(config.proxy.connect.backoff)
                 .push_map_target(Http::from)

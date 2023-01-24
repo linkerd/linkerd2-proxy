@@ -177,7 +177,7 @@ impl<S> Stack<S> {
     pub fn push_connect_timeout(
         self,
         timeout: Duration,
-    ) -> Stack<MapErr<stack::Timeout<S>, impl FnOnce(Error) -> Error + Clone>> {
+    ) -> Stack<MapErr<impl FnOnce(Error) -> Error + Clone, stack::Timeout<S>>> {
         self.push(stack::Timeout::layer(timeout))
             .push(MapErr::layer(move |err: Error| {
                 if err.is::<stack::TimeoutError>() {
