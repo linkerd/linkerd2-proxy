@@ -77,7 +77,7 @@ impl<N> Outbound<N> {
             // cache of all concrete services used by the router.
             concrete
                 // Share the concrete stack with each router stack.
-                .push_new_clone()
+                .lift_new()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())

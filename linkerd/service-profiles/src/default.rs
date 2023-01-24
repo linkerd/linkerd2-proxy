@@ -1,4 +1,4 @@
-use crate::{GetProfile, Receiver};
+use crate::{GetProfile, LookupAddr, Receiver};
 use futures::{future, prelude::*};
 use linkerd_error::Error;
 use std::task::{Context, Poll};
@@ -20,9 +20,9 @@ type RspFuture<F, E> = future::OrElse<
     fn(E) -> future::Ready<Result<Option<Receiver>, Error>>,
 >;
 
-impl<T, S> tower::Service<T> for RecoverDefault<S>
+impl<S> tower::Service<LookupAddr> for RecoverDefault<S>
 where
-    S: GetProfile<T>,
+    S: GetProfile,
     S::Error: Into<Error>,
 {
     type Response = Option<Receiver>;
@@ -33,7 +33,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, dst: T) -> Self::Future {
+    fn call(&mut self, dst: LookupAddr) -> Self::Future {
         self.0.get_profile(dst).or_else(|e| {
             let error: Error = e.into();
             if crate::DiscoveryRejected::is_rejected(error.as_ref()) {

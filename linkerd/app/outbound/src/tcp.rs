@@ -1,7 +1,7 @@
 use crate::Outbound;
 use linkerd_app_core::{
-    io, svc,
-    transport::{metrics, OrigDstAddr},
+    io, profiles, svc,
+    transport::{self, metrics, OrigDstAddr},
     transport_header::SessionProtocol,
     Error,
 };
@@ -14,23 +14,36 @@ pub mod opaque_transport;
 pub use self::connect::Connect;
 pub use linkerd_app_core::proxy::tcp::Forward;
 
-pub type Accept = crate::Accept<()>;
 pub type Logical = crate::logical::Logical<()>;
 pub type Concrete = crate::logical::Concrete<()>;
 pub type Endpoint = crate::endpoint::Endpoint<()>;
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Accept {
+    pub orig_dst: OrigDstAddr,
+}
+
 impl From<OrigDstAddr> for Accept {
     fn from(orig_dst: OrigDstAddr) -> Self {
-        Self {
-            orig_dst,
-            protocol: (),
-        }
+        Self { orig_dst }
     }
 }
 
-impl<P> From<(P, Accept)> for crate::Accept<P> {
-    fn from((protocol, Accept { orig_dst, .. }): (P, Accept)) -> Self {
-        Self { orig_dst, protocol }
+impl svc::Param<OrigDstAddr> for Accept {
+    fn param(&self) -> OrigDstAddr {
+        self.orig_dst
+    }
+}
+
+impl svc::Param<profiles::LookupAddr> for Accept {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr((*self.orig_dst).into())
+    }
+}
+
+impl svc::Param<transport::labels::Key> for Accept {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::outbound_server(self.orig_dst.into())
     }
 }
 

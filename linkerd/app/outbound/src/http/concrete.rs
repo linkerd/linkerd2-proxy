@@ -52,7 +52,7 @@ impl<N> Outbound<N> {
                         .layer(stack_labels("http", "endpoint")),
                 )
                 .instrument(|e: &Endpoint| info_span!("endpoint", addr = %e.addr))
-                .push_new_clone()
+                .lift_new()
                 .push(endpoint::NewFromMetadata::layer(config.inbound_ips.clone()))
                 .push(http::NewBalancePeakEwma::layer(resolve))
                 // Drives the initial resolution via the service's readiness.

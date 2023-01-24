@@ -100,7 +100,7 @@ impl Config {
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .push_new_reconnect(self.connect.backoff)
             .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr))
-            .push_new_clone()
+            .lift_new()
             .push(self::balance::layer(dns, resolve_backoff))
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
