@@ -11,6 +11,8 @@ const HTTP_SPAN_ID_HEADER: &str = "x-b3-spanid";
 const HTTP_SAMPLED_HEADER: &str = "x-b3-sampled";
 
 const W3C_HTTP_TRACEPARENT: &str = "traceparent";
+const W3C_HEADER_VALUE_SEPARATOR: &str = "-";
+const W3C_HEADER_VERSION: &str = "00";
 
 const GRPC_TRACE_HEADER: &str = "grpc-trace-bin";
 const GRPC_TRACE_FIELD_TRACE_ID: u8 = 0;
@@ -69,54 +71,47 @@ fn unpack_w3c_trace_context<B>(request: &http::Request<B>) -> Option<TraceContex
 }
 
 fn parse_w3c_context(header_value: &str) -> Option<TraceContext> {
-    let mut iter = header_value.split('-');
-    // First, process header.
-    //
-    if let Some(version) = iter.next() {
-        // probably don't need to decode from hex here
-        // Version (version) is 1 byte representing an 8-bit unsigned integer.
-        // Version ff is invalid. The current specification assumes the version
-        // is set to 00.
-        if version != "00" {
-            warn!(
-                "trace header {} contains invalid version value: {}",
-                W3C_HTTP_TRACEPARENT, header_value
-            );
-            // According to spec, we should create new traceparent here
-            // and clear out tracestate
+    let rest = match header_value.split_once(W3C_HEADER_VALUE_SEPARATOR) {
+        Some((version, rest)) => {
+            if version != W3C_HEADER_VERSION {
+                warn!(
+                    "Tracecontext header {} contains invalid version: {}",
+                    header_value, version
+                );
+                return None;
+            }
+            rest
+        }
+        None => {
+            warn!("Tracecontext header {} is invalid", header_value);
             return None;
         }
-    }
+    };
 
-    let trace_id = if let Some(trace_id) = iter
-        .next()
-        .and_then(check_valid_w3c_id)
-        .and_then(|id| parse_w3c_id(id, 16))
-    {
-        trace_id
+    let (trace_id, rest) = if let Some((id, rest)) = parse_w3c_header_value(rest, 16) {
+        (id, rest)
     } else {
+        warn!("Tracecontext header {} contains invalid id", header_value);
         return None;
     };
 
-    let parent_id = if let Some(parent_id) = iter
-        .next()
-        .and_then(check_valid_w3c_id)
-        .and_then(|id| parse_w3c_id(id, 8))
-    {
-        parent_id
+    let (parent_id, rest) = if let Some((id, rest)) = parse_w3c_header_value(rest, 8) {
+        (id, rest)
     } else {
+        warn!("Tracecontext header {} contains invalid id", header_value);
         return None;
     };
 
-    let flags = if let Some(flag) = iter.next().and_then(|flag| hex::decode(flag).ok()) {
-        // Value will be 1 if last bit in flag is 1.
-        Flags(flag[0] & 0x1)
-    } else {
-        // the above branch should be infallible, we shouldn't hit this if
-        // parsing works.
-        // need to check spec to see what happens if it's missing the flags
-        Flags(0)
-    };
+    let flags = hex::decode(rest)
+        .map_err(|e| {
+            warn!(
+                "Tracecontext header {} contains invalid flags value: {}",
+                header_value, e
+            )
+        })
+        .ok()
+        .map(|data| Flags(data[0] & 0x1))
+        .unwrap_or(Flags(0));
 
     Some(TraceContext {
         propagation: Propagation::TraceContext,
@@ -126,32 +121,11 @@ fn parse_w3c_context(header_value: &str) -> Option<TraceContext> {
     })
 }
 
-fn parse_w3c_id(id: &str, pad_to: usize) -> Option<Id> {
-    hex::decode(id)
-        .map(|mut data| {
-            if data.len() < pad_to {
-                let padding = pad_to - data.len();
-                let mut padded = vec![0u8; padding];
-                padded.append(&mut data);
-                Id(padded)
-            } else {
-                Id(data)
-            }
-        })
-        .map_err(|e| warn!("Value {} does not contain a hex value: {}", id, e))
-        .ok()
-}
-
-fn check_valid_w3c_id(id: &str) -> Option<&str> {
-    if id.chars().all(|c| c == '0') {
-        warn!(
-            "trace header {} contains invalid trace id: {}",
-            W3C_HTTP_TRACEPARENT, id
-        );
-        None
-    } else {
-        Some(id)
-    }
+fn parse_w3c_header_value(next_header: &str, pad_to: usize) -> Option<(Id, &str)> {
+    next_header
+        .split_once(W3C_HEADER_VALUE_SEPARATOR)
+        .filter(|(id, _rest)| !id.chars().all(|c| c == '0'))
+        .and_then(|(id, rest)| decode_id_with_padding(id, pad_to).zip(Some(rest)))
 }
 
 fn increment_w3c_http_span_id<B>(request: &mut http::Request<B>, trace_id: Id, flags: Flags) -> Id {
@@ -159,16 +133,24 @@ fn increment_w3c_http_span_id<B>(request: &mut http::Request<B>, trace_id: Id, f
 
     trace!("incremented span id: {}", span_id);
 
-    let span_str = hex::encode(span_id.as_ref());
-    let trace_str = hex::encode(trace_id);
-    let flag_str = hex::encode(vec![flags.0]);
+    let new_header = {
+        let mut buf = String::with_capacity(60);
+        buf.push_str(W3C_HEADER_VERSION);
+        buf.push_str(W3C_HEADER_VALUE_SEPARATOR);
+        buf.push_str(&hex::encode(trace_id));
+        buf.push_str(W3C_HEADER_VALUE_SEPARATOR);
+        buf.push_str(&hex::encode(span_id.as_ref()));
+        buf.push_str(W3C_HEADER_VALUE_SEPARATOR);
+        buf.push_str(&hex::encode(vec![flags.0]));
+        buf
+    };
 
-    let final_str = format!("{}-{}-{}-{}", "00", trace_str, span_str, flag_str);
-    if let Result::Ok(hv) = HeaderValue::from_str(&final_str) {
+    if let Result::Ok(hv) = HeaderValue::from_str(&new_header) {
         request.headers_mut().insert(W3C_HTTP_TRACEPARENT, hv);
     } else {
-        warn!("invalid {} header: {:?}", W3C_HTTP_TRACEPARENT, span_str);
+        warn!("invalid value {} for tracecontext header", new_header);
     }
+
     span_id
 }
 
@@ -329,7 +311,13 @@ fn get_header_str<'a, B>(request: &'a http::Request<B>, header: &str) -> Option<
 
 fn parse_header_id<B>(request: &http::Request<B>, header: &str, pad_to: usize) -> Option<Id> {
     let header_value = get_header_str(request, header)?;
-    hex::decode(header_value)
+    decode_id_with_padding(header_value, pad_to)
+}
+
+/// Attempt to decode a hex value to an id, padding the buffer up to the
+/// specified argument. Used to decode header values from hex to binary.
+fn decode_id_with_padding(value: &str, pad_to: usize) -> Option<Id> {
+    hex::decode(value)
         .map(|mut data| {
             if data.len() < pad_to {
                 let padding = pad_to - data.len();
@@ -340,7 +328,7 @@ fn parse_header_id<B>(request: &http::Request<B>, header: &str, pad_to: usize) -
                 Id(data)
             }
         })
-        .map_err(|e| warn!("Header {} does not contain a hex value: {}", header, e))
+        .map_err(|e| warn!("Header value {} does not contain a hex: {}", value, e))
         .ok()
 }
 
@@ -352,4 +340,22 @@ fn try_split_to(buf: &mut Bytes, n: usize) -> Result<Bytes, InsufficientBytes> {
     } else {
         Err(InsufficientBytes)
     }
+}
+
+#[test]
+fn test_w3c_context_parsed_successfully() {
+    let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-01";
+    let actual = parse_w3c_context(input);
+
+    let expected_trace = hex::decode("94d7f6ec6b95f3e916179cb6cfd01390")
+        .expect("Failed to decode trace parent from hex");
+    let expected_parent =
+        hex::decode("55ccfce77f972614").expect("Failed to decode span parent from hex");
+    let expected_flags = 1;
+
+    assert!(actual.is_some());
+    let actual = actual.unwrap();
+    assert_eq!(expected_trace, actual.trace_id.0);
+    assert_eq!(expected_parent, actual.parent_id.0);
+    assert_eq!(expected_flags, actual.flags.0);
 }
