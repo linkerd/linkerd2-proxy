@@ -54,7 +54,7 @@ impl<N> Outbound<N> {
                 .check_new_service::<U, _>()
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
                 .push_map_target(U::from)
-                .instrument(|(v, _): &(http::Version, _)| debug_span!("http", ?v))
+                .instrument(|_: &_| debug_span!("http"))
                 .push(svc::UnwrapOr::layer(
                     tcp.clone()
                         .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))

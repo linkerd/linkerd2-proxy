@@ -244,10 +244,7 @@ impl<C> Inbound<C> {
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .instrument(|t: &Logical| {
                     let name = t.logical.as_ref().map(tracing::field::display);
-                    match t.http {
-                        http::Version::H2 => debug_span!("http2", name),
-                        http::Version::Http1 => debug_span!("http1", name),
-                    }
+                    debug_span!("http", name)
                 })
                 // Routes each request to a target, obtains a service for that target, and
                 // dispatches the request.
