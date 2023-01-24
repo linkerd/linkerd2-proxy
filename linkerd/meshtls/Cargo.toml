@@ -9,6 +9,7 @@ publish = false
 [features]
 rustls = ["linkerd-meshtls-rustls", "__has_any_tls_impls"]
 boring = ["linkerd-meshtls-boring", "__has_any_tls_impls"]
+boring-fips = ["linkerd-meshtls-boring?/fips"]
 # Enabled if *any* TLS impl is enabled.
 __has_any_tls_impls = []
 

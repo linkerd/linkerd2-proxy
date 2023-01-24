@@ -28,13 +28,13 @@ jobs:
     steps:
       - uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
       - run: just fetch
-      - run: just clippy-crate linkerd-meshtls --all-features
+      - run: just clippy-crate linkerd-meshtls --no-default-features --features=boring,rustls
       - run: |
-          just test-crate linkerd-meshtls --all-features --no-run \
+          just test-crate linkerd-meshtls --no-default-features --features=boring,rustls --no-run \
             --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
       - run: |
-          just test-crate linkerd-meshtls --all-features \
+          just test-crate linkerd-meshtls --no-default-features --features=boring,rustls \
             --package=linkerd-meshtls-boring \
             --package=linkerd-meshtls-rustls
 
