@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub struct NoRoute;
 
 #[derive(Debug, thiserror::Error)]
-#[error("logical {version} service {addr}: {source}")]
+#[error("logical {version:?} service {addr}: {source}")]
 pub struct LogicalError {
     addr: profiles::LogicalAddr,
     version: http::Version,

@@ -85,7 +85,7 @@ impl<H> Inbound<H> {
                 )
                 .check_new_service::<T, http::Request<_>>()
                 .push(NewAccessLog::layer())
-                .instrument(|t: &T| debug_span!("http", v = %Param::<Version>::param(t)))
+                .instrument(|t: &T| debug_span!("http", v = ?Param::<Version>::param(t)))
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())

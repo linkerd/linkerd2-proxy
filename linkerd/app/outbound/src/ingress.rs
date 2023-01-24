@@ -242,7 +242,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             .push(http::BoxRequest::layer()),
                     )
                     .check_new_service::<Http<tcp::Accept>, http::Request<_>>()
-                    .instrument(|a: &Http<tcp::Accept>| debug_span!("http", v = %a.version));
+                    .instrument(|a: &Http<tcp::Accept>| debug_span!("http", v = ?a.version));
 
                 // HTTP detection is **always** performed. If detection fails, then we
                 // use the `fallback` stack to process the connection by its original
