@@ -131,7 +131,7 @@ impl Config {
         let balance = endpoint
             .check_new::<self::client::Target>()
             .check_new_service::<self::client::Target, _>()
-            .push_new_clone()
+            .lift_new()
             .check_new_new::<ControlAddr, self::client::Target>()
             .push(self::balance::layer(dns, resolve_backoff))
             .check_new::<ControlAddr>()

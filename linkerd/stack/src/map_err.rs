@@ -108,12 +108,11 @@ impl<N> NewMapErr<(), (), N> {
         T: Clone,
         WrapFromTarget<T, E>: WrapErr<Error> + Clone,
     {
-        NewMapErr::layer_with(
-            (|t: &T| WrapFromTarget {
-                target: t.clone(),
-                _err: PhantomData,
-            }) as ExtractWrapFromTarget<T, E>,
-        )
+        let extract = |t: &T| WrapFromTarget {
+            target: t.clone(),
+            _err: PhantomData,
+        };
+        NewMapErr::layer_with(extract as ExtractWrapFromTarget<T, E>)
     }
 }
 

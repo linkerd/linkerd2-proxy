@@ -1,4 +1,4 @@
-use crate::{NewService, Param, Service};
+use crate::{NewFromTargets, NewService, Param, Service};
 use std::{
     marker::PhantomData,
     task::{Context, Poll},
@@ -28,26 +28,7 @@ pub struct SpawnWatch<S> {
     inner: S,
 }
 
-/// Builds `NewFromTuple` instances within a `NewSpawnWatch` stack.
-///
-/// When we use a `T`-typed target to produce a `U`-typed `watch::Receiver`,
-/// this module converts the `U`-typed target value to a `P`-typed target for
-/// the inner stack. `P` must implement `From<(U, T)>`.
-#[derive(Debug)]
-pub struct NewWatchedFromTuple<P, N> {
-    inner: N,
-    _marker: PhantomData<fn() -> P>,
-}
-
-/// Builds services by passing `P` typed values to an `N`-typed inner stack.
-#[derive(Debug)]
-pub struct NewFromTuple<T, P, N> {
-    target: T,
-    inner: N,
-    _marker: PhantomData<fn() -> P>,
-}
-
-type SpawnFromTuple<T, P, N> = NewSpawnWatch<P, NewWatchedFromTuple<T, N>>;
+type SpawnFromTuple<T, P, N> = NewSpawnWatch<P, NewFromTargets<T, N>>;
 
 // === impl NewSpawnWatch ===
 
@@ -67,7 +48,7 @@ impl<P, N> NewSpawnWatch<P, N> {
     /// `T` for the inner stack.
     pub fn layer_into<T>() -> impl tower::layer::Layer<N, Service = SpawnFromTuple<T, P, N>> + Clone
     {
-        crate::layer::mk(|inner| NewSpawnWatch::new(NewWatchedFromTuple::new(inner)))
+        crate::layer::mk(|inner| NewSpawnWatch::new(NewFromTargets::new(inner)))
     }
 }
 
@@ -153,73 +134,6 @@ where
     #[inline]
     fn call(&mut self, req: Req) -> Self::Future {
         self.inner.call(req)
-    }
-}
-
-// === impl NewWatchedFromTuple ===
-
-impl<T, N> NewWatchedFromTuple<T, N> {
-    fn new(inner: N) -> Self {
-        Self {
-            inner,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<T, P, N> NewService<T> for NewWatchedFromTuple<P, N>
-where
-    T: Clone,
-    N: NewService<T>,
-{
-    type Service = NewFromTuple<T, P, N::Service>;
-
-    fn new_service(&self, target: T) -> Self::Service {
-        // Create a `NewService` that is used to process updates to the watched
-        // value. This allows inner stacks to, for instance, scope caches to the
-        // target.
-        let inner = self.inner.new_service(target.clone());
-
-        NewFromTuple {
-            target,
-            inner,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<P, N: Clone> Clone for NewWatchedFromTuple<P, N> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-// === impl NewFromTuple ===
-
-impl<T, U, P, N> NewService<U> for NewFromTuple<T, P, N>
-where
-    T: Clone,
-    P: From<(U, T)>,
-    N: NewService<P>,
-{
-    type Service = N::Service;
-
-    fn new_service(&self, target: U) -> Self::Service {
-        let p = P::from((target, self.target.clone()));
-        self.inner.new_service(p)
-    }
-}
-
-impl<T: Clone, P, N: Clone> Clone for NewFromTuple<T, P, N> {
-    fn clone(&self) -> Self {
-        Self {
-            target: self.target.clone(),
-            inner: self.inner.clone(),
-            _marker: PhantomData,
-        }
     }
 }
 

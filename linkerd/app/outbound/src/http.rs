@@ -23,7 +23,6 @@ use linkerd_app_core::{
 };
 use std::{net::SocketAddr, str::FromStr};
 
-pub type Accept = crate::Accept<Version>;
 pub type Logical = crate::logical::Logical<Version>;
 pub type Concrete = crate::logical::Concrete<Version>;
 pub type Endpoint = crate::endpoint::Endpoint<Version>;
@@ -41,23 +40,6 @@ impl From<CanonicalDstHeader> for HeaderPair {
             HeaderName::from_static(CANONICAL_DST_HEADER),
             HeaderValue::from_str(&dst.to_string()).expect("addr must be a valid header"),
         )
-    }
-}
-
-// === impl Accept ===
-
-impl Param<Version> for Accept {
-    fn param(&self) -> Version {
-        self.protocol
-    }
-}
-
-impl Param<normalize_uri::DefaultAuthority> for Accept {
-    fn param(&self) -> normalize_uri::DefaultAuthority {
-        normalize_uri::DefaultAuthority(Some(
-            uri::Authority::from_str(&self.orig_dst.to_string())
-                .expect("Address must be a valid authority"),
-        ))
     }
 }
 
