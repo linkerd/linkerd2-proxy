@@ -11,8 +11,8 @@ description = "The main proxy executable"
 default = ["multicore", "meshtls-rustls"]
 multicore = ["tokio/rt-multi-thread", "num_cpus"]
 meshtls-boring = ["linkerd-meshtls/boring"]
+meshtls-boring-fips = ["linkerd-meshtls/boring-fips"]
 meshtls-rustls = ["linkerd-meshtls/rustls"]
-meshtls-fips = ["linkerd-meshtls/fips"]
 log-streaming = ["linkerd-app/log-streaming"]
 
 [dependencies]
