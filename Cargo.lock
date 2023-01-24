@@ -73,9 +73,9 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.61"
+version = "0.1.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "705339e0e4a9690e2908d2b3d049d85682cf19fbd5782494498fbf7003a6a282"
+checksum = "eff18d764974428cf3a9328e23fc5c986f5fbed46e6cd4cdf42544df5d297ec1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -122,8 +122,7 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 [[package]]
 name = "boring"
 version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c713ad6d8d7a681a43870ac37b89efd2a08015ceb4b256d82707509c1f0b6bb"
+source = "git+https://github.com/cloudflare/boring#3059ba6e102599f8ae0a962223ca1e216bb61902"
 dependencies = [
  "bitflags",
  "boring-sys",
@@ -135,8 +134,7 @@ dependencies = [
 [[package]]
 name = "boring-sys"
 version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7663d3069437a5ccdb2b5f4f481c8b80446daea10fa8503844e89ac65fcdc363"
+source = "git+https://github.com/cloudflare/boring#3059ba6e102599f8ae0a962223ca1e216bb61902"
 dependencies = [
  "bindgen",
  "cmake",
@@ -2456,9 +2454,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.24.1"
+version = "1.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d9f76183f91ecfb55e1d7d5602bd1d979e38a3a522fe900241cf195624d67ae"
+checksum = "597a12a59981d9e3c38d216785b0c37399f6e415e8d0712047620f189371b0bb"
 dependencies = [
  "autocfg",
  "bytes",
@@ -2477,8 +2475,7 @@ dependencies = [
 [[package]]
 name = "tokio-boring"
 version = "2.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb059337235a89f03252c6285da8f0a6747a85bbd42e9ece70178d578054cba7"
+source = "git+https://github.com/cloudflare/boring#3059ba6e102599f8ae0a962223ca1e216bb61902"
 dependencies = [
  "boring",
  "boring-sys",
@@ -2966,9 +2963,9 @@ checksum = "41d2aa71f6f0cbe00ae5167d90ef3cfe66527d6f613ca78ac8024c3ccab9a19e"
 
 [[package]]
 name = "windows_aarch64_msvc"
-version = "0.42.0"
+version = "0.42.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd0f252f5a35cac83d6311b2e795981f5ee6e67eb1f9a7f64eb4500fbc4dcdb4"
+checksum = "4c8b1b673ffc16c47a9ff48570a9d85e25d265735c503681332589af6253c6c7"
 
 [[package]]
 name = "windows_i686_gnu"

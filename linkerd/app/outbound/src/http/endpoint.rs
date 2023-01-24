@@ -1,5 +1,5 @@
 use super::{NewRequireIdentity, NewStripProxyError, ProxyConnectionClose};
-use crate::{endpoint::EndpointError, tcp::opaque_transport, Outbound};
+use crate::{tcp::opaque_transport, Outbound};
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
     proxy::{http, tap},
@@ -10,15 +10,23 @@ use linkerd_app_core::{
     Error, Result, CANONICAL_DST_HEADER,
 };
 
-#[derive(Copy, Clone, Debug)]
-struct ClientRescue {
-    emit_headers: bool,
-}
-
 #[derive(Clone, Debug)]
 pub struct Connect<T> {
     version: http::Version,
     inner: T,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("endpoint {addr}: {source}")]
+pub struct EndpointError {
+    addr: Remote<ServerAddr>,
+    #[source]
+    source: Error,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct ClientRescue {
+    emit_headers: bool,
 }
 
 impl<C> Outbound<C> {
@@ -194,6 +202,20 @@ impl<T: svc::Param<transport::labels::Key>> svc::Param<transport::labels::Key> f
     #[inline]
     fn param(&self) -> transport::labels::Key {
         self.inner.param()
+    }
+}
+
+// === impl EndpointError ===
+
+impl<T> From<(&T, Error)> for EndpointError
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
+        }
     }
 }
 

@@ -1,5 +1,4 @@
 use super::{Concrete, Logical, Outbound};
-use crate::logical::LogicalError;
 use linkerd_app_core::{
     io,
     profiles::{self, Profile},
@@ -11,6 +10,14 @@ use linkerd_distribute as distribute;
 #[derive(Debug, thiserror::Error)]
 #[error("no route")]
 pub struct NoRoute;
+
+#[derive(Debug, thiserror::Error)]
+#[error("logical service {addr}: {source}")]
+pub struct LogicalError {
+    addr: profiles::LogicalAddr,
+    #[source]
+    source: Error,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Params {
@@ -164,5 +171,19 @@ impl<I> svc::router::SelectRoute<I> for Params {
 impl svc::Param<Distribution> for RouteParams {
     fn param(&self) -> Distribution {
         self.distribution.clone()
+    }
+}
+
+// === impl LogicalError ===
+
+impl<T> From<(&T, Error)> for LogicalError
+where
+    T: svc::Param<profiles::LogicalAddr>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
+        }
     }
 }

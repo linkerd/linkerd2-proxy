@@ -1,12 +1,24 @@
 use super::{Concrete, Endpoint};
-use crate::{endpoint, logical::ConcreteError, stack_labels, Outbound};
+use crate::{endpoint, stack_labels, Outbound};
 use linkerd_app_core::{
     drain, io,
-    proxy::{api_resolve::Metadata, core::Resolve, tcp},
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        tcp,
+    },
     svc, Error,
 };
 use std::time;
 use tracing::info_span;
+
+#[derive(Debug, thiserror::Error)]
+#[error("concrete service {addr}: {source}")]
+pub struct ConcreteError {
+    addr: ConcreteAddr,
+    #[source]
+    source: Error,
+}
 
 // === impl Outbound ===
 
@@ -84,6 +96,17 @@ impl svc::Param<tcp::balance::EwmaConfig> for Concrete {
         tcp::balance::EwmaConfig {
             default_rtt: time::Duration::from_millis(30),
             decay: time::Duration::from_secs(10),
+        }
+    }
+}
+
+// === impl ConcreteError ===
+
+impl<T: svc::Param<ConcreteAddr>> From<(&T, Error)> for ConcreteError {
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
         }
     }
 }

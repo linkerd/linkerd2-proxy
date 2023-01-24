@@ -1,5 +1,5 @@
 use super::opaque_transport::{self, OpaqueTransport};
-use crate::{endpoint::EndpointError, ConnectMeta, Outbound};
+use crate::{ConnectMeta, Outbound};
 use futures::future;
 use linkerd_app_core::{
     io,
@@ -21,6 +21,14 @@ pub struct Connect {
 /// `allow-loopback` feature is enabled.
 #[derive(Clone, Debug)]
 pub struct PreventLoopback<S>(S);
+
+#[derive(Debug, thiserror::Error)]
+#[error("endpoint {addr}: {source}")]
+pub struct EndpointError {
+    addr: Remote<ServerAddr>,
+    #[source]
+    source: Error,
+}
 
 // === impl Outbound ===
 
@@ -159,6 +167,20 @@ impl svc::Param<Remote<ServerAddr>> for Connect {
 impl svc::Param<tls::ConditionalClientTls> for Connect {
     fn param(&self) -> tls::ConditionalClientTls {
         self.tls.clone()
+    }
+}
+
+// === impl EndpointError ===
+
+impl<T> From<(&T, Error)> for EndpointError
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
+        }
     }
 }
 

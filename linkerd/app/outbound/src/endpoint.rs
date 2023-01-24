@@ -39,14 +39,6 @@ pub struct FromMetadata<P, N> {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("endpoint {addr}: {source}")]
-pub struct EndpointError {
-    addr: Remote<ServerAddr>,
-    #[source]
-    source: Error,
-}
-
-#[derive(Debug, thiserror::Error)]
 #[error("forwarding to {addr}: {source}")]
 pub struct ForwardError {
     addr: Remote<ServerAddr>,
@@ -298,20 +290,6 @@ impl<S> Outbound<S> {
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
-    }
-}
-
-// === impl EndpointError ===
-
-impl<T> From<(&T, Error)> for EndpointError
-where
-    T: svc::Param<Remote<ServerAddr>>,
-{
-    fn from((target, source): (&T, Error)) -> Self {
-        Self {
-            addr: target.param(),
-            source,
-        }
     }
 }
 

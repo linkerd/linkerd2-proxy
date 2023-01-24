@@ -7,7 +7,7 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, Remote, ServerAddr},
     Error, Infallible, NameAddr, Result,
 };
-use std::{fmt, net::SocketAddr, sync::Arc};
+use std::{fmt, net::SocketAddr};
 use tracing::{debug, debug_span};
 
 /// Describes an HTTP client target.
@@ -60,15 +60,6 @@ struct ClientRescue;
 struct LogicalError {
     logical: Option<NameAddr>,
     addr: Remote<ServerAddr>,
-    http: http::Version,
-    #[source]
-    source: Error,
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("route ({:?}): {}", .route_labels, .source)]
-struct RouteError {
-    route_labels: Arc<std::collections::BTreeMap<String, String>>,
     #[source]
     source: Error,
 }
@@ -177,7 +168,6 @@ impl<C> Inbound<C> {
                         .push_on_service(http::BoxResponse::layer())
                         .push(classify::NewClassify::layer())
                         .push_http_insert_target::<profiles::http::Route>()
-                        .push(svc::NewMapErr::layer_from_target::<RouteError, _>())
                         .push_map_target(|(route, profile)| ProfileRoute { route, profile })
                         .push_on_service(svc::MapErr::layer(Error::from))
                         .into_inner(),
@@ -254,10 +244,7 @@ impl<C> Inbound<C> {
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .instrument(|t: &Logical| {
                     let name = t.logical.as_ref().map(tracing::field::display);
-                    match t.http {
-                        http::Version::H2 => debug_span!("http2", name),
-                        http::Version::Http1 => debug_span!("http1", name),
-                    }
+                    debug_span!("http", name)
                 })
                 // Routes each request to a target, obtains a service for that target, and
                 // dispatches the request.
@@ -556,7 +543,6 @@ impl From<(&Logical, Error)> for LogicalError {
         Self {
             logical: logical.logical.clone(),
             addr: logical.addr,
-            http: logical.http,
             source,
         }
     }
@@ -567,28 +553,12 @@ impl fmt::Display for LogicalError {
         let Self {
             logical,
             addr,
-            http,
             source,
         } = self;
-        let version = match http {
-            http::Version::H2 => "HTTP/2",
-            http::Version::Http1 => "HTTP/1",
-        };
-
-        match logical {
-            Some(logical) => write!(f, "{version} logical ({logical}, addr={addr}): {source}"),
-            None => write!(f, "{version} ({addr}): {source}"),
+        write!(f, "server {addr}")?;
+        if let Some(logical) = logical {
+            write!(f, ": service {logical}")?;
         }
-    }
-}
-
-// === impl RouteError ===
-
-impl From<(&ProfileRoute, Error)> for RouteError {
-    fn from((route, source): (&ProfileRoute, Error)) -> Self {
-        Self {
-            route_labels: route.route.labels().clone(),
-            source,
-        }
+        write!(f, ": {source}")
     }
 }

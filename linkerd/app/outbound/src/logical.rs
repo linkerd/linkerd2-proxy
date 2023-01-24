@@ -9,7 +9,6 @@ use linkerd_app_core::{
 };
 pub use profiles::LogicalAddr;
 use std::fmt;
-use thiserror::Error;
 use tracing::info_span;
 
 #[derive(Clone)]
@@ -23,22 +22,6 @@ pub struct Logical<P> {
 pub struct Concrete<P> {
     pub resolve: ConcreteAddr,
     pub logical: Logical<P>,
-}
-
-#[derive(Debug, Error)]
-pub struct LogicalError {
-    pub(crate) addr: LogicalAddr,
-    #[source]
-    pub(crate) source: Error,
-    pub(crate) protocol: Option<http::Version>,
-}
-
-#[derive(Debug, Error)]
-#[error("concrete ({}): {}", .addr, .source)]
-pub struct ConcreteError {
-    pub(crate) addr: ConcreteAddr,
-    #[source]
-    pub(crate) source: Error,
 }
 
 pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
@@ -193,50 +176,5 @@ impl<C> Outbound<C> {
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
-    }
-}
-
-// === impl LogicalError ===
-
-impl fmt::Display for LogicalError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self {
-            protocol,
-            addr,
-            source,
-        } = self;
-        let proto = match protocol {
-            None => "opaque",
-            Some(http::Version::Http1) => "HTTP/1",
-            Some(http::Version::H2) => "HTTP/2",
-        };
-        write!(f, "{proto} logical ({addr}): {source}")
-    }
-}
-
-impl<T> From<(&T, Error)> for LogicalError
-where
-    T: svc::Param<LogicalAddr> + svc::Param<Option<http::Version>>,
-{
-    fn from((target, source): (&T, Error)) -> Self {
-        Self {
-            protocol: target.param(),
-            addr: target.param(),
-            source,
-        }
-    }
-}
-
-// === impl ConcreteError ===
-
-impl<T> From<(&T, Error)> for ConcreteError
-where
-    T: svc::Param<ConcreteAddr>,
-{
-    fn from((target, source): (&T, Error)) -> Self {
-        Self {
-            addr: target.param(),
-            source,
-        }
     }
 }
