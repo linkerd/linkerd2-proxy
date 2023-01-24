@@ -385,7 +385,12 @@ where
         };
 
         let rsp = info_span!("rescue", client.addr = %self.client_addr()).in_scope(|| {
-            tracing::info!(error, "Request failed");
+            if self.is_grpc {
+                let version = self.version;
+                tracing::info!(error, "{version:?} request failed",);
+            } else {
+                tracing::info!(error, "gRPC request failed");
+            };
             self.rescue.rescue(error)
         })?;
 

@@ -127,7 +127,7 @@ impl Config {
                                     return Err(Error::from(UnexpectedSni(sni, tcp.client)));
                                 }
                             };
-                            debug!(%version, "HTTP detection timed out; assuming HTTP");
+                            debug!(?version, "HTTP detection timed out; assuming HTTP");
                             Ok(Http { version, tcp })
                         }
                         // If the connection failed HTTP detection, check if we detected TLS for
