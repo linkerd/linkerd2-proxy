@@ -23,7 +23,7 @@ const GRPC_TRACE_FIELD_TRACE_OPTIONS: u8 = 2;
 pub enum Propagation {
     B3Http,
     B3Grpc,
-    TraceContext,
+    W3CHttp,
 }
 
 #[derive(Debug)]
@@ -60,7 +60,7 @@ pub fn increment_span_id<B>(request: &mut http::Request<B>, context: &TraceConte
     match context.propagation {
         Propagation::B3Grpc => increment_grpc_span_id(request, context),
         Propagation::B3Http => increment_http_span_id(request),
-        Propagation::TraceContext => {
+        Propagation::W3CHttp => {
             increment_w3c_http_span_id(request, context.trace_id.clone(), context.flags.clone())
         }
     }
@@ -102,19 +102,19 @@ fn parse_w3c_context(header_value: &str) -> Option<TraceContext> {
         return None;
     };
 
-    let flags = hex::decode(rest)
-        .map_err(|e| {
-            warn!(
-                "Tracecontext header {} contains invalid flags value: {}",
-                header_value, e
-            )
-        })
-        .ok()
-        .map(|data| Flags(data[0] & 0x1))
-        .unwrap_or(Flags(0));
+    let flags = match hex::decode(rest) {
+        // If valid hex, take final bit and AND with 1. W3C only uses one bit
+        // for flags in version 00, and the bit is used to control sampling
+        Ok(decoded) => Flags(decoded[0] & 0x1),
+        // If invalid hex, do not sample trace
+        Err(e) => {
+            warn!("Failed to decode flags for header {}: {}", header_value, e);
+            Flags(0)
+        }
+    };
 
     Some(TraceContext {
-        propagation: Propagation::TraceContext,
+        propagation: Propagation::W3CHttp,
         trace_id,
         parent_id,
         flags,
