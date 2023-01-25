@@ -118,7 +118,7 @@ where
         future::BoxFuture<'static, Result<AllowPolicy, S::Error>>,
     >;
     type Error = S::Error;
-    fn get_policy(&mut self, dst: OrigDstAddr) -> Self::Future {
+    fn get_policy(&self, dst: OrigDstAddr) -> Self::Future {
         // Lookup the polcify for the target port in the cache. If it doesn't
         // already exist, we spawn a watch on the API (if it is configured). If
         // no discovery API is configured we use the default policy.
@@ -137,7 +137,7 @@ where
                 let server = self.cache.insert(port, self.default_rx.clone());
                 future::Either::Left(future::ready(Ok(AllowPolicy { dst, server })))
             }
-            Some(disco) => {
+            Some(ref disco) => {
                 let disco = disco.clone();
                 let cache = self.cache.clone();
                 future::Either::Right(Box::pin(

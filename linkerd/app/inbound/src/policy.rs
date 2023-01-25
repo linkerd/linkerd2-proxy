@@ -1,6 +1,7 @@
 mod api;
 mod config;
 pub mod defaults;
+mod discover;
 mod http;
 mod store;
 mod tcp;
@@ -8,6 +9,7 @@ mod tcp;
 pub(crate) use self::store::Store;
 pub use self::{
     config::Config,
+    discover::Discover,
     http::{
         HttpInvalidPolicy, HttpRouteInvalidRedirect, HttpRouteNotFound, HttpRouteRedirect,
         HttpRouteUnauthorized, NewHttpPolicy,
@@ -38,12 +40,13 @@ use tokio::sync::watch;
 pub struct ServerUnauthorized {
     server: Arc<Meta>,
 }
+
 /// Returns the traffic policy configured for the destination address.
 pub trait GetPolicy {
     type Error: Into<Error>;
     type Future: Future<Output = Result<AllowPolicy, Self::Error>>;
 
-    fn get_policy(&mut self, target: OrigDstAddr) -> Self::Future;
+    fn get_policy(&self, target: OrigDstAddr) -> Self::Future;
 
     // fn into_service(self) -> GetPolicyService<Self>
     // where

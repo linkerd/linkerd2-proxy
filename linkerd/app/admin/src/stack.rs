@@ -70,10 +70,10 @@ struct Rescue;
 
 impl Config {
     #[allow(clippy::too_many_arguments)]
-    pub fn build<B, R>(
+    pub fn build<B, R, P>(
         self,
         bind: B,
-        policy: impl inbound::policy::GetPolicy,
+        policy: P,
         identity: identity::Server,
         report: R,
         metrics: inbound::Metrics,
@@ -85,15 +85,24 @@ impl Config {
         R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
         B: Bind<ServerConfig>,
         B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
+        P: inbound::policy::GetPolicy + Send + Sync + 'static,
+        P::Error: Send,
+        P::Future: Send,
     {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
-        // Get the policy for the admin server.
-        let policy = policy.get_policy(OrigDstAddr(listen_addr.into()));
-
         let (ready, latch) = crate::server::Readiness::new();
-        let admin = crate::server::Admin::new(report, ready, shutdown, trace);
-        let admin = svc::stack(move |_| admin.clone())
+        let serve = Box::pin(async move {
+            // Get the policy for the admin server.
+            // TODO(eliza): don't expect this...
+            let policy = policy
+                .get_policy(OrigDstAddr(listen_addr.into()))
+                .await
+                .map_err(Into::into)
+                .expect("must be able to get policy for admin server");
+
+            let admin = crate::server::Admin::new(report, ready, shutdown, trace);
+            let admin = svc::stack(move |_| admin.clone())
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
             .push_map_target(|(permit, http)| Permitted { permit, http })
             .push(inbound::policy::NewHttpPolicy::layer(metrics.http_authz.clone()))
@@ -157,8 +166,8 @@ impl Config {
                 identity,
             }))
             .into_inner();
-
-        let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
+            serve::serve(listen, admin, drain.signaled()).await
+        });
         Ok(Task {
             listen_addr,
             latch,

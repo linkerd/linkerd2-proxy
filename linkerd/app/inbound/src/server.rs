@@ -20,18 +20,19 @@ impl Inbound<()> {
         &self,
         dns: dns::Resolver,
         control_metrics: metrics::ControlHttp,
-    ) -> impl policy::GetPolicy + Clone + Send + Sync + 'static {
+    ) -> impl policy::GetPolicy<Future = impl Send, Error = impl Send> + Clone + Send + Sync + 'static
+    {
         self.config
             .policy
             .clone()
             .build(dns, control_metrics, self.runtime.identity.new_client())
     }
 
-    pub async fn serve<A, I, G, GSvc, P>(
+    pub async fn serve<A, I, G, GSvc, P, O>(
         self,
         addr: Local<ServerAddr>,
         listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
-        policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
+        policies: O,
         profiles: P,
         gateway: G,
     ) where
@@ -44,6 +45,9 @@ impl Inbound<()> {
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
         P: profiles::GetProfile<Error = Error>,
+        O: policy::GetPolicy + Clone + Send + Sync + 'static,
+        O::Error: Send,
+        O::Future: Unpin + Send,
     {
         let shutdown = self.runtime.drain.clone().signaled();
 

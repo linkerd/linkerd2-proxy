@@ -1,5 +1,5 @@
 use crate::{
-    policy::{AllowPolicy, GetPolicy},
+    policy::{self, AllowPolicy, GetPolicy},
     Inbound,
 };
 use linkerd_app_core::{
@@ -23,10 +23,10 @@ impl<N> Inbound<N> {
     /// Builds a stack that accepts connections. Connections to the proxy port are diverted to the
     /// 'direct' stack; otherwise connections are associated with a policy and passed to the inner
     /// stack.
-    pub(crate) fn push_accept<T, I, NSvc, D, DSvc>(
+    pub(crate) fn push_accept<T, I, P, NSvc, D, DSvc>(
         self,
         proxy_port: u16,
-        policies: impl GetPolicy + Clone + Send + Sync + 'static,
+        policies: P,
         direct: D,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
@@ -34,6 +34,9 @@ impl<N> Inbound<N> {
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
+        P: GetPolicy + Clone + Send + Sync + 'static,
+        P::Error: Into<Error>,
+        P::Future: Unpin + Send,
         N: svc::NewService<Accept, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<I, Response = ()>,
         NSvc: Send + Unpin + 'static,
@@ -46,6 +49,19 @@ impl<N> Inbound<N> {
     {
         self.map_stack(|cfg, rt, accept| {
             accept
+                .push_on_service(svc::MapErr::layer(Into::into as fn(_) -> Error))
+                .push_map_target(|(policy, t): (AllowPolicy, T)| {
+                    tracing::debug!(policy = ?&*policy.borrow(), "Accepted");
+                    Accept {
+                        client_addr: t.param(),
+                        orig_dst_addr: t.param(),
+                        policy,
+                    }
+                })
+                .push(policy::Discover::layer(policies))
+                .push(svc::MapErr::layer(Into::into as fn(_) -> Error))
+                .into_new_service()
+                .check_new_service::<T, I>()
                 .push_switch(
                     // Switch to the `direct` stack when a connection's original destination is the
                     // proxy's inbound port. Otherwise, check that connections are allowed on the
@@ -56,13 +72,7 @@ impl<N> Inbound<N> {
                             return Ok(svc::Either::B(t));
                         }
 
-                        let policy = policies.get_policy(addr);
-                        tracing::debug!(policy = ?&*policy.borrow(), "Accepted");
-                        Ok(svc::Either::A(Accept {
-                            client_addr: t.param(),
-                            orig_dst_addr: addr,
-                            policy,
-                        }))
+                        Ok(svc::Either::A(t))
                     },
                     direct,
                 )

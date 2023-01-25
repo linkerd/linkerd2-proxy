@@ -80,6 +80,12 @@ struct TlsParams {
     identity: identity::Server,
 }
 
+#[derive(Debug, Clone)]
+struct WithTransportHeader {
+    header: TransportHeader,
+    client: ClientInfo,
+}
+
 impl<N> Inbound<N> {
     /// Builds a stack that handles connections that target the proxy's inbound port
     /// (i.e. without an SO_ORIGINAL_DST setting). This port behaves differently from
@@ -89,9 +95,9 @@ impl<N> Inbound<N> {
     /// 2. TLS is required;
     /// 3. A transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
-    pub(crate) fn push_direct<T, I, NSvc, G, GSvc, H, HSvc>(
+    pub(crate) fn push_direct<T, I, NSvc, P, G, GSvc, H, HSvc>(
         self,
-        policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
+        policies: P,
         gateway: G,
         http: H,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
@@ -114,6 +120,8 @@ impl<N> Inbound<N> {
         HSvc: svc::Service<io::PrefixedIo<TlsIo<I>>, Response = ()> + Send + 'static,
         HSvc::Error: Into<Error>,
         HSvc::Future: Send,
+        P: policy::GetPolicy + Clone + Send + Sync + 'static,
+        P::Future: Send + Unpin,
     {
         self.map_stack(|config, rt, inner| {
             let detect_timeout = config.proxy.detect_protocol_timeout;
@@ -147,9 +155,12 @@ impl<N> Inbound<N> {
                 .push_switch(Ok::<Local, Infallible>, http)
                 .push_switch(
                     {
-                        let policies = policies.clone();
-                        move |(h, client): (TransportHeader, ClientInfo)| -> Result<_> {
-                            match h {
+                        move |(policy, WithTransportHeader { header, client }): (
+                            AllowPolicy,
+                            WithTransportHeader,
+                        )|
+                              -> Result<_> {
+                            match header {
                                 TransportHeader {
                                     port,
                                     name: None,
@@ -159,7 +170,6 @@ impl<N> Inbound<N> {
                                     // not identify an alternate target name), we check the new
                                     // target's policy (rather than the inbound proxy's address).
                                     let addr = (client.local_addr.ip(), port).into();
-                                    let policy = policies.get_policy(OrigDstAddr(addr));
                                     let local = match protocol {
                                         None => svc::Either::A(LocalTcp {
                                             server_addr: Remote(ServerAddr(addr)),
@@ -189,7 +199,6 @@ impl<N> Inbound<N> {
                                     // When the transport header provides an alternate target, the
                                     // connection is a gateway connection. We check the _gateway
                                     // address's_ policy (rather than the target address).
-                                    let policy = policies.get_policy(client.local_addr);
                                     Ok(svc::Either::B(GatewayTransportHeader {
                                         target: NameAddr::from((name, port)),
                                         protocol,
@@ -211,6 +220,10 @@ impl<N> Inbound<N> {
                         )
                         .into_inner(),
                 )
+                .push(policy::Discover::layer(policies))
+                .push(svc::MapErr::layer(Into::into))
+                .into_new_service()
+                .push_map_target(|(header, client)| WithTransportHeader { header, client })
                 .check_new_service::<(TransportHeader, ClientInfo), _>()
                 // Use ALPN to determine whether a transport header should be read.
                 .push(NewTransportHeaderServer::layer(detect_timeout))
@@ -458,5 +471,23 @@ impl<T> InsertParam<tls::ConditionalServerTls, T> for TlsParams {
     #[inline]
     fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
         (tls, target)
+    }
+}
+
+// === impl WithTransportHeader ===
+
+impl svc::Param<OrigDstAddr> for WithTransportHeader {
+    fn param(&self) -> OrigDstAddr {
+        if self.header.name.is_none() {
+            // When the transport header targets an alternate port (but does
+            // not identify an alternate target name), we check the new
+            // target's policy (rather than the inbound proxy's address).
+            return OrigDstAddr((self.client.local_addr.ip(), self.header.port).into());
+        }
+
+        // When the transport header provides an alternate target, the
+        // connection is a gateway connection. We check the _gateway
+        // address's_ policy (rather than the target address).
+        self.client.local_addr
     }
 }
