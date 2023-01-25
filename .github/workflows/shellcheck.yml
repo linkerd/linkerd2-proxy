@@ -15,6 +15,6 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
-      - uses: linkerd/dev/actions/setup-tools@v38
+      - uses: linkerd/dev/actions/setup-tools@v39
       - uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
       - run: just sh-lint
