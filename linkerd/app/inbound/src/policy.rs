@@ -20,6 +20,7 @@ use linkerd_app_core::{
     metrics::{RouteAuthzLabels, ServerAuthzLabels},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
+    Error,
 };
 use linkerd_idle_cache::Cached;
 pub use linkerd_server_policy::{
@@ -28,7 +29,7 @@ pub use linkerd_server_policy::{
     http::{filter::Redirection, Route as HttpRoute},
     route, Authentication, Authorization, Meta, Protocol, RoutePolicy, ServerPolicy,
 };
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 use thiserror::Error;
 use tokio::sync::watch;
 
@@ -37,10 +38,19 @@ use tokio::sync::watch;
 pub struct ServerUnauthorized {
     server: Arc<Meta>,
 }
-
+/// Returns the traffic policy configured for the destination address.
 pub trait GetPolicy {
-    // Returns the traffic policy configured for the destination address.
-    fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy;
+    type Error: Into<Error>;
+    type Future: Future<Output = Result<AllowPolicy, Self::Error>>;
+
+    fn get_policy(&mut self, target: OrigDstAddr) -> Self::Future;
+
+    // fn into_service(self) -> GetPolicyService<Self>
+    // where
+    //     Self: Sized,
+    // {
+    //     GetPolicyService(self)
+    // }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

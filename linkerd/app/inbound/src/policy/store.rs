@@ -1,4 +1,5 @@
 use super::{api, AllowPolicy, DefaultPolicy, GetPolicy};
+use futures::future;
 use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error};
 use linkerd_idle_cache::IdleCache;
 pub use linkerd_server_policy::{
@@ -9,7 +10,7 @@ use std::{
     hash::{BuildHasherDefault, Hasher},
 };
 use tokio::{sync::watch, time::Duration};
-use tracing::info_span;
+use tracing::{info_span, Instrument};
 
 #[derive(Clone)]
 pub struct Store<S> {
@@ -112,29 +113,44 @@ where
     S::ResponseBody:
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
-    fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy {
+    type Future = future::Either<
+        future::Ready<Result<AllowPolicy, Self::Error>>,
+        future::BoxFuture<'static, Result<AllowPolicy, S::Error>>,
+    >;
+    type Error = S::Error;
+    fn get_policy(&mut self, dst: OrigDstAddr) -> Self::Future {
         // Lookup the polcify for the target port in the cache. If it doesn't
         // already exist, we spawn a watch on the API (if it is configured). If
         // no discovery API is configured we use the default policy.
-        let server =
-            self.cache
-                .get_or_insert_with(dst.port(), |port| match self.discover.clone() {
-                    Some(disco) => info_span!("watch", port).in_scope(|| {
+        let port = dst.port();
+        if let Some(server) = self.cache.get(&port) {
+            return future::Either::Left(future::ready(Ok(AllowPolicy { dst, server })));
+        }
+
+        match self.discover {
+            None => {
+                // If no discovery API is configured, then we use the
+                // default policy. Whlie it's a little wasteful to cache
+                // these results separately, this case isn't expected to be
+                // used outside of testing.
+                tracing::trace!(%port, "using the default policy");
+                let server = self.cache.insert(port, self.default_rx.clone());
+                future::Either::Left(future::ready(Ok(AllowPolicy { dst, server })))
+            }
+            Some(disco) => {
+                let disco = disco.clone();
+                let cache = self.cache.clone();
+                future::Either::Right(Box::pin(
+                    async move {
                         tracing::trace!(%port, "spawning policy discovery");
-                        disco.spawn_with_init(*port, self.default_rx.borrow().clone())
-                    }),
-
-                    // If no discovery API is configured, then we use the
-                    // default policy. Whlie it's a little wasteful to cache
-                    // these results separately, this case isn't expected to be
-                    // used outside of testing.
-                    None => {
-                        tracing::trace!(%port, "using the default policy");
-                        self.default_rx.clone()
+                        let server = disco.spawn_watch(port).await?.into_inner();
+                        let server = cache.insert(port, server);
+                        Ok(AllowPolicy { dst, server })
                     }
-                });
-
-        AllowPolicy { dst, server }
+                    .instrument(info_span!("watch", port)),
+                ))
+            }
+        }
     }
 }
 

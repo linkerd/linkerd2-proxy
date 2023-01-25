@@ -134,6 +134,13 @@ where
         Some(cached)
     }
 
+    pub fn insert(&self, key: K, value: V) -> Cached<V>
+    where
+        V: Clone,
+    {
+        self.insert_with(key, move |_| value)
+    }
+
     pub fn get_or_insert_with(&self, key: K, f: impl FnOnce(&K) -> V) -> Cached<V>
     where
         V: Clone,
@@ -145,6 +152,30 @@ where
         }
 
         // Otherwise, obtain a write lock to insert a new value.
+        self.insert_with(key, f)
+    }
+
+    /// Adds or overwrites a value in the cache that will never be evicted from
+    /// the cache.
+    pub fn insert_permanent(&self, key: K, val: V) -> Option<V> {
+        match self.inner.write().entry(key) {
+            Entry::Vacant(entry) => {
+                debug!(key = ?entry.key(), "Permanently caching new value");
+                entry.insert(CacheEntry::permanent(val));
+                None
+            }
+            Entry::Occupied(ref mut entry) => {
+                debug!(key = ?entry.key(), "Updating permanently cached value");
+                let prior_entry = entry.insert(CacheEntry::permanent(val));
+                Some(prior_entry.value)
+            }
+        }
+    }
+
+    fn insert_with(&self, key: K, f: impl FnOnce(&K) -> V) -> Cached<V>
+    where
+        V: Clone,
+    {
         let mut cache = self.inner.write();
         match cache.entry(key) {
             Entry::Vacant(entry) => {
@@ -165,23 +196,6 @@ where
                 // Another thread raced us to create a value for this target.
                 trace!(key = ?entry.key(), "Using cached value");
                 entry.get().cached()
-            }
-        }
-    }
-
-    /// Adds or overwrites a value in the cache that will never be evicted from
-    /// the cache.
-    pub fn insert_permanent(&self, key: K, val: V) -> Option<V> {
-        match self.inner.write().entry(key) {
-            Entry::Vacant(entry) => {
-                debug!(key = ?entry.key(), "Permanently caching new value");
-                entry.insert(CacheEntry::permanent(val));
-                None
-            }
-            Entry::Occupied(ref mut entry) => {
-                debug!(key = ?entry.key(), "Updating permanently cached value");
-                let prior_entry = entry.insert(CacheEntry::permanent(val));
-                Some(prior_entry.value)
             }
         }
     }
