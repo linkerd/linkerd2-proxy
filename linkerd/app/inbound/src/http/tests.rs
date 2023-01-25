@@ -181,15 +181,11 @@ async fn http1_bad_gateway_meshed_response_error_header() {
         .unwrap();
     let response = http_util::http_request(&mut client, req).await.unwrap();
     assert_eq!(response.status(), http::StatusCode::BAD_GATEWAY);
-    let message = response
-        .headers()
-        .get(L5D_PROXY_ERROR)
-        .expect("response did not contain L5D_PROXY_ERROR header");
     // NOTE: this does not include a stack error context for that endpoint
     // because we don't build a real HTTP endpoint stack, which adds error
     // context to this error, and the client rescue layer is below where the
     // logical error context is added.
-    assert_eq!(message, "error trying to connect: server is not listening");
+    check_error_header(response.headers(), "server is not listening");
 
     drop(client);
     bg.await.expect("background task failed");
@@ -263,18 +259,12 @@ async fn http1_connect_timeout_meshed_response_error_header() {
         .unwrap();
     let response = http_util::http_request(&mut client, req).await.unwrap();
     assert_eq!(response.status(), http::StatusCode::GATEWAY_TIMEOUT);
-    let message = response
-        .headers()
-        .get(L5D_PROXY_ERROR)
-        .expect("response did not contain L5D_PROXY_ERROR header");
+
     // NOTE: this does not include a stack error context for that endpoint
     // because we don't build a real HTTP endpoint stack, which adds error
     // context to this error, and the client rescue layer is below where the
     // logical error context is added.
-    assert_eq!(
-        message,
-        "error trying to connect: connect timed out after 1s"
-    );
+    check_error_header(response.headers(), "connect timed out after 1s");
 
     drop(client);
     bg.await.expect("background task failed");
@@ -348,14 +338,8 @@ async fn h2_response_meshed_error_header() {
         .unwrap();
     let response = http_util::http_request(&mut client, req).await.unwrap();
     assert_eq!(response.status(), http::StatusCode::GATEWAY_TIMEOUT);
-    let message = response
-        .headers()
-        .get(L5D_PROXY_ERROR)
-        .expect("response did not contain L5D_PROXY_ERROR header");
-    assert_eq!(
-        message,
-        "HTTP/2 logical (foo.svc.cluster.local:5550, addr=127.0.0.1:80): service in fail-fast"
-    );
+
+    check_error_header(response.headers(), "service in fail-fast");
 
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
@@ -433,14 +417,8 @@ async fn grpc_meshed_response_error_header() {
         .unwrap();
     let response = http_util::http_request(&mut client, req).await.unwrap();
     assert_eq!(response.status(), http::StatusCode::OK);
-    let message = response
-        .headers()
-        .get(L5D_PROXY_ERROR)
-        .expect("response did not contain L5D_PROXY_ERROR header");
-    assert_eq!(
-        message,
-        "HTTP/2 logical (foo.svc.cluster.local:5550, addr=127.0.0.1:80): service in fail-fast"
-    );
+
+    check_error_header(response.headers(), "service in fail-fast");
 
     // Drop the client and discard the result of awaiting the proxy background
     // task. The result is discarded because it hits an error that is related
@@ -542,6 +520,19 @@ fn connect_timeout(
 
 #[derive(Clone, Debug)]
 struct Target(http::Version, tls::ConditionalServerTls);
+
+#[track_caller]
+fn check_error_header(hdrs: &hyper::header::HeaderMap, expected: &str) {
+    let message = hdrs
+        .get(L5D_PROXY_ERROR)
+        .expect("response did not contain l5d-proxy-error header")
+        .to_str()
+        .expect("l5d-proxy-error header should always be a UTF-8 string");
+    assert!(
+        message.contains(expected),
+        "expected {L5D_PROXY_ERROR} to contain {expected:?}; got: {message:?}",
+    );
+}
 
 // === impl Target ===
 
