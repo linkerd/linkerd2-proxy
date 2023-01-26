@@ -21,6 +21,22 @@ pub struct ControlAddr {
     pub identity: tls::ConditionalClientTls,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("controller {addr}: {source}")]
+pub struct ControlError {
+    addr: Addr,
+    #[source]
+    source: Error,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("endpoint {addr}: {source}")]
+struct EndpointError {
+    addr: std::net::SocketAddr,
+    #[source]
+    source: Error,
+}
+
 impl svc::Param<Addr> for ControlAddr {
     fn param(&self) -> Addr {
         self.addr.clone()
@@ -58,7 +74,7 @@ impl Config {
         impl svc::Service<
                 http::Request<tonic::body::BoxBody>,
                 Response = http::Response<RspBody>,
-                Error = Error,
+                Error = ControlError,
                 Future = impl Send,
             > + Clone,
     > {
@@ -84,13 +100,15 @@ impl Config {
             }
         };
 
-        svc::stack(ConnectTcp::new(self.connect.keepalive))
+        let client = svc::stack(ConnectTcp::new(self.connect.keepalive))
             .push(tls::Client::layer(identity))
             .push_connect_timeout(self.connect.timeout)
             .push_map_target(|(_version, target)| target)
             .push(self::client::layer())
             .push_on_service(svc::MapErr::layer_boxed())
-            .into_new_service()
+            .into_new_service();
+
+        let endpoint = client
             // Ensure that connection is driven independently of the load
             // balancer; but don't drive reconnection independently of the
             // balancer. This ensures that new connections are only initiated
@@ -98,20 +116,44 @@ impl Config {
             // after checking for discovery updates); but we don't want to
             // continually reconnect without checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
+            .push(svc::NewMapErr::layer_from_target::<EndpointError, _>())
             .push_new_reconnect(self.connect.backoff)
-            .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr))
+            .instrument(|t: &self::client::Target| info_span!("endpoint", addr = %t.addr));
+
+        let balance = endpoint
             .lift_new()
             .push(self::balance::layer(dns, resolve_backoff))
             .push(metrics.to_layer::<classify::Response, _, _>())
-            .push(self::add_origin::layer())
             // This buffer allows a resolver client to be shared across stacks.
             // No load shed is applied here, however, so backpressure may leak
             // into the caller task.
-            .push(svc::NewQueue::layer_fixed(self.buffer))
+            .push(svc::NewQueue::layer_fixed(self.buffer));
+
+        balance
+            .push(self::add_origin::layer())
+            .push(svc::NewMapErr::layer_from_target::<ControlError, _>())
             .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
             .push(svc::ArcNewService::layer())
             .into_inner()
+    }
+}
+
+impl From<(&ControlAddr, Error)> for ControlError {
+    fn from((controller, source): (&ControlAddr, Error)) -> Self {
+        Self {
+            addr: controller.addr.clone(),
+            source,
+        }
+    }
+}
+
+impl From<(&self::client::Target, Error)> for EndpointError {
+    fn from((target, source): (&self::client::Target, Error)) -> Self {
+        Self {
+            addr: target.addr,
+            source,
+        }
     }
 }
 

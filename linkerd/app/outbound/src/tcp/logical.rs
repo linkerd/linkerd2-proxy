@@ -11,6 +11,14 @@ use linkerd_distribute as distribute;
 #[error("no route")]
 pub struct NoRoute;
 
+#[derive(Debug, thiserror::Error)]
+#[error("logical service {addr}: {source}")]
+pub struct LogicalError {
+    addr: profiles::LogicalAddr,
+    #[source]
+    source: Error,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Params {
     logical: Logical,
@@ -45,13 +53,14 @@ impl<N> Outbound<N> {
     ) -> Outbound<
         svc::ArcNewService<
             Logical,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+            impl svc::Service<I, Response = (), Error = LogicalError, Future = impl Send> + Clone,
         >,
     >
     where
         N: svc::NewService<Concrete, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<I, Response = (), Error = Error> + Clone + Send + Sync + 'static,
+        NSvc: svc::Service<I, Response = ()> + Clone + Send + Sync + 'static,
         NSvc::Future: Send,
+        NSvc::Error: Into<Error>,
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
     {
         self.map_stack(|_, _, concrete| {
@@ -81,6 +90,7 @@ impl<N> Outbound<N> {
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
+                .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -161,5 +171,19 @@ impl<I> svc::router::SelectRoute<I> for Params {
 impl svc::Param<Distribution> for RouteParams {
     fn param(&self) -> Distribution {
         self.distribution.clone()
+    }
+}
+
+// === impl LogicalError ===
+
+impl<T> From<(&T, Error)> for LogicalError
+where
+    T: svc::Param<profiles::LogicalAddr>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
+        }
     }
 }

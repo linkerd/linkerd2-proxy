@@ -1,11 +1,23 @@
 use super::{Concrete, Endpoint};
 use crate::{endpoint, stack_labels, Outbound};
 use linkerd_app_core::{
-    proxy::{api_resolve::Metadata, core::Resolve, http},
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        http,
+    },
     svc, Error,
 };
 use std::time;
 use tracing::info_span;
+
+#[derive(Debug, thiserror::Error)]
+#[error("concrete service {addr}: {source}")]
+pub struct ConcreteError {
+    addr: ConcreteAddr,
+    #[source]
+    source: Error,
+}
 
 impl<N> Outbound<N> {
     /// Builds a [`svc::NewService`] stack that builds buffered HTTP load
@@ -26,7 +38,7 @@ impl<N> Outbound<N> {
             impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
-                    Error = Error,
+                    Error = ConcreteError,
                     Future = impl Send,
                 > + Clone,
         >,
@@ -66,16 +78,30 @@ impl<N> Outbound<N> {
                 )
                 .push(svc::NewQueue::layer_fixed(config.http_request_buffer))
                 .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
+                .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }
 }
+
+// === impl Concrete ===
 
 impl svc::Param<http::balance::EwmaConfig> for Concrete {
     fn param(&self) -> http::balance::EwmaConfig {
         http::balance::EwmaConfig {
             default_rtt: time::Duration::from_millis(30),
             decay: time::Duration::from_secs(10),
+        }
+    }
+}
+
+// === impl ConcreteError ===
+
+impl<T: svc::Param<ConcreteAddr>> From<(&T, Error)> for ConcreteError {
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
         }
     }
 }

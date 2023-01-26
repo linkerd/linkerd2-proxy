@@ -7,7 +7,7 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, Remote, ServerAddr},
     Error, Infallible, NameAddr, Result,
 };
-use std::net::SocketAddr;
+use std::{fmt, net::SocketAddr};
 use tracing::{debug, debug_span};
 
 /// Describes an HTTP client target.
@@ -55,6 +55,14 @@ struct ProfileRoute {
 
 #[derive(Copy, Clone, Debug)]
 struct ClientRescue;
+
+#[derive(Debug, thiserror::Error)]
+struct LogicalError {
+    logical: Option<NameAddr>,
+    addr: Remote<ServerAddr>,
+    #[source]
+    source: Error,
+}
 
 // === impl Inbound ===
 
@@ -161,6 +169,7 @@ impl<C> Inbound<C> {
                         .push(classify::NewClassify::layer())
                         .push_http_insert_target::<profiles::http::Route>()
                         .push_map_target(|(route, profile)| ProfileRoute { route, profile })
+                        .push_on_service(svc::MapErr::layer(Error::from))
                         .into_inner(),
                 ))
                 .push_switch(
@@ -180,6 +189,7 @@ impl<C> Inbound<C> {
                         Ok(svc::Either::B(logical))
                     },
                     http.clone()
+                    .push_on_service(svc::MapErr::layer(Error::from))
                         .check_new_service::<Logical, http::Request<_>>()
                         .into_inner(),
                 )
@@ -220,7 +230,9 @@ impl<C> Inbound<C> {
             discover
                 // Skip the profile stack if it takes too long to become ready.
                 .push_when_unready(config.profile_skip_timeout, http.into_inner())
-                .push_on_service(rt.metrics.proxy.stack.layer(stack_labels("http", "logical"))
+                .push_on_service(
+                    svc::layers()
+                        .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
                 )
                 .push(svc::NewQueue::layer_fixed(config.http_request_buffer))
                 .push_idle_cache(config.discovery_idle_timeout)
@@ -238,6 +250,7 @@ impl<C> Inbound<C> {
                 // dispatches the request.
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_service(svc::LoadShed::layer())
+                .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                 .lift_new()
                 .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
                 .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {
@@ -512,13 +525,40 @@ impl ExtractParam<errors::respond::EmitHeaders, Logical> for ClientRescue {
 
 impl errors::HttpRescue<Error> for ClientRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if let Some(cause) = errors::cause_ref::<std::io::Error>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        if errors::is_caused_by::<std::io::Error>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
-        if let Some(cause) = errors::cause_ref::<errors::ConnectTimeout>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        if errors::is_caused_by::<errors::ConnectTimeout>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
         }
 
         Err(error)
+    }
+}
+
+// === impl LogicalError ===
+
+impl From<(&Logical, Error)> for LogicalError {
+    fn from((logical, source): (&Logical, Error)) -> Self {
+        Self {
+            logical: logical.logical.clone(),
+            addr: logical.addr,
+            source,
+        }
+    }
+}
+
+impl fmt::Display for LogicalError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            logical,
+            addr,
+            source,
+        } = self;
+        write!(f, "server {addr}")?;
+        if let Some(logical) = logical {
+            write!(f, ": service {logical}")?;
+        }
+        write!(f, ": {source}")
     }
 }

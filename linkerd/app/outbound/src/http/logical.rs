@@ -14,6 +14,14 @@ use std::sync::Arc;
 #[error("no route")]
 pub struct NoRoute;
 
+#[derive(Debug, thiserror::Error)]
+#[error("logical service {addr}: {source}")]
+pub struct LogicalError {
+    addr: profiles::LogicalAddr,
+    #[source]
+    source: Error,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Params {
     logical: Logical,
@@ -51,21 +59,19 @@ impl<N> Outbound<N> {
             impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
-                    Error = Error,
+                    Error = LogicalError,
                     Future = impl Send,
                 > + Clone,
         >,
     >
     where
         N: svc::NewService<Concrete, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-            > + Clone
+        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Clone
             + Send
             + Sync
             + 'static,
+        NSvc::Error: Into<Error>,
         NSvc::Future: Send,
     {
         self.map_stack(|_, rt, concrete| {
@@ -105,6 +111,7 @@ impl<N> Outbound<N> {
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
+                // TODO(ver) .push(svc::NewMapErr::layer_from_target::<RouteError, _>())
                 .push_on_service(http::BoxResponse::layer());
 
             // A `NewService`--instantiated once per logical target--that caches
@@ -134,6 +141,7 @@ impl<N> Outbound<N> {
                 //
                 // TODO(ver) do we need to strip headers here?
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
+                .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -266,5 +274,16 @@ impl classify::CanClassify for RouteParams {
 
     fn classify(&self) -> classify::Request {
         self.profile.response_classes().clone().into()
+    }
+}
+
+// === impl LogicalError ===
+
+impl<T: svc::Param<profiles::LogicalAddr>> From<(&T, Error)> for LogicalError {
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
+        }
     }
 }

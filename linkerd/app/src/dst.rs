@@ -4,7 +4,7 @@ use linkerd_app_core::{
     identity, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{api_resolve as api, http, resolve::recover},
-    svc::{self, NewService},
+    svc::{self, NewService, ServiceExt},
     Error, Recover,
 };
 
@@ -50,7 +50,11 @@ impl Config {
     > {
         let addr = self.control.addr.clone();
         let backoff = BackoffUnlessInvalidArgument(self.control.connect.backoff);
-        let svc = self.control.build(dns, metrics, identity).new_service(());
+        let svc = self
+            .control
+            .build(dns, metrics, identity)
+            .new_service(())
+            .map_err(Error::from);
 
         Ok(Dst {
             addr,

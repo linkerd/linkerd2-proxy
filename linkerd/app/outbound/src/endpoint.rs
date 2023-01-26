@@ -5,7 +5,7 @@ use linkerd_app_core::{
     proxy::api_resolve::Metadata,
     svc, tls,
     transport::{self, addrs::*},
-    transport_header, Conditional,
+    transport_header, Conditional, Error,
 };
 use std::{
     collections::HashSet,
@@ -36,6 +36,14 @@ pub struct FromMetadata<P, N> {
     inbound_ips: Arc<HashSet<IpAddr>>,
     concrete: Concrete<P>,
     inner: N,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("forwarding to {addr}: {source}")]
+pub struct ForwardError {
+    addr: Remote<ServerAddr>,
+    #[source]
+    source: Error,
 }
 
 // === impl Endpoint ===
@@ -277,9 +285,25 @@ impl<S> Outbound<S> {
 
         opaque.push_detect_http(http).map_stack(|_, _, stk| {
             stk.instrument(|e: &tcp::Endpoint| info_span!("forward", endpoint = %e.addr))
+                .push(svc::NewMapErr::layer_from_target::<ForwardError, _>())
+                .push_on_service(svc::MapErr::layer(Error::from))
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
+    }
+}
+
+// === impl ForwardError ===
+
+impl<T> From<(&T, Error)> for ForwardError
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
+        }
     }
 }
 

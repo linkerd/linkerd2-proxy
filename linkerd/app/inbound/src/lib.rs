@@ -84,6 +84,13 @@ pub struct GatewayDomainInvalid;
 #[error("gateway loop detected")]
 pub struct GatewayLoop;
 
+#[derive(Debug, thiserror::Error)]
+#[error("server {addr}: {source}")]
+pub struct ForwardError {
+    addr: Remote<ServerAddr>,
+    source: Error,
+}
+
 // === impl Inbound ===
 
 impl<S> Inbound<S> {
@@ -218,11 +225,16 @@ impl<S> Inbound<S> {
     ) -> Inbound<
         svc::ArcNewService<
             T,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+            impl svc::Service<I, Response = (), Error = ForwardError, Future = impl Send> + Clone,
         >,
     >
     where
-        T: svc::Param<transport::labels::Key> + Clone + Send + 'static,
+        T: svc::Param<transport::labels::Key>
+            + svc::Param<Remote<ServerAddr>>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
         I: io::AsyncRead + io::AsyncWrite,
         I: Debug + Send + Unpin + 'static,
         S: svc::MakeConnection<T> + Clone + Send + Sync + Unpin + 'static,
@@ -243,6 +255,7 @@ impl<S> Inbound<S> {
                         .push(drain::Retain::layer(rt.drain.clone())),
                 )
                 .instrument(|_: &_| debug_span!("tcp"))
+                .push(svc::NewMapErr::layer_from_target::<ForwardError, _>())
                 .push(svc::ArcNewService::layer())
                 .check_new::<T>()
         })
@@ -251,4 +264,16 @@ impl<S> Inbound<S> {
 
 fn stack_labels(proto: &'static str, name: &'static str) -> metrics::StackLabels {
     metrics::StackLabels::inbound(proto, name)
+}
+
+impl<T> From<(&T, Error)> for ForwardError
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
+        }
+    }
 }

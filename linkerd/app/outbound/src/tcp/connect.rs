@@ -22,6 +22,14 @@ pub struct Connect {
 #[derive(Clone, Debug)]
 pub struct PreventLoopback<S>(S);
 
+#[derive(Debug, thiserror::Error)]
+#[error("endpoint {addr}: {source}")]
+pub struct EndpointError {
+    addr: Remote<ServerAddr>,
+    #[source]
+    source: Error,
+}
+
 // === impl Outbound ===
 
 impl Outbound<()> {
@@ -80,11 +88,11 @@ impl<C> Outbound<C> {
     ) -> Outbound<
         svc::ArcNewService<
             T,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+            impl svc::Service<I, Response = (), Error = EndpointError, Future = impl Send> + Clone,
         >,
     >
     where
-        T: Clone + Send + 'static,
+        T: svc::Param<Remote<ServerAddr>> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         C: svc::MakeConnection<T> + Clone + Send + Sync + 'static,
         C::Connection: Send + Unpin,
@@ -95,6 +103,7 @@ impl<C> Outbound<C> {
             conn.push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_make_thunk()
                 .push_on_service(super::Forward::layer())
+                .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })
@@ -161,6 +170,20 @@ impl svc::Param<tls::ConditionalClientTls> for Connect {
     }
 }
 
+// === impl EndpointError ===
+
+impl<T> From<(&T, Error)> for EndpointError
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,6 +194,21 @@ mod tests {
     };
     use std::net::SocketAddr;
 
+    #[derive(Clone)]
+    struct Target(SocketAddr);
+
+    impl svc::Param<Option<crate::http::Version>> for Target {
+        fn param(&self) -> Option<crate::http::Version> {
+            None
+        }
+    }
+
+    impl svc::Param<Remote<ServerAddr>> for Target {
+        fn param(&self) -> Remote<ServerAddr> {
+            Remote(ServerAddr(self.0))
+        }
+    }
+
     #[tokio::test]
     async fn forward() {
         let _trace = linkerd_tracing::test::trace_init();
@@ -178,7 +216,7 @@ mod tests {
         let addr = SocketAddr::new([192, 0, 2, 2].into(), 2222);
         let (rt, _shutdown) = runtime();
         let stack = Outbound::new(default_config(), rt)
-            .with_stack(svc::mk(move |a: SocketAddr| {
+            .with_stack(svc::mk(move |Target(a): Target| {
                 assert_eq!(a, addr);
                 let mut io = support::io();
                 io.write(b"hello").read(b"world");
@@ -193,7 +231,7 @@ mod tests {
         let mut io = support::io();
         io.read(b"hello").write(b"world");
         stack
-            .new_service(addr)
+            .new_service(Target(addr))
             .oneshot(io.build())
             .await
             .expect("forward must complete successfully");
