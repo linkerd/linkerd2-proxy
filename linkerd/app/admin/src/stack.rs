@@ -69,11 +69,15 @@ struct Rescue;
 // === impl Config ===
 
 impl Config {
+    /// Builds the admin endpoint server.
+    ///
+    /// This method is asynchronous, as it must discover a `ServerPolicy` for
+    /// the admin port.
     #[allow(clippy::too_many_arguments)]
-    pub fn build<B, R, P>(
+    pub async fn build<B, R, P>(
         self,
         bind: B,
-        policy: P,
+        policy: &P,
         identity: identity::Server,
         report: R,
         metrics: inbound::Metrics,
@@ -91,16 +95,11 @@ impl Config {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
         let (ready, latch) = crate::server::Readiness::new();
-        let serve = Box::pin(async move {
-            // Get the policy for the admin server.
-            // TODO(eliza): don't expect this...
-            let policy = policy
-                .get_policy(OrigDstAddr(listen_addr.into()))
-                .await
-                .expect("must be able to get policy for admin server");
+        // Get the policy for the admin server.
+        let policy = policy.get_policy(OrigDstAddr(listen_addr.into())).await?;
 
-            let admin = crate::server::Admin::new(report, ready, shutdown, trace);
-            let admin = svc::stack(move |_| admin.clone())
+        let admin = crate::server::Admin::new(report, ready, shutdown, trace);
+        let admin = svc::stack(move |_| admin.clone())
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
             .push_map_target(|(permit, http)| Permitted { permit, http })
             .push(inbound::policy::NewHttpPolicy::layer(metrics.http_authz.clone()))
@@ -164,8 +163,7 @@ impl Config {
                 identity,
             }))
             .into_inner();
-            serve::serve(listen, admin, drain.signaled()).await
-        });
+        let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
         Ok(Task {
             listen_addr,
             latch,

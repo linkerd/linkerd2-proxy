@@ -46,13 +46,6 @@ pub trait GetPolicy {
     type Future: Future<Output = Result<AllowPolicy, Error>>;
 
     fn get_policy(&self, target: OrigDstAddr) -> Self::Future;
-
-    // fn into_service(self) -> GetPolicyService<Self>
-    // where
-    //     Self: Sized,
-    // {
-    //     GetPolicyService(self)
-    // }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
