@@ -60,9 +60,7 @@ pub fn increment_span_id<B>(request: &mut http::Request<B>, context: &TraceConte
     match context.propagation {
         Propagation::B3Grpc => increment_grpc_span_id(request, context),
         Propagation::B3Http => increment_http_span_id(request),
-        Propagation::W3CHttp => {
-            increment_w3c_http_span_id(request, context.trace_id.clone(), context.flags.clone())
-        }
+        Propagation::W3CHttp => increment_w3c_http_span_id(request, context),
     }
 }
 
@@ -128,7 +126,7 @@ fn parse_w3c_header_value(next_header: &str, pad_to: usize) -> Option<(Id, &str)
         .and_then(|(id, rest)| decode_id_with_padding(id, pad_to).zip(Some(rest)))
 }
 
-fn increment_w3c_http_span_id<B>(request: &mut http::Request<B>, trace_id: Id, flags: Flags) -> Id {
+fn increment_w3c_http_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
     let span_id = Id::new_span_id(&mut thread_rng());
 
     trace!("incremented span id: {}", span_id);
@@ -137,11 +135,11 @@ fn increment_w3c_http_span_id<B>(request: &mut http::Request<B>, trace_id: Id, f
         let mut buf = String::with_capacity(60);
         buf.push_str(W3C_HEADER_VERSION);
         buf.push_str(W3C_HEADER_VALUE_SEPARATOR);
-        buf.push_str(&hex::encode(trace_id));
+        buf.push_str(&hex::encode(context.trace_id.as_ref()));
         buf.push_str(W3C_HEADER_VALUE_SEPARATOR);
-        buf.push_str(&hex::encode(span_id.as_ref()));
+        buf.push_str(&hex::encode(context.parent_id.as_ref()));
         buf.push_str(W3C_HEADER_VALUE_SEPARATOR);
-        buf.push_str(&hex::encode(vec![flags.0]));
+        buf.push_str(&hex::encode(vec![context.flags.0]));
         buf
     };
 
