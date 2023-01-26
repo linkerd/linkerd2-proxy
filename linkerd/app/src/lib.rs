@@ -18,7 +18,8 @@ use linkerd_app_core::{
     control::ControlAddr,
     dns, drain,
     metrics::FmtMetrics,
-    svc::Param,
+    profiles,
+    svc::{self, Param},
     telemetry,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, ProxyRuntime,
@@ -142,6 +143,15 @@ impl Config {
             info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.receiver().new_client()))
         }?;
 
+        let profiles = svc::stack(profiles::GetProfile::into_service(dst.profiles))
+            // TODO(eliza): these configs should not be inbound/outbound-specific,
+            // and should also have names that remotely reflect what they configure...
+            .push_discover_cache(
+                outbound.tcp_connection_buffer,
+                outbound.discovery_idle_timeout,
+            )
+            .into_inner();
+
         let oc_collector = {
             let identity = identity.receiver().new_client();
             let dns = dns.resolver.clone();
@@ -194,7 +204,7 @@ impl Config {
             gateway,
             inbound.clone(),
             outbound.to_tcp_connect(),
-            dst.profiles.clone(),
+            profiles.clone(),
             dst.resolve.clone(),
         );
 
@@ -212,7 +222,6 @@ impl Config {
         let start_proxy = {
             let identity_ready = identity.ready();
             let inbound_addr = inbound_addr;
-            let profiles = dst.profiles;
             let resolve = dst.resolve;
 
             Box::pin(async move {

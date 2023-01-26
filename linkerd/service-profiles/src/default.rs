@@ -23,19 +23,17 @@ type RspFuture<F, E> = future::OrElse<
 impl<S> tower::Service<LookupAddr> for RecoverDefault<S>
 where
     S: GetProfile,
-    S::Error: Into<Error>,
 {
     type Response = Option<Receiver>;
     type Error = Error;
-    type Future = RspFuture<S::Future, S::Error>;
+    type Future = RspFuture<S::Future, Error>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, dst: LookupAddr) -> Self::Future {
-        self.0.get_profile(dst).or_else(|e| {
-            let error: Error = e.into();
+        self.0.get_profile(dst).or_else(|error| {
             if crate::DiscoveryRejected::is_rejected(error.as_ref()) {
                 debug!(error, "Handling rejected discovery");
                 return future::ok(None);

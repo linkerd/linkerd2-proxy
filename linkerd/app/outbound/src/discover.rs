@@ -24,7 +24,6 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
         P: profiles::GetProfile + Clone + Send + Sync + 'static,
         P::Future: Send,
-        P::Error: Send,
     {
         self.map_stack(|config, _, stk| {
             let allow = config.allow_discovery.clone();

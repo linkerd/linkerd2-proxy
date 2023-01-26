@@ -2,6 +2,7 @@ use crate::LookupAddr;
 
 use super::{default::RecoverDefault, GetProfile, Receiver};
 use futures::prelude::*;
+use linkerd_error::Error;
 use linkerd_stack::{layer, FutureService, NewService, Param};
 use std::{future::Future, pin::Pin};
 
@@ -26,12 +27,11 @@ where
     T: Clone + Send + 'static,
     G: GetProfile + Clone,
     G::Future: Send + 'static,
-    G::Error: Send,
     N: NewService<T, Service = M> + Send + 'static,
     M: NewService<Option<Receiver>> + Send + 'static,
 {
     type Service = FutureService<
-        Pin<Box<dyn Future<Output = Result<M::Service, G::Error>> + Send + 'static>>,
+        Pin<Box<dyn Future<Output = Result<M::Service, Error>> + Send + 'static>>,
         M::Service,
     >;
 

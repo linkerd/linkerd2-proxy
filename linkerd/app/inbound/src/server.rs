@@ -44,7 +44,6 @@ impl Inbound<()> {
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
         P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
-        P::Error: Send,
         P::Future: Send,
     {
         let shutdown = self.runtime.drain.clone().signaled();

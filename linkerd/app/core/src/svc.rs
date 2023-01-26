@@ -233,6 +233,35 @@ impl<S> Stack<S> {
         }))
     }
 
+    pub fn push_discover_cache<T>(
+        self,
+        queue_config: QueueConfig,
+        idle_timeout: Duration,
+    ) -> Stack<
+        impl Service<T, Response = S::Response, Future = impl Send, Error = Error>
+            + Clone
+            + Send
+            + 'static,
+    >
+    where
+        S: Service<T, Error = Error> + Send + 'static + Clone,
+        S::Future: Send + 'static,
+        S::Response: Clone + Send + 'static,
+        T: std::hash::Hash + Eq + std::fmt::Debug + Clone + Send + Sync + 'static,
+    {
+        let discover = self
+            .push(crate::discover::NewDiscover::layer())
+            .check_new_service::<T, ()>();
+        let discover = discover
+            .push(stack::NewQueue::layer_fixed(queue_config))
+            .check_new_service::<T, ()>();
+        discover
+            .push_idle_cache(idle_timeout)
+            .check_new_service::<T, ()>()
+            .push(stack::Unthunk::layer::<T>())
+            .check_service::<T>()
+    }
+
     /// Validates that this stack serves T-typed targets.
     pub fn check_new<T>(self) -> Self
     where

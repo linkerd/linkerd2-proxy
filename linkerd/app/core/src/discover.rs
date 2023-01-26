@@ -84,7 +84,7 @@ where
                     }
                     Err(e) => return Poll::Ready(Err(e)),
                 },
-                // We have a service! We're now ready to clone this service.
+                // We have a service! We're now ready to clone this service
                 State::Discovered(_) => return Poll::Ready(Ok(())),
             }
         }

@@ -1,7 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use futures::Stream;
+use futures::{future::MapErr, prelude::*};
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
@@ -75,8 +75,7 @@ pub enum DiscoveryRejected {
 
 /// Watches a destination's Profile.
 pub trait GetProfile {
-    type Error: Into<Error>;
-    type Future: Future<Output = Result<Option<Receiver>, Self::Error>>;
+    type Future: Future<Output = Result<Option<Receiver>, Error>>;
 
     fn get_profile(&mut self, target: LookupAddr) -> Self::Future;
 
@@ -93,18 +92,17 @@ where
     S: tower::Service<LookupAddr, Response = Option<Receiver>> + Clone,
     S::Error: Into<Error>,
 {
-    type Error = S::Error;
-    type Future = Oneshot<S, LookupAddr>;
+    type Future = MapErr<Oneshot<S, LookupAddr>, fn(S::Error) -> Error>;
 
     #[inline]
     fn get_profile(&mut self, target: LookupAddr) -> Self::Future {
-        self.clone().oneshot(target)
+        self.clone().oneshot(target).map_err(Into::into)
     }
 }
 
 impl<P: GetProfile> tower::Service<LookupAddr> for GetProfileService<P> {
     type Response = Option<Receiver>;
-    type Error = P::Error;
+    type Error = Error;
     type Future = P::Future;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {

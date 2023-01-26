@@ -92,7 +92,6 @@ impl<C> Inbound<C> {
         T: Clone + Send + Unpin + 'static,
         P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
-        P::Error: Send,
         C: svc::MakeConnection<Http> + Clone + Send + Sync + Unpin + 'static,
         C::Connection: Send + Unpin,
         C::Metadata: Send,

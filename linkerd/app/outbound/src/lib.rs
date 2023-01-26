@@ -171,7 +171,6 @@ impl Outbound<()> {
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
-        P::Error: Send,
     {
         if self.config.ingress_mode {
             info!("Outbound routing in ingress-mode");
@@ -199,7 +198,6 @@ impl Outbound<()> {
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
-        P::Error: Send,
     {
         let logical = self.to_tcp_connect().push_logical(resolve);
         let forward = self.to_tcp_connect().push_forward();
@@ -230,7 +228,6 @@ impl Outbound<()> {
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
-        P::Error: Send,
     {
         // The fallback stack is the same thing as the normal proxy stack, but
         // it doesn't include TCP metrics, since they are already instrumented
