@@ -118,6 +118,7 @@ where
         future::BoxFuture<'static, Result<AllowPolicy, S::Error>>,
     >;
     type Error = S::Error;
+
     fn get_policy(&self, dst: OrigDstAddr) -> Self::Future {
         // Lookup the polcify for the target port in the cache. If it doesn't
         // already exist, we spawn a watch on the API (if it is configured). If
