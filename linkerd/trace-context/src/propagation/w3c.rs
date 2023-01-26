@@ -77,10 +77,10 @@ fn parse_context(header_value: &str) -> Option<TraceContext> {
         // If valid hex, take final bit and AND with 1. W3C only uses one bit
         // for flags in version 00, and the bit is used to control sampling
         Ok(decoded) => Flags(decoded[0]),
-        // If invalid hex, do not sample trace
+        // If invalid hex, invalidate trace
         Err(e) => {
             warn!("Failed to decode flags for header {}: {}", header_value, e);
-            Flags(0)
+            return None;
         }
     };
 
@@ -92,6 +92,9 @@ fn parse_context(header_value: &str) -> Option<TraceContext> {
     })
 }
 
+// Parse header value as Id and return the rest after '-' separator. When an id
+// is all 0 value it is considered invalid according to the spec.
+// <https://www.w3.org/TR/trace-context-1/#trace-id>
 fn parse_header_value(next_header: &str, pad_to: usize) -> Option<(Id, &str)> {
     next_header
         .split_once('-')
@@ -100,7 +103,7 @@ fn parse_header_value(next_header: &str, pad_to: usize) -> Option<(Id, &str)> {
 }
 
 #[test]
-fn test_w3c_context_parsed_successfully() {
+fn w3c_context_parsed_successfully() {
     let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-01";
     let actual = parse_context(input);
 
@@ -115,4 +118,31 @@ fn test_w3c_context_parsed_successfully() {
     assert_eq!(expected_trace, actual.trace_id.0);
     assert_eq!(expected_parent, actual.parent_id.0);
     assert_eq!(expected_flags, actual.flags.0);
+}
+
+#[test]
+fn w3c_context_invalid_flags() {
+    let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-011";
+    let actual = parse_context(input);
+    assert!(actual.is_none());
+
+    let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614";
+    let actual = parse_context(input);
+    assert!(actual.is_none());
+}
+
+#[test]
+fn w3c_context_invalid_version() {
+    let input = "22-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-01";
+    assert!(parse_context(input).is_none());
+
+    let input = "94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-01";
+    assert!(parse_context(input).is_none());
+}
+
+#[test]
+fn w3c_context_invalid_hex() {
+    // length of id 94d(...) is odd, results in invalid hex.
+    let input = "00-94d7f6ec6b95f3e916179cb6cfd013901-55ccfce77972614-01";
+    assert!(parse_context(input).is_none());
 }
