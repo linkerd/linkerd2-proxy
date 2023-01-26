@@ -221,7 +221,6 @@ impl<N> Inbound<N> {
                         .into_inner(),
                 )
                 .push(policy::Discover::layer(policies))
-                .push(svc::MapErr::layer(Into::into))
                 .into_new_service()
                 .push_map_target(|(header, client)| WithTransportHeader { header, client })
                 .check_new_service::<(TransportHeader, ClientInfo), _>()

@@ -86,7 +86,6 @@ impl Config {
         B: Bind<ServerConfig>,
         B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
         P: inbound::policy::GetPolicy + Send + Sync + 'static,
-        P::Error: Send,
         P::Future: Send,
     {
         let (listen_addr, listen) = bind.bind(&self.server)?;
@@ -98,7 +97,6 @@ impl Config {
             let policy = policy
                 .get_policy(OrigDstAddr(listen_addr.into()))
                 .await
-                .map_err(Into::into)
                 .expect("must be able to get policy for admin server");
 
             let admin = crate::server::Admin::new(report, ready, shutdown, trace);

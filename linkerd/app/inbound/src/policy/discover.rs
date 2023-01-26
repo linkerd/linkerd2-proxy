@@ -1,6 +1,6 @@
 use super::{AllowPolicy, GetPolicy};
 use futures::ready;
-use linkerd_app_core::{svc, transport::OrigDstAddr};
+use linkerd_app_core::{svc, transport::OrigDstAddr, Error};
 use std::{
     future::Future,
     pin::Pin,
@@ -36,7 +36,7 @@ where
     N: svc::NewService<(AllowPolicy, T)> + Clone,
     T: svc::Param<OrigDstAddr>,
 {
-    type Error = G::Error;
+    type Error = Error;
     type Response = N::Service;
     type Future = DiscoverFuture<T, G::Future, N>;
 

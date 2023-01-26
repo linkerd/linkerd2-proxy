@@ -20,8 +20,7 @@ impl Inbound<()> {
         &self,
         dns: dns::Resolver,
         control_metrics: metrics::ControlHttp,
-    ) -> impl policy::GetPolicy<Future = impl Send, Error = impl Send> + Clone + Send + Sync + 'static
-    {
+    ) -> impl policy::GetPolicy<Future = impl Send> + Clone + Send + Sync + 'static {
         self.config
             .policy
             .clone()
@@ -46,7 +45,6 @@ impl Inbound<()> {
         GSvc::Future: Send,
         P: profiles::GetProfile<Error = Error>,
         O: policy::GetPolicy + Clone + Send + Sync + 'static,
-        O::Error: Send,
         O::Future: Unpin + Send,
     {
         let shutdown = self.runtime.drain.clone().signaled();

@@ -43,8 +43,7 @@ pub struct ServerUnauthorized {
 
 /// Returns the traffic policy configured for the destination address.
 pub trait GetPolicy {
-    type Error: Into<Error>;
-    type Future: Future<Output = Result<AllowPolicy, Self::Error>>;
+    type Future: Future<Output = Result<AllowPolicy, Error>>;
 
     fn get_policy(&self, target: OrigDstAddr) -> Self::Future;
 

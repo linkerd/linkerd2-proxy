@@ -36,7 +36,7 @@ impl Config {
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: identity::NewClient,
-    ) -> impl GetPolicy<Future = impl Send, Error = impl Send> + Clone + Send + Sync + 'static {
+    ) -> impl GetPolicy<Future = impl Send> + Clone + Send + Sync + 'static {
         match self {
             Self::Fixed {
                 default,

@@ -114,10 +114,9 @@ where
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
     type Future = future::Either<
-        future::Ready<Result<AllowPolicy, Self::Error>>,
-        future::BoxFuture<'static, Result<AllowPolicy, S::Error>>,
+        future::Ready<Result<AllowPolicy, Error>>,
+        future::BoxFuture<'static, Result<AllowPolicy, Error>>,
     >;
-    type Error = S::Error;
 
     fn get_policy(&self, dst: OrigDstAddr) -> Self::Future {
         // Lookup the polcify for the target port in the cache. If it doesn't

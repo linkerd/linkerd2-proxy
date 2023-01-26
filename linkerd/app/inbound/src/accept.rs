@@ -35,7 +35,6 @@ impl<N> Inbound<N> {
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         P: GetPolicy + Clone + Send + Sync + 'static,
-        P::Error: Into<Error>,
         P::Future: Unpin + Send,
         N: svc::NewService<Accept, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<I, Response = ()>,
@@ -49,7 +48,7 @@ impl<N> Inbound<N> {
     {
         self.map_stack(|cfg, rt, accept| {
             accept
-                .push_on_service(svc::MapErr::layer(Into::into as fn(_) -> Error))
+                .push_on_service(svc::MapErr::layer_boxed())
                 .push_map_target(|(policy, t): (AllowPolicy, T)| {
                     tracing::debug!(policy = ?&*policy.borrow(), "Accepted");
                     Accept {
@@ -59,7 +58,6 @@ impl<N> Inbound<N> {
                     }
                 })
                 .push(policy::Discover::layer(policies))
-                .push(svc::MapErr::layer(Into::into as fn(_) -> Error))
                 .into_new_service()
                 .check_new_service::<T, I>()
                 .push_switch(
