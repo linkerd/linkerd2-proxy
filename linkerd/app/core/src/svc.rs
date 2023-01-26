@@ -233,6 +233,15 @@ impl<S> Stack<S> {
         }))
     }
 
+    /// Wraps a discovery [`Service`] to cache the returned discovery results
+    /// for each `T`-typed target.
+    ///
+    /// When a discovery target is *in the process* of being looked up, requests
+    /// for that target are placed in a queue. These queues are constructed per
+    /// discovery target based on the provided `queue_config`.
+    ///
+    /// `idle_timeout` configures the duration after which discovered services
+    /// are evicted from the cache.
     pub fn push_discover_cache<T>(
         self,
         queue_config: QueueConfig,
@@ -249,13 +258,10 @@ impl<S> Stack<S> {
         S::Response: Clone + Send + 'static,
         T: std::hash::Hash + Eq + std::fmt::Debug + Clone + Send + Sync + 'static,
     {
-        let discover = self
-            .push(crate::discover::NewDiscover::layer())
-            .check_new_service::<T, ()>();
-        let discover = discover
+        self.push(crate::discover::NewDiscover::layer())
+            .check_new_service::<T, ()>()
             .push(stack::NewQueue::layer_fixed(queue_config))
-            .check_new_service::<T, ()>();
-        discover
+            .check_new_service::<T, ()>()
             .push_idle_cache(idle_timeout)
             .check_new_service::<T, ()>()
             .push(stack::Unthunk::layer::<T>())

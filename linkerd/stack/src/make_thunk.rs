@@ -18,10 +18,20 @@ pub struct Thunk<S, T> {
     target: T,
 }
 
+/// Un-thunks a `NewService<T>` that produces thunked `Service<()>`s back into a
+/// `Service<T>`.
+///
+/// This type's `Service<T>` implementation calls `N::new_service` with a `T`,
+/// returning a `Service<()>`, and oneshots that service in its `call` method.
+///
+/// Because the produced service thunk is oneshotted, the `Unthunk` service is
+/// always ready.
 #[derive(Clone, Debug)]
 pub struct Unthunk<N> {
     new: N,
 }
+
+// === impl MakeThunk ===
 
 impl<S> MakeThunk<S> {
     pub fn new(inner: S) -> Self {
@@ -52,6 +62,8 @@ impl<S: Clone, T> tower::Service<T> for MakeThunk<S> {
         future::ok(Thunk { inner, target })
     }
 }
+
+// === impl Thunk ===
 
 impl<S, T> tower::Service<()> for Thunk<S, T>
 where
