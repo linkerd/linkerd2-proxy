@@ -41,7 +41,7 @@ pub use self::{
     filter::{Filter, FilterLayer, Predicate},
     lazy::{Lazy, NewLazy},
     loadshed::{LoadShed, LoadShedError},
-    make_thunk::MakeThunk,
+    make_thunk::{MakeThunk, Unthunk},
     map_err::{MapErr, NewMapErr, WrapErr},
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},

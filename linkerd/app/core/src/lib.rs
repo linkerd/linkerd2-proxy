@@ -35,6 +35,7 @@ mod addr_match;
 pub mod classify;
 pub mod config;
 pub mod control;
+pub mod discover;
 pub mod dns;
 pub mod errors;
 pub mod http_tracing;

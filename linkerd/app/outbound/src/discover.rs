@@ -1,6 +1,6 @@
 use crate::Outbound;
 use linkerd_app_core::{
-    profiles,
+    discover, profiles,
     svc::{self, stack::Param},
     Error, Infallible,
 };
@@ -28,11 +28,24 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, _, stk| {
             let allow = config.allow_discovery.clone();
+            let profiles = svc::stack(profiles.into_service())
+                .push(svc::MapErr::layer_boxed())
+                .check_service::<profiles::LookupAddr>();
+            let discovery = profiles
+                .push(discover::NewDiscover::layer())
+                .check_new_service::<profiles::LookupAddr, ()>()
+                .push(svc::NewQueue::layer_fixed(config.tcp_connection_buffer))
+                .check_new_service::<profiles::LookupAddr, ()>()
+                .push_idle_cache(config.discovery_idle_timeout)
+                .check_new_service::<profiles::LookupAddr, ()>()
+                .push(svc::Unthunk::layer::<profiles::LookupAddr>())
+                .check_service::<profiles::LookupAddr>();
+
             stk.clone()
                 .check_new_service::<(Option<profiles::Receiver>, T), Req>()
                 .lift_new_with_target()
                 .check_new_new_service::<T, Option<profiles::Receiver>, Req>()
-                .push(profiles::Discover::layer(profiles))
+                .push(profiles::Discover::layer(discovery))
                 .check_new::<T>()
                 .check_new_service::<T, Req>()
                 .push_switch(
