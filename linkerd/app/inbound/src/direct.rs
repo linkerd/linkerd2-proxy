@@ -3,7 +3,7 @@ use crate::{
     Inbound,
 };
 use linkerd_app_core::{
-    identity, io,
+    identity, io, profiles,
     proxy::http,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
@@ -215,7 +215,7 @@ impl<N> Inbound<N> {
                 // Use ALPN to determine whether a transport header should be read.
                 .push(NewTransportHeaderServer::layer(detect_timeout))
                 .check_new_service::<ClientInfo, _>()
-                .push_request_filter(|client: ClientInfo| -> Result<_> {
+                .push_filter(|client: ClientInfo| -> Result<_> {
                     if client.header_negotiated() {
                         Ok(client)
                     } else {
@@ -224,7 +224,7 @@ impl<N> Inbound<N> {
                 })
                 // Build a ClientInfo target for each accepted connection. Refuse the
                 // connection if it doesn't include an mTLS identity.
-                .push_request_filter(ClientInfo::try_from)
+                .push_filter(ClientInfo::try_from)
                 .push(svc::ArcNewService::layer())
                 .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                     TlsParams {
@@ -422,6 +422,12 @@ impl Param<tls::ConditionalServerTls> for GatewayTransportHeader {
             client_id: Some(self.client.client_id.clone()),
             negotiated_protocol: self.client.alpn.clone(),
         })
+    }
+}
+
+impl Param<profiles::LookupAddr> for GatewayTransportHeader {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(self.target.clone().into())
     }
 }
 

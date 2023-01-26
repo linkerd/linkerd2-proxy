@@ -69,7 +69,7 @@ impl<N> Outbound<N> {
                 .push(metrics::NewServer::layer(
                     rt.metrics.proxy.transport.clone(),
                 ))
-                .push_request_filter(|t: T| Accept::try_from(t.param()))
+                .push_filter(|t: T| Accept::try_from(t.param()))
                 .push(rt.metrics.tcp_errors.to_layer())
                 .instrument(mk_span)
                 .check_new_service::<T, I>()

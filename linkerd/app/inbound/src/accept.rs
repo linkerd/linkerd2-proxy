@@ -67,7 +67,7 @@ impl<N> Inbound<N> {
                     direct,
                 )
                 .check_new_service::<T, I>()
-                .push_request_filter(cfg.allowed_ips.clone())
+                .push_filter(cfg.allowed_ips.clone())
                 .push(rt.metrics.tcp_errors.to_layer())
                 .check_new_service::<T, I>()
                 .instrument(|t: &T| {

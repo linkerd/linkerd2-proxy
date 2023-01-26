@@ -83,7 +83,7 @@ impl<N> Outbound<N> {
             .push(svc::NewQueue::layer_with_timeout_via(
                 config.tcp_connection_queue,
             ))
-            .push_idle_cache(config.discovery_idle_timeout)
+            .push_new_idle_cache(config.discovery_idle_timeout)
             .push(svc::ArcNewService::layer())
             .check_new_service::<T, Req>()
         })

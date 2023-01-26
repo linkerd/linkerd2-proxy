@@ -119,7 +119,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     // If a profile was discovered, use it to build a logical stack.
                     // Otherwise, the override header was present but no profile
                     // information could be discovered, so fail the request.
-                    .push_request_filter(
+                    .push_filter(
                         |(profile, http): (Option<profiles::Receiver>, Http<NameAddr>)| {
                             if let Some(profile) = profile {
                                 if let Some(logical_addr) = profile.logical_addr() {
@@ -138,7 +138,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     .lift_new_with_target()
                     .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
                     .check_new_service::<Http<NameAddr>, http::Request<_>>()
-                    .push_request_filter(move |h: Http<NameAddr>| {
+                    .push_filter(move |h: Http<NameAddr>| {
                         // Lookup the profile if the override header was set and it
                         // is in the configured profile domains. Otherwise, profile
                         // discovery is skipped.
@@ -170,7 +170,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     .push(svc::NewQueue::layer_with_timeout_via(*http_request_queue))
                     // Caches the profile-based stack so that it can be reused across
                     // multiple requests to the same canonical destination.
-                    .push_idle_cache(*discovery_idle_timeout)
+                    .push_new_idle_cache(*discovery_idle_timeout)
                     .push_on_service(
                         svc::layers()
                             .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
