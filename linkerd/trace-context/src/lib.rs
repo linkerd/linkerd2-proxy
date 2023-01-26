@@ -16,10 +16,10 @@ use thiserror::Error;
 
 const SPAN_ID_LEN: usize = 8;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct Id(Vec<u8>);
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct Flags(u8);
 
 #[derive(Debug, Error)]
