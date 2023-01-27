@@ -1,5 +1,3 @@
-#![allow(warnings)] // FIXME
-
 use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_idle_cache::{Cached, NewIdleCached};
@@ -95,7 +93,7 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
             self.state = match self.state {
-                // We have a response! We're now ready to clone this service
+                // We have a response! We're now ready to call this service
                 State::Service(ref mut svc) => return svc.poll_ready(cx),
 
                 // Discovery for `target` has not yet been started.
