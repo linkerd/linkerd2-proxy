@@ -64,7 +64,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>) -> Id {
 
     let span_str = hex::encode(span_id.as_ref());
 
-    if let Result::Ok(hv) = HeaderValue::from_str(&span_str) {
+    if let Ok(hv) = HeaderValue::from_str(&span_str) {
         request.headers_mut().insert(HTTP_SPAN_ID_HEADER, hv);
     } else {
         warn!("invalid {HTTP_SPAN_ID_HEADER} header: {span_str:?}");
