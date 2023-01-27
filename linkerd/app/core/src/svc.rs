@@ -9,6 +9,7 @@ pub use linkerd_router::{self as router, NewOneshotRoute};
 pub use linkerd_stack::{self as stack, *};
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use std::{
+    future::Future,
     task::{Context, Poll},
     time::Duration,
 };
@@ -247,8 +248,12 @@ impl<S> Stack<S> {
         queue_config: QueueConfig,
         idle_timeout: Duration,
     ) -> Stack<
-        impl Service<T, Response = S::Response, Future = impl Send, Error = Error>
-            + Clone
+        impl Service<
+                T,
+                Response = S::Response,
+                Future = impl Future<Output = Result<S::Response, Error>> + Send,
+                Error = Error,
+            > + Clone
             + Send
             + 'static,
     >
@@ -427,5 +432,78 @@ impl<E: Into<Error>> Recover<E> for AlwaysReconnect {
 
     fn recover(&self, _: E) -> Result<Self::Backoff, E> {
         Ok(self.0.stream())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn discovery_cache() {
+        time::pause();
+
+        let (svc, mut handle) = tower_test::mock::pair::<usize, usize>();
+        let cache = stack(svc)
+            .push_discover_cache(
+                QueueConfig {
+                    capacity: 10,
+
+                    /// The maximum amount of time a request may be buffered before failfast
+                    /// errors are emitted.
+                    failfast_timeout: Duration::from_secs(1),
+                },
+                Duration::from_secs(5),
+            )
+            .into_inner();
+
+        handle.allow(1);
+
+        let call = tokio::spawn({
+            let mut cache = cache.clone();
+            async move {
+                let rsp = cache.ready().await.unwrap().call(1).await.unwrap();
+                assert_eq!(rsp, 1);
+            }
+        });
+
+        let (req, rsp) = handle.next_request().await.unwrap();
+        assert_eq!(req, 1);
+        rsp.send_response(1);
+
+        call.await.expect("first call succeeds");
+
+        // now, call the cache again. the service should not be called again.
+        let call = tokio::spawn({
+            let mut cache = cache.clone();
+            async move {
+                let rsp = cache.ready().await.unwrap().call(1).await.unwrap();
+                assert_eq!(rsp, 1);
+            }
+        });
+
+        tokio_test::assert_pending!(handle.poll_request(), "inner service should not be called");
+
+        call.await.expect("second call succeeds");
+
+        // now advance time past the idle timeout
+        time::sleep(Duration::from_secs(6)).await;
+
+        handle.allow(1);
+
+        let call = tokio::spawn({
+            let mut cache = cache.clone();
+            async move {
+                let rsp = cache.ready().await.unwrap().call(1).await.unwrap();
+                assert_eq!(rsp, 2);
+            }
+        });
+
+        let (req, rsp) = handle.next_request().await.unwrap();
+        assert_eq!(req, 1);
+        rsp.send_response(2);
+
+        call.await.expect("third call succeeds");
     }
 }

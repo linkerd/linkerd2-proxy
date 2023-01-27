@@ -78,3 +78,6 @@ linkerd-system = { path = "../../system" }
 
 [dev-dependencies]
 quickcheck = { version = "1", default-features = false }
+tower-test = "0.4"
+tokio = { version = "1", features = ["time"] }
+tokio-test = "0.4"

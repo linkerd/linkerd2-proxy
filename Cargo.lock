@@ -851,8 +851,10 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tokio-test",
  "tonic",
  "tower",
+ "tower-test",
  "tracing",
 ]
 
