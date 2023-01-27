@@ -10,6 +10,24 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
+use thiserror::Error;
+
+mod addr_match;
+pub mod classify;
+pub mod config;
+pub mod control;
+mod disco_cache;
+pub mod dns;
+pub mod errors;
+pub mod http_tracing;
+pub mod metrics;
+pub mod proxy;
+pub mod serve;
+pub mod svc;
+pub mod telemetry;
+pub mod transport;
+
+pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
 pub use drain;
 pub use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 pub use linkerd_addr::{self as addr, Addr, NameAddr};
@@ -28,24 +46,6 @@ pub use linkerd_stack_tracing as stack_tracing;
 pub use linkerd_tls as tls;
 pub use linkerd_tracing as trace;
 pub use linkerd_transport_header as transport_header;
-
-use thiserror::Error;
-
-mod addr_match;
-pub mod classify;
-pub mod config;
-pub mod control;
-pub mod dns;
-pub mod errors;
-pub mod http_tracing;
-pub mod metrics;
-pub mod proxy;
-pub mod serve;
-pub mod svc;
-pub mod telemetry;
-pub mod transport;
-
-pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
 
 pub mod identity {
     pub use linkerd_identity::*;

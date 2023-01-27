@@ -19,11 +19,15 @@ where
     N: NewService<T> + 'static,
     N::Service: Send + Sync + 'static,
 {
-    pub fn layer(idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |new_svc| Self {
+    pub fn new(new_svc: N, idle: time::Duration) -> Self {
+        Self {
             new_svc,
             cache: IdleCache::new(idle),
-        })
+        }
+    }
+
+    pub fn layer(idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |new_svc| Self::new(new_svc, idle))
     }
 }
 
