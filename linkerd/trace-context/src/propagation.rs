@@ -61,7 +61,7 @@ pub fn increment_span_id<B>(request: &mut http::Request<B>, context: &TraceConte
 fn get_header_str<'a, B>(request: &'a http::Request<B>, header: &str) -> Option<&'a str> {
     let hv = request.headers().get(header)?;
     hv.to_str()
-        .map_err(|e| warn!("Invalid trace header {}: {}", header, e))
+        .map_err(|e| warn!("Invalid trace header {header}: {e}"))
         .ok()
 }
 
@@ -79,7 +79,7 @@ fn decode_id_with_padding(value: &str, pad_to: usize) -> Option<Id> {
                 Id(data)
             }
         })
-        .map_err(|e| warn!("Header value {} does not contain a hex: {}", value, e))
+        .map_err(|e| warn!("Header value {value} does not contain a hex: {e}"))
         .ok()
 }
 

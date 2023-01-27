@@ -45,16 +45,13 @@ fn parse_context(header_value: &str) -> Option<TraceContext> {
     let rest = match header_value.split_once('-') {
         Some((version, rest)) => {
             if version != HEADER_VERSION_00 {
-                warn!(
-                    "Tracecontext header {} contains invalid version: {}",
-                    header_value, version
-                );
+                warn!("Tracecontext header {header_value} contains invalid version: {version}",);
                 return None;
             }
             rest
         }
         None => {
-            warn!("Tracecontext header {} is invalid", header_value);
+            warn!("Tracecontext header {header_value} is invalid");
             return None;
         }
     };
@@ -62,14 +59,14 @@ fn parse_context(header_value: &str) -> Option<TraceContext> {
     let (trace_id, rest) = if let Some((id, rest)) = parse_header_value(rest, 16) {
         (id, rest)
     } else {
-        warn!("Tracecontext header {} contains invalid id", header_value);
+        warn!("Tracecontext header {header_value} contains invalid id");
         return None;
     };
 
     let (parent_id, rest) = if let Some((id, rest)) = parse_header_value(rest, 8) {
         (id, rest)
     } else {
-        warn!("Tracecontext header {} contains invalid id", header_value);
+        warn!("Tracecontext header {header_value} contains invalid id");
         return None;
     };
 
@@ -79,7 +76,7 @@ fn parse_context(header_value: &str) -> Option<TraceContext> {
         Ok(decoded) => Flags(decoded[0]),
         // If invalid hex, invalidate trace
         Err(e) => {
-            warn!("Failed to decode flags for header {}: {}", header_value, e);
+            warn!("Failed to decode flags for header {header_value}: {e}");
             return None;
         }
     };
