@@ -99,47 +99,52 @@ fn parse_header_value(next_header: &str, pad_to: usize) -> Option<(Id, &str)> {
         .and_then(|(id, rest)| decode_id_with_padding(id, pad_to).zip(Some(rest)))
 }
 
-#[test]
-fn w3c_context_parsed_successfully() {
-    let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-01";
-    let actual = parse_context(input);
+#[cfg(test)]
+mod tests {
+    use super::parse_context;
 
-    let expected_trace = hex::decode("94d7f6ec6b95f3e916179cb6cfd01390")
-        .expect("Failed to decode trace parent from hex");
-    let expected_parent =
-        hex::decode("55ccfce77f972614").expect("Failed to decode span parent from hex");
-    let expected_flags = 1;
+    #[test]
+    fn w3c_context_parsed_successfully() {
+        let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-01";
+        let actual = parse_context(input);
 
-    assert!(actual.is_some());
-    let actual = actual.unwrap();
-    assert_eq!(expected_trace, actual.trace_id.0);
-    assert_eq!(expected_parent, actual.parent_id.0);
-    assert_eq!(expected_flags, actual.flags.0);
-}
+        let expected_trace = hex::decode("94d7f6ec6b95f3e916179cb6cfd01390")
+            .expect("Failed to decode trace parent from hex");
+        let expected_parent =
+            hex::decode("55ccfce77f972614").expect("Failed to decode span parent from hex");
+        let expected_flags = 1;
 
-#[test]
-fn w3c_context_invalid_flags() {
-    let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-011";
-    let actual = parse_context(input);
-    assert!(actual.is_none());
+        assert!(actual.is_some());
+        let actual = actual.unwrap();
+        assert_eq!(expected_trace, actual.trace_id.0);
+        assert_eq!(expected_parent, actual.parent_id.0);
+        assert_eq!(expected_flags, actual.flags.0);
+    }
 
-    let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614";
-    let actual = parse_context(input);
-    assert!(actual.is_none());
-}
+    #[test]
+    fn w3c_context_invalid_flags() {
+        let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-011";
+        let actual = parse_context(input);
+        assert!(actual.is_none());
 
-#[test]
-fn w3c_context_invalid_version() {
-    let input = "22-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-01";
-    assert!(parse_context(input).is_none());
+        let input = "00-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614";
+        let actual = parse_context(input);
+        assert!(actual.is_none());
+    }
 
-    let input = "94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-01";
-    assert!(parse_context(input).is_none());
-}
+    #[test]
+    fn w3c_context_invalid_version() {
+        let input = "22-94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-01";
+        assert!(parse_context(input).is_none());
 
-#[test]
-fn w3c_context_invalid_hex() {
-    // length of id 94d(...) is odd, results in invalid hex.
-    let input = "00-94d7f6ec6b95f3e916179cb6cfd013901-55ccfce77972614-01";
-    assert!(parse_context(input).is_none());
+        let input = "94d7f6ec6b95f3e916179cb6cfd01390-55ccfce77f972614-01";
+        assert!(parse_context(input).is_none());
+    }
+
+    #[test]
+    fn w3c_context_invalid_hex() {
+        // length of id 94d(...) is odd, results in invalid hex.
+        let input = "00-94d7f6ec6b95f3e916179cb6cfd013901-55ccfce77972614-01";
+        assert!(parse_context(input).is_none());
+    }
 }
