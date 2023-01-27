@@ -60,7 +60,7 @@ pub fn increment_span_id<B>(request: &mut http::Request<B>, context: &TraceConte
 
 fn get_header_str<'a, B>(
     request: &'a http::Request<B>,
-    header: http::header::HeaderName,
+    header: &http::header::HeaderName,
 ) -> Option<&'a str> {
     let hv = request.headers().get(header)?;
     hv.to_str()

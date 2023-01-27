@@ -9,14 +9,14 @@ use tracing::{trace, warn};
 
 use super::{decode_id_with_padding, get_header_str, Propagation, TraceContext, UnknownFieldId};
 
-const HTTP_TRACE_ID_HEADER: http::header::HeaderName =
+static HTTP_TRACE_ID_HEADER: http::header::HeaderName =
     http::header::HeaderName::from_static("x-b3-traceid");
-const HTTP_SPAN_ID_HEADER: http::header::HeaderName =
+static HTTP_SPAN_ID_HEADER: http::header::HeaderName =
     http::header::HeaderName::from_static("x-b3-spanid");
-const HTTP_SAMPLED_HEADER: http::header::HeaderName =
+static HTTP_SAMPLED_HEADER: http::header::HeaderName =
     http::header::HeaderName::from_static("x-b3-sampled");
 
-const GRPC_TRACE_HEADER: http::header::HeaderName =
+static GRPC_TRACE_HEADER: http::header::HeaderName =
     http::header::HeaderName::from_static("grpc-trace-bin");
 const GRPC_TRACE_FIELD_TRACE_ID: u8 = 0;
 const GRPC_TRACE_FIELD_SPAN_ID: u8 = 1;
@@ -50,7 +50,7 @@ pub fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &Trace
     let bytes_b64 = base64::encode(&bytes);
 
     if let Result::Ok(hv) = HeaderValue::from_str(&bytes_b64) {
-        request.headers_mut().insert(GRPC_TRACE_HEADER, hv);
+        request.headers_mut().insert(&GRPC_TRACE_HEADER, hv);
     } else {
         warn!("invalid header: {:?}", &bytes_b64);
     }
@@ -65,7 +65,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>) -> Id {
     let span_str = hex::encode(span_id.as_ref());
 
     if let Ok(hv) = HeaderValue::from_str(&span_str) {
-        request.headers_mut().insert(HTTP_SPAN_ID_HEADER, hv);
+        request.headers_mut().insert(&HTTP_SPAN_ID_HEADER, hv);
     } else {
         warn!("invalid {HTTP_SPAN_ID_HEADER} header: {span_str:?}");
     }
@@ -73,7 +73,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>) -> Id {
 }
 
 pub fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
-    get_header_str(request, GRPC_TRACE_HEADER)
+    get_header_str(request, &GRPC_TRACE_HEADER)
         .and_then(|header_str| {
             base64::decode(header_str)
                 .map_err(|e| warn!("trace header {GRPC_TRACE_HEADER} is not base64 encoded: {e}"))
@@ -86,9 +86,9 @@ pub fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceC
 }
 
 pub fn unpack_http_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
-    let parent_id = parse_header_id(request, HTTP_SPAN_ID_HEADER, 8)?;
-    let trace_id = parse_header_id(request, HTTP_TRACE_ID_HEADER, 16)?;
-    let flags = match get_header_str(request, HTTP_SAMPLED_HEADER) {
+    let parent_id = parse_header_id(request, &HTTP_SPAN_ID_HEADER, 8)?;
+    let trace_id = parse_header_id(request, &HTTP_TRACE_ID_HEADER, 16)?;
+    let flags = match get_header_str(request, &HTTP_SAMPLED_HEADER) {
         Some("1") => Flags(1),
         _ => Flags(0),
     };
@@ -155,7 +155,7 @@ fn parse_grpc_trace_context_field(
 
 fn parse_header_id<B>(
     request: &http::Request<B>,
-    header: http::header::HeaderName,
+    header: &http::header::HeaderName,
     pad_to: usize,
 ) -> Option<Id> {
     let header_value = get_header_str(request, header)?;

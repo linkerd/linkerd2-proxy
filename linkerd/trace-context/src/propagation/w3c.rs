@@ -3,12 +3,12 @@ use tracing::{trace, warn};
 use super::{decode_id_with_padding, get_header_str, Propagation, TraceContext};
 use crate::{Flags, Id};
 
-pub const HTTP_TRACEPARENT: http::header::HeaderName =
+static HTTP_TRACEPARENT: http::header::HeaderName =
     http::header::HeaderName::from_static("traceparent");
-pub const VERSION_00: &str = "00";
+const VERSION_00: &str = "00";
 
 pub fn unpack_w3c_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
-    get_header_str(request, HTTP_TRACEPARENT).and_then(parse_context)
+    get_header_str(request, &HTTP_TRACEPARENT).and_then(parse_context)
 }
 
 /// Given an http request and a w3c trace context, create a new Span ID and
@@ -32,7 +32,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &Trace
     };
 
     if let Ok(hv) = http::HeaderValue::from_str(&new_header) {
-        request.headers_mut().insert(HTTP_TRACEPARENT, hv);
+        request.headers_mut().insert(&HTTP_TRACEPARENT, hv);
     } else {
         warn!("invalid value {new_header} for tracecontext header");
     }
