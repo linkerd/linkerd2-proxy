@@ -17,7 +17,7 @@ pub fn unpack_w3c_trace_context<B>(request: &http::Request<B>) -> Option<TraceCo
 pub fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
     let span_id = Id::new_span_id(&mut rand::thread_rng());
 
-    trace!("incremented span id: {}", span_id);
+    trace!("incremented span id: {span_id}");
 
     let new_header = {
         let mut buf = String::with_capacity(60);
@@ -34,7 +34,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &Trace
     if let Result::Ok(hv) = HeaderValue::from_str(&new_header) {
         request.headers_mut().insert(HTTP_TRACEPARENT, hv);
     } else {
-        warn!("invalid value {} for tracecontext header", new_header);
+        warn!("invalid value {new_header} for tracecontext header");
     }
 
     span_id
