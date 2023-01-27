@@ -16,7 +16,7 @@ mod addr_match;
 pub mod classify;
 pub mod config;
 pub mod control;
-mod disco_cache;
+pub mod disco_cache;
 pub mod dns;
 pub mod errors;
 pub mod http_tracing;

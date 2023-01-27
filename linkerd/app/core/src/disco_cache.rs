@@ -58,11 +58,11 @@ where
 
 impl<T, K, DNew, DSvc, SNew> NewService<T> for NewDiscoveryCache<K, DNew, SNew>
 where
-    T: Param<K>,
+    T: Param<K> + Clone,
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
     DNew: NewService<K, Service = DSvc> + 'static,
     DSvc: Service<()> + Clone + Send + Sync + 'static,
-    SNew: NewService<DSvc::Response> + Clone,
+    SNew: NewService<(DSvc::Response, T)> + Clone,
 {
     type Service = CachedDiscovery<T, DSvc::Response, DSvc, SNew, SNew::Service>;
 
@@ -83,8 +83,9 @@ where
     DSvc: Service<(), Error = Error> + Clone + Send + Sync + 'static,
     DSvc::Response: Clone,
     DSvc::Future: Send + 'static,
-    SNew: NewService<DSvc::Response, Service = SSvc>,
-    SSvc: Service<Req, Error = Error> + Clone + Send + Sync + 'static,
+    SNew: NewService<(DSvc::Response, T), Service = SSvc>,
+    SSvc: Service<Req, Error = Error> + Send + 'static,
+    T: Clone,
 {
     type Response = SSvc::Response;
     type Error = SSvc::Error;
@@ -105,7 +106,7 @@ where
                 // Waiting for discovery to complete for `target`.
                 State::Pending(ref mut f) => match futures::ready!(f.poll_unpin(cx)) {
                     Ok(rsp) => {
-                        let svc = self.new.new_service(rsp);
+                        let svc = self.new.new_service((rsp, self.target.clone()));
                         State::Service(svc)
                     }
                     Err(e) => return Poll::Ready(Err(e)),
