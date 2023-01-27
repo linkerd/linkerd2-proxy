@@ -9,6 +9,8 @@ pub use linkerd_router::{self as router, NewOneshotRoute};
 pub use linkerd_stack::{self as stack, *};
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use std::{
+    fmt,
+    hash::Hash,
     task::{Context, Poll},
     time::Duration,
 };
@@ -231,6 +233,50 @@ impl<S> Stack<S> {
                 predicate.clone(),
             )
         }))
+    }
+
+    pub fn push_discover_cache<D, K, T>(
+        self,
+        discover: D,
+        queue: QueueConfig,
+        idle: Duration,
+    ) -> Stack<
+        crate::disco_cache::NewDiscoveryCache<
+            K,
+            impl NewService<
+                    K,
+                    Service = impl Service<
+                        (),
+                        Error = Error,
+                        Response = D::Response,
+                        Future = impl Send + 'static,
+                    > + Clone
+                                  + Send
+                                  + Sync
+                                  + 'static,
+                > + Clone
+                + Send
+                + Sync
+                + 'static,
+            S,
+        >,
+    >
+    where
+        T: Param<K> + Clone,
+        K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
+        D: Service<K> + Clone + Send + Sync + 'static,
+        D::Error: Into<Error>,
+        D::Future: Send + 'static,
+        D::Response: Clone + Send + 'static,
+        S: NewService<(D::Response, T)> + Clone,
+    {
+        let discover = stack(discover)
+            .push(stack::MapErr::layer_boxed())
+            .push(stack::NewThunkCloneResponse::layer())
+            .push(stack::NewQueue::layer_fixed(queue))
+            .check_new_service::<K, ()>();
+        self.push(crate::disco_cache::NewDiscoveryCache::layer(discover, idle))
+            .check_new::<T>()
     }
 
     /// Validates that this stack serves T-typed targets.

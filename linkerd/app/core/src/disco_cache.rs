@@ -88,7 +88,7 @@ where
     T: Clone,
 {
     type Response = SSvc::Response;
-    type Error = SSvc::Error;
+    type Error = Error;
     type Future = SSvc::Future;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {

@@ -92,7 +92,8 @@ impl<C> Inbound<C> {
     {
         self.map_stack(|config, rt, connect| {
             let allow_profile = config.allow_discovery.clone();
-
+            let profiles = profiles::RecoverDefault::new(profiles.into_service());
+            
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http = connect
                 .push(svc::layer::mk(|inner: C| inner.into_service()))
@@ -186,10 +187,12 @@ impl<C> Inbound<C> {
                 .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>();
 
             let discover = router.clone()
-                .lift_new_with_target()
-                .check_new_new::<Logical, Option<profiles::Receiver>>()
-                .check_new_new_service::<Logical, Option<profiles::Receiver>, http::Request<_>>()
-                .push(profiles::Discover::layer(profiles))
+                .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
+                .push_discover_cache(
+                    profiles,
+                    config.http_request_buffer,
+                    config.discovery_idle_timeout,
+                )
                 .check_new_service::<Logical, http::Request<_>>()
                 .push_switch(
                     move |logical: Logical| -> Result<_, Infallible> {

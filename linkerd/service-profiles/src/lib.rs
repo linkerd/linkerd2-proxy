@@ -20,11 +20,10 @@ use tower::util::{Oneshot, ServiceExt};
 
 mod client;
 mod default;
-mod discover;
 pub mod http;
 mod proto;
 
-pub use self::{client::Client, discover::Discover};
+pub use self::{client::Client, default::RecoverDefault};
 
 #[derive(Clone, Debug)]
 pub struct Receiver {

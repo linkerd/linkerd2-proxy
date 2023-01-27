@@ -81,7 +81,7 @@ where
 {
     let inbound_config = inbound.config().clone();
     let local_id = identity::LocalId(inbound.identity().name().clone());
-
+    let profiles = profiles::RecoverDefault::new(profiles.into_service());
     // For each gatewayed connection that is *not* HTTP, use the target from the
     // transport header to lookup a service profile. If the profile includes a
     // resolvable service name, then continue with TCP endpoint resolution,
@@ -139,8 +139,12 @@ where
         let discover = stack
             .clone()
             .check_new::<Option<profiles::Receiver>>()
-            .lift_new()
-            .push(profiles::Discover::layer(profiles.clone()))
+            .push_map_target(|(profile, _)| profile)
+            .push_discover_cache(
+                profiles.clone(),
+                outbound.config().tcp_connection_buffer,
+                outbound.config().discovery_idle_timeout,
+            )
             .check_new_service::<profiles::LookupAddr, I>()
             .push_switch(
                 move |addr: NameAddr| -> Result<_, Infallible> {
@@ -190,9 +194,12 @@ where
         let discover = gateway
             .clone()
             .check_new::<(Option<profiles::Receiver>, HttpTarget)>()
-            .lift_new_with_target()
-            .check_new_new::<HttpTarget, Option<profiles::Receiver>>()
-            .push(profiles::Discover::layer(profiles))
+            .push_discover_cache(
+                profiles.clone(),
+                inbound_config.http_request_buffer,
+                inbound_config.discovery_idle_timeout,
+            )
+            .check_new::<HttpTarget>()
             .push_switch(
                 move |t: HttpTarget| -> Result<_, Infallible> {
                     if !allow_discovery.matches(t.target.name()) {

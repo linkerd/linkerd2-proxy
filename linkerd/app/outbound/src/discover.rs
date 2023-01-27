@@ -1,6 +1,6 @@
 use crate::Outbound;
 use linkerd_app_core::{
-    disco_cache, profiles,
+    profiles,
     svc::{self, stack::Param},
     Error, Infallible,
 };
@@ -28,21 +28,14 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, _, stk| {
             let allow = config.allow_discovery.clone();
-            let discover = svc::stack(profiles.clone().into_service())
-                // TODO(eliza): just remove the Error associated type from `GetProfile`...
-                .push(svc::MapErr::layer_boxed())
-                .push(svc::NewThunkCloneResponse::layer())
-                .push(svc::NewQueue::layer_fixed(config.tcp_connection_buffer))
-                .check_new_service::<profiles::LookupAddr, ()>();
+            let profiles = profiles::RecoverDefault::new(profiles.into_service());
             stk.clone()
                 .check_new_service::<(Option<profiles::Receiver>, T), Req>()
-                // .lift_new_with_target()
-                // .check_new_new_service::<T, Option<profiles::Receiver>, Req>()
-                // .push(profiles::Discover::layer(profiles))
-                .push(disco_cache::NewDiscoveryCache::layer(
-                    discover,
+                .push_discover_cache(
+                    profiles,
+                    config.tcp_connection_buffer,
                     config.discovery_idle_timeout,
-                ))
+                )
                 .check_new::<T>()
                 .check_new_service::<T, Req>()
                 .push_switch(
@@ -63,6 +56,7 @@ impl<N> Outbound<N> {
                     },
                     stk.into_inner(),
                 )
+                .check_new::<T>()
                 .check_new_service::<T, Req>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
