@@ -58,7 +58,10 @@ pub fn increment_span_id<B>(request: &mut http::Request<B>, context: &TraceConte
 
 // === Header parse utils ===
 
-fn get_header_str<'a, B>(request: &'a http::Request<B>, header: &str) -> Option<&'a str> {
+fn get_header_str<'a, B>(
+    request: &'a http::Request<B>,
+    header: http::header::HeaderName,
+) -> Option<&'a str> {
     let hv = request.headers().get(header)?;
     hv.to_str()
         .map_err(|e| warn!("Invalid trace header {header}: {e}"))

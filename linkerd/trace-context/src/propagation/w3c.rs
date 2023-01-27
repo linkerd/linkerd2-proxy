@@ -1,11 +1,11 @@
-use http::HeaderValue;
 use tracing::{trace, warn};
 
 use super::{decode_id_with_padding, get_header_str, Propagation, TraceContext};
 use crate::{Flags, Id};
 
-pub const HTTP_TRACEPARENT: &str = "traceparent";
-pub const HEADER_VERSION_00: &str = "00";
+pub const HTTP_TRACEPARENT: http::header::HeaderName =
+    http::header::HeaderName::from_static("traceparent");
+pub const VERSION_00: &str = "00";
 
 pub fn unpack_w3c_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
     get_header_str(request, HTTP_TRACEPARENT).and_then(parse_context)
@@ -21,7 +21,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &Trace
 
     let new_header = {
         let mut buf = String::with_capacity(60);
-        buf.push_str(HEADER_VERSION_00);
+        buf.push_str(VERSION_00);
         buf.push('-');
         buf.push_str(&hex::encode(context.trace_id.as_ref()));
         buf.push('-');
@@ -31,7 +31,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &Trace
         buf
     };
 
-    if let Result::Ok(hv) = HeaderValue::from_str(&new_header) {
+    if let Ok(hv) = http::HeaderValue::from_str(&new_header) {
         request.headers_mut().insert(HTTP_TRACEPARENT, hv);
     } else {
         warn!("invalid value {new_header} for tracecontext header");
@@ -44,7 +44,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &Trace
 fn parse_context(header_value: &str) -> Option<TraceContext> {
     let rest = match header_value.split_once('-') {
         Some((version, rest)) => {
-            if version != HEADER_VERSION_00 {
+            if version != VERSION_00 {
                 warn!("Tracecontext header {header_value} contains invalid version: {version}",);
                 return None;
             }
