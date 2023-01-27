@@ -69,24 +69,24 @@ impl<N> Outbound<N> {
     >
     where
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+        Req: Send + 'static,
         N: svc::NewService<T, Service = NSvc>,
         N: Clone + Send + Sync + 'static,
-        Req: Send + 'static,
-        NSvc: svc::Service<Req, Response = (), Error = Error> + Send + 'static,
+        NSvc: svc::Service<Req, Error = Error> + Send + 'static,
         NSvc::Future: Send,
     {
         self.map_stack(|config, rt, stk| {
             stk.push_on_service(
-                svc::layers().push(
-                    rt.metrics
-                        .proxy
-                        .stack
-                        .layer(crate::stack_labels("tcp", "discover")),
-                ),
+                rt.metrics
+                    .proxy
+                    .stack
+                    .layer(crate::stack_labels("tcp", "discover")),
             )
             .push(svc::NewQueue::layer_fixed(config.tcp_connection_buffer))
+            .check_new_service::<T, Req>()
             .push_idle_cache(config.discovery_idle_timeout)
             .push(svc::ArcNewService::layer())
+            .check_new_service::<T, Req>()
         })
     }
 }
