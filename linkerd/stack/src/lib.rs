@@ -21,7 +21,7 @@ pub mod monitor;
 pub mod new_service;
 mod on_service;
 pub mod proxy;
-mod queue;
+pub mod queue;
 mod result;
 mod switch_ready;
 mod thunk;
@@ -41,16 +41,16 @@ pub use self::{
     filter::{Filter, FilterLayer, Predicate},
     lazy::{Lazy, NewLazy},
     loadshed::{LoadShed, LoadShedError},
-    map_err::{MapErr, NewMapErr, WrapErr},
+    map_err::{MapErr, MapErrBoxed, NewMapErr, WrapErr},
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
     new_service::{NewCloneService, NewFromTargets, NewFromTargetsInner, NewService},
     on_service::{OnService, OnServiceLayer},
     proxy::Proxy,
-    queue::{NewQueue, Queue, QueueConfig},
+    queue::{NewQueue, NewQueueForever, NewQueueTimeout, QueueConfig, QueueForever, QueueTimeout},
     result::ResultService,
     switch_ready::{NewSwitchReady, SwitchReady},
-    thunk::{NewThunk, NewThunkCache, Thunk, ThunkCache},
+    thunk::{NewThunk, Thunk, ThunkClone},
     timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,
     watch::{NewSpawnWatch, SpawnWatch},
@@ -60,6 +60,11 @@ pub use tower::{
     util::{self, future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},
     Service,
 };
+
+pub type BoxFutureService<S, E = linkerd_error::Error> = FutureService<
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<S, E>> + Send + 'static>>,
+    S,
+>;
 
 /// Describes a stack target that can produce `T` typed parameters.
 ///

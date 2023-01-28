@@ -239,7 +239,7 @@ impl<S> Stack<S> {
         self,
         discover: D,
         idle: Duration,
-        queue: QueueConfig,
+        capacity: usize,
     ) -> Stack<NewDiscoveryCache<K, D, S>>
     where
         T: Param<K> + Clone,
@@ -251,7 +251,7 @@ impl<S> Stack<S> {
         N: NewService<D::Response> + Clone,
         N::Service: Service<Req, Error = Error>,
     {
-        self.push(NewDiscoveryCache::layer(discover, idle, queue))
+        self.push(NewDiscoveryCache::layer(discover, idle, capacity))
     }
 
     /// Validates that this stack serves T-typed targets.

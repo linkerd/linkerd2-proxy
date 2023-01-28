@@ -21,7 +21,6 @@ mod new_service;
 
 pub use new_service::NewIdleCached;
 
-#[derive(Clone)]
 pub struct IdleCache<K, V, S = RandomState>
 where
     K: Eq + Hash,
@@ -307,6 +306,17 @@ impl<V> CacheEntry<V> {
         self.handle.is_none()
     }
 }
+impl<K, V, S> Clone for IdleCache<K, V, S>
+where
+    K: Eq + Hash,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            idle: self.idle,
+        }
+    }
+}
 
 // === impl Cached ===
 
@@ -325,6 +335,15 @@ impl<V> Cached<V> {
         Self {
             inner,
             handle: None,
+        }
+    }
+}
+
+impl<T> Cached<T> {
+    pub fn clone_with<U>(&self, inner: U) -> Cached<U> {
+        Cached {
+            inner,
+            handle: self.handle.clone(),
         }
     }
 }
