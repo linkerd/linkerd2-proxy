@@ -321,17 +321,15 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let inbound_detect_timeout = parse(strings, ENV_INBOUND_DETECT_TIMEOUT, parse_duration);
     let inbound_connect_timeout = parse(strings, ENV_INBOUND_CONNECT_TIMEOUT, parse_duration);
-    let inbound_http_buffer_capacity =
-        parse(strings, ENV_INBOUND_HTTP_QUEUE_CAPACITY, parse_number);
+    let inbound_http_queue_capacity = parse(strings, ENV_INBOUND_HTTP_QUEUE_CAPACITY, parse_number);
     let inbound_http_failfast_timeout =
         parse(strings, ENV_INBOUND_HTTP_FAILFAST_TIMEOUT, parse_duration);
 
     let outbound_detect_timeout = parse(strings, ENV_OUTBOUND_DETECT_TIMEOUT, parse_duration);
-    let outbound_tcp_buffer_capacity =
-        parse(strings, ENV_OUTBOUND_TCP_QUEUE_CAPACITY, parse_number);
+    let outbound_tcp_queue_capacity = parse(strings, ENV_OUTBOUND_TCP_QUEUE_CAPACITY, parse_number);
     let outbound_tcp_failfast_timeout =
         parse(strings, ENV_OUTBOUND_TCP_FAILFAST_TIMEOUT, parse_duration);
-    let outbound_http_buffer_capacity =
+    let outbound_http_queue_capacity =
         parse(strings, ENV_OUTBOUND_HTTP_QUEUE_CAPACITY, parse_number);
     let outbound_http_failfast_timeout =
         parse(strings, ENV_OUTBOUND_HTTP_FAILFAST_TIMEOUT, parse_duration);
@@ -488,12 +486,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let detect_protocol_timeout =
             outbound_detect_timeout?.unwrap_or(DEFAULT_OUTBOUND_DETECT_TIMEOUT);
 
-        let tcp_buffer_capacity =
-            outbound_tcp_buffer_capacity?.unwrap_or(DEFAULT_OUTBOUND_TCP_QUEUE_CAPACITY);
+        let tcp_queue_capacity =
+            outbound_tcp_queue_capacity?.unwrap_or(DEFAULT_OUTBOUND_TCP_QUEUE_CAPACITY);
         let tcp_failfast_timeout =
             outbound_tcp_failfast_timeout?.unwrap_or(DEFAULT_OUTBOUND_TCP_FAILFAST_TIMEOUT);
-        let http_buffer_capacity =
-            outbound_http_buffer_capacity?.unwrap_or(DEFAULT_OUTBOUND_HTTP_QUEUE_CAPACITY);
+        let http_queue_capacity =
+            outbound_http_queue_capacity?.unwrap_or(DEFAULT_OUTBOUND_HTTP_QUEUE_CAPACITY);
         let http_failfast_timeout =
             outbound_http_failfast_timeout?.unwrap_or(DEFAULT_OUTBOUND_HTTP_FAILFAST_TIMEOUT);
 
@@ -510,12 +508,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             },
             inbound_ips: inbound_ips.clone(),
             discovery_idle_timeout,
-            tcp_connection_buffer: QueueConfig {
-                capacity: tcp_buffer_capacity,
+            tcp_connection_queue: QueueConfig {
+                capacity: tcp_queue_capacity,
                 failfast_timeout: tcp_failfast_timeout,
             },
-            http_request_buffer: QueueConfig {
-                capacity: http_buffer_capacity,
+            http_request_queue: QueueConfig {
+                capacity: http_queue_capacity,
                 failfast_timeout: http_failfast_timeout,
             },
         }
@@ -757,8 +755,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             allowed_ips: inbound_ips.into(),
 
             discovery_idle_timeout,
-            http_request_buffer: QueueConfig {
-                capacity: inbound_http_buffer_capacity?
+            http_request_queue: QueueConfig {
+                capacity: inbound_http_queue_capacity?
                     .unwrap_or(DEFAULT_INBOUND_HTTP_QUEUE_CAPACITY),
                 failfast_timeout: inbound_http_failfast_timeout?
                     .unwrap_or(DEFAULT_INBOUND_HTTP_FAILFAST_TIMEOUT),
@@ -774,9 +772,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound.proxy.connect.clone()
         };
         let failfast_timeout = if addr.addr.is_loopback() {
-            inbound.http_request_buffer.failfast_timeout
+            inbound.http_request_queue.failfast_timeout
         } else {
-            outbound.http_request_buffer.failfast_timeout
+            outbound.http_request_queue.failfast_timeout
         };
         super::dst::Config {
             context: dst_token?.unwrap_or_default(),
@@ -817,9 +815,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 outbound.proxy.connect.clone()
             };
             let failfast_timeout = if addr.addr.is_loopback() {
-                inbound.http_request_buffer.failfast_timeout
+                inbound.http_request_queue.failfast_timeout
             } else {
-                outbound.http_request_buffer.failfast_timeout
+                outbound.http_request_queue.failfast_timeout
             };
             let attributes = oc_attributes_file_path
                 .map(|path| match path {
@@ -863,9 +861,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound.proxy.connect.clone()
         };
         let failfast_timeout = if addr.addr.is_loopback() {
-            inbound.http_request_buffer.failfast_timeout
+            inbound.http_request_queue.failfast_timeout
         } else {
-            outbound.http_request_buffer.failfast_timeout
+            outbound.http_request_queue.failfast_timeout
         };
         identity::Config {
             certify,

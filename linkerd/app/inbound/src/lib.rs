@@ -50,7 +50,7 @@ pub struct Config {
     pub discovery_idle_timeout: Duration,
 
     /// Configures how HTTP requests are buffered *for each inbound port*.
-    pub http_request_buffer: QueueConfig,
+    pub http_request_queue: QueueConfig,
 }
 
 #[derive(Clone)]
