@@ -24,8 +24,8 @@ mod on_service;
 pub mod proxy;
 mod queue;
 mod result;
+mod spawn_clone_response;
 mod switch_ready;
-mod thunk_clone_response;
 mod timeout;
 mod unwrap_or;
 mod watch;
@@ -51,8 +51,8 @@ pub use self::{
     proxy::Proxy,
     queue::{NewQueue, QueueConfig},
     result::ResultService,
+    spawn_clone_response::SpawnCloneResponse,
     switch_ready::{NewSwitchReady, SwitchReady},
-    thunk_clone_response::NewThunkCloneResponse,
     timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,
     watch::{NewSpawnWatch, SpawnWatch},

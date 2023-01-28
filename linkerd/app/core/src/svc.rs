@@ -264,14 +264,13 @@ impl<S> Stack<S> {
         T: Param<K> + Clone,
         K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
         D: Service<K> + Clone + Send + Sync + 'static,
-        D::Error: Into<Error>,
+        D::Error: Into<Error> + Send + 'static,
         D::Future: Send + 'static,
         D::Response: Clone + Send + Sync + 'static,
         S: NewService<(D::Response, T)> + Clone,
     {
         let discover = stack(discover)
-            .push(stack::MapErr::layer_boxed())
-            .push(stack::NewThunkCloneResponse::layer())
+            .push(stack::SpawnCloneResponse::layer())
             .check_new_service::<K, ()>();
         self.push(crate::disco_cache::NewDiscoveryCache::layer(discover, idle))
             .check_new::<T>()
