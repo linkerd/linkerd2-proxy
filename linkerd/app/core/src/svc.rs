@@ -117,8 +117,8 @@ impl<S> Stack<S> {
     ///
     /// Each time the service is called, the `T`-typed request is cloned and
     /// issued into the inner service.
-    pub fn push_make_thunk(self) -> Stack<stack::MakeThunk<S>> {
-        self.push(layer::mk(stack::MakeThunk::new))
+    pub fn push_new_thunk(self) -> Stack<stack::NewThunk<S>> {
+        self.push(layer::mk(stack::NewThunk::new))
     }
 
     pub fn instrument<G: Clone>(self, get_span: G) -> Stack<NewInstrument<G, S>> {
