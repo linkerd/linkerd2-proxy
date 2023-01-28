@@ -248,7 +248,7 @@ impl<S> Inbound<S> {
                     rt.metrics.proxy.transport.clone(),
                 ))
                 .push(svc::stack::WithoutConnectionMetadata::layer())
-                .push_make_thunk()
+                .push_new_thunk()
                 .push_on_service(
                     svc::layers()
                         .push(tcp::Forward::layer())
