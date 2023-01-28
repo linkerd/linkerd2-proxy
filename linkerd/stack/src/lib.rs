@@ -15,7 +15,6 @@ mod filter;
 pub mod layer;
 mod lazy;
 mod loadshed;
-mod make_thunk;
 mod map_err;
 mod map_target;
 pub mod monitor;
@@ -25,7 +24,7 @@ pub mod proxy;
 mod queue;
 mod result;
 mod switch_ready;
-mod thunk_clone_response;
+mod thunk;
 mod timeout;
 mod unwrap_or;
 mod watch;
@@ -38,11 +37,10 @@ pub use self::{
     either::{Either, NewEither},
     fail::Fail,
     fail_on_error::FailOnError,
-    failfast::{FailFast, FailFastError},
+    failfast::{FailFast, FailFastError, Gate},
     filter::{Filter, FilterLayer, Predicate},
     lazy::{Lazy, NewLazy},
     loadshed::{LoadShed, LoadShedError},
-    make_thunk::MakeThunk,
     map_err::{MapErr, NewMapErr, WrapErr},
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
@@ -52,7 +50,7 @@ pub use self::{
     queue::{NewQueue, Queue, QueueConfig},
     result::ResultService,
     switch_ready::{NewSwitchReady, SwitchReady},
-    thunk_clone_response::NewThunkCloneResponse,
+    thunk::{NewThunk, NewThunkCache, Thunk, ThunkCache},
     timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,
     watch::{NewSpawnWatch, SpawnWatch},

@@ -93,7 +93,7 @@ impl<C> Outbound<C> {
     {
         self.map_stack(|_, _, conn| {
             conn.push(svc::stack::WithoutConnectionMetadata::layer())
-                .push_make_thunk()
+                .push_new_thunk()
                 .push_on_service(super::Forward::layer())
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()

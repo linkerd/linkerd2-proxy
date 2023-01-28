@@ -49,7 +49,7 @@ impl<C> Outbound<C> {
 
             connect
                 .push(svc::stack::WithoutConnectionMetadata::layer())
-                .push_make_thunk()
+                .push_new_thunk()
                 .push_on_service(
                     rt.metrics
                         .proxy

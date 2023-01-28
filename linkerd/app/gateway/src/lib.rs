@@ -141,10 +141,10 @@ where
             .check_new::<Option<profiles::Receiver>>()
             .push_map_target(|(profile, _)| profile)
             .lift_new_with_target()
-            .push_discover_cache(
+            .push_new_discovery_cache(
                 profiles.clone(),
-                outbound.config().tcp_connection_buffer,
                 outbound.config().discovery_idle_timeout,
+                outbound.config().tcp_connection_buffer,
             )
             .check_new_service::<profiles::LookupAddr, I>()
             .push_switch(
@@ -180,7 +180,7 @@ where
     // gateway. This permits gateway services (and profile resolutions) to be
     // cached per target, shared across clients.
     let http = {
-        let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
+        let endpoint = outbound.clone().push_tcp_endpoint().push_http_endpoint();
         let stack = endpoint
             .clone()
             .push_http_concrete(resolve)
@@ -196,10 +196,10 @@ where
             .clone()
             .check_new::<(Option<profiles::Receiver>, HttpTarget)>()
             .lift_new_with_target()
-            .push_discover_cache(
+            .push_new_discovery_cache(
                 profiles,
-                inbound_config.http_request_buffer,
-                inbound_config.discovery_idle_timeout,
+                outbound.config().discovery_idle_timeout,
+                outbound.config().http_request_buffer,
             )
             .check_new::<HttpTarget>()
             .push_switch(

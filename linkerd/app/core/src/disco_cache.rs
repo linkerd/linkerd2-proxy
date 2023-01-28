@@ -1,7 +1,10 @@
 use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_idle_cache::{Cached, NewIdleCached};
-use linkerd_stack::{layer, NewService, Param, Service, ServiceExt};
+use linkerd_stack::{
+    layer, CloneParam, NewQueue, NewService, NewThunkCache, Param, Queue, QueueConfig, Service,
+    ServiceExt,
+};
 use std::{
     fmt,
     future::Future,
@@ -10,16 +13,26 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::time;
+use tracing::trace;
 
+// XXX(ver) when this queue goes into failfast, fail the pending response and
+// therefore the whole service fails with errors. I don't think we want that to
+// happen. At the very least it breaks the inbound stack's readiness-driven
+// fallback logic. We may want to us ea plain old `Buffer` here instead.
+type NewQueueThunkCache<D> = NewQueue<CloneParam<QueueConfig>, (), NewThunkCache<D>>;
+
+/// A `NewService` that extracts a `K`-typed key from each target to build a
+/// `CachedDiscovery`. The key is passed to the `D` type `NewThunk`
 #[derive(Clone)]
 pub struct NewDiscoveryCache<K, D, N>
 where
-    K: Eq + Hash,
-    D: NewService<K>,
-    D::Service: Clone,
+    K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
+    D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
+    D::Response: Clone + Send + Sync + 'static,
+    D::Future: Send + 'static,
 {
     inner: N,
-    cache: NewIdleCached<K, D>,
+    cache: NewIdleCached<K, NewQueueThunkCache<D>>,
 }
 
 pub struct CachedDiscovery<Rsp, D, N, S> {
@@ -41,31 +54,38 @@ enum State<Rsp, N, S> {
 impl<K, D, N> NewDiscoveryCache<K, D, N>
 where
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
-    D: NewService<K> + Clone + 'static,
-    D::Service: Clone + Send + Sync + 'static,
+    D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
+    D::Response: Clone + Send + Sync + 'static,
+    D::Future: Send + 'static,
 {
-    pub fn new(inner: N, disco: D, idle: time::Duration) -> Self {
-        Self {
-            inner,
-            cache: NewIdleCached::new(disco, idle),
-        }
+    pub fn new(inner: N, disco: D, timeout: time::Duration, queue: QueueConfig) -> Self {
+        let cache = {
+            let disco = NewQueue::new_fixed(queue, NewThunkCache::new(disco));
+            NewIdleCached::new(disco, timeout)
+        };
+        Self { inner, cache }
     }
 
-    pub fn layer(disco: D, idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |inner| Self::new(inner, disco.clone(), idle))
+    pub fn layer(
+        disco: D,
+        idle: time::Duration,
+        queue: QueueConfig,
+    ) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(inner, disco.clone(), idle, queue))
     }
 }
 
-impl<T, K, D, DSvc, M, N> NewService<T> for NewDiscoveryCache<K, D, M>
+impl<T, K, D, M, N> NewService<T> for NewDiscoveryCache<K, D, M>
 where
     T: Param<K> + Clone,
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
-    D: NewService<K, Service = DSvc> + 'static,
-    DSvc: Service<()> + Clone + Send + Sync + 'static,
+    D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
+    D::Response: Clone + Send + Sync + 'static,
+    D::Future: Send + 'static,
     M: NewService<T, Service = N> + Clone,
-    N: NewService<DSvc::Response> + Clone,
+    N: NewService<D::Response> + Clone,
 {
-    type Service = CachedDiscovery<DSvc::Response, DSvc, N, N::Service>;
+    type Service = CachedDiscovery<D::Response, Queue<(), D::Response>, N, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let key = target.param();
@@ -94,11 +114,15 @@ where
         loop {
             self.state = match self.state {
                 // We have an inner service. Wait for it to be ready.
-                State::Service(ref mut svc) => return svc.poll_ready(cx),
+                State::Service(ref mut svc) => {
+                    trace!("Ready");
+                    return svc.poll_ready(cx);
+                }
 
                 // We don't have an inner service, so start discovery so that we
                 // can build one.
                 State::Init(ref mut inner) => {
+                    trace!("Initializing");
                     let disco = self.disco.clone();
                     State::Pending {
                         future: Box::pin(disco.oneshot(())),
@@ -110,13 +134,19 @@ where
                 State::Pending {
                     ref mut future,
                     ref inner,
-                } => match futures::ready!(future.poll_unpin(cx)) {
-                    Ok(rsp) => {
-                        let svc = inner.new_service(rsp);
-                        State::Service(svc)
+                } => {
+                    trace!("Pending");
+                    match futures::ready!(future.poll_unpin(cx)) {
+                        Ok(rsp) => {
+                            let svc = inner.new_service(rsp);
+                            State::Service(svc)
+                        }
+                        Err(e) => {
+                            trace!("Failed");
+                            return Poll::Ready(Err(e));
+                        }
                     }
-                    Err(e) => return Poll::Ready(Err(e)),
-                },
+                }
             };
         }
     }

@@ -119,8 +119,8 @@ impl<S> Stack<S> {
     ///
     /// Each time the service is called, the `T`-typed request is cloned and
     /// issued into the inner service.
-    pub fn push_make_thunk(self) -> Stack<stack::MakeThunk<S>> {
-        self.push(layer::mk(stack::MakeThunk::new))
+    pub fn push_new_thunk(self) -> Stack<stack::NewThunk<S>> {
+        self.push(layer::mk(stack::NewThunk::new))
     }
 
     pub fn instrument<G: Clone>(self, get_span: G) -> Stack<NewInstrument<G, S>> {
@@ -235,33 +235,23 @@ impl<S> Stack<S> {
         }))
     }
 
-    pub fn push_discover_cache<K, T, Req, D, N>(
+    pub fn push_new_discovery_cache<K, T, Req, D, N>(
         self,
         discover: D,
-        queue: QueueConfig,
         idle: Duration,
-    ) -> Stack<NewDiscoveryCache<K, ArcNewService<K, Queue<(), D::Response>>, S>>
+        queue: QueueConfig,
+    ) -> Stack<NewDiscoveryCache<K, D, S>>
     where
         T: Param<K> + Clone,
         K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
         D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
-        D::Response: Clone + Send + 'static,
+        D::Response: Clone + Send + Sync + 'static,
         D::Future: Send + 'static,
         S: NewService<T, Service = N> + Clone,
         N: NewService<D::Response> + Clone,
         N::Service: Service<Req, Error = Error>,
     {
-        let discover = stack(discover)
-            .check_service::<K>()
-            .push(NewThunkCloneResponse::layer())
-            .push(NewQueue::layer_fixed(queue))
-            .push(ArcNewService::layer())
-            .check_new_service::<K, ()>()
-            .into_inner();
-
-        self.check_new_new_service::<T, D::Response, Req>()
-            .push(NewDiscoveryCache::layer(discover, idle))
-            .check_new_service::<T, Req>()
+        self.push(NewDiscoveryCache::layer(discover, idle, queue))
     }
 
     /// Validates that this stack serves T-typed targets.

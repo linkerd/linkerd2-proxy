@@ -34,9 +34,9 @@ where
     X: ExtractParam<QueueConfig, T>,
     N: NewService<T>,
     N::Service: Service<Req> + Send + 'static,
-    <N::Service as Service<Req>>::Future: Send,
-    <N::Service as Service<Req>>::Error: Into<Error>,
     <N::Service as Service<Req>>::Response: 'static,
+    <N::Service as Service<Req>>::Error: Into<Error>,
+    <N::Service as Service<Req>>::Future: Send,
 {
     type Service = Queue<Req, <N::Service as Service<Req>>::Response>;
 
@@ -78,6 +78,14 @@ impl<Req, N> NewQueue<(), Req, N> {
 }
 
 impl<Req, N> NewQueue<CloneParam<QueueConfig>, Req, N> {
+    pub fn new_fixed(config: QueueConfig, inner: N) -> Self {
+        Self {
+            inner,
+            extract: CloneParam(config),
+            _req: PhantomData,
+        }
+    }
+
     /// Returns a [`Layer`] that constructs new [`failfast::Gate`]d [`Buffer`]s
     /// using a fixed [`QueueConfig`] regardless of the target.
     #[inline]
