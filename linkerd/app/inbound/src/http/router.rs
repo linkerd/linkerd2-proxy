@@ -93,7 +93,7 @@ impl<C> Inbound<C> {
         self.map_stack(|config, rt, connect| {
             let allow_profile = config.allow_discovery.clone();
             let profiles = profiles::RecoverDefault::new(profiles.into_service());
-            
+
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http = connect
                 .push(svc::layer::mk(|inner: C| inner.into_service()))
