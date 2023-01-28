@@ -15,8 +15,8 @@ pub struct NewDiscoveryCache<K, D, N>
 where
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
     D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
-    D::Response: Clone + Send + Sync + 'static,
-    D::Future: Send + 'static,
+    D::Response: Clone + Send + Sync,
+    D::Future: Send,
 {
     inner: N,
     cache: NewIdleCached<K, NewQueueThunkCache<D>>,
@@ -72,9 +72,10 @@ where
         let key = target.param();
         let cached = self.cache.new_service(key);
         let inner = self.inner.new_service(target);
-        let svc = cached.clone();
+        let discover = cached.clone();
         FutureService::new(Box::pin(
-            svc.oneshot(())
+            discover
+                .oneshot(())
                 .map_ok(move |discovery| cached.clone_with(inner.new_service(discovery))),
         ))
     }
