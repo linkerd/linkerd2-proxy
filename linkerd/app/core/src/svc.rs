@@ -238,7 +238,6 @@ impl<S> Stack<S> {
     pub fn push_discover_cache<D, K, T>(
         self,
         discover: D,
-        queue: QueueConfig,
         idle: Duration,
     ) -> Stack<
         crate::disco_cache::NewDiscoveryCache<
@@ -267,13 +266,12 @@ impl<S> Stack<S> {
         D: Service<K> + Clone + Send + Sync + 'static,
         D::Error: Into<Error>,
         D::Future: Send + 'static,
-        D::Response: Clone + Send + 'static,
+        D::Response: Clone + Send + Sync + 'static,
         S: NewService<(D::Response, T)> + Clone,
     {
         let discover = stack(discover)
             .push(stack::MapErr::layer_boxed())
             .push(stack::NewThunkCloneResponse::layer())
-            .push(stack::NewQueue::layer_fixed(queue))
             .check_new_service::<K, ()>();
         self.push(crate::disco_cache::NewDiscoveryCache::layer(discover, idle))
             .check_new::<T>()

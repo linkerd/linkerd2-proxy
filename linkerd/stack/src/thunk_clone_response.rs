@@ -1,10 +1,13 @@
 use crate::{layer, NewService, Service, ServiceExt};
 use futures::{future, prelude::*};
 use linkerd_error::Error;
+use parking_lot::RwLock;
 use std::{
     fmt,
-    future::Future,
-    pin::Pin,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     task::{Context, Poll},
 };
 
@@ -21,7 +24,12 @@ pub struct NewThunkCloneResponse<S> {
 /// response for each call to the service.
 #[derive(Debug)]
 pub struct ThunkCloneResponse<T, Rsp, S> {
-    state: State<T, Rsp, S>,
+    shared: Arc<Shared<T, Rsp, S>>,
+}
+#[derive(Debug)]
+struct Shared<T, Rsp, S> {
+    done: AtomicBool,
+    state: RwLock<State<T, Rsp, S>>,
 }
 
 // === impl NewThunkCloneResponse ===
@@ -48,21 +56,26 @@ where
 impl<T, Rsp, S> ThunkCloneResponse<T, Rsp, S> {
     pub fn new(discover: S, target: T) -> Self {
         Self {
-            state: State::Init(Some((discover, target))),
+            shared: Arc::new(Shared {
+                state: RwLock::new(State::Init(Some((discover, target)))),
+                done: AtomicBool::new(false),
+            }),
         }
     }
 }
 
 enum State<T, Rsp, S> {
     Init(Option<(S, T)>),
-    Pending(Pin<Box<dyn Future<Output = Result<Rsp, Error>> + Send + 'static>>),
+    // a background task is used to erase the potential `!Sync`ness of the
+    // response future while still allowing the `State` to be stuck in an `RwLock`.
+    Pending(tokio::task::JoinHandle<Result<Rsp, Error>>),
     Ready(Rsp),
 }
 
 impl<T, S> Service<()> for ThunkCloneResponse<T, S::Response, S>
 where
-    S: Service<T, Error = Error> + Send + 'static,
-    S::Response: Clone,
+    S: Service<T, Error = Error> + Send + Sync + 'static,
+    S::Response: Clone + Send,
     S::Future: Send + 'static,
     T: Send + 'static,
 {
@@ -71,31 +84,63 @@ where
     type Future = future::Ready<Result<S::Response, Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        if self.shared.done.load(Ordering::Acquire) {
+            return Poll::Ready(Ok(()));
+        }
+
+        // TODO(eliza): would maybe be nicer if we could `try_write` here, and (if
+        // someone else is polling the future) get notified by them when it's
+        // done...
+        let mut state = self.shared.state.write();
         loop {
-            self.state = match self.state {
+            *state = match *state {
                 // Discovery for `target` has not yet been started.
                 State::Init(ref mut inner) => {
+                    tracing::trace!("State::Init -> State::Pending");
                     let (svc, target) =
                         inner.take().expect("discovery should not be started twice");
-                    State::Pending(Box::pin(svc.oneshot(target)))
+                    State::Pending(tokio::spawn(svc.oneshot(target)))
                 }
 
                 // Waiting for discovery to complete for `target`.
-                State::Pending(ref mut f) => match futures::ready!(f.poll_unpin(cx)) {
-                    Ok(rsp) => State::Ready(rsp),
-                    Err(e) => return Poll::Ready(Err(e)),
-                },
+                State::Pending(ref mut f) => {
+                    tracing::debug!("State::Pending");
+                    match f.poll_unpin(cx) {
+                        Poll::Pending => {
+                            tracing::trace!("State::Pending -> State::Pending");
+                            return Poll::Pending;
+                        }
+                        Poll::Ready(Ok(Ok(rsp))) => {
+                            tracing::trace!("State::Pending -> State::State::Ready");
+                            State::Ready(rsp)
+                        }
+                        Poll::Ready(Ok(Err(e))) => return Poll::Ready(Err(e)),
+                        Poll::Ready(Err(e)) => panic!("background task panicked: {e:?}"),
+                    }
+                }
 
                 // We have a service! We're now ready to clone this service
-                State::Ready(_) => return Poll::Ready(Ok(())),
+                State::Ready(_) => {
+                    tracing::trace!("State::Ready -> Ready!");
+                    self.shared.done.store(true, Ordering::Release);
+                    return Poll::Ready(Ok(()));
+                }
             };
         }
     }
 
     fn call(&mut self, _nothing: ()) -> Self::Future {
-        match self.state {
+        match *self.shared.state.try_read().expect("called before ready") {
             State::Ready(ref rsp) => future::ready(Ok(rsp.clone())),
-            _ => panic!("polled before ready"),
+            _ => panic!("called before ready"),
+        }
+    }
+}
+
+impl<T, Rsp, S> Clone for ThunkCloneResponse<T, Rsp, S> {
+    fn clone(&self) -> Self {
+        Self {
+            shared: self.shared.clone(),
         }
     }
 }

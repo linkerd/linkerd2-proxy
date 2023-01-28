@@ -31,11 +31,7 @@ impl<N> Outbound<N> {
             let profiles = profiles::RecoverDefault::new(profiles.into_service());
             stk.clone()
                 .check_new_service::<(Option<profiles::Receiver>, T), Req>()
-                .push_discover_cache(
-                    profiles,
-                    config.tcp_connection_buffer,
-                    config.discovery_idle_timeout,
-                )
+                .push_discover_cache(profiles, config.discovery_idle_timeout)
                 .check_new::<T>()
                 .check_new_service::<T, Req>()
                 .push_switch(

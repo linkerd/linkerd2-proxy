@@ -190,7 +190,6 @@ impl<C> Inbound<C> {
                 .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
                 .push_discover_cache(
                     profiles,
-                    config.http_request_buffer,
                     config.discovery_idle_timeout,
                 )
                 .check_new_service::<Logical, http::Request<_>>()

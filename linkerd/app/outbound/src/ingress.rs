@@ -140,7 +140,6 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     .check_new_service::<(Option<profiles::Receiver>, Http<NameAddr>), http::Request<_>>()
                     .push_discover_cache(
                         profiles,
-                        config.tcp_connection_buffer,
                         config.discovery_idle_timeout,
                     )
                     .check_new_service::<Http<NameAddr>, http::Request<_>>()
