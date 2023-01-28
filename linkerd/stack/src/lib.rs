@@ -51,7 +51,7 @@ pub use self::{
     proxy::Proxy,
     queue::{NewQueue, QueueConfig},
     result::ResultService,
-    spawn_clone_response::SpawnCloneResponse,
+    spawn_clone_response::SpawnThunkCloneResponse,
     switch_ready::{NewSwitchReady, SwitchReady},
     timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,

@@ -270,7 +270,7 @@ impl<S> Stack<S> {
         S: NewService<(D::Response, T)> + Clone,
     {
         let discover = stack(discover)
-            .push(stack::SpawnCloneResponse::layer())
+            .push(stack::SpawnThunkCloneResponse::layer())
             .check_new_service::<K, ()>();
         self.push(crate::disco_cache::NewDiscoveryCache::layer(discover, idle))
             .check_new::<T>()

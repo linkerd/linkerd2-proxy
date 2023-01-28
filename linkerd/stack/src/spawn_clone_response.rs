@@ -10,15 +10,15 @@ use std::{
 };
 use tokio::sync::watch;
 
-/// A `NewService<T>` that produces a [`CloneResponse`] over an inner
+/// A `NewService<T>` that produces a [`ThunkCloneResponse`] over an inner
 /// `Service<T>`, calling that service a single time in a background task and
 /// producing `Service<()>`s that clone the response of that call.
 #[derive(Debug, Clone)]
-pub struct SpawnCloneResponse<S> {
+pub struct SpawnThunkCloneResponse<S> {
     service: S,
 }
 
-pub struct CloneResponse<Rsp> {
+pub struct ThunkCloneResponse<Rsp> {
     rx: watch::Receiver<Option<Result<Rsp, CloneError>>>,
     waiting: Option<Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>>,
 }
@@ -28,13 +28,13 @@ struct CloneError(Arc<Error>);
 
 // === impl SpawnCloneResponse ===
 
-impl<S> SpawnCloneResponse<S> {
+impl<S> SpawnThunkCloneResponse<S> {
     pub fn layer() -> impl layer::Layer<S, Service = Self> + Clone {
         layer::mk(|service| Self { service })
     }
 }
 
-impl<T, S> NewService<T> for SpawnCloneResponse<S>
+impl<T, S> NewService<T> for SpawnThunkCloneResponse<S>
 where
     T: Send + 'static,
     S: Service<T> + Clone + Send + 'static,
@@ -42,7 +42,7 @@ where
     S::Future: Send,
     S::Response: Clone + Send + Sync + 'static,
 {
-    type Service = CloneResponse<S::Response>;
+    type Service = ThunkCloneResponse<S::Response>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let (tx, rx) = watch::channel(None);
@@ -55,13 +55,13 @@ where
             });
             let _ = tx.send(Some(rsp));
         });
-        CloneResponse { rx, waiting: None }
+        ThunkCloneResponse { rx, waiting: None }
     }
 }
 
-// === impl CloneResponse ===
+// === impl ThunkCloneResponse ===
 
-impl<Rsp> Service<()> for CloneResponse<Rsp>
+impl<Rsp> Service<()> for ThunkCloneResponse<Rsp>
 where
     Rsp: Clone + Send + Sync + 'static,
 {
@@ -100,7 +100,7 @@ where
     }
 }
 
-impl<Rsp> Clone for CloneResponse<Rsp> {
+impl<Rsp> Clone for ThunkCloneResponse<Rsp> {
     fn clone(&self) -> Self {
         Self {
             rx: self.rx.clone(),
