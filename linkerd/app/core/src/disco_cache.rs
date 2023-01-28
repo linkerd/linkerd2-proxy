@@ -2,10 +2,10 @@ use futures::TryFutureExt;
 use linkerd_error::Error;
 use linkerd_idle_cache::{Cached, NewIdleCached};
 use linkerd_stack::{
-    layer, queue, BoxFutureService, CloneParam, FutureService, MapErrBoxed, NewQueueForever,
-    NewService, Param, Service, ServiceExt, ThunkClone,
+    layer, queue, CloneParam, FutureService, MapErrBoxed, NewQueueForever, NewService, Oneshot,
+    Param, QueueForever, Service, ServiceExt, ThunkClone,
 };
-use std::{fmt, hash::Hash};
+use std::{fmt, hash::Hash, task};
 use tokio::time;
 
 /// A `NewService` that extracts a `K`-typed key from each target to build a
@@ -16,10 +16,19 @@ where
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
     D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
     D::Response: Clone + Send + Sync,
-    D::Future: Send,
+    D::Future: Send + Unpin,
 {
     inner: N,
     cache: NewIdleCached<K, NewQueueThunkCache<D>>,
+}
+
+#[derive(Debug)]
+#[pin_project::pin_project]
+pub struct DiscoverFuture<D: Service<()>, N> {
+    inner: N,
+    cached: Cached<D>,
+    #[pin]
+    future: Oneshot<Cached<D>, ()>,
 }
 
 #[derive(Clone, Debug)]
@@ -35,8 +44,8 @@ impl<K, D, N> NewDiscoveryCache<K, D, N>
 where
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
     D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
-    D::Response: Clone + Send + Sync + 'static,
-    D::Future: Send + 'static,
+    D::Response: Clone + Send + Sync,
+    D::Future: Send + Unpin,
 {
     pub fn new(inner: N, discover: D, timeout: time::Duration, capacity: usize) -> Self {
         let cache = {
@@ -62,44 +71,65 @@ where
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
     D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
     D::Response: Clone + Send + Sync + 'static,
-    D::Future: Send + 'static,
+    D::Future: Send + Unpin,
     M: NewService<T, Service = N> + Clone,
-    N: NewService<D::Response> + Clone + Send + Sync + 'static,
+    N: NewService<D::Response> + Clone + Send + 'static,
 {
-    type Service = DiscoveryCache<N::Service>;
+    type Service = DiscoveryCache<D::Response, N, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let key = target.param();
         let cached = self.cache.new_service(key);
         let inner = self.inner.new_service(target);
-        let discover = cached.clone();
-        FutureService::new(Box::pin(
-            discover
-                .oneshot(())
-                .map_ok(move |discovery| cached.clone_with(inner.new_service(discovery))),
-        ))
+        let future = cached.clone().oneshot(());
+        FutureService::new(DiscoverFuture {
+            future,
+            cached,
+            inner,
+        })
     }
 }
 
-pub type DiscoveryCache<S> = BoxFutureService<Cached<S>>;
+pub type DiscoveryCache<D, N, S> = FutureService<DiscoverFuture<QueueForever<(), D>, N>, Cached<S>>;
 
 impl<T, D> NewService<T> for NewDiscoverThunk<D>
 where
-    T: Send + 'static,
-    D: Service<T, Error = Error> + Clone + Send + Sync + 'static,
-    D::Response: Clone + Send + Sync + 'static,
-    D::Future: Send + 'static,
+    D: Service<T, Error = Error> + Clone,
+    D::Response: Clone,
+    D::Future: Unpin,
 {
-    type Service = DiscoverThunk<D::Response>;
+    type Service = DiscoverThunk<T, D::Response, D>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let discover = self.discover.clone();
-        FutureService::new(Box::pin(
+        FutureService::new(
             discover
                 .oneshot(target)
                 .map_ok(|discovery| MapErrBoxed::new(ThunkClone::new(discovery), ())),
-        ))
+        )
     }
 }
 
-pub type DiscoverThunk<Rsp> = BoxFutureService<MapErrBoxed<ThunkClone<Rsp>>>;
+pub type DiscoverThunk<Req, Rsp, S> = FutureService<
+    futures::future::MapOk<Oneshot<S, Req>, fn(Rsp) -> MapErrBoxed<ThunkClone<Rsp>>>,
+    MapErrBoxed<ThunkClone<Rsp>>,
+>;
+
+impl<D, N> std::future::Future for DiscoverFuture<D, N>
+where
+    D: Service<()>,
+    N: NewService<D::Response>,
+{
+    type Output = Result<Cached<N::Service>, D::Error>;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+    ) -> task::Poll<Self::Output> {
+        let this = self.project();
+        let discovery = futures::ready!(this.future.poll(cx))?;
+        let inner = this.inner.new_service(discovery);
+        let cached = this.cached.clone_with(inner);
+        task::Poll::Ready(Ok(cached))
+    }
+}

@@ -268,7 +268,7 @@ impl<S> Outbound<S> {
                 // that in the concrete stack. It should probably be
                 // derived from the target so that we can configure it
                 // via the API.
-                .push(svc::NewQueue::layer_fixed(config.http_request_buffer))
+                .push(svc::NewQueueTimeout::layer_with(config.http_request_buffer))
             })
             .push_http_server()
             .into_inner();

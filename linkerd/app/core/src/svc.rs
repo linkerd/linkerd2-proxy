@@ -235,21 +235,17 @@ impl<S> Stack<S> {
         }))
     }
 
-    pub fn push_new_discovery_cache<K, T, Req, D, N>(
+    pub fn push_new_discovery_cache<K, D>(
         self,
         discover: D,
         idle: Duration,
         capacity: usize,
     ) -> Stack<NewDiscoveryCache<K, D, S>>
     where
-        T: Param<K> + Clone,
         K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
         D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
         D::Response: Clone + Send + Sync + 'static,
-        D::Future: Send + 'static,
-        S: NewService<T, Service = N> + Clone,
-        N: NewService<D::Response> + Clone,
-        N::Service: Service<Req, Error = Error>,
+        D::Future: Send + Unpin,
     {
         self.push(NewDiscoveryCache::layer(discover, idle, capacity))
     }

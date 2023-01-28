@@ -71,7 +71,7 @@ impl<C> Outbound<C> {
                                 .layer(stack_labels("opaque", "concrete")),
                         ),
                 )
-                .push(svc::NewQueue::layer_fixed(*tcp_connection_buffer))
+                .push(svc::NewQueueTimeout::layer_with(*tcp_connection_buffer))
                 .instrument(|c: &Concrete| info_span!("concrete", addr = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })

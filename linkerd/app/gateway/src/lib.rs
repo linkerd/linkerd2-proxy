@@ -144,7 +144,7 @@ where
             .push_new_discovery_cache(
                 profiles.clone(),
                 outbound.config().discovery_idle_timeout,
-                outbound.config().tcp_connection_buffer,
+                outbound.config().tcp_connection_buffer.capacity,
             )
             .check_new_service::<profiles::LookupAddr, I>()
             .push_switch(
@@ -167,7 +167,7 @@ where
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 ),
             )
-            .push(svc::NewQueue::layer_fixed(
+            .push(svc::NewQueueTimeout::layer_with(
                 outbound.config().tcp_connection_buffer,
             ))
             .push_idle_cache(outbound.config().discovery_idle_timeout)
@@ -199,7 +199,7 @@ where
             .push_new_discovery_cache(
                 profiles,
                 outbound.config().discovery_idle_timeout,
-                outbound.config().http_request_buffer,
+                outbound.config().http_request_buffer.capacity,
             )
             .check_new::<HttpTarget>()
             .push_switch(
@@ -222,7 +222,7 @@ where
                         .layer(metrics::StackLabels::inbound("http", "gateway")),
                 ),
             )
-            .push(svc::NewQueue::layer_fixed(
+            .push(svc::NewQueueTimeout::layer_with(
                 inbound_config.http_request_buffer,
             ))
             .push_idle_cache(inbound_config.discovery_idle_timeout)

@@ -139,7 +139,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     )
                     .check_new_service::<(Option<profiles::Receiver>, Http<NameAddr>), http::Request<_>>()
                     .lift_new_with_target()
-                    .push_new_discovery_cache(profiles, config.discovery_idle_timeout, *http_request_buffer)
+                    .push_new_discovery_cache(profiles, config.discovery_idle_timeout, http_request_buffer.capacity)
                     .check_new_service::<Http<NameAddr>, http::Request<_>>()
                     .push_request_filter(move |h: Http<NameAddr>| {
                         // Lookup the profile if the override header was set and it
@@ -172,7 +172,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                 .layer(stack_labels("http", "logical")),
                         ),
                     )
-                    .push(svc::NewQueue::layer_fixed(*http_request_buffer))
+                    .push(svc::NewQueueTimeout::layer_with(*http_request_buffer))
                     // Caches the profile-based stack so that it can be reused across
                     // multiple requests to the same canonical destination.
                     .push_idle_cache(*discovery_idle_timeout)

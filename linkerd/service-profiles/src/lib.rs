@@ -75,7 +75,7 @@ pub enum DiscoveryRejected {
 /// Watches a destination's Profile.
 pub trait GetProfile {
     type Error: Into<Error>;
-    type Future: Future<Output = Result<Option<Receiver>, Self::Error>>;
+    type Future: Future<Output = Result<Option<Receiver>, Self::Error>> + Unpin;
 
     fn get_profile(&mut self, target: LookupAddr) -> Self::Future;
 
@@ -91,6 +91,7 @@ impl<S> GetProfile for S
 where
     S: tower::Service<LookupAddr, Response = Option<Receiver>> + Clone,
     S::Error: Into<Error>,
+    S::Future: Unpin,
 {
     type Error = S::Error;
     type Future = Oneshot<S, LookupAddr>;

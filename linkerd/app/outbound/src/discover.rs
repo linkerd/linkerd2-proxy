@@ -23,7 +23,7 @@ impl<N> Outbound<N> {
         NSvc: svc::Service<Req, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
         P: profiles::GetProfile + Clone + Send + Sync + 'static,
-        P::Future: Send,
+        P::Future: Send + Unpin,
         P::Error: Send,
     {
         self.map_stack(|config, _, stk| {
@@ -35,7 +35,7 @@ impl<N> Outbound<N> {
                 .push_new_discovery_cache(
                     profiles,
                     config.discovery_idle_timeout,
-                    config.tcp_connection_buffer,
+                    config.tcp_connection_buffer.capacity,
                 )
                 .check_new::<T>()
                 .check_new_service::<T, Req>()
@@ -87,7 +87,9 @@ impl<N> Outbound<N> {
                     .stack
                     .layer(crate::stack_labels("tcp", "discover")),
             )
-            .push(svc::NewQueue::layer_fixed(config.tcp_connection_buffer))
+            .push(svc::NewQueueTimeout::layer_with(
+                config.tcp_connection_buffer,
+            ))
             .check_new_service::<T, Req>()
             .push_idle_cache(config.discovery_idle_timeout)
             .push(svc::ArcNewService::layer())

@@ -193,7 +193,7 @@ impl<C> Inbound<C> {
                 .push_new_discovery_cache(
                     profiles,
                     config.discovery_idle_timeout,
-                    config.http_request_buffer,
+                    config.http_request_buffer.capacity,
                 )
                 .check_new_service::<Logical, http::Request<_>>()
                 .push_switch(
@@ -227,7 +227,7 @@ impl<C> Inbound<C> {
                 .push_when_unready(config.profile_skip_timeout, http.into_inner())
                 .push_on_service(rt.metrics.proxy.stack.layer(stack_labels("http", "logical"))
                 )
-                .push(svc::NewQueue::layer_fixed(config.http_request_buffer))
+                .push(svc::NewQueueTimeout::layer_with(config.http_request_buffer))
                 .push_idle_cache(config.discovery_idle_timeout)
                 .push_on_service(
                     svc::layers()

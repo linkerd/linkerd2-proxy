@@ -362,7 +362,7 @@ where
 
 impl<Req, S> tower::Service<Req> for Cached<S>
 where
-    S: tower::Service<Req> + Send + Sync + 'static,
+    S: tower::Service<Req>,
 {
     type Response = S::Response;
     type Error = S::Error;

@@ -64,7 +64,7 @@ impl<N> Outbound<N> {
                             .layer(stack_labels("http", "concrete")),
                     ),
                 )
-                .push(svc::NewQueue::layer_fixed(config.http_request_buffer))
+                .push(svc::NewQueueTimeout::layer_with(config.http_request_buffer))
                 .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
                 .push(svc::ArcNewService::layer())
         })
