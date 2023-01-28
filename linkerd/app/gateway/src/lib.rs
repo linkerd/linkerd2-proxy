@@ -140,6 +140,7 @@ where
             .clone()
             .check_new::<Option<profiles::Receiver>>()
             .push_map_target(|(profile, _)| profile)
+            .lift_new_with_target()
             .push_discover_cache(
                 profiles.clone(),
                 outbound.config().tcp_connection_buffer,
@@ -194,8 +195,9 @@ where
         let discover = gateway
             .clone()
             .check_new::<(Option<profiles::Receiver>, HttpTarget)>()
+            .lift_new_with_target()
             .push_discover_cache(
-                profiles.clone(),
+                profiles,
                 inbound_config.http_request_buffer,
                 inbound_config.discovery_idle_timeout,
             )

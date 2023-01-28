@@ -12,101 +12,107 @@ use std::{
 use tokio::time;
 
 #[derive(Clone)]
-pub struct NewDiscoveryCache<K, DNew, SNew>
+pub struct NewDiscoveryCache<K, D, N>
 where
     K: Eq + Hash,
-    DNew: NewService<K>,
-    DNew::Service: Clone,
+    D: NewService<K>,
+    D::Service: Clone,
 {
-    inner: SNew,
-    cache: NewIdleCached<K, DNew>,
+    inner: N,
+    cache: NewIdleCached<K, D>,
 }
 
-pub struct CachedDiscovery<T, Rsp, DSvc, SNew, SSvc> {
-    target: T,
-    new: SNew,
-    disco: Cached<DSvc>,
-    state: State<Rsp, SSvc>,
+pub struct CachedDiscovery<Rsp, D, N, S> {
+    // This must be held to keep the cache entry alive.
+    disco: Cached<D>,
+
+    state: State<Rsp, N, S>,
 }
 
-enum State<Rsp, S> {
-    Init,
-    Pending(Pin<Box<dyn Future<Output = Result<Rsp, Error>> + Send + 'static>>),
+enum State<Rsp, N, S> {
+    Init(Option<N>),
+    Pending {
+        future: Pin<Box<dyn Future<Output = Result<Rsp, Error>> + Send + 'static>>,
+        inner: N,
+    },
     Service(S),
 }
 
-impl<K, DNew, SNew> NewDiscoveryCache<K, DNew, SNew>
+impl<K, D, N> NewDiscoveryCache<K, D, N>
 where
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
-    DNew: NewService<K> + Clone + 'static,
-    DNew::Service: Clone + Send + Sync + 'static,
+    D: NewService<K> + Clone + 'static,
+    D::Service: Clone + Send + Sync + 'static,
 {
-    pub fn new(inner: SNew, disco: DNew, idle: time::Duration) -> Self {
+    pub fn new(inner: N, disco: D, idle: time::Duration) -> Self {
         Self {
             inner,
             cache: NewIdleCached::new(disco, idle),
         }
     }
 
-    pub fn layer(
-        disco: DNew,
-        idle: time::Duration,
-    ) -> impl layer::Layer<SNew, Service = Self> + Clone {
+    pub fn layer(disco: D, idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self::new(inner, disco.clone(), idle))
     }
 }
 
-impl<T, K, DNew, DSvc, SNew> NewService<T> for NewDiscoveryCache<K, DNew, SNew>
+impl<T, K, D, DSvc, M, N> NewService<T> for NewDiscoveryCache<K, D, M>
 where
     T: Param<K> + Clone,
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
-    DNew: NewService<K, Service = DSvc> + 'static,
+    D: NewService<K, Service = DSvc> + 'static,
     DSvc: Service<()> + Clone + Send + Sync + 'static,
-    SNew: NewService<(DSvc::Response, T)> + Clone,
+    M: NewService<T, Service = N> + Clone,
+    N: NewService<DSvc::Response> + Clone,
 {
-    type Service = CachedDiscovery<T, DSvc::Response, DSvc, SNew, SNew::Service>;
+    type Service = CachedDiscovery<DSvc::Response, DSvc, N, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let key = target.param();
         let disco = self.cache.new_service(key);
+        let inner = self.inner.new_service(target);
         CachedDiscovery {
-            target,
             disco,
-            new: self.inner.clone(),
-            state: State::Init,
+            state: State::Init(Some(inner)),
         }
     }
 }
 
-impl<Req, T, DSvc, SNew, SSvc> Service<Req> for CachedDiscovery<T, DSvc::Response, DSvc, SNew, SSvc>
+impl<Req, D, N, S> Service<Req> for CachedDiscovery<D::Response, D, N, S>
 where
-    DSvc: Service<(), Error = Error> + Clone + Send + Sync + 'static,
-    DSvc::Response: Clone,
-    DSvc::Future: Send + 'static,
-    SNew: NewService<(DSvc::Response, T), Service = SSvc>,
-    SSvc: Service<Req, Error = Error> + Send + 'static,
-    T: Clone,
+    D: Service<(), Error = Error> + Clone + Send + Sync + 'static,
+    D::Response: Clone,
+    D::Future: Send + 'static,
+    N: NewService<D::Response, Service = S>,
+    S: Service<Req, Error = Error>,
 {
-    type Response = SSvc::Response;
-    type Error = Error;
-    type Future = SSvc::Future;
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
             self.state = match self.state {
-                // We have a response! We're now ready to call this service
+                // We have an inner service. Wait for it to be ready.
                 State::Service(ref mut svc) => return svc.poll_ready(cx),
 
-                // Discovery for `target` has not yet been started.
-                State::Init => {
+                // We don't have an inner service, so start discovery so that we
+                // can build one.
+                State::Init(ref mut inner) => {
                     let disco = self.disco.clone();
-                    State::Pending(Box::pin(disco.oneshot(())))
+                    State::Pending {
+                        future: Box::pin(disco.oneshot(())),
+                        inner: inner.take().expect("illegal state"),
+                    }
                 }
 
                 // Waiting for discovery to complete for `target`.
-                State::Pending(ref mut f) => match futures::ready!(f.poll_unpin(cx)) {
+                State::Pending {
+                    ref mut future,
+                    ref inner,
+                } => match futures::ready!(future.poll_unpin(cx)) {
                     Ok(rsp) => {
-                        let svc = self.new.new_service((rsp, self.target.clone()));
+                        let svc = inner.new_service(rsp);
                         State::Service(svc)
                     }
                     Err(e) => return Poll::Ready(Err(e)),
@@ -116,9 +122,10 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        match self.state {
-            State::Service(ref mut svc) => svc.call(req),
-            _ => panic!("poll_ready must be called first"),
+        if let State::Service(ref mut svc) = self.state {
+            return svc.call(req);
         }
+
+        panic!("poll_ready must be called first");
     }
 }

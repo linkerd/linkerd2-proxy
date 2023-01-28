@@ -1,7 +1,7 @@
 // Possibly unused, but useful during development.
 
 pub use crate::proxy::http;
-use crate::{idle_cache, Error};
+use crate::{disco_cache::NewDiscoveryCache, idle_cache, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
@@ -235,48 +235,33 @@ impl<S> Stack<S> {
         }))
     }
 
-    pub fn push_discover_cache<D, K, T>(
+    pub fn push_discover_cache<K, T, Req, D, N>(
         self,
         discover: D,
         queue: QueueConfig,
         idle: Duration,
-    ) -> Stack<
-        crate::disco_cache::NewDiscoveryCache<
-            K,
-            impl NewService<
-                    K,
-                    Service = impl Service<
-                        (),
-                        Error = Error,
-                        Response = D::Response,
-                        Future = impl Send + 'static,
-                    > + Clone
-                                  + Send
-                                  + Sync
-                                  + 'static,
-                > + Clone
-                + Send
-                + Sync
-                + 'static,
-            S,
-        >,
-    >
+    ) -> Stack<NewDiscoveryCache<K, ArcNewService<K, Queue<(), D::Response>>, S>>
     where
         T: Param<K> + Clone,
         K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
-        D: Service<K> + Clone + Send + Sync + 'static,
-        D::Error: Into<Error>,
-        D::Future: Send + 'static,
+        D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
         D::Response: Clone + Send + 'static,
-        S: NewService<(D::Response, T)> + Clone,
+        D::Future: Send + 'static,
+        S: NewService<T, Service = N> + Clone,
+        N: NewService<D::Response> + Clone,
+        N::Service: Service<Req, Error = Error>,
     {
         let discover = stack(discover)
-            .push(stack::MapErr::layer_boxed())
-            .push(stack::NewThunkCloneResponse::layer())
-            .push(stack::NewQueue::layer_fixed(queue))
-            .check_new_service::<K, ()>();
-        self.push(crate::disco_cache::NewDiscoveryCache::layer(discover, idle))
-            .check_new::<T>()
+            .check_service::<K>()
+            .push(NewThunkCloneResponse::layer())
+            .push(NewQueue::layer_fixed(queue))
+            .push(ArcNewService::layer())
+            .check_new_service::<K, ()>()
+            .into_inner();
+
+        self.check_new_new_service::<T, D::Response, Req>()
+            .push(NewDiscoveryCache::layer(discover, idle))
+            .check_new_service::<T, Req>()
     }
 
     /// Validates that this stack serves T-typed targets.

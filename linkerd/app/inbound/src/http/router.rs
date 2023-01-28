@@ -188,6 +188,8 @@ impl<C> Inbound<C> {
 
             let discover = router.clone()
                 .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
+                .lift_new_with_target()
+                .check_new_new_service::<Logical, Option<profiles::Receiver>, http::Request<_>>()
                 .push_discover_cache(
                     profiles,
                     config.http_request_buffer,

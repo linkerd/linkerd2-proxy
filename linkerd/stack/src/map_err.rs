@@ -65,6 +65,8 @@ pub struct WrapFromTarget<T, E> {
     _err: PhantomData<fn(E)>,
 }
 
+pub type MapErrBoxed<S> = MapErr<(), S>;
+
 // === impl NewMapErr===
 
 impl<W, X, N> NewMapErr<W, X, N> {
@@ -174,7 +176,7 @@ impl<W, S> MapErr<W, S> {
     }
 }
 
-impl<S> MapErr<(), S> {
+impl<S> MapErrBoxed<S> {
     pub fn layer_boxed() -> impl layer::Layer<S, Service = Self> + Clone {
         MapErr::layer(())
     }

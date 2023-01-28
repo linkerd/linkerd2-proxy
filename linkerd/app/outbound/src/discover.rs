@@ -31,6 +31,7 @@ impl<N> Outbound<N> {
             let profiles = profiles::RecoverDefault::new(profiles.into_service());
             stk.clone()
                 .check_new_service::<(Option<profiles::Receiver>, T), Req>()
+                .lift_new_with_target()
                 .push_discover_cache(
                     profiles,
                     config.tcp_connection_buffer,
