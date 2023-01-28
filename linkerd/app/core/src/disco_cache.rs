@@ -5,8 +5,7 @@ use linkerd_stack::{
     layer, queue, CloneParam, FutureService, MapErrBoxed, NewQueueForever, NewService, Oneshot,
     Param, QueueForever, Service, ServiceExt, ThunkClone,
 };
-use std::{fmt, hash::Hash, task};
-use tokio::time;
+use std::{fmt, hash::Hash, task, time};
 
 /// A `NewService` that extracts a `K`-typed key from each target to build a
 /// `CachedDiscovery`. The key is passed to the `D` type `NewThunk`
