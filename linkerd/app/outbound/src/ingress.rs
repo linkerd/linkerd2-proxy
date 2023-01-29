@@ -162,12 +162,10 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     // that we drive the inner service to readiness even if new requests
                     // aren't received.
                     .push_on_service(
-                        svc::layers().push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(stack_labels("http", "logical")),
-                        ),
+                        rt.metrics
+                            .proxy
+                            .stack
+                            .layer(stack_labels("http", "logical")),
                     )
                     .push(svc::NewQueue::layer_with_timeout_via(*http_request_queue))
                     // Caches the profile-based stack so that it can be reused across
