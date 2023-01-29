@@ -29,7 +29,7 @@ impl<N> Outbound<N> {
             stk.clone()
                 .check_new_service::<(Option<profiles::Receiver>, T), Req>()
                 .lift_new_with_target()
-                .push_discover_cache(profiles.into_service(), config.discovery_idle_timeout)
+                .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
                 .check_new::<T>()
                 .check_new_service::<T, Req>()
                 .push_switch(

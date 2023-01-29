@@ -197,7 +197,7 @@ impl<C> Inbound<C> {
                 .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
                 .lift_new_with_target()
                 .check_new_new_service::<Logical, Option<profiles::Receiver>, http::Request<_>>()
-                .push_discover_cache(profiles.into_service(), config.discovery_idle_timeout)
+                .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
                 .check_new_service::<Logical, http::Request<_>>()
                 .push_switch(
                     move |logical: Logical| -> Result<_, Infallible> {
