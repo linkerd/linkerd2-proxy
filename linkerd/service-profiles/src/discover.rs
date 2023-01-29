@@ -1,6 +1,5 @@
-use crate::LookupAddr;
-
 use super::{default::RecoverDefault, GetProfile, Receiver};
+use crate::LookupAddr;
 use futures::prelude::*;
 use linkerd_stack::{layer, FutureService, NewService, Param};
 use std::{future::Future, pin::Pin};

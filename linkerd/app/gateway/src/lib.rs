@@ -68,9 +68,7 @@ where
     O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
     O::Connection: Send + Unpin,
     O::Future: Send + Unpin + 'static,
-    P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
-    P::Future: Send + 'static,
-    P::Error: Send,
+    P: profiles::GetProfile<Error = Error>,
     R: Clone + Send + Sync + Unpin + 'static,
     R: Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
     <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,
@@ -81,7 +79,7 @@ where
 {
     let inbound_config = inbound.config().clone();
     let local_id = identity::LocalId(inbound.identity().name().clone());
-    let profiles = profiles::RecoverDefault::new(profiles.into_service());
+
     // For each gatewayed connection that is *not* HTTP, use the target from the
     // transport header to lookup a service profile. If the profile includes a
     // resolvable service name, then continue with TCP endpoint resolution,
@@ -140,7 +138,10 @@ where
             .clone()
             .check_new::<Option<profiles::Receiver>>()
             .lift_new()
-            .push_new_discovery_cache(profiles.clone(), outbound.config().discovery_idle_timeout)
+            .push_new_cached_discover(
+                profiles.clone().into_service(),
+                outbound.config().discovery_idle_timeout,
+            )
             .check_new_service::<profiles::LookupAddr, I>()
             .push_switch(
                 move |addr: NameAddr| -> Result<_, Infallible> {
@@ -191,7 +192,10 @@ where
             .clone()
             .check_new::<(Option<profiles::Receiver>, HttpTarget)>()
             .lift_new_with_target()
-            .push_new_discovery_cache(profiles, outbound.config().discovery_idle_timeout)
+            .push_new_cached_discover(
+                profiles.into_service(),
+                outbound.config().discovery_idle_timeout,
+            )
             .check_new::<HttpTarget>()
             .push_switch(
                 move |t: HttpTarget| -> Result<_, Infallible> {

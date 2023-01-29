@@ -85,8 +85,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
-        P::Error: Send,
+        P: profiles::GetProfile<Error = Error> + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         R: Clone + Send + Sync + 'static,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
@@ -115,7 +114,6 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     ..
                 } = config;
                 let profile_domains = allow_discovery.names().clone();
-                let profiles = profiles::RecoverDefault::new(profiles.into_service());
 
                 let discover = http_logical
                     .check_new_service::<http::Logical, http::Request<_>>()
@@ -139,7 +137,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     )
                     .check_new_service::<(Option<profiles::Receiver>, Http<NameAddr>), http::Request<_>>()
                     .lift_new_with_target()
-                    .push_new_discovery_cache(profiles, config.discovery_idle_timeout)
+                    .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
                     .check_new_service::<Http<NameAddr>, http::Request<_>>()
                     .push_request_filter(move |h: Http<NameAddr>| {
                         // Lookup the profile if the override header was set and it

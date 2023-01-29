@@ -9,7 +9,7 @@ use tracing::debug;
 pub struct RecoverDefault<S>(S);
 
 impl<S> RecoverDefault<S> {
-    pub fn new(inner: S) -> Self {
+    pub(crate) fn new(inner: S) -> Self {
         Self(inner)
     }
 }

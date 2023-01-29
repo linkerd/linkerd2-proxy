@@ -22,17 +22,15 @@ impl<N> Outbound<N> {
         Req: Send + 'static,
         NSvc: svc::Service<Req, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
-        P: profiles::GetProfile + Clone + Send + Sync + 'static,
+        P: profiles::GetProfile<Error = Error> + Clone + Send + Sync + 'static,
         P::Future: Send + Unpin,
-        P::Error: Send,
     {
         self.map_stack(|config, _, stk| {
             let allow = config.allow_discovery.clone();
-            let profiles = profiles::RecoverDefault::new(profiles.into_service());
             stk.clone()
                 .check_new_service::<(Option<profiles::Receiver>, T), Req>()
                 .lift_new_with_target()
-                .push_new_discovery_cache(profiles, config.discovery_idle_timeout)
+                .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
                 .check_new::<T>()
                 .check_new_service::<T, Req>()
                 .push_switch(
@@ -60,7 +58,7 @@ impl<N> Outbound<N> {
         })
     }
 
-    pub fn push_new_discovery_cache<T, Req, NSvc>(
+    pub fn push_new_cached_discover<T, Req, NSvc>(
         self,
     ) -> Outbound<
         svc::ArcNewService<
@@ -142,7 +140,7 @@ mod tests {
         let stack = Outbound::new(default_config(), rt)
             .with_stack(stack)
             .push_discover(profiles)
-            .push_new_discovery_cache()
+            .push_new_cached_discover()
             .into_inner();
 
         assert_eq!(
@@ -216,7 +214,7 @@ mod tests {
         let stack = Outbound::new(cfg, rt)
             .with_stack(stack)
             .push_discover(profiles)
-            .push_new_discovery_cache()
+            .push_new_cached_discover()
             .into_inner();
 
         assert_eq!(
@@ -337,7 +335,7 @@ mod tests {
         let stack = Outbound::new(cfg, rt)
             .with_stack(stack)
             .push_discover(profiles)
-            .push_new_discovery_cache()
+            .push_new_cached_discover()
             .into_inner();
 
         // Instantiate a service from the stack so that it instantiates the tracked inner service.

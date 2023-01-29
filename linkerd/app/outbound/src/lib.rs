@@ -169,9 +169,7 @@ impl Outbound<()> {
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<http::Concrete>>::Resolution: Send,
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
-        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
-        P::Future: Send,
-        P::Error: Send,
+        P: profiles::GetProfile<Error = Error>,
     {
         if self.config.ingress_mode {
             info!("Outbound routing in ingress-mode");
@@ -197,16 +195,14 @@ impl Outbound<()> {
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<http::Concrete>>::Resolution: Send,
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
-        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
-        P::Future: Send,
-        P::Error: Send,
+        P: profiles::GetProfile<Error = Error>,
     {
         let logical = self.to_tcp_connect().push_logical(resolve);
         let forward = self.to_tcp_connect().push_forward();
         forward
             .push_switch_logical(logical.into_inner())
             .push_discover(profiles)
-            .push_new_discovery_cache()
+            .push_new_cached_discover()
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }
@@ -228,9 +224,7 @@ impl Outbound<()> {
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<http::Concrete>>::Resolution: Send,
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
-        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
-        P::Future: Send,
-        P::Error: Send,
+        P: profiles::GetProfile<Error = Error>,
     {
         // The fallback stack is the same thing as the normal proxy stack, but
         // it doesn't include TCP metrics, since they are already instrumented
@@ -241,7 +235,7 @@ impl Outbound<()> {
             forward
                 .push_switch_logical(logical.into_inner())
                 .push_discover(profiles.clone())
-                .push_new_discovery_cache()
+                .push_new_cached_discover()
                 .into_inner()
         };
 
