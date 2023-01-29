@@ -138,7 +138,7 @@ where
             .clone()
             .check_new::<Option<profiles::Receiver>>()
             .lift_new()
-            .push_new_cached_discover(
+            .push_discover_cache(
                 profiles.clone().into_service(),
                 outbound.config().discovery_idle_timeout,
             )
@@ -192,7 +192,7 @@ where
             .clone()
             .check_new::<(Option<profiles::Receiver>, HttpTarget)>()
             .lift_new_with_target()
-            .push_new_cached_discover(
+            .push_discover_cache(
                 profiles.into_service(),
                 outbound.config().discovery_idle_timeout,
             )

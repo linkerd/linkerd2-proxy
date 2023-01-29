@@ -202,7 +202,7 @@ impl Outbound<()> {
         forward
             .push_switch_logical(logical.into_inner())
             .push_discover(profiles)
-            .push_new_cached_discover()
+            .push_discover_cache()
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }
@@ -235,7 +235,7 @@ impl Outbound<()> {
             forward
                 .push_switch_logical(logical.into_inner())
                 .push_discover(profiles.clone())
-                .push_new_cached_discover()
+                .push_discover_cache()
                 .into_inner()
         };
 

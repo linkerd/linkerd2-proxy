@@ -29,7 +29,7 @@ impl<N> Outbound<N> {
             stk.clone()
                 .check_new_service::<(Option<profiles::Receiver>, T), Req>()
                 .lift_new_with_target()
-                .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
+                .push_discover_cache(profiles.into_service(), config.discovery_idle_timeout)
                 .check_new::<T>()
                 .check_new_service::<T, Req>()
                 .push_switch(
@@ -57,7 +57,7 @@ impl<N> Outbound<N> {
         })
     }
 
-    pub fn push_new_cached_discover<T, Req, NSvc>(
+    pub fn push_discover_cache<T, Req, NSvc>(
         self,
     ) -> Outbound<
         svc::ArcNewService<
@@ -139,7 +139,7 @@ mod tests {
         let stack = Outbound::new(default_config(), rt)
             .with_stack(stack)
             .push_discover(profiles)
-            .push_new_cached_discover()
+            .push_discover_cache()
             .into_inner();
 
         assert_eq!(
@@ -213,7 +213,7 @@ mod tests {
         let stack = Outbound::new(cfg, rt)
             .with_stack(stack)
             .push_discover(profiles)
-            .push_new_cached_discover()
+            .push_discover_cache()
             .into_inner();
 
         assert_eq!(
@@ -334,7 +334,7 @@ mod tests {
         let stack = Outbound::new(cfg, rt)
             .with_stack(stack)
             .push_discover(profiles)
-            .push_new_cached_discover()
+            .push_discover_cache()
             .into_inner();
 
         // Instantiate a service from the stack so that it instantiates the tracked inner service.

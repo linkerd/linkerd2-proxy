@@ -235,7 +235,7 @@ impl<S> Stack<S> {
         }))
     }
 
-    pub fn push_new_cached_discover<K, D>(
+    pub fn push_discover_cache<K, D>(
         self,
         discover: D,
         idle: Duration,
