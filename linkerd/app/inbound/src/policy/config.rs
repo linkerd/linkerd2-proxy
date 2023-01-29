@@ -1,5 +1,9 @@
 use super::{api::Api, DefaultPolicy, GetPolicy, Protocol, ServerPolicy, Store};
-use linkerd_app_core::{control, dns, identity, metrics, svc::NewService};
+use linkerd_app_core::{
+    control, dns, identity, metrics,
+    svc::{NewService, ServiceExt},
+    Error,
+};
 use std::collections::{HashMap, HashSet};
 use tokio::time::Duration;
 
@@ -49,7 +53,10 @@ impl Config {
             } => {
                 let watch = {
                     let backoff = control.connect.backoff;
-                    let client = control.build(dns, metrics, identity).new_service(());
+                    let client = control
+                        .build(dns, metrics, identity)
+                        .new_service(())
+                        .map_err(Error::from);
                     let detect_timeout = match default {
                         DefaultPolicy::Allow(ServerPolicy {
                             protocol: Protocol::Detect { timeout, .. },

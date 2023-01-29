@@ -68,6 +68,12 @@ impl svc::Param<Option<http::detect::Skip>> for Logical<()> {
     }
 }
 
+impl svc::Param<Option<http::Version>> for Logical<()> {
+    fn param(&self) -> Option<http::Version> {
+        None
+    }
+}
+
 impl<P> Logical<P> {
     pub fn addr(&self) -> Addr {
         Addr::from(self.logical_addr.clone().0)

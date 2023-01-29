@@ -35,11 +35,8 @@ impl<N> Outbound<N> {
     where
         T: svc::Param<http::normalize_uri::DefaultAuthority>,
         N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-            > + Clone
+        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Clone
             + Send
             + 'static,
         NSvc::Error: Into<Error>,
@@ -115,21 +112,21 @@ impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
 
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if let Some(cause) = errors::cause_ref::<http::ResponseTimeoutError>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        if errors::is_caused_by::<http::ResponseTimeoutError>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
         }
-        if let Some(cause) = errors::cause_ref::<IdentityRequired>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        if errors::is_caused_by::<IdentityRequired>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
-        if let Some(cause) = errors::cause_ref::<errors::FailFastError>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        if errors::is_caused_by::<errors::FailFastError>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
         }
-        if let Some(cause) = errors::cause_ref::<errors::LoadShedError>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::unavailable(cause));
+        if errors::is_caused_by::<errors::LoadShedError>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::unavailable(error));
         }
 
-        if let Some(cause) = errors::cause_ref::<super::logical::NoRoute>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::not_found(cause));
+        if errors::is_caused_by::<super::logical::NoRoute>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::not_found(error));
         }
 
         if errors::is_caused_by::<errors::H2Error>(&*error) {

@@ -77,7 +77,7 @@ pub fn default_config() -> Config {
             detect_protocol_timeout: Duration::from_secs(10),
         },
         allowed_ips: Default::default(),
-        http_request_buffer: config::QueueConfig {
+        http_request_queue: config::QueueConfig {
             capacity: 10_000,
             failfast_timeout: Duration::from_secs(1),
         },

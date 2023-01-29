@@ -10,15 +10,23 @@ use linkerd_app_core::{
     Error, Result, CANONICAL_DST_HEADER,
 };
 
-#[derive(Copy, Clone, Debug)]
-struct ClientRescue {
-    emit_headers: bool,
-}
-
 #[derive(Clone, Debug)]
 pub struct Connect<T> {
     version: http::Version,
     inner: T,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("endpoint {addr}: {source}")]
+pub struct EndpointError {
+    addr: Remote<ServerAddr>,
+    #[source]
+    source: Error,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct ClientRescue {
+    emit_headers: bool,
 }
 
 impl<C> Outbound<C> {
@@ -26,6 +34,7 @@ impl<C> Outbound<C> {
     where
         T: Clone + Send + Sync + 'static,
         T: svc::Param<http::client::Settings>
+            + svc::Param<Remote<ServerAddr>>
             + svc::Param<Option<http::AuthorityOverride>>
             + svc::Param<metrics::EndpointLabels>
             + svc::Param<tls::ConditionalClientTls>
@@ -62,6 +71,7 @@ impl<C> Outbound<C> {
                 // Set the TLS status on responses so that the stack can detect whether the request
                 // was sent over a meshed connection.
                 .push_http_response_insert_target::<tls::ConditionalClientTls>()
+                .push(svc::NewMapErr::layer_from_target::<EndpointError, _>())
                 // If the outbound proxy is not configured to emit headers, then strip the
                 // `l5d-proxy-errors` header if set by the peer.
                 .push(NewStripProxyError::layer(config.emit_headers))
@@ -128,14 +138,14 @@ impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ClientRescue {
 
 impl errors::HttpRescue<Error> for ClientRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if let Some(cause) = errors::cause_ref::<http::orig_proto::DowngradedH2Error>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        if errors::is_caused_by::<http::orig_proto::DowngradedH2Error>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
-        if let Some(cause) = errors::cause_ref::<std::io::Error>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        if errors::is_caused_by::<std::io::Error>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
-        if let Some(cause) = errors::cause_ref::<errors::ConnectTimeout>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        if errors::is_caused_by::<errors::ConnectTimeout>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
         }
 
         Err(error)
@@ -192,6 +202,20 @@ impl<T: svc::Param<transport::labels::Key>> svc::Param<transport::labels::Key> f
     #[inline]
     fn param(&self) -> transport::labels::Key {
         self.inner.param()
+    }
+}
+
+// === impl EndpointError ===
+
+impl<T> From<(&T, Error)> for EndpointError
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
+        }
     }
 }
 

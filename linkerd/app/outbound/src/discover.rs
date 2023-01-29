@@ -35,7 +35,7 @@ impl<N> Outbound<N> {
                 .push_new_discovery_cache(
                     profiles,
                     config.discovery_idle_timeout,
-                    config.tcp_connection_buffer.capacity,
+                    config.tcp_connection_queue.capacity,
                 )
                 .check_new::<T>()
                 .check_new_service::<T, Req>()
@@ -87,10 +87,9 @@ impl<N> Outbound<N> {
                     .stack
                     .layer(crate::stack_labels("tcp", "discover")),
             )
-            .push(svc::NewQueueTimeout::layer_with(
-                config.tcp_connection_buffer,
+            .push(svc::NewQueue::layer_with_timeout_via(
+                config.tcp_connection_queue,
             ))
-            .check_new_service::<T, Req>()
             .push_idle_cache(config.discovery_idle_timeout)
             .push(svc::ArcNewService::layer())
             .check_new_service::<T, Req>()

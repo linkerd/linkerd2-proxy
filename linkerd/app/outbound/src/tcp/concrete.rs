@@ -2,11 +2,23 @@ use super::{Concrete, Endpoint};
 use crate::{endpoint, stack_labels, Outbound};
 use linkerd_app_core::{
     drain, io,
-    proxy::{api_resolve::Metadata, core::Resolve, tcp},
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        tcp,
+    },
     svc, Error,
 };
 use std::time;
 use tracing::info_span;
+
+#[derive(Debug, thiserror::Error)]
+#[error("concrete service {addr}: {source}")]
+pub struct ConcreteError {
+    addr: ConcreteAddr,
+    #[source]
+    source: Error,
+}
 
 // === impl Outbound ===
 
@@ -26,7 +38,7 @@ impl<C> Outbound<C> {
     ) -> Outbound<
         svc::ArcNewService<
             Concrete,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+            impl svc::Service<I, Response = (), Error = ConcreteError, Future = impl Send> + Clone,
         >,
     >
     where
@@ -43,7 +55,7 @@ impl<C> Outbound<C> {
     {
         self.map_stack(|config, rt, connect| {
             let crate::Config {
-                tcp_connection_buffer,
+                tcp_connection_queue,
                 ..
             } = config;
 
@@ -71,8 +83,9 @@ impl<C> Outbound<C> {
                                 .layer(stack_labels("opaque", "concrete")),
                         ),
                 )
-                .push(svc::NewQueueTimeout::layer_with(*tcp_connection_buffer))
+                .push(svc::NewQueue::layer_with_timeout_via(*tcp_connection_queue))
                 .instrument(|c: &Concrete| info_span!("concrete", addr = %c.resolve))
+                .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -83,6 +96,17 @@ impl svc::Param<tcp::balance::EwmaConfig> for Concrete {
         tcp::balance::EwmaConfig {
             default_rtt: time::Duration::from_millis(30),
             decay: time::Duration::from_secs(10),
+        }
+    }
+}
+
+// === impl ConcreteError ===
+
+impl<T: svc::Param<ConcreteAddr>> From<(&T, Error)> for ConcreteError {
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
         }
     }
 }

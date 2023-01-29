@@ -2,8 +2,8 @@ use futures::TryFutureExt;
 use linkerd_error::Error;
 use linkerd_idle_cache::{Cached, NewIdleCached};
 use linkerd_stack::{
-    layer, queue, CloneParam, FutureService, MapErrBoxed, NewQueueForever, NewService, Oneshot,
-    Param, QueueForever, Service, ServiceExt, ThunkClone,
+    layer, queue, CloneParam, FutureService, MapErrBoxed, NewQueueWithoutTimeout, NewService,
+    Oneshot, Param, QueueWithoutTimeout, Service, ServiceExt, ThunkClone,
 };
 use std::{fmt, hash::Hash, task, time};
 
@@ -18,7 +18,7 @@ where
     D::Future: Send + Unpin,
 {
     inner: N,
-    cache: NewIdleCached<K, NewQueueThunkCache<D>>,
+    cache: NewIdleCached<K, NewQueueDiscoverThunk<D>>,
 }
 
 #[derive(Debug)]
@@ -35,9 +35,8 @@ struct NewDiscoverThunk<D> {
     discover: D,
 }
 
-type NewQueueThunk<D> = NewQueueForever<CloneParam<queue::Capacity>, (), D>;
-
-type NewQueueThunkCache<D> = NewQueueThunk<NewDiscoverThunk<D>>;
+type NewQueueDiscoverThunk<D> = NewQueueThunk<NewDiscoverThunk<D>>;
+type NewQueueThunk<D> = NewQueueWithoutTimeout<CloneParam<queue::Capacity>, (), D>;
 
 impl<K, D, N> NewDiscoveryCache<K, D, N>
 where
@@ -49,7 +48,8 @@ where
     pub fn new(inner: N, discover: D, timeout: time::Duration, capacity: usize) -> Self {
         let cache = {
             let thunk = NewDiscoverThunk { discover };
-            let queue = NewQueueForever::new(thunk, CloneParam::from(queue::Capacity(capacity)));
+            let queue =
+                NewQueueWithoutTimeout::new(thunk, CloneParam::from(queue::Capacity(capacity)));
             NewIdleCached::new(queue, timeout)
         };
         Self { inner, cache }
@@ -89,7 +89,8 @@ where
     }
 }
 
-pub type DiscoveryCache<D, N, S> = FutureService<DiscoverFuture<QueueForever<(), D>, N>, Cached<S>>;
+pub type DiscoveryCache<D, N, S> =
+    FutureService<DiscoverFuture<QueueWithoutTimeout<(), D>, N>, Cached<S>>;
 
 impl<T, D> NewService<T> for NewDiscoverThunk<D>
 where

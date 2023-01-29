@@ -130,15 +130,15 @@ impl<T: Param<tls::ConditionalServerTls>> ExtractParam<errors::respond::EmitHead
 
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if let Some(cause) = errors::cause_ref::<policy::HttpRouteNotFound>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::not_found(cause));
+        if errors::is_caused_by::<policy::HttpRouteNotFound>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::not_found(error));
         }
 
-        if let Some(cause) = errors::cause_ref::<policy::HttpRouteUnauthorized>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::permission_denied(cause));
+        if errors::is_caused_by::<policy::HttpRouteUnauthorized>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::permission_denied(error));
         }
 
-        if let Some(error) = errors::cause_ref::<policy::HttpRouteInvalidRedirect>(&*error) {
+        if errors::is_caused_by::<policy::HttpRouteInvalidRedirect>(&*error) {
             tracing::warn!(%error);
             return Ok(errors::SyntheticHttpResponse::unexpected_error());
         }
@@ -147,26 +147,26 @@ impl errors::HttpRescue<Error> for ServerRescue {
         {
             return Ok(errors::SyntheticHttpResponse::redirect(*status, location));
         }
-        if let Some(cause) = errors::cause_ref::<policy::HttpInvalidPolicy>(&*error) {
+        if errors::is_caused_by::<policy::HttpInvalidPolicy>(&*error) {
             return Ok(errors::SyntheticHttpResponse::internal_error(
-                cause.to_string(),
+                error.to_string(),
             ));
         }
 
-        if let Some(cause) = errors::cause_ref::<crate::GatewayDomainInvalid>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::not_found(cause));
+        if errors::is_caused_by::<crate::GatewayDomainInvalid>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::not_found(error));
         }
-        if let Some(cause) = errors::cause_ref::<crate::GatewayIdentityRequired>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::unauthenticated(cause));
+        if errors::is_caused_by::<crate::GatewayIdentityRequired>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::unauthenticated(error));
         }
-        if let Some(cause) = errors::cause_ref::<crate::GatewayLoop>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::loop_detected(cause));
+        if errors::is_caused_by::<crate::GatewayLoop>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::loop_detected(error));
         }
-        if let Some(cause) = errors::cause_ref::<errors::FailFastError>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        if errors::is_caused_by::<errors::FailFastError>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
         }
-        if let Some(cause) = errors::cause_ref::<errors::LoadShedError>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::unavailable(cause));
+        if errors::is_caused_by::<errors::LoadShedError>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::unavailable(error));
         }
 
         if errors::is_caused_by::<errors::H2Error>(&*error) {

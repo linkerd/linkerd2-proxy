@@ -1,8 +1,7 @@
 pub use crate::exp_backoff::ExponentialBackoff;
-pub use crate::svc::QueueConfig;
 use crate::{
     proxy::http::{self, h1, h2},
-    svc::{stack::CloneParam, Param},
+    svc::{queue, CloneParam, ExtractParam, Param},
     transport::{Keepalive, ListenAddr},
 };
 use std::time::Duration;
@@ -29,6 +28,33 @@ pub struct ProxyConfig {
     pub connect: ConnectConfig,
     pub max_in_flight_requests: usize,
     pub detect_protocol_timeout: Duration,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct QueueConfig {
+    /// The number of requests (or connections, depending on the context) that
+    /// may be buffered
+    pub capacity: usize,
+
+    /// The maximum amount of time a request may be buffered before failfast
+    /// errors are emitted.
+    pub failfast_timeout: Duration,
+}
+
+// === impl QueueConfig ===
+
+impl<T> ExtractParam<queue::Capacity, T> for QueueConfig {
+    #[inline]
+    fn extract_param(&self, _: &T) -> queue::Capacity {
+        queue::Capacity(self.capacity)
+    }
+}
+
+impl<T> ExtractParam<queue::Timeout, T> for QueueConfig {
+    #[inline]
+    fn extract_param(&self, _: &T) -> queue::Timeout {
+        queue::Timeout(self.failfast_timeout)
+    }
 }
 
 // === impl ProxyConfig ===
