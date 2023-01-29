@@ -139,13 +139,8 @@ where
         let discover = stack
             .clone()
             .check_new::<Option<profiles::Receiver>>()
-            .push_map_target(|(profile, _)| profile)
-            .lift_new_with_target()
-            .push_new_discovery_cache(
-                profiles.clone(),
-                outbound.config().discovery_idle_timeout,
-                outbound.config().tcp_connection_queue.capacity,
-            )
+            .lift_new()
+            .push_new_discovery_cache(profiles.clone(), outbound.config().discovery_idle_timeout)
             .check_new_service::<profiles::LookupAddr, I>()
             .push_switch(
                 move |addr: NameAddr| -> Result<_, Infallible> {
@@ -196,11 +191,7 @@ where
             .clone()
             .check_new::<(Option<profiles::Receiver>, HttpTarget)>()
             .lift_new_with_target()
-            .push_new_discovery_cache(
-                profiles,
-                outbound.config().discovery_idle_timeout,
-                outbound.config().http_request_queue.capacity,
-            )
+            .push_new_discovery_cache(profiles, outbound.config().discovery_idle_timeout)
             .check_new::<HttpTarget>()
             .push_switch(
                 move |t: HttpTarget| -> Result<_, Infallible> {

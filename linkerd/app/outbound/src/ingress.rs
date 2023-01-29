@@ -139,7 +139,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     )
                     .check_new_service::<(Option<profiles::Receiver>, Http<NameAddr>), http::Request<_>>()
                     .lift_new_with_target()
-                    .push_new_discovery_cache(profiles, config.discovery_idle_timeout, http_request_queue.capacity)
+                    .push_new_discovery_cache(profiles, config.discovery_idle_timeout)
                     .check_new_service::<Http<NameAddr>, http::Request<_>>()
                     .push_request_filter(move |h: Http<NameAddr>| {
                         // Lookup the profile if the override header was set and it

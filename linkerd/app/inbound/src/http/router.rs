@@ -200,11 +200,7 @@ impl<C> Inbound<C> {
                 .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
                 .lift_new_with_target()
                 .check_new_new_service::<Logical, Option<profiles::Receiver>, http::Request<_>>()
-                .push_new_discovery_cache(
-                    profiles,
-                    config.discovery_idle_timeout,
-                    config.http_request_queue.capacity,
-                )
+                .push_new_discovery_cache(profiles, config.discovery_idle_timeout)
                 .check_new_service::<Logical, http::Request<_>>()
                 .push_switch(
                     move |logical: Logical| -> Result<_, Infallible> {

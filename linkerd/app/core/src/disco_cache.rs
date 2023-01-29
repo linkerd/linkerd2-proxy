@@ -7,64 +7,92 @@ use linkerd_stack::{
 };
 use std::{fmt, hash::Hash, task, time};
 
-/// A `NewService` that extracts a `K`-typed key from each target to build a
-/// `CachedDiscovery`. The key is passed to the `D` type `NewThunk`
+/// A [`NewService`] that extracts a `K`-typed key from each target to build a
+/// [`Cached`]<[`DiscoverThunk`]>.
 #[derive(Clone)]
-pub struct NewDiscoveryCache<K, D, N>
+pub struct NewCachedDiscover<K, D, N>
 where
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
     D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
     D::Response: Clone + Send + Sync,
     D::Future: Send + Unpin,
 {
+    // NewService<K, Service<(), D::Response>>
+    cache: NewIdleCached<K, NewQueueThunk<NewDiscoverThunk<D>>>,
+
+    // NewService<D::Response>
     inner: N,
-    cache: NewIdleCached<K, NewQueueDiscoverThunk<D>>,
 }
 
+/// The [`Future`] that drives discovery to build an new inner service wrapped
+/// in the [`Cached`] decorator from the discovery lookup.
 #[derive(Debug)]
 #[pin_project::pin_project]
-pub struct DiscoverFuture<D: Service<()>, N> {
+pub struct CachedDiscoverFuture<D: Service<()>, N> {
+    // NewService<D::Response>
     inner: N,
+
+    // Holds a cache handle so that we can carry that forward with the returned
+    // service.
     cached: Cached<D>,
+
+    // A future that obtains a `D::Response` and produces an `N::Service`.
     #[pin]
     future: Oneshot<Cached<D>, ()>,
 }
+
+/// A [`Service<()>`] that uses a `D`-typed discovery service to build a new
+/// inner service wrapped in the discovery service's cache handle.
+pub type CachedDiscover<D, N, S> = FutureService<CachedDiscoverFuture<QueueThunk<D>, N>, Cached<S>>;
+
+/// A [`Service<()>`] that discovers a `Rsp` and returns a clone of it for each
+/// call.
+pub type DiscoverThunk<Req, Rsp, S> = FutureService<
+    futures::future::MapOk<Oneshot<S, Req>, fn(Rsp) -> MapErrBoxed<ThunkClone<Rsp>>>,
+    MapErrBoxed<ThunkClone<Rsp>>,
+>;
 
 #[derive(Clone, Debug)]
 struct NewDiscoverThunk<D> {
     discover: D,
 }
 
-type NewQueueDiscoverThunk<D> = NewQueueThunk<NewDiscoverThunk<D>>;
+// We do not enforce any timeouts on discovery. Nor are we concerned with load
+// shedding. `NewCachedDiscover` returns a `FutureService`, so the internal
+// queue's capacity can exert backpressure into `Service::poll_ready`. This is
+// a good thing. That service stack can determine its own load shedding and
+// failfast semantics independently. The queue capacity is purely to avoid
+// contention across clones.
 type NewQueueThunk<D> = NewQueueWithoutTimeout<CloneParam<queue::Capacity>, (), D>;
+type QueueThunk<D> = QueueWithoutTimeout<(), D>;
+const QUEUE_CAPACITY: queue::Capacity = queue::Capacity(10);
 
-impl<K, D, N> NewDiscoveryCache<K, D, N>
+// === impl NewCachedDiscover ===
+
+impl<K, D, N> NewCachedDiscover<K, D, N>
 where
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
     D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
     D::Response: Clone + Send + Sync,
     D::Future: Send + Unpin,
 {
-    pub fn new(inner: N, discover: D, timeout: time::Duration, capacity: usize) -> Self {
-        let cache = {
-            let thunk = NewDiscoverThunk { discover };
-            let queue =
-                NewQueueWithoutTimeout::new(thunk, CloneParam::from(queue::Capacity(capacity)));
-            NewIdleCached::new(queue, timeout)
-        };
-        Self { inner, cache }
+    pub fn new(inner: N, discover: D, timeout: time::Duration) -> Self {
+        let queue = NewQueueThunk::new(
+            NewDiscoverThunk { discover },
+            CloneParam::from(QUEUE_CAPACITY),
+        );
+        Self {
+            inner,
+            cache: NewIdleCached::new(queue, timeout),
+        }
     }
 
-    pub fn layer(
-        disco: D,
-        idle: time::Duration,
-        capacity: usize,
-    ) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |inner| Self::new(inner, disco.clone(), idle, capacity))
+    pub fn layer(disco: D, idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(inner, disco.clone(), idle))
     }
 }
 
-impl<T, K, D, M, N> NewService<T> for NewDiscoveryCache<K, D, M>
+impl<T, K, D, M, N> NewService<T> for NewCachedDiscover<K, D, M>
 where
     T: Param<K> + Clone,
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
@@ -74,14 +102,14 @@ where
     M: NewService<T, Service = N> + Clone,
     N: NewService<D::Response> + Clone + Send + 'static,
 {
-    type Service = DiscoveryCache<D::Response, N, N::Service>;
+    type Service = CachedDiscover<D::Response, N, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let key = target.param();
         let cached = self.cache.new_service(key);
         let inner = self.inner.new_service(target);
         let future = cached.clone().oneshot(());
-        FutureService::new(DiscoverFuture {
+        FutureService::new(CachedDiscoverFuture {
             future,
             cached,
             inner,
@@ -89,8 +117,7 @@ where
     }
 }
 
-pub type DiscoveryCache<D, N, S> =
-    FutureService<DiscoverFuture<QueueWithoutTimeout<(), D>, N>, Cached<S>>;
+// === impl NewDiscoverThunk ===
 
 impl<T, D> NewService<T> for NewDiscoverThunk<D>
 where
@@ -101,21 +128,14 @@ where
     type Service = DiscoverThunk<T, D::Response, D>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let discover = self.discover.clone();
-        FutureService::new(
-            discover
-                .oneshot(target)
-                .map_ok(|discovery| MapErrBoxed::new(ThunkClone::new(discovery), ())),
-        )
+        let disco = self.discover.clone().oneshot(target);
+        FutureService::new(disco.map_ok(|rsp| ThunkClone::new(rsp).into()))
     }
 }
 
-pub type DiscoverThunk<Req, Rsp, S> = FutureService<
-    futures::future::MapOk<Oneshot<S, Req>, fn(Rsp) -> MapErrBoxed<ThunkClone<Rsp>>>,
-    MapErrBoxed<ThunkClone<Rsp>>,
->;
+// === impl DiscoverFUture ===
 
-impl<D, N> std::future::Future for DiscoverFuture<D, N>
+impl<D, N> std::future::Future for CachedDiscoverFuture<D, N>
 where
     D: Service<()>,
     N: NewService<D::Response>,

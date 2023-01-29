@@ -1,7 +1,7 @@
 // Possibly unused, but useful during development.
 
 pub use crate::proxy::http;
-use crate::{disco_cache::NewDiscoveryCache, idle_cache, Error};
+use crate::{disco_cache::NewCachedDiscover, idle_cache, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
@@ -239,15 +239,14 @@ impl<S> Stack<S> {
         self,
         discover: D,
         idle: Duration,
-        capacity: usize,
-    ) -> Stack<NewDiscoveryCache<K, D, S>>
+    ) -> Stack<NewCachedDiscover<K, D, S>>
     where
         K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
         D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
         D::Response: Clone + Send + Sync + 'static,
         D::Future: Send + Unpin,
     {
-        self.push(NewDiscoveryCache::layer(discover, idle, capacity))
+        self.push(NewCachedDiscover::layer(discover, idle))
     }
 
     /// Validates that this stack serves T-typed targets.

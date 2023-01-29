@@ -8,11 +8,11 @@ use std::{fmt, marker::PhantomData, time};
 use tower::buffer::Buffer;
 
 /// A param type that configures the capacity of a queue.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Capacity(pub usize);
 
 /// A param type that configures a queue's failfast timeout.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Timeout(pub time::Duration);
 
 /// A `NewService` that builds buffered inner services.

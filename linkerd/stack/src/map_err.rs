@@ -176,6 +176,12 @@ impl<W, S> MapErr<W, S> {
     }
 }
 
+impl<S> From<S> for MapErrBoxed<S> {
+    fn from(inner: S) -> Self {
+        Self::new(inner, ())
+    }
+}
+
 impl<S> MapErrBoxed<S> {
     pub fn layer_boxed() -> impl layer::Layer<S, Service = Self> + Clone {
         MapErr::layer(())
