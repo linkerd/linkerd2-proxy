@@ -23,7 +23,7 @@ impl<T, G, N, M> NewService<T> for Discover<G, N>
 where
     T: Param<LookupAddr>,
     T: Clone + Send + 'static,
-    G: GetProfile + Clone,
+    G: GetProfile,
     G::Future: Send + 'static,
     G::Error: Send,
     N: NewService<T, Service = M> + Send + 'static,

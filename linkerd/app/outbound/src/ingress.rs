@@ -85,8 +85,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        P: profiles::GetProfile<Error = Error> + Clone + Send + Sync + Unpin + 'static,
-        P::Future: Send,
+        P: profiles::GetProfile<Error = Error>,
         R: Clone + Send + Sync + 'static,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,

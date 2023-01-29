@@ -22,8 +22,7 @@ impl<N> Outbound<N> {
         Req: Send + 'static,
         NSvc: svc::Service<Req, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
-        P: profiles::GetProfile<Error = Error> + Clone + Send + Sync + 'static,
-        P::Future: Send + Unpin,
+        P: profiles::GetProfile<Error = Error>,
     {
         self.map_stack(|config, _, stk| {
             let allow = config.allow_discovery.clone();
