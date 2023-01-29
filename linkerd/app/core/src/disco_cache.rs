@@ -24,7 +24,7 @@ where
     inner: N,
 }
 
-/// The [`Future`] that drives discovery to build an new inner service wrapped
+/// The future that drives discovery to build an new inner service wrapped
 /// in the [`Cached`] decorator from the discovery lookup.
 #[derive(Debug)]
 #[pin_project::pin_project]

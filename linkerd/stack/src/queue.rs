@@ -93,7 +93,7 @@ impl<Z, X: Clone, Req, N> NewQueue<Z, X, Req, N> {
 
     /// Returns a [`Layer`] that constructs new [`failfast::Gate`]d [`Buffer`]s
     /// using an `X`-typed [`ExtractParam`] implementation to extract
-    /// [`QueueConfig`] from a `T`-typed target.
+    /// the necessary configuration.
     #[inline]
     #[must_use]
     pub fn layer_via(extract: X) -> impl Layer<N, Service = Self> + Clone {
