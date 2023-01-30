@@ -1,3 +1,6 @@
+//! A specialized `NewIdleCache` to manage discovery stae, usually from a
+//! control plane client.
+
 use futures::TryFutureExt;
 use linkerd_error::Error;
 use linkerd_idle_cache::{Cached, NewIdleCached};
@@ -25,7 +28,8 @@ where
 }
 
 /// The future that drives discovery to build an new inner service wrapped
-/// in the [`Cached`] decorator from the discovery lookup.
+/// in the [`Cached`] decorator from the discovery lookup, preventing the
+/// cache's idle timeout from starting until returned services are dropped.
 #[derive(Debug)]
 #[pin_project::pin_project]
 pub struct CachedDiscoverFuture<D: Service<()>, N> {
