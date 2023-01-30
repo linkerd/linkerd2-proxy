@@ -48,7 +48,7 @@ pub fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &Trace
     if let Ok(hv) = HeaderValue::from_str(&bytes_b64) {
         request.headers_mut().insert(&GRPC_TRACE_HEADER, hv);
     } else {
-        debug!(header = %GRPC_TRACE_HEADER, header_value = %bytes_b64, "Header value contains invalid ASCII characters");
+        debug!(header = %GRPC_TRACE_HEADER, header_value = %bytes_b64, "Invalid non-ASCII or control character in header value");
     }
     span_id
 }
@@ -63,7 +63,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>) -> Id {
     if let Ok(hv) = HeaderValue::from_str(&span_str) {
         request.headers_mut().insert(&HTTP_SPAN_ID_HEADER, hv);
     } else {
-        debug!(header = %HTTP_SPAN_ID_HEADER, header_value = %span_str, "Header value contains invalid ASCII characters");
+        debug!(header = %HTTP_SPAN_ID_HEADER, header_value = %span_str, "Invalid non-ASCII or control character in header value");
     }
     span_id
 }
@@ -156,4 +156,8 @@ fn parse_header_id<B>(
 ) -> Option<Id> {
     let header_value = get_header_str(request, header)?;
     decode_id_with_padding(header_value, pad_to)
+        .map_err(
+            |error| debug!(%header, %header_value, %error, "Id in header value contains invalid hex"),
+        )
+        .ok()
 }

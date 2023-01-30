@@ -1,5 +1,5 @@
 use http::header::HeaderName;
-use tracing::{trace, warn};
+use tracing::{debug, trace};
 
 use super::{decode_id_with_padding, get_header_str, Propagation, TraceContext};
 use crate::{Flags, Id};
@@ -17,7 +17,7 @@ pub fn unpack_w3c_trace_context<B>(request: &http::Request<B>) -> Option<TraceCo
 pub fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
     let span_id = Id::new_span_id(&mut rand::thread_rng());
 
-    trace!("incremented span id: {span_id}");
+    trace!(%span_id, "Incremented span id");
 
     let new_header = {
         let mut buf = String::with_capacity(60);
@@ -34,7 +34,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &Trace
     if let Ok(hv) = http::HeaderValue::from_str(&new_header) {
         request.headers_mut().insert(&HTTP_TRACEPARENT, hv);
     } else {
-        warn!("invalid value {new_header} for tracecontext header");
+        debug!(header = %HTTP_TRACEPARENT, header_value = %new_header, "Invalid non-ASCII or control character in header value");
     }
 
     span_id
@@ -45,38 +45,27 @@ fn parse_context(header_value: &str) -> Option<TraceContext> {
     let rest = match header_value.split_once('-') {
         Some((version, rest)) => {
             if version != VERSION_00 {
-                warn!("Tracecontext header {header_value} contains invalid version: {version}",);
+                debug!(header = %HTTP_TRACEPARENT, %header_value, %version, "Tracecontext header value contains invalid version",);
                 return None;
             }
             rest
         }
         None => {
-            warn!("Tracecontext header {header_value} is invalid");
+            debug!(header = %HTTP_TRACEPARENT, %header_value, "Tracecontext header value does not contain version");
             return None;
         }
     };
 
-    let (trace_id, rest) = if let Some((id, rest)) = parse_header_value(rest, 16) {
-        (id, rest)
-    } else {
-        warn!("Tracecontext header {header_value} contains invalid id");
-        return None;
-    };
-
-    let (parent_id, rest) = if let Some((id, rest)) = parse_header_value(rest, 8) {
-        (id, rest)
-    } else {
-        warn!("Tracecontext header {header_value} contains invalid id");
-        return None;
-    };
+    let (trace_id, rest) = parse_header_value(rest, 16)?;
+    let (parent_id, rest) = parse_header_value(rest, 8)?;
 
     let flags = match hex::decode(rest) {
         // If valid hex, take final bit and AND with 1. W3C only uses one bit
         // for flags in version 00, and the bit is used to control sampling
         Ok(decoded) => Flags(decoded[0]),
         // If invalid hex, invalidate trace
-        Err(e) => {
-            warn!("Failed to decode flags for header {header_value}: {e}");
+        Err(error) => {
+            debug!(header = %HTTP_TRACEPARENT, flags = %rest, %error, "Failed to hex decode tracecontext flags");
             return None;
         }
     };
@@ -92,11 +81,14 @@ fn parse_context(header_value: &str) -> Option<TraceContext> {
 // Parse header value as Id and return the rest after '-' separator. When an id
 // is all 0 value it is considered invalid according to the spec.
 // <https://www.w3.org/TR/trace-context-1/#trace-id>
-fn parse_header_value(next_header: &str, pad_to: usize) -> Option<(Id, &str)> {
-    next_header
+fn parse_header_value(next_header_value: &str, pad_to: usize) -> Option<(Id, &str)> {
+    next_header_value
         .split_once('-')
         .filter(|(id, _rest)| !id.chars().all(|c| c == '0'))
-        .and_then(|(id, rest)| decode_id_with_padding(id, pad_to).zip(Some(rest)))
+        .and_then(|(id, rest)| decode_id_with_padding(id, pad_to)
+                  .map_err(|error| debug!(header = %HTTP_TRACEPARENT, %error, %id, "Id in header value contains invalid hex"))
+                  .ok()
+                  .zip(Some(rest)))
 }
 
 #[cfg(test)]

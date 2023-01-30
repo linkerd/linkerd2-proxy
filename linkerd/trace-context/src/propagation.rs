@@ -2,7 +2,7 @@ use crate::{Flags, Id, InsufficientBytes};
 use bytes::Bytes;
 
 use thiserror::Error;
-use tracing::warn;
+use tracing::debug;
 
 mod b3;
 mod w3c;
@@ -64,26 +64,23 @@ fn get_header_str<'a, B>(
 ) -> Option<&'a str> {
     let hv = request.headers().get(header)?;
     hv.to_str()
-        .map_err(|e| warn!("Invalid trace header {header}: {e}"))
+        .map_err(|_| debug!(header_value = %header, "Trace header value contains invalid ASCII characters"))
         .ok()
 }
 
 // Attempt to decode a hex value to an id, padding the buffer up to the
 // specified argument. Used to decode header values from hex to binary.
-fn decode_id_with_padding(value: &str, pad_to: usize) -> Option<Id> {
-    hex::decode(value)
-        .map(|mut data| {
-            if data.len() < pad_to {
-                let padding = pad_to - data.len();
-                let mut padded = vec![0u8; padding];
-                padded.append(&mut data);
-                Id(padded)
-            } else {
-                Id(data)
-            }
-        })
-        .map_err(|e| warn!("Header value {value} does not contain a hex: {e}"))
-        .ok()
+fn decode_id_with_padding(value: &str, pad_to: usize) -> Result<Id, hex::FromHexError> {
+    hex::decode(value).map(|mut data| {
+        if data.len() < pad_to {
+            let padding = pad_to - data.len();
+            let mut padded = vec![0u8; padding];
+            padded.append(&mut data);
+            Id(padded)
+        } else {
+            Id(data)
+        }
+    })
 }
 
 /// Attempt to split_to the given index.  If there are not enough bytes then
