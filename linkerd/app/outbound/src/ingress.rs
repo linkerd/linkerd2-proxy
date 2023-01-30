@@ -85,9 +85,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
-        P::Error: Send,
-        P::Future: Send,
+        P: profiles::GetProfile<Error = Error>,
         R: Clone + Send + Sync + 'static,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,
@@ -136,9 +134,9 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                             Err(ProfileRequired)
                         },
                     )
+                    .check_new_service::<(Option<profiles::Receiver>, Http<NameAddr>), http::Request<_>>()
                     .lift_new_with_target()
-                    .check_new_new_service::<Http<NameAddr>, Option<profiles::Receiver>, http::Request<_>>()
-                    .push(profiles::Discover::layer(profiles))
+                    .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
                     .check_new_service::<Http<NameAddr>, http::Request<_>>()
                     .push_request_filter(move |h: Http<NameAddr>| {
                         // Lookup the profile if the override header was set and it
@@ -164,13 +162,10 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     // that we drive the inner service to readiness even if new requests
                     // aren't received.
                     .push_on_service(
-                        svc::layers()
-                            .push(
-                                rt.metrics
-                                    .proxy
-                                    .stack
-                                    .layer(stack_labels("http", "logical")),
-                            )
+                        rt.metrics
+                            .proxy
+                            .stack
+                            .layer(stack_labels("http", "logical")),
                     )
                     .push(svc::NewQueue::layer_via(*http_request_queue))
                     // Caches the profile-based stack so that it can be reused across

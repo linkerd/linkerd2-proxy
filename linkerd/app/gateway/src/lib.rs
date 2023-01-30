@@ -68,9 +68,7 @@ where
     O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
     O::Connection: Send + Unpin,
     O::Future: Send + Unpin + 'static,
-    P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
-    P::Future: Send + 'static,
-    P::Error: Send,
+    P: profiles::GetProfile<Error = Error>,
     R: Clone + Send + Sync + Unpin + 'static,
     R: Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
     <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,
@@ -140,7 +138,10 @@ where
             .clone()
             .check_new::<Option<profiles::Receiver>>()
             .lift_new()
-            .push(profiles::Discover::layer(profiles.clone()))
+            .push_new_cached_discover(
+                profiles.clone().into_service(),
+                outbound.config().discovery_idle_timeout,
+            )
             .check_new_service::<profiles::LookupAddr, I>()
             .push_switch(
                 move |addr: NameAddr| -> Result<_, Infallible> {
@@ -175,7 +176,7 @@ where
     // gateway. This permits gateway services (and profile resolutions) to be
     // cached per target, shared across clients.
     let http = {
-        let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
+        let endpoint = outbound.clone().push_tcp_endpoint().push_http_endpoint();
         let stack = endpoint
             .clone()
             .push_http_concrete(resolve)
@@ -191,8 +192,11 @@ where
             .clone()
             .check_new::<(Option<profiles::Receiver>, HttpTarget)>()
             .lift_new_with_target()
-            .check_new_new::<HttpTarget, Option<profiles::Receiver>>()
-            .push(profiles::Discover::layer(profiles))
+            .push_new_cached_discover(
+                profiles.into_service(),
+                outbound.config().discovery_idle_timeout,
+            )
+            .check_new::<HttpTarget>()
             .push_switch(
                 move |t: HttpTarget| -> Result<_, Infallible> {
                     if !allow_discovery.matches(t.target.name()) {

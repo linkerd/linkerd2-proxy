@@ -1,7 +1,7 @@
 // Possibly unused, but useful during development.
 
 pub use crate::proxy::http;
-use crate::{idle_cache, Error};
+use crate::{disco_cache::NewCachedDiscover, idle_cache, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
@@ -9,6 +9,8 @@ pub use linkerd_router::{self as router, NewOneshotRoute};
 pub use linkerd_stack::{self as stack, *};
 pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use std::{
+    fmt,
+    hash::Hash,
     task::{Context, Poll},
     time::Duration,
 };
@@ -231,6 +233,20 @@ impl<S> Stack<S> {
                 predicate.clone(),
             )
         }))
+    }
+
+    pub fn push_new_cached_discover<K, D>(
+        self,
+        discover: D,
+        idle: Duration,
+    ) -> Stack<NewCachedDiscover<K, D, S>>
+    where
+        K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
+        D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
+        D::Response: Clone + Send + Sync + 'static,
+        D::Future: Send + Unpin,
+    {
+        self.push(NewCachedDiscover::layer(discover, idle))
     }
 
     /// Validates that this stack serves T-typed targets.

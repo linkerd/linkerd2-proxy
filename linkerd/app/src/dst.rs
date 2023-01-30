@@ -20,7 +20,7 @@ pub struct Dst<S> {
     pub addr: control::ControlAddr,
 
     /// Resolves profiles.
-    pub profiles: profiles::Client<BackoffUnlessInvalidArgument, S>,
+    pub profiles: profiles::RecoverDefault<profiles::Client<BackoffUnlessInvalidArgument, S>>,
 
     /// Resolves endpoints.
     pub resolve: recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<S>>,
@@ -56,9 +56,12 @@ impl Config {
             .new_service(())
             .map_err(Error::from);
 
+        let profiles =
+            profiles::Client::new_recover_default(backoff, svc.clone(), self.context.clone());
+
         Ok(Dst {
             addr,
-            profiles: profiles::Client::new(backoff, svc.clone(), self.context.clone()),
+            profiles,
             resolve: recover::Resolve::new(backoff, api::Resolve::new(svc, self.context)),
         })
     }

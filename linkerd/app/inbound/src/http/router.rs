@@ -90,9 +90,7 @@ impl<C> Inbound<C> {
             + Param<tls::ConditionalServerTls>
             + Param<policy::AllowPolicy>,
         T: Clone + Send + Unpin + 'static,
-        P: profiles::GetProfile + Clone + Send + Sync + Unpin + 'static,
-        P::Future: Send,
-        P::Error: Send,
+        P: profiles::GetProfile<Error = Error>,
         C: svc::MakeConnection<Http> + Clone + Send + Sync + Unpin + 'static,
         C::Connection: Send + Unpin,
         C::Metadata: Send,
@@ -196,10 +194,10 @@ impl<C> Inbound<C> {
                 .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>();
 
             let discover = router.clone()
+                .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
                 .lift_new_with_target()
-                .check_new_new::<Logical, Option<profiles::Receiver>>()
                 .check_new_new_service::<Logical, Option<profiles::Receiver>, http::Request<_>>()
-                .push(profiles::Discover::layer(profiles))
+                .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
                 .check_new_service::<Logical, http::Request<_>>()
                 .push_switch(
                     move |logical: Logical| -> Result<_, Infallible> {

@@ -1,7 +1,6 @@
 use super::*;
 use linkerd_stack::{layer, NewService};
 
-#[derive(Clone)]
 pub struct NewIdleCached<T, N>
 where
     T: Eq + Hash,
@@ -19,11 +18,15 @@ where
     N: NewService<T> + 'static,
     N::Service: Send + Sync + 'static,
 {
-    pub fn layer(idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |new_svc| Self {
+    pub fn new(new_svc: N, idle: time::Duration) -> Self {
+        Self {
             new_svc,
             cache: IdleCache::new(idle),
-        })
+        }
+    }
+
+    pub fn layer(idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |new_svc| Self::new(new_svc, idle))
     }
 }
 
@@ -38,5 +41,18 @@ where
     fn new_service(&self, target: T) -> Cached<N::Service> {
         self.cache
             .get_or_insert_with(target, |target| self.new_svc.new_service(target.clone()))
+    }
+}
+
+impl<T, N> Clone for NewIdleCached<T, N>
+where
+    T: Eq + Hash,
+    N: NewService<T> + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            new_svc: self.new_svc.clone(),
+            cache: self.cache.clone(),
+        }
     }
 }

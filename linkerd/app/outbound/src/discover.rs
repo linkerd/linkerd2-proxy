@@ -22,17 +22,14 @@ impl<N> Outbound<N> {
         Req: Send + 'static,
         NSvc: svc::Service<Req, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
-        P: profiles::GetProfile + Clone + Send + Sync + 'static,
-        P::Future: Send,
-        P::Error: Send,
+        P: profiles::GetProfile<Error = Error>,
     {
         self.map_stack(|config, _, stk| {
             let allow = config.allow_discovery.clone();
             stk.clone()
                 .check_new_service::<(Option<profiles::Receiver>, T), Req>()
                 .lift_new_with_target()
-                .check_new_new_service::<T, Option<profiles::Receiver>, Req>()
-                .push(profiles::Discover::layer(profiles))
+                .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
                 .check_new::<T>()
                 .check_new_service::<T, Req>()
                 .push_switch(
@@ -53,6 +50,7 @@ impl<N> Outbound<N> {
                     },
                     stk.into_inner(),
                 )
+                .check_new::<T>()
                 .check_new_service::<T, Req>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
@@ -69,24 +67,23 @@ impl<N> Outbound<N> {
     >
     where
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+        Req: Send + 'static,
         N: svc::NewService<T, Service = NSvc>,
         N: Clone + Send + Sync + 'static,
-        Req: Send + 'static,
-        NSvc: svc::Service<Req, Response = (), Error = Error> + Send + 'static,
+        NSvc: svc::Service<Req, Error = Error> + Send + 'static,
         NSvc::Future: Send,
     {
         self.map_stack(|config, rt, stk| {
             stk.push_on_service(
-                svc::layers().push(
-                    rt.metrics
-                        .proxy
-                        .stack
-                        .layer(crate::stack_labels("tcp", "discover")),
-                ),
+                rt.metrics
+                    .proxy
+                    .stack
+                    .layer(crate::stack_labels("tcp", "discover")),
             )
             .push(svc::NewQueue::layer_via(config.tcp_connection_queue))
             .push_idle_cache(config.discovery_idle_timeout)
             .push(svc::ArcNewService::layer())
+            .check_new_service::<T, Req>()
         })
     }
 }

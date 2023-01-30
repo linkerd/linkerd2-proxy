@@ -1,4 +1,4 @@
-use crate::{proto, LookupAddr, Profile, Receiver};
+use crate::{proto, LookupAddr, Profile, Receiver, RecoverDefault};
 use futures::prelude::*;
 use http_body::Body;
 use linkerd2_proxy_api::destination::{self as api, destination_client::DestinationClient};
@@ -42,6 +42,14 @@ where
         Self {
             watch: StreamWatch::new(recover, Inner::new(context_token.into(), inner)),
         }
+    }
+
+    pub fn new_recover_default(
+        recover: R,
+        inner: S,
+        context_token: impl Into<Arc<str>>,
+    ) -> RecoverDefault<Self> {
+        RecoverDefault::new(Self::new(recover, inner, context_token))
     }
 }
 

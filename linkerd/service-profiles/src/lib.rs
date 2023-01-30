@@ -20,11 +20,10 @@ use tower::util::{Oneshot, ServiceExt};
 
 mod client;
 mod default;
-mod discover;
 pub mod http;
 mod proto;
 
-pub use self::{client::Client, discover::Discover};
+pub use self::{client::Client, default::RecoverDefault};
 
 #[derive(Clone, Debug)]
 pub struct Receiver {
@@ -74,9 +73,9 @@ pub enum DiscoveryRejected {
 }
 
 /// Watches a destination's Profile.
-pub trait GetProfile {
+pub trait GetProfile: Clone + Send + Sync + Unpin + 'static {
     type Error: Into<Error>;
-    type Future: Future<Output = Result<Option<Receiver>, Self::Error>>;
+    type Future: Future<Output = Result<Option<Receiver>, Self::Error>> + Send + Unpin;
 
     fn get_profile(&mut self, target: LookupAddr) -> Self::Future;
 
@@ -90,8 +89,14 @@ pub trait GetProfile {
 
 impl<S> GetProfile for S
 where
-    S: tower::Service<LookupAddr, Response = Option<Receiver>> + Clone,
+    S: tower::Service<LookupAddr, Response = Option<Receiver>>
+        + Clone
+        + Send
+        + Sync
+        + Unpin
+        + 'static,
     S::Error: Into<Error>,
+    S::Future: Send + Unpin,
 {
     type Error = S::Error;
     type Future = Oneshot<S, LookupAddr>;

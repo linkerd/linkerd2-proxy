@@ -41,7 +41,7 @@ pub use self::{
     filter::{Filter, FilterLayer, Predicate},
     lazy::{Lazy, NewLazy},
     loadshed::{LoadShed, LoadShedError},
-    map_err::{MapErr, NewMapErr, WrapErr},
+    map_err::{MapErr, MapErrBoxed, NewMapErr, WrapErr},
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
     new_service::{NewCloneService, NewFromTargets, NewFromTargetsInner, NewService},
@@ -60,6 +60,11 @@ pub use tower::{
     util::{self, future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},
     Service,
 };
+
+pub type BoxFutureService<S, E = linkerd_error::Error> = FutureService<
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<S, E>> + Send + 'static>>,
+    S,
+>;
 
 /// Describes a stack target that can produce `T` typed parameters.
 ///
