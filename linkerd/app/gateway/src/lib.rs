@@ -163,7 +163,7 @@ where
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 ),
             )
-            .push(svc::NewQueue::layer_with_timeout_via(
+            .push(svc::NewQueue::layer_via(
                 outbound.config().tcp_connection_queue,
             ))
             .push_idle_cache(outbound.config().discovery_idle_timeout)
@@ -217,9 +217,7 @@ where
                         .layer(metrics::StackLabels::inbound("http", "gateway")),
                 ),
             )
-            .push(svc::NewQueue::layer_with_timeout_via(
-                inbound_config.http_request_queue,
-            ))
+            .push(svc::NewQueue::layer_via(inbound_config.http_request_queue))
             .push_idle_cache(inbound_config.discovery_idle_timeout)
             .push_on_service(
                 svc::layers()
