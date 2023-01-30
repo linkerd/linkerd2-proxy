@@ -166,7 +166,7 @@ where
             .push(svc::NewQueue::layer_via(
                 outbound.config().tcp_connection_queue,
             ))
-            .push_idle_cache(outbound.config().discovery_idle_timeout)
+            .push_new_idle_cached(outbound.config().discovery_idle_timeout)
             .check_new_service::<NameAddr, I>()
     };
 
@@ -218,7 +218,7 @@ where
                 ),
             )
             .push(svc::NewQueue::layer_via(inbound_config.http_request_queue))
-            .push_idle_cache(inbound_config.discovery_idle_timeout)
+            .push_new_idle_cached(inbound_config.discovery_idle_timeout)
             .push_on_service(
                 svc::layers()
                     .push(http::Retain::layer())
