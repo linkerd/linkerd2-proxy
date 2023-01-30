@@ -5,7 +5,7 @@ use http::header::{HeaderName, HeaderValue};
 use linkerd_error::Error;
 use rand::thread_rng;
 
-use tracing::{trace, warn};
+use tracing::{debug, trace};
 
 use super::{decode_id_with_padding, get_header_str, Propagation, TraceContext, UnknownFieldId};
 
@@ -24,7 +24,7 @@ const GRPC_TRACE_FIELD_TRACE_OPTIONS: u8 = 2;
 pub fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
     let span_id = Id::new_span_id(&mut thread_rng());
 
-    trace!(message = "incremented span id", %span_id);
+    trace!(%span_id, "Incremented span id");
 
     let mut bytes = Vec::<u8>::new();
 
@@ -45,10 +45,10 @@ pub fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &Trace
 
     let bytes_b64 = base64::encode(&bytes);
 
-    if let Result::Ok(hv) = HeaderValue::from_str(&bytes_b64) {
+    if let Ok(hv) = HeaderValue::from_str(&bytes_b64) {
         request.headers_mut().insert(&GRPC_TRACE_HEADER, hv);
     } else {
-        warn!("invalid header: {:?}", &bytes_b64);
+        debug!(header = %GRPC_TRACE_HEADER, header_value = %bytes_b64, "Header value contains invalid ASCII characters");
     }
     span_id
 }
@@ -56,14 +56,14 @@ pub fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &Trace
 pub fn increment_http_span_id<B>(request: &mut http::Request<B>) -> Id {
     let span_id = Id::new_span_id(&mut thread_rng());
 
-    trace!("incremented span id: {span_id}");
+    trace!(%span_id, "Incremented span id");
 
     let span_str = hex::encode(span_id.as_ref());
 
     if let Ok(hv) = HeaderValue::from_str(&span_str) {
         request.headers_mut().insert(&HTTP_SPAN_ID_HEADER, hv);
     } else {
-        warn!("invalid {HTTP_SPAN_ID_HEADER} header: {span_str:?}");
+        debug!(header = %HTTP_SPAN_ID_HEADER, header_value = %span_str, "Header value contains invalid ASCII characters");
     }
     span_id
 }
@@ -72,7 +72,7 @@ pub fn unpack_grpc_trace_context<B>(request: &http::Request<B>) -> Option<TraceC
     get_header_str(request, &GRPC_TRACE_HEADER)
         .and_then(|header_str| {
             base64::decode(header_str)
-                .map_err(|e| warn!("trace header {GRPC_TRACE_HEADER} is not base64 encoded: {e}"))
+                .map_err(|error| debug!(header = %GRPC_TRACE_HEADER, header_value = %header_str, %error, "Failed to unpack trace context due to invalid base64 encoding"))
                 .ok()
         })
         .and_then(|vec| {
@@ -97,7 +97,7 @@ pub fn unpack_http_trace_context<B>(request: &http::Request<B>) -> Option<TraceC
 }
 
 fn parse_grpc_trace_context_fields(buf: &mut Bytes) -> Option<TraceContext> {
-    trace!(message = "reading binary trace context", ?buf);
+    trace!(?buf, "Reading binary trace context");
 
     let _version = try_split_to(buf, 1).ok()?;
 
@@ -112,8 +112,8 @@ fn parse_grpc_trace_context_fields(buf: &mut Bytes) -> Option<TraceContext> {
         match parse_grpc_trace_context_field(buf, &mut context) {
             Ok(()) => {}
             Err(ref e) if e.is::<UnknownFieldId>() => break,
-            Err(e) => {
-                warn!("error parsing {GRPC_TRACE_HEADER} header: {e}");
+            Err(error) => {
+                debug!(header = %GRPC_TRACE_HEADER, %error, "Failed to parse trace context header");
                 return None;
             }
         };
@@ -129,17 +129,17 @@ fn parse_grpc_trace_context_field(
     match field_id {
         GRPC_TRACE_FIELD_SPAN_ID => {
             let id = try_split_to(buf, 8)?;
-            trace!("reading binary trace field {GRPC_TRACE_FIELD_SPAN_ID:?}: {id:?}");
+            trace!("Reading binary trace field {GRPC_TRACE_FIELD_SPAN_ID:?}: {id:?}");
             context.parent_id = id.into();
         }
         GRPC_TRACE_FIELD_TRACE_ID => {
             let id = try_split_to(buf, 16)?;
-            trace!("reading binary trace field {GRPC_TRACE_FIELD_TRACE_ID:?}: {id:?}",);
+            trace!("Reading binary trace field {GRPC_TRACE_FIELD_TRACE_ID:?}: {id:?}",);
             context.trace_id = id.into();
         }
         GRPC_TRACE_FIELD_TRACE_OPTIONS => {
             let flags = try_split_to(buf, 1)?;
-            trace!("reading binary trace field {GRPC_TRACE_FIELD_TRACE_OPTIONS:?}: {flags:?}",);
+            trace!("Reading binary trace field {GRPC_TRACE_FIELD_TRACE_OPTIONS:?}: {flags:?}",);
             context.flags = flags.try_into()?;
         }
         id => {
