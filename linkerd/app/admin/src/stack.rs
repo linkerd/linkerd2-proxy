@@ -100,7 +100,7 @@ impl Config {
             .push(Rescue::layer())
             .push_on_service(http::BoxResponse::layer())
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
-            .push_request_filter(
+            .push_filter(
                 |(http, tcp): (
                     Result<Option<http::Version>, detect::DetectTimeoutError<_>>,
                     Tcp,

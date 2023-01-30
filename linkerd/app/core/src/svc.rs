@@ -111,7 +111,7 @@ impl<S> Stack<S> {
         self.push(stack::MapTargetLayer::new(map_target))
     }
 
-    pub fn push_request_filter<F: Clone>(self, filter: F) -> Stack<stack::Filter<S, F>> {
+    pub fn push_filter<F: Clone>(self, filter: F) -> Stack<stack::Filter<S, F>> {
         self.push(stack::Filter::<S, F>::layer(filter))
     }
 
@@ -200,7 +200,7 @@ impl<S> Stack<S> {
         self.push(http::insert::NewResponseInsert::layer())
     }
 
-    pub fn push_idle_cache<T>(self, idle: Duration) -> Stack<idle_cache::NewIdleCached<T, S>>
+    pub fn push_new_idle_cached<T>(self, idle: Duration) -> Stack<idle_cache::NewIdleCached<T, S>>
     where
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         S: NewService<T> + 'static,

@@ -200,7 +200,7 @@ impl Inbound<()> {
                 // Limits the time we wait for a connection to be established.
                 .push_connect_timeout(*timeout)
                 // Prevent connections that would target the inbound proxy port from looping.
-                .push_request_filter(move |t: T| {
+                .push_filter(move |t: T| {
                     let addr = t.param();
                     let port = addr.port();
                     if port == proxy_port {
