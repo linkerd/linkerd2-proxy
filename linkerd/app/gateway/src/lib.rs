@@ -28,20 +28,27 @@ pub struct Config {
     pub allow_discovery: NameMatch,
 }
 
+/// A target type describing an HTTP gateway connection from an inbound proxy,
+/// including enough information to enforce inbound policy on the gatewayed
+/// requests.
 #[derive(Clone, Debug)]
-struct HttpWithClient {
-    http: Http,
+struct InboundHttp {
     client: ClientInfo,
     inbound_policy: policy::AllowPolicy,
+    outbound: OutboundHttp,
 }
 
+/// A target type describing outbound HTTP traffic.
 #[derive(Clone, Debug)]
-struct Http {
+struct OutboundHttp {
     target: NameAddr,
     profile: Option<profiles::Receiver>,
     version: http::Version,
 }
 
+/// A target type describing an opaque gateway connection from an inbound proxy,
+/// including enough informatiion to enforce inbound policy on the gatewayed
+/// connection.
 #[derive(Clone, Debug)]
 struct Opaque {
     target: NameAddr,
@@ -50,8 +57,14 @@ struct Opaque {
     profile: profiles::Receiver,
 }
 
+/// Implements `svc::router::SelectRoute` for outbound HTTP requests. An
+/// `OutboundHttp` target is returned for each request using the request's HTTP
+/// version.
+///
+/// The request's HTTP version may not match the target's original HTTP version
+/// when proxies use HTTP/2 to transport HTTP/1 requests.
 #[derive(Clone, Debug)]
-struct ByRequestVersion(Http);
+struct ByRequestVersion(OutboundHttp);
 
 #[derive(Debug, Default, Error)]
 #[error("a named target must be provided on gateway connections")]
@@ -104,7 +117,9 @@ where
                     .push_on_service(svc::LoadShed::layer())
                     .lift_new()
                     .push(svc::NewOneshotRoute::layer_via(
-                        |(_permit, http): &(_, HttpWithClient)| ByRequestVersion(http.http.clone()),
+                        |(_permit, http): &(_, InboundHttp)| {
+                            ByRequestVersion(http.outbound.clone())
+                        },
                     ))
                     .push(inbound.authorize_http())
                     .push_http_insert_target::<tls::ClientId>()
@@ -112,18 +127,18 @@ where
             )
             .push_http_server()
             .into_stack()
-            .check_new_service::<HttpWithClient, I>()
+            .check_new_service::<InboundHttp, I>()
     };
 
     let protocol = http
-        .check_new_service::<HttpWithClient, I>()
+        .check_new_service::<InboundHttp, I>()
         .push_switch(
             |(profile, gth): (Option<profiles::Receiver>, GatewayTransportHeader)| -> Result<_, Error> {
                 if let Some(proto) = gth.protocol {
-                    return Ok(svc::Either::A(HttpWithClient {
+                    return Ok(svc::Either::A(InboundHttp {
                         client: gth.client,
                         inbound_policy: gth.policy,
-                        http: Http {
+                        outbound: OutboundHttp {
                             profile,
                             target: gth.target,
                             version: match proto {
@@ -188,7 +203,7 @@ fn new_http<O, R>(
     outbound: Outbound<O>,
     resolve: R,
 ) -> svc::ArcNewService<
-    Http,
+    OutboundHttp,
     impl svc::Service<
         http::Request<http::BoxBody>,
         Response = http::Response<http::BoxBody>,
@@ -215,7 +230,7 @@ where
         .push_switch(Ok::<_, Infallible>, endpoint.into_stack())
         .push(NewHttpGateway::layer(local_id))
         .push(svc::ArcNewService::layer())
-        .check_new::<Http>()
+        .check_new::<OutboundHttp>()
         .into_inner()
 }
 
@@ -288,53 +303,53 @@ where
         .into_inner()
 }
 
-// === impl Http ===
+// === impl OutboundHttp ===
 
-impl Param<http::Version> for Http {
+impl Param<http::Version> for OutboundHttp {
     fn param(&self) -> http::Version {
         self.version
     }
 }
 
-// === impl HttpWithClient ===
+// === impl InboundHttp ===
 
-impl Param<http::normalize_uri::DefaultAuthority> for HttpWithClient {
+impl Param<http::normalize_uri::DefaultAuthority> for InboundHttp {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(Some(self.http.target.as_http_authority()))
+        http::normalize_uri::DefaultAuthority(Some(self.outbound.target.as_http_authority()))
     }
 }
 
-impl Param<Option<identity::Name>> for HttpWithClient {
+impl Param<Option<identity::Name>> for InboundHttp {
     fn param(&self) -> Option<identity::Name> {
         Some(self.client.client_id.clone().0)
     }
 }
 
-impl Param<http::Version> for HttpWithClient {
+impl Param<http::Version> for InboundHttp {
     fn param(&self) -> http::Version {
-        self.http.version
+        self.outbound.version
     }
 }
 
-impl Param<tls::ClientId> for HttpWithClient {
+impl Param<tls::ClientId> for InboundHttp {
     fn param(&self) -> tls::ClientId {
         self.client.client_id.clone()
     }
 }
 
-impl Param<OrigDstAddr> for HttpWithClient {
+impl Param<OrigDstAddr> for InboundHttp {
     fn param(&self) -> OrigDstAddr {
         self.client.local_addr
     }
 }
 
-impl Param<Remote<ClientAddr>> for HttpWithClient {
+impl Param<Remote<ClientAddr>> for InboundHttp {
     fn param(&self) -> Remote<ClientAddr> {
         self.client.client_addr
     }
 }
 
-impl Param<tls::ConditionalServerTls> for HttpWithClient {
+impl Param<tls::ConditionalServerTls> for InboundHttp {
     fn param(&self) -> tls::ConditionalServerTls {
         tls::ConditionalServerTls::Some(tls::ServerTls::Established {
             client_id: Some(self.client.client_id.clone()),
@@ -343,13 +358,13 @@ impl Param<tls::ConditionalServerTls> for HttpWithClient {
     }
 }
 
-impl Param<policy::AllowPolicy> for HttpWithClient {
+impl Param<policy::AllowPolicy> for InboundHttp {
     fn param(&self) -> policy::AllowPolicy {
         self.inbound_policy.clone()
     }
 }
 
-impl Param<policy::ServerLabel> for HttpWithClient {
+impl Param<policy::ServerLabel> for InboundHttp {
     fn param(&self) -> policy::ServerLabel {
         self.inbound_policy.server_label()
     }
@@ -358,11 +373,11 @@ impl Param<policy::ServerLabel> for HttpWithClient {
 // === impl ByRequestVersion ===
 
 impl<B> svc::router::SelectRoute<http::Request<B>> for ByRequestVersion {
-    type Key = Http;
+    type Key = OutboundHttp;
     type Error = Error;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
-        Ok(Http {
+        Ok(OutboundHttp {
             version: req.version().try_into()?,
             ..self.0.clone()
         })

@@ -1,4 +1,4 @@
-use super::Http;
+use super::OutboundHttp;
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     dns,
@@ -43,7 +43,7 @@ impl<O> NewHttpGateway<O> {
     }
 }
 
-impl<O> svc::NewService<Http> for NewHttpGateway<O>
+impl<O> svc::NewService<OutboundHttp> for NewHttpGateway<O>
 where
     O: svc::NewService<svc::Either<outbound::http::Logical, outbound::http::Endpoint>>
         + Send
@@ -52,7 +52,7 @@ where
 {
     type Service = HttpGateway<O::Service>;
 
-    fn new_service(&self, http: Http) -> Self::Service {
+    fn new_service(&self, http: OutboundHttp) -> Self::Service {
         let local_id = self.local_id.clone();
         let profile = match http.profile {
             Some(profile) => profile,

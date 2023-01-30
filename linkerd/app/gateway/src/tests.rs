@@ -113,8 +113,8 @@ impl Test {
         );
 
         let gateway = svc::stack(new)
-            .check_new_service::<Http, http::Request<http::BoxBody>>()
-            .new_service(Http {
+            .check_new_service::<OutboundHttp, http::Request<http::BoxBody>>()
+            .new_service(OutboundHttp {
                 profile,
                 target: target.clone(),
                 version: http::Version::Http1,
