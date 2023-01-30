@@ -172,7 +172,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                                     .layer(stack_labels("http", "logical")),
                             )
                     )
-                    .push(svc::NewQueue::layer_with_timeout_via(*http_request_queue))
+                    .push(svc::NewQueue::layer_via(*http_request_queue))
                     // Caches the profile-based stack so that it can be reused across
                     // multiple requests to the same canonical destination.
                     .push_idle_cache(*discovery_idle_timeout)

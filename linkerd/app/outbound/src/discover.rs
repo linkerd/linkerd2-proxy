@@ -84,9 +84,7 @@ impl<N> Outbound<N> {
                         .layer(crate::stack_labels("tcp", "discover")),
                 ),
             )
-            .push(svc::NewQueue::layer_with_timeout_via(
-                config.tcp_connection_queue,
-            ))
+            .push(svc::NewQueue::layer_via(config.tcp_connection_queue))
             .push_idle_cache(config.discovery_idle_timeout)
             .push(svc::ArcNewService::layer())
         })

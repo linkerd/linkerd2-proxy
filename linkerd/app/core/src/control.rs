@@ -127,7 +127,7 @@ impl Config {
             // This buffer allows a resolver client to be shared across stacks.
             // No load shed is applied here, however, so backpressure may leak
             // into the caller task.
-            .push(svc::NewQueue::layer_with_timeout_via(self.buffer));
+            .push(svc::NewQueueWithoutTimeout::layer_via(self.buffer));
 
         balance
             .push(self::add_origin::layer())
