@@ -21,7 +21,7 @@ pub struct Timeout(pub time::Duration);
 pub struct NewQueue<X, Req, N> {
     inner: N,
     extract: X,
-    _req: PhantomData<fn(Req, Z)>,
+    _req: PhantomData<fn(Req)>,
 }
 
 /// A [`NewService`] that wraps inner services in a [`Buffer`] **without** a
