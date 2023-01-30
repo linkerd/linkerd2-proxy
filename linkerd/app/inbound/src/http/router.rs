@@ -234,7 +234,7 @@ impl<C> Inbound<C> {
                     svc::layers()
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
                 )
-                .push(svc::NewQueue::layer_fixed(config.http_request_buffer))
+                .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .push_idle_cache(config.discovery_idle_timeout)
                 .push_on_service(
                     svc::layers()

@@ -21,7 +21,7 @@ pub mod monitor;
 pub mod new_service;
 mod on_service;
 pub mod proxy;
-mod queue;
+pub mod queue;
 mod result;
 mod switch_ready;
 mod thunk;
@@ -37,7 +37,7 @@ pub use self::{
     either::{Either, NewEither},
     fail::Fail,
     fail_on_error::FailOnError,
-    failfast::{FailFast, FailFastError},
+    failfast::{FailFast, FailFastError, Gate},
     filter::{Filter, FilterLayer, Predicate},
     lazy::{Lazy, NewLazy},
     loadshed::{LoadShed, LoadShedError},
@@ -47,7 +47,7 @@ pub use self::{
     new_service::{NewCloneService, NewFromTargets, NewFromTargetsInner, NewService},
     on_service::{OnService, OnServiceLayer},
     proxy::Proxy,
-    queue::{NewQueue, QueueConfig},
+    queue::{NewQueue, NewQueueWithoutTimeout, Queue, QueueWithoutTimeout},
     result::ResultService,
     switch_ready::{NewSwitchReady, SwitchReady},
     thunk::{NewThunk, Thunk, ThunkClone},

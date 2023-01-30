@@ -48,8 +48,8 @@ pub(crate) fn default_config() -> Config {
         },
         inbound_ips: Default::default(),
         discovery_idle_timeout: Duration::from_secs(60),
-        tcp_connection_buffer: buffer,
-        http_request_buffer: buffer,
+        tcp_connection_queue: buffer,
+        http_request_queue: buffer,
     }
 }
 
