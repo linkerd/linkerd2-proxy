@@ -64,7 +64,7 @@ fn get_header_str<'a, B>(
 ) -> Option<&'a str> {
     let hv = request.headers().get(header)?;
     hv.to_str()
-        .map_err(|_| debug!(header_value = %header, "Trace header value contains invalid ASCII characters"))
+        .map_err(|_| debug!(header_value = %header, "Invalid non-ASCII or control character in header value"))
         .ok()
 }
 

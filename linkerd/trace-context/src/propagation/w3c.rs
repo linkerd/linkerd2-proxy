@@ -82,9 +82,13 @@ fn parse_context(header_value: &str) -> Option<TraceContext> {
 // is all 0 value it is considered invalid according to the spec.
 // <https://www.w3.org/TR/trace-context-1/#trace-id>
 fn parse_header_value(next_header_value: &str, pad_to: usize) -> Option<(Id, &str)> {
-    next_header_value
+    let next_parse_result = next_header_value
         .split_once('-')
-        .filter(|(id, _rest)| !id.chars().all(|c| c == '0'))
+        .filter(|(id, _)| !id.chars().all(|c| c == '0'));
+    if next_parse_result.is_none() {
+        debug!(header = %HTTP_TRACEPARENT, "Id in header value contains invalid all zeros value");
+    }
+    next_parse_result
         .and_then(|(id, rest)| decode_id_with_padding(id, pad_to)
                   .map_err(|error| debug!(header = %HTTP_TRACEPARENT, %error, %id, "Id in header value contains invalid hex"))
                   .ok()
