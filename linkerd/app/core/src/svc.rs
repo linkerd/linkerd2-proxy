@@ -200,7 +200,7 @@ impl<S> Stack<S> {
         self.push(http::insert::NewResponseInsert::layer())
     }
 
-    pub fn push_new_idle_cache<T>(self, idle: Duration) -> Stack<idle_cache::NewIdleCached<T, S>>
+    pub fn push_new_idle_cached<T>(self, idle: Duration) -> Stack<idle_cache::NewIdleCached<T, S>>
     where
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         S: NewService<T> + 'static,

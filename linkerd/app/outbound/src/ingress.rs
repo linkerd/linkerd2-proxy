@@ -170,7 +170,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     .push(svc::NewQueue::layer_via(*http_request_queue))
                     // Caches the profile-based stack so that it can be reused across
                     // multiple requests to the same canonical destination.
-                    .push_new_idle_cache(*discovery_idle_timeout)
+                    .push_new_idle_cached(*discovery_idle_timeout)
                     .push_on_service(
                         svc::layers()
                             .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
