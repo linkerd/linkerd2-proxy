@@ -76,6 +76,7 @@ where
     O::Connection: Send + Unpin,
     O::Future: Send + Unpin + 'static,
     P: profiles::GetProfile<Error = Error>,
+    P: profiles::GetProfile<Error = Error>,
     R: Clone + Send + Sync + Unpin + 'static,
     R: Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
     <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,

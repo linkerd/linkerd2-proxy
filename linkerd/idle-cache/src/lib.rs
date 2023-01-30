@@ -340,6 +340,8 @@ impl<V> Cached<V> {
 }
 
 impl<T> Cached<T> {
+    /// Wraps the provided `U` typed value so that the underlying cache registry
+    /// is bound to the new value's lifetime.
     pub fn clone_with<U>(&self, inner: U) -> Cached<U> {
         Cached {
             inner,
