@@ -1,7 +1,7 @@
 use crate::propagation::try_split_to;
 use crate::{Flags, Id};
 use bytes::Bytes;
-use http::header::HeaderValue;
+use http::header::{HeaderName, HeaderValue};
 use linkerd_error::Error;
 use rand::thread_rng;
 
@@ -9,15 +9,11 @@ use tracing::{trace, warn};
 
 use super::{decode_id_with_padding, get_header_str, Propagation, TraceContext, UnknownFieldId};
 
-static HTTP_TRACE_ID_HEADER: http::header::HeaderName =
-    http::header::HeaderName::from_static("x-b3-traceid");
-static HTTP_SPAN_ID_HEADER: http::header::HeaderName =
-    http::header::HeaderName::from_static("x-b3-spanid");
-static HTTP_SAMPLED_HEADER: http::header::HeaderName =
-    http::header::HeaderName::from_static("x-b3-sampled");
+static HTTP_TRACE_ID_HEADER: HeaderName = HeaderName::from_static("x-b3-traceid");
+static HTTP_SPAN_ID_HEADER: HeaderName = HeaderName::from_static("x-b3-spanid");
+static HTTP_SAMPLED_HEADER: HeaderName = HeaderName::from_static("x-b3-sampled");
 
-static GRPC_TRACE_HEADER: http::header::HeaderName =
-    http::header::HeaderName::from_static("grpc-trace-bin");
+static GRPC_TRACE_HEADER: HeaderName = HeaderName::from_static("grpc-trace-bin");
 const GRPC_TRACE_FIELD_TRACE_ID: u8 = 0;
 const GRPC_TRACE_FIELD_SPAN_ID: u8 = 1;
 const GRPC_TRACE_FIELD_TRACE_OPTIONS: u8 = 2;
@@ -155,7 +151,7 @@ fn parse_grpc_trace_context_field(
 
 fn parse_header_id<B>(
     request: &http::Request<B>,
-    header: &http::header::HeaderName,
+    header: &HeaderName,
     pad_to: usize,
 ) -> Option<Id> {
     let header_value = get_header_str(request, header)?;

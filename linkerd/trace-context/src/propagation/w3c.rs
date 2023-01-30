@@ -1,10 +1,10 @@
+use http::header::HeaderName;
 use tracing::{trace, warn};
 
 use super::{decode_id_with_padding, get_header_str, Propagation, TraceContext};
 use crate::{Flags, Id};
 
-static HTTP_TRACEPARENT: http::header::HeaderName =
-    http::header::HeaderName::from_static("traceparent");
+static HTTP_TRACEPARENT: HeaderName = HeaderName::from_static("traceparent");
 const VERSION_00: &str = "00";
 
 pub fn unpack_w3c_trace_context<B>(request: &http::Request<B>) -> Option<TraceContext> {
