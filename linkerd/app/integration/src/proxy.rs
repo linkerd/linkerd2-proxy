@@ -288,7 +288,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         Some(policy) => policy,
         None => {
             controller::policy()
-                .with_inbound_default(Default::default())
+                .with_inbound_default(policy::default_allow())
                 .run()
                 .await
         }

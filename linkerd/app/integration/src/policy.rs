@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic as grpc;
 
-pub use linkerd2_proxy_api::inbound;
+pub use linkerd2_proxy_api::{self as api, inbound};
 
 #[derive(Clone, Debug, Default)]
 pub struct Controller {
@@ -19,6 +19,40 @@ pub struct Controller {
 pub struct InboundSender(mpsc::UnboundedSender<Result<inbound::Server, grpc::Status>>);
 
 type InboundReceiver = UnboundedReceiverStream<Result<inbound::Server, grpc::Status>>;
+
+pub fn default_allow() -> inbound::Server {
+    inbound::Server {
+        protocol: Some(inbound::ProxyProtocol {
+            kind: Some(inbound::proxy_protocol::Kind::Detect(
+                inbound::proxy_protocol::Detect {
+                    timeout: Some(Duration::from_secs(10).try_into().unwrap()),
+                    http_routes: vec![],
+                },
+            )),
+        }),
+        authorizations: vec![inbound::Authz {
+            networks: vec![inbound::Network {
+                net: Some("0.0.0.0/0".parse::<ipnet::IpNet>().unwrap().into()),
+                except: Vec::new(),
+            }],
+            authentication: Some(inbound::Authn {
+                permit: Some(inbound::authn::Permit::Unauthenticated(
+                    inbound::authn::PermitUnauthenticated {},
+                )),
+            }),
+            labels: Default::default(),
+            metadata: Some(api::meta::Metadata {
+                kind: Some(api::meta::metadata::Kind::Default(
+                    "all-unauthenticated".into(),
+                )),
+            }),
+        }],
+        server_ips: vec![],
+        labels: maplit::hashmap![
+            "name".into() => "default".into(),
+        ],
+    }
+}
 
 impl Controller {
     pub fn new() -> Self {
