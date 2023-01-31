@@ -198,6 +198,7 @@ where
                 tracing::debug!("Passing request to outbound");
                 Box::pin(outbound.call(request).map_err(Into::into))
             }
+
             Self::BadDomain(..) => Box::pin(future::err(GatewayDomainInvalid.into())),
         }
     }

@@ -89,7 +89,6 @@ where
     O::Connection: Send + Unpin,
     O::Future: Send + Unpin + 'static,
     P: profiles::GetProfile<Error = Error>,
-    P: profiles::GetProfile<Error = Error>,
     R: Clone + Send + Sync + Unpin + 'static,
     R: Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
     <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,
@@ -193,11 +192,11 @@ where
         .into_inner()
 }
 
-// Cache an HTTP gateway service for each destination and HTTP version.
-//
-// The client's ID is set as a request extension, as required by the
-// gateway. This permits gateway services (and profile resolutions) to be
-// cached per target, shared across clients.
+/// Builds an outbound HTTP stack.
+///
+/// A gateway-specififc module is inserted to requests from looping through
+/// gateways. Discovery errors are lifted into the HTTP stack so that individual
+/// requests are failed with an HTTP-level error repsonse.
 fn new_http<O, R>(
     local_id: identity::LocalId,
     outbound: Outbound<O>,
@@ -234,6 +233,10 @@ where
         .into_inner()
 }
 
+/// Builds an outbound opaque stack.
+///
+/// Requires that the connection targets either a logical service or a known
+/// endpoint.
 fn new_opaque<I, O, R>(
     outbound: Outbound<O>,
     resolve: R,
@@ -252,16 +255,6 @@ where
     <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,
     <R as Resolve<outbound::tcp::Concrete>>::Future: Send + Unpin,
 {
-    // For each gatewayed connection that is *not* HTTP, use the target from the
-    // transport header to lookup a service profile. If the profile includes a
-    // resolvable service name, then continue with TCP endpoint resolution,
-    // balancing, and forwarding. If the profile includes an endpoint instead
-    // of a logical address, then connect to endpoint directly and avoid
-    // balancing.
-    //
-    // TODO: We should use another target type that actually reflects
-    // reality. But the outbound stack is currently pretty tightly
-    // coupled to its target types.
     let logical = outbound
         .clone()
         .push_tcp_endpoint()
