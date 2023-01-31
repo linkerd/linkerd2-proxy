@@ -163,6 +163,7 @@ pub mod client;
 pub mod controller;
 pub mod identity;
 pub mod metrics;
+pub mod policy;
 pub mod proxy;
 pub mod server;
 pub mod tap;
