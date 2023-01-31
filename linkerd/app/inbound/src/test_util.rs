@@ -41,8 +41,15 @@ pub fn default_config() -> Config {
     let policy = policy::Config {
         control: control::Config {
             addr: control::ControlAddr {
-                addr: "policy.linkerd.svc.cluster.local".parse().unwrap(),
-                identity: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
+                addr: "policy.linkerd.svc.cluster.local:8090"
+                    .parse()
+                    .expect("control addr must be valid"),
+                identity: tls::ConditionalClientTls::Some(tls::ClientTls {
+                    server_id: "policy.linkerd.serviceaccount.identity.linkerd.cluster.local"
+                        .parse()
+                        .expect("control identity name must be valid"),
+                    alpn: None,
+                }),
             },
             connect: connect.clone(),
             buffer: QueueConfig {
