@@ -1,7 +1,7 @@
-use super::HttpTarget;
+use super::OutboundHttp;
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
-    dns, profiles,
+    dns,
     proxy::http,
     svc::{self, layer},
     tls, Error, NameAddr,
@@ -16,13 +16,13 @@ use std::{
 use tracing::{debug, warn};
 
 #[derive(Clone, Debug)]
-pub(crate) struct NewGateway<O> {
+pub(crate) struct NewHttpGateway<O> {
     outbound: O,
     local_id: tls::LocalId,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum Gateway<O> {
+pub(crate) enum HttpGateway<O> {
     BadDomain(dns::Name),
     Outbound {
         outbound: O,
@@ -31,11 +31,9 @@ pub(crate) enum Gateway<O> {
     },
 }
 
-pub(crate) type Target = (Option<profiles::Receiver>, HttpTarget);
+// === impl NewHttpGateway ===
 
-// === impl NewGateway ===
-
-impl<O> NewGateway<O> {
+impl<O> NewHttpGateway<O> {
     pub fn new(outbound: O, local_id: tls::LocalId) -> Self {
         Self { outbound, local_id }
     }
@@ -45,27 +43,35 @@ impl<O> NewGateway<O> {
     }
 }
 
-impl<O> svc::NewService<Target> for NewGateway<O>
+impl<O> svc::NewService<OutboundHttp> for NewHttpGateway<O>
 where
     O: svc::NewService<svc::Either<outbound::http::Logical, outbound::http::Endpoint>>
         + Send
         + Clone
         + 'static,
 {
-    type Service = Gateway<O::Service>;
+    type Service = HttpGateway<O::Service>;
 
-    fn new_service(&self, (profile, http): Target) -> Self::Service {
+    fn new_service(&self, http: OutboundHttp) -> Self::Service {
         let local_id = self.local_id.clone();
-        let profile = match profile {
+        let profile = match http.profile {
             Some(profile) => profile,
-            None => return Gateway::BadDomain(http.target.name().clone()),
+            None => return HttpGateway::BadDomain(http.target.name().clone()),
         };
 
         // Create an outbound target using the endpoint from the profile.
         if let Some((addr, metadata)) = profile.endpoint() {
             debug!("Creating outbound endpoint");
-            // Create empty list of inbound ips, TLS shouldn't be skipped in
-            // this case.
+            // This assumes that the resolved endpoint isn't the local IP.
+            // That's _probably_ the case, but it's not guaranteed.
+            //
+            // If the endpoint does target the local gateway IP, connections
+            // will loop through the proxy. The `HttpGateway` service should
+            // detect this loop based on headers.
+            //
+            // TODO(ver) We should eagerly fail connections that target the
+            // inbound IP. We don't want to support looping through the gateway.
+            let inbound_ips = Default::default();
             let svc = self
                 .outbound
                 .new_service(svc::Either::B(outbound::http::Endpoint::from((
@@ -75,17 +81,15 @@ where
                         metadata,
                         tls::NoClientTls::NotProvidedByServiceDiscovery,
                         profile.is_opaque_protocol(),
-                        // Address would not be a local IP so always treat
-                        // target as remote in this case.
-                        &Default::default(),
+                        &inbound_ips,
                     ),
                 ))));
-            return Gateway::new(svc, http.target, local_id);
+            return HttpGateway::new(svc, http.target, local_id);
         }
 
         let logical_addr = match profile.logical_addr() {
             Some(addr) => addr,
-            None => return Gateway::BadDomain(http.target.name().clone()),
+            None => return HttpGateway::BadDomain(http.target.name().clone()),
         };
 
         // Create an outbound target using the resolved name and an address
@@ -100,16 +104,16 @@ where
                 logical_addr,
             }));
 
-        Gateway::new(svc, http.target, local_id)
+        HttpGateway::new(svc, http.target, local_id)
     }
 }
 
-// === impl Gateway ===
+// === impl HttpGateway ===
 
-impl<O> Gateway<O> {
+impl<O> HttpGateway<O> {
     pub fn new(outbound: O, dst: NameAddr, local_identity: tls::LocalId) -> Self {
         let host = dst.as_http_authority().to_string();
-        Gateway::Outbound {
+        HttpGateway::Outbound {
             outbound,
             local_identity,
             host,
@@ -119,7 +123,7 @@ impl<O> Gateway<O> {
 
 type ResponseFuture<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 'static>>;
 
-impl<B, O> tower::Service<http::Request<B>> for Gateway<O>
+impl<B, O> tower::Service<http::Request<B>> for HttpGateway<O>
 where
     B: http::HttpBody + 'static,
     O: tower::Service<http::Request<B>, Response = http::Response<http::BoxBody>>,
@@ -194,6 +198,7 @@ where
                 tracing::debug!("Passing request to outbound");
                 Box::pin(outbound.call(request).map_err(Into::into))
             }
+
             Self::BadDomain(..) => Box::pin(future::err(GatewayDomainInvalid.into())),
         }
     }

@@ -105,20 +105,20 @@ impl Test {
         let (outbound, mut handle) =
             mock::pair::<http::Request<http::BoxBody>, http::Response<http::BoxBody>>();
 
-        let new = NewGateway::new(
+        let new = NewHttpGateway::new(
             move |_: svc::Either<outbound::http::Logical, outbound::http::Endpoint>| {
                 outbound.clone()
             },
             tls::LocalId("gateway.id.test".parse().unwrap()),
         );
 
-        let t = HttpTarget {
-            target: target.clone(),
-            version: http::Version::Http1,
-        };
         let gateway = svc::stack(new)
-            .check_new_service::<gateway::Target, http::Request<http::BoxBody>>()
-            .new_service((profile, t));
+            .check_new_service::<OutboundHttp, http::Request<http::BoxBody>>()
+            .new_service(OutboundHttp {
+                profile,
+                target: target.clone(),
+                version: http::Version::Http1,
+            });
 
         let bg = tokio::spawn(async move {
             handle.allow(1);

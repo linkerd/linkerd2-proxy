@@ -3,7 +3,7 @@ use crate::{
     Inbound,
 };
 use linkerd_app_core::{
-    identity, io,
+    identity, io, profiles,
     proxy::http,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
@@ -426,6 +426,12 @@ impl Param<tls::ConditionalServerTls> for GatewayTransportHeader {
             client_id: Some(self.client.client_id.clone()),
             negotiated_protocol: self.client.alpn.clone(),
         })
+    }
+}
+
+impl Param<profiles::LookupAddr> for GatewayTransportHeader {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(self.target.clone().into())
     }
 }
 
