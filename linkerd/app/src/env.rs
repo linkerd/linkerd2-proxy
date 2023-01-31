@@ -1016,28 +1016,6 @@ fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
     Ok(nets)
 }
 
-fn parse_default_policy(
-    s: &str,
-    cluster_nets: HashSet<IpNet>,
-    detect_timeout: Duration,
-) -> Result<policy::DefaultPolicy, ParseError> {
-    match s {
-        "deny" => Ok(policy::DefaultPolicy::Deny),
-        "all-authenticated" => Ok(policy::defaults::all_authenticated(detect_timeout).into()),
-        "all-unauthenticated" => Ok(policy::defaults::all_unauthenticated(detect_timeout).into()),
-
-        // If cluster networks are configured, support cluster-scoped default policies.
-        name if cluster_nets.is_empty() => Err(ParseError::InvalidPortPolicy(name.to_string())),
-        "cluster-authenticated" => {
-            Ok(policy::defaults::cluster_authenticated(cluster_nets, detect_timeout).into())
-        }
-        "cluster-unauthenticated" => {
-            Ok(policy::defaults::cluster_unauthenticated(cluster_nets, detect_timeout).into())
-        }
-
-        name => Err(ParseError::InvalidPortPolicy(name.to_string())),
-    }
-}
 pub fn parse_backoff<S: Strings>(
     strings: &S,
     base: &str,
