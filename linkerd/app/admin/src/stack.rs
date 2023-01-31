@@ -99,6 +99,7 @@ impl Config {
             .push(inbound::policy::NewHttpPolicy::layer(metrics.http_authz.clone()))
             .push(Rescue::layer())
             .push_on_service(http::BoxResponse::layer())
+            .unlift_new()
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
             .push_filter(
                 |(http, tcp): (
@@ -142,7 +143,9 @@ impl Config {
                 },
             )
             .push(svc::ArcNewService::layer())
-            .push(detect::NewDetectService::layer(svc::stack::CloneParam::from(detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT))))
+            .push(detect::NewDetectService::layer(svc::stack::CloneParam::from(
+                detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT),
+            )))
             .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
             .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
                 Tcp {

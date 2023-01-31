@@ -82,7 +82,9 @@ impl<L> Layers<L> {
     /// Wraps the inner `N` with `NewCloneService` so that the stack holds a
     /// `NewService` that always returns a clone of `N` regardless of the target
     /// value.
-    pub fn lift_new<N>(self) -> Layers<Pair<L, impl Layer<N, Service = NewCloneService<N>>>> {
+    pub fn lift_new<N>(
+        self,
+    ) -> Layers<Pair<L, impl Layer<N, Service = NewCloneService<N>> + Clone>> {
         self.push(layer::mk(NewCloneService::from))
     }
 
@@ -149,9 +151,8 @@ impl<S> Stack<S> {
         self.push(stack::OnServiceLayer::new(layer))
     }
 
-    /// Lifts the inner `S` with `NewCloneService` so that the stack holds a
-    /// `NewService` that always returns a clone of `S` regardless of the target
-    /// value.
+    /// Lifts `S` into `NewService<_, Service = S>` so that the inner stack is
+    /// cloned for each target (ignoring its value).
     pub fn lift_new(self) -> Stack<NewCloneService<S>> {
         self.push(layer::mk(NewCloneService::from))
     }
@@ -170,6 +171,17 @@ impl<S> Stack<S> {
         // The result is that we expose NewService<T, Service = NewService<U>>
         // over an inner NewService<P>.
         self.lift_new().push(NewFromTargets::layer())
+    }
+
+    /// Converts a `NewService<T, Service = NewService<_, Service = Svc>>` into
+    /// `NewService<T, Service = Svc>` by cloning `Svc` for each child target
+    /// (ignoring its value), in effect disarding the child `NewService`.
+    ///
+    /// The inverse of `lift_new`.
+    pub fn unlift_new<Svc>(
+        self,
+    ) -> Stack<OnService<impl Layer<Svc, Service = NewCloneService<Svc>> + Clone, S>> {
+        self.push_on_service(layer::mk(NewCloneService::from))
     }
 
     /// Wraps the inner service with a response timeout such that timeout errors are surfaced as a

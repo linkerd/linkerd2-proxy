@@ -51,7 +51,9 @@ impl<N> Outbound<N> {
                         .push(http::BoxRequest::layer())
                         .push(svc::MapErr::layer_boxed()),
                 )
-                .check_new_service::<U, _>()
+                .check_new_service::<U, http::Request<_>>()
+                .unlift_new()
+                .check_new_new_service::<U, http::ClientHandle, http::Request<_>>()
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
                 .push_map_target(U::from)
                 .instrument(|_: &_| debug_span!("http"))
