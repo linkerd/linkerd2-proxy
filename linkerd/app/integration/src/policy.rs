@@ -95,7 +95,7 @@ impl inbound::inbound_server_policies_server::InboundServerPolicies for Controll
             %req.workload,
         )
         .entered();
-        tracing::debug!("received request");
+        tracing::debug!("received request; ");
 
         if let Some(ref expected_workload) = self.expected_workload {
             if req.workload != **expected_workload {
@@ -108,6 +108,7 @@ impl inbound::inbound_server_policies_server::InboundServerPolicies for Controll
             }
         }
 
+        // See if we have any configured expected calls that match this port.
         let mut calls = self.inbound_calls.lock();
         if let Some((spec, policy)) = calls.pop_front() {
             tracing::debug!(?spec, "checking next call");
@@ -118,18 +119,25 @@ impl inbound::inbound_server_policies_server::InboundServerPolicies for Controll
 
             tracing::warn!(?spec, ?policy, "request does not match");
             calls.push_front((spec, policy));
-
-            if let Some(default) = self.inbound_default.clone() {
-                tracing::info!("using default inbound policy");
-                let stream =
-                    Box::pin(stream::once(async move { Ok(default) }).chain(stream::pending()));
-                return Ok(grpc::Response::new(stream));
-            }
-
-            return Err(grpc_unexpected_request());
         }
 
-        Err(grpc_no_results())
+        // Try the configured default policy...
+        if let Some(default) = self.inbound_default.clone() {
+            tracing::info!("using default inbound policy");
+            let stream =
+                Box::pin(stream::once(async move { Ok(default) }).chain(stream::pending()));
+            return Ok(grpc::Response::new(stream));
+        }
+
+        if calls.is_empty() {
+            // We're not configured to expect any calls, and we have no default
+            // policy. Send a "no results" error.
+            Err(grpc_no_results())
+        } else {
+            // We recieved a request that did not match the expected calls, and
+            // we have no default policy. Return an error.
+            Err(grpc_unexpected_request())
+        }
     }
 }
 
