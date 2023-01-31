@@ -173,9 +173,9 @@ impl<S> Stack<S> {
         self.lift_new().push(NewFromTargets::layer())
     }
 
-    /// Converts a `NewService<T, Service = NewService<_, Service = Svc>>` into
-    /// `NewService<T, Service = Svc>` by cloning `Svc` for each child target
-    /// (ignoring its value), in effect disarding the child `NewService`.
+    /// Converts an inner `NewService<T, Service = Svc>` into a `NewService<T,
+    /// Service = NewService<_, Service = Svc>>`, cloning `Svc` for each child
+    /// target (ignoring its value), in effect disarding the child `NewService`.
     ///
     /// The inverse of `lift_new`.
     pub fn unlift_new<Svc>(
