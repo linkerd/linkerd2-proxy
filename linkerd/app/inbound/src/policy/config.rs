@@ -1,4 +1,4 @@
-use super::{api::Api, DefaultPolicy, GetPolicy, Protocol, ServerPolicy, Store};
+use super::{api::Api, GetPolicy, Protocol, Store};
 use linkerd_app_core::{
     control, dns, identity, metrics,
     svc::{NewService, ServiceExt},
@@ -15,7 +15,6 @@ use tokio::time::Duration;
 pub struct Config {
     pub control: control::Config,
     pub workload: String,
-    pub default: DefaultPolicy,
     pub cache_max_idle_age: Duration,
     pub ports: HashSet<u16>,
 }
@@ -33,7 +32,6 @@ impl Config {
             control,
             ports,
             workload,
-            default,
             cache_max_idle_age,
         } = self;
         let watch = {
@@ -42,15 +40,8 @@ impl Config {
                 .build(dns, metrics, identity)
                 .new_service(())
                 .map_err(Error::from);
-            let detect_timeout = match default {
-                DefaultPolicy::Allow(ServerPolicy {
-                    protocol: Protocol::Detect { timeout, .. },
-                    ..
-                }) => timeout,
-                _ => Duration::from_secs(10),
-            };
-            Api::new(workload, detect_timeout, client).into_watch(backoff)
+            Api::new(workload, Duration::from_secs(10), client).into_watch(backoff)
         };
-        Store::spawn_discover(default, cache_max_idle_age, watch, ports)
+        Store::spawn_discover(cache_max_idle_age, watch, ports)
     }
 }

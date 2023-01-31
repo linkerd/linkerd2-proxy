@@ -63,7 +63,6 @@ where
     /// A discovery watch is spawned for each of the described `ports` and the
     /// result is cached for as long as the `Store` is held. The `Store` may be used to
     pub(super) fn spawn_discover(
-        default: DefaultPolicy,
         idle_timeout: Duration,
         discover: api::Watch<S>,
         ports: HashSet<u16>,
@@ -73,16 +72,26 @@ where
         // Policies that are dynamically discovered at runtime will expire after
         // `idle_timeout` to prevent holding policy watches indefinitely for
         // ports that are generally unused.
-        let cache = {
-            let rxs = ports.into_iter().map(|port| {
-                let discover = discover.clone();
-                let default = default.clone();
-                let rx = info_span!("watch", port)
-                    .in_scope(|| discover.spawn_with_init(port, default.into()));
-                (port, rx)
-            });
-            IdleCache::with_permanent_from_iter(idle_timeout, rxs)
-        };
+        let cache = IdleCache::with_capacity(idle_timeout, ports.len());
+        for port in ports.into_iter() {
+            let cache = cache.clone();
+            let discover = discover.clone();
+            tokio::spawn(
+                async move {
+                    match discover.spawn_watch(port).await {
+                        Err(error) => {
+                            // we'll try again when a connection actually targets this port...
+                            tracing::error!(port, %error, "Failed to start ServerPolicy default port watch!")
+                        }
+                        Ok(rsp) => {
+                            let rx = rsp.into_inner();
+                            cache.insert(port, rx);
+                        }
+                    }
+                }
+                .instrument(info_span!("watch", port)),
+            );
+        }
 
         Self { cache, discover }
     }
