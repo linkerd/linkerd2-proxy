@@ -16,8 +16,7 @@ use tracing::{info_span, Instrument};
 #[derive(Clone)]
 pub struct Store<S> {
     cache: IdleCache<u16, Rx, BuildHasherDefault<PortHasher>>,
-    default_rx: Rx,
-    discover: Option<api::Watch<S>>,
+    discover: api::Watch<S>,
 }
 
 type Rx = watch::Receiver<ServerPolicy>;
@@ -31,11 +30,19 @@ struct PortHasher(u16);
 
 // === impl Store ===
 
-impl<S> Store<S> {
-    pub(crate) fn spawn_fixed(
-        default: DefaultPolicy,
+impl<S> Store<S>
+where
+    S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+    S: Clone + Send + Sync + 'static,
+    S::Future: Send,
+    S::ResponseBody:
+        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
+{
+    #[cfg(test)]
+    pub(super) fn spawn_fixed(
         idle_timeout: Duration,
         ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
+        discover: api::Watch<S>,
     ) -> Self {
         let cache = {
             let rxs = ports.into_iter().map(|(p, s)| {
@@ -48,11 +55,7 @@ impl<S> Store<S> {
             IdleCache::with_permanent_from_iter(idle_timeout, rxs)
         };
 
-        Self {
-            cache,
-            discover: None,
-            default_rx: Self::spawn_default(default),
-        }
+        Self { cache, discover }
     }
 
     /// Spawns a watch for each of the given ports.
@@ -64,14 +67,7 @@ impl<S> Store<S> {
         idle_timeout: Duration,
         discover: api::Watch<S>,
         ports: HashSet<u16>,
-    ) -> Self
-    where
-        S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
-        S: Clone + Send + Sync + 'static,
-        S::Future: Send,
-        S::ResponseBody:
-            http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
-    {
+    ) -> Self {
         // The initial set of policies never expire from the cache.
         //
         // Policies that are dynamically discovered at runtime will expire after
@@ -88,21 +84,7 @@ impl<S> Store<S> {
             IdleCache::with_permanent_from_iter(idle_timeout, rxs)
         };
 
-        Self {
-            cache,
-            discover: Some(discover),
-            default_rx: Self::spawn_default(default),
-        }
-    }
-
-    fn spawn_default(default: DefaultPolicy) -> Rx {
-        let (tx, rx) = watch::channel(ServerPolicy::from(default));
-        // Hold the sender until all of the receivers are dropped. This ensures
-        // that receivers can be watched like any other policy.
-        tokio::spawn(async move {
-            tx.closed().await;
-        });
-        rx
+        Self { cache, discover }
     }
 }
 
@@ -134,30 +116,17 @@ where
             return future::Either::Left(future::ready(Ok(AllowPolicy { dst, server })));
         }
 
-        match self.discover {
-            None => {
-                // If no discovery API is configured, then we use the
-                // default policy. While it's a little wasteful to cache
-                // these results separately, this case isn't expected to be
-                // used outside of testing.
-                tracing::trace!(%port, "using the default policy");
-                let server = self.cache.get_or_insert(port, self.default_rx.clone());
-                future::Either::Left(future::ready(Ok(AllowPolicy { dst, server })))
+        let disco = self.discover.clone();
+        let cache = self.cache.clone();
+        future::Either::Right(Box::pin(
+            async move {
+                tracing::trace!(%port, "spawning policy discovery");
+                let server = disco.spawn_watch(port).await?.into_inner();
+                let server = cache.get_or_insert(port, server);
+                Ok(AllowPolicy { dst, server })
             }
-            Some(ref disco) => {
-                let disco = disco.clone();
-                let cache = self.cache.clone();
-                future::Either::Right(Box::pin(
-                    async move {
-                        tracing::trace!(%port, "spawning policy discovery");
-                        let server = disco.spawn_watch(port).await?.into_inner();
-                        let server = cache.get_or_insert(port, server);
-                        Ok(AllowPolicy { dst, server })
-                    }
-                    .instrument(info_span!("watch", port)),
-                ))
-            }
-        }
+            .instrument(info_span!("watch", port)),
+        ))
     }
 }
 

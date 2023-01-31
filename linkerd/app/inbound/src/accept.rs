@@ -116,10 +116,7 @@ impl svc::Param<AllowPolicy> for Accept {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        policy::{DefaultPolicy, Store},
-        test_util,
-    };
+    use crate::{policy::Store, test_util};
     use futures::future;
     use linkerd_app_core::{
         svc::{NewService, ServiceExt},
@@ -131,7 +128,8 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn default_allow() {
         let (io, _) = io::duplex(1);
-        let policies = Store::for_test(
+        let policies = Store::for_test(std::iter::once((
+            1000,
             ServerPolicy {
                 protocol: linkerd_proxy_server_policy::Protocol::Opaque(Arc::new([
                     Authorization {
@@ -150,23 +148,7 @@ mod tests {
                     name: "testsrv".into(),
                 }),
             },
-            None,
-        );
-        inbound()
-            .with_stack(new_ok())
-            .push_accept(999, policies, new_panic("direct stack must not be built"))
-            .into_inner()
-            .new_service(Target(1000))
-            .oneshot(io)
-            .await
-            .expect("should succeed");
-    }
-
-    /// Default-deny authorizations are checked by an internal stack.
-    #[tokio::test(flavor = "current_thread")]
-    async fn default_deny() {
-        let policies = Store::for_test(DefaultPolicy::Deny, None);
-        let (io, _) = io::duplex(1);
+        )));
         inbound()
             .with_stack(new_ok())
             .push_accept(999, policies, new_panic("direct stack must not be built"))
@@ -179,7 +161,27 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn direct() {
-        let policies = Store::for_test(DefaultPolicy::Deny, None);
+        let policies = Store::for_test(std::iter::once((
+            1000,
+            ServerPolicy {
+                protocol: linkerd_proxy_server_policy::Protocol::Opaque(Arc::new([
+                    Authorization {
+                        authentication: Authentication::Unauthenticated,
+                        networks: vec![Default::default()],
+                        meta: Arc::new(Meta::Resource {
+                            group: "policy.linkerd.io".into(),
+                            kind: "serverauthorization".into(),
+                            name: "testsaz".into(),
+                        }),
+                    },
+                ])),
+                meta: Arc::new(Meta::Resource {
+                    group: "policy.linkerd.io".into(),
+                    kind: "server".into(),
+                    name: "testsrv".into(),
+                }),
+            },
+        )));
         let (io, _) = io::duplex(1);
         inbound()
             .with_stack(new_panic("detect stack must not be built"))

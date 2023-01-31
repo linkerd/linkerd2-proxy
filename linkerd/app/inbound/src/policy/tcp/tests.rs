@@ -1,6 +1,6 @@
 use super::*;
 use crate::policy::*;
-use linkerd_app_core::{proxy::http, Error};
+use linkerd_app_core::{exp_backoff::ExponentialBackoff, proxy::http, Error};
 use linkerd_proxy_server_policy::{
     authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
 };
@@ -268,10 +268,12 @@ impl tonic::client::GrpcService<tonic::body::BoxBody> for MockSvc {
 }
 
 impl Store<MockSvc> {
-    pub(crate) fn for_test(
-        default: impl Into<DefaultPolicy>,
-        ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
-    ) -> Self {
-        Self::spawn_fixed(default.into(), std::time::Duration::MAX, ports)
+    pub(crate) fn for_test(ports: impl IntoIterator<Item = (u16, ServerPolicy)>) -> Self {
+        Self::spawn_fixed(
+            std::time::Duration::MAX,
+            ports,
+            api::Api::new("test".into(), std::time::Duration::MAX, MockSvc)
+                .into_watch(ExponentialBackoff::default()),
+        )
     }
 }
