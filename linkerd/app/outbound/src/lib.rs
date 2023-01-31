@@ -108,10 +108,6 @@ impl Outbound<()> {
         }
     }
 
-    pub fn metrics(&self) -> Metrics {
-        self.runtime.metrics.clone()
-    }
-
     pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
         self.map_stack(move |_, _, _| svc::stack(stack))
     }
@@ -120,6 +116,14 @@ impl Outbound<()> {
 impl<S> Outbound<S> {
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    pub fn metrics(&self) -> Metrics {
+        self.runtime.metrics.clone()
+    }
+
+    pub fn stack_metrics(&self) -> metrics::Stack {
+        self.runtime.metrics.proxy.stack.clone()
     }
 
     pub fn into_stack(self) -> svc::Stack<S> {
