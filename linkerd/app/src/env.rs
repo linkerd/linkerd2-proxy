@@ -8,7 +8,6 @@ use crate::core::{
     Addr, AddrMatch, Conditional, IpNet,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
-use inbound::policy;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -345,12 +344,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let shutdown_grace_period = parse(strings, ENV_SHUTDOWN_GRACE_PERIOD, parse_duration);
 
-    let inbound_disable_ports = parse(
-        strings,
-        ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-        parse_port_set,
-    );
-
     let inbound_discovery_idle_timeout =
         parse(strings, ENV_INBOUND_DISCOVERY_IDLE_TIMEOUT, parse_duration);
     let outbound_discovery_idle_timeout =
@@ -571,14 +564,39 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // Parse inbound ServerPolicy discovery configuration.
         let policy = {
             let inbound_port = server.addr.port();
+
             // Check for presence of environment variables that the proxy no
             // longer honors.
-            if let Ok(Some(val)) = strings.get(ENV_INBOUND_DEFAULT_POLICY) {
-                warn!("Ignoring deprecated {ENV_INBOUND_DEFAULT_POLICY:?}={val:?}");
+            if let Some(val) = strings.get(ENV_INBOUND_PORTS_REQUIRE_IDENTITY)? {
+                warn!(
+                    "The {ENV_INBOUND_PORTS_REQUIRE_IDENTITY}={val:?} \
+                    configuration is no longer supported and will be ignored. \
+                    Use a MeshTlsAuthentication resource instead."
+                );
             }
 
-            if let Ok(Some(val)) = strings.get(ENV_POLICY_CLUSTER_NETWORKS) {
-                warn!("Ignoring deprecated {ENV_POLICY_CLUSTER_NETWORKS:?}={val:?}");
+            if let Some(val) = strings.get(ENV_INBOUND_PORTS_REQUIRE_TLS)? {
+                warn!(
+                    "The {ENV_INBOUND_PORTS_REQUIRE_TLS}={val:?} configuration \
+                    is no longer supported and will be ignored. Use a \
+                    MeshTlsAuthentication resource instead."
+                );
+            }
+
+            if let Some(val) = strings.get(ENV_INBOUND_DEFAULT_POLICY)? {
+                warn!(
+                    "The {ENV_INBOUND_DEFAULT_POLICY}={val:?} configuration \
+                    is no longer supported and will be ignored. Use the \
+                    `config.linkerd.io/default-inbound-policy` annotation \
+                    instead."
+                );
+            }
+
+            if let Some(val) = strings.get(ENV_POLICY_CLUSTER_NETWORKS)? {
+                warn!(
+                    "The {ENV_POLICY_CLUSTER_NETWORKS}={val:?} configuration \
+                    is no longer needed by the proxy, and will be ignored."
+                );
             }
 
             let addr = parse_control_addr(strings, ENV_POLICY_SVC_BASE)?
