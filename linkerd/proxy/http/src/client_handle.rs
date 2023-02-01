@@ -56,9 +56,8 @@ impl ClientHandle {
 // === SetClientHandle ===
 
 impl<S> SetClientHandle<S> {
-    pub fn new(addr: SocketAddr, inner: S) -> (Self, Closed) {
-        let (handle, closed) = ClientHandle::new(addr);
-        (Self { inner, handle }, closed)
+    pub fn new(handle: ClientHandle, inner: S) -> Self {
+        Self { inner, handle }
     }
 }
 

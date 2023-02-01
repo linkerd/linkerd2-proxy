@@ -3,7 +3,7 @@ use crate::{
     client_handle::SetClientHandle,
     glue::{HyperServerSvc, UpgradeBody},
     h2::Settings as H2Settings,
-    trace, upgrade, Version,
+    trace, upgrade, ClientHandle, Version,
 };
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
@@ -26,10 +26,10 @@ pub struct NewServeHttp<N> {
 }
 
 #[derive(Clone, Debug)]
-pub struct ServeHttp<S> {
+pub struct ServeHttp<N> {
     version: Version,
     server: Server,
-    inner: S,
+    inner: N,
     drain: drain::Watch,
 }
 
@@ -90,11 +90,11 @@ where
 
 // === impl ServeHttp ===
 
-impl<I, S> Service<I> for ServeHttp<S>
+impl<I, N, S> Service<I> for ServeHttp<N>
 where
     I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
+    N: NewService<ClientHandle, Service = S> + Clone + Send + 'static,
     S: Service<http::Request<UpgradeBody>, Response = http::Response<http::BoxBody>, Error = Error>
-        + Clone
         + Unpin
         + Send
         + 'static,
@@ -118,7 +118,9 @@ where
         debug!(?version, "Handling as HTTP");
 
         Box::pin(async move {
-            let (svc, closed) = SetClientHandle::new(io.peer_addr()?, inner);
+            let client_addr = io.peer_addr()?;
+            let (client_handle, closed) = ClientHandle::new(client_addr);
+            let svc = SetClientHandle::new(client_handle.clone(), inner.new_service(client_handle));
 
             match version {
                 Version::Http1 => {
@@ -144,6 +146,7 @@ where
                         }
                     }
                 }
+
                 Version::H2 => {
                     let mut conn = server
                         .http2_only(true)
