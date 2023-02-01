@@ -32,7 +32,7 @@ pub fn default_allow() -> inbound::Server {
         }),
         authorizations: vec![inbound::Authz {
             networks: vec![inbound::Network {
-                net: Some("0.0.0.0/0".parse::<ipnet::IpNet>().unwrap().into()),
+                net: Some(ipnet::IpNet::default().into()),
                 except: Vec::new(),
             }],
             authentication: Some(inbound::Authn {
@@ -49,7 +49,8 @@ pub fn default_allow() -> inbound::Server {
         }],
         server_ips: vec![],
         labels: maplit::hashmap![
-            "name".into() => "default".into(),
+            "name".into() => "all-unauthenticated".into(),
+            "kind".into() => "default".into(),
         ],
     }
 }
