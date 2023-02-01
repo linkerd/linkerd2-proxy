@@ -85,7 +85,7 @@ where
                         }
                         Ok(rsp) => {
                             let rx = rsp.into_inner();
-                            cache.insert(port, rx);
+                            cache.insert_permanent(port, rx);
                         }
                     }
                 }
