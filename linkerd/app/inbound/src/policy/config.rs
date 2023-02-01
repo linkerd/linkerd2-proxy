@@ -1,4 +1,4 @@
-use super::{api::Api, GetPolicy, Protocol, Store};
+use super::{api::Api, GetPolicy, Store};
 use linkerd_app_core::{
     control, dns, identity, metrics,
     svc::{NewService, ServiceExt},
