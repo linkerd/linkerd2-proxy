@@ -1,4 +1,4 @@
-use super::{api, AllowPolicy, DefaultPolicy};
+use super::{api, AllowPolicy};
 use futures::future;
 use linkerd_app_core::{proxy::http, svc, transport::OrigDstAddr, Error};
 use linkerd_idle_cache::IdleCache;
