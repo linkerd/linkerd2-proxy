@@ -244,6 +244,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                 // destination address.
                 new_http
                     .check_new_service::<Http<tcp::Accept>, http::Request<_>>()
+                    .unlift_new()
                     .push(http::NewServeHttp::layer(*h2_settings, rt.drain.clone()))
                     .check_new_service::<Http<tcp::Accept>, I>()
                     .push_switch(
