@@ -221,9 +221,16 @@ async fn test_server_speaks_first(env: TestEnv) {
         .run()
         .await;
 
+    let policy = controller::policy().with_inbound_default(policy::all_unauthenticated());
+    let policy_tx = policy.inbound_tx(srv.addr.port());
+    // disable protocol detection on this port.
+    policy_tx.send(policy::opaque_unauthenticated());
+
+    let policy = policy.run().await;
+
     let proxy = proxy::new()
-        .disable_inbound_ports_protocol_detection(vec![srv.addr.port()])
         .inbound(srv)
+        .policy(policy)
         .run_with_test_env(env)
         .await;
 

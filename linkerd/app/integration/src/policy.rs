@@ -20,7 +20,7 @@ pub struct InboundSender(mpsc::UnboundedSender<Result<inbound::Server, grpc::Sta
 
 type InboundReceiver = UnboundedReceiverStream<Result<inbound::Server, grpc::Status>>;
 
-pub fn default_allow() -> inbound::Server {
+pub fn all_unauthenticated() -> inbound::Server {
     inbound::Server {
         protocol: Some(inbound::ProxyProtocol {
             kind: Some(inbound::proxy_protocol::Kind::Detect(
@@ -28,6 +28,38 @@ pub fn default_allow() -> inbound::Server {
                     timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                     http_routes: vec![],
                 },
+            )),
+        }),
+        authorizations: vec![inbound::Authz {
+            networks: vec![inbound::Network {
+                net: Some(ipnet::IpNet::default().into()),
+                except: Vec::new(),
+            }],
+            authentication: Some(inbound::Authn {
+                permit: Some(inbound::authn::Permit::Unauthenticated(
+                    inbound::authn::PermitUnauthenticated {},
+                )),
+            }),
+            labels: Default::default(),
+            metadata: Some(api::meta::Metadata {
+                kind: Some(api::meta::metadata::Kind::Default(
+                    "all-unauthenticated".into(),
+                )),
+            }),
+        }],
+        server_ips: vec![],
+        labels: maplit::hashmap![
+            "name".into() => "all-unauthenticated".into(),
+            "kind".into() => "default".into(),
+        ],
+    }
+}
+
+pub fn opaque_unauthenticated() -> inbound::Server {
+    inbound::Server {
+        protocol: Some(inbound::ProxyProtocol {
+            kind: Some(inbound::proxy_protocol::Kind::Opaque(
+                inbound::proxy_protocol::Opaque {},
             )),
         }),
         authorizations: vec![inbound::Authz {
