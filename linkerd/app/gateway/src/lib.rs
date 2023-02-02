@@ -216,14 +216,20 @@ where
     O::Future: Send + Unpin + 'static,
     R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
 {
-    let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
-    endpoint
+    outbound
         .clone()
+        .push_tcp_endpoint()
+        .push_http_endpoint()
         .push_http_concrete(resolve)
         .push_http_logical()
         .into_stack()
-        .check_new_service::<OutboundHttp, http::Request<http::BoxBody>>()
-        .push_switch(Ok::<_, Infallible>, endpoint.into_stack())
+        .push_switch(
+            Ok::<_, Infallible>,
+            outbound
+                .push_tcp_endpoint()
+                .push_http_endpoint()
+                .into_inner(),
+        )
         .push(NewHttpGateway::layer(local_id))
         .push(svc::ArcNewService::layer())
         .check_new::<OutboundHttp>()
