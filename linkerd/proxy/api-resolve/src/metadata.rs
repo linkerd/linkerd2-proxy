@@ -85,7 +85,7 @@ impl Metadata {
         self.authority_override.as_ref()
     }
 
-    // TODO(ver) remove this.
+    #[deprecated(note = "should be removed")]
     pub fn clear_upgrade(&mut self) {
         self.protocol_hint = ProtocolHint::Unknown;
         self.opaque_transport_port = None;

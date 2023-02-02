@@ -59,6 +59,7 @@ impl Endpoint<()> {
     ) -> Self {
         let addr: SocketAddr = addr.into();
         let tls = if inbound_ips.contains(&addr.ip()) {
+            #[allow(deprecated)]
             metadata.clear_upgrade();
             tracing::debug!(%addr, ?metadata, ?addr, ?inbound_ips, "Target is local");
             tls::ConditionalClientTls::None(tls::NoClientTls::Loopback)

@@ -1,6 +1,7 @@
 use futures::prelude::*;
 use linkerd_error::Error;
 use std::{
+    fmt::Debug,
     future::Future,
     net::SocketAddr,
     task::{Context, Poll},
@@ -9,7 +10,7 @@ use tower::util::Oneshot;
 
 /// Resolves `T`-typed names/addresses as an infinite stream of `Update<Self::Endpoint>`.
 pub trait Resolve<T>: Clone + Send + Sync + Unpin + 'static {
-    type Endpoint;
+    type Endpoint: Clone + Debug + Eq + Send + 'static;
     type Error: Into<Error>;
     type Resolution: Stream<Item = Result<Update<Self::Endpoint>, Self::Error>> + Send + 'static;
     type Future: Future<Output = Result<Self::Resolution, Self::Error>> + Send + Unpin + 'static;
@@ -45,6 +46,7 @@ where
     S::Error: Into<Error>,
     S::Future: Send + Unpin + 'static,
     R: Stream<Item = Result<Update<E>, S::Error>> + Send + 'static,
+    E: Clone + Debug + Eq + Send + 'static,
 {
     type Endpoint = E;
     type Error = S::Error;

@@ -1,7 +1,7 @@
 use futures::prelude::*;
 use linkerd_proxy_core::Resolve;
 use linkerd_stack::NewService;
-use std::{fmt::Debug, net::SocketAddr};
+use std::net::SocketAddr;
 
 pub mod buffer;
 pub mod from_resolve;
@@ -20,9 +20,6 @@ pub(crate) fn spawn_new_from_resolve<T, R, M, N>(
 where
     T: Clone,
     R: Resolve<T>,
-    R::Endpoint: Clone + Debug + Eq + Send + 'static,
-    R::Resolution: Send,
-    R::Future: Send + 'static,
     M: NewService<T, Service = N>,
     N: NewService<(SocketAddr, R::Endpoint)> + Send + 'static,
     N::Service: Send,
