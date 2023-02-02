@@ -1,4 +1,4 @@
-use crate::{http, logical::Concrete, stack_labels, tcp, Outbound};
+use crate::{http, stack_labels, tcp, Outbound};
 use linkerd_app_core::{
     io, metrics,
     profiles::LogicalAddr,
@@ -11,7 +11,6 @@ use std::{
     collections::HashSet,
     fmt,
     net::{IpAddr, SocketAddr},
-    sync::Arc,
 };
 use tracing::info_span;
 
@@ -23,19 +22,6 @@ pub struct Endpoint<P> {
     pub logical_addr: Option<LogicalAddr>,
     pub protocol: P,
     pub opaque_protocol: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct NewFromMetadata<N> {
-    inbound_ips: Arc<HashSet<IpAddr>>,
-    inner: N,
-}
-
-#[derive(Clone, Debug)]
-pub struct FromMetadata<P, N> {
-    inbound_ips: Arc<HashSet<IpAddr>>,
-    concrete: Concrete<P>,
-    inner: N,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -182,61 +168,6 @@ fn client_tls(metadata: &Metadata, reason: tls::NoClientTls) -> tls::Conditional
             })
         })
         .unwrap_or(Conditional::None(reason))
-}
-
-impl<N> NewFromMetadata<N> {
-    pub fn new(inbound_ips: Arc<HashSet<IpAddr>>, inner: N) -> Self {
-        Self { inbound_ips, inner }
-    }
-
-    pub fn layer(inbound_ips: Arc<HashSet<IpAddr>>) -> impl svc::Layer<N, Service = Self> + Clone {
-        svc::layer::mk(move |inner| Self::new(inbound_ips.clone(), inner))
-    }
-}
-
-impl<P, N> svc::NewService<Concrete<P>> for NewFromMetadata<N>
-where
-    P: Copy + std::fmt::Debug,
-    N: svc::NewService<Concrete<P>>,
-{
-    type Service = FromMetadata<P, N::Service>;
-
-    fn new_service(&self, concrete: Concrete<P>) -> Self::Service {
-        FromMetadata {
-            inner: self.inner.new_service(concrete.clone()),
-            concrete,
-            inbound_ips: self.inbound_ips.clone(),
-        }
-    }
-}
-
-impl<P, N> svc::NewService<(SocketAddr, Metadata)> for FromMetadata<P, N>
-where
-    P: Copy + std::fmt::Debug,
-    N: svc::NewService<Endpoint<P>>,
-{
-    type Service = N::Service;
-
-    fn new_service(&self, (addr, mut metadata): (SocketAddr, Metadata)) -> Self::Service {
-        tracing::trace!(%addr, ?metadata, concrete = ?self.concrete, "Resolved endpoint");
-        let tls = if self.inbound_ips.contains(&addr.ip()) {
-            metadata.clear_upgrade();
-            tracing::debug!(%addr, ?metadata, ?addr, ?self.inbound_ips, "Target is local");
-            tls::ConditionalClientTls::None(tls::NoClientTls::Loopback)
-        } else {
-            client_tls(&metadata, tls::NoClientTls::NotProvidedByServiceDiscovery)
-        };
-        self.inner.new_service(Endpoint {
-            addr: Remote(ServerAddr(addr)),
-            tls,
-            metadata,
-            logical_addr: Some(self.concrete.logical.logical_addr.clone()),
-            protocol: self.concrete.logical.protocol,
-            // XXX We never do protocol detection after resolving a concrete address to endpoints.
-            // We should differentiate these target types statically.
-            opaque_protocol: false,
-        })
-    }
 }
 
 // === Outbound ===

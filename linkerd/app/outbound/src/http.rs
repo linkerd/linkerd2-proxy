@@ -16,7 +16,7 @@ pub(crate) use self::{require_id_header::IdentityRequired, server::ServerRescue}
 use crate::tcp;
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
-    profiles::{self, LogicalAddr},
+    profiles,
     proxy::{api_resolve::ProtocolHint, tap},
     svc::Param,
     tls, Addr, Conditional, CANONICAL_DST_HEADER,
@@ -24,7 +24,6 @@ use linkerd_app_core::{
 use std::{net::SocketAddr, str::FromStr};
 
 pub type Logical = crate::logical::Logical<Version>;
-pub type Concrete = crate::logical::Concrete<Version>;
 pub type Endpoint = crate::endpoint::Endpoint<Version>;
 
 pub type Connect = self::endpoint::Connect<Endpoint>;
@@ -100,7 +99,7 @@ impl From<(Version, tcp::Endpoint)> for Endpoint {
 
 impl Param<normalize_uri::DefaultAuthority> for Endpoint {
     fn param(&self) -> normalize_uri::DefaultAuthority {
-        if let Some(LogicalAddr(ref a)) = self.logical_addr {
+        if let Some(profiles::LogicalAddr(ref a)) = self.logical_addr {
             normalize_uri::DefaultAuthority(Some(
                 uri::Authority::from_str(&a.to_string())
                     .expect("Address must be a valid authority"),

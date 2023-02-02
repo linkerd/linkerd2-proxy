@@ -18,12 +18,6 @@ pub struct Logical<P> {
     pub protocol: P,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Concrete<P> {
-    pub resolve: ConcreteAddr,
-    pub logical: Logical<P>,
-}
-
 pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 
 // === impl Logical ===
@@ -108,35 +102,6 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
             .field("profile", &format_args!(".."))
             .field("logical_addr", &self.logical_addr)
             .finish()
-    }
-}
-
-// === impl Concrete ===
-
-impl<P> From<(ConcreteAddr, Logical<P>)> for Concrete<P> {
-    fn from((resolve, logical): (ConcreteAddr, Logical<P>)) -> Self {
-        Self { resolve, logical }
-    }
-}
-
-impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
-    fn param(&self) -> ConcreteAddr {
-        self.resolve.clone()
-    }
-}
-
-impl<P> svc::Param<http::Version> for Concrete<P>
-where
-    Logical<P>: svc::Param<http::Version>,
-{
-    fn param(&self) -> http::Version {
-        self.logical.param()
-    }
-}
-
-impl<P> svc::Param<Option<profiles::LogicalAddr>> for Concrete<P> {
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        Some(self.logical.logical_addr.clone())
     }
 }
 
