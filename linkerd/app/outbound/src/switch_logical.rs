@@ -13,10 +13,12 @@ impl<S> Outbound<S> {
     pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
         self,
         logical: N,
-    ) -> Outbound<svc::ArcNewTcp<(Option<profiles::Receiver>, T), I>>
+    ) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         Self: Clone + 'static,
-        T: svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        T: svc::Param<OrigDstAddr>,
+        T: svc::Param<Option<profiles::Receiver>>,
+        T: Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Logical, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = (), Error = Error> + Send + 'static,
@@ -30,8 +32,8 @@ impl<S> Outbound<S> {
             let inbound_ips = config.inbound_ips.clone();
             endpoint
                 .push_switch(
-                    move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Infallible> {
-                        if let Some(rx) = profile {
+                    move |target: T| -> Result<_, Infallible> {
+                        if let Some(rx) = target.param() {
                             let is_opaque = rx.is_opaque_protocol();
 
                             // If the profile provides an endpoint, then the target is single
@@ -100,6 +102,24 @@ mod tests {
     #[error("wrong stack built")]
     struct WrongStack;
 
+    #[derive(Clone, Debug)]
+    struct Target {
+        addr: SocketAddr,
+        profile: Option<profiles::Receiver>,
+    }
+
+    impl Param<OrigDstAddr> for Target {
+        fn param(&self) -> OrigDstAddr {
+            OrigDstAddr(self.addr)
+        }
+    }
+
+    impl Param<Option<profiles::Receiver>> for Target {
+        fn param(&self) -> Option<profiles::Receiver> {
+            self.profile.clone()
+        }
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn no_profile() {
         let _trace = linkerd_tracing::test::trace_init();
@@ -117,8 +137,10 @@ mod tests {
             .push_switch_logical(svc::Fail::<_, WrongStack>::default())
             .into_inner();
 
-        let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((None, orig_dst));
+        let svc = stack.new_service(Target {
+            addr: SocketAddr::new([192, 0, 2, 20].into(), 2020),
+            profile: None,
+        });
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -153,8 +175,10 @@ mod tests {
             ..Default::default()
         });
 
-        let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((Some(profile.into()), orig_dst));
+        let svc = stack.new_service(Target {
+            addr: SocketAddr::new([192, 0, 2, 20].into(), 2020),
+            profile: Some(profile.into()),
+        });
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -184,8 +208,10 @@ mod tests {
             ..Default::default()
         });
 
-        let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((Some(profile.into()), orig_dst));
+        let svc = stack.new_service(Target {
+            addr: SocketAddr::new([192, 0, 2, 20].into(), 2020),
+            profile: Some(profile.into()),
+        });
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -216,8 +242,10 @@ mod tests {
             ..Default::default()
         });
 
-        let orig_dst = OrigDstAddr(endpoint_addr);
-        let svc = stack.new_service((Some(profile.into()), orig_dst));
+        let svc = stack.new_service(Target {
+            profile: Some(profile.into()),
+            addr: endpoint_addr,
+        });
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }

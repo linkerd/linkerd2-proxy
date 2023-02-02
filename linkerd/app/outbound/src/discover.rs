@@ -2,9 +2,16 @@ use crate::Outbound;
 use linkerd_app_core::{
     profiles,
     svc::{self, stack::Param},
+    transport::addrs::*,
     Error, Infallible,
 };
 use tracing::debug;
+
+#[derive(Clone, Debug)]
+pub struct Discovery<T> {
+    parent: T,
+    profile: Option<profiles::Receiver>,
+}
 
 impl<N> Outbound<N> {
     /// Discovers the profile for a TCP endpoint.
@@ -17,7 +24,7 @@ impl<N> Outbound<N> {
     where
         T: Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + 'static,
-        N: svc::NewService<(Option<profiles::Receiver>, T), Service = NSvc>,
+        N: svc::NewService<Discovery<T>, Service = NSvc>,
         N: Clone + Send + Sync + 'static,
         Req: Send + 'static,
         NSvc: svc::Service<Req, Response = (), Error = Error> + Send + 'static,
@@ -27,26 +34,28 @@ impl<N> Outbound<N> {
         self.map_stack(|config, _, stk| {
             let allow = config.allow_discovery.clone();
             stk.clone()
-                .check_new_service::<(Option<profiles::Receiver>, T), Req>()
                 .lift_new_with_target()
                 .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
                 .check_new::<T>()
                 .check_new_service::<T, Req>()
                 .push_switch(
-                    move |t: T| -> Result<_, Infallible> {
+                    move |parent: T| -> Result<_, Infallible> {
                         // TODO(ver) Should this allowance be parameterized by
                         // the target type?
-                        let profiles::LookupAddr(addr) = t.param();
+                        let profiles::LookupAddr(addr) = parent.param();
                         if allow.matches(&addr) {
                             debug!("Allowing profile lookup");
-                            return Ok(svc::Either::A(t));
+                            return Ok(svc::Either::A(parent));
                         }
                         debug!(
                             %addr,
                             networks = %allow.nets(),
                             "Address is not in discoverable networks",
                         );
-                        Ok(svc::Either::B((None, t)))
+                        Ok(svc::Either::B(Discovery {
+                            parent,
+                            profile: None,
+                        }))
                     },
                     stk.into_inner(),
                 )
@@ -85,6 +94,38 @@ impl<N> Outbound<N> {
             .push(svc::ArcNewService::layer())
             .check_new_service::<T, Req>()
         })
+    }
+}
+
+// === impl Discovery ===
+
+impl<T> From<(Option<profiles::Receiver>, T)> for Discovery<T> {
+    fn from((profile, parent): (Option<profiles::Receiver>, T)) -> Self {
+        Self { parent, profile }
+    }
+}
+
+impl<T> svc::Param<OrigDstAddr> for Discovery<T>
+where
+    T: svc::Param<OrigDstAddr>,
+{
+    fn param(&self) -> OrigDstAddr {
+        self.parent.param()
+    }
+}
+
+impl<T> svc::Param<Remote<ServerAddr>> for Discovery<T>
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn param(&self) -> Remote<ServerAddr> {
+        self.parent.param()
+    }
+}
+
+impl<T> svc::Param<Option<profiles::Receiver>> for Discovery<T> {
+    fn param(&self) -> Option<profiles::Receiver> {
+        self.profile.clone()
     }
 }
 
@@ -313,8 +354,8 @@ mod tests {
         let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
 
         // Mock an inner stack with a service that asserts that no profile is built.
-        let stack = |(profile, _): (Option<profiles::Receiver>, _)| {
-            assert!(profile.is_none(), "profile must not resolve");
+        let stack = |d: Discovery<_>| {
+            assert!(d.profile.is_none(), "profile must not resolve");
             svc::mk(move |_: io::DuplexStream| future::ok::<(), Error>(()))
         };
 
