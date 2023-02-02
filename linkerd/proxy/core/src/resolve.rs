@@ -8,11 +8,11 @@ use std::{
 use tower::util::Oneshot;
 
 /// Resolves `T`-typed names/addresses as an infinite stream of `Update<Self::Endpoint>`.
-pub trait Resolve<T>: Clone {
+pub trait Resolve<T>: Clone + Send + Sync + Unpin + 'static {
     type Endpoint;
     type Error: Into<Error>;
-    type Resolution: Stream<Item = Result<Update<Self::Endpoint>, Self::Error>>;
-    type Future: Future<Output = Result<Self::Resolution, Self::Error>>;
+    type Resolution: Stream<Item = Result<Update<Self::Endpoint>, Self::Error>> + Send + 'static;
+    type Future: Future<Output = Result<Self::Resolution, Self::Error>> + Send + Unpin + 'static;
 
     fn resolve(&self, target: T) -> Self::Future;
 
@@ -39,9 +39,12 @@ pub enum Update<T> {
 
 impl<S, T, R, E> Resolve<T> for S
 where
-    S: tower::Service<T, Response = R> + Clone,
+    T: Send + 'static,
+    S: tower::Service<T, Response = R> + Clone + Send + Sync + Unpin + 'static,
+    S::Response: Send + 'static,
     S::Error: Into<Error>,
-    R: Stream<Item = Result<Update<E>, S::Error>>,
+    S::Future: Send + Unpin + 'static,
+    R: Stream<Item = Result<Update<E>, S::Error>> + Send + 'static,
 {
     type Endpoint = E;
     type Error = S::Error;

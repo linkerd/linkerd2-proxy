@@ -93,7 +93,7 @@ where
     S::Error: Into<Error>,
     C: load::TrackCompletion<load::peak_ewma::Handle, S::Response> + Default + Send + 'static,
     Req: 'static,
-    Balance<C, Req, S>: Service<Req>,
+    // Balance<C, Req, S>: Service<Req>,
 {
     type Service = Balance<C, Req, S>;
 

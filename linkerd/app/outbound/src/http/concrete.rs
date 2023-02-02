@@ -52,8 +52,6 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
         R: Clone + Send + Sync + 'static,
         R: Resolve<Concrete, Error = Error, Endpoint = Metadata>,
-        R::Resolution: Send,
-        R::Future: Send + Unpin,
     {
         self.map_stack(|config, rt, endpoint| {
             endpoint

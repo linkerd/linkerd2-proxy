@@ -57,6 +57,12 @@ impl<P> svc::Param<LogicalAddr> for Logical<P> {
     }
 }
 
+impl<P> svc::Param<Option<LogicalAddr>> for Logical<P> {
+    fn param(&self) -> Option<LogicalAddr> {
+        Some(self.logical_addr.clone())
+    }
+}
+
 // Used for skipping HTTP detection
 impl svc::Param<Option<http::detect::Skip>> for Logical<()> {
     fn param(&self) -> Option<http::detect::Skip> {
@@ -135,12 +141,8 @@ impl<C> Outbound<C> {
         C::Connection: Send + Unpin,
         C::Future: Send + Unpin,
         R: Clone + Send + Sync + Unpin + 'static,
-        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<tcp::Concrete>>::Resolution: Send,
-        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<http::Concrete>>::Resolution: Send,
-        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: fmt::Debug + Send + Sync + Unpin + 'static,
     {

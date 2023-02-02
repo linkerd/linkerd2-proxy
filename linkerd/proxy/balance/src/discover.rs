@@ -19,7 +19,7 @@ pub(crate) fn spawn_new_from_resolve<T, R, M, N>(
 ) -> Buffer<N::Service>
 where
     T: Clone,
-    R: Resolve<T> + Clone,
+    R: Resolve<T>,
     R::Endpoint: Clone + Debug + Eq + Send + 'static,
     R::Resolution: Send,
     R::Future: Send + 'static,

@@ -57,7 +57,7 @@ pub use self::{
 };
 pub use tower::{
     service_fn,
-    util::{self, future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},
+    util::{self, future_service, BoxCloneService, FutureService, MapRequest, Oneshot, ServiceExt},
     Service,
 };
 
