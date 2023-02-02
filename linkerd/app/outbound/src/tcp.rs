@@ -7,6 +7,7 @@ use linkerd_app_core::{
 };
 
 pub mod connect;
+pub mod endpoint;
 pub mod opaque_transport;
 
 pub use self::connect::Connect;

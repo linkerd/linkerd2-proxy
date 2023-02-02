@@ -125,6 +125,21 @@ impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
     }
 }
 
+impl<P> svc::Param<http::Version> for Concrete<P>
+where
+    Logical<P>: svc::Param<http::Version>,
+{
+    fn param(&self) -> http::Version {
+        self.logical.param()
+    }
+}
+
+impl<P> svc::Param<Option<profiles::LogicalAddr>> for Concrete<P> {
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        Some(self.logical.logical_addr.clone())
+    }
+}
+
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
@@ -142,13 +157,12 @@ impl<C> Outbound<C> {
         C::Future: Send + Unpin,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: fmt::Debug + Send + Sync + Unpin + 'static,
     {
         let http = self
             .clone()
-            .push_opaque_endpoint()
+            .push_tcp_endpoint()
             .push_http_endpoint()
             .push_http_concrete(resolve.clone())
             .push_http_logical()
@@ -166,7 +180,7 @@ impl<C> Outbound<C> {
             .into_inner();
 
         let opaque = self
-            .push_opaque_endpoint()
+            .push_tcp_endpoint()
             .push_opaque_concrete(resolve)
             .push_opaque_logical()
             // The detect stack doesn't cache its inner service, so we need a

@@ -8,7 +8,8 @@ use linkerd_app_core::{
         core::Resolve,
         http, tap,
     },
-    svc, tls,
+    svc::{self, Layer},
+    tls,
     transport::{self, addrs::*},
     Error,
 };
@@ -76,10 +77,10 @@ impl<N> Outbound<N> {
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
         R: Clone + Send + Sync + 'static,
-        R: Resolve<Concrete, Error = Error, Endpoint = Metadata>,
+        R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
     {
-        // let resolve = svc::MapTargetLayer::new(|t: Concrete| -> ConcreteAddr { t.resolve })
-        //     .layer(resolve.into_service());
+        let resolve = svc::MapTargetLayer::new(|t: Concrete| -> ConcreteAddr { t.resolve })
+            .layer(resolve.into_service());
 
         self.map_stack(|config, rt, endpoint| {
             endpoint

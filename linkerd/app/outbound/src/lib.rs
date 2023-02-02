@@ -237,7 +237,7 @@ impl Outbound<()> {
         };
 
         self.to_tcp_connect()
-            .push_opaque_endpoint()
+            .push_tcp_endpoint()
             .push_http_endpoint()
             .push_ingress(profiles, resolve, fallback)
             .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))

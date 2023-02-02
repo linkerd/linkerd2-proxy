@@ -2,7 +2,7 @@ use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, http_tracing, io, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve},
+    proxy::{api_resolve::{ConcreteAddr, Metadata}, core::Resolve},
     svc::{self, stack::Param},
     tls,
     transport::{OrigDstAddr, Remote, ServerAddr},
@@ -86,8 +86,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         P: profiles::GetProfile<Error = Error>,
-        R: Clone + Send + Sync + 'static,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         F: svc::NewService<tcp::Accept, Service = FSvc> + Clone + Send + Sync + 'static,
         FSvc: svc::Service<DetectIo<I>, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,

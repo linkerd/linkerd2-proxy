@@ -1,10 +1,5 @@
-use crate::{
-    tcp::{
-        self,
-        opaque_transport::{self, OpaqueTransport},
-    },
-    ConnectMeta, Outbound,
-};
+use super::{opaque_transport::OpaqueTransport, *};
+use crate::{ConnectMeta, Outbound};
 use linkerd_app_core::{
     io,
     proxy::http,
@@ -15,7 +10,7 @@ use linkerd_app_core::{
 };
 
 impl<C> Outbound<C> {
-    pub fn push_opaque_endpoint<T>(
+    pub fn push_tcp_endpoint<T>(
         self,
     ) -> Outbound<
         impl svc::MakeConnection<
@@ -33,7 +28,7 @@ impl<C> Outbound<C> {
             + svc::Param<Option<http::AuthorityOverride>>
             + svc::Param<Option<SessionProtocol>>
             + svc::Param<transport::labels::Key>,
-        C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+        C: svc::MakeConnection<Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
         C: Clone + Send + 'static,
         C::Connection: Send + Unpin,
         C::Metadata: Send + Unpin,
