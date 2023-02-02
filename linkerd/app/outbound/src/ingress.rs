@@ -1,11 +1,15 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, http_tracing, io, profiles,
-    proxy::{api_resolve::{ConcreteAddr, Metadata}, core::Resolve},
+    detect, http_tracing, io, metrics, profiles,
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        tap,
+    },
     svc::{self, stack::Param},
     tls,
-    transport::{OrigDstAddr, Remote, ServerAddr},
+    transport::{self, addrs::*},
     AddrMatch, Error, Infallible, NameAddr,
 };
 use thiserror::Error;
@@ -19,6 +23,9 @@ struct Http<T> {
     target: T,
     version: http::Version,
 }
+
+#[derive(Clone, Debug)]
+struct SelectTarget(Http<tcp::Accept>);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Target {
@@ -38,33 +45,9 @@ const DST_OVERRIDE_HEADER: &str = "l5d-dst-override";
 
 type DetectIo<I> = io::PrefixedIo<I>;
 
-impl<T> Param<http::Version> for Http<T> {
-    fn param(&self) -> http::Version {
-        self.version
-    }
-}
-
-impl Param<profiles::LookupAddr> for Http<NameAddr> {
-    fn param(&self) -> profiles::LookupAddr {
-        profiles::LookupAddr(self.target.clone().into())
-    }
-}
-
-impl Param<http::normalize_uri::DefaultAuthority> for Http<tcp::Accept> {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(Some(
-            self.target
-                .orig_dst
-                .to_string()
-                .parse()
-                .expect("Address must be a valid authority"),
-        ))
-    }
-}
-
 // === impl Outbound ===
 
-impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
+impl<S> Outbound<S> {
     /// Routes HTTP requests according to the l5d-dst-override header.
     ///
     /// This is only intended for Ingress configurations, where we assume all
@@ -90,10 +73,20 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
         F: svc::NewService<tcp::Accept, Service = FSvc> + Clone + Send + Sync + 'static,
         FSvc: svc::Service<DetectIo<I>, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,
+        S: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+        S: Clone + Send + Sync + Unpin + 'static,
+        S::Connection: Send + Unpin + 'static,
+        S::Future: Send,
     {
-        let http_endpoint = self.clone().into_stack();
+        let http_endpoint = self
+            .clone()
+            .push_tcp_endpoint()
+            .push_http_endpoint()
+            .into_stack();
 
-        self.push_http_concrete(resolve)
+        self.push_tcp_endpoint()
+            .push_http_endpoint()
+            .push_http_concrete(resolve)
             .push_http_logical()
             .map_stack(|config, rt, http_logical| {
                 let detect_http = config.proxy.detect_http();
@@ -185,33 +178,18 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                 // are not.
                 let new_http = ingress_override
                     .push_switch(
-                        |Http { target, version }: Http<Target>| match target {
-                            Target::Override(target) => {
-                                Ok::<_, Infallible>(svc::Either::A(Http { target, version }))
-                            }
-                            Target::Forward(OrigDstAddr(addr)) => {
-                                Ok(svc::Either::B(http::Endpoint {
-                                    addr: Remote(ServerAddr(addr)),
-                                    metadata: Metadata::default(),
-                                    logical_addr: None,
-                                    protocol: version,
-                                    opaque_protocol: false,
-                                    tls: tls::ConditionalClientTls::None(
-                                        tls::NoClientTls::IngressWithoutOverride,
-                                    ),
-                                }))
-                            }
+                        |Http { target, version }: Http<Target>| -> Result<_, Infallible> {
+                            Ok(match target {
+                                Target::Override(target) => svc::Either::A(Http { target, version }),
+                                Target::Forward(target) => svc::Either::B(Http { target, version }),
+                            })
                         },
                         http_endpoint.into_inner(),
                     )
-                    .push(svc::ArcNewService::layer())
-                    // Obtain a new inner service for each request. Override stacks are
-                    // cached, as they depend on discovery that should not be performed
-                    // many times. Forwarding stacks are not cached explicitly, as there
-                    // are no real resources we need to share across connections. This
-                    // allows us to avoid buffering requests to these endpoints.
-                    .check_new_service::<Http<Target>, http::Request<_>>()
                     .push_on_service(svc::LoadShed::layer())
+                    .push(svc::ArcNewService::layer())
+                    .check_new_service::<Http<Target>, http::Request<_>>()
+                    // Obtain a new inner service for each request.
                     .lift_new()
                     .check_new_new::<Http<tcp::Accept>, Http<Target>>()
                     .push(svc::NewOneshotRoute::layer_via(|a: &Http<tcp::Accept>| {
@@ -264,8 +242,126 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
     }
 }
 
-#[derive(Clone, Debug)]
-struct SelectTarget(Http<tcp::Accept>);
+// === impl Http ===
+
+impl<T> Param<http::Version> for Http<T> {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+impl Param<http::normalize_uri::DefaultAuthority> for Http<tcp::Accept> {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(Some(
+            self.target
+                .orig_dst
+                .to_string()
+                .parse()
+                .expect("Address must be a valid authority"),
+        ))
+    }
+}
+
+impl Param<profiles::LookupAddr> for Http<NameAddr> {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(self.target.clone().into())
+    }
+}
+
+impl Param<Remote<ServerAddr>> for Http<OrigDstAddr> {
+    fn param(&self) -> Remote<ServerAddr> {
+        let OrigDstAddr(addr) = self.target;
+        Remote(ServerAddr(addr))
+    }
+}
+
+impl Param<tls::ConditionalClientTls> for Http<OrigDstAddr> {
+    fn param(&self) -> tls::ConditionalClientTls {
+        tls::ConditionalClientTls::None(tls::NoClientTls::NotProvidedByServiceDiscovery)
+    }
+}
+
+impl Param<Option<tcp::opaque_transport::PortOverride>> for Http<OrigDstAddr> {
+    fn param(&self) -> Option<tcp::opaque_transport::PortOverride> {
+        None
+    }
+}
+
+impl Param<Option<http::AuthorityOverride>> for Http<OrigDstAddr> {
+    fn param(&self) -> Option<http::AuthorityOverride> {
+        None
+    }
+}
+
+impl svc::Param<transport::labels::Key> for Http<OrigDstAddr> {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::OutboundClient(self.param())
+    }
+}
+
+impl svc::Param<metrics::OutboundEndpointLabels> for Http<OrigDstAddr> {
+    fn param(&self) -> metrics::OutboundEndpointLabels {
+        let authority = self
+            .target
+            .to_string()
+            .parse()
+            .expect("address must be a valid authority");
+        metrics::OutboundEndpointLabels {
+            authority: Some(authority),
+            labels: Default::default(),
+            server_id: self.param(),
+            target_addr: self.target.into(),
+        }
+    }
+}
+
+impl svc::Param<metrics::EndpointLabels> for Http<OrigDstAddr> {
+    fn param(&self) -> metrics::EndpointLabels {
+        metrics::EndpointLabels::Outbound(self.param())
+    }
+}
+
+impl svc::Param<http::client::Settings> for Http<OrigDstAddr> {
+    fn param(&self) -> http::client::Settings {
+        match self.param() {
+            http::Version::H2 => http::client::Settings::H2,
+            http::Version::Http1 => http::client::Settings::Http1,
+        }
+    }
+}
+
+// TODO(ver) move this into the endpoint stack?
+impl tap::Inspect for Http<OrigDstAddr> {
+    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<std::net::SocketAddr> {
+        req.extensions().get::<http::ClientHandle>().map(|c| c.addr)
+    }
+
+    fn src_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::None(tls::NoServerTls::Loopback)
+    }
+
+    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<std::net::SocketAddr> {
+        Some(self.target.into())
+    }
+
+    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<tap::Labels> {
+        None
+    }
+
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalClientTls {
+        self.param()
+    }
+
+    fn route_labels<B>(&self, _: &http::Request<B>) -> Option<tap::Labels> {
+        None
+    }
+
+    fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
+        true
+    }
+}
+
+// === impl SelectTarget ===
 
 impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
     type Key = Http<Target>;

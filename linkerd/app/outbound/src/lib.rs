@@ -173,7 +173,6 @@ impl Outbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         P: profiles::GetProfile<Error = Error>,
     {
         if self.config.ingress_mode {
@@ -195,7 +194,6 @@ impl Outbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         P: profiles::GetProfile<Error = Error>,
     {
         let logical = self.to_tcp_connect().push_logical(resolve);
@@ -220,7 +218,6 @@ impl Outbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         P: profiles::GetProfile<Error = Error>,
     {
         // The fallback stack is the same thing as the normal proxy stack, but
@@ -237,8 +234,6 @@ impl Outbound<()> {
         };
 
         self.to_tcp_connect()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
             .push_ingress(profiles, resolve, fallback)
             .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
             .into_inner()

@@ -285,6 +285,7 @@ where
     }
 }
 
+// TODO(ver) move this into the endpoint stack?
 impl<T> tap::Inspect for Endpoint<T> {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
         req.extensions().get::<http::ClientHandle>().map(|c| c.addr)
