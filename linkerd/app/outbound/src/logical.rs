@@ -176,6 +176,7 @@ impl<C> Outbound<C> {
                             .push(http::Retain::layer())
                             .push(http::BoxResponse::layer()),
                     )
+                    .check_new_service::<http::Logical, http::Request<_>>()
             })
             .into_inner();
 

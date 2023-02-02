@@ -1,4 +1,4 @@
-use super::{retry, CanonicalDstHeader, Logical};
+use super::{retry, CanonicalDstHeader};
 use crate::Outbound;
 use linkerd_app_core::{
     classify, metrics,
@@ -57,11 +57,11 @@ impl<N> Outbound<N> {
     /// available backends, requests are failed with a [`svc::stack::LoadShedError`].
     ///
     // TODO(ver) make the outer target type generic/parameterized.
-    pub fn push_http_logical<NSvc>(
+    pub fn push_http_logical<T, NSvc>(
         self,
     ) -> Outbound<
         svc::ArcNewService<
-            Logical,
+            T,
             impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
@@ -71,7 +71,11 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        N: svc::NewService<Concrete<Logical>, Service = NSvc> + Clone + Send + Sync + 'static,
+        T: svc::Param<tokio::sync::watch::Receiver<profiles::Profile>>,
+        T: svc::Param<profiles::LogicalAddr>,
+        T: svc::Param<CanonicalDstHeader>,
+        T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+        N: svc::NewService<Concrete<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Clone
             + Send
@@ -90,12 +94,12 @@ impl<N> Outbound<N> {
                         // leaking tasks onto the runtime.
                         .push(svc::LoadShed::layer()),
                 )
-                .push(http::insert::NewInsert::<RouteParams<Logical>, _>::layer())
+                .push(http::insert::NewInsert::<RouteParams<T>, _>::layer())
                 .push(
                     rt.metrics
                         .proxy
                         .http_profile_route_actual
-                        .to_layer::<classify::Response, _, RouteParams<Logical>>(),
+                        .to_layer::<classify::Response, _, RouteParams<T>>(),
                 )
                 // Depending on whether or not the request can be
                 // retried, it may have one of two `Body` types. This
@@ -112,7 +116,7 @@ impl<N> Outbound<N> {
                     rt.metrics
                         .proxy
                         .http_profile_route
-                        .to_layer::<classify::Response, _, RouteParams<Logical>>(),
+                        .to_layer::<classify::Response, _, RouteParams<T>>(),
                 )
                 // Sets the per-route response classifier as a request
                 // extension.
@@ -130,18 +134,16 @@ impl<N> Outbound<N> {
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(route)
-                .push(svc::NewOneshotRoute::<Params<Logical>, _, _>::layer_cached());
+                .push(svc::NewOneshotRoute::<Params<T>, _, _>::layer_cached());
 
-            // For each `Logical` target, watch its `Profile`, rebuilding a
+            // For each `T` target, watch its `Profile`, rebuilding a
             // router stack.
             concrete
                 // Share the concrete stack with each router stack.
                 .lift_new()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<
-                    Params<Logical>,
-                >())
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params<T>>())
                 // Add l5d-dst-canonical header to requests.
                 //
                 // TODO(ver) move this into the endpoint stack so that we can only
@@ -157,13 +159,17 @@ impl<N> Outbound<N> {
 
 // === impl Params ===
 
-impl From<(Profile, Logical)> for Params<Logical> {
-    fn from((profile, logical): (Profile, Logical)) -> Self {
+impl<T> From<(Profile, T)> for Params<T>
+where
+    T: svc::Param<profiles::LogicalAddr>,
+    T: Eq + Hash + Clone + Debug,
+{
+    fn from((profile, parent): (Profile, T)) -> Self {
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if profile.targets.is_empty() {
             let concrete = Concrete {
-                addr: logical.logical_addr.clone().into(),
-                parent: logical.clone(),
+                addr: parent.param().into(),
+                parent: parent.clone(),
             };
             let backends = std::iter::once(concrete.clone()).collect();
             let distribution = Distribution::first_available(std::iter::once(concrete));
@@ -174,14 +180,14 @@ impl From<(Profile, Logical)> for Params<Logical> {
                 .iter()
                 .map(|t| Concrete {
                     addr: t.addr.clone(),
-                    parent: logical.clone(),
+                    parent: parent.clone(),
                 })
                 .collect();
             let distribution = Distribution::random_available(profile.targets.iter().cloned().map(
                 |profiles::Target { addr, weight }| {
                     let concrete = Concrete {
                         addr,
-                        parent: logical.clone(),
+                        parent: parent.clone(),
                     };
                     (concrete, weight)
                 },
@@ -198,7 +204,7 @@ impl From<(Profile, Logical)> for Params<Logical> {
             .map(|(req_match, profile)| {
                 let params = RouteParams {
                     profile,
-                    parent: logical.clone(),
+                    parent: parent.clone(),
                     distribution: distribution.clone(),
                 };
                 (req_match, params)
@@ -208,34 +214,44 @@ impl From<(Profile, Logical)> for Params<Logical> {
                 profiles::http::RequestMatch::default(),
                 RouteParams {
                     profile: Default::default(),
-                    parent: logical.clone(),
+                    parent: parent.clone(),
                     distribution: distribution.clone(),
                 },
             )))
             .collect::<Arc<[(_, _)]>>();
 
         Self {
-            parent: logical,
+            parent,
             backends,
             routes,
         }
     }
 }
 
-impl svc::Param<distribute::Backends<Concrete<Logical>>> for Params<Logical> {
-    fn param(&self) -> distribute::Backends<Concrete<Logical>> {
+impl<T> svc::Param<distribute::Backends<Concrete<T>>> for Params<T>
+where
+    T: Eq + Hash + Clone + Debug,
+{
+    fn param(&self) -> distribute::Backends<Concrete<T>> {
         self.backends.clone()
     }
 }
 
-impl svc::Param<profiles::LogicalAddr> for Params<Logical> {
+impl<T> svc::Param<profiles::LogicalAddr> for Params<T>
+where
+    T: svc::Param<profiles::LogicalAddr>,
+    T: Eq + Hash + Clone + Debug,
+{
     fn param(&self) -> profiles::LogicalAddr {
-        self.parent.logical_addr.clone()
+        self.parent.param()
     }
 }
 
-impl<B> svc::router::SelectRoute<http::Request<B>> for Params<Logical> {
-    type Key = RouteParams<Logical>;
+impl<T, B> svc::router::SelectRoute<http::Request<B>> for Params<T>
+where
+    T: Eq + Hash + Clone + Debug,
+{
+    type Key = RouteParams<T>;
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
@@ -247,37 +263,43 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for Params<Logical> {
 
 // === impl RouteParams ===
 
-impl svc::Param<profiles::LogicalAddr> for RouteParams<Logical> {
+impl<T> svc::Param<profiles::LogicalAddr> for RouteParams<T>
+where
+    T: svc::Param<profiles::LogicalAddr>,
+{
     fn param(&self) -> profiles::LogicalAddr {
-        self.parent.logical_addr.clone()
+        self.parent.param()
     }
 }
 
-impl svc::Param<Distribution<Logical>> for RouteParams<Logical> {
-    fn param(&self) -> Distribution<Logical> {
+impl<T: Clone> svc::Param<Distribution<T>> for RouteParams<T> {
+    fn param(&self) -> Distribution<T> {
         self.distribution.clone()
     }
 }
 
-impl svc::Param<profiles::http::Route> for RouteParams<Logical> {
+impl<T> svc::Param<profiles::http::Route> for RouteParams<T> {
     fn param(&self) -> profiles::http::Route {
         self.profile.clone()
     }
 }
 
-impl svc::Param<metrics::ProfileRouteLabels> for RouteParams<Logical> {
+impl<T> svc::Param<metrics::ProfileRouteLabels> for RouteParams<T>
+where
+    T: svc::Param<profiles::LogicalAddr>,
+{
     fn param(&self) -> metrics::ProfileRouteLabels {
-        metrics::ProfileRouteLabels::outbound(self.parent.logical_addr.clone(), &self.profile)
+        metrics::ProfileRouteLabels::outbound(self.parent.param(), &self.profile)
     }
 }
 
-impl svc::Param<http::ResponseTimeout> for RouteParams<Logical> {
+impl<T> svc::Param<http::ResponseTimeout> for RouteParams<T> {
     fn param(&self) -> http::ResponseTimeout {
         http::ResponseTimeout(self.profile.timeout())
     }
 }
 
-impl classify::CanClassify for RouteParams<Logical> {
+impl<T> classify::CanClassify for RouteParams<T> {
     type Classify = classify::Request;
 
     fn classify(&self) -> classify::Request {
@@ -298,25 +320,31 @@ impl<T: svc::Param<profiles::LogicalAddr>> From<(&T, Error)> for LogicalError {
 
 // === impl Concrete ===
 
-impl svc::Param<http::Version> for Concrete<Logical> {
+impl<T> svc::Param<http::Version> for Concrete<T>
+where
+    T: svc::Param<http::Version>,
+{
     fn param(&self) -> http::Version {
         self.parent.param()
     }
 }
 
-impl svc::Param<ConcreteAddr> for Concrete<Logical> {
+impl<T> svc::Param<ConcreteAddr> for Concrete<T> {
     fn param(&self) -> ConcreteAddr {
         ConcreteAddr(self.addr.clone())
     }
 }
 
-impl svc::Param<Option<profiles::LogicalAddr>> for Concrete<Logical> {
+impl<T> svc::Param<Option<profiles::LogicalAddr>> for Concrete<T>
+where
+    T: svc::Param<profiles::LogicalAddr>,
+{
     fn param(&self) -> Option<profiles::LogicalAddr> {
-        Some(self.parent.logical_addr.clone())
+        Some(self.parent.param())
     }
 }
 
-impl svc::Param<http::balance::EwmaConfig> for Concrete<Logical> {
+impl<T> svc::Param<http::balance::EwmaConfig> for Concrete<T> {
     fn param(&self) -> http::balance::EwmaConfig {
         http::balance::EwmaConfig {
             default_rtt: std::time::Duration::from_millis(30),
