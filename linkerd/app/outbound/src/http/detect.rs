@@ -23,7 +23,7 @@ impl<N> Outbound<N> {
     //
     // TODO(ver) Let discovery influence whether we assume an HTTP protocol
     // without deteciton.
-    pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
+    pub fn push_detect_http<T, U, I, H, HSvc, NSvc>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: std::fmt::Debug + Send + Sync + Unpin + 'static,

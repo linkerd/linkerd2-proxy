@@ -44,12 +44,16 @@ impl From<CanonicalDstHeader> for HeaderPair {
 
 // === impl Logical ===
 
-impl From<(Version, tcp::Logical)> for Logical {
-    fn from((protocol, logical): (Version, tcp::Logical)) -> Self {
+impl<T> From<(Version, T)> for Logical
+where
+    T: Param<profiles::LogicalAddr>,
+    T: Param<profiles::Receiver>,
+{
+    fn from((protocol, logical): (Version, T)) -> Self {
         Self {
             protocol,
-            profile: logical.profile,
-            logical_addr: logical.logical_addr,
+            profile: logical.param(),
+            logical_addr: logical.param(),
         }
     }
 }

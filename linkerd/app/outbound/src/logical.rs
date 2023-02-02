@@ -7,14 +7,13 @@ use linkerd_app_core::{
     transport::{ClientAddr, Local},
     Addr, Error,
 };
-pub use profiles::LogicalAddr;
-use std::fmt;
+use std::{fmt::Debug, hash::Hash};
 use tracing::info_span;
 
 #[derive(Clone)]
 pub struct Logical<P> {
     pub profile: profiles::Receiver,
-    pub logical_addr: LogicalAddr,
+    pub logical_addr: profiles::LogicalAddr,
     pub protocol: P,
 }
 
@@ -23,7 +22,7 @@ pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 // === impl Logical ===
 
 impl Logical<()> {
-    pub(crate) fn new(logical_addr: LogicalAddr, profile: profiles::Receiver) -> Self {
+    pub(crate) fn new(logical_addr: profiles::LogicalAddr, profile: profiles::Receiver) -> Self {
         Self {
             profile,
             logical_addr,
@@ -38,6 +37,12 @@ impl<P> svc::Param<tokio::sync::watch::Receiver<profiles::Profile>> for Logical<
     }
 }
 
+impl<P> svc::Param<profiles::Receiver> for Logical<P> {
+    fn param(&self) -> profiles::Receiver {
+        self.profile.clone()
+    }
+}
+
 /// Used for default traffic split
 impl<P> svc::Param<profiles::LookupAddr> for Logical<P> {
     fn param(&self) -> profiles::LookupAddr {
@@ -45,14 +50,14 @@ impl<P> svc::Param<profiles::LookupAddr> for Logical<P> {
     }
 }
 
-impl<P> svc::Param<LogicalAddr> for Logical<P> {
-    fn param(&self) -> LogicalAddr {
+impl<P> svc::Param<profiles::LogicalAddr> for Logical<P> {
+    fn param(&self) -> profiles::LogicalAddr {
         self.logical_addr.clone()
     }
 }
 
-impl<P> svc::Param<Option<LogicalAddr>> for Logical<P> {
-    fn param(&self) -> Option<LogicalAddr> {
+impl<P> svc::Param<Option<profiles::LogicalAddr>> for Logical<P> {
+    fn param(&self) -> Option<profiles::LogicalAddr> {
         Some(self.logical_addr.clone())
     }
 }
@@ -95,7 +100,7 @@ impl<P: std::hash::Hash> std::hash::Hash for Logical<P> {
     }
 }
 
-impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
+impl<P: Debug> Debug for Logical<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Logical")
             .field("protocol", &self.protocol)
@@ -104,7 +109,6 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
             .finish()
     }
 }
-
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
@@ -113,9 +117,14 @@ impl<C> Outbound<C> {
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.
-    pub fn push_logical<R, I>(self, resolve: R) -> Outbound<svc::ArcNewTcp<tcp::Logical, I>>
+    pub fn push_logical<T, R, I>(self, resolve: R) -> Outbound<svc::ArcNewTcp<T, I>>
     where
-        Self: Clone + 'static,
+        T: svc::Param<tokio::sync::watch::Receiver<profiles::Profile>>,
+        T: svc::Param<profiles::LogicalAddr>,
+        T: svc::Param<Option<profiles::LogicalAddr>>,
+        T: svc::Param<Option<http::detect::Skip>>,
+        T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+        http::Logical: From<(http::Version, T)>,
         C: Clone + Send + Sync + Unpin + 'static,
         C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
         C::Connection: Send + Unpin,
@@ -123,7 +132,7 @@ impl<C> Outbound<C> {
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
-        I: fmt::Debug + Send + Sync + Unpin + 'static,
+        I: Debug + Send + Sync + Unpin + 'static,
     {
         let http = self
             .clone()
@@ -151,10 +160,13 @@ impl<C> Outbound<C> {
             .push_opaque_logical()
             // The detect stack doesn't cache its inner service, so we need a
             // process-global cache of logical TCP stacks.
-            .map_stack(|config, _, stk| stk.push_new_idle_cached(config.discovery_idle_timeout));
+            .map_stack(|config, _, stk| {
+                stk.push_new_idle_cached(config.discovery_idle_timeout)
+                    .check_new_service::<T, _>()
+            });
 
-        opaque.push_detect_http(http).map_stack(|_, _, stk| {
-            stk.instrument(|l: &tcp::Logical| info_span!("logical",  svc = %l.logical_addr))
+        opaque.push_detect_http::<T, http::Logical, I, _, _, _>(http).map_stack(|_, _, stk| {
+            stk.instrument(|t: &T| info_span!("logical",  svc = %svc::Param::<profiles::LogicalAddr>::param(t)))
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
