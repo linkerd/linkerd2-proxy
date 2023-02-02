@@ -344,11 +344,13 @@ where
     }
 }
 
-impl<T> svc::Param<http::balance::EwmaConfig> for Concrete<T> {
-    fn param(&self) -> http::balance::EwmaConfig {
-        http::balance::EwmaConfig {
+impl<T> svc::Param<super::Dispatch> for Concrete<T> {
+    fn param(&self) -> super::Dispatch {
+        const EWMA: http::balance::EwmaConfig = http::balance::EwmaConfig {
             default_rtt: std::time::Duration::from_millis(30),
             decay: std::time::Duration::from_secs(10),
-        }
+        };
+
+        super::Dispatch::Balance(self.addr.clone(), EWMA)
     }
 }

@@ -1,4 +1,4 @@
-use super::{client, normalize_uri};
+use super::{client, normalize_uri, Dispatch};
 use crate::{stack_labels, Outbound};
 use ahash::AHashSet;
 use linkerd_app_core::{
@@ -11,7 +11,7 @@ use linkerd_app_core::{
     svc::{self, Layer},
     tls,
     transport::{self, addrs::*},
-    Error,
+    Error, Infallible, NameAddr,
 };
 use std::{
     fmt::Debug,
@@ -23,7 +23,7 @@ use tracing::info_span;
 #[derive(Debug, thiserror::Error)]
 #[error("concrete service {addr}: {source}")]
 pub struct ConcreteError {
-    addr: ConcreteAddr,
+    addr: NameAddr,
     #[source]
     source: Error,
 }
@@ -44,6 +44,13 @@ pub struct NewEndpoint<N> {
 
 pub type IpSet = Arc<AHashSet<IpAddr>>;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Balance<T> {
+    addr: NameAddr,
+    ewma: http::balance::EwmaConfig,
+    parent: T,
+}
+
 impl<N> Outbound<N> {
     /// Builds a [`svc::NewService`] stack that builds buffered HTTP load
     /// balancer services for [`Concrete`] targets.
@@ -63,14 +70,15 @@ impl<N> Outbound<N> {
             impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
-                    Error = ConcreteError,
+                    Error = Error,
                     Future = impl Send,
                 > + Clone,
         >,
     >
     where
-        T: svc::Param<ConcreteAddr>,
-        T: svc::Param<http::balance::EwmaConfig>,
+        T: svc::Param<Dispatch>,
+        // T: svc::Param<svc::queue::Capacity>,
+        // T: svc::Param<svc::queue::Timeout>,
         T: Clone + Debug + Send + Sync + 'static,
         N: svc::NewService<Endpoint<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -81,24 +89,30 @@ impl<N> Outbound<N> {
         R: Clone + Send + Sync + 'static,
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
     {
-        let resolve = svc::MapTargetLayer::new(|t: T| -> ConcreteAddr { t.param() })
-            .layer(resolve.into_service());
+        let resolve =
+            svc::MapTargetLayer::new(|t: Balance<T>| -> ConcreteAddr { ConcreteAddr(t.addr) })
+                .layer(resolve.into_service());
 
         self.map_stack(|config, rt, endpoint| {
-            endpoint
+            let inbound_ips = config.inbound_ips.clone();
+
+            let endpoint = endpoint
                 .push_on_service(
                     rt.metrics
                         .proxy
                         .stack
                         .layer(stack_labels("http", "endpoint")),
                 )
-                .check_new_service::<Endpoint<T>, http::Request<_>>()
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr))
-                .push(NewEndpoint::layer(config.inbound_ips.iter().copied()))
+                .check_new_service::<Endpoint<T>, http::Request<_>>();
+
+            endpoint
+                .clone()
+                .push(NewEndpoint::layer(inbound_ips.iter().copied()))
                 .lift_new_with_target()
-                .check_new_new_service::<T, (_, _), http::Request<_>>()
+                .check_new_new_service::<Balance<T>, (_, _), http::Request<_>>()
                 .push(http::NewBalancePeakEwma::layer(resolve))
-                .check_new_service::<T, http::Request<_>>()
+                .check_new_service::<Balance<T>, http::Request<_>>()
                 // Drives the initial resolution via the service's readiness.
                 .push_on_service(
                     svc::layers().push(http::BoxResponse::layer()).push(
@@ -108,12 +122,26 @@ impl<N> Outbound<N> {
                             .layer(stack_labels("http", "concrete")),
                     ),
                 )
-                .push(svc::NewQueue::layer_via(config.http_request_queue))
-                .instrument(
-                    |c: &T| info_span!("concrete", svc = %svc::Param::<ConcreteAddr>::param(c)),
+                .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
+                .instrument(|t: &Balance<T>| info_span!("concrete", addr = %t.addr))
+                .push_switch(
+                    move |parent: T| -> Result<_, Infallible> {
+                        Ok(match parent.param() {
+                            Dispatch::Balance(addr, ewma) => {
+                                svc::Either::A(Balance { addr, ewma, parent })
+                            }
+                            Dispatch::Forward(addr, meta) => svc::Either::B(Endpoint {
+                                addr: Remote(ServerAddr(addr)),
+                                is_local: false,
+                                metadata: meta,
+                                parent,
+                            }),
+                        })
+                    },
+                    endpoint.into_inner(),
                 )
+                .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .check_new_service::<T, http::Request<_>>()
-                .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -121,15 +149,20 @@ impl<N> Outbound<N> {
 
 // === impl ConcreteError ===
 
-impl<T> From<(&T, Error)> for ConcreteError
-where
-    T: svc::Param<ConcreteAddr>,
-{
-    fn from((target, source): (&T, Error)) -> Self {
+impl<T> From<(&Balance<T>, Error)> for ConcreteError {
+    fn from((target, source): (&Balance<T>, Error)) -> Self {
         Self {
-            addr: target.param(),
+            addr: target.addr.clone(),
             source,
         }
+    }
+}
+
+// === impl Balance ===
+
+impl<T> svc::Param<http::balance::EwmaConfig> for Balance<T> {
+    fn param(&self) -> http::balance::EwmaConfig {
+        self.ewma
     }
 }
 
@@ -326,7 +359,7 @@ impl<N> NewEndpoint<N> {
     }
 }
 
-impl<T, N> svc::NewService<((SocketAddr, Metadata), T)> for NewEndpoint<N>
+impl<T, N> svc::NewService<((SocketAddr, Metadata), Balance<T>)> for NewEndpoint<N>
 where
     T: Clone + Debug,
     N: svc::NewService<Endpoint<T>>,
@@ -335,7 +368,7 @@ where
 
     fn new_service(
         &self,
-        ((addr, metadata), parent): ((SocketAddr, Metadata), T),
+        ((addr, metadata), parent): ((SocketAddr, Metadata), Balance<T>),
     ) -> Self::Service {
         tracing::trace!(%addr, ?metadata, ?parent, "Resolved endpoint");
         let is_local = self.inbound_ips.contains(&addr.ip());
@@ -343,7 +376,7 @@ where
             addr: Remote(ServerAddr(addr)),
             metadata,
             is_local,
-            parent,
+            parent: parent.parent,
         })
     }
 }

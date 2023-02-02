@@ -1,3 +1,19 @@
+use self::{
+    proxy_connection_close::ProxyConnectionClose, require_id_header::NewRequireIdentity,
+    strip_proxy_error::NewStripProxyError,
+};
+use crate::tcp;
+use linkerd_app_core::{
+    profiles,
+    proxy::{
+        api_resolve::{Metadata, ProtocolHint},
+        tap,
+    },
+    svc::Param,
+    tls, Addr, Conditional, NameAddr, CANONICAL_DST_HEADER,
+};
+use std::{net::SocketAddr, str::FromStr};
+
 pub mod concrete;
 pub mod detect;
 mod endpoint;
@@ -8,25 +24,19 @@ mod retry;
 mod server;
 mod strip_proxy_error;
 
-use self::{
-    proxy_connection_close::ProxyConnectionClose, require_id_header::NewRequireIdentity,
-    strip_proxy_error::NewStripProxyError,
-};
 pub(crate) use self::{require_id_header::IdentityRequired, server::ServerRescue};
-use crate::tcp;
 pub use linkerd_app_core::proxy::http::*;
-use linkerd_app_core::{
-    profiles,
-    proxy::{api_resolve::ProtocolHint, tap},
-    svc::Param,
-    tls, Addr, Conditional, CANONICAL_DST_HEADER,
-};
-use std::{net::SocketAddr, str::FromStr};
 
 pub type Logical = crate::logical::Logical<Version>;
 pub type Endpoint = crate::endpoint::Endpoint<Version>;
 
 pub type Connect = self::endpoint::Connect<Endpoint>;
+
+#[derive(Clone, Debug)]
+pub enum Dispatch {
+    Balance(NameAddr, balance::EwmaConfig),
+    Forward(SocketAddr, Metadata),
+}
 
 #[derive(Clone, Debug)]
 pub struct CanonicalDstHeader(pub Addr);
