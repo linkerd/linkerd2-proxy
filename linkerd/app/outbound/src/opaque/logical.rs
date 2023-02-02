@@ -1,4 +1,4 @@
-use super::Outbound;
+use crate::Outbound;
 use linkerd_app_core::{
     io,
     profiles::{self, Profile},
@@ -55,7 +55,7 @@ impl<N> Outbound<N> {
     /// [`svc::stack::LoadShedError`].
     ///
     // TODO(ver) make the outer target type generic/parameterized.
-    pub fn push_tcp_logical<T, I, NSvc>(
+    pub fn push_opaque_logical<T, I, NSvc>(
         self,
     ) -> Outbound<
         svc::ArcNewService<

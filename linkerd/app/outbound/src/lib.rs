@@ -11,6 +11,7 @@ pub mod http;
 mod ingress;
 pub mod logical;
 mod metrics;
+pub mod opaque;
 mod switch_logical;
 pub mod tcp;
 #[cfg(test)]
@@ -236,7 +237,7 @@ impl Outbound<()> {
         };
 
         self.to_tcp_connect()
-            .push_tcp_endpoint()
+            .push_opaque_endpoint()
             .push_http_endpoint()
             .push_ingress(profiles, resolve, fallback)
             .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))

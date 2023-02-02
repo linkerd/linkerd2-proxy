@@ -217,7 +217,7 @@ where
     O::Future: Send + Unpin + 'static,
     R: Resolve<outbound::http::Concrete, Endpoint = Metadata, Error = Error>,
 {
-    let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
+    let endpoint = outbound.push_opaque_endpoint().push_http_endpoint();
     endpoint
         .clone()
         .push_http_concrete(resolve)
@@ -252,13 +252,13 @@ where
 {
     let logical = outbound
         .clone()
-        .push_tcp_endpoint()
-        .push_tcp_concrete(resolve)
-        .push_tcp_logical();
+        .push_opaque_endpoint()
+        .push_opaque_concrete(resolve)
+        .push_opaque_logical();
     let endpoint = outbound
         .clone()
-        .push_tcp_endpoint()
-        .push_tcp_forward()
+        .push_opaque_endpoint()
+        .push_opaque_forward()
         .into_stack();
     let inbound_ips = outbound.config().inbound_ips.clone();
     endpoint
