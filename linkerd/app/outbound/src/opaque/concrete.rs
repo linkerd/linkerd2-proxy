@@ -138,43 +138,6 @@ impl<T: svc::Param<ConcreteAddr>> From<(&T, Error)> for ConcreteError {
     }
 }
 
-/// === impl NewEndpoint ===
-
-impl<N> NewEndpoint<N> {
-    pub fn new(inbound_ips: IpSet, inner: N) -> Self {
-        Self { inbound_ips, inner }
-    }
-
-    pub fn layer(
-        inbound_ips: impl IntoIterator<Item = IpAddr>,
-    ) -> impl svc::Layer<N, Service = Self> + Clone {
-        let inbound_ips = Arc::new(inbound_ips.into_iter().collect::<AHashSet<_>>());
-        svc::layer::mk(move |inner| Self::new(inbound_ips.clone(), inner))
-    }
-}
-
-impl<T, N> svc::NewService<((SocketAddr, Metadata), T)> for NewEndpoint<N>
-where
-    T: Clone + Debug,
-    N: svc::NewService<Endpoint<T>>,
-{
-    type Service = N::Service;
-
-    fn new_service(
-        &self,
-        ((addr, metadata), parent): ((SocketAddr, Metadata), T),
-    ) -> Self::Service {
-        tracing::trace!(%addr, ?metadata, ?parent, "Resolved endpoint");
-        let is_local = self.inbound_ips.contains(&addr.ip());
-        self.inner.new_service(Endpoint {
-            addr: Remote(ServerAddr(addr)),
-            metadata,
-            is_local,
-            parent,
-        })
-    }
-}
-
 // === impl Endpoint ===
 
 impl<T> svc::Param<Remote<ServerAddr>> for Endpoint<T> {
@@ -277,5 +240,42 @@ impl<T> svc::Param<tls::ConditionalClientTls> for Endpoint<T> {
             .unwrap_or(tls::ConditionalClientTls::None(
                 tls::NoClientTls::NotProvidedByServiceDiscovery,
             ))
+    }
+}
+
+/// === impl NewEndpoint ===
+
+impl<N> NewEndpoint<N> {
+    pub fn new(inbound_ips: IpSet, inner: N) -> Self {
+        Self { inbound_ips, inner }
+    }
+
+    pub fn layer(
+        inbound_ips: impl IntoIterator<Item = IpAddr>,
+    ) -> impl svc::Layer<N, Service = Self> + Clone {
+        let inbound_ips = Arc::new(inbound_ips.into_iter().collect::<AHashSet<_>>());
+        svc::layer::mk(move |inner| Self::new(inbound_ips.clone(), inner))
+    }
+}
+
+impl<T, N> svc::NewService<((SocketAddr, Metadata), T)> for NewEndpoint<N>
+where
+    T: Clone + Debug,
+    N: svc::NewService<Endpoint<T>>,
+{
+    type Service = N::Service;
+
+    fn new_service(
+        &self,
+        ((addr, metadata), parent): ((SocketAddr, Metadata), T),
+    ) -> Self::Service {
+        tracing::trace!(%addr, ?metadata, ?parent, "Resolved endpoint");
+        let is_local = self.inbound_ips.contains(&addr.ip());
+        self.inner.new_service(Endpoint {
+            addr: Remote(ServerAddr(addr)),
+            metadata,
+            is_local,
+            parent,
+        })
     }
 }
