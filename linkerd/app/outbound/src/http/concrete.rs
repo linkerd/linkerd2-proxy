@@ -55,12 +55,12 @@ impl<N> Outbound<N> {
     /// services.
     //
     // TODO(ver) make the outer target type generic/parameterized.
-    pub fn push_http_concrete<NSvc, R>(
+    pub fn push_http_concrete<T, NSvc, R>(
         self,
         resolve: R,
     ) -> Outbound<
         svc::ArcNewService<
-            Concrete,
+            T,
             impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
@@ -70,7 +70,10 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        N: svc::NewService<Endpoint<Concrete>, Service = NSvc> + Clone + Send + Sync + 'static,
+        T: svc::Param<ConcreteAddr>,
+        T: svc::Param<http::balance::EwmaConfig>,
+        T: Clone + Debug + Send + Sync + 'static,
+        N: svc::NewService<Endpoint<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
             + 'static,
@@ -79,7 +82,7 @@ impl<N> Outbound<N> {
         R: Clone + Send + Sync + 'static,
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
     {
-        let resolve = svc::MapTargetLayer::new(|t: Concrete| -> ConcreteAddr { t.resolve })
+        let resolve = svc::MapTargetLayer::new(|t: T| -> ConcreteAddr { t.param() })
             .layer(resolve.into_service());
 
         self.map_stack(|config, rt, endpoint| {
@@ -90,13 +93,13 @@ impl<N> Outbound<N> {
                         .stack
                         .layer(stack_labels("http", "endpoint")),
                 )
-                .check_new_service::<Endpoint<Concrete>, http::Request<_>>()
-                .instrument(|e: &Endpoint<Concrete>| info_span!("endpoint", addr = %e.addr))
+                .check_new_service::<Endpoint<T>, http::Request<_>>()
+                .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr))
                 .push(NewEndpoint::layer(config.inbound_ips.iter().copied()))
                 .lift_new_with_target()
-                .check_new_new_service::<Concrete, (_, _), http::Request<_>>()
+                .check_new_new_service::<T, (_, _), http::Request<_>>()
                 .push(http::NewBalancePeakEwma::layer(resolve))
-                .check_new_service::<Concrete, http::Request<_>>()
+                .check_new_service::<T, http::Request<_>>()
                 // Drives the initial resolution via the service's readiness.
                 .push_on_service(
                     svc::layers().push(http::BoxResponse::layer()).push(
@@ -107,8 +110,10 @@ impl<N> Outbound<N> {
                     ),
                 )
                 .push(svc::NewQueue::layer_via(config.http_request_queue))
-                .instrument(|c: &Concrete| info_span!("concrete", svc = %c.resolve))
-                .check_new_service::<Concrete, http::Request<_>>()
+                .instrument(
+                    |c: &T| info_span!("concrete", svc = %svc::Param::<ConcreteAddr>::param(c)),
+                )
+                .check_new_service::<T, http::Request<_>>()
                 .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
