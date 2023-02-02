@@ -31,6 +31,8 @@ pub struct Proxy {
     inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
 
     shutdown_signal: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
+
+    name: Option<String>,
 }
 
 pub struct Listening {
@@ -174,6 +176,13 @@ impl Proxy {
         let fut = Box::pin(sig.map(|_| ()));
         self.shutdown_signal = Some(fut);
         self
+    }
+
+    pub fn named(self, name: impl ToString) -> Self {
+        Self {
+            name: Some(name.to_string()),
+            ..self
+        }
     }
 
     pub async fn run(self) -> Listening {
@@ -374,11 +383,16 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     }
 
     let identity_addr = identity.addr;
+    let name = proxy.name.as_deref().unwrap_or("proxy");
     let thread = thread::Builder::new()
-        .name(format!("{}:proxy", thread_name()))
+        .name(format!("{}:{name}", thread_name()))
         .spawn(move || {
             tracing::dispatcher::with_default(&trace, || {
-                let span = info_span!("proxy", test = %thread_name());
+                let span = info_span!(
+                    "proxy",
+                    name = %proxy.name.as_deref().unwrap_or("proxy"),
+                    test = %thread_name()
+                );
                 let _enter = span.enter();
 
                 tokio::runtime::Builder::new_current_thread()
