@@ -1,4 +1,4 @@
-use super::{client, normalize_uri, Concrete};
+use super::{client, normalize_uri};
 use crate::{stack_labels, Outbound};
 use ahash::AHashSet;
 use linkerd_app_core::{
@@ -13,7 +13,6 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     Error,
 };
-use std::time;
 use std::{
     fmt::Debug,
     net::{IpAddr, SocketAddr},
@@ -117,17 +116,6 @@ impl<N> Outbound<N> {
                 .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
-    }
-}
-
-// === impl Concrete ===
-
-impl svc::Param<http::balance::EwmaConfig> for Concrete {
-    fn param(&self) -> http::balance::EwmaConfig {
-        http::balance::EwmaConfig {
-            default_rtt: time::Duration::from_millis(30),
-            decay: time::Duration::from_secs(10),
-        }
     }
 }
 
