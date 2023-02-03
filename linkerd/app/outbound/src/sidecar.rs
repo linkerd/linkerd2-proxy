@@ -95,7 +95,7 @@ where
     Self: svc::Param<Remote<ServerAddr>>,
 {
     fn param(&self) -> http::logical::Target {
-        if let Some(profile) = self.target.param() {
+        if let Some(profile) = self.0.param() {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
                 return http::logical::Target::Route(addr, profile);
             }

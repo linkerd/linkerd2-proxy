@@ -23,9 +23,9 @@ impl<N> Outbound<N> {
     where
         T: Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + 'static,
+        Req: Send + 'static,
         N: svc::NewService<Discovery<T>, Service = NSvc>,
         N: Clone + Send + Sync + 'static,
-        Req: Send + 'static,
         NSvc: svc::Service<Req, Error = Error> + Send + 'static,
         NSvc::Future: Send,
         P: profiles::GetProfile<Error = Error>,

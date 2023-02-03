@@ -29,7 +29,6 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tracing::{info, info_span};
 
 mod discover;
 pub mod endpoint;
@@ -186,7 +185,7 @@ impl Outbound<()> {
         P: profiles::GetProfile<Error = Error>,
     {
         if self.config.ingress_mode {
-            info!("Outbound routing in ingress-mode");
+            tracing::info!("Outbound routing in ingress-mode");
             let server = self.mk_ingress(profiles, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, server, shutdown).await;
@@ -195,39 +194,6 @@ impl Outbound<()> {
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, proxy, shutdown).await;
         }
-    }
-
-    /// Builds a an "ingress mode" proxy.
-    ///
-    /// Ingress-mode proxies route based on request headers instead of using the
-    /// original destination. Protocol detection is **always** performed. If it
-    /// fails, we revert to using the normal IP-based discovery
-    fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
-    where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
-        I: Debug + Unpin + Send + Sync + 'static,
-        R: Clone + Send + Sync + Unpin + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        P: profiles::GetProfile<Error = Error>,
-    {
-        // The fallback stack is the same thing as the normal proxy stack, but
-        // it doesn't include TCP metrics, since they are already instrumented
-        // on this ingress stack.
-        let fallback = {
-            let http = self.to_tcp_connect().push_http(resolve.clone());
-            let opaque = self.to_tcp_connect().push_opaque(resolve.clone());
-            opaque
-                .push_protocol(http.into_inner())
-                .push_discover(profiles.clone())
-                .push_discover_cache()
-                .into_inner()
-        };
-
-        self.to_tcp_connect()
-            .push_ingress(profiles, resolve, fallback)
-            .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
-            .into_inner()
     }
 }
 
