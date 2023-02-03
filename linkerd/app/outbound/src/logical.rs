@@ -4,11 +4,10 @@ use linkerd_app_core::{
     io, profiles,
     proxy::{api_resolve::Metadata, core::Resolve},
     svc,
-    transport::{ClientAddr, Local},
+    transport::addrs::*,
     Addr, Error,
 };
 use std::{fmt::Debug, hash::Hash};
-use tracing::info_span;
 
 #[derive(Clone)]
 pub struct Logical<P> {
@@ -109,6 +108,7 @@ impl<P: Debug> Debug for Logical<P> {
             .finish()
     }
 }
+
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
@@ -119,9 +119,9 @@ impl<C> Outbound<C> {
     /// across multiple connections.
     pub fn push_logical<T, R, I>(self, resolve: R) -> Outbound<svc::ArcNewTcp<T, I>>
     where
-        T: svc::Param<tokio::sync::watch::Receiver<profiles::Profile>>,
-        T: svc::Param<profiles::LogicalAddr>,
+        T: svc::Param<Remote<ServerAddr>>,
         T: svc::Param<Option<profiles::LogicalAddr>>,
+        T: svc::Param<Option<profiles::Receiver>>,
         T: svc::Param<Option<http::detect::Skip>>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         http::Logical: From<(http::Version, T)>,
@@ -136,11 +136,7 @@ impl<C> Outbound<C> {
     {
         let http = self
             .clone()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
-            .push_http_concrete(resolve.clone())
-            .push_http_logical()
-            .push_http_server()
+            .push_http(resolve.clone())
             // The detect stack doesn't cache its inner service, so we need a
             // process-global cache of logical HTTP stacks.
             .map_stack(|config, _, stk| {
@@ -165,10 +161,12 @@ impl<C> Outbound<C> {
                     .check_new_service::<T, _>()
             });
 
-        opaque.push_detect_http::<T, http::Logical, I, _, _, _>(http).map_stack(|_, _, stk| {
-            stk.instrument(|t: &T| info_span!("logical",  svc = %svc::Param::<profiles::LogicalAddr>::param(t)))
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
-        })
+        opaque
+            .push_detect_http::<T, http::Logical, I, _, _, _>(http)
+            .map_stack(|_, _, stk| {
+                stk // .instrument(|t: &T| info_span!("logical",  svc = %svc::Param::<profiles::LogicalAddr>::param(t)))
+                    .push_on_service(svc::BoxService::layer())
+                    .push(svc::ArcNewService::layer())
+            })
     }
 }

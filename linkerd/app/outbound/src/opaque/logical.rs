@@ -1,16 +1,20 @@
+use super::Dispatch;
 use crate::Outbound;
 use linkerd_app_core::{
     io,
     profiles::{self, Profile},
-    proxy::{api_resolve::ConcreteAddr, tcp::balance},
-    svc, Error, NameAddr,
+    proxy::tcp::balance,
+    svc,
+    transport::addrs::*,
+    Error, Infallible,
 };
 use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash, time};
+use tokio::sync::watch;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Concrete<T> {
-    addr: NameAddr,
+    dispatch: Dispatch,
     parent: T,
 }
 
@@ -42,6 +46,13 @@ struct RouteParams<T> {
 type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
 type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
+#[derive(Clone, Debug)]
+struct Routable<T> {
+    parent: T,
+    addr: profiles::LogicalAddr,
+    profile: profiles::Receiver,
+}
+
 // === impl Outbound ===
 
 impl<N> Outbound<N> {
@@ -60,12 +71,12 @@ impl<N> Outbound<N> {
     ) -> Outbound<
         svc::ArcNewService<
             T,
-            impl svc::Service<I, Response = (), Error = LogicalError, Future = impl Send> + Clone,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
     >
     where
-        T: svc::Param<tokio::sync::watch::Receiver<profiles::Profile>>,
-        T: svc::Param<profiles::LogicalAddr>,
+        T: svc::Param<Remote<ServerAddr>>,
+        T: svc::Param<Option<profiles::Receiver>>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         N: svc::NewService<Concrete<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = ()> + Clone + Send + Sync + 'static,
@@ -95,33 +106,74 @@ impl<N> Outbound<N> {
             // For each `Logical` target, watch its `Profile`, maintaining a
             // cache of all concrete services used by the router.
             concrete
+                .clone()
                 // Share the concrete stack with each router stack.
                 .lift_new()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .check_new_new_service::<T, Params<T>, I>()
+                .check_new_new_service::<Routable<T>, Params<T>, I>()
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params<T>>())
+                .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
+                .check_new::<Routable<T>>()
+                .push_switch(
+                    |parent: T| -> Result<_, Infallible> {
+                        if let Some(profile) = parent.param() {
+                            if let Some(addr) = profile.logical_addr() {
+                                return Ok(svc::Either::A(Routable {
+                                    addr,
+                                    parent,
+                                    profile,
+                                }));
+                            }
+
+                            if let Some((addr, meta)) = profile.endpoint() {
+                                return Ok(svc::Either::B(Concrete {
+                                    dispatch: Dispatch::Forward(addr, meta),
+                                    parent,
+                                }));
+                            }
+                        }
+
+                        let Remote(ServerAddr(addr)) = parent.param();
+                        Ok(svc::Either::B(Concrete {
+                            dispatch: Dispatch::Forward(addr, Default::default()),
+                            parent,
+                        }))
+                    },
+                    concrete.check_new::<Concrete<T>>().into_inner(),
+                )
                 .check_new::<T>()
-                .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
         })
     }
 }
 
+// === impl Routable ===
+
+impl<T> svc::Param<watch::Receiver<profiles::Profile>> for Routable<T> {
+    fn param(&self) -> watch::Receiver<profiles::Profile> {
+        self.profile.clone().into()
+    }
+}
+
 // === impl Params ===
 
-impl<T> From<(Profile, T)> for Params<T>
+impl<T> From<(Profile, Routable<T>)> for Params<T>
 where
-    T: svc::Param<profiles::LogicalAddr>,
     T: Eq + Hash + Clone + Debug,
 {
-    fn from((profile, parent): (Profile, T)) -> Self {
+    fn from((profile, routable): (Profile, Routable<T>)) -> Self {
+        const EWMA: balance::EwmaConfig = balance::EwmaConfig {
+            default_rtt: time::Duration::from_millis(30),
+            decay: time::Duration::from_secs(10),
+        };
+
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if profile.targets.is_empty() {
-            let profiles::LogicalAddr(addr) = parent.param();
+            let profiles::LogicalAddr(addr) = routable.addr;
             let concrete = Concrete {
-                addr,
-                parent: parent.clone(),
+                dispatch: Dispatch::Balance(addr, EWMA),
+                parent: routable.parent.clone(),
             };
             let backends = std::iter::once(concrete.clone()).collect();
             let distribution = Distribution::first_available(std::iter::once(concrete));
@@ -131,15 +183,15 @@ where
                 .targets
                 .iter()
                 .map(|t| Concrete {
-                    addr: t.addr.clone(),
-                    parent: parent.clone(),
+                    dispatch: Dispatch::Balance(t.addr.clone(), EWMA),
+                    parent: routable.parent.clone(),
                 })
                 .collect();
             let distribution = Distribution::random_available(profile.targets.iter().cloned().map(
                 |profiles::Target { addr, weight }| {
                     let concrete = Concrete {
-                        parent: parent.clone(),
-                        addr,
+                        dispatch: Dispatch::Balance(addr, EWMA),
+                        parent: routable.parent.clone(),
                     };
                     (concrete, weight)
                 },
@@ -150,12 +202,12 @@ where
         };
 
         let route = RouteParams {
-            parent: parent.clone(),
+            parent: routable.parent.clone(),
             distribution,
         };
 
         Self {
-            parent,
+            parent: routable.parent,
             backends,
             route,
         }
@@ -203,34 +255,16 @@ impl<T: Clone> svc::Param<Distribution<T>> for RouteParams<T> {
 
 // === impl LogicalError ===
 
-impl<T> From<(&T, Error)> for LogicalError
-where
-    T: svc::Param<profiles::LogicalAddr>,
-{
-    fn from((target, source): (&T, Error)) -> Self {
+impl<T> From<(&Routable<T>, Error)> for LogicalError {
+    fn from((target, source): (&Routable<T>, Error)) -> Self {
         Self {
-            addr: target.param(),
+            addr: target.addr,
             source,
         }
     }
 }
 
 // === impl Concrete ===
-
-impl<T> svc::Param<balance::EwmaConfig> for Concrete<T> {
-    fn param(&self) -> balance::EwmaConfig {
-        balance::EwmaConfig {
-            default_rtt: time::Duration::from_millis(30),
-            decay: time::Duration::from_secs(10),
-        }
-    }
-}
-
-impl<T> svc::Param<ConcreteAddr> for Concrete<T> {
-    fn param(&self) -> ConcreteAddr {
-        ConcreteAddr(self.addr.clone())
-    }
-}
 
 impl<T> svc::Param<Option<profiles::LogicalAddr>> for Concrete<T>
 where
@@ -240,13 +274,8 @@ where
         self.parent.param()
     }
 }
-impl<T> svc::Param<super::Dispatch> for Concrete<T> {
-    fn param(&self) -> super::Dispatch {
-        const EWMA: balance::EwmaConfig = balance::EwmaConfig {
-            default_rtt: std::time::Duration::from_millis(30),
-            decay: std::time::Duration::from_secs(10),
-        };
-
-        super::Dispatch::Balance(self.addr.clone(), EWMA)
+impl<T> svc::Param<Dispatch> for Concrete<T> {
+    fn param(&self) -> Dispatch {
+        self.dispatch.clone()
     }
 }

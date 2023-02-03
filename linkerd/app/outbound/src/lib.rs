@@ -196,10 +196,8 @@ impl Outbound<()> {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         P: profiles::GetProfile<Error = Error>,
     {
-        let logical = self.to_tcp_connect().push_logical(resolve);
-        let forward = self.to_tcp_connect().push_forward();
-        forward
-            .push_switch_logical(logical.into_inner())
+        self.to_tcp_connect()
+            .push_logical(resolve)
             .push_discover(profiles)
             .push_discover_cache()
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))

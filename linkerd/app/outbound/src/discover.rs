@@ -1,10 +1,11 @@
-use crate::Outbound;
+use crate::{http, Outbound};
 use linkerd_app_core::{
     profiles,
     svc::{self, stack::Param},
     transport::addrs::*,
     Error, Infallible,
 };
+use std::hash::{Hash, Hasher};
 use tracing::debug;
 
 #[derive(Clone, Debug)]
@@ -99,6 +100,20 @@ impl<N> Outbound<N> {
 
 // === impl Discovery ===
 
+impl<T: PartialEq> PartialEq for Discovery<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.parent == other.parent
+    }
+}
+
+impl<T: Eq> Eq for Discovery<T> {}
+
+impl<T: Hash> Hash for Discovery<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.parent.hash(state);
+    }
+}
+
 impl<T> From<(Option<profiles::Receiver>, T)> for Discovery<T> {
     fn from((profile, parent): (Option<profiles::Receiver>, T)) -> Self {
         Self { parent, profile }
@@ -126,6 +141,27 @@ where
 impl<T> svc::Param<Option<profiles::Receiver>> for Discovery<T> {
     fn param(&self) -> Option<profiles::Receiver> {
         self.profile.clone()
+    }
+}
+
+impl<T> svc::Param<Option<profiles::LogicalAddr>> for Discovery<T>
+where
+    T: svc::Param<profiles::LookupAddr>,
+{
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        self.profile.as_ref().and_then(|p| p.logical_addr())
+    }
+}
+
+impl<T> svc::Param<Option<http::detect::Skip>> for Discovery<T> {
+    fn param(&self) -> Option<http::detect::Skip> {
+        if let Some(profile) = self.profile.as_ref() {
+            if profile.is_opaque_protocol() {
+                return Some(http::detect::Skip);
+            }
+        }
+
+        None
     }
 }
 
