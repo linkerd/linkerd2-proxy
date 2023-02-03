@@ -109,64 +109,109 @@ impl<P: Debug> Debug for Logical<P> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Detected<T> {
+    version: http::Version,
+    parent: T,
+}
+
 // === impl Outbound ===
 
-impl<C> Outbound<C> {
+impl<N> Outbound<N> {
     /// Builds a stack that handles protocol detection as well as routing and
     /// load balancing for a single logical destination.
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.
-    pub fn push_logical<T, R, I>(self, resolve: R) -> Outbound<svc::ArcNewTcp<T, I>>
+    pub fn push_protocol<T, I, H, HSvc, NSvc>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
-        T: svc::Param<Remote<ServerAddr>>,
-        T: svc::Param<Option<profiles::LogicalAddr>>,
-        T: svc::Param<Option<profiles::Receiver>>,
         T: svc::Param<Option<http::detect::Skip>>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
-        http::Logical: From<(http::Version, T)>,
-        C: Clone + Send + Sync + Unpin + 'static,
-        C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
-        C::Connection: Send + Unpin,
-        C::Future: Send + Unpin,
-        R: Clone + Send + Sync + Unpin + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
+        H: Clone + Send + Sync + Unpin + 'static,
+        H: svc::NewService<Detected<T>, Service = HSvc>,
+        HSvc: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        HSvc: Clone + Send + Sync + 'static,
+        HSvc::Future: Send,
+        N: Clone + Send + Sync + Unpin + 'static,
+        N: svc::NewService<T, Service = NSvc>,
+        NSvc: svc::Service<io::EitherIo<I, io::PrefixedIo<I>>, Response = ()>,
+        NSvc: Clone + Send + Sync + 'static,
+        NSvc::Future: Send,
     {
-        let http = self
-            .clone()
-            .push_http(resolve.clone())
-            // The detect stack doesn't cache its inner service, so we need a
-            // process-global cache of logical HTTP stacks.
-            .map_stack(|config, _, stk| {
-                stk.push_new_idle_cached(config.discovery_idle_timeout)
-                    .push_on_service(
-                        svc::layers()
-                            .push(http::Retain::layer())
-                            .push(http::BoxResponse::layer()),
-                    )
-                    .check_new_service::<http::Logical, http::Request<_>>()
-            })
-            .into_inner();
+        let http = self.clone().with_stack(http).map_stack(|config, _, stk| {
+            stk.push_new_idle_cached(config.discovery_idle_timeout)
+                .push_on_service(
+                    svc::layers()
+                        .push(http::Retain::layer())
+                        .push(http::BoxResponse::layer()),
+                )
+                .check_new_service::<Detected<T>, http::Request<_>>()
+        });
 
-        let opaque = self
-            .push_tcp_endpoint()
-            .push_opaque_concrete(resolve)
-            .push_opaque_logical()
+        let detect = self.map_stack(|config, _, opaque| {
             // The detect stack doesn't cache its inner service, so we need a
             // process-global cache of logical TCP stacks.
-            .map_stack(|config, _, stk| {
-                stk.push_new_idle_cached(config.discovery_idle_timeout)
-                    .check_new_service::<T, _>()
-            });
+            opaque
+                .check_new_service::<T, _>()
+                .push_new_idle_cached(config.discovery_idle_timeout)
+                .check_new_service::<T, _>()
+        });
 
-        opaque
-            .push_detect_http::<T, http::Logical, I, _, _, _>(http)
+        detect
+            .push_detect_http::<T, Detected<T>, I, _, _, _>(http.into_inner())
             .map_stack(|_, _, stk| {
-                stk // .instrument(|t: &T| info_span!("logical",  svc = %svc::Param::<profiles::LogicalAddr>::param(t)))
-                    .push_on_service(svc::BoxService::layer())
+                stk.push_on_service(svc::BoxService::layer())
                     .push(svc::ArcNewService::layer())
             })
+    }
+}
+
+// === impl Detected ===
+
+impl<T> svc::Param<http::Version> for Detected<T> {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+impl<T> svc::Param<Remote<ServerAddr>> for Detected<T>
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn param(&self) -> Remote<ServerAddr> {
+        self.parent.param()
+    }
+}
+
+impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Detected<T>
+where
+    T: svc::Param<http::normalize_uri::DefaultAuthority>,
+{
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        self.parent.param()
+    }
+}
+
+impl<T> svc::Param<Option<profiles::LogicalAddr>> for Detected<T>
+where
+    T: svc::Param<Option<profiles::LogicalAddr>>,
+{
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        self.parent.param()
+    }
+}
+
+impl<T> svc::Param<Option<profiles::Receiver>> for Detected<T>
+where
+    T: svc::Param<Option<profiles::Receiver>>,
+{
+    fn param(&self) -> Option<profiles::Receiver> {
+        self.parent.param()
     }
 }

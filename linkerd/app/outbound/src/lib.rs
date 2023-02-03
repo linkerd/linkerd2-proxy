@@ -112,10 +112,6 @@ impl Outbound<()> {
             stack: svc::stack(()),
         }
     }
-
-    pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
-        self.map_stack(move |_, _, _| svc::stack(stack))
-    }
 }
 
 impl<S> Outbound<S> {
@@ -129,6 +125,10 @@ impl<S> Outbound<S> {
 
     pub fn stack_metrics(&self) -> metrics::Stack {
         self.runtime.metrics.proxy.stack.clone()
+    }
+
+    pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
+        self.map_stack(move |_, _, _| svc::stack(stack))
     }
 
     pub fn into_stack(self) -> svc::Stack<S> {
