@@ -127,7 +127,7 @@ impl<S> Outbound<S> {
         self.runtime.metrics.proxy.stack.clone()
     }
 
-    pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
+    pub fn with_stack<Svc>(self, stack: Svc) -> Outbound<Svc> {
         self.map_stack(move |_, _, _| svc::stack(stack))
     }
 
@@ -158,6 +158,14 @@ impl<S> Outbound<S> {
             runtime: self.runtime,
             stack,
         }
+    }
+
+    pub fn check_new_service<T, Req>(self) -> Self
+    where
+        S: svc::NewService<T> + Clone + Send + Sync + 'static,
+        S::Service: svc::Service<Req>,
+    {
+        self
     }
 }
 
@@ -192,12 +200,14 @@ impl Outbound<()> {
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R: Clone + Send + Sync + Unpin + 'static,
         P: profiles::GetProfile<Error = Error>,
     {
-        self.to_tcp_connect()
-            .push_logical(resolve)
+        let opaque = self.to_tcp_connect().push_opaque(resolve.clone());
+        let http = self.to_tcp_connect().push_http(resolve);
+        opaque
+            .push_protocol(http.into_inner())
             .push_discover(profiles)
             .push_discover_cache()
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
@@ -222,10 +232,10 @@ impl Outbound<()> {
         // it doesn't include TCP metrics, since they are already instrumented
         // on this ingress stack.
         let fallback = {
-            let logical = self.to_tcp_connect().push_logical(resolve.clone());
-            let forward = self.to_tcp_connect().push_forward();
-            forward
-                .push_switch_logical(logical.into_inner())
+            let http = self.to_tcp_connect().push_http(resolve.clone());
+            let opaque = self.to_tcp_connect().push_opaque(resolve.clone());
+            opaque
+                .push_protocol(http.into_inner())
                 .push_discover(profiles.clone())
                 .push_discover_cache()
                 .into_inner()

@@ -26,7 +26,7 @@ mod retry;
 mod server;
 mod strip_proxy_error;
 
-pub(crate) use self::{require_id_header::IdentityRequired, server::ServerRescue};
+pub(crate) use self::require_id_header::IdentityRequired;
 pub use linkerd_app_core::proxy::http::{self as http, *};
 
 pub type Logical = crate::logical::Logical<Version>;
@@ -43,6 +43,9 @@ pub enum Dispatch {
 #[derive(Clone, Debug)]
 pub struct CanonicalDstHeader(pub Addr);
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Http<T>(T);
+
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
@@ -58,16 +61,15 @@ impl<C> Outbound<C> {
         svc::ArcNewService<
             T,
             impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-                Future = impl Send,
-            >,
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
         >,
     >
     where
         T: svc::Param<http::Version>,
-        T: svc::Param<http::normalize_uri::DefaultAuthority>,
         T: svc::Param<Remote<ServerAddr>>,
         T: svc::Param<Option<profiles::LogicalAddr>>,
         T: svc::Param<Option<profiles::Receiver>>,
@@ -75,17 +77,81 @@ impl<C> Outbound<C> {
         C: Clone + Send + Sync + Unpin + 'static,
         C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
         C::Connection: Send + Unpin,
-        C::Future: Send + Unpin,
+        C::Future: Send,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        self.clone()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
+        let endpoint = self.clone().push_tcp_endpoint().push_http_endpoint();
+        let concrete = endpoint
             .push_http_concrete(resolve.clone())
+            .check_new_service::<logical::Concrete<Http<T>>, _>();
+        let logical = concrete
             .push_http_logical()
+            .check_new_service::<Http<T>, _>();
+        logical
             .push_http_server()
-            .into_inner()
+            .check_new_service::<Http<T>, _>()
+            .map_stack(|_, _, stk| stk.push_map_target(Http).push(svc::ArcNewService::layer()))
+            .check_new_service::<T, _>()
+    }
+}
+
+// === impl Http ===
+
+impl<T> svc::Param<http::Version> for Http<T>
+where
+    T: svc::Param<Version>,
+{
+    fn param(&self) -> http::Version {
+        self.0.param().into()
+    }
+}
+
+impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Http<T>
+where
+    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        if let Some(profiles::LogicalAddr(addr)) = self.0.param() {
+            return http::normalize_uri::DefaultAuthority(Some(
+                Addr::from(addr).to_http_authority(),
+            ));
+        }
+
+        let Remote(ServerAddr(addr)) = self.0.param();
+        http::normalize_uri::DefaultAuthority(Some(
+            addr.to_string()
+                .parse()
+                .expect("address must be a valid uri"),
+        ))
+    }
+}
+
+impl<T> svc::Param<Remote<ServerAddr>> for Http<T>
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn param(&self) -> Remote<ServerAddr> {
+        self.0.param()
+    }
+}
+
+impl<T> svc::Param<Option<profiles::LogicalAddr>> for Http<T>
+where
+    T: svc::Param<Option<profiles::LogicalAddr>>,
+{
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        self.0.param()
+    }
+}
+
+impl<T> svc::Param<Option<profiles::Receiver>> for Http<T>
+where
+    T: svc::Param<Option<profiles::Receiver>>,
+{
+    fn param(&self) -> Option<profiles::Receiver> {
+        self.0.param()
     }
 }
 

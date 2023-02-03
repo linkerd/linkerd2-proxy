@@ -1,7 +1,7 @@
-use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
+use crate::{http, tcp, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, http_tracing, io, metrics, profiles,
+    detect, io, metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -13,7 +13,6 @@ use linkerd_app_core::{
     AddrMatch, Error, Infallible, NameAddr,
 };
 use thiserror::Error;
-use tracing::{debug, debug_span, info_span};
 
 #[derive(Clone)]
 struct AllowHttpProfile(AddrMatch);
@@ -28,9 +27,9 @@ struct Http<T> {
 struct SelectTarget(Http<tcp::Accept>);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum Target {
-    Forward(OrigDstAddr),
-    Override(NameAddr),
+struct RequestTarget {
+    orig_dst: OrigDstAddr,
+    name: Option<NameAddr>,
 }
 
 #[derive(Debug, Error)]
@@ -78,96 +77,18 @@ impl<S> Outbound<S> {
         S::Connection: Send + Unpin + 'static,
         S::Future: Send,
     {
-        let http_endpoint = self
-            .clone()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
-            .into_stack();
-
-        self.push_tcp_endpoint()
-            .push_http_endpoint()
-            .push_http_concrete(resolve)
-            .push_http_logical()
-            .map_stack(|config, rt, http_logical| {
+        self.push_http(resolve)
+            .push_discover(profiles)
+            .map_stack(|config, rt, discover| {
                 let detect_http = config.proxy.detect_http();
                 let Config {
-                    allow_discovery,
-                    http_request_queue,
-                    discovery_idle_timeout,
                     proxy:
                         ProxyConfig {
                             server: ServerConfig { h2_settings, .. },
-                            max_in_flight_requests,
                             ..
                         },
                     ..
                 } = config;
-                let profile_domains = allow_discovery.names().clone();
-
-                let discover = http_logical
-                    .check_new_service::<http::Logical, http::Request<_>>()
-                    // If a profile was discovered, use it to build a logical stack.
-                    // Otherwise, the override header was present but no profile
-                    // information could be discovered, so fail the request.
-                    .push_filter(
-                        |(profile, http): (Option<profiles::Receiver>, Http<NameAddr>)| {
-                            if let Some(profile) = profile {
-                                if let Some(logical_addr) = profile.logical_addr() {
-                                    return Ok(http::Logical {
-                                        profile,
-                                        logical_addr,
-                                        protocol: http.version,
-                                    });
-                                }
-                            }
-
-                            Err(ProfileRequired)
-                        },
-                    )
-                    .check_new_service::<(Option<profiles::Receiver>, Http<NameAddr>), http::Request<_>>()
-                    .lift_new_with_target()
-                    .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
-                    .check_new_service::<Http<NameAddr>, http::Request<_>>()
-                    .push_filter(move |h: Http<NameAddr>| {
-                        // Lookup the profile if the override header was set and it
-                        // is in the configured profile domains. Otherwise, profile
-                        // discovery is skipped.
-                        if profile_domains.matches(h.target.name()) {
-                            return Ok(h);
-                        }
-
-                        debug!(
-                            dst = %h.target,
-                            domains = %profile_domains,
-                            "Address not in discoverable domains",
-                        );
-                        Err(ProfileRequired)
-                    })
-                    .check_new_service::<Http<NameAddr>, http::Request<_>>();
-
-                let ingress_override = discover
-                    // This service is buffered because it needs to initialize the
-                    // profile resolution and a fail-fast is instrumented in case it
-                    // becomes unavailable. When this service is in fail-fast, ensure
-                    // that we drive the inner service to readiness even if new requests
-                    // aren't received.
-                    .push_on_service(
-                        rt.metrics
-                            .proxy
-                            .stack
-                            .layer(stack_labels("http", "logical")),
-                    )
-                    .push(svc::NewQueue::layer_via(*http_request_queue))
-                    // Caches the profile-based stack so that it can be reused across
-                    // multiple requests to the same canonical destination.
-                    .push_new_idle_cached(*discovery_idle_timeout)
-                    .push_on_service(
-                        svc::layers()
-                            .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
-                            .push(http::Retain::layer())
-                            .push(http::BoxResponse::layer()),
-                    )
-                    .instrument(|h: &Http<NameAddr>| info_span!("override", dst = %h.target));
 
                 // Route requests with destinations that can be discovered via the
                 // `l5d-dst-override` header through the (load balanced) logical
@@ -176,49 +97,24 @@ impl<S> Outbound<S> {
                 //
                 // Stacks with an override are cached and reused. Endpoint stacks
                 // are not.
-                let new_http = ingress_override
-                    .push_switch(
-                        |Http { target, version }: Http<Target>| -> Result<_, Infallible> {
-                            Ok(match target {
-                                Target::Override(target) => svc::Either::A(Http { target, version }),
-                                Target::Forward(target) => svc::Either::B(Http { target, version }),
-                            })
-                        },
-                        http_endpoint.into_inner(),
+                let http = discover
+                    .check_new_service::<Http<RequestTarget>, http::Request<http::BoxBody>>()
+                    .push_on_service(
+                        svc::layers()
+                            .push(http::BoxRequest::layer())
+                            .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
+                            .push(svc::LoadShed::layer()),
                     )
-                    .push_on_service(svc::LoadShed::layer())
-                    .push(svc::ArcNewService::layer())
-                    .check_new_service::<Http<Target>, http::Request<_>>()
-                    // Obtain a new inner service for each request.
                     .lift_new()
-                    .check_new_new::<Http<tcp::Accept>, Http<Target>>()
                     .push(svc::NewOneshotRoute::layer_via(|a: &Http<tcp::Accept>| {
                         SelectTarget(a.clone())
                     }))
-                    .check_new_service::<Http<tcp::Accept>, http::Request<_>>()
-                    .push(http::NewNormalizeUri::layer())
-                    .push_on_service(
-                        svc::layers()
-                            .push(http::MarkAbsoluteForm::layer())
-                            .push(svc::ConcurrencyLimitLayer::new(*max_in_flight_requests))
-                            .push(svc::LoadShed::layer())
-                            .push(rt.metrics.http_errors.to_layer()),
-                    )
-                    .push(http::ServerRescue::layer(config.emit_headers))
-                    .push_on_service(
-                        svc::layers()
-                            .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
-                            .push(http::BoxResponse::layer())
-                            .push(http::BoxRequest::layer()),
-                    )
-                    .instrument(|_: &_| debug_span!("http"))
                     .check_new_service::<Http<tcp::Accept>, http::Request<_>>();
 
                 // HTTP detection is **always** performed. If detection fails, then we
                 // use the `fallback` stack to process the connection by its original
                 // destination address.
-                new_http
-                    .check_new_service::<Http<tcp::Accept>, http::Request<_>>()
+                http.check_new_service::<Http<tcp::Accept>, http::Request<_>>()
                     .unlift_new()
                     .push(http::NewServeHttp::layer(*h2_settings, rt.drain.clone()))
                     .check_new_service::<Http<tcp::Accept>, I>()
@@ -250,28 +146,44 @@ impl<T> Param<http::Version> for Http<T> {
     }
 }
 
-impl Param<http::normalize_uri::DefaultAuthority> for Http<tcp::Accept> {
+impl Param<OrigDstAddr> for Http<RequestTarget> {
+    fn param(&self) -> OrigDstAddr {
+        self.target.orig_dst
+    }
+}
+
+impl Param<http::normalize_uri::DefaultAuthority> for Http<RequestTarget> {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(Some(
-            self.target
-                .orig_dst
-                .to_string()
-                .parse()
-                .expect("Address must be a valid authority"),
-        ))
+        let profiles::LookupAddr(addr) = self.param();
+        http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
     }
 }
 
-impl Param<profiles::LookupAddr> for Http<NameAddr> {
+impl Param<profiles::LookupAddr> for Http<RequestTarget> {
     fn param(&self) -> profiles::LookupAddr {
-        profiles::LookupAddr(self.target.clone().into())
+        profiles::LookupAddr(
+            self.target
+                .name
+                .clone()
+                .map(Into::into)
+                .unwrap_or_else(|| self.target.orig_dst.0.into()),
+        )
     }
 }
 
-impl Param<Remote<ServerAddr>> for Http<OrigDstAddr> {
+impl<T> Param<Remote<ServerAddr>> for Http<T>
+where
+    Self: Param<OrigDstAddr>,
+{
     fn param(&self) -> Remote<ServerAddr> {
-        let OrigDstAddr(addr) = self.target;
+        let OrigDstAddr(addr) = self.param();
         Remote(ServerAddr(addr))
+    }
+}
+
+impl Param<OrigDstAddr> for Http<OrigDstAddr> {
+    fn param(&self) -> OrigDstAddr {
+        self.target
     }
 }
 
@@ -364,22 +276,29 @@ impl tap::Inspect for Http<OrigDstAddr> {
 // === impl SelectTarget ===
 
 impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
-    type Key = Http<Target>;
+    type Key = Http<RequestTarget>;
     type Error = InvalidOverrideHeader;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
-        Ok(Http {
-            version: self.0.version,
-            // Use either the override header or the original destination
-            // address.
-            target: http::authority_from_header(req, DST_OVERRIDE_HEADER)
-                .map(|a| {
-                    NameAddr::from_authority_with_default_port(&a, 80)
-                        .map_err(|_| InvalidOverrideHeader)
-                        .map(Target::Override)
-                })
-                .transpose()?
-                .unwrap_or(Target::Forward(self.0.target.orig_dst)),
-        })
+        // Use either the override header or the original destination address.
+        let name = http::authority_from_header(req, DST_OVERRIDE_HEADER)
+            .map(|a| {
+                NameAddr::from_authority_with_default_port(&a, 80)
+                    .map_err(|_| InvalidOverrideHeader)
+            })
+            .transpose()?;
+        let target = RequestTarget {
+            orig_dst: self.0.target.orig_dst,
+            name,
+        };
+
+        // Use the request's version.
+        let version = match req.version() {
+            ::http::Version::HTTP_2 => http::Version::H2,
+            ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => http::Version::Http1,
+            _ => unreachable!("Only HTTP/1 and HTTP/2 are supported"),
+        };
+
+        Ok(Http { version, target })
     }
 }

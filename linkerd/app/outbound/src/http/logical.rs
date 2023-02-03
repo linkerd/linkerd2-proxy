@@ -186,6 +186,7 @@ impl<N> Outbound<N> {
                             }
                         }
 
+                        // XXX This requirement is awkward.
                         let Remote(ServerAddr(addr)) = parent.param();
                         Ok(svc::Either::B(Concrete {
                             dispatch: Dispatch::Forward(addr, Default::default()),
@@ -228,7 +229,7 @@ where
 
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if profile.targets.is_empty() {
-            let profiles::LogicalAddr(addr) = routable.addr;
+            let profiles::LogicalAddr(addr) = routable.addr.clone();
             let concrete = Concrete {
                 dispatch: Dispatch::Balance(addr, EWMA),
                 parent: routable.parent.clone(),
@@ -259,13 +260,14 @@ where
             (backends, distribution)
         };
 
+        let addr = routable.addr.clone();
         let routes = profile
             .http_routes
             .iter()
             .cloned()
             .map(|(req_match, profile)| {
                 let params = RouteParams {
-                    addr: routable.addr,
+                    addr: addr.clone(),
                     profile,
                     parent: routable.parent.clone(),
                     distribution: distribution.clone(),
@@ -276,7 +278,7 @@ where
             .chain(std::iter::once((
                 profiles::http::RequestMatch::default(),
                 RouteParams {
-                    addr: routable.addr,
+                    addr: addr.clone(),
                     profile: Default::default(),
                     parent: routable.parent.clone(),
                     distribution: distribution.clone(),
@@ -285,7 +287,7 @@ where
             .collect::<Arc<[(_, _)]>>();
 
         Self {
-            addr: routable.addr,
+            addr,
             parent: routable.parent,
             backends,
             routes,
@@ -370,7 +372,7 @@ impl<T> classify::CanClassify for RouteParams<T> {
 impl<T> From<(&Routable<T>, Error)> for LogicalError {
     fn from((target, source): (&Routable<T>, Error)) -> Self {
         Self {
-            addr: target.addr,
+            addr: target.addr.clone(),
             source,
         }
     }
@@ -389,10 +391,10 @@ where
 
 impl<T> svc::Param<Option<profiles::LogicalAddr>> for Concrete<T>
 where
-    T: svc::Param<profiles::LogicalAddr>,
+    T: svc::Param<Option<profiles::LogicalAddr>>,
 {
     fn param(&self) -> Option<profiles::LogicalAddr> {
-        Some(self.parent.param())
+        self.parent.param()
     }
 }
 

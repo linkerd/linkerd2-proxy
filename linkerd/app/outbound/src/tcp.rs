@@ -1,7 +1,7 @@
 use crate::Outbound;
 use linkerd_app_core::{
     io, profiles, svc,
-    transport::{self, metrics, OrigDstAddr},
+    transport::{self, addrs::*, metrics},
     transport_header::SessionProtocol,
     Error,
 };
@@ -30,6 +30,13 @@ impl From<OrigDstAddr> for Accept {
 impl svc::Param<OrigDstAddr> for Accept {
     fn param(&self) -> OrigDstAddr {
         self.orig_dst
+    }
+}
+
+impl svc::Param<Remote<ServerAddr>> for Accept {
+    fn param(&self) -> Remote<ServerAddr> {
+        let OrigDstAddr(addr) = self.orig_dst;
+        Remote(ServerAddr(addr))
     }
 }
 

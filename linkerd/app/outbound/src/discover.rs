@@ -15,9 +15,7 @@ pub struct Discovery<T> {
 }
 
 impl<N> Outbound<N> {
-    /// Discovers the profile for a TCP endpoint.
-    ///
-    /// Resolved services are cached and buffered.
+    /// Discovers routing configuration.
     pub fn push_discover<T, Req, NSvc, P>(
         self,
         profiles: P,
@@ -28,7 +26,7 @@ impl<N> Outbound<N> {
         N: svc::NewService<Discovery<T>, Service = NSvc>,
         N: Clone + Send + Sync + 'static,
         Req: Send + 'static,
-        NSvc: svc::Service<Req, Response = (), Error = Error> + Send + 'static,
+        NSvc: svc::Service<Req, Error = Error> + Send + 'static,
         NSvc::Future: Send,
         P: profiles::GetProfile<Error = Error>,
     {
@@ -45,13 +43,14 @@ impl<N> Outbound<N> {
                         // the target type?
                         let profiles::LookupAddr(addr) = parent.param();
                         if allow.matches(&addr) {
-                            debug!("Allowing profile lookup");
+                            debug!(%addr, "Discovery allowed");
                             return Ok(svc::Either::A(parent));
                         }
                         debug!(
                             %addr,
+                            domains = %allow.names(),
                             networks = %allow.nets(),
-                            "Address is not in discoverable networks",
+                            "Discovery skipped",
                         );
                         Ok(svc::Either::B(Discovery {
                             parent,
@@ -100,23 +99,18 @@ impl<N> Outbound<N> {
 
 // === impl Discovery ===
 
-impl<T: PartialEq> PartialEq for Discovery<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.parent == other.parent
-    }
-}
-
-impl<T: Eq> Eq for Discovery<T> {}
-
-impl<T: Hash> Hash for Discovery<T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.parent.hash(state);
-    }
-}
-
 impl<T> From<(Option<profiles::Receiver>, T)> for Discovery<T> {
     fn from((profile, parent): (Option<profiles::Receiver>, T)) -> Self {
         Self { parent, profile }
+    }
+}
+
+impl<T> svc::Param<http::Version> for Discovery<T>
+where
+    T: svc::Param<http::Version>,
+{
+    fn param(&self) -> http::Version {
+        self.parent.param()
     }
 }
 
@@ -144,10 +138,7 @@ impl<T> svc::Param<Option<profiles::Receiver>> for Discovery<T> {
     }
 }
 
-impl<T> svc::Param<Option<profiles::LogicalAddr>> for Discovery<T>
-where
-    T: svc::Param<profiles::LookupAddr>,
-{
+impl<T> svc::Param<Option<profiles::LogicalAddr>> for Discovery<T> {
     fn param(&self) -> Option<profiles::LogicalAddr> {
         self.profile.as_ref().and_then(|p| p.logical_addr())
     }
@@ -162,6 +153,20 @@ impl<T> svc::Param<Option<http::detect::Skip>> for Discovery<T> {
         }
 
         None
+    }
+}
+
+impl<T: PartialEq> PartialEq for Discovery<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.parent == other.parent
+    }
+}
+
+impl<T: Eq> Eq for Discovery<T> {}
+
+impl<T: Hash> Hash for Discovery<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.parent.hash(state);
     }
 }
 

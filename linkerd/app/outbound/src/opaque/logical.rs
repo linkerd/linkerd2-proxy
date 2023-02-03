@@ -258,7 +258,7 @@ impl<T: Clone> svc::Param<Distribution<T>> for RouteParams<T> {
 impl<T> From<(&Routable<T>, Error)> for LogicalError {
     fn from((target, source): (&Routable<T>, Error)) -> Self {
         Self {
-            addr: target.addr,
+            addr: target.addr.clone(),
             source,
         }
     }
