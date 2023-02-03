@@ -12,7 +12,7 @@ use linkerd_app_core::{
     },
     svc, tls,
     transport::addrs::*,
-    Addr, Conditional, Error, NameAddr, CANONICAL_DST_HEADER,
+    Addr, Conditional, Error, CANONICAL_DST_HEADER,
 };
 use std::{fmt::Debug, hash::Hash, net::SocketAddr, str::FromStr};
 
@@ -33,12 +33,6 @@ pub type Logical = crate::logical::Logical<Version>;
 pub type Endpoint = crate::endpoint::Endpoint<Version>;
 
 pub type Connect = self::endpoint::Connect<Endpoint>;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Dispatch {
-    Balance(NameAddr, balance::EwmaConfig),
-    Forward(SocketAddr, Metadata),
-}
 
 #[derive(Clone, Debug)]
 pub struct CanonicalDstHeader(pub Addr);
@@ -70,9 +64,7 @@ impl<C> Outbound<C> {
     >
     where
         T: svc::Param<http::Version>,
-        T: svc::Param<Remote<ServerAddr>>,
-        T: svc::Param<Option<profiles::LogicalAddr>>,
-        T: svc::Param<Option<profiles::Receiver>>,
+        T: svc::Param<logical::Target>,
         T: Eq + Debug + Hash + Clone + Debug + Send + Sync + 'static,
         C: Clone + Send + Sync + Unpin + 'static,
         C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
@@ -105,51 +97,50 @@ where
     }
 }
 
-impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Http<T>
+impl<T> svc::Param<logical::Target> for Http<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
-    T: svc::Param<Remote<ServerAddr>>,
+    T: svc::Param<logical::Target>,
 {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        if let Some(profiles::LogicalAddr(addr)) = self.0.param() {
-            return http::normalize_uri::DefaultAuthority(Some(
-                Addr::from(addr).to_http_authority(),
-            ));
-        }
-
-        let Remote(ServerAddr(addr)) = self.0.param();
-        http::normalize_uri::DefaultAuthority(Some(
-            addr.to_string()
-                .parse()
-                .expect("address must be a valid uri"),
-        ))
+    fn param(&self) -> logical::Target {
+        self.0.param()
     }
 }
 
-impl<T> svc::Param<Remote<ServerAddr>> for Http<T>
+impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Http<T>
 where
-    T: svc::Param<Remote<ServerAddr>>,
+    T: svc::Param<logical::Target>,
 {
-    fn param(&self) -> Remote<ServerAddr> {
-        self.0.param()
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        let addr = match self.0.param() {
+            logical::Target::Route(addr, _) => Addr::from(addr),
+            logical::Target::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
+        };
+
+        http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
     }
 }
 
 impl<T> svc::Param<Option<profiles::LogicalAddr>> for Http<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<logical::Target>,
 {
     fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.0.param()
+        match self.0.param() {
+            logical::Target::Route(addr, _) => Some(profiles::LogicalAddr(addr)),
+            logical::Target::Forward(_, _) => None,
+        }
     }
 }
 
 impl<T> svc::Param<Option<profiles::Receiver>> for Http<T>
 where
-    T: svc::Param<Option<profiles::Receiver>>,
+    T: svc::Param<logical::Target>,
 {
     fn param(&self) -> Option<profiles::Receiver> {
-        self.0.param()
+        match self.0.param() {
+            logical::Target::Route(_, rx) => Some(rx),
+            logical::Target::Forward(_, _) => None,
+        }
     }
 }
 

@@ -1,12 +1,12 @@
-use super::{client, normalize_uri, Dispatch};
-use crate::{stack_labels, Outbound};
+use super::{balance, client, normalize_uri};
+use crate::{http, stack_labels, Outbound};
 use ahash::AHashSet;
 use linkerd_app_core::{
     metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
-        http, tap,
+        tap,
     },
     svc::{self, Layer},
     tls,
@@ -19,6 +19,12 @@ use std::{
     sync::Arc,
 };
 use tracing::info_span;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Target {
+    Balance(NameAddr, balance::EwmaConfig),
+    Forward(Remote<ServerAddr>, Metadata),
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("concrete service {addr}: {source}")]
@@ -47,7 +53,7 @@ pub type IpSet = Arc<AHashSet<IpAddr>>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Balance<T> {
     addr: NameAddr,
-    ewma: http::balance::EwmaConfig,
+    ewma: balance::EwmaConfig,
     parent: T,
 }
 
@@ -76,7 +82,7 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        T: svc::Param<Dispatch>,
+        T: svc::Param<Target>,
         // T: svc::Param<svc::queue::Capacity>,
         // T: svc::Param<svc::queue::Timeout>,
         T: Clone + Debug + Send + Sync + 'static,
@@ -127,11 +133,11 @@ impl<N> Outbound<N> {
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Dispatch::Balance(addr, ewma) => {
+                            Target::Balance(addr, ewma) => {
                                 svc::Either::A(Balance { addr, ewma, parent })
                             }
-                            Dispatch::Forward(addr, meta) => svc::Either::B(Endpoint {
-                                addr: Remote(ServerAddr(addr)),
+                            Target::Forward(addr, meta) => svc::Either::B(Endpoint {
+                                addr,
                                 is_local: false,
                                 metadata: meta,
                                 parent,

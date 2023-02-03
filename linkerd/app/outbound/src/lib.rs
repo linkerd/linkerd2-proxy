@@ -5,19 +5,6 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-mod discover;
-pub mod endpoint;
-pub mod http;
-mod ingress;
-pub mod logical;
-mod metrics;
-pub mod opaque;
-mod switch_logical;
-pub mod tcp;
-#[cfg(test)]
-pub(crate) mod test_util;
-
-pub use self::metrics::Metrics;
 use futures::Stream;
 use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
@@ -43,6 +30,21 @@ use std::{
     time::Duration,
 };
 use tracing::{info, info_span};
+
+mod discover;
+pub mod endpoint;
+pub mod http;
+mod ingress;
+pub mod logical;
+mod metrics;
+pub mod opaque;
+mod sidecar;
+mod switch_logical;
+pub mod tcp;
+#[cfg(test)]
+pub(crate) mod test_util;
+
+pub use self::metrics::Metrics;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -189,29 +191,10 @@ impl Outbound<()> {
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, server, shutdown).await;
         } else {
-            let proxy = self.mk_proxy(profiles, resolve);
+            let proxy = self.mk_sidecar(profiles, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, proxy, shutdown).await;
         }
-    }
-
-    fn mk_proxy<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
-    where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
-        I: Debug + Unpin + Send + Sync + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R: Clone + Send + Sync + Unpin + 'static,
-        P: profiles::GetProfile<Error = Error>,
-    {
-        let opaque = self.to_tcp_connect().push_opaque(resolve.clone());
-        let http = self.to_tcp_connect().push_http(resolve);
-        opaque
-            .push_protocol(http.into_inner())
-            .push_discover(profiles)
-            .push_discover_cache()
-            .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
-            .into_inner()
     }
 
     /// Builds a an "ingress mode" proxy.

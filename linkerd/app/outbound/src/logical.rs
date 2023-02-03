@@ -1,6 +1,6 @@
 use crate::{http, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
-use linkerd_app_core::{io, profiles, svc, transport::addrs::*, Addr, Error};
+use linkerd_app_core::{io, profiles, svc, Addr, Error};
 use std::{fmt::Debug, hash::Hash};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -185,11 +185,11 @@ impl<T> svc::Param<http::Version> for Detected<T> {
     }
 }
 
-impl<T> svc::Param<Remote<ServerAddr>> for Detected<T>
+impl<T> svc::Param<http::logical::Target> for Detected<T>
 where
-    T: svc::Param<Remote<ServerAddr>>,
+    T: svc::Param<http::logical::Target>,
 {
-    fn param(&self) -> Remote<ServerAddr> {
+    fn param(&self) -> http::logical::Target {
         self.parent.param()
     }
 }
@@ -199,24 +199,6 @@ where
     T: svc::Param<http::normalize_uri::DefaultAuthority>,
 {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        self.parent.param()
-    }
-}
-
-impl<T> svc::Param<Option<profiles::LogicalAddr>> for Detected<T>
-where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
-{
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.parent.param()
-    }
-}
-
-impl<T> svc::Param<Option<profiles::Receiver>> for Detected<T>
-where
-    T: svc::Param<Option<profiles::Receiver>>,
-{
-    fn param(&self) -> Option<profiles::Receiver> {
         self.parent.param()
     }
 }

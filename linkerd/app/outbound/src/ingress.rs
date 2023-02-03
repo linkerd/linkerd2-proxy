@@ -18,13 +18,13 @@ use thiserror::Error;
 struct AllowHttpProfile(AddrMatch);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Http<T> {
+struct Ingress<T> {
     target: T,
     version: http::Version,
 }
 
 #[derive(Clone, Debug)]
-struct SelectTarget(Http<tcp::Accept>);
+struct SelectTarget(Ingress<tcp::Accept>);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RequestTarget {
@@ -78,6 +78,7 @@ impl<S> Outbound<S> {
         S::Future: Send,
     {
         self.push_http(resolve)
+            .map_stack(|_, _, stk| stk.push_map_target(Ingress::wrap))
             .push_discover(profiles)
             .map_stack(|config, rt, discover| {
                 let detect_http = config.proxy.detect_http();
@@ -98,7 +99,7 @@ impl<S> Outbound<S> {
                 // Stacks with an override are cached and reused. Endpoint stacks
                 // are not.
                 let http = discover
-                    .check_new_service::<Http<RequestTarget>, http::Request<http::BoxBody>>()
+                    .check_new_service::<Ingress<RequestTarget>, http::Request<http::BoxBody>>()
                     .push_on_service(
                         svc::layers()
                             .push(http::BoxRequest::layer())
@@ -106,23 +107,23 @@ impl<S> Outbound<S> {
                             .push(svc::LoadShed::layer()),
                     )
                     .lift_new()
-                    .push(svc::NewOneshotRoute::layer_via(|a: &Http<tcp::Accept>| {
-                        SelectTarget(a.clone())
-                    }))
-                    .check_new_service::<Http<tcp::Accept>, http::Request<_>>();
+                    .push(svc::NewOneshotRoute::layer_via(
+                        |a: &Ingress<tcp::Accept>| SelectTarget(a.clone()),
+                    ))
+                    .check_new_service::<Ingress<tcp::Accept>, http::Request<_>>();
 
                 // HTTP detection is **always** performed. If detection fails, then we
                 // use the `fallback` stack to process the connection by its original
                 // destination address.
-                http.check_new_service::<Http<tcp::Accept>, http::Request<_>>()
+                http.check_new_service::<Ingress<tcp::Accept>, http::Request<_>>()
                     .unlift_new()
                     .push(http::NewServeHttp::layer(*h2_settings, rt.drain.clone()))
-                    .check_new_service::<Http<tcp::Accept>, I>()
+                    .check_new_service::<Ingress<tcp::Accept>, I>()
                     .push_switch(
                         |(http, t): (Option<http::Version>, T)| -> Result<_, Infallible> {
                             let target = tcp::Accept::from(t.param());
                             if let Some(version) = http {
-                                return Ok(svc::Either::A(Http { version, target }));
+                                return Ok(svc::Either::A(Ingress { version, target }));
                             }
                             Ok(svc::Either::B(target))
                         },
@@ -138,28 +139,40 @@ impl<S> Outbound<S> {
     }
 }
 
-// === impl Http ===
+// === impl Ingress ===
 
-impl<T> Param<http::Version> for Http<T> {
+impl<T> Ingress<T>
+where
+    T: Param<http::Version>,
+{
+    fn wrap(t: T) -> Self {
+        Self {
+            version: t.param(),
+            target: t,
+        }
+    }
+}
+
+impl<T> Param<http::Version> for Ingress<T> {
     fn param(&self) -> http::Version {
         self.version
     }
 }
 
-impl Param<OrigDstAddr> for Http<RequestTarget> {
+impl Param<OrigDstAddr> for Ingress<RequestTarget> {
     fn param(&self) -> OrigDstAddr {
         self.target.orig_dst
     }
 }
 
-impl Param<http::normalize_uri::DefaultAuthority> for Http<RequestTarget> {
+impl Param<http::normalize_uri::DefaultAuthority> for Ingress<RequestTarget> {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
         let profiles::LookupAddr(addr) = self.param();
         http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
     }
 }
 
-impl Param<profiles::LookupAddr> for Http<RequestTarget> {
+impl Param<profiles::LookupAddr> for Ingress<RequestTarget> {
     fn param(&self) -> profiles::LookupAddr {
         profiles::LookupAddr(
             self.target
@@ -171,7 +184,7 @@ impl Param<profiles::LookupAddr> for Http<RequestTarget> {
     }
 }
 
-impl<T> Param<Remote<ServerAddr>> for Http<T>
+impl<T> Param<Remote<ServerAddr>> for Ingress<T>
 where
     Self: Param<OrigDstAddr>,
 {
@@ -181,37 +194,57 @@ where
     }
 }
 
-impl Param<OrigDstAddr> for Http<OrigDstAddr> {
+impl Param<OrigDstAddr> for Ingress<OrigDstAddr> {
     fn param(&self) -> OrigDstAddr {
         self.target
     }
 }
 
-impl Param<tls::ConditionalClientTls> for Http<OrigDstAddr> {
+impl<T> Param<http::logical::Target> for Ingress<T>
+where
+    T: Param<Option<profiles::Receiver>>,
+    T: Param<Remote<ServerAddr>>,
+{
+    fn param(&self) -> http::logical::Target {
+        if let Some(profile) = self.target.param() {
+            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                return http::logical::Target::Route(addr, profile);
+            }
+
+            if let Some((addr, metadata)) = profile.endpoint() {
+                return http::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
+            }
+        }
+
+        http::logical::Target::Forward(self.target.param(), Default::default())
+    }
+}
+
+impl Param<tls::ConditionalClientTls> for Ingress<OrigDstAddr> {
     fn param(&self) -> tls::ConditionalClientTls {
         tls::ConditionalClientTls::None(tls::NoClientTls::NotProvidedByServiceDiscovery)
     }
 }
 
-impl Param<Option<tcp::opaque_transport::PortOverride>> for Http<OrigDstAddr> {
+impl Param<Option<tcp::opaque_transport::PortOverride>> for Ingress<OrigDstAddr> {
     fn param(&self) -> Option<tcp::opaque_transport::PortOverride> {
         None
     }
 }
 
-impl Param<Option<http::AuthorityOverride>> for Http<OrigDstAddr> {
+impl Param<Option<http::AuthorityOverride>> for Ingress<OrigDstAddr> {
     fn param(&self) -> Option<http::AuthorityOverride> {
         None
     }
 }
 
-impl svc::Param<transport::labels::Key> for Http<OrigDstAddr> {
+impl svc::Param<transport::labels::Key> for Ingress<OrigDstAddr> {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::OutboundClient(self.param())
     }
 }
 
-impl svc::Param<metrics::OutboundEndpointLabels> for Http<OrigDstAddr> {
+impl svc::Param<metrics::OutboundEndpointLabels> for Ingress<OrigDstAddr> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
         let authority = self
             .target
@@ -227,13 +260,13 @@ impl svc::Param<metrics::OutboundEndpointLabels> for Http<OrigDstAddr> {
     }
 }
 
-impl svc::Param<metrics::EndpointLabels> for Http<OrigDstAddr> {
+impl svc::Param<metrics::EndpointLabels> for Ingress<OrigDstAddr> {
     fn param(&self) -> metrics::EndpointLabels {
         metrics::EndpointLabels::Outbound(self.param())
     }
 }
 
-impl svc::Param<http::client::Settings> for Http<OrigDstAddr> {
+impl svc::Param<http::client::Settings> for Ingress<OrigDstAddr> {
     fn param(&self) -> http::client::Settings {
         match self.param() {
             http::Version::H2 => http::client::Settings::H2,
@@ -243,7 +276,7 @@ impl svc::Param<http::client::Settings> for Http<OrigDstAddr> {
 }
 
 // TODO(ver) move this into the endpoint stack?
-impl tap::Inspect for Http<OrigDstAddr> {
+impl tap::Inspect for Ingress<OrigDstAddr> {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<std::net::SocketAddr> {
         req.extensions().get::<http::ClientHandle>().map(|c| c.addr)
     }
@@ -276,7 +309,7 @@ impl tap::Inspect for Http<OrigDstAddr> {
 // === impl SelectTarget ===
 
 impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
-    type Key = Http<RequestTarget>;
+    type Key = Ingress<RequestTarget>;
     type Error = InvalidOverrideHeader;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
@@ -299,6 +332,6 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
             _ => unreachable!("Only HTTP/1 and HTTP/2 are supported"),
         };
 
-        Ok(Http { version, target })
+        Ok(Ingress { version, target })
     }
 }
