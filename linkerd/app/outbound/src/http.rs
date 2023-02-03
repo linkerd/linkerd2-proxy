@@ -81,14 +81,12 @@ impl<C> Outbound<C> {
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        let endpoint = self.clone().push_tcp_endpoint().push_http_endpoint();
-        let concrete = endpoint
-            .push_http_concrete(resolve.clone())
-            .check_new_service::<logical::Concrete<Http<T>>, _>();
-        let logical = concrete
+        self.push_tcp_endpoint()
+            .push_http_endpoint()
+            .push_http_concrete(resolve)
+            .check_new_service::<logical::Concrete<Http<T>>, _>()
             .push_http_logical()
-            .check_new_service::<Http<T>, _>();
-        logical
+            .check_new_service::<Http<T>, _>()
             .push_http_server()
             .check_new_service::<Http<T>, _>()
             .map_stack(|_, _, stk| stk.push_map_target(Http).push(svc::ArcNewService::layer()))
@@ -103,7 +101,7 @@ where
     T: svc::Param<Version>,
 {
     fn param(&self) -> http::Version {
-        self.0.param().into()
+        self.0.param()
     }
 }
 

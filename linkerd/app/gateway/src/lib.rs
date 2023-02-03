@@ -15,9 +15,9 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
-    transport::{ClientAddr, Local, OrigDstAddr, Remote},
+    transport::addrs::*,
     transport_header::SessionProtocol,
-    Error, Infallible, NameAddr, NameMatch,
+    Error, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::{
     direct::{ClientInfo, GatewayTransportHeader},
@@ -98,35 +98,38 @@ where
 {
     let local_id = identity::LocalId(inbound.identity().name().clone());
 
-    let opaque = {
-        let stk = new_opaque(outbound.clone(), resolve.clone());
-        svc::stack(stk)
-            .push_map_target(|(_permit, opaque): (_, Opaque)| opaque)
-            .push(inbound.authorize_tcp())
-            .check_new_service::<Opaque, I>()
-    };
+    let opaque = outbound
+        .clone()
+        .push_opaque(resolve.clone())
+        .check_new_service::<Opaque, I>()
+        .into_stack()
+        .push_map_target(|(_permit, opaque): (_, Opaque)| opaque)
+        .push(inbound.authorize_tcp())
+        .check_new_service::<Opaque, I>();
 
-    let http = {
-        let stk = new_http(local_id, outbound.clone(), resolve);
-        inbound
-            .clone()
-            .with_stack(
-                svc::stack(stk)
-                    .push_on_service(svc::LoadShed::layer())
-                    .lift_new()
-                    .push(svc::NewOneshotRoute::layer_via(
-                        |(_permit, http): &(_, InboundHttp)| {
-                            ByRequestVersion(http.outbound.clone())
-                        },
-                    ))
-                    .push(inbound.authorize_http())
-                    .push_http_insert_target::<tls::ClientId>()
-                    .into_inner(),
-            )
-            .push_http_server()
-            .into_stack()
-            .check_new_service::<InboundHttp, I>()
-    };
+    let http = inbound
+        .clone()
+        .with_stack(
+            outbound
+                .clone()
+                .push_http(resolve)
+                .into_stack()
+                .push(NewHttpGateway::layer(local_id))
+                .push(svc::ArcNewService::layer())
+                .check_new::<OutboundHttp>()
+                .push_on_service(svc::LoadShed::layer())
+                .lift_new()
+                .push(svc::NewOneshotRoute::layer_via(
+                    |(_permit, http): &(_, InboundHttp)| ByRequestVersion(http.outbound.clone()),
+                ))
+                .push(inbound.authorize_http())
+                .push_http_insert_target::<tls::ClientId>()
+                .into_inner(),
+        )
+        // Handles inbound-policy errors.
+        .push_http_server()
+        .into_stack()
+        .check_new_service::<InboundHttp, I>();
 
     let protocol = http
         .check_new_service::<InboundHttp, I>()
@@ -191,117 +194,35 @@ where
         .into_inner()
 }
 
-/// Builds an outbound HTTP stack.
-///
-/// A gateway-specififc module is inserted to requests from looping through
-/// gateways. Discovery errors are lifted into the HTTP stack so that individual
-/// requests are failed with an HTTP-level error repsonse.
-fn new_http<O, R>(
-    local_id: identity::LocalId,
-    outbound: Outbound<O>,
-    resolve: R,
-) -> svc::ArcNewService<
-    OutboundHttp,
-    impl svc::Service<
-        http::Request<http::BoxBody>,
-        Response = http::Response<http::BoxBody>,
-        Error = Error,
-        Future = impl Send,
-    >,
->
-where
-    O: Clone + Send + Sync + Unpin + 'static,
-    O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
-    O::Connection: Send + Unpin,
-    O::Future: Send + Unpin + 'static,
-    R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-{
-    outbound
-        .clone()
-        .push_tcp_endpoint()
-        .push_http_endpoint()
-        .push_http_concrete(resolve)
-        .push_http_logical()
-        .into_stack()
-        .push_switch(
-            Ok::<_, Infallible>,
-            outbound
-                .push_tcp_endpoint()
-                .push_http_endpoint()
-                .into_inner(),
-        )
-        .push(NewHttpGateway::layer(local_id))
-        .push(svc::ArcNewService::layer())
-        .check_new::<OutboundHttp>()
-        .into_inner()
-}
-
-/// Builds an outbound opaque stack.
-///
-/// Requires that the connection targets either a logical service or a known
-/// endpoint.
-fn new_opaque<I, O, R>(
-    outbound: Outbound<O>,
-    resolve: R,
-) -> svc::ArcNewService<
-    Opaque,
-    impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
->
-where
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
-    O: Clone + Send + Sync + Unpin + 'static,
-    O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
-    O::Connection: Send + Unpin,
-    O::Future: Send + Unpin + 'static,
-    R: Clone + Send + Sync + Unpin + 'static,
-    R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-{
-    let logical = outbound
-        .clone()
-        .push_tcp_endpoint()
-        .push_opaque_concrete(resolve)
-        .push_opaque_logical();
-    let endpoint = outbound
-        .clone()
-        .push_tcp_endpoint()
-        .push_opaque_forward()
-        .into_stack();
-    let inbound_ips = outbound.config().inbound_ips.clone();
-    endpoint
-        .push_switch(
-            move |opaque: Opaque| -> Result<_, Error> {
-                if let Some((addr, metadata)) = opaque.profile.endpoint() {
-                    return Ok(svc::Either::A(outbound::tcp::Endpoint::from_metadata(
-                        addr,
-                        metadata,
-                        tls::NoClientTls::NotProvidedByServiceDiscovery,
-                        opaque.profile.is_opaque_protocol(),
-                        &inbound_ips,
-                    )));
-                }
-
-                let logical_addr = opaque
-                    .profile
-                    .logical_addr()
-                    .ok_or(RefusedNotResolved(opaque.target))?;
-                Ok(svc::Either::B(outbound::tcp::Logical {
-                    profile: opaque.profile,
-                    logical_addr,
-                    protocol: (),
-                }))
-            },
-            logical.into_inner(),
-        )
-        .push(svc::ArcNewService::layer())
-        .check_new_service::<Opaque, I>()
-        .into_inner()
-}
-
 // === impl OutboundHttp ===
 
 impl Param<http::Version> for OutboundHttp {
     fn param(&self) -> http::Version {
         self.version
+    }
+}
+
+impl svc::Param<Remote<ServerAddr>> for OutboundHttp {
+    fn param(&self) -> Remote<ServerAddr> {
+        todo!("not this")
+    }
+}
+
+impl svc::Param<http::normalize_uri::DefaultAuthority> for OutboundHttp {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        todo!("not this")
+    }
+}
+
+impl svc::Param<Option<profiles::LogicalAddr>> for OutboundHttp {
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        self.profile.as_ref()?.logical_addr()
+    }
+}
+
+impl svc::Param<Option<profiles::Receiver>> for OutboundHttp {
+    fn param(&self) -> Option<profiles::Receiver> {
+        self.profile.clone()
     }
 }
 
@@ -398,11 +319,29 @@ impl Param<Remote<ClientAddr>> for Opaque {
     }
 }
 
+impl svc::Param<Remote<ServerAddr>> for Opaque {
+    fn param(&self) -> Remote<ServerAddr> {
+        Remote(ServerAddr(self.client.local_addr.into()))
+    }
+}
+
 impl Param<tls::ConditionalServerTls> for Opaque {
     fn param(&self) -> tls::ConditionalServerTls {
         tls::ConditionalServerTls::Some(tls::ServerTls::Established {
             client_id: Some(self.client.client_id.clone()),
             negotiated_protocol: self.client.alpn.clone(),
         })
+    }
+}
+
+impl svc::Param<Option<profiles::LogicalAddr>> for Opaque {
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        self.profile.logical_addr()
+    }
+}
+
+impl svc::Param<Option<profiles::Receiver>> for Opaque {
+    fn param(&self) -> Option<profiles::Receiver> {
+        Some(self.profile.clone())
     }
 }

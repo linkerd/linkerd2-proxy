@@ -138,9 +138,13 @@ impl<N> Outbound<N> {
         NSvc: Clone + Send + Sync + Unpin + 'static,
         NSvc::Future: Send,
     {
+        // The detect stack doesn't cache its inner service, so we need a
+        // process-global cache of each inner stack.
+        //
+        // TODO(ver): is this really necessary? is this responsible for keeping
+        // balancers cached?
+
         let opaque = self.clone().map_stack(|config, _, opaque| {
-            // The detect stack doesn't cache its inner service, so we need a
-            // process-global cache of logical TCP stacks.
             opaque
                 .push_new_idle_cached(config.discovery_idle_timeout)
                 .check_new_service::<T, _>()
