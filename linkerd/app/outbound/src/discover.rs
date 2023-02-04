@@ -5,7 +5,10 @@ use linkerd_app_core::{
     transport::addrs::*,
     Error, Infallible,
 };
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    ops::Deref,
+};
 use tracing::debug;
 
 #[derive(Clone, Debug)]
@@ -153,6 +156,14 @@ impl<T> svc::Param<Option<http::detect::Skip>> for Discovery<T> {
         }
 
         None
+    }
+}
+
+impl<T> Deref for Discovery<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.parent
     }
 }
 

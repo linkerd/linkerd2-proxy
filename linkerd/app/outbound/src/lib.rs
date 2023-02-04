@@ -43,7 +43,7 @@ pub mod tcp;
 #[cfg(test)]
 pub(crate) mod test_util;
 
-pub use self::metrics::Metrics;
+pub use self::{discover::Discovery, metrics::Metrics};
 
 #[derive(Clone, Debug)]
 pub struct Config {

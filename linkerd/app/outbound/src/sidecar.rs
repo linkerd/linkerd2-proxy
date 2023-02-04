@@ -37,6 +37,8 @@ impl Outbound<()> {
     }
 }
 
+// === impl Sidecar ===
+
 impl<T> svc::Param<OrigDstAddr> for Sidecar<T>
 where
     T: svc::Param<OrigDstAddr>,

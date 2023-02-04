@@ -8,11 +8,7 @@ mod tests;
 use self::gateway::NewHttpGateway;
 use linkerd_app_core::{
     identity, io, metrics, profiles,
-    proxy::{
-        api_resolve::{ConcreteAddr, Metadata},
-        core::Resolve,
-        http,
-    },
+    proxy::http,
     svc::{self, Param},
     tls,
     transport::addrs::*,
@@ -21,10 +17,10 @@ use linkerd_app_core::{
 };
 use linkerd_app_inbound::{
     direct::{ClientInfo, GatewayTransportHeader},
-    policy, Inbound,
+    policy, GatewayDomainInvalid, Inbound,
 };
 use linkerd_app_outbound::{self as outbound, Outbound};
-use std::fmt;
+use std::{fmt::Debug, hash::Hash};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Default)]
@@ -32,33 +28,22 @@ pub struct Config {
     pub allow_discovery: NameMatch,
 }
 
-/// A target type describing an HTTP gateway connection from an inbound proxy,
-/// including enough information to enforce inbound policy on the gatewayed
-/// requests.
-#[derive(Clone, Debug)]
-struct InboundHttp {
-    client: ClientInfo,
-    inbound_policy: policy::AllowPolicy,
-    outbound: OutboundHttp,
+#[derive(Clone)]
+pub struct Gateway {
+    config: Config,
+    inbound: Inbound<()>,
+    outbound: Outbound<()>,
 }
 
-/// A target type describing outbound HTTP traffic.
 #[derive(Clone, Debug)]
-struct OutboundHttp {
-    target: NameAddr,
-    profile: Option<profiles::Receiver>,
+pub struct OutboundHttp {
+    target: outbound::http::logical::Target,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Http<T> {
     version: http::Version,
-}
-
-/// A target type describing an opaque gateway connection from an inbound proxy,
-/// including enough informatiion to enforce inbound policy on the gatewayed
-/// connection.
-#[derive(Clone, Debug)]
-struct Opaque {
-    target: NameAddr,
-    client: ClientInfo,
-    inbound_policy: policy::AllowPolicy,
-    profile: profiles::Receiver,
+    parent: T,
 }
 
 /// Implements `svc::router::SelectRoute` for outbound HTTP requests. An
@@ -68,7 +53,7 @@ struct Opaque {
 /// The request's HTTP version may not match the target's original HTTP version
 /// when proxies use HTTP/2 to transport HTTP/1 requests.
 #[derive(Clone, Debug)]
-struct ByRequestVersion(OutboundHttp);
+struct ByRequestVersion<T>(T);
 
 #[derive(Debug, Default, Error)]
 #[error("a named target must be provided on gateway connections")]
@@ -78,154 +63,165 @@ struct RefusedNoTarget(());
 #[error("the provided address could not be resolved: {}", self.0)]
 struct RefusedNotResolved(NameAddr);
 
-/// Builds a gateway between inbound and outbound proxy stacks.
-pub fn stack<I, O, P, R>(
-    Config { allow_discovery }: Config,
-    inbound: Inbound<()>,
-    outbound: Outbound<O>,
-    profiles: P,
-    resolve: R,
-) -> svc::ArcNewTcp<GatewayTransportHeader, I>
-where
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
-    O: Clone + Send + Sync + Unpin + 'static,
-    O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
-    O::Connection: Send + Unpin,
-    O::Future: Send + Unpin + 'static,
-    P: profiles::GetProfile<Error = Error>,
-    R: Clone + Send + Sync + Unpin + 'static,
-    R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-{
-    let local_id = identity::LocalId(inbound.identity().name().clone());
+impl Gateway {
+    fn new(config: Config, inbound: Inbound<()>, outbound: Outbound<()>) -> Self {
+        Self {
+            config,
+            inbound,
+            outbound,
+        }
+    }
+}
 
-    let opaque = outbound
-        .clone()
-        .push_opaque(resolve.clone())
-        .check_new_service::<Opaque, I>()
-        .into_stack()
-        .push_map_target(|(_permit, opaque): (_, Opaque)| opaque)
-        .push(inbound.authorize_tcp())
-        .check_new_service::<Opaque, I>();
+impl Gateway {
+    /// Builds a gateway between inbound and outbound proxy stacks.
+    pub fn stack<T, I, P, O, H, OSvc, HSvc>(
+        self,
+        profiles: P,
+        opaque: O,
+        http: H,
+    ) -> svc::ArcNewTcp<T, I>
+    where
+        // Target
+        T: svc::Param<profiles::LookupAddr>,
+        T: svc::Param<Option<SessionProtocol>>,
+        T: svc::Param<tls::ClientId>,
+        T: Clone + Send + Sync + 'static,
+        // Inbound socket
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Debug + Send + Sync + Unpin + 'static,
+        // Discovery
+        P: profiles::GetProfile<Error = Error>,
+        // Outbound opaque stack
+        O: svc::NewService<outbound::Discovery<T>, Service = OSvc>,
+        O: Clone + Send + Sync + Unpin + 'static,
+        OSvc: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        OSvc: Send + Unpin + 'static,
+        OSvc::Future: Send + 'static,
+        // Outbound HTTP stack
+        H: svc::NewService<OuboundHttp, Service = HSvc>,
+        H: Clone + Send + Sync + Unpin + 'static,
+        HSvc: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        HSvc: Send + Unpin + 'static,
+        HSvc::Future: Send + 'static,
+    {
+        // XXX TODO THIS STACK PROBABLY NEEDS TO HANDLE CACHING LOAD BALANCERS,
+        // etc.
 
-    let http = inbound
-        .clone()
-        .with_stack(
-            outbound
-                .clone()
-                .push_http(resolve)
-                .into_stack()
-                .push(NewHttpGateway::layer(local_id))
-                .push(svc::ArcNewService::layer())
+        let tcp_http = {
+            let http = svc::stack(http)
+                .push(NewHttpGateway::layer(identity::LocalId(
+                    self.inbound.identity().name().clone(),
+                )))
                 .check_new::<OutboundHttp>()
                 .push_on_service(svc::LoadShed::layer())
                 .lift_new()
                 .push(svc::NewOneshotRoute::layer_via(
-                    |(_permit, http): &(_, InboundHttp)| ByRequestVersion(http.outbound.clone()),
+                    |(_permit, t): &(_, Http<outbound::Discovery<T>>)| ByRequestVersion(t.clone()),
                 ))
-                .push(inbound.authorize_http())
+                .push(self.inbound.authorize_http())
                 .push_http_insert_target::<tls::ClientId>()
-                .into_inner(),
-        )
-        // Handles inbound-policy errors.
-        .push_http_server()
-        .into_stack()
-        .check_new_service::<InboundHttp, I>();
+                .into_inner();
 
-    let protocol = http
-        .check_new_service::<InboundHttp, I>()
-        .push_switch(
-            |(profile, gth): (Option<profiles::Receiver>, GatewayTransportHeader)| -> Result<_, Error> {
-                if let Some(proto) = gth.protocol {
-                    return Ok(svc::Either::A(InboundHttp {
-                        client: gth.client,
-                        inbound_policy: gth.policy,
-                        outbound: OutboundHttp {
-                            profile,
-                            target: gth.target,
-                            version: match proto {
-                                SessionProtocol::Http1 => http::Version::Http1,
-                                SessionProtocol::Http2 => http::Version::H2,
-                            },
-                        },
-                    }));
-                }
+            // - Teminate HTTP connections into the `http` stack
+            // - May write access logs.
+            // - Handle HTTP downgrading, inbound-policy errors.
+            // - XXX Set an identity header -- this should probably not be done
+            //   in the gateway, though the value will be stripped by meshed
+            //   servers.
+            // - Initializes tracing.
+            self.inbound
+                .clone()
+                .with_stack(http)
+                .push_http_server()
+                .into_stack()
+                .check_new_service::<_, I>()
+        };
 
-                let profile = profile.ok_or_else(|| RefusedNotResolved(gth.target.clone()))?;
-                Ok(svc::Either::B(Opaque {
-                    profile,
-                    target: gth.target,
-                    client: gth.client,
-                    inbound_policy: gth.policy,
-                }))
-            },
-            opaque.into_inner(),
-        )
-        .push_on_service(svc::BoxService::layer())
-        .check_new_service::<(Option<profiles::Receiver>, GatewayTransportHeader), I>();
+        let tcp_opaque = svc::stack(opaque)
+            .push_map_target(|(_permit, opaque): (_, T)| opaque)
+            .push(self.inbound.authorize_tcp())
+            .check_new_service::<_, I>();
 
-    let discover = protocol
-        .clone()
-        .check_new_service::<(Option<profiles::Receiver>, GatewayTransportHeader), I>()
-        .lift_new_with_target()
-        .push_new_cached_discover(
-            profiles.into_service(),
-            outbound.config().discovery_idle_timeout,
-        )
-        .push_filter(move |gth: GatewayTransportHeader| {
-            if !allow_discovery.matches(gth.target.name()) {
-                return Err(RefusedNotResolved(gth.target));
-            }
-            Ok(gth)
-        })
-        .check_new_service::<GatewayTransportHeader, I>();
+        let protocol = tcp_http
+            .push_switch(
+                |disco: outbound::Discovery<T>| -> Result<_, Error> {
+                    if let Some(proto) = (*disco).param() {
+                        let version = match proto {
+                            SessionProtocol::Http1 => http::Version::Http1,
+                            SessionProtocol::Http2 => http::Version::H2,
+                        };
+                        return Ok(svc::Either::A(Http {
+                            parent: disco,
+                            version,
+                        }));
+                    }
 
-    discover
-        .push_on_service(
-            svc::layers()
-                .push(
-                    outbound
-                        .stack_metrics()
-                        .layer(metrics::StackLabels::outbound("tcp", "gateway")),
-                )
-                .push(svc::BoxService::layer()),
-        )
-        .push(svc::ArcNewService::layer())
-        .check_new_service::<GatewayTransportHeader, I>()
-        .into_inner()
+                    Ok(svc::Either::B(parent))
+                },
+                tcp_opaque.into_inner(),
+            )
+            .check_new_service::<outbound::Discovery<T>, I>();
+
+        let discover = self
+            .outbound
+            .with_stack(protocol.into_inner())
+            .push_discover(profiles)
+            .check_new_service::<T, I>();
+
+        discover
+            .push_on_service(svc::BoxService::layer())
+            .push(svc::ArcNewService::layer())
+            .check_new_service::<T, I>()
+    }
 }
 
-// === impl OutboundHttp ===
+// === impl Http ===
 
-impl Param<http::Version> for OutboundHttp {
+impl<T> Http<T>
+where
+    T: svc::Param<http::Version>,
+{
+    fn wrap(parent: T) -> Self {
+        Self {
+            version: parent.param(),
+            parent,
+        }
+    }
+}
+
+impl<T> Param<http::Version> for Http<T> {
     fn param(&self) -> http::Version {
         self.version
     }
 }
 
-impl svc::Param<Remote<ServerAddr>> for OutboundHttp {
-    fn param(&self) -> Remote<ServerAddr> {
-        todo!("not this")
+impl<T> Param<profiles::Receiver> for Http<T>
+where
+    T: svc::Param<profiles::Receiver>,
+{
+    fn param(&self) -> profiles::Receiver {
+        self.parent.param()
     }
 }
 
-impl svc::Param<http::normalize_uri::DefaultAuthority> for OutboundHttp {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        todo!("not this")
+impl<T> svc::Param<tls::ClientId> for Http<outbound::Discovery<T>>
+where
+    T: svc::Param<tls::ClientId>,
+{
+    fn param(&self) -> tls::ClientId {
+        (*self.parent).param()
     }
 }
 
-impl svc::Param<Option<profiles::LogicalAddr>> for OutboundHttp {
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.profile.as_ref()?.logical_addr()
-    }
-}
-
-impl svc::Param<Option<profiles::Receiver>> for OutboundHttp {
-    fn param(&self) -> Option<profiles::Receiver> {
-        self.profile.clone()
-    }
-}
-
+/*
 // === impl InboundHttp ===
 
 impl Param<http::normalize_uri::DefaultAuthority> for InboundHttp {
@@ -288,14 +284,52 @@ impl Param<policy::ServerLabel> for InboundHttp {
 // === impl ByRequestVersion ===
 
 impl<B> svc::router::SelectRoute<http::Request<B>> for ByRequestVersion {
-    type Key = OutboundHttp;
+    type Key = Http<profiles::LogicalAddr>;
     type Error = Error;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
-        Ok(OutboundHttp {
-            version: req.version().try_into()?,
-            ..self.0.clone()
-        })
+        if let Some(profile) = self.0.profile.clone() {
+            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                return Http {
+                    version: req.version(),
+                    target: outbound::http::logical::Target::Route(addr, profile),
+                };
+            }
+        }
+
+        Err(GatewayDomainInvalid.into())
+    }
+}
+
+// === impl OutboundHttp ===
+
+impl Param<http::Version> for OutboundHttp {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+impl svc::Param<Remote<ServerAddr>> for OutboundHttp {
+    fn param(&self) -> Remote<ServerAddr> {
+        todo!("not this")
+    }
+}
+
+impl svc::Param<http::normalize_uri::DefaultAuthority> for OutboundHttp {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        todo!("not this")
+    }
+}
+
+impl svc::Param<Option<profiles::LogicalAddr>> for OutboundHttp {
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        self.profile.as_ref()?.logical_addr()
+    }
+}
+
+impl svc::Param<Option<profiles::Receiver>> for OutboundHttp {
+    fn param(&self) -> Option<profiles::Receiver> {
+        self.profile.clone()
     }
 }
 
@@ -345,3 +379,5 @@ impl svc::Param<Option<profiles::Receiver>> for Opaque {
         Some(self.profile.clone())
     }
 }
+
+*/

@@ -80,7 +80,7 @@ impl Outbound<()> {
 
         let http = self
             .to_tcp_connect()
-            .push_http(resolve.clone())
+            .push_http(resolve)
             .map_stack(|_, _, stk| stk.push_map_target(HttpIngress::wrap))
             .push_discover(profiles)
             .push_discover_cache();
