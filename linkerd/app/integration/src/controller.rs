@@ -408,6 +408,7 @@ where
 pub enum Hint {
     Unknown,
     H2,
+    Opaque,
 }
 
 pub struct DestinationBuilder {
@@ -447,16 +448,20 @@ impl DestinationBuilder {
                     inbound_port: port as u32,
                 }),
             }),
-            (Hint::H2, Some(port)) => Some(pb::ProtocolHint {
-                protocol: Some(pb::protocol_hint::Protocol::H2(pb::protocol_hint::H2 {})),
-                opaque_transport: Some(pb::protocol_hint::OpaqueTransport {
+            (hint, port) => {
+                let protocol = match hint {
+                    Hint::Unknown => None,
+                    Hint::H2 => Some(pb::protocol_hint::Protocol::H2(pb::protocol_hint::H2 {})),
+                    Hint::Opaque => Some(pb::protocol_hint::Protocol::Opaque(pb::protocol_hint::Opaque {})),
+                };
+                let opaque_transport = port.map(|port|pb::protocol_hint::OpaqueTransport {
                     inbound_port: port as u32,
-                }),
-            }),
-            (Hint::H2, None) => Some(pb::ProtocolHint {
-                protocol: Some(pb::protocol_hint::Protocol::H2(pb::protocol_hint::H2 {})),
-                ..Default::default()
-            }),
+                });
+
+                Some(pb::ProtocolHint {
+                protocol,
+                opaque_transport,})
+            }
         };
 
         let tls_identity = identity.map(|identity| pb::TlsIdentity {
