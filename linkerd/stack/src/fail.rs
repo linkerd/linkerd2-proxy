@@ -1,4 +1,3 @@
-use crate::NewService;
 use futures::future;
 use linkerd_error::Error;
 use std::{
@@ -9,15 +8,6 @@ use std::{
 #[derive(Debug)]
 pub struct Fail<U, E> {
     _marker: PhantomData<fn() -> Result<U, E>>,
-}
-
-impl<T, U, E> NewService<T> for Fail<U, E> {
-    type Service = Self;
-
-    #[inline]
-    fn new_service(&self, _: T) -> Self::Service {
-        *self
-    }
 }
 
 impl<T, U, E> tower::Service<T> for Fail<U, E>

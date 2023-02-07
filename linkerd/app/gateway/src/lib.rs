@@ -6,6 +6,7 @@ mod gateway;
 mod tests;
 
 use self::gateway::NewHttpGateway;
+use inbound::{GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_core::{
     identity, io, profiles,
     proxy::http,
@@ -45,6 +46,12 @@ pub struct Http<T> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Opaque<T>(outbound::Discovery<T>);
+
+#[derive(Clone, Debug)]
+pub struct HttpOutbound<T> {
+    profile: profiles::Receiver,
+    parent: Http<T>,
+}
 
 /// Implements `svc::router::SelectRoute` for outbound HTTP requests. An
 /// `OutboundHttp` target is returned for each request using the request's HTTP
@@ -89,7 +96,7 @@ impl Gateway {
         T: svc::Param<tls::ClientId>,
         T: svc::Param<Option<SessionProtocol>>,
         T: svc::Param<profiles::LookupAddr>,
-        T: Clone + Send + Sync + 'static,
+        T: Clone + Send + Sync + Unpin + 'static,
         // Inbound socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Debug + Send + Sync + Unpin + 'static,
         // Discovery
@@ -101,7 +108,7 @@ impl Gateway {
         OSvc: Send + Unpin + 'static,
         OSvc::Future: Send + 'static,
         // Outbound HTTP stack
-        H: svc::NewService<OuboundHttp, Service = HSvc>,
+        H: svc::NewService<HttpOutbound<T>, Service = HSvc>,
         H: Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<
             http::Request<http::BoxBody>,
@@ -116,17 +123,25 @@ impl Gateway {
 
         let tcp_http = {
             let http = svc::stack(http)
+                .check_new_service::<HttpOutbound<T>, http::Request<http::BoxBody>>()
                 .push(NewHttpGateway::layer(identity::LocalId(
                     self.inbound.identity().name().clone(),
                 )))
-                .check_new::<OutboundHttp>()
-                .push_on_service(svc::LoadShed::layer())
-                .lift_new()
-                .push(svc::NewOneshotRoute::layer_via(
-                    |(_permit, t): &(_, Http<outbound::Discovery<T>>)| ByRequestVersion(t.clone()),
-                ))
+                .check_new_service::<HttpOutbound<T>, http::Request<http::BoxBody>>()
+                // .push_on_service(svc::LoadShed::layer())
+                // .lift_new()
+                // .push(svc::NewOneshotRoute::layer_via(
+                //     |(_permit, t): &(_, Http<T>)| ByRequestVersion(t.clone()),
+                // ))
+                .push_filter(
+                    |(_, parent): (_, Http<T>)| -> Result<_, GatewayDomainInvalid> {
+                        svc::Param::<Option<profiles::Receiver>>::param(&parent)
+                            .map(|profile| HttpOutbound { profile, parent })
+                            .ok_or(GatewayDomainInvalid)
+                    },
+                )
                 .push(self.inbound.authorize_http())
-                .push_http_insert_target::<tls::ClientId>()
+                .check_new_service::<Http<T>, http::Request<http::BoxBody>>()
                 .into_inner();
 
             self.inbound
@@ -138,9 +153,9 @@ impl Gateway {
                 //   in the gateway, though the value will be stripped by meshed
                 //   servers.
                 // - Initializes tracing.
-                .push_http_server()
-                // Teminate HTTP connections.
+                .push_http_server() // Teminate HTTP connections.
                 .push_tcp_http_server()
+                .check_new_service::<Http<T>, I>()
                 .into_stack()
                 .check_new_service::<Http<T>, I>()
         };
@@ -227,24 +242,6 @@ where
     }
 }
 
-impl<T> svc::Param<Option<SessionProtocol>> for Opaque<T>
-where
-    T: svc::Param<Option<SessionProtocol>>,
-{
-    fn param(&self) -> Option<SessionProtocol> {
-        (*self.0).param()
-    }
-}
-
-impl<T> svc::Param<profiles::LookupAddr> for Opaque<T>
-where
-    T: svc::Param<profiles::LookupAddr>,
-{
-    fn param(&self) -> profiles::LookupAddr {
-        (*self.0).param()
-    }
-}
-
 // === impl Http ===
 
 impl<T> std::ops::Deref for Http<T> {
@@ -261,21 +258,55 @@ impl<T> Param<http::Version> for Http<T> {
     }
 }
 
-impl<T> Param<profiles::Receiver> for Http<T>
-where
-    T: svc::Param<profiles::Receiver>,
-{
-    fn param(&self) -> profiles::Receiver {
+impl<T> Param<Option<profiles::Receiver>> for Http<T> {
+    fn param(&self) -> Option<profiles::Receiver> {
         self.parent.param()
     }
 }
 
-impl<T> svc::Param<tls::ClientId> for Http<outbound::Discovery<T>>
+impl<T> svc::Param<inbound::policy::AllowPolicy> for Http<T>
+where
+    T: svc::Param<inbound::policy::AllowPolicy>,
+{
+    fn param(&self) -> inbound::policy::AllowPolicy {
+        (*self.parent).param()
+    }
+}
+
+impl<T> svc::Param<Remote<ClientAddr>> for Http<T>
+where
+    T: svc::Param<Remote<ClientAddr>>,
+{
+    fn param(&self) -> Remote<ClientAddr> {
+        (*self.parent).param()
+    }
+}
+
+impl<T> svc::Param<tls::ConditionalServerTls> for Http<T>
+where
+    T: svc::Param<tls::ConditionalServerTls>,
+{
+    fn param(&self) -> tls::ConditionalServerTls {
+        (*self.parent).param()
+    }
+}
+
+impl<T> svc::Param<tls::ClientId> for Http<T>
 where
     T: svc::Param<tls::ClientId>,
 {
     fn param(&self) -> tls::ClientId {
         (*self.parent).param()
+    }
+}
+
+// === impl Http ===
+
+impl<T> std::ops::Deref for HttpOutbound<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.parent
     }
 }
 

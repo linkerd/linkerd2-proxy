@@ -114,10 +114,9 @@ impl Test {
 
         let gateway = svc::stack(new)
             .check_new_service::<OutboundHttp, http::Request<http::BoxBody>>()
-            .new_service(OutboundHttp {
+            .new_service(HttpOutbound {
                 profile,
                 target: target.clone(),
-                version: http::Version::Http1,
             });
 
         let bg = tokio::spawn(async move {

@@ -42,9 +42,9 @@ impl<C> Outbound<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
+    use crate::test_util::*;
+    use linkerd_app_core::{
         svc::{self, NewService, ServiceExt},
-        test_util::*,
         transport::{ClientAddr, Local},
     };
     use std::net::SocketAddr;

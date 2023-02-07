@@ -14,16 +14,6 @@ pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 
 // === impl Logical ===
 
-impl Logical<()> {
-    pub(crate) fn new(logical_addr: profiles::LogicalAddr, profile: profiles::Receiver) -> Self {
-        Self {
-            profile,
-            logical_addr,
-            protocol: (),
-        }
-    }
-}
-
 impl<P> svc::Param<tokio::sync::watch::Receiver<profiles::Profile>> for Logical<P> {
     fn param(&self) -> tokio::sync::watch::Receiver<profiles::Profile> {
         self.profile.clone().into()

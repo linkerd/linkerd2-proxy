@@ -19,7 +19,7 @@ use linkerd_app_core::{
     serve,
     svc::{self, stack::Param},
     tls,
-    transport::{self, addrs::*},
+    transport::addrs::*,
     AddrMatch, Error, ProxyRuntime, Result,
 };
 use std::{
@@ -39,7 +39,7 @@ mod metrics;
 pub mod opaque;
 mod protocol;
 mod sidecar;
-mod switch_logical;
+// mod switch_logical;
 pub mod tcp;
 #[cfg(test)]
 pub(crate) mod test_util;
@@ -139,10 +139,6 @@ impl<S> Outbound<S> {
 
     pub fn into_inner(self) -> S {
         self.stack.into_inner()
-    }
-
-    fn no_tls_reason(&self) -> tls::NoClientTls {
-        tls::NoClientTls::NotProvidedByServiceDiscovery
     }
 
     pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {

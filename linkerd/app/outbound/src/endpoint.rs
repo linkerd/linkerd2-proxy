@@ -33,21 +33,6 @@ pub struct ForwardError {
 // === impl Endpoint ===
 
 impl Endpoint<()> {
-    pub(crate) fn forward(
-        addr: OrigDstAddr,
-        reason: tls::NoClientTls,
-        opaque_protocol: bool,
-    ) -> Self {
-        Self {
-            addr: Remote(ServerAddr(addr.into())),
-            metadata: Metadata::default(),
-            tls: Conditional::None(reason),
-            logical_addr: None,
-            opaque_protocol,
-            protocol: (),
-        }
-    }
-
     pub fn from_metadata(
         addr: impl Into<SocketAddr>,
         mut metadata: Metadata,
