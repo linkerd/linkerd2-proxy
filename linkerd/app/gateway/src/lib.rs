@@ -90,6 +90,7 @@ impl Gateway {
     ) -> svc::ArcNewTcp<T, I>
     where
         // Target
+        T: svc::Param<GatewayAddr>,
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: svc::Param<Remote<ClientAddr>>,
         T: svc::Param<tls::ConditionalServerTls>,
@@ -127,6 +128,7 @@ impl Gateway {
                 .push(NewHttpGateway::layer(identity::LocalId(
                     self.inbound.identity().name().clone(),
                 )))
+                .check_new::<HttpOutbound<T>>()
                 .check_new_service::<HttpOutbound<T>, http::Request<http::BoxBody>>()
                 // .push_on_service(svc::LoadShed::layer())
                 // .lift_new()
