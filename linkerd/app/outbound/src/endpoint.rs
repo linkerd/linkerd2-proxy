@@ -113,11 +113,11 @@ impl<P> svc::Param<Option<http::detect::Skip>> for Endpoint<P> {
     }
 }
 
-impl<P> svc::Param<Option<tcp::opaque_transport::PortOverride>> for Endpoint<P> {
-    fn param(&self) -> Option<tcp::opaque_transport::PortOverride> {
+impl<P> svc::Param<Option<tcp::tagged_transport::PortOverride>> for Endpoint<P> {
+    fn param(&self) -> Option<tcp::tagged_transport::PortOverride> {
         self.metadata
             .opaque_transport_port()
-            .map(tcp::opaque_transport::PortOverride)
+            .map(tcp::tagged_transport::PortOverride)
     }
 }
 

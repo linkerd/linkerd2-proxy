@@ -9,7 +9,7 @@ use linkerd_app_core::{
 pub mod concrete;
 pub mod connect;
 pub mod logical;
-pub mod opaque_transport;
+pub mod tagged_transport;
 
 pub use self::connect::Connect;
 pub use linkerd_app_core::proxy::tcp::Forward;

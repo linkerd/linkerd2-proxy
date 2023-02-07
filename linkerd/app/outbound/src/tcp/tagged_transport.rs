@@ -20,15 +20,15 @@ use tracing::{debug, trace, warn};
 pub struct PortOverride(pub u16);
 
 #[derive(Clone, Debug)]
-pub struct OpaqueTransport<S> {
+pub struct TaggedTransport<S> {
     inner: S,
 }
 
-// === impl OpaqueTransport ===
+// === impl TaggedTransport ===
 
-impl<S> OpaqueTransport<S> {
+impl<S> TaggedTransport<S> {
     pub fn layer() -> impl svc::Layer<S, Service = Self> + Copy {
-        svc::layer::mk(|inner| OpaqueTransport { inner })
+        svc::layer::mk(|inner| TaggedTransport { inner })
     }
 
     /// Determines whether the connection has negotiated support for the
@@ -43,7 +43,7 @@ impl<S> OpaqueTransport<S> {
     }
 }
 
-impl<T, S> svc::Service<T> for OpaqueTransport<S>
+impl<T, S> svc::Service<T> for TaggedTransport<S>
 where
     T: svc::Param<tls::ConditionalClientTls>
         + svc::Param<Remote<ServerAddr>>
@@ -67,7 +67,7 @@ where
     fn call(&mut self, ep: T) -> Self::Future {
         let tls: tls::ConditionalClientTls = ep.param();
         if let tls::ConditionalClientTls::None(reason) = tls {
-            trace!(%reason, "Not attempting opaque transport");
+            trace!(%reason, "Not attempting tagged transport");
             let target = Connect {
                 addr: ep.param(),
                 tls,
@@ -80,12 +80,12 @@ where
         let Remote(ServerAddr(addr)) = ep.param();
         let mut target_port = addr.port();
 
-        // If this endpoint should use opaque transport, then we update the
+        // If this endpoint should use tagged transport, then we update the
         // endpoint so the connection actually targets the target proxy's
         // inbound port.
-        let connect_port = if let Some(PortOverride(opaque_port)) = ep.param() {
-            debug!(target_port, opaque_port, "Using opaque transport");
-            opaque_port
+        let connect_port = if let Some(PortOverride(direct_port)) = ep.param() {
+            debug!(target_port, direct_port, "Using tagged transport");
+            direct_port
         } else {
             trace!("No port override");
             target_port
@@ -109,7 +109,6 @@ where
         }
 
         let protocol: Option<SessionProtocol> = ep.param();
-
         debug!(?protocol, "Using session protocol");
 
         let connect = self.inner.connect(Connect {
@@ -197,7 +196,7 @@ mod test {
     async fn plain() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(|ep: Connect| {
                 let Remote(ServerAddr(sa)) = ep.addr;
                 assert_eq!(sa.port(), 4321);
@@ -221,7 +220,7 @@ mod test {
     async fn unknown_no_name() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(expect_header(TransportHeader {
                 port: 4321,
                 name: None,
@@ -246,7 +245,7 @@ mod test {
     async fn unknown_named_with_port() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(expect_header(TransportHeader {
                 port: 5555,
                 name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
@@ -271,7 +270,7 @@ mod test {
     async fn unknown_named_no_port() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(expect_header(TransportHeader {
                 port: 4321,
                 name: None,
@@ -296,7 +295,7 @@ mod test {
     async fn opaque_no_name() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(expect_header(TransportHeader {
                 port: 4321,
                 name: None,
@@ -321,7 +320,7 @@ mod test {
     async fn opaque_named_with_port() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(expect_header(TransportHeader {
                 port: 5555,
                 name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
@@ -346,7 +345,7 @@ mod test {
     async fn opaque_named_no_port() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(expect_header(TransportHeader {
                 port: 4321,
                 name: None,
@@ -371,7 +370,7 @@ mod test {
     async fn unknown_http1() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(expect_header(TransportHeader {
                 port: 5555,
                 name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
@@ -399,7 +398,7 @@ mod test {
     async fn opaque_http1() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(expect_header(TransportHeader {
                 port: 5555,
                 name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
@@ -429,7 +428,7 @@ mod test {
     async fn hinted_http2() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(expect_header(TransportHeader {
                 port: 5555,
                 name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),

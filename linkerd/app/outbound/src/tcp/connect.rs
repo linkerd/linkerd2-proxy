@@ -1,4 +1,4 @@
-use super::opaque_transport::{self, OpaqueTransport};
+use super::tagged_transport::{self, TaggedTransport};
 use crate::{ConnectMeta, Outbound};
 use futures::future;
 use linkerd_app_core::{
@@ -54,7 +54,7 @@ impl<C> Outbound<C> {
     where
         T: svc::Param<Remote<ServerAddr>>
             + svc::Param<tls::ConditionalClientTls>
-            + svc::Param<Option<opaque_transport::PortOverride>>
+            + svc::Param<Option<tagged_transport::PortOverride>>
             + svc::Param<Option<http::AuthorityOverride>>
             + svc::Param<Option<SessionProtocol>>
             + svc::Param<transport::labels::Key>,
@@ -73,7 +73,7 @@ impl<C> Outbound<C> {
                 .push(tls::Client::layer(rt.identity.clone()))
                 // Encodes a transport header if the established connection is TLS'd and
                 // ALPN negotiation indicates support.
-                .push(OpaqueTransport::layer())
+                .push(TaggedTransport::layer())
                 // Limits the time we wait for a connection to be established.
                 .push_connect_timeout(config.proxy.connect.timeout)
                 .push(svc::stack::BoxFuture::layer())
