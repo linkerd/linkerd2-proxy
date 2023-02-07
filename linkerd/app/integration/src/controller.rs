@@ -464,10 +464,10 @@ impl DestinationBuilder {
             }
         };
 
-        let tls_identity = identity.map(|identity| pb::TlsIdentity {
+        let tls_identity = identity.map(|name| pb::TlsIdentity {
             strategy: Some(pb::tls_identity::Strategy::DnsLikeIdentity(
                 pb::tls_identity::DnsLikeIdentity {
-                    name: identity.into(),
+                    name,
                 },
             )),
         });
