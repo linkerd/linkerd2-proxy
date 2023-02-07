@@ -45,6 +45,7 @@ pub struct Opaque<T>(outbound::Discovery<T>);
 #[derive(Clone, Debug)]
 pub struct HttpOutbound<T> {
     profile: profiles::Receiver,
+    logical: outbound::http::logical::Target,
     parent: Http<T>,
 }
 
@@ -55,7 +56,7 @@ pub struct HttpOutbound<T> {
 /// The request's HTTP version may not match the target's original HTTP version
 /// when proxies use HTTP/2 to transport HTTP/1 requests.
 #[derive(Clone, Debug)]
-struct ByRequestVersion<T>(T);
+struct ByRequestVersion<T>(HttpOutbound<T>);
 
 #[derive(Debug, Default, Error)]
 #[error("a named target must be provided on gateway connections")]
@@ -125,22 +126,39 @@ impl Gateway {
                 .push(NewHttpGateway::layer(identity::LocalId(
                     self.inbound.identity().name().clone(),
                 )))
+                .push_on_service(svc::LoadShed::layer())
+                .check_new_service::<HttpOutbound<T>, http::Request<http::BoxBody>>()
+                .lift_new()
+                .check_new_new::<HttpOutbound<T>, HttpOutbound<T>>()
+                .push(svc::NewOneshotRoute::layer_via(|t: &HttpOutbound<T>| {
+                    ByRequestVersion(t.clone())
+                }))
                 .check_new::<HttpOutbound<T>>()
                 .check_new_service::<HttpOutbound<T>, http::Request<http::BoxBody>>()
-                // .push_on_service(svc::LoadShed::layer())
-                // .lift_new()
-                // .push(svc::NewOneshotRoute::layer_via(
-                //     |(_permit, t): &(_, Http<T>)| ByRequestVersion(t.clone()),
-                // ))
                 .push_filter(
                     move |(_, parent): (_, Http<T>)| -> Result<_, GatewayDomainInvalid> {
                         let GatewayAddr(addr) = (*parent).param();
                         if allow_discovery.matches(addr.name()) {
                             return Err(GatewayDomainInvalid);
                         }
-                        svc::Param::<Option<profiles::Receiver>>::param(&parent)
-                            .map(|profile| HttpOutbound { profile, parent })
-                            .ok_or(GatewayDomainInvalid)
+                        let profile = svc::Param::<Option<profiles::Receiver>>::param(&parent)
+                            .ok_or(GatewayDomainInvalid)?;
+                        let logical =
+                            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                                outbound::http::logical::Target::Route(addr, profile.clone())
+                            } else if let Some((addr, metadata)) = profile.endpoint() {
+                                outbound::http::logical::Target::Forward(
+                                    Remote(ServerAddr(addr)),
+                                    metadata,
+                                )
+                            } else {
+                                return Err(GatewayDomainInvalid);
+                            };
+                        Ok(HttpOutbound {
+                            profile,
+                            logical,
+                            parent,
+                        })
                     },
                 )
                 .push(self.inbound.authorize_http())
@@ -198,6 +216,19 @@ impl Gateway {
             .push(svc::ArcNewService::layer())
             .check_new_service::<T, I>()
             .into_inner()
+    }
+}
+
+// === impl ByRequestVersion ===
+
+impl<B, T: Clone> svc::router::SelectRoute<http::Request<B>> for ByRequestVersion<T> {
+    type Key = HttpOutbound<T>;
+    type Error = http::version::Unsupported;
+
+    fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
+        let mut t = self.0.clone();
+        t.parent.version = req.version().try_into()?;
+        Ok(t)
     }
 }
 
@@ -382,14 +413,12 @@ where
 
 impl<T> svc::Param<outbound::http::logical::Target> for HttpOutbound<T> {
     fn param(&self) -> outbound::http::logical::Target {
-        if let Some(profiles::LogicalAddr(addr)) = self.profile.logical_addr() {
-            return outbound::http::logical::Target::Route(addr, self.profile.clone());
-        }
+        self.logical.clone()
+    }
+}
 
-        if let Some((addr, metadata)) = self.profile.endpoint() {
-            return outbound::http::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
-        }
-
-        unreachable!("right?")
+impl<T> svc::Param<profiles::Receiver> for HttpOutbound<T> {
+    fn param(&self) -> profiles::Receiver {
+        self.profile.clone()
     }
 }

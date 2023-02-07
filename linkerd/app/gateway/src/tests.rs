@@ -142,7 +142,7 @@ impl Test {
             );
         });
 
-        let req = http::Request::builder().uri(format!("http://{}", target));
+        let req = http::Request::builder().uri(format!("http://{target}"));
         let req = orig_fwd
             .into_iter()
             .fold(req, |req, fwd| req.header(http::header::FORWARDED, fwd))

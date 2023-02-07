@@ -22,7 +22,7 @@ pub mod strip_header;
 pub mod timeout;
 pub mod trace;
 pub mod upgrade;
-mod version;
+pub mod version;
 
 pub use self::{
     balance::NewBalancePeakEwma,
