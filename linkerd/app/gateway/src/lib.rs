@@ -11,10 +11,11 @@ use linkerd_app_core::{
     proxy::http,
     svc::{self, Param},
     tls,
+    transport::addrs::*,
     transport_header::SessionProtocol,
     Error, NameAddr, NameMatch,
 };
-use linkerd_app_inbound::Inbound;
+use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
 use std::{fmt::Debug, hash::Hash};
 use thiserror::Error;
@@ -39,8 +40,11 @@ pub struct OutboundHttp {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http<T> {
     version: http::Version,
-    parent: T,
+    parent: outbound::Discovery<T>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Opaque<T>(outbound::Discovery<T>);
 
 /// Implements `svc::router::SelectRoute` for outbound HTTP requests. An
 /// `OutboundHttp` target is returned for each request using the request's HTTP
@@ -79,22 +83,21 @@ impl Gateway {
     ) -> svc::ArcNewTcp<T, I>
     where
         // Target
-        T: svc::Param<profiles::LookupAddr>,
-        T: svc::Param<Option<SessionProtocol>>,
+        T: svc::Param<inbound::policy::AllowPolicy>,
+        T: svc::Param<Remote<ClientAddr>>,
+        T: svc::Param<tls::ConditionalServerTls>,
         T: svc::Param<tls::ClientId>,
+        T: svc::Param<Option<SessionProtocol>>,
+        T: svc::Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + 'static,
         // Inbound socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Debug + Send + Sync + Unpin + 'static,
         // Discovery
         P: profiles::GetProfile<Error = Error>,
         // Outbound opaque stack
-        O: svc::NewService<outbound::Discovery<T>, Service = OSvc>,
+        O: svc::NewService<Opaque<T>, Service = OSvc>,
         O: Clone + Send + Sync + Unpin + 'static,
-        OSvc: svc::Service<
-            http::Request<http::BoxBody>,
-            Response = http::Response<http::BoxBody>,
-            Error = Error,
-        >,
+        OSvc: svc::Service<I, Response = (), Error = Error>,
         OSvc: Send + Unpin + 'static,
         OSvc::Future: Send + 'static,
         // Outbound HTTP stack
@@ -126,41 +129,40 @@ impl Gateway {
                 .push_http_insert_target::<tls::ClientId>()
                 .into_inner();
 
-            // - Teminate HTTP connections into the `http` stack
-            // - May write access logs.
-            // - Handle HTTP downgrading, inbound-policy errors.
-            // - XXX Set an identity header -- this should probably not be done
-            //   in the gateway, though the value will be stripped by meshed
-            //   servers.
-            // - Initializes tracing.
             self.inbound
                 .clone()
                 .with_stack(http)
+                // - May write access logs.
+                // - Handle HTTP downgrading, inbound-policy errors.
+                // - XXX Set an identity header -- this should probably not be done
+                //   in the gateway, though the value will be stripped by meshed
+                //   servers.
+                // - Initializes tracing.
                 .push_http_server()
+                // Teminate HTTP connections.
+                .push_tcp_http_server()
                 .into_stack()
-                .check_new_service::<_, I>()
+                .check_new_service::<Http<T>, I>()
         };
 
         let tcp_opaque = svc::stack(opaque)
-            .push_map_target(|(_permit, opaque): (_, T)| opaque)
+            .check_new_service::<Opaque<T>, I>()
+            .push_map_target(|(_permit, opaque): (_, Opaque<T>)| opaque)
             .push(self.inbound.authorize_tcp())
-            .check_new_service::<_, I>();
+            .check_new_service::<Opaque<T>, I>();
 
         let protocol = tcp_http
             .push_switch(
-                |disco: outbound::Discovery<T>| -> Result<_, Error> {
-                    if let Some(proto) = (*disco).param() {
+                |parent: outbound::Discovery<T>| -> Result<_, Error> {
+                    if let Some(proto) = (*parent).param() {
                         let version = match proto {
                             SessionProtocol::Http1 => http::Version::Http1,
                             SessionProtocol::Http2 => http::Version::H2,
                         };
-                        return Ok(svc::Either::A(Http {
-                            parent: disco,
-                            version,
-                        }));
+                        return Ok(svc::Either::A(Http { parent, version }));
                     }
 
-                    Ok(svc::Either::B(parent))
+                    Ok(svc::Either::B(Opaque(parent)))
                 },
                 tcp_opaque.into_inner(),
             )
@@ -179,17 +181,77 @@ impl Gateway {
     }
 }
 
+// === impl Opaque ===
+
+impl<T> std::ops::Deref for Opaque<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+impl<T> svc::Param<inbound::policy::AllowPolicy> for Opaque<T>
+where
+    T: svc::Param<inbound::policy::AllowPolicy>,
+{
+    fn param(&self) -> inbound::policy::AllowPolicy {
+        (*self.0).param()
+    }
+}
+
+impl<T> svc::Param<Remote<ClientAddr>> for Opaque<T>
+where
+    T: svc::Param<Remote<ClientAddr>>,
+{
+    fn param(&self) -> Remote<ClientAddr> {
+        (*self.0).param()
+    }
+}
+
+impl<T> svc::Param<tls::ConditionalServerTls> for Opaque<T>
+where
+    T: svc::Param<tls::ConditionalServerTls>,
+{
+    fn param(&self) -> tls::ConditionalServerTls {
+        (*self.0).param()
+    }
+}
+
+impl<T> svc::Param<tls::ClientId> for Opaque<T>
+where
+    T: svc::Param<tls::ClientId>,
+{
+    fn param(&self) -> tls::ClientId {
+        (*self.0).param()
+    }
+}
+
+impl<T> svc::Param<Option<SessionProtocol>> for Opaque<T>
+where
+    T: svc::Param<Option<SessionProtocol>>,
+{
+    fn param(&self) -> Option<SessionProtocol> {
+        (*self.0).param()
+    }
+}
+
+impl<T> svc::Param<profiles::LookupAddr> for Opaque<T>
+where
+    T: svc::Param<profiles::LookupAddr>,
+{
+    fn param(&self) -> profiles::LookupAddr {
+        (*self.0).param()
+    }
+}
+
 // === impl Http ===
 
-impl<T> Http<T>
-where
-    T: svc::Param<http::Version>,
-{
-    fn wrap(parent: T) -> Self {
-        Self {
-            version: parent.param(),
-            parent,
-        }
+impl<T> std::ops::Deref for Http<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.parent
     }
 }
 
