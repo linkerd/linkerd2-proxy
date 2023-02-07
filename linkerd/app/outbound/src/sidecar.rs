@@ -1,4 +1,4 @@
-use crate::{http, Outbound};
+use crate::{discover, http, Outbound};
 use linkerd_app_core::{
     io, profiles,
     proxy::{
@@ -13,7 +13,7 @@ use std::fmt::Debug;
 use tracing::info_span;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Sidecar<T>(T);
+pub struct Sidecar<T>(discover::Discovery<T>);
 
 impl Outbound<()> {
     pub fn mk_sidecar<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
@@ -39,50 +39,49 @@ impl Outbound<()> {
 
 // === impl Sidecar ===
 
+impl<T> std::ops::Deref for Sidecar<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
 impl<T> svc::Param<OrigDstAddr> for Sidecar<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
     fn param(&self) -> OrigDstAddr {
-        self.0.param()
+        (**self).param()
     }
 }
 
 impl<T> svc::Param<Remote<ServerAddr>> for Sidecar<T>
 where
-    T: svc::Param<OrigDstAddr>,
+    Self: svc::Param<OrigDstAddr>,
 {
     fn param(&self) -> Remote<ServerAddr> {
-        let OrigDstAddr(addr) = self.0.param();
+        let OrigDstAddr(addr) = self.param();
         Remote(ServerAddr(addr))
     }
 }
 
-impl<T> svc::Param<Option<profiles::LogicalAddr>> for Sidecar<T>
-where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
-{
+impl<T> svc::Param<Option<profiles::LogicalAddr>> for Sidecar<T> {
     fn param(&self) -> Option<profiles::LogicalAddr> {
         self.0.param()
     }
 }
 
-impl<T> svc::Param<Option<profiles::Receiver>> for Sidecar<T>
-where
-    T: svc::Param<Option<profiles::Receiver>>,
-{
+impl<T> svc::Param<Option<profiles::Receiver>> for Sidecar<T> {
     fn param(&self) -> Option<profiles::Receiver> {
         self.0.param()
     }
 }
 
-impl<T> svc::Param<Option<http::detect::Skip>> for Sidecar<T>
-where
-    T: svc::Param<Option<profiles::Receiver>>,
-{
+impl<T> svc::Param<Option<http::detect::Skip>> for Sidecar<T> {
     fn param(&self) -> Option<http::detect::Skip> {
-        if let Some(profile) = self.0.param() {
-            if profile.is_opaque_protocol() {
+        if let Some(rx) = svc::Param::<Option<profiles::Receiver>>::param(self) {
+            if rx.is_opaque_protocol() {
                 return Some(http::detect::Skip);
             }
         }
@@ -93,11 +92,11 @@ where
 
 impl<T> svc::Param<http::logical::Target> for Sidecar<T>
 where
-    T: svc::Param<Option<profiles::Receiver>>,
+    Self: svc::Param<Option<profiles::Receiver>>,
     Self: svc::Param<Remote<ServerAddr>>,
 {
     fn param(&self) -> http::logical::Target {
-        if let Some(profile) = self.0.param() {
+        if let Some(profile) = self.param() {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
                 return http::logical::Target::Route(addr, profile);
             }
