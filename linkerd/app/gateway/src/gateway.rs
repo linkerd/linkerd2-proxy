@@ -1,11 +1,10 @@
-use crate::HttpOutbound;
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     proxy::http,
     svc::{self, layer},
     tls, Error,
 };
-use linkerd_app_inbound::{GatewayAddr, GatewayIdentityRequired, GatewayLoop};
+use linkerd_app_inbound::{GatewayAddr, GatewayLoop};
 use std::{
     future::Future,
     pin::Pin,
@@ -40,22 +39,19 @@ impl<N> NewHttpGateway<N> {
     }
 }
 
-impl<T, N> svc::NewService<HttpOutbound<T>> for NewHttpGateway<N>
+impl<T, N> svc::NewService<T> for NewHttpGateway<N>
 where
     T: svc::Param<GatewayAddr>,
     T: svc::Param<tls::ClientId>,
-    N: svc::NewService<HttpOutbound<T>> + Clone + Send + 'static,
+    N: svc::NewService<T> + Clone + Send + 'static,
 {
     type Service = HttpGateway<N::Service>;
 
-    fn new_service(&self, target: HttpOutbound<T>) -> Self::Service {
-        let host = {
-            let GatewayAddr(addr) = (*target).param();
-            addr.as_http_authority().to_string()
-        };
+    fn new_service(&self, target: T) -> Self::Service {
+        let GatewayAddr(addr) = target.param();
         HttpGateway {
-            host,
-            client_id: (*target).param(),
+            host: addr.as_http_authority().to_string(),
+            client_id: target.param(),
             local_id: self.local_id.clone(),
             inner: self.inner.new_service(target),
         }
@@ -101,16 +97,10 @@ where
 
         // Determine the value of the forwarded header using the Client
         // ID from the requests's extensions.
-        let fwd = match request.extensions_mut().remove::<tls::ClientId>() {
-            Some(client_id) => format!(
-                "by={};for={};host={};proto=https",
-                local_id, client_id, self.host
-            ),
-            None => {
-                tracing::warn!("Request missing ClientId extension");
-                return Box::pin(future::err(GatewayIdentityRequired.into()));
-            }
-        };
+        let fwd = format!(
+            "by={};for={};host={};proto=https",
+            local_id, self.client_id, self.host
+        );
         request.headers_mut().append(
             http::header::FORWARDED,
             http::header::HeaderValue::from_str(&fwd)

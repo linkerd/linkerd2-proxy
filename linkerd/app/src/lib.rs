@@ -190,13 +190,12 @@ impl Config {
         };
 
         let dst_addr = dst.addr.clone();
-        let gateway_stack = gateway::stack(
-            gateway,
-            inbound.clone(),
-            outbound.to_tcp_connect(),
-            dst.profiles.clone(),
-            dst.resolve.clone(),
-        );
+        let gateway_stack =
+            gateway::Gateway::new(gateway, inbound.clone(), outbound.clone().with_stack(())).stack(
+                dst.profiles.clone(),
+                outbound.to_tcp_connect().push_opaque(dst.resolve.clone()),
+                outbound.to_tcp_connect().push_http(dst.resolve.clone()),
+            );
 
         // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
         // stacks until the proxy starts running.

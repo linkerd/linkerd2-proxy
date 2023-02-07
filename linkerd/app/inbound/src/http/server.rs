@@ -10,7 +10,7 @@ use linkerd_app_core::{
     proxy::http,
     svc::{self, ExtractParam, Param},
     tls,
-    transport::{ClientAddr, OrigDstAddr, Remote},
+    transport::addrs::*,
     Error, Result,
 };
 use linkerd_http_access_log::NewAccessLog;
@@ -64,7 +64,9 @@ impl<N> Inbound<N> {
                 // `Client`. This must be below the `orig_proto::Downgrade` layer, since
                 // the request may have been downgraded from a HTTP/2 orig-proto request.
                 .push(http::NewNormalizeUri::layer())
+                .check_new::<T>()
                 .push(NewSetIdentityHeader::layer(()))
+                .check_new::<T>()
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
@@ -83,7 +85,9 @@ impl<N> Inbound<N> {
                         .push(svc::LoadShed::layer()),
                 )
                 .push(rt.metrics.http_errors.to_layer())
+                .check_new::<T>()
                 .push(ServerRescue::layer())
+                .check_new::<T>()
                 .push_on_service(
                     svc::layers()
                         .push(http_tracing::server(
