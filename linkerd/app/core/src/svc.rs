@@ -88,6 +88,17 @@ impl<L> Layers<L> {
         self.push(layer::mk(NewCloneService::from))
     }
 
+    pub fn push_flatten_new<T, N>(
+        self,
+        target: T,
+    ) -> Layers<Pair<L, impl Layer<N, Service = N::Service> + Clone>>
+    where
+        T: Clone,
+        N: NewService<T>,
+    {
+        self.push(layer::mk(move |inner: N| inner.new_service(target.clone())))
+    }
+
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, NewInstrumentLayer<G>>> {
         self.push(NewInstrumentLayer::new(get_span))
     }
@@ -182,6 +193,13 @@ impl<S> Stack<S> {
         self,
     ) -> Stack<OnService<impl Layer<Svc, Service = NewCloneService<Svc>> + Clone, S>> {
         self.push_on_service(layer::mk(NewCloneService::from))
+    }
+
+    pub fn flatten_new<T>(self, target: T) -> Stack<S::Service>
+    where
+        S: NewService<T>,
+    {
+        Stack(self.0.new_service(target))
     }
 
     /// Wraps the inner service with a response timeout such that timeout errors are surfaced as a

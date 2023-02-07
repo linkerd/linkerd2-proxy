@@ -37,6 +37,7 @@ mod ingress;
 pub mod logical;
 mod metrics;
 pub mod opaque;
+mod protocol;
 mod sidecar;
 mod switch_logical;
 pub mod tcp;

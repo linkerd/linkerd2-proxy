@@ -7,18 +7,14 @@ mod tests;
 
 use self::gateway::NewHttpGateway;
 use linkerd_app_core::{
-    identity, io, metrics, profiles,
+    identity, io, profiles,
     proxy::http,
     svc::{self, Param},
     tls,
-    transport::addrs::*,
     transport_header::SessionProtocol,
     Error, NameAddr, NameMatch,
 };
-use linkerd_app_inbound::{
-    direct::{ClientInfo, GatewayTransportHeader},
-    policy, GatewayDomainInvalid, Inbound,
-};
+use linkerd_app_inbound::Inbound;
 use linkerd_app_outbound::{self as outbound, Outbound};
 use std::{fmt::Debug, hash::Hash};
 use thiserror::Error;

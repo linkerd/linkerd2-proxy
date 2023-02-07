@@ -1,11 +1,15 @@
 use crate::{http, Outbound};
 use linkerd_app_core::{
-    config::ServerConfig,
     detect, io,
     svc::{self, Param},
     Error, Infallible,
 };
-use tracing::debug_span;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Detected<T> {
+    parent: T,
+    version: Option<http::Version>,
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Skip;
@@ -23,72 +27,47 @@ impl<N> Outbound<N> {
     //
     // TODO(ver) Let discovery influence whether we assume an HTTP protocol
     // without deteciton.
-    pub fn push_detect_http<T, U, I, H, HSvc, NSvc>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
+    pub fn push_detect_http<T, I, M, MSvc>(self) -> Outbound<svc::ArcNewTcp<T, I>>
     where
+        T: Param<Option<Skip>> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: std::fmt::Debug + Send + Sync + Unpin + 'static,
-        N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc:
+        N: svc::NewService<T, Service = M> + Clone + Send + Sync + 'static,
+        M: svc::NewService<Option<http::Version>, Service = MSvc> + Clone + Send + Sync + 'static,
+        MSvc:
             svc::Service<io::EitherIo<I, io::PrefixedIo<I>>, Response = ()> + Send + Sync + 'static,
-        NSvc::Error: Into<Error>,
-        NSvc::Future: Send,
-        H: svc::NewService<U, Service = HSvc> + Clone + Send + Sync + 'static,
-        HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
-        HSvc: Clone + Send + Sync + Unpin + 'static,
-        HSvc::Error: Into<Error>,
-        HSvc::Future: Send,
-        T: Param<Option<Skip>> + Clone + Send + Sync + 'static,
-        U: From<(http::Version, T)> + svc::Param<http::Version> + 'static,
+        MSvc::Error: Into<Error>,
+        MSvc::Future: Send,
     {
-        self.map_stack(|config, rt, tcp| {
-            let ServerConfig { h2_settings, .. } = config.proxy.server;
-
-            let tcp = tcp.instrument(|_: &_| debug_span!("opaque"));
-
-            svc::stack(http)
+        self.map_stack(|config, _, stk| {
+            stk.clone()
+                .check_new_new_service::<T, Option<http::Version>, io::EitherIo<_, _>>()
                 .push_on_service(
                     svc::layers()
-                        .push(http::BoxRequest::layer())
-                        .push(svc::MapErr::layer_boxed()),
-                )
-                .check_new_service::<U, http::Request<_>>()
-                .unlift_new()
-                .check_new_new_service::<U, http::ClientHandle, http::Request<_>>()
-                .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
-                .push_map_target(U::from)
-                .instrument(|_: &_| debug_span!("http"))
-                .push(svc::UnwrapOr::layer(
-                    tcp.clone()
+                        .push(svc::MapTargetLayer::new(detect::allow_timeout))
                         .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
-                        .into_inner(),
-                ))
-                .push_on_service(
-                    svc::layers()
                         // `DetectService` oneshots the inner service, so we add
                         // a loadshed to prevent leaking tasks if (for some
                         // unexpected reason) the inner service is not ready.
-                        .push(svc::LoadShed::layer())
-                        .push(svc::BoxService::layer()),
+                        .push_on_service(svc::LoadShed::layer()),
                 )
-                .check_new_service::<(Option<http::Version>, T), _>()
-                .push_map_target(detect::allow_timeout)
-                .push(svc::ArcNewService::layer())
                 .push(detect::NewDetectService::layer(config.proxy.detect_http()))
+                .check_new_service::<T, I>()
                 .push_switch(
-                    // When the target is marked as as opaque, we skip HTTP
-                    // detection and just use the TCP stack directly.
-                    |target: T| -> Result<_, Infallible> {
-                        if let Some(Skip) = target.param() {
+                    |parent: T| -> Result<_, Infallible> {
+                        // Skip detection when the target has the `Skip` param.
+                        if let Some(Skip) = parent.param() {
                             tracing::debug!("Skipping HTTP protocol detection");
-                            return Ok(svc::Either::B(target));
+                            return Ok(svc::Either::B(parent));
                         }
                         tracing::debug!("Attempting HTTP protocol detection");
-                        Ok(svc::Either::A(target))
+                        Ok(svc::Either::A(parent))
                     },
-                    tcp.push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
+                    stk.check_new_new_service::<T, Option<http::Version>, _>()
+                        .push_on_service(svc::layers().push_flatten_new(None))
+                        .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
                         .into_inner(),
                 )
-                .check_new_service::<T, _>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })

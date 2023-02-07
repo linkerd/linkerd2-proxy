@@ -10,7 +10,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
-    AddrMatch, Error, Infallible, NameAddr,
+    AddrMatch, Error, Infallible, NameAddr, Result,
 };
 use std::fmt::Debug;
 use thiserror::Error;
@@ -160,16 +160,16 @@ impl<N> Outbound<N> {
                 .push(http::NewServeHttp::layer(*h2_settings, rt.drain.clone()))
                 .check_new_service::<HttpIngress<tcp::Accept>, I>()
                 .push_switch(
-                    |(http, t): (Option<http::Version>, T)| -> Result<_, Infallible> {
+                    |(detected, t): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {
                         let target = tcp::Accept::from(t.param());
-                        if let Some(version) = http {
+                        if let Some(version) = detect::allow_timeout(detected) {
                             return Ok(svc::Either::A(HttpIngress { version, target }));
                         }
                         Ok(svc::Either::B(target))
                     },
                     fallback,
                 )
-                .push_map_target(detect::allow_timeout)
+                .lift_new_with_target()
                 .push(detect::NewDetectService::layer(detect_http))
                 .check_new_service::<T, I>()
                 .push_on_service(svc::BoxService::layer())
