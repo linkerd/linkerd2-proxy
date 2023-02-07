@@ -1,7 +1,7 @@
 use crate::*;
 
 #[tokio::test]
-async fn opaque_transport_http() {
+async fn h2_hinted() {
     let _trace = trace_init();
 
     // identity is always required for direct connections
@@ -26,7 +26,7 @@ async fn opaque_transport_http() {
         let dst = ctrl.destination_tx(dst);
         dst.send(
             controller::DestinationBuilder {
-                hint: controller::Hint::Opaque,
+                hint: controller::Hint::H2,
                 opaque_port: Some(inbound.inbound.port()),
                 identity: Some(in_svc_acct.to_string()),
                 ..Default::default()
@@ -46,7 +46,7 @@ async fn opaque_transport_http() {
 /// traffic with a transport header, and the port is also in the
 /// `INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION` env var.
 #[tokio::test]
-async fn opaque_transport_http_env() {
+async fn opaque_hinted() {
     let _trace = trace_init();
 
     // identity is always required for direct connections
