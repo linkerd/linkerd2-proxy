@@ -12,6 +12,7 @@ use linkerd_app_core::{
 use std::fmt::Debug;
 use tracing::info_span;
 
+/// A target type holding discovery information for a sidecar proxy.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sidecar<T>(discover::Discovery<T>);
 

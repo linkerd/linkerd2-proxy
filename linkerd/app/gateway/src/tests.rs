@@ -5,7 +5,7 @@ use linkerd_app_core::{
     svc::NewService,
     tls, Error, NameAddr, NameMatch,
 };
-use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
+use linkerd_app_inbound::{GatewayDomainInvalid, GatewayLoop};
 use linkerd_app_test as support;
 use std::str::FromStr;
 use tower::util::ServiceExt;
@@ -54,16 +54,6 @@ async fn bad_domain() {
 }
 
 #[tokio::test]
-async fn no_identity() {
-    let test = Test {
-        client_id: None,
-        ..Default::default()
-    };
-    let e = test.with_default_profile().run().await.unwrap_err();
-    assert!(e.is::<GatewayIdentityRequired>());
-}
-
-#[tokio::test]
 async fn forward_loop() {
     let test = Test {
         orig_fwd: Some(
@@ -78,7 +68,7 @@ async fn forward_loop() {
 struct Test {
     suffix: &'static str,
     target: NameAddr,
-    client_id: Option<tls::ClientId>,
+    client_id: tls::ClientId,
     orig_fwd: Option<&'static str>,
     profile: Option<profiles::Receiver>,
 }
@@ -88,7 +78,7 @@ impl Default for Test {
         Self {
             suffix: "test.example.com",
             target: NameAddr::from_str("dst.test.example.com:4321").unwrap(),
-            client_id: Some(tls::ClientId::from_str("client.id.test").unwrap()),
+            client_id: tls::ClientId::from_str("client.id.test").unwrap(),
             orig_fwd: None,
             profile: None,
         }
@@ -98,28 +88,43 @@ impl Default for Test {
 impl Test {
     async fn run(self) -> Result<http::Response<http::BoxBody>, Error> {
         let Self {
-            suffix: _,
             target,
             client_id,
             orig_fwd,
-            profile,
+            ..
         } = self;
 
         let (outbound, mut handle) =
             mock::pair::<http::Request<http::BoxBody>, http::Response<http::BoxBody>>();
 
         let new = NewHttpGateway::new(
-            move |_: svc::Either<outbound::http::Logical, outbound::http::Endpoint>| {
-                outbound.clone()
-            },
+            move |_: _| outbound.clone(),
             tls::LocalId("gateway.id.test".parse().unwrap()),
         );
 
+        #[derive(Clone, Debug)]
+        struct Target {
+            addr: NameAddr,
+            client_id: tls::ClientId,
+        }
+
+        impl svc::Param<GatewayAddr> for Target {
+            fn param(&self) -> GatewayAddr {
+                GatewayAddr(self.addr.clone())
+            }
+        }
+
+        impl svc::Param<tls::ClientId> for Target {
+            fn param(&self) -> tls::ClientId {
+                self.client_id.clone()
+            }
+        }
+
         let gateway = svc::stack(new)
-            .check_new_service::<OutboundHttp, http::Request<http::BoxBody>>()
-            .new_service(HttpOutbound {
-                profile,
-                target: target.clone(),
+            .check_new_service::<Target, http::Request<http::BoxBody>>()
+            .new_service(Target {
+                addr: target.clone(),
+                client_id,
             });
 
         let bg = tokio::spawn(async move {
@@ -138,14 +143,11 @@ impl Test {
         });
 
         let req = http::Request::builder().uri(format!("http://{}", target));
-        let mut req = orig_fwd
+        let req = orig_fwd
             .into_iter()
             .fold(req, |req, fwd| req.header(http::header::FORWARDED, fwd))
             .body(Default::default())
             .unwrap();
-        if let Some(id) = client_id {
-            req.extensions_mut().insert(id);
-        }
         let rsp = gateway.oneshot(req).await?;
         bg.await?;
         Ok(rsp)
