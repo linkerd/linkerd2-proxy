@@ -164,6 +164,27 @@ mod test {
         )
     }
 
+    fn expect_header(
+        header: TransportHeader,
+    ) -> impl Fn(Connect) -> futures::future::Ready<Result<(tokio_test::io::Mock, ConnectMeta), io::Error>>
+    {
+        move |ep| {
+            let Remote(ServerAddr(sa)) = ep.addr;
+            assert_eq!(sa.port(), 4143);
+            assert!(ep.tls.is_some());
+            let buf = header.encode_prefaced_buf().expect("Must encode");
+            let io = tokio_test::io::Builder::new()
+                .write(&buf[..])
+                .write(b"hello")
+                .build();
+            let meta = tls::ConnectMeta {
+                socket: Local(ClientAddr(([0, 0, 0, 0], 0).into())),
+                tls: Conditional::Some(Some(tls::NegotiatedProtocolRef(PROTOCOL).into())),
+            };
+            future::ready(Ok::<_, io::Error>((io, meta)))
+        }
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn plain() {
         let _trace = linkerd_tracing::test::trace_init();
@@ -189,30 +210,15 @@ mod test {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn opaque_no_name() {
+    async fn unknown_no_name() {
         let _trace = linkerd_tracing::test::trace_init();
 
         let svc = OpaqueTransport {
-            inner: service_fn(|ep: Connect| {
-                let Remote(ServerAddr(sa)) = ep.addr;
-                assert_eq!(sa.port(), 4143);
-                assert!(ep.tls.is_some());
-                let hdr = TransportHeader {
-                    port: 4321,
-                    name: None,
-                    protocol: None,
-                };
-                let buf = hdr.encode_prefaced_buf().expect("Must encode");
-                let io = tokio_test::io::Builder::new()
-                    .write(&buf[..])
-                    .write(b"hello")
-                    .build();
-                let meta = tls::ConnectMeta {
-                    socket: Local(ClientAddr(([0, 0, 0, 0], 0).into())),
-                    tls: Conditional::Some(Some(tls::NegotiatedProtocolRef(PROTOCOL).into())),
-                };
-                future::ready(Ok::<_, io::Error>((io, meta)))
-            }),
+            inner: service_fn(expect_header(TransportHeader {
+                port: 4321,
+                name: None,
+                protocol: None,
+            })),
         };
 
         let e = ep(Metadata::new(
@@ -229,30 +235,15 @@ mod test {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn opaque_named_with_port() {
+    async fn unknown_named_with_port() {
         let _trace = linkerd_tracing::test::trace_init();
 
         let svc = OpaqueTransport {
-            inner: service_fn(|ep: Connect| {
-                let Remote(ServerAddr(sa)) = ep.addr;
-                assert_eq!(sa.port(), 4143);
-                assert!(ep.tls.is_some());
-                let hdr = TransportHeader {
-                    port: 5555,
-                    name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
-                    protocol: None,
-                };
-                let buf = hdr.encode_prefaced_buf().expect("Must encode");
-                let io = tokio_test::io::Builder::new()
-                    .write(&buf[..])
-                    .write(b"hello")
-                    .build();
-                let meta = tls::ConnectMeta {
-                    socket: Local(ClientAddr(([0, 0, 0, 0], 0).into())),
-                    tls: Conditional::Some(Some(tls::NegotiatedProtocolRef(PROTOCOL).into())),
-                };
-                future::ready(Ok::<_, io::Error>((io, meta)))
-            }),
+            inner: service_fn(expect_header(TransportHeader {
+                port: 5555,
+                name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
+                protocol: None,
+            })),
         };
 
         let e = ep(Metadata::new(
@@ -269,35 +260,95 @@ mod test {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn opaque_named_no_port() {
+    async fn unknown_named_no_port() {
         let _trace = linkerd_tracing::test::trace_init();
 
         let svc = OpaqueTransport {
-            inner: service_fn(|ep: Connect| {
-                let Remote(ServerAddr(sa)) = ep.addr;
-                assert_eq!(sa.port(), 4143);
-                assert!(ep.tls.is_some());
-                let hdr = TransportHeader {
-                    port: 4321,
-                    name: None,
-                    protocol: None,
-                };
-                let buf = hdr.encode_prefaced_buf().expect("Must encode");
-                let io = tokio_test::io::Builder::new()
-                    .write(&buf[..])
-                    .write(b"hello")
-                    .build();
-                let meta = tls::ConnectMeta {
-                    socket: Local(ClientAddr(([0, 0, 0, 0], 0).into())),
-                    tls: Conditional::Some(Some(tls::NegotiatedProtocolRef(PROTOCOL).into())),
-                };
-                future::ready(Ok::<_, io::Error>((io, meta)))
-            }),
+            inner: service_fn(expect_header(TransportHeader {
+                port: 4321,
+                name: None,
+                protocol: None,
+            })),
         };
 
         let e = ep(Metadata::new(
             None,
             ProtocolHint::Unknown,
+            Some(4143),
+            Some(tls::ServerId(
+                identity::Name::from_str("server.id").unwrap(),
+            )),
+            None,
+        ));
+        let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
+        io.write_all(b"hello").await.expect("Write must succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn opaque_no_name() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let svc = OpaqueTransport {
+            inner: service_fn(expect_header(TransportHeader {
+                port: 4321,
+                name: None,
+                protocol: None,
+            })),
+        };
+
+        let e = ep(Metadata::new(
+            None,
+            ProtocolHint::Opaque,
+            Some(4143),
+            Some(tls::ServerId(
+                identity::Name::from_str("server.id").unwrap(),
+            )),
+            None,
+        ));
+        let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
+        io.write_all(b"hello").await.expect("Write must succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn opaque_named_with_port() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let svc = OpaqueTransport {
+            inner: service_fn(expect_header(TransportHeader {
+                port: 5555,
+                name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
+                protocol: None,
+            })),
+        };
+
+        let e = ep(Metadata::new(
+            None,
+            ProtocolHint::Opaque,
+            Some(4143),
+            Some(tls::ServerId(
+                identity::Name::from_str("server.id").unwrap(),
+            )),
+            Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
+        ));
+        let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
+        io.write_all(b"hello").await.expect("Write must succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn opaque_named_no_port() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let svc = OpaqueTransport {
+            inner: service_fn(expect_header(TransportHeader {
+                port: 4321,
+                name: None,
+                protocol: None,
+            })),
+        };
+
+        let e = ep(Metadata::new(
+            None,
+            ProtocolHint::Opaque,
             Some(4143),
             Some(tls::ServerId(
                 identity::Name::from_str("server.id").unwrap(),
