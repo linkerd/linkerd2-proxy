@@ -194,10 +194,10 @@ impl Config {
             {
                 let opq = outbound
                     .to_tcp_connect()
-                    .push_opaque::<gateway::Opaque<_>, _, _>(dst.resolve.clone());
+                    .push_opaque::<gateway::OpaqueOutbound, _, _>(dst.resolve.clone());
                 let http = outbound
                     .to_tcp_connect()
-                    .push_http::<gateway::HttpOutbound<_>, _>(dst.resolve.clone());
+                    .push_http::<gateway::HttpOutbound, _>(dst.resolve.clone());
                 gateway::Gateway::new(gateway, inbound.clone(), outbound.clone().with_stack(()))
                     .stack(dst.profiles.clone(), opq.into_inner(), http.into_inner())
             };

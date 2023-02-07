@@ -397,3 +397,33 @@ impl<T> svc::Param<concrete::Target> for Concrete<T> {
         self.target.clone()
     }
 }
+
+// === impl Target ===
+
+impl std::cmp::PartialEq for Target {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Route(laddr, _), Self::Route(raddr, _)) => laddr == raddr,
+            (Self::Forward(laddr, lmeta), Self::Forward(raddr, rmeta)) => {
+                laddr == raddr && lmeta == rmeta
+            }
+            _ => false,
+        }
+    }
+}
+
+impl std::cmp::Eq for Target {}
+
+impl std::hash::Hash for Target {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Route(addr, _) => {
+                addr.hash(state);
+            }
+            Self::Forward(addr, meta) => {
+                addr.hash(state);
+                meta.hash(state);
+            }
+        }
+    }
+}

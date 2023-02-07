@@ -69,7 +69,7 @@ struct Runtime {
     drain: drain::Watch,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GatewayAddr(pub NameAddr);
 
 // The inbound HTTP server handles gateway traffic; so gateway error types are defined here (so that

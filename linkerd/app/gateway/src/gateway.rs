@@ -77,7 +77,9 @@ where
     }
 
     fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
-        let tls::LocalId(ref local_id) = self.local_id;
+        if *self.client_id == *self.local_id {
+            return Box::pin(future::err(GatewayLoop.into()));
+        }
 
         // Check forwarded headers to see if this request has already
         // transited through this gateway.
@@ -89,7 +91,7 @@ where
         {
             if let Some(by) = fwd_by(forwarded) {
                 tracing::info!(%forwarded);
-                if by == local_id.as_str() {
+                if by == self.local_id.as_str() {
                     return Box::pin(future::err(GatewayLoop.into()));
                 }
             }
@@ -99,7 +101,7 @@ where
         // ID from the requests's extensions.
         let fwd = format!(
             "by={};for={};host={};proto=https",
-            local_id, self.client_id, self.host
+            self.local_id, self.client_id, self.host
         );
         request.headers_mut().append(
             http::header::FORWARDED,
