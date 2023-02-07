@@ -60,7 +60,7 @@ impl<C> Outbound<C> {
             // HTTP/1.x fallback is supported as needed.
             svc::stack(connect.into_inner().into_service())
                 .check_service::<Connect<T>>()
-                .push_map_target(|(version, inner)| Connect { version, inner })
+                .push_map_target(Connect::from)
                 .push(http::client::layer(h1_settings, h2_settings))
                 .push_on_service(svc::MapErr::layer_boxed())
                 .check_service::<T>()
@@ -154,6 +154,12 @@ impl errors::HttpRescue<Error> for ClientRescue {
 }
 
 // === impl Connect ===
+
+impl<T> From<(http::Version, T)> for Connect<T> {
+    fn from((version, inner): (http::Version, T)) -> Self {
+        Self { version, inner }
+    }
+}
 
 impl<T> svc::Param<Option<SessionProtocol>> for Connect<T>
 where

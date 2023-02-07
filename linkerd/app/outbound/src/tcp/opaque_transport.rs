@@ -147,7 +147,10 @@ mod test {
     use linkerd_app_core::{
         identity,
         io::{self, AsyncWriteExt},
-        proxy::api_resolve::{Metadata, ProtocolHint},
+        proxy::{
+            api_resolve::{Metadata, ProtocolHint},
+            http,
+        },
         tls,
         transport::{ClientAddr, Local},
         transport_header::TransportHeader,
@@ -162,6 +165,11 @@ mod test {
             false,
             &Default::default(),
         )
+    }
+
+    fn http_ep(metadata: Metadata, version: http::Version) -> crate::http::Connect {
+        let e = crate::http::Endpoint::from((version, ep(metadata)));
+        crate::http::Connect::from((version, e))
     }
 
     fn expect_header(
@@ -355,6 +363,94 @@ mod test {
             )),
             None,
         ));
+        let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
+        io.write_all(b"hello").await.expect("Write must succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn unknown_http1() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let svc = OpaqueTransport {
+            inner: service_fn(expect_header(TransportHeader {
+                port: 5555,
+                name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
+                protocol: Some(SessionProtocol::Http1),
+            })),
+        };
+
+        let e = http_ep(
+            Metadata::new(
+                None,
+                ProtocolHint::Unknown,
+                Some(4143),
+                Some(tls::ServerId(
+                    identity::Name::from_str("server.id").unwrap(),
+                )),
+                Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
+            ),
+            http::Version::Http1,
+        );
+        let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
+        io.write_all(b"hello").await.expect("Write must succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn opaque_http1() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let svc = OpaqueTransport {
+            inner: service_fn(expect_header(TransportHeader {
+                port: 5555,
+                name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
+                // If the endpoint's protocol hint is opaque, no session
+                // should be sent.
+                protocol: None,
+            })),
+        };
+
+        let e = http_ep(
+            Metadata::new(
+                None,
+                ProtocolHint::Opaque,
+                Some(4143),
+                Some(tls::ServerId(
+                    identity::Name::from_str("server.id").unwrap(),
+                )),
+                Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
+            ),
+            http::Version::Http1,
+        );
+        let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
+        io.write_all(b"hello").await.expect("Write must succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn hinted_http2() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let svc = OpaqueTransport {
+            inner: service_fn(expect_header(TransportHeader {
+                port: 5555,
+                name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
+                // If the endpoint contains an upgrade hint, we should send the
+                // upgraded session protocol, rather than the detected protocol.
+                protocol: Some(SessionProtocol::Http2),
+            })),
+        };
+
+        let e = http_ep(
+            Metadata::new(
+                None,
+                ProtocolHint::Http2,
+                Some(4143),
+                Some(tls::ServerId(
+                    identity::Name::from_str("server.id").unwrap(),
+                )),
+                Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
+            ),
+            http::Version::H2,
+        );
         let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
