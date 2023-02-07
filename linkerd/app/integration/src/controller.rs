@@ -452,23 +452,24 @@ impl DestinationBuilder {
                 let protocol = match hint {
                     Hint::Unknown => None,
                     Hint::H2 => Some(pb::protocol_hint::Protocol::H2(pb::protocol_hint::H2 {})),
-                    Hint::Opaque => Some(pb::protocol_hint::Protocol::Opaque(pb::protocol_hint::Opaque {})),
+                    Hint::Opaque => Some(pb::protocol_hint::Protocol::Opaque(
+                        pb::protocol_hint::Opaque {},
+                    )),
                 };
-                let opaque_transport = port.map(|port|pb::protocol_hint::OpaqueTransport {
+                let opaque_transport = port.map(|port| pb::protocol_hint::OpaqueTransport {
                     inbound_port: port as u32,
                 });
 
                 Some(pb::ProtocolHint {
-                protocol,
-                opaque_transport,})
+                    protocol,
+                    opaque_transport,
+                })
             }
         };
 
         let tls_identity = identity.map(|name| pb::TlsIdentity {
             strategy: Some(pb::tls_identity::Strategy::DnsLikeIdentity(
-                pb::tls_identity::DnsLikeIdentity {
-                    name,
-                },
+                pb::tls_identity::DnsLikeIdentity { name },
             )),
         });
 
