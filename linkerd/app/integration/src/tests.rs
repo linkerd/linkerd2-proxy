@@ -1,6 +1,6 @@
+mod direct;
 mod discovery;
 mod identity;
-mod opaque;
 mod orig_proto;
 mod profile_dst_overrides;
 mod profiles;
