@@ -125,10 +125,16 @@ impl Param<client::Settings> for Endpoint {
         match self.protocol {
             Version::H2 => client::Settings::H2,
             Version::Http1 => match self.metadata.protocol_hint() {
-                ProtocolHint::Unknown => client::Settings::Http1,
+                ProtocolHint::Unknown | ProtocolHint::Opaque => client::Settings::Http1,
                 ProtocolHint::Http2 => client::Settings::OrigProtoUpgrade,
             },
         }
+    }
+}
+
+impl Param<ProtocolHint> for Endpoint {
+    fn param(&self) -> ProtocolHint {
+        self.metadata.protocol_hint()
     }
 }
 

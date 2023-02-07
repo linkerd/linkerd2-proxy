@@ -110,6 +110,8 @@ where
 
         let protocol: Option<SessionProtocol> = ep.param();
 
+        debug!(?protocol, "Using session protocol");
+
         let connect = self.inner.connect(Connect {
             addr: Remote(ServerAddr((addr.ip(), connect_port).into())),
             tls,

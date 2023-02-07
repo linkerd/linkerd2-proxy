@@ -26,7 +26,7 @@ async fn opaque_transport_http() {
         let dst = ctrl.destination_tx(dst);
         dst.send(
             controller::DestinationBuilder {
-                hint: controller::Hint::H2,
+                hint: controller::Hint::Opaque,
                 opaque_port: Some(inbound.inbound.port()),
                 identity: Some(in_svc_acct.to_string()),
                 ..Default::default()
@@ -77,7 +77,7 @@ async fn opaque_transport_http_env() {
         let dst = ctrl.destination_tx(dst);
         dst.send(
             controller::DestinationBuilder {
-                hint: controller::Hint::H2,
+                hint: controller::Hint::Opaque,
                 opaque_port: Some(inbound.inbound.port()),
                 identity: Some(in_svc_acct.to_string()),
                 ..Default::default()

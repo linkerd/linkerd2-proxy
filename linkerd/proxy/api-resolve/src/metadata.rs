@@ -31,6 +31,9 @@ pub enum ProtocolHint {
     Unknown,
     /// The destination can receive HTTP2 messages.
     Http2,
+    /// The destination will handle all connections as opaque TCP, so do not
+    /// send a session protocol in a tagged transport connection.
+    Opaque,
 }
 
 // === impl Metadata ===

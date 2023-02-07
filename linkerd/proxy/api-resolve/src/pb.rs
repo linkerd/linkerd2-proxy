@@ -31,6 +31,9 @@ pub fn to_addr_meta(
                 Protocol::H2(..) => {
                     proto_hint = ProtocolHint::Http2;
                 }
+                Protocol::Opaque(..) => {
+                    proto_hint = ProtocolHint::Opaque;
+                }
             }
         }
 
