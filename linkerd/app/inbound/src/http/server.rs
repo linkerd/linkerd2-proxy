@@ -5,8 +5,7 @@ pub use linkerd_app_core::proxy::http::{
     Version,
 };
 use linkerd_app_core::{
-    config::{ProxyConfig, ServerConfig},
-    errors, http_tracing, io,
+    config, errors, http_tracing, io,
     metrics::ServerLabel,
     proxy::http,
     svc::{self, ExtractParam, Param},
@@ -20,30 +19,42 @@ use tracing::debug_span;
 #[derive(Copy, Clone, Debug)]
 struct ServerRescue;
 
-impl<H> Inbound<H> {
-    /// Fails requests when the `HSvc`-typed inner service is not ready.
-    pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
+impl<N> Inbound<N> {
+    /// Fails requests when the `NSvc`-typed inner service is not ready.
+    pub fn push_http_server<T, B, NSvc>(
+        self,
+    ) -> Inbound<
+        svc::ArcNewService<
+            T,
+            impl svc::Service<
+                    http::Request<B>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    >
     where
-        T: Param<Version>
-            + Param<http::normalize_uri::DefaultAuthority>
-            + Param<tls::ConditionalServerTls>
-            + Param<ServerLabel>
-            + Param<OrigDstAddr>
-            + Param<Remote<ClientAddr>>,
+        // Target
+        T: Param<http::normalize_uri::DefaultAuthority>,
+        T: Param<tls::ConditionalServerTls>,
+        T: Param<ServerLabel>,
+        T: Param<OrigDstAddr>,
+        T: Param<Remote<ClientAddr>>,
         T: Clone + Send + Unpin + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
-        H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
-        HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-            + Clone
-            + Send
-            + Unpin
-            + 'static,
-        HSvc::Error: Into<Error>,
-        HSvc::Future: Send,
+        // Outer request type.
+        B: http::HttpBody + std::fmt::Debug + Send + 'static,
+        B::Data: Send + 'static,
+        B::Error: Into<Error>,
+        // Inner stack
+        N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
+        NSvc: Clone + Send + Unpin + 'static,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send,
     {
         self.map_stack(|config, rt, http| {
-            let ProxyConfig {
-                server: ServerConfig { h2_settings, .. },
+            let config::ProxyConfig {
                 max_in_flight_requests,
                 ..
             } = config.proxy;
@@ -85,11 +96,33 @@ impl<H> Inbound<H> {
                 )
                 .push(NewAccessLog::layer())
                 .instrument(|_: &T| debug_span!("http"))
-                .check_new_service::<T, http::Request<_>>()
-                .unlift_new()
-                .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
-                .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
-                .check_new_service::<T, I>()
+                .push(svc::ArcNewService::layer())
+        })
+    }
+
+    pub fn push_tcp_http_server<T, I, NSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
+    where
+        // Target
+        T: svc::Param<Version>,
+        T: Clone + Send + Unpin + 'static,
+        // Server-side socket
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        // Inner stack
+        N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<
+            http::Request<http::UpgradeBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        NSvc: Clone + Send + Unpin + 'static,
+        NSvc::Future: Send,
+    {
+        self.map_stack(|config, rt, http| {
+            http.unlift_new()
+                .push(http::NewServeHttp::layer(
+                    config.proxy.server.h2_settings,
+                    rt.drain.clone(),
+                ))
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })

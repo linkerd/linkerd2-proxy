@@ -94,10 +94,8 @@ impl<I, N, S> Service<I> for ServeHttp<N>
 where
     I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
     N: NewService<ClientHandle, Service = S> + Clone + Send + 'static,
-    S: Service<http::Request<UpgradeBody>, Response = http::Response<http::BoxBody>, Error = Error>
-        + Unpin
-        + Send
-        + 'static,
+    S: Service<http::Request<UpgradeBody>, Response = http::Response<http::BoxBody>, Error = Error>,
+    S: Unpin + Send + 'static,
     S::Future: Send + 'static,
 {
     type Response = ();
