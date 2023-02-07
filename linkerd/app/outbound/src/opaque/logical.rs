@@ -266,14 +266,23 @@ impl<T> From<(&Routable<T>, Error)> for LogicalError {
 
 // === impl Concrete ===
 
-impl<T> svc::Param<Option<profiles::LogicalAddr>> for Concrete<T>
-where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
-{
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.parent.param()
+impl<T> std::ops::Deref for Concrete<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.parent
     }
 }
+
+impl<T> svc::Param<Option<profiles::LogicalAddr>> for Concrete<T>
+where
+    T: svc::Param<Option<profiles::Receiver>>,
+{
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        (**self).param()?.logical_addr()
+    }
+}
+
 impl<T> svc::Param<Dispatch> for Concrete<T> {
     fn param(&self) -> Dispatch {
         self.dispatch.clone()

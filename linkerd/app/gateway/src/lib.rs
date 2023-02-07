@@ -84,7 +84,6 @@ impl Gateway {
     ) -> svc::ArcNewTcp<T, I>
     where
         // Target
-        T: svc::Param<Remote<ServerAddr>>,
         T: svc::Param<GatewayAddr>,
         T: svc::Param<OrigDstAddr>,
         T: svc::Param<Remote<ClientAddr>>,
@@ -275,6 +274,12 @@ where
 {
     fn param(&self) -> tls::ClientId {
         (*self.0).param()
+    }
+}
+
+impl<T> svc::Param<Option<profiles::Receiver>> for Opaque<T> {
+    fn param(&self) -> Option<profiles::Receiver> {
+        self.0.param()
     }
 }
 

@@ -431,6 +431,18 @@ impl Param<tls::ConditionalServerTls> for GatewayTransportHeader {
     }
 }
 
+impl Param<tls::ClientId> for GatewayTransportHeader {
+    fn param(&self) -> tls::ClientId {
+        self.client.client_id.clone()
+    }
+}
+
+impl Param<Option<SessionProtocol>> for GatewayTransportHeader {
+    fn param(&self) -> Option<SessionProtocol> {
+        self.protocol.clone()
+    }
+}
+
 impl Param<profiles::LookupAddr> for GatewayTransportHeader {
     fn param(&self) -> profiles::LookupAddr {
         profiles::LookupAddr(self.target.clone().into())

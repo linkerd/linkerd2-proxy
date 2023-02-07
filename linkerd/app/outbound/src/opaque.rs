@@ -40,18 +40,22 @@ impl<C> Outbound<C> {
         >,
     >
     where
+        // Target
         T: svc::Param<Remote<ServerAddr>>,
-        T: svc::Param<Option<profiles::LogicalAddr>>,
+        // T: svc::Param<Option<profiles::LogicalAddr>>,
         T: svc::Param<Option<profiles::Receiver>>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+        // Server-side connection
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        C: Clone + Send + Sync + Unpin + 'static,
+        // Client-side connector service
         C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+        C: Clone + Send + Sync + Unpin + 'static,
         C::Connection: Send + Unpin,
         C::Future: Send + Unpin,
-        R: Clone + Send + Sync + Unpin + 'static,
+        // Endpoint discovery
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R: Clone + Send + Sync + Unpin + 'static,
     {
         self.push_tcp_endpoint()
             .push_opaque_concrete(resolve)
