@@ -18,7 +18,11 @@ use linkerd_app_core::{
 };
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
-use std::{fmt::Debug, hash::Hash};
+use std::{
+    cmp::{Eq, PartialEq},
+    fmt::Debug,
+    hash::Hash,
+};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Default)]
@@ -39,8 +43,9 @@ pub struct Http<T> {
     parent: outbound::Discovery<T>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Opaque<T>(outbound::Discovery<T>);
+// XXX These outbound types can't just reflect `T` blindly, because it will bust
+// caching. We probably  need to extract everything we need from the inner `T`
+// and move on with a new type.
 
 #[derive(Clone, Debug)]
 pub struct HttpOutbound<T> {
@@ -48,6 +53,9 @@ pub struct HttpOutbound<T> {
     logical: outbound::http::logical::Target,
     parent: Http<T>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Opaque<T>(outbound::Discovery<T>);
 
 /// Implements `svc::router::SelectRoute` for outbound HTTP requests. An
 /// `OutboundHttp` target is returned for each request using the request's HTTP
@@ -92,7 +100,7 @@ impl Gateway {
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: svc::Param<Option<SessionProtocol>>,
         T: svc::Param<profiles::LookupAddr>,
-        T: Clone + Send + Sync + Unpin + 'static,
+        T: Clone + Eq + Hash + Send + Sync + Unpin + 'static,
         // Inbound socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Debug + Send + Sync + Unpin + 'static,
         // Discovery
@@ -246,7 +254,7 @@ where
     T: svc::Param<inbound::policy::AllowPolicy>,
 {
     fn param(&self) -> inbound::policy::AllowPolicy {
-        (*self.0).param()
+        (**self).param()
     }
 }
 
@@ -255,7 +263,16 @@ where
     T: svc::Param<Remote<ClientAddr>>,
 {
     fn param(&self) -> Remote<ClientAddr> {
-        (*self.0).param()
+        (**self).param()
+    }
+}
+
+impl<T> svc::Param<Remote<ServerAddr>> for Opaque<T>
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn param(&self) -> Remote<ServerAddr> {
+        (**self).param()
     }
 }
 
@@ -264,7 +281,7 @@ where
     T: svc::Param<tls::ConditionalServerTls>,
 {
     fn param(&self) -> tls::ConditionalServerTls {
-        (*self.0).param()
+        (**self).param()
     }
 }
 
@@ -273,7 +290,7 @@ where
     T: svc::Param<tls::ClientId>,
 {
     fn param(&self) -> tls::ClientId {
-        (*self.0).param()
+        (**self).param()
     }
 }
 
@@ -310,7 +327,7 @@ where
     T: svc::Param<inbound::policy::AllowPolicy>,
 {
     fn param(&self) -> inbound::policy::AllowPolicy {
-        (*self.parent).param()
+        (**self).param()
     }
 }
 
@@ -319,7 +336,7 @@ where
     T: svc::Param<OrigDstAddr>,
 {
     fn param(&self) -> OrigDstAddr {
-        (*self.parent).param()
+        (**self).param()
     }
 }
 
@@ -328,7 +345,7 @@ where
     T: svc::Param<Remote<ClientAddr>>,
 {
     fn param(&self) -> Remote<ClientAddr> {
-        (*self.parent).param()
+        (**self).param()
     }
 }
 
@@ -337,7 +354,7 @@ where
     T: svc::Param<Remote<ServerAddr>>,
 {
     fn param(&self) -> Remote<ServerAddr> {
-        (*self.parent).param()
+        (**self).param()
     }
 }
 
@@ -346,7 +363,7 @@ where
     T: svc::Param<tls::ConditionalServerTls>,
 {
     fn param(&self) -> tls::ConditionalServerTls {
-        (*self.parent).param()
+        (**self).param()
     }
 }
 
@@ -355,7 +372,7 @@ where
     T: svc::Param<tls::ClientId>,
 {
     fn param(&self) -> tls::ClientId {
-        (*self.parent).param()
+        (**self).param()
     }
 }
 
@@ -364,7 +381,7 @@ where
     T: svc::Param<GatewayAddr>,
 {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        let GatewayAddr(addr) = (*self.parent).param();
+        let GatewayAddr(addr) = (**self).param();
         let authority = Addr::from(addr).to_http_authority();
         http::normalize_uri::DefaultAuthority(Some(authority))
     }
@@ -375,7 +392,7 @@ where
     T: svc::Param<inbound::policy::AllowPolicy>,
 {
     fn param(&self) -> inbound::policy::ServerLabel {
-        (*self.parent).param().server_label()
+        (**self).param().server_label()
     }
 }
 
@@ -389,12 +406,18 @@ impl<T> std::ops::Deref for HttpOutbound<T> {
     }
 }
 
+impl<T> svc::Param<http::Version> for HttpOutbound<T> {
+    fn param(&self) -> http::Version {
+        self.parent.param()
+    }
+}
+
 impl<T> svc::Param<Remote<ServerAddr>> for HttpOutbound<T>
 where
     T: svc::Param<Remote<ServerAddr>>,
 {
     fn param(&self) -> Remote<ServerAddr> {
-        (*self.parent).param()
+        (**self).param()
     }
 }
 
@@ -403,7 +426,7 @@ where
     T: svc::Param<GatewayAddr>,
 {
     fn param(&self) -> GatewayAddr {
-        (*self.parent).param()
+        (**self).param()
     }
 }
 
@@ -412,7 +435,7 @@ where
     T: svc::Param<tls::ClientId>,
 {
     fn param(&self) -> tls::ClientId {
-        (*self.parent).param()
+        (**self).param()
     }
 }
 
@@ -425,5 +448,19 @@ impl<T> svc::Param<outbound::http::logical::Target> for HttpOutbound<T> {
 impl<T> svc::Param<profiles::Receiver> for HttpOutbound<T> {
     fn param(&self) -> profiles::Receiver {
         self.profile.clone()
+    }
+}
+
+impl<T: PartialEq> PartialEq for HttpOutbound<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.parent == other.parent
+    }
+}
+
+impl<T: Eq> Eq for HttpOutbound<T> where T: Eq {}
+
+impl<T: Hash> Hash for HttpOutbound<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.parent.hash(state)
     }
 }

@@ -30,7 +30,7 @@ impl<C> Outbound<C> {
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.
-    pub fn push_opaque<T, R, I>(
+    pub fn push_opaque<T, I, R>(
         self,
         resolve: R,
     ) -> Outbound<

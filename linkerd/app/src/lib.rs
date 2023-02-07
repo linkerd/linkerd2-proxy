@@ -191,11 +191,16 @@ impl Config {
 
         let dst_addr = dst.addr.clone();
         let gateway_stack =
-            gateway::Gateway::new(gateway, inbound.clone(), outbound.clone().with_stack(())).stack(
-                dst.profiles.clone(),
-                outbound.to_tcp_connect().push_opaque(dst.resolve.clone()),
-                outbound.to_tcp_connect().push_http(dst.resolve.clone()),
-            );
+            {
+                let opq = outbound
+                    .to_tcp_connect()
+                    .push_opaque::<gateway::Opaque<_>, _, _>(dst.resolve.clone());
+                let http = outbound
+                    .to_tcp_connect()
+                    .push_http::<gateway::HttpOutbound<_>, _>(dst.resolve.clone());
+                gateway::Gateway::new(gateway, inbound.clone(), outbound.clone().with_stack(()))
+                    .stack(dst.profiles.clone(), opq.into_inner(), http.into_inner())
+            };
 
         // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
         // stacks until the proxy starts running.
