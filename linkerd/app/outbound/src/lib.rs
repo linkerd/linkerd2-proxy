@@ -121,6 +121,10 @@ impl<S> Outbound<S> {
         &self.config
     }
 
+    pub fn config_mut(&mut self) -> &mut Config {
+        &mut self.config
+    }
+
     pub fn metrics(&self) -> Metrics {
         self.runtime.metrics.clone()
     }

@@ -97,9 +97,9 @@ impl Gateway {
         profiles: P,
         opaque: O,
         http: H,
-    ) -> svc::ArcNewTcp<T, I>
+    ) -> svc::Stack<svc::ArcNewTcp<T, I>>
     where
-        // Target
+        // Target describes inbound gateway connections.
         T: svc::Param<GatewayAddr>,
         T: svc::Param<OrigDstAddr>,
         T: svc::Param<Remote<ClientAddr>>,
@@ -133,116 +133,139 @@ impl Gateway {
         // XXX TODO THIS STACK PROBABLY NEEDS TO HANDLE CACHING LOAD BALANCERS,
         // etc.
 
-        let Config { allow_discovery } = self.config;
+        let protocol = self.http(http).push_switch(
+            |parent: outbound::Discovery<T>| -> Result<_, GatewayDomainInvalid> {
+                if let Some(proto) = (*parent).param() {
+                    let version = match proto {
+                        SessionProtocol::Http1 => http::Version::Http1,
+                        SessionProtocol::Http2 => http::Version::H2,
+                    };
+                    return Ok(svc::Either::A(Http { parent, version }));
+                }
 
-        let tcp_http = {
-            let http = svc::stack(http)
-                .check_new_service::<HttpOutbound, http::Request<http::BoxBody>>()
-                .push_map_target(HttpOutbound::orphan)
-                .check_new_service::<HttpOutbound<_>, http::Request<http::BoxBody>>()
-                .push(NewHttpGateway::layer(identity::LocalId(
-                    self.inbound.identity().name().clone(),
-                )))
-                .check_new_service::<HttpOutbound<T>, http::Request<http::BoxBody>>()
-                .push_on_service(svc::LoadShed::layer())
-                .lift_new()
-                .check_new_new::<HttpOutbound<T>, HttpOutbound<T>>()
-                .push(svc::NewOneshotRoute::layer_via(|t: &HttpOutbound<T>| {
-                    ByRequestVersion(t.clone())
-                }))
-                .check_new::<HttpOutbound<T>>()
-                .check_new_service::<HttpOutbound<T>, http::Request<http::BoxBody>>()
-                .push_filter(
-                    move |(_, parent): (_, Http<T>)| -> Result<_, GatewayDomainInvalid> {
-                        let GatewayAddr(addr) = (*parent).param();
-                        if allow_discovery.matches(addr.name()) {
-                            return Err(GatewayDomainInvalid);
-                        }
-                        let profile = svc::Param::<Option<profiles::Receiver>>::param(&parent)
-                            .ok_or(GatewayDomainInvalid)?;
-                        let target =
-                            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                                outbound::http::logical::Target::Route(addr, profile)
-                            } else if let Some((addr, metadata)) = profile.endpoint() {
-                                outbound::http::logical::Target::Forward(
-                                    Remote(ServerAddr(addr)),
-                                    metadata,
-                                )
-                            } else {
-                                return Err(GatewayDomainInvalid);
-                            };
-                        Ok(HttpOutbound {
-                            target,
-                            addr: GatewayAddr(addr),
-                            version: parent.version,
-                            parent: (*parent).param(),
-                        })
-                    },
-                )
-                .push(self.inbound.authorize_http())
-                .check_new_service::<Http<T>, http::Request<http::BoxBody>>()
-                .into_inner();
+                Ok(svc::Either::B(Opaque(parent)))
+            },
+            self.opaque(opaque).into_inner(),
+        );
 
-            self.inbound
-                .clone()
-                .with_stack(http)
-                // - May write access logs.
-                // - Handle HTTP downgrading, inbound-policy errors.
-                // - XXX Set an identity header -- this should probably not be done
-                //   in the gateway, though the value will be stripped by meshed
-                //   servers.
-                // - Initializes tracing.
-                .push_http_server()
-                // Teminate HTTP connections.
-                .push_tcp_http_server()
-                .into_stack()
-                .check_new_service::<Http<T>, I>()
-        };
+        // Override the outbound stack's discovery allow list to match the
+        // gateway allow list.
+        let mut out = self.outbound.clone();
+        out.config_mut().allow_discovery = self.config.allow_discovery.clone().into();
 
-        let tcp_opaque = svc::stack(opaque)
-            .check_new_service::<OpaqueOutbound, I>()
+        out.with_stack(protocol.clone().into_inner())
+            .push_discover(profiles)
+            .into_stack()
+            .push_on_service(svc::BoxService::layer())
+            .push(svc::ArcNewService::layer())
+    }
+
+    fn opaque<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Opaque<T>, I>>
+    where
+        T: svc::Param<GatewayAddr>,
+        T: svc::Param<OrigDstAddr>,
+        T: svc::Param<Remote<ClientAddr>>,
+        T: svc::Param<tls::ClientId>,
+        T: svc::Param<tls::ConditionalServerTls>,
+        T: svc::Param<inbound::policy::AllowPolicy>,
+        T: Clone + Send + Sync + Unpin + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        // Opaque outbound stack.
+        N: svc::NewService<OpaqueOutbound, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<I, Response = (), Error = Error>,
+        NSvc: Send + Unpin + 'static,
+        NSvc::Future: Send + 'static,
+    {
+        svc::stack(inner)
             .push_filter(
                 |(_, Opaque(opq)): (_, Opaque<T>)| -> Result<_, GatewayDomainInvalid> {
+                    // Fail connections were not resolved.
+                    let profile = svc::Param::<Option<profiles::Receiver>>::param(&opq)
+                        .ok_or(GatewayDomainInvalid)?;
                     Ok(OpaqueOutbound {
-                        profile: svc::Param::<Option<profiles::Receiver>>::param(&opq)
-                            .ok_or(GatewayDomainInvalid)?,
+                        profile,
                         addr: (*opq).param(),
                         orig_dst: opq.param(),
                     })
                 },
             )
             .push(self.inbound.authorize_tcp())
-            .check_new_service::<Opaque<T>, I>();
-
-        let protocol = tcp_http
-            .push_switch(
-                |parent: outbound::Discovery<T>| -> Result<_, GatewayDomainInvalid> {
-                    if let Some(proto) = (*parent).param() {
-                        let version = match proto {
-                            SessionProtocol::Http1 => http::Version::Http1,
-                            SessionProtocol::Http2 => http::Version::H2,
-                        };
-                        return Ok(svc::Either::A(Http { parent, version }));
-                    }
-
-                    Ok(svc::Either::B(Opaque(parent)))
-                },
-                tcp_opaque.into_inner(),
-            )
-            .check_new_service::<outbound::Discovery<T>, I>();
-
-        let discover = self
-            .outbound
-            .with_stack(protocol.into_inner())
-            .push_discover(profiles)
-            .check_new_service::<T, I>();
-
-        discover
-            .into_stack()
             .push_on_service(svc::BoxService::layer())
             .push(svc::ArcNewService::layer())
-            .check_new_service::<T, I>()
-            .into_inner()
+    }
+
+    fn http<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Http<T>, I>>
+    where
+        T: svc::Param<GatewayAddr>,
+        T: svc::Param<OrigDstAddr>,
+        T: svc::Param<Remote<ClientAddr>>,
+        T: svc::Param<tls::ConditionalServerTls>,
+        T: svc::Param<tls::ClientId>,
+        T: svc::Param<inbound::policy::AllowPolicy>,
+        T: svc::Param<profiles::LookupAddr>,
+        T: Clone + Send + Sync + Unpin + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        // HTTP outbound stack.
+        N: svc::NewService<HttpOutbound, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        NSvc: Send + Unpin + 'static,
+        NSvc::Future: Send + 'static,
+    {
+        let Config { allow_discovery } = self.config.clone();
+
+        let http = svc::stack(inner)
+            .push_map_target(HttpOutbound::orphan)
+            .push(NewHttpGateway::layer(identity::LocalId(
+                self.inbound.identity().name().clone(),
+            )))
+            .push_on_service(svc::LoadShed::layer())
+            .lift_new()
+            .push(svc::NewOneshotRoute::layer_via(|t: &HttpOutbound<T>| {
+                ByRequestVersion(t.clone())
+            }))
+            .push_filter(
+                move |(_, parent): (_, Http<T>)| -> Result<_, GatewayDomainInvalid> {
+                    let GatewayAddr(addr) = (*parent).param();
+                    if allow_discovery.matches(addr.name()) {
+                        return Err(GatewayDomainInvalid);
+                    }
+                    let profile = svc::Param::<Option<profiles::Receiver>>::param(&parent)
+                        .ok_or(GatewayDomainInvalid)?;
+                    let target = if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                        outbound::http::logical::Target::Route(addr, profile)
+                    } else if let Some((addr, metadata)) = profile.endpoint() {
+                        outbound::http::logical::Target::Forward(Remote(ServerAddr(addr)), metadata)
+                    } else {
+                        return Err(GatewayDomainInvalid);
+                    };
+                    Ok(HttpOutbound {
+                        target,
+                        addr: GatewayAddr(addr),
+                        version: parent.version,
+                        parent: (*parent).param(),
+                    })
+                },
+            )
+            .push(self.inbound.authorize_http())
+            .into_inner();
+
+        self.inbound
+            .clone()
+            .with_stack(http)
+            // - May write access logs.
+            // - Handle HTTP downgrading, inbound-policy errors.
+            // - XXX Set an identity header -- this should probably not be done
+            //   in the gateway, though the value will be stripped by meshed
+            //   servers.
+            // - Initializes tracing.
+            .push_http_server()
+            // Teminate HTTP connections.
+            .push_tcp_http_server()
+            .into_stack()
     }
 }
 
