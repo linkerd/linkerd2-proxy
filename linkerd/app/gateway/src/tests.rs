@@ -5,7 +5,7 @@ use linkerd_app_core::{
     svc::NewService,
     tls, Error, NameAddr, NameMatch,
 };
-use linkerd_app_inbound::{GatewayDomainInvalid, GatewayLoop};
+use linkerd_app_inbound::GatewayLoop;
 use linkerd_app_test as support;
 use std::str::FromStr;
 use tower::util::ServiceExt;
@@ -41,16 +41,6 @@ async fn gateway_endpoint() {
             .status(),
         http::StatusCode::NO_CONTENT
     );
-}
-
-#[tokio::test]
-async fn bad_domain() {
-    let test = Test {
-        suffix: "bad.example.com",
-        ..Default::default()
-    };
-    let e = test.with_default_profile().run().await.unwrap_err();
-    assert!(e.is::<GatewayDomainInvalid>());
 }
 
 #[tokio::test]

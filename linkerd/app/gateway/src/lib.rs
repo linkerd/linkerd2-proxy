@@ -14,7 +14,7 @@ use linkerd_app_core::{
     tls,
     transport::addrs::*,
     transport_header::SessionProtocol,
-    Addr, Error, NameAddr, NameMatch,
+    Addr, Error, NameMatch,
 };
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
@@ -23,7 +23,6 @@ use std::{
     fmt::Debug,
     hash::Hash,
 };
-use thiserror::Error;
 
 #[derive(Clone, Debug, Default)]
 pub struct Config {
@@ -74,14 +73,6 @@ pub struct OpaqueOutbound {
 #[derive(Clone, Debug)]
 struct ByRequestVersion<T>(HttpOutbound<T>);
 
-#[derive(Debug, Default, Error)]
-#[error("a named target must be provided on gateway connections")]
-struct RefusedNoTarget(());
-
-#[derive(Debug, Error)]
-#[error("the provided address could not be resolved: {}", self.0)]
-struct RefusedNotResolved(NameAddr);
-
 impl Gateway {
     pub fn new(config: Config, inbound: Inbound<()>, outbound: Outbound<()>) -> Self {
         Self {
@@ -99,7 +90,7 @@ impl Gateway {
         http: H,
     ) -> svc::Stack<svc::ArcNewTcp<T, I>>
     where
-        // Target describes inbound gateway connections.
+        // Target describing an inbound gateway connection.
         T: svc::Param<GatewayAddr>,
         T: svc::Param<OrigDstAddr>,
         T: svc::Param<Remote<ClientAddr>>,
@@ -130,11 +121,10 @@ impl Gateway {
         HSvc: Send + Unpin + 'static,
         HSvc::Future: Send + 'static,
     {
-        // XXX TODO THIS STACK PROBABLY NEEDS TO HANDLE CACHING LOAD BALANCERS,
-        // etc.
-
-        let protocol = self.http(http).push_switch(
-            |parent: outbound::Discovery<T>| -> Result<_, GatewayDomainInvalid> {
+        let protocol = {
+            // XXX TODO THIS STACK PROBABLY NEEDS TO HANDLE CACHING LOAD BALANCERS,
+            // etc.
+            let switch = |parent: outbound::Discovery<T>| -> Result<_, GatewayDomainInvalid> {
                 if let Some(proto) = (*parent).param() {
                     let version = match proto {
                         SessionProtocol::Http1 => http::Version::Http1,
@@ -144,24 +134,31 @@ impl Gateway {
                 }
 
                 Ok(svc::Either::B(Opaque(parent)))
-            },
-            self.opaque(opaque).into_inner(),
-        );
+            };
+
+            self.http(http)
+                .push_switch(switch, self.opaque(opaque).into_inner())
+                .into_inner()
+        };
 
         // Override the outbound stack's discovery allow list to match the
         // gateway allow list.
-        let mut out = self.outbound.clone();
-        out.config_mut().allow_discovery = self.config.allow_discovery.clone().into();
+        let discover = {
+            let mut out = self.outbound.clone();
+            out.config_mut().allow_discovery = self.config.allow_discovery.clone().into();
+            out.with_stack(protocol)
+                .push_discover(profiles)
+                .into_stack()
+        };
 
-        out.with_stack(protocol.clone().into_inner())
-            .push_discover(profiles)
-            .into_stack()
+        discover
             .push_on_service(svc::BoxService::layer())
             .push(svc::ArcNewService::layer())
     }
 
     fn opaque<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Opaque<T>, I>>
     where
+        // Target describing an inbound gateway connection.
         T: svc::Param<GatewayAddr>,
         T: svc::Param<OrigDstAddr>,
         T: svc::Param<Remote<ClientAddr>>,
@@ -169,6 +166,7 @@ impl Gateway {
         T: svc::Param<tls::ConditionalServerTls>,
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: Clone + Send + Sync + Unpin + 'static,
+        // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         // Opaque outbound stack.
         N: svc::NewService<OpaqueOutbound, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -196,6 +194,7 @@ impl Gateway {
 
     fn http<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Http<T>, I>>
     where
+        // Target describing an inbound gateway connection.
         T: svc::Param<GatewayAddr>,
         T: svc::Param<OrigDstAddr>,
         T: svc::Param<Remote<ClientAddr>>,
@@ -204,6 +203,7 @@ impl Gateway {
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: svc::Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + Unpin + 'static,
+        // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         // HTTP outbound stack.
         N: svc::NewService<HttpOutbound, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -215,8 +215,6 @@ impl Gateway {
         NSvc: Send + Unpin + 'static,
         NSvc::Future: Send + 'static,
     {
-        let Config { allow_discovery } = self.config.clone();
-
         let http = svc::stack(inner)
             .push_map_target(HttpOutbound::orphan)
             .push(NewHttpGateway::layer(identity::LocalId(
@@ -228,13 +226,10 @@ impl Gateway {
                 ByRequestVersion(t.clone())
             }))
             .push_filter(
-                move |(_, parent): (_, Http<T>)| -> Result<_, GatewayDomainInvalid> {
-                    let GatewayAddr(addr) = (*parent).param();
-                    if allow_discovery.matches(addr.name()) {
-                        return Err(GatewayDomainInvalid);
-                    }
+                |(_, parent): (_, Http<T>)| -> Result<_, GatewayDomainInvalid> {
                     let profile = svc::Param::<Option<profiles::Receiver>>::param(&parent)
                         .ok_or(GatewayDomainInvalid)?;
+
                     let target = if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
                         outbound::http::logical::Target::Route(addr, profile)
                     } else if let Some((addr, metadata)) = profile.endpoint() {
@@ -242,11 +237,12 @@ impl Gateway {
                     } else {
                         return Err(GatewayDomainInvalid);
                     };
+
                     Ok(HttpOutbound {
                         target,
-                        addr: GatewayAddr(addr),
-                        version: parent.version,
+                        addr: (*parent).param(),
                         parent: (*parent).param(),
+                        version: parent.version,
                     })
                 },
             )
