@@ -14,7 +14,7 @@
 // ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use std::{fmt, ops::Deref};
+use std::fmt;
 use thiserror::Error;
 
 /// A DNS Name suitable for use in the TLS Server Name Indication (SNI)
@@ -99,7 +99,7 @@ impl std::str::FromStr for Name {
     }
 }
 
-impl Deref for Name {
+impl std::ops::Deref for Name {
     type Target = str;
 
     #[inline]
@@ -295,7 +295,7 @@ mod tests {
             ("d.c.b.a", "d.c.b.a", true),
             // case sensitivity
             (
-                "abcdefghijklmnopaqrstuvwxyz",
+                "abcdefghijklmnopqrstuvwxyz",
                 "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 true,
             ),
