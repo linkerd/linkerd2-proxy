@@ -295,7 +295,7 @@ mod tests {
             ("d.c.b.a", "d.c.b.a", true),
             // case sensitivity
             (
-                "abcdefghijklmnopqrstuvwxyz",
+                "abcdefghijklmnopaqrstuvwxyz",
                 "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 true,
             ),

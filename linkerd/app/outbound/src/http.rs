@@ -38,7 +38,10 @@ pub type Connect = self::endpoint::Connect<Endpoint>;
 pub struct CanonicalDstHeader(pub Addr);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Http<T>(T);
+struct Http {
+    target: logical::Target,
+    version: http::Version,
+}
 
 // === impl Outbound ===
 
@@ -65,53 +68,57 @@ impl<C> Outbound<C> {
     where
         T: svc::Param<http::Version>,
         T: svc::Param<logical::Target>,
-        T: Eq + Debug + Hash + Clone + Debug + Send + Sync + 'static,
-        C: Clone + Send + Sync + Unpin + 'static,
+        T: Clone + Send + Sync + 'static,
         C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
+        C: Clone + Send + Sync + Unpin + 'static,
         C::Connection: Send + Unpin,
         C::Future: Send,
-        R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R: Clone + Send + Sync + Unpin + 'static,
     {
         self.push_tcp_endpoint()
             .push_http_endpoint()
             .push_http_concrete(resolve)
-            .check_new_service::<logical::Concrete<Http<T>>, _>()
             .push_http_logical()
-            .check_new_service::<Http<T>, _>()
             .push_http_server()
-            .check_new_service::<Http<T>, _>()
-            .map_stack(|_, _, stk| stk.push_map_target(Http).push(svc::ArcNewService::layer()))
-            .check_new_service::<T, _>()
+            .map_stack(move |_, _, stk| {
+                stk.push_map_target(Http::new)
+                    .push(svc::ArcNewService::layer())
+                    .check_new_service::<T, http::Request<http::BoxBody>>()
+            })
     }
 }
 
 // === impl Http ===
 
-impl<T> svc::Param<http::Version> for Http<T>
-where
-    T: svc::Param<Version>,
-{
+impl Http {
+    pub fn new<T>(parent: T) -> Self
+    where
+        T: svc::Param<logical::Target>,
+        T: svc::Param<http::Version>,
+    {
+        Self {
+            target: parent.param(),
+            version: parent.param(),
+        }
+    }
+}
+
+impl svc::Param<http::Version> for Http {
     fn param(&self) -> http::Version {
-        self.0.param()
+        self.version
     }
 }
 
-impl<T> svc::Param<logical::Target> for Http<T>
-where
-    T: svc::Param<logical::Target>,
-{
+impl svc::Param<logical::Target> for Http {
     fn param(&self) -> logical::Target {
-        self.0.param()
+        self.target.clone()
     }
 }
 
-impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Http<T>
-where
-    T: svc::Param<logical::Target>,
-{
+impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        let addr = match self.0.param() {
+        let addr = match self.target.param() {
             logical::Target::Route(addr, _) => Addr::from(addr),
             logical::Target::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
         };
@@ -120,25 +127,19 @@ where
     }
 }
 
-impl<T> svc::Param<Option<profiles::LogicalAddr>> for Http<T>
-where
-    T: svc::Param<logical::Target>,
-{
+impl svc::Param<Option<profiles::LogicalAddr>> for Http {
     fn param(&self) -> Option<profiles::LogicalAddr> {
-        match self.0.param() {
-            logical::Target::Route(addr, _) => Some(profiles::LogicalAddr(addr)),
+        match self.target {
+            logical::Target::Route(ref addr, _) => Some(profiles::LogicalAddr(addr.clone())),
             logical::Target::Forward(_, _) => None,
         }
     }
 }
 
-impl<T> svc::Param<Option<profiles::Receiver>> for Http<T>
-where
-    T: svc::Param<logical::Target>,
-{
+impl svc::Param<Option<profiles::Receiver>> for Http {
     fn param(&self) -> Option<profiles::Receiver> {
-        match self.0.param() {
-            logical::Target::Route(_, rx) => Some(rx),
+        match self.target {
+            logical::Target::Route(_, ref rx) => Some(rx.clone()),
             logical::Target::Forward(_, _) => None,
         }
     }
@@ -156,20 +157,6 @@ impl From<CanonicalDstHeader> for HeaderPair {
 }
 
 // === impl Logical ===
-
-impl<T> From<(Version, T)> for Logical
-where
-    T: svc::Param<profiles::LogicalAddr>,
-    T: svc::Param<profiles::Receiver>,
-{
-    fn from((protocol, logical): (Version, T)) -> Self {
-        Self {
-            protocol,
-            profile: logical.param(),
-            logical_addr: logical.param(),
-        }
-    }
-}
 
 impl svc::Param<CanonicalDstHeader> for Logical {
     fn param(&self) -> CanonicalDstHeader {

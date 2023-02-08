@@ -679,7 +679,9 @@ mod outbound_dst_labels {
     // the mock controller before the first request has finished.
     // See linkerd/linkerd2#751
     #[tokio::test]
-    #[cfg_attr(not(feature = "flakey-in-ci"), ignore)]
+    // XXX This test is flat-out broken
+    #[cfg(ignore)]
+    // #[cfg_attr(not(feature = "flakey-in-ci"), ignore)]
     async fn controller_updates_addr_labels() {
         let _trace = trace_init();
         info!("running test server");

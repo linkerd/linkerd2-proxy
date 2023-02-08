@@ -176,14 +176,14 @@ impl Gateway {
     {
         svc::stack(inner)
             .push_filter(
-                |(_, Opaque(opq)): (_, Opaque<T>)| -> Result<_, GatewayDomainInvalid> {
+                |(_, Opaque(opaq)): (_, Opaque<T>)| -> Result<_, GatewayDomainInvalid> {
                     // Fail connections were not resolved.
-                    let profile = svc::Param::<Option<profiles::Receiver>>::param(&opq)
+                    let profile = svc::Param::<Option<profiles::Receiver>>::param(&opaq)
                         .ok_or(GatewayDomainInvalid)?;
                     Ok(OpaqueOutbound {
                         profile,
-                        addr: (*opq).param(),
-                        orig_dst: opq.param(),
+                        addr: (*opaq).param(),
+                        orig_dst: opaq.param(),
                     })
                 },
             )
