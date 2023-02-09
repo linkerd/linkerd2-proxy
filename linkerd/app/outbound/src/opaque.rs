@@ -49,7 +49,6 @@ impl<C> Outbound<C> {
         C::Future: Send + Unpin,
         // Endpoint discovery
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R: Clone + Send + Sync + Unpin + 'static,
     {
         self.push_tcp_endpoint()
             .push_opaque_concrete(resolve)

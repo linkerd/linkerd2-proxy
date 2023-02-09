@@ -171,18 +171,23 @@ impl<S> Outbound<S> {
 }
 
 impl Outbound<()> {
-    pub async fn serve<A, I, P, R>(
+    pub async fn serve<T, I, P, R>(
         self,
-        listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
+        listen: impl Stream<Item = Result<(T, I)>> + Send + Sync + 'static,
         profiles: P,
         resolve: R,
     ) where
-        A: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        // Target describing a server-side connection.
+        T: Param<Remote<ClientAddr>>,
+        T: Param<OrigDstAddr>,
+        T: Clone + Send + Sync + 'static,
+        // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        R: Clone + Send + Sync + Unpin + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        // Configuration discovery.
         P: profiles::GetProfile<Error = Error>,
+        // Endpoint resolution.
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
         if self.config.ingress_mode {
             tracing::info!("Outbound routing in ingress-mode");

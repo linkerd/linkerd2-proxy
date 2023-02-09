@@ -92,7 +92,6 @@ impl<N> Outbound<N> {
             + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
-        R: Clone + Send + Sync + 'static,
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
     {
         let resolve =

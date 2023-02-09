@@ -32,7 +32,6 @@ impl Outbound<()> {
         P: profiles::GetProfile<Error = Error>,
         // Endpoint resolver
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R: Clone + Send + Sync + Unpin + 'static,
     {
         // FIXME(ver) this timeout should be separate from the discovery
         // timeout.

@@ -73,7 +73,6 @@ impl<C> Outbound<C> {
         C::Connection: Send + Unpin,
         C::Future: Send,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R: Clone + Send + Sync + Unpin + 'static,
     {
         self.push_tcp_endpoint()
             .push_http_endpoint()
