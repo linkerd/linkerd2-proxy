@@ -19,10 +19,14 @@ impl<N> Outbound<N> {
     /// across multiple connections.
     pub fn push_protocol<T, I, H, HSvc, NSvc>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
+        // Target type indicating whether detection should be skipped.
+        // TODO(ver): Enable additional hinting via discovery.
         T: svc::Param<Option<http::detect::Skip>>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
+        // Server-side socket.
         I: Debug + Send + Sync + Unpin + 'static,
+        // HTTP request stack.
         H: svc::NewService<Http<T>, Service = HSvc>,
         H: Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<
@@ -32,23 +36,15 @@ impl<N> Outbound<N> {
         >,
         HSvc: Clone + Send + Sync + Unpin + 'static,
         HSvc::Future: Send,
+        // Opaque connection stack.
         N: svc::NewService<T, Service = NSvc>,
         N: Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<io::EitherIo<I, io::PrefixedIo<I>>, Response = (), Error = Error>,
         NSvc: Clone + Send + Sync + Unpin + 'static,
         NSvc::Future: Send,
     {
-        // The detect stack doesn't cache its inner service, so we need a
-        // process-global cache of each inner stack.
-        //
-        // TODO(ver): is this really necessary? is this responsible for keeping
-        // balancers cached?
-
-        let opaque = self.clone().check_new_service::<T, _>();
-
-        let http = self.with_stack(http).map_stack(|config, rt, stk| {
-            stk.check_new_service::<Http<T>, http::Request<_>>()
-                .push_on_service(http::BoxRequest::layer())
+        let http = self.clone().with_stack(http).map_stack(|config, rt, stk| {
+            stk.push_on_service(http::BoxRequest::layer())
                 .unlift_new()
                 .push(http::NewServeHttp::layer(
                     config.proxy.server.h2_settings,
@@ -60,13 +56,8 @@ impl<N> Outbound<N> {
         let detect = http
             .map_stack(|_, _, http| {
                 http.push_map_target(Http::from)
-                    .check_new::<(http::Version, T)>()
-                    .push(svc::UnwrapOr::layer(
-                        opaque.into_stack().check_new::<T>().into_inner(),
-                    ))
-                    .check_new::<(Option<http::Version>, T)>()
-                    .lift_new_with_target()
-                    .check_new_new::<T, Option<http::Version>>()
+                    .push(svc::UnwrapOr::layer(self.clone().into_inner()))
+                    .lift_new_with_target::<(Option<http::Version>, T)>()
             })
             .push_detect_http();
 

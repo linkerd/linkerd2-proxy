@@ -33,6 +33,9 @@ impl Outbound<()> {
         // Endpoint resolver
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
+        // The protocol stack isn't (yet) able to reuse its inner stacks across
+        // connections, so we include a (global) idle cache to hold
+        //
         // FIXME(ver) this timeout should be separate from the discovery
         // timeout.
         let idle_timeout = self.config.discovery_idle_timeout;

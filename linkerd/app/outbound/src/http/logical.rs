@@ -92,8 +92,10 @@ impl<N> Outbound<N> {
         >,
     >
     where
+        // Logical target.
         T: svc::Param<Target>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+        // Concrete stack.
         N: svc::NewService<Concrete<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Clone

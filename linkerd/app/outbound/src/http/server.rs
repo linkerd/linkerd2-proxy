@@ -33,9 +33,9 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        // Target
+        // Target with a default HTTP authority.
         T: svc::Param<http::normalize_uri::DefaultAuthority>,
-        // Inner stack
+        // HTTP outbound stack
         N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
         NSvc: Clone + Send + 'static,

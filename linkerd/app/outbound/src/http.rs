@@ -57,14 +57,17 @@ impl<C> Outbound<C> {
         >,
     >
     where
+        // Http target.
         T: svc::Param<http::Version>,
         T: svc::Param<logical::Target>,
         T: Clone + Send + Sync + 'static,
+        // Endpoint resolution.
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        // TCP connector stack.
         C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
         C: Clone + Send + Sync + Unpin + 'static,
         C::Connection: Send + Unpin,
         C::Future: Send,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
         self.push_tcp_endpoint()
             .push_http_endpoint()

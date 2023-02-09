@@ -36,19 +36,19 @@ impl<C> Outbound<C> {
         >,
     >
     where
-        // Target
+        // Opaque target
         T: svc::Param<logical::Target>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side connection
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        // Client-side connector service
+        // Endpoint discovery
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        // TCP endpoint stack.
         C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
         C: Clone + Send + Sync + Unpin + 'static,
         C::Connection: Send + Unpin,
         C::Future: Send + Unpin,
-        // Endpoint discovery
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
         self.push_tcp_endpoint()
             .push_opaque_concrete(resolve)

@@ -37,7 +37,6 @@ mod metrics;
 pub mod opaque;
 mod protocol;
 mod sidecar;
-// mod switch_logical;
 pub mod tcp;
 #[cfg(test)]
 pub(crate) mod test_util;

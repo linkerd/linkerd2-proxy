@@ -87,6 +87,8 @@ impl<N> Outbound<N> {
         // T: svc::Param<svc::queue::Capacity>,
         // T: svc::Param<svc::queue::Timeout>,
         T: Clone + Debug + Send + Sync + 'static,
+        // Endpoint resolution.
+        R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
         // Inner stack.
         N: svc::NewService<Endpoint<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -94,8 +96,6 @@ impl<N> Outbound<N> {
             + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
-        // Endpoint resolution.
-        R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
     {
         let resolve =
             svc::MapTargetLayer::new(|t: Balance<T>| -> ConcreteAddr { ConcreteAddr(t.addr) })

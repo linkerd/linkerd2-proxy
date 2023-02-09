@@ -22,12 +22,14 @@ impl<C> Outbound<C> {
             > + Clone,
     >
     where
-        T: svc::Param<Remote<ServerAddr>>
-            + svc::Param<tls::ConditionalClientTls>
-            + svc::Param<Option<opaque_transport::PortOverride>>
-            + svc::Param<Option<http::AuthorityOverride>>
-            + svc::Param<Option<SessionProtocol>>
-            + svc::Param<transport::labels::Key>,
+        // TCP endpoint target.
+        T: svc::Param<Remote<ServerAddr>>,
+        T: svc::Param<tls::ConditionalClientTls>,
+        T: svc::Param<Option<opaque_transport::PortOverride>>,
+        T: svc::Param<Option<http::AuthorityOverride>>,
+        T: svc::Param<Option<SessionProtocol>>,
+        T: svc::Param<transport::labels::Key>,
+        // Connector stack.
         C: svc::MakeConnection<Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
         C: Clone + Send + 'static,
         C::Connection: Send + Unpin,

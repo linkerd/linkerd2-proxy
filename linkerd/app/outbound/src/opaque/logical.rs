@@ -84,13 +84,16 @@ impl<N> Outbound<N> {
         >,
     >
     where
+        // Opaque logical target.
         T: svc::Param<Target>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+        // Server-side socket.
+        I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
+        // Concrete stack.
         N: svc::NewService<Concrete<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = ()> + Clone + Send + Sync + 'static,
         NSvc::Future: Send,
         NSvc::Error: Into<Error>,
-        I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
     {
         self.map_stack(|_, _, concrete| {
             let route = svc::layers()

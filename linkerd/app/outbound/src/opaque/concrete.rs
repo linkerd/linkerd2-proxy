@@ -44,12 +44,12 @@ pub struct Endpoint<T> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewEndpoint<N> {
+struct NewEndpoint<N> {
     inner: N,
     inbound_ips: IpSet,
 }
 
-pub type IpSet = Arc<AHashSet<IpAddr>>;
+type IpSet = Arc<AHashSet<IpAddr>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Balance<T> {
@@ -80,15 +80,19 @@ impl<C> Outbound<C> {
         >,
     >
     where
+        // Logical target.c
         T: svc::Param<Target>,
         T: Clone + Debug + Send + Sync + 'static,
+        // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
+        // #ndpoint resolution.
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        // Endpoint stack.
         C: svc::MakeConnection<Endpoint<T>> + Clone + Send + 'static,
         C::Connection: Send + Unpin,
         C::Metadata: Send + Unpin,
         C::Future: Send,
         C: Send + Sync + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
         let resolve =
             svc::MapTargetLayer::new(|t: Balance<T>| -> ConcreteAddr { ConcreteAddr(t.addr) })
