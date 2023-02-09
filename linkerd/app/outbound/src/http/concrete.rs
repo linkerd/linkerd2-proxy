@@ -82,16 +82,19 @@ impl<N> Outbound<N> {
         >,
     >
     where
+        // Concrete target type.
         T: svc::Param<Target>,
         // T: svc::Param<svc::queue::Capacity>,
         // T: svc::Param<svc::queue::Timeout>,
         T: Clone + Debug + Send + Sync + 'static,
+        // Inner stack.
         N: svc::NewService<Endpoint<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
             + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
+        // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
     {
         let resolve =
