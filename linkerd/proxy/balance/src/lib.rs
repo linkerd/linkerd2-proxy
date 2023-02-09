@@ -84,9 +84,6 @@ impl<C, T, Req, R, M, N, S> NewService<T> for NewBalancePeakEwma<C, Req, R, M>
 where
     T: Param<EwmaConfig> + Clone + Send,
     R: Resolve<T>,
-    R::Endpoint: Clone + Debug + Eq + Send + 'static,
-    R::Resolution: Send,
-    R::Future: Send + 'static,
     M: NewService<T, Service = N> + Clone,
     N: NewService<(SocketAddr, R::Endpoint), Service = S> + Send + 'static,
     S: Service<Req> + Send,
