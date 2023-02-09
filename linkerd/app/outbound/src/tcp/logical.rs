@@ -7,6 +7,9 @@ use linkerd_app_core::{
 };
 use linkerd_distribute as distribute;
 
+#[cfg(tests)]
+mod tests;
+
 #[derive(Debug, thiserror::Error)]
 #[error("no route")]
 pub struct NoRoute;
