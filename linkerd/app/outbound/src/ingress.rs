@@ -1,4 +1,4 @@
-use crate::{http, tcp, Config, Outbound};
+use crate::{discover, http, opaque, tcp, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, io, metrics, profiles,
@@ -10,38 +10,35 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
-    AddrMatch, Error, Infallible, NameAddr, Result,
+    Error, Infallible, NameAddr, Result,
 };
 use std::fmt::Debug;
 use thiserror::Error;
 
-#[derive(Clone)]
-struct AllowHttpProfile(AddrMatch);
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Accept(tcp::Accept);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct HttpIngress<T> {
-    target: T,
+    parent: T,
     version: http::Version,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Fallback<T> {
-    target: T,
-    version: http::Version,
-}
+struct OpaqIngress<T>(T);
 
 #[derive(Clone, Debug)]
-struct SelectTarget(HttpIngress<tcp::Accept>);
+struct SelectTarget<T>(HttpIngress<T>);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct RequestTarget {
-    orig_dst: OrigDstAddr,
-    name: Option<NameAddr>,
+enum RequestTarget {
+    Named(NameAddr),
+    Orig(OrigDstAddr),
 }
 
 #[derive(Debug, Error)]
-#[error("ingress-mode routing requires a service profile")]
-struct ProfileRequired;
+#[error("ingress-mode routing requires a service profile: {0}")]
+struct ProfileRequired(NameAddr);
 
 #[derive(Debug, Default, Error)]
 #[error("l5d-dst-override is not a valid host:port")]
@@ -61,7 +58,8 @@ impl Outbound<()> {
     /// fails, we revert to using the normal IP-based discovery
     pub fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
     where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        T: Param<OrigDstAddr>,
+        T: Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
@@ -74,6 +72,7 @@ impl Outbound<()> {
         let opaque = self
             .to_tcp_connect()
             .push_opaque(resolve.clone())
+            .map_stack(|_, _, stk| stk.push_map_target(OpaqIngress))
             .push_discover(profiles.clone())
             .push_discover_cache()
             .into_inner();
@@ -81,7 +80,10 @@ impl Outbound<()> {
         let http = self
             .to_tcp_connect()
             .push_http(resolve)
-            .map_stack(|_, _, stk| stk.push_map_target(HttpIngress::wrap))
+            .map_stack(|_, _, stk| {
+                stk.check_new_service::<HttpIngress<http::logical::Target>, _>()
+                    .push_filter(HttpIngress::try_from)
+            })
             .push_discover(profiles)
             .push_discover_cache();
 
@@ -105,9 +107,9 @@ impl<N> Outbound<N> {
     // are expected to be cached elsewhere, if necessary.
     fn push_ingress<T, I, F, FSvc, NSvc>(self, fallback: F) -> Outbound<svc::ArcNewTcp<T, I>>
     where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        T: Param<OrigDstAddr> + Clone + Send + Sync + Unpin + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        F: svc::NewService<tcp::Accept, Service = FSvc> + Clone + Send + Sync + 'static,
+        F: svc::NewService<T, Service = FSvc> + Clone + Send + Sync + 'static,
         FSvc: svc::Service<DetectIo<I>, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,
         N: svc::NewService<HttpIngress<RequestTarget>, Service = NSvc>,
@@ -148,22 +150,24 @@ impl<N> Outbound<N> {
                 )
                 .lift_new()
                 .push(svc::NewOneshotRoute::layer_via(
-                    |a: &HttpIngress<tcp::Accept>| SelectTarget(a.clone()),
+                    |t: &HttpIngress<T>| SelectTarget(t.clone()),
                 ))
-                .check_new_service::<HttpIngress<tcp::Accept>, http::Request<_>>();
+                .check_new_service::<HttpIngress<T>, http::Request<_>>();
 
             // HTTP detection is **always** performed. If detection fails, then we
             // use the `fallback` stack to process the connection by its original
             // destination address.
-            http.check_new_service::<HttpIngress<tcp::Accept>, http::Request<_>>()
+            http.check_new_service::<HttpIngress<T>, http::Request<_>>()
                 .unlift_new()
                 .push(http::NewServeHttp::layer(*h2_settings, rt.drain.clone()))
-                .check_new_service::<HttpIngress<tcp::Accept>, I>()
+                .check_new_service::<HttpIngress<T>, I>()
                 .push_switch(
-                    |(detected, t): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {
-                        let target = tcp::Accept::from(t.param());
+                    |(detected, target): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {
                         if let Some(version) = detect::allow_timeout(detected) {
-                            return Ok(svc::Either::A(HttpIngress { version, target }));
+                            return Ok(svc::Either::A(HttpIngress {
+                                version,
+                                parent: target,
+                            }));
                         }
                         Ok(svc::Either::B(target))
                     },
@@ -181,27 +185,66 @@ impl<N> Outbound<N> {
 
 // === impl HttpIngress ===
 
-impl<T> HttpIngress<T>
-where
-    T: Param<http::Version>,
+impl TryFrom<discover::Discovery<HttpIngress<RequestTarget>>>
+    for HttpIngress<http::logical::Target>
 {
-    fn wrap(t: T) -> Self {
-        Self {
-            version: t.param(),
-            target: t,
+    type Error = ProfileRequired;
+
+    fn try_from(
+        parent: discover::Discovery<HttpIngress<RequestTarget>>,
+    ) -> std::result::Result<Self, Self::Error> {
+        match &**parent {
+            RequestTarget::Named(addr) => {
+                if let Some(profile) = svc::Param::<Option<profiles::Receiver>>::param(&parent) {
+                    if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                        return Ok(HttpIngress {
+                            version: (*parent).param(),
+                            parent: http::logical::Target::Route(addr, profile),
+                        });
+                    }
+
+                    if let Some((addr, metadata)) = profile.endpoint() {
+                        return Ok(HttpIngress {
+                            version: (*parent).param(),
+                            parent: http::logical::Target::Forward(
+                                Remote(ServerAddr(addr)),
+                                metadata,
+                            ),
+                        });
+                    }
+                }
+
+                Err(ProfileRequired(addr.clone()))
+            }
+
+            RequestTarget::Orig(OrigDstAddr(addr)) => Ok(HttpIngress {
+                version: (*parent).param(),
+                parent: http::logical::Target::Forward(
+                    Remote(ServerAddr(*addr)),
+                    Default::default(),
+                ),
+            }),
         }
+    }
+}
+
+impl svc::Param<http::logical::Target> for HttpIngress<http::logical::Target> {
+    fn param(&self) -> http::logical::Target {
+        self.parent.clone()
+    }
+}
+
+impl<T> std::ops::Deref for HttpIngress<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.parent
     }
 }
 
 impl<T> Param<http::Version> for HttpIngress<T> {
     fn param(&self) -> http::Version {
         self.version
-    }
-}
-
-impl Param<OrigDstAddr> for HttpIngress<RequestTarget> {
-    fn param(&self) -> OrigDstAddr {
-        self.target.orig_dst
     }
 }
 
@@ -214,49 +257,19 @@ impl Param<http::normalize_uri::DefaultAuthority> for HttpIngress<RequestTarget>
 
 impl Param<profiles::LookupAddr> for HttpIngress<RequestTarget> {
     fn param(&self) -> profiles::LookupAddr {
-        profiles::LookupAddr(
-            self.target
-                .name
-                .clone()
-                .map(Into::into)
-                .unwrap_or_else(|| self.target.orig_dst.0.into()),
-        )
+        profiles::LookupAddr(match self.parent.clone() {
+            RequestTarget::Named(addr) => addr.into(),
+            RequestTarget::Orig(OrigDstAddr(addr)) => addr.into(),
+        })
     }
 }
 
-impl<T> Param<Remote<ServerAddr>> for HttpIngress<T>
+impl<T> Param<OrigDstAddr> for HttpIngress<T>
 where
-    Self: Param<OrigDstAddr>,
+    T: svc::Param<OrigDstAddr>,
 {
-    fn param(&self) -> Remote<ServerAddr> {
-        let OrigDstAddr(addr) = self.param();
-        Remote(ServerAddr(addr))
-    }
-}
-
-impl Param<OrigDstAddr> for HttpIngress<OrigDstAddr> {
     fn param(&self) -> OrigDstAddr {
-        self.target
-    }
-}
-
-impl<T> Param<http::logical::Target> for HttpIngress<T>
-where
-    T: Param<Option<profiles::Receiver>>,
-    T: Param<Remote<ServerAddr>>,
-{
-    fn param(&self) -> http::logical::Target {
-        if let Some(profile) = self.target.param() {
-            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return http::logical::Target::Route(addr, profile);
-            }
-
-            if let Some((addr, metadata)) = profile.endpoint() {
-                return http::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
-            }
-        }
-
-        http::logical::Target::Forward(self.target.param(), Default::default())
+        self.parent.param()
     }
 }
 
@@ -287,7 +300,7 @@ impl svc::Param<transport::labels::Key> for HttpIngress<OrigDstAddr> {
 impl svc::Param<metrics::OutboundEndpointLabels> for HttpIngress<OrigDstAddr> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
         let authority = self
-            .target
+            .parent
             .to_string()
             .parse()
             .expect("address must be a valid authority");
@@ -295,7 +308,7 @@ impl svc::Param<metrics::OutboundEndpointLabels> for HttpIngress<OrigDstAddr> {
             authority: Some(authority),
             labels: Default::default(),
             server_id: self.param(),
-            target_addr: self.target.into(),
+            target_addr: self.parent.into(),
         }
     }
 }
@@ -326,7 +339,7 @@ impl tap::Inspect for HttpIngress<OrigDstAddr> {
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<std::net::SocketAddr> {
-        Some(self.target.into())
+        Some(self.parent.into())
     }
 
     fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<tap::Labels> {
@@ -348,22 +361,23 @@ impl tap::Inspect for HttpIngress<OrigDstAddr> {
 
 // === impl SelectTarget ===
 
-impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
+impl<B, T> svc::router::SelectRoute<http::Request<B>> for SelectTarget<T>
+where
+    T: svc::Param<OrigDstAddr>,
+{
     type Key = HttpIngress<RequestTarget>;
     type Error = InvalidOverrideHeader;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         // Use either the override header or the original destination address.
-        let name = http::authority_from_header(req, DST_OVERRIDE_HEADER)
+        let target = http::authority_from_header(req, DST_OVERRIDE_HEADER)
             .map(|a| {
                 NameAddr::from_authority_with_default_port(&a, 80)
+                    .map(RequestTarget::Named)
                     .map_err(|_| InvalidOverrideHeader)
             })
-            .transpose()?;
-        let target = RequestTarget {
-            orig_dst: self.0.target.orig_dst,
-            name,
-        };
+            .transpose()?
+            .unwrap_or_else(|| RequestTarget::Orig((*self.0).param()));
 
         // Use the request's version.
         let version = match req.version() {
@@ -372,6 +386,49 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for SelectTarget {
             _ => unreachable!("Only HTTP/1 and HTTP/2 are supported"),
         };
 
-        Ok(HttpIngress { version, target })
+        Ok(HttpIngress {
+            version,
+            parent: target,
+        })
+    }
+}
+
+// === impl OpaqIngress ===
+
+impl<T> std::ops::Deref for OpaqIngress<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> Param<Remote<ServerAddr>> for OpaqIngress<T>
+where
+    T: svc::Param<OrigDstAddr>,
+{
+    fn param(&self) -> Remote<ServerAddr> {
+        let OrigDstAddr(addr) = self.0.param();
+        Remote(ServerAddr(addr))
+    }
+}
+
+impl<T> Param<opaque::logical::Target> for OpaqIngress<T>
+where
+    T: svc::Param<Option<profiles::Receiver>>,
+    T: svc::Param<OrigDstAddr>,
+{
+    fn param(&self) -> opaque::logical::Target {
+        if let Some(profile) = self.0.param() {
+            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                return opaque::logical::Target::Route(addr, profile);
+            }
+
+            if let Some((addr, metadata)) = profile.endpoint() {
+                return opaque::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
+            }
+        }
+
+        opaque::logical::Target::Forward(self.param(), Default::default())
     }
 }

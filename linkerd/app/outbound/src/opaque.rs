@@ -4,23 +4,19 @@ use linkerd_app_core::{
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
-        tcp::balance,
     },
     svc,
     transport::addrs::*,
-    Error, NameAddr,
+    Error,
 };
-use std::{fmt::Debug, hash::Hash, net::SocketAddr};
+use std::{fmt::Debug, hash::Hash};
 
 pub mod concrete;
 pub mod forward;
 pub mod logical;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Dispatch {
-    Balance(NameAddr, balance::EwmaConfig),
-    Forward(SocketAddr, Metadata),
-}
+struct Opaq(logical::Target);
 
 // === impl Outbound ===
 
@@ -41,9 +37,7 @@ impl<C> Outbound<C> {
     >
     where
         // Target
-        T: svc::Param<Remote<ServerAddr>>,
-        // T: svc::Param<Option<profiles::LogicalAddr>>,
-        T: svc::Param<Option<profiles::Receiver>>,
+        T: svc::Param<logical::Target>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side connection
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -60,5 +54,26 @@ impl<C> Outbound<C> {
         self.push_tcp_endpoint()
             .push_opaque_concrete(resolve)
             .push_opaque_logical()
+            .map_stack(|_, _, stk| {
+                stk.push_map_target(|t: T| Opaq(t.param()))
+                    .push(svc::ArcNewService::layer())
+            })
+    }
+}
+
+// === impl Opaq ===
+
+impl svc::Param<logical::Target> for Opaq {
+    fn param(&self) -> logical::Target {
+        self.0.clone()
+    }
+}
+
+impl svc::Param<Option<profiles::Receiver>> for Opaq {
+    fn param(&self) -> Option<profiles::Receiver> {
+        match self.0.param() {
+            logical::Target::Route(_, rx) => Some(rx),
+            _ => None,
+        }
     }
 }

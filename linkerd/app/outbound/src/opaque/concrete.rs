@@ -1,4 +1,3 @@
-use super::Dispatch;
 use crate::{stack_labels, Outbound};
 use ahash::AHashSet;
 use linkerd_app_core::{
@@ -7,7 +6,7 @@ use linkerd_app_core::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
         http::AuthorityOverride,
-        tcp,
+        tcp::{self, balance},
     },
     svc::{self, layer::Layer},
     tls,
@@ -21,6 +20,12 @@ use std::{
     sync::Arc,
 };
 use tracing::info_span;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Target {
+    Balance(NameAddr, balance::EwmaConfig),
+    Forward(Remote<ServerAddr>, Metadata),
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("concrete service {addr}: {source}")]
@@ -49,7 +54,7 @@ pub type IpSet = Arc<AHashSet<IpAddr>>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Balance<T> {
     addr: NameAddr,
-    ewma: tcp::balance::EwmaConfig,
+    ewma: balance::EwmaConfig,
     parent: T,
 }
 
@@ -75,7 +80,7 @@ impl<C> Outbound<C> {
         >,
     >
     where
-        T: svc::Param<Dispatch>,
+        T: svc::Param<Target>,
         T: Clone + Debug + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
         C: svc::MakeConnection<Endpoint<T>> + Clone + Send + 'static,
@@ -128,11 +133,11 @@ impl<C> Outbound<C> {
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Dispatch::Balance(addr, ewma) => {
+                            Target::Balance(addr, ewma) => {
                                 svc::Either::A(Balance { addr, ewma, parent })
                             }
-                            Dispatch::Forward(addr, meta) => svc::Either::B(Endpoint {
-                                addr: Remote(ServerAddr(addr)),
+                            Target::Forward(addr, meta) => svc::Either::B(Endpoint {
+                                addr,
                                 is_local: false,
                                 metadata: meta,
                                 parent,
@@ -166,8 +171,8 @@ impl<T> From<(&Balance<T>, Error)> for ConcreteError {
 
 // === impl Balance ===
 
-impl<T> svc::Param<tcp::balance::EwmaConfig> for Balance<T> {
-    fn param(&self) -> tcp::balance::EwmaConfig {
+impl<T> svc::Param<balance::EwmaConfig> for Balance<T> {
+    fn param(&self) -> balance::EwmaConfig {
         self.ewma
     }
 }

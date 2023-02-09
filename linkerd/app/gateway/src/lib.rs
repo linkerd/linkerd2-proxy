@@ -18,6 +18,7 @@ use linkerd_app_core::{
 };
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
+use outbound::opaque;
 use std::{
     cmp::{Eq, PartialEq},
     fmt::Debug,
@@ -47,22 +48,18 @@ struct Http<T> {
 // and move on with a new type.
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct HttpOutbound<T = OrigDstAddr> {
+pub struct HttpOut<T = OrigDstAddr> {
     addr: GatewayAddr,
     target: outbound::http::logical::Target,
     version: http::Version,
     parent: T,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Opaque<T>(outbound::Discovery<T>);
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Opaq<T>(outbound::Discovery<T>);
 
-#[derive(Clone, Debug)]
-pub struct OpaqueOutbound {
-    addr: GatewayAddr,
-    orig_dst: OrigDstAddr,
-    profile: profiles::Receiver,
-}
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct OpaqOut(outbound::opaque::logical::Target);
 
 /// Implements `svc::router::SelectRoute` for outbound HTTP requests. An
 /// `OutboundHttp` target is returned for each request using the request's HTTP
@@ -71,7 +68,7 @@ pub struct OpaqueOutbound {
 /// The request's HTTP version may not match the target's original HTTP version
 /// when proxies use HTTP/2 to transport HTTP/1 requests.
 #[derive(Clone, Debug)]
-struct ByRequestVersion<T>(HttpOutbound<T>);
+struct ByRequestVersion<T>(HttpOut<T>);
 
 impl Gateway {
     pub fn new(config: Config, inbound: Inbound<()>, outbound: Outbound<()>) -> Self {
@@ -104,14 +101,14 @@ impl Gateway {
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Debug + Send + Sync + Unpin + 'static,
         // Discovery
         P: profiles::GetProfile<Error = Error>,
-        // Opaque outbound stack
-        O: svc::NewService<OpaqueOutbound, Service = OSvc>,
+        // Opaq outbound stack
+        O: svc::NewService<OpaqOut, Service = OSvc>,
         O: Clone + Send + Sync + Unpin + 'static,
         OSvc: svc::Service<I, Response = (), Error = Error>,
         OSvc: Send + Unpin + 'static,
         OSvc::Future: Send + 'static,
         // HTTP outbound stack
-        H: svc::NewService<HttpOutbound, Service = HSvc>,
+        H: svc::NewService<HttpOut, Service = HSvc>,
         H: Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<
             http::Request<http::BoxBody>,
@@ -133,7 +130,7 @@ impl Gateway {
                     return Ok(svc::Either::A(Http { parent, version }));
                 }
 
-                Ok(svc::Either::B(Opaque(parent)))
+                Ok(svc::Either::B(Opaq(parent)))
             };
 
             self.http(http)
@@ -156,7 +153,7 @@ impl Gateway {
             .push(svc::ArcNewService::layer())
     }
 
-    fn opaque<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Opaque<T>, I>>
+    fn opaque<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Opaq<T>, I>>
     where
         // Target describing an inbound gateway connection.
         T: svc::Param<GatewayAddr>,
@@ -168,23 +165,31 @@ impl Gateway {
         T: Clone + Send + Sync + Unpin + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
-        // Opaque outbound stack.
-        N: svc::NewService<OpaqueOutbound, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        // Opaq outbound stack.
+        N: svc::NewService<OpaqOut, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<I, Response = (), Error = Error>,
         NSvc: Send + Unpin + 'static,
         NSvc::Future: Send + 'static,
     {
         svc::stack(inner)
             .push_filter(
-                |(_, Opaque(opaq)): (_, Opaque<T>)| -> Result<_, GatewayDomainInvalid> {
+                |(_, Opaq(opaq)): (_, Opaq<T>)| -> Result<_, GatewayDomainInvalid> {
                     // Fail connections were not resolved.
                     let profile = svc::Param::<Option<profiles::Receiver>>::param(&opaq)
                         .ok_or(GatewayDomainInvalid)?;
-                    Ok(OpaqueOutbound {
-                        profile,
-                        addr: (*opaq).param(),
-                        orig_dst: opaq.param(),
-                    })
+
+                    let target = if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                        outbound::opaque::logical::Target::Route(addr, profile)
+                    } else if let Some((addr, metadata)) = profile.endpoint() {
+                        outbound::opaque::logical::Target::Forward(
+                            Remote(ServerAddr(addr)),
+                            metadata,
+                        )
+                    } else {
+                        return Err(GatewayDomainInvalid);
+                    };
+
+                    Ok(OpaqOut(target))
                 },
             )
             .push(self.inbound.authorize_tcp())
@@ -206,7 +211,7 @@ impl Gateway {
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         // HTTP outbound stack.
-        N: svc::NewService<HttpOutbound, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        N: svc::NewService<HttpOut, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<
             http::Request<http::BoxBody>,
             Response = http::Response<http::BoxBody>,
@@ -216,13 +221,13 @@ impl Gateway {
         NSvc::Future: Send + 'static,
     {
         let http = svc::stack(inner)
-            .push_map_target(HttpOutbound::orphan)
+            .push_map_target(HttpOut::orphan)
             .push(NewHttpGateway::layer(identity::LocalId(
                 self.inbound.identity().name().clone(),
             )))
             .push_on_service(svc::LoadShed::layer())
             .lift_new()
-            .push(svc::NewOneshotRoute::layer_via(|t: &HttpOutbound<T>| {
+            .push(svc::NewOneshotRoute::layer_via(|t: &HttpOut<T>| {
                 ByRequestVersion(t.clone())
             }))
             .push_filter(
@@ -238,7 +243,7 @@ impl Gateway {
                         return Err(GatewayDomainInvalid);
                     };
 
-                    Ok(HttpOutbound {
+                    Ok(HttpOut {
                         target,
                         addr: (*parent).param(),
                         parent: (*parent).param(),
@@ -268,7 +273,7 @@ impl Gateway {
 // === impl ByRequestVersion ===
 
 impl<B, T: Clone> svc::router::SelectRoute<http::Request<B>> for ByRequestVersion<T> {
-    type Key = HttpOutbound<T>;
+    type Key = HttpOut<T>;
     type Error = http::version::Unsupported;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
@@ -278,9 +283,9 @@ impl<B, T: Clone> svc::router::SelectRoute<http::Request<B>> for ByRequestVersio
     }
 }
 
-// === impl Opaque ===
+// === impl Opaq ===
 
-impl<T> std::ops::Deref for Opaque<T> {
+impl<T> std::ops::Deref for Opaq<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -288,7 +293,7 @@ impl<T> std::ops::Deref for Opaque<T> {
     }
 }
 
-impl<T> svc::Param<inbound::policy::AllowPolicy> for Opaque<T>
+impl<T> svc::Param<inbound::policy::AllowPolicy> for Opaq<T>
 where
     T: svc::Param<inbound::policy::AllowPolicy>,
 {
@@ -297,7 +302,7 @@ where
     }
 }
 
-impl<T> svc::Param<Remote<ClientAddr>> for Opaque<T>
+impl<T> svc::Param<Remote<ClientAddr>> for Opaq<T>
 where
     T: svc::Param<Remote<ClientAddr>>,
 {
@@ -306,7 +311,7 @@ where
     }
 }
 
-impl<T> svc::Param<Remote<ServerAddr>> for Opaque<T>
+impl<T> svc::Param<Remote<ServerAddr>> for Opaq<T>
 where
     T: svc::Param<Remote<ServerAddr>>,
 {
@@ -315,7 +320,7 @@ where
     }
 }
 
-impl<T> svc::Param<tls::ConditionalServerTls> for Opaque<T>
+impl<T> svc::Param<tls::ConditionalServerTls> for Opaq<T>
 where
     T: svc::Param<tls::ConditionalServerTls>,
 {
@@ -324,7 +329,7 @@ where
     }
 }
 
-impl<T> svc::Param<tls::ClientId> for Opaque<T>
+impl<T> svc::Param<tls::ClientId> for Opaq<T>
 where
     T: svc::Param<tls::ClientId>,
 {
@@ -333,38 +338,17 @@ where
     }
 }
 
-impl<T> svc::Param<Option<profiles::Receiver>> for Opaque<T> {
+impl<T> svc::Param<Option<profiles::Receiver>> for Opaq<T> {
     fn param(&self) -> Option<profiles::Receiver> {
         self.0.param()
     }
 }
 
-// === impl OpqueOutbound ===
+// === impl OpaqOut ===
 
-impl svc::Param<Option<profiles::Receiver>> for OpaqueOutbound {
-    fn param(&self) -> Option<profiles::Receiver> {
-        Some(self.profile.clone())
-    }
-}
-
-impl svc::Param<Remote<ServerAddr>> for OpaqueOutbound {
-    fn param(&self) -> Remote<ServerAddr> {
-        let OrigDstAddr(addr) = self.orig_dst;
-        Remote(ServerAddr(addr))
-    }
-}
-
-impl std::cmp::PartialEq for OpaqueOutbound {
-    fn eq(&self, other: &Self) -> bool {
-        self.addr == other.addr
-    }
-}
-
-impl std::cmp::Eq for OpaqueOutbound {}
-
-impl std::hash::Hash for OpaqueOutbound {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.addr.hash(state);
+impl svc::Param<opaque::logical::Target> for OpaqOut {
+    fn param(&self) -> opaque::logical::Target {
+        self.0.clone()
     }
 }
 
@@ -464,15 +448,15 @@ where
     }
 }
 
-// === impl HttpOutbound ===
+// === impl HttpOut ===
 
-impl<T> HttpOutbound<T>
+impl<T> HttpOut<T>
 where
     T: svc::Param<GatewayAddr>,
     T: svc::Param<OrigDstAddr>,
 {
-    fn orphan(self) -> HttpOutbound {
-        HttpOutbound {
+    fn orphan(self) -> HttpOut {
+        HttpOut {
             addr: self.parent.param(),
             target: self.target,
             version: self.version,
@@ -481,19 +465,19 @@ where
     }
 }
 
-impl<T> svc::Param<GatewayAddr> for HttpOutbound<T> {
+impl<T> svc::Param<GatewayAddr> for HttpOut<T> {
     fn param(&self) -> GatewayAddr {
         self.addr.clone()
     }
 }
 
-impl<T> svc::Param<http::Version> for HttpOutbound<T> {
+impl<T> svc::Param<http::Version> for HttpOut<T> {
     fn param(&self) -> http::Version {
         self.version
     }
 }
 
-impl<T> svc::Param<OrigDstAddr> for HttpOutbound<T>
+impl<T> svc::Param<OrigDstAddr> for HttpOut<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
@@ -502,7 +486,7 @@ where
     }
 }
 
-impl<T> svc::Param<tls::ClientId> for HttpOutbound<T>
+impl<T> svc::Param<tls::ClientId> for HttpOut<T>
 where
     T: svc::Param<tls::ClientId>,
 {
@@ -511,7 +495,7 @@ where
     }
 }
 
-impl<T> svc::Param<Remote<ServerAddr>> for HttpOutbound<T>
+impl<T> svc::Param<Remote<ServerAddr>> for HttpOut<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
@@ -521,7 +505,7 @@ where
     }
 }
 
-impl<T> svc::Param<outbound::http::logical::Target> for HttpOutbound<T> {
+impl<T> svc::Param<outbound::http::logical::Target> for HttpOut<T> {
     fn param(&self) -> outbound::http::logical::Target {
         self.target.clone()
     }

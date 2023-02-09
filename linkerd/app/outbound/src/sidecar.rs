@@ -1,4 +1,4 @@
-use crate::{discover, http, Outbound};
+use crate::{discover, http, opaque, Outbound};
 use linkerd_app_core::{
     io, profiles,
     proxy::{
@@ -123,6 +123,23 @@ impl svc::Param<http::logical::Target> for Sidecar {
 
         let OrigDstAddr(addr) = self.orig_dst;
         http::logical::Target::Forward(Remote(ServerAddr(addr)), Default::default())
+    }
+}
+
+impl svc::Param<opaque::logical::Target> for Sidecar {
+    fn param(&self) -> opaque::logical::Target {
+        if let Some(profile) = self.profile.clone() {
+            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                return opaque::logical::Target::Route(addr, profile);
+            }
+
+            if let Some((addr, metadata)) = profile.endpoint() {
+                return opaque::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
+            }
+        }
+
+        let OrigDstAddr(addr) = self.orig_dst;
+        opaque::logical::Target::Forward(Remote(ServerAddr(addr)), Default::default())
     }
 }
 
