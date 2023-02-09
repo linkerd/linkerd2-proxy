@@ -62,7 +62,7 @@ struct Balance<T> {
 
 impl<N> Outbound<N> {
     /// Builds a [`svc::NewService`] stack that builds buffered HTTP load
-    /// balancer services for [`Concrete`] targets.
+    /// balancer services for `T`-typed concrete targets.
     ///
     /// When a balancer has no available inner services, it goes into
     /// 'failfast'. While in failfast, buffered requests are failed and the
