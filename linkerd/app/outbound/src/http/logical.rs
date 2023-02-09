@@ -1,3 +1,5 @@
+//! A stack that routes HTTP requests to concrete backends.
+
 use super::{concrete, retry};
 use crate::Outbound;
 use linkerd_app_core::{

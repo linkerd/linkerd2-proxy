@@ -1,3 +1,6 @@
+//! A stack that (optionally) resolves a service to a set of endpoint replicas
+//! and distributes HTTP requests among them.
+
 use super::{balance, client, normalize_uri};
 use crate::{http, stack_labels, Outbound};
 use ahash::AHashSet;
@@ -89,7 +92,7 @@ impl<N> Outbound<N> {
         T: Clone + Debug + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
-        // Inner stack.
+        // Endpoint stack.
         N: svc::NewService<Endpoint<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
@@ -138,11 +141,14 @@ impl<N> Outbound<N> {
                             Target::Balance(addr, ewma) => {
                                 svc::Either::A(Balance { addr, ewma, parent })
                             }
-                            Target::Forward(addr, meta) => svc::Either::B(Endpoint {
-                                addr,
-                                is_local: false,
-                                metadata: meta,
-                                parent,
+                            Target::Forward(addr, metadata) => svc::Either::B({
+                                let is_local = inbound_ips.contains(&addr.ip());
+                                Endpoint {
+                                    is_local,
+                                    addr,
+                                    metadata,
+                                    parent,
+                                }
                             }),
                         })
                     },

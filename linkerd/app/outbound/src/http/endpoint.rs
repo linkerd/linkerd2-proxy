@@ -1,3 +1,5 @@
+//! A stack that sends requests to an HTTP endpoint.
+
 use super::{NewRequireIdentity, NewStripProxyError, ProxyConnectionClose};
 use crate::{tcp::opaque_transport, Outbound};
 use linkerd_app_core::{
