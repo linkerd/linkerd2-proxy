@@ -48,10 +48,7 @@ impl<C> Outbound<C> {
         C::Future: Send,
         C: Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
-        R: Clone + Send + Sync + 'static,
-        R: Resolve<Concrete, Endpoint = Metadata, Error = Error> + Sync,
-        R::Resolution: Send,
-        R::Future: Send + Unpin,
+        R: Resolve<Concrete, Endpoint = Metadata, Error = Error>,
     {
         self.map_stack(|config, rt, connect| {
             let crate::Config {

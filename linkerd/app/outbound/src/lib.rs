@@ -166,13 +166,8 @@ impl Outbound<()> {
         A: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<tcp::Concrete>>::Resolution: Send,
-        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<http::Concrete>>::Resolution: Send,
-        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         P: profiles::GetProfile<Error = Error>,
     {
         if self.config.ingress_mode {
@@ -192,13 +187,8 @@ impl Outbound<()> {
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<tcp::Concrete>>::Resolution: Send,
-        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<http::Concrete>>::Resolution: Send,
-        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         P: profiles::GetProfile<Error = Error>,
     {
         let logical = self.to_tcp_connect().push_logical(resolve);
@@ -221,13 +211,8 @@ impl Outbound<()> {
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<tcp::Concrete>>::Resolution: Send,
-        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<http::Concrete>>::Resolution: Send,
-        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         P: profiles::GetProfile<Error = Error>,
     {
         // The fallback stack is the same thing as the normal proxy stack, but

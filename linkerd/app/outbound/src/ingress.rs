@@ -88,8 +88,6 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
         P: profiles::GetProfile<Error = Error>,
         R: Clone + Send + Sync + 'static,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        R::Resolution: Send,
-        R::Future: Send + Unpin,
         F: svc::NewService<tcp::Accept, Service = FSvc> + Clone + Send + Sync + 'static,
         FSvc: svc::Service<DetectIo<I>, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,
