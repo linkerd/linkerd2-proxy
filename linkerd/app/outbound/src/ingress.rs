@@ -16,9 +16,6 @@ use std::fmt::Debug;
 use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Accept(tcp::Accept);
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct HttpIngress<T> {
     parent: T,
     version: http::Version,
