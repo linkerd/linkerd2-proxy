@@ -13,7 +13,6 @@ pub mod opaque_transport;
 pub use self::connect::Connect;
 pub use linkerd_app_core::proxy::tcp::Forward;
 
-pub type Logical = crate::logical::Logical<()>;
 pub type Endpoint = crate::endpoint::Endpoint<()>;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]

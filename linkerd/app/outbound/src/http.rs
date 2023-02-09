@@ -29,13 +29,12 @@ mod strip_proxy_error;
 pub(crate) use self::require_id_header::IdentityRequired;
 pub use linkerd_app_core::proxy::http::{self as http, *};
 
-pub type Logical = crate::logical::Logical<Version>;
 pub type Endpoint = crate::endpoint::Endpoint<Version>;
 
 pub type Connect = self::endpoint::Connect<Endpoint>;
 
 #[derive(Clone, Debug)]
-pub struct CanonicalDstHeader(pub Addr);
+struct CanonicalDstHeader(pub Addr);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Http {
@@ -158,6 +157,7 @@ impl From<CanonicalDstHeader> for HeaderPair {
 
 // === impl Logical ===
 
+/*
 impl svc::Param<CanonicalDstHeader> for Logical {
     fn param(&self) -> CanonicalDstHeader {
         CanonicalDstHeader(self.addr())
@@ -184,6 +184,7 @@ impl svc::Param<normalize_uri::DefaultAuthority> for Logical {
         ))
     }
 }
+*/
 
 // === impl Endpoint ===
 
