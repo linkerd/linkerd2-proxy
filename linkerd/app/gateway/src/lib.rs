@@ -89,13 +89,8 @@ where
     O::Connection: Send + Unpin,
     O::Future: Send + Unpin + 'static,
     P: profiles::GetProfile<Error = Error>,
-    R: Clone + Send + Sync + Unpin + 'static,
     R: Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
-    <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,
-    <R as Resolve<outbound::tcp::Concrete>>::Future: Send + Unpin,
     R: Resolve<outbound::http::Concrete, Endpoint = Metadata, Error = Error>,
-    <R as Resolve<outbound::http::Concrete>>::Resolution: Send,
-    <R as Resolve<outbound::http::Concrete>>::Future: Send + Unpin,
 {
     let local_id = identity::LocalId(inbound.identity().name().clone());
 
@@ -215,10 +210,7 @@ where
     O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
     O::Connection: Send + Unpin,
     O::Future: Send + Unpin + 'static,
-    R: Clone + Send + Sync + Unpin + 'static,
     R: Resolve<outbound::http::Concrete, Endpoint = Metadata, Error = Error>,
-    <R as Resolve<outbound::http::Concrete>>::Resolution: Send,
-    <R as Resolve<outbound::http::Concrete>>::Future: Send + Unpin,
 {
     let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
     endpoint
@@ -250,10 +242,7 @@ where
     O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
     O::Connection: Send + Unpin,
     O::Future: Send + Unpin + 'static,
-    R: Clone + Send + Sync + Unpin + 'static,
     R: Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
-    <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,
-    <R as Resolve<outbound::tcp::Concrete>>::Future: Send + Unpin,
 {
     let logical = outbound
         .clone()
