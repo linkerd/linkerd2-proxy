@@ -57,7 +57,7 @@ impl<C> Outbound<C> {
         >,
     >
     where
-        // Http target.
+        // Logical HTTP target.
         T: svc::Param<http::Version>,
         T: svc::Param<logical::Target>,
         T: Clone + Send + Sync + 'static,
