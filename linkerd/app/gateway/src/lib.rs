@@ -18,7 +18,6 @@ use linkerd_app_core::{
 };
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
-use outbound::opaque;
 use std::{
     cmp::{Eq, PartialEq},
     fmt::Debug,
@@ -58,8 +57,7 @@ pub struct HttpOut<T = OrigDstAddr> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Opaq<T>(outbound::Discovery<T>);
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct OpaqOut(outbound::opaque::logical::Target);
+pub type OpaqOut = outbound::opaque::logical::Target;
 
 /// Implements `svc::router::SelectRoute` for outbound HTTP requests. An
 /// `OutboundHttp` target is returned for each request using the request's HTTP
@@ -177,19 +175,16 @@ impl Gateway {
                     // Fail connections were not resolved.
                     let profile = svc::Param::<Option<profiles::Receiver>>::param(&opaq)
                         .ok_or(GatewayDomainInvalid)?;
-
-                    let target = if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                        outbound::opaque::logical::Target::Route(addr, profile)
+                    if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                        Ok(outbound::opaque::logical::Target::Route(addr, profile))
                     } else if let Some((addr, metadata)) = profile.endpoint() {
-                        outbound::opaque::logical::Target::Forward(
+                        Ok(outbound::opaque::logical::Target::Forward(
                             Remote(ServerAddr(addr)),
                             metadata,
-                        )
+                        ))
                     } else {
-                        return Err(GatewayDomainInvalid);
-                    };
-
-                    Ok(OpaqOut(target))
+                        Err(GatewayDomainInvalid)
+                    }
                 },
             )
             .push(self.inbound.authorize_tcp())
@@ -341,14 +336,6 @@ where
 impl<T> svc::Param<Option<profiles::Receiver>> for Opaq<T> {
     fn param(&self) -> Option<profiles::Receiver> {
         self.0.param()
-    }
-}
-
-// === impl OpaqOut ===
-
-impl svc::Param<opaque::logical::Target> for OpaqOut {
-    fn param(&self) -> opaque::logical::Target {
-        self.0.clone()
     }
 }
 
