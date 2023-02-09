@@ -2,7 +2,6 @@ use crate::Outbound;
 use linkerd_app_core::{
     io, profiles, svc,
     transport::{self, addrs::*, metrics},
-    transport_header::SessionProtocol,
     Error,
 };
 
@@ -13,12 +12,14 @@ pub mod opaque_transport;
 pub use self::connect::Connect;
 pub use linkerd_app_core::proxy::tcp::Forward;
 
-pub type Endpoint = crate::endpoint::Endpoint<()>;
+// pub type Endpoint = crate::endpoint::Endpoint<()>;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Accept {
     pub orig_dst: OrigDstAddr,
 }
+
+// === impl Accept ===
 
 impl From<OrigDstAddr> for Accept {
     fn from(orig_dst: OrigDstAddr) -> Self {
@@ -51,11 +52,7 @@ impl svc::Param<transport::labels::Key> for Accept {
     }
 }
 
-impl svc::Param<Option<SessionProtocol>> for Endpoint {
-    fn param(&self) -> Option<SessionProtocol> {
-        None
-    }
-}
+// === impl Outbound ===
 
 impl<N> Outbound<N> {
     /// Wraps a TCP accept stack with tracing and metrics instrumentation.

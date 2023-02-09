@@ -12,6 +12,9 @@ use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash, time};
 use tokio::sync::watch;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Debug)]
 pub enum Target {
     Route(NameAddr, profiles::Receiver),

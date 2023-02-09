@@ -1,4 +1,4 @@
-use super::{concrete, retry, CanonicalDstHeader};
+use super::{concrete, retry};
 use crate::Outbound;
 use linkerd_app_core::{
     classify, metrics,
@@ -9,7 +9,7 @@ use linkerd_app_core::{
     },
     svc,
     transport::addrs::*,
-    Error, Infallible, NameAddr,
+    Error, Infallible, NameAddr, CANONICAL_DST_HEADER,
 };
 use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash, sync::Arc, time};
@@ -64,6 +64,9 @@ struct Routable<T> {
     addr: NameAddr,
     profile: profiles::Receiver,
 }
+
+#[derive(Clone, Debug)]
+struct CanonicalDstHeader(NameAddr);
 
 // === impl Outbound ===
 
@@ -204,7 +207,7 @@ impl<T> svc::Param<watch::Receiver<profiles::Profile>> for Routable<T> {
 
 impl<T> svc::Param<CanonicalDstHeader> for Routable<T> {
     fn param(&self) -> CanonicalDstHeader {
-        CanonicalDstHeader(self.addr.clone().into())
+        CanonicalDstHeader(self.addr.clone())
     }
 }
 
@@ -425,5 +428,16 @@ impl std::hash::Hash for Target {
                 meta.hash(state);
             }
         }
+    }
+}
+
+// === impl CanonicalDstHeader ===
+
+impl From<CanonicalDstHeader> for http::HeaderPair {
+    fn from(CanonicalDstHeader(dst): CanonicalDstHeader) -> http::HeaderPair {
+        http::HeaderPair(
+            http::HeaderName::from_static(CANONICAL_DST_HEADER),
+            http::HeaderValue::from_str(&dst.to_string()).expect("addr must be a valid header"),
+        )
     }
 }

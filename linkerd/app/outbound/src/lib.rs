@@ -31,7 +31,6 @@ use std::{
 };
 
 mod discover;
-pub mod endpoint;
 pub mod http;
 mod ingress;
 mod metrics;
