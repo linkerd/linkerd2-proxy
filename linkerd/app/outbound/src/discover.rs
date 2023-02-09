@@ -14,6 +14,7 @@ use tracing::debug;
 #[cfg(test)]
 mod tests;
 
+/// Target with a discovery result.
 #[derive(Clone, Debug)]
 pub struct Discovery<T> {
     parent: T,
@@ -27,22 +28,24 @@ impl<N> Outbound<N> {
         profiles: P,
     ) -> Outbound<svc::ArcNewService<T, svc::BoxService<Req, NSvc::Response, Error>>>
     where
+        // Discoverable target.
         T: Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + 'static,
+        // Request type.
         Req: Send + 'static,
+        // Discovery client.
+        P: profiles::GetProfile<Error = Error>,
+        // Inner stack.
         N: svc::NewService<Discovery<T>, Service = NSvc>,
         N: Clone + Send + Sync + 'static,
         NSvc: svc::Service<Req, Error = Error> + Send + 'static,
         NSvc::Future: Send,
-        P: profiles::GetProfile<Error = Error>,
     {
         self.map_stack(|config, _, stk| {
             let allow = config.allow_discovery.clone();
             stk.clone()
                 .lift_new_with_target()
                 .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
-                .check_new::<T>()
-                .check_new_service::<T, Req>()
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         // TODO(ver) Should this allowance be parameterized by
@@ -65,8 +68,6 @@ impl<N> Outbound<N> {
                     },
                     stk.into_inner(),
                 )
-                .check_new::<T>()
-                .check_new_service::<T, Req>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })

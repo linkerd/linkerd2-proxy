@@ -70,6 +70,7 @@ impl Outbound<()> {
             .push_opaque(resolve.clone())
             .map_stack(|_, _, stk| stk.push_map_target(OpaqIngress))
             .push_discover(profiles.clone())
+            // TODO replace this cache.
             .push_discover_cache()
             .into_inner();
 
@@ -81,6 +82,7 @@ impl Outbound<()> {
                     .push_filter(HttpIngress::try_from)
             })
             .push_discover(profiles)
+            // TODO replace this cache.
             .push_discover_cache();
 
         http.push_ingress(opaque)
@@ -103,11 +105,17 @@ impl<N> Outbound<N> {
     // are expected to be cached elsewhere, if necessary.
     fn push_ingress<T, I, F, FSvc, NSvc>(self, fallback: F) -> Outbound<svc::ArcNewTcp<T, I>>
     where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + Unpin + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
+        // Target type describing an outbound connection.
+        T: Param<OrigDstAddr>,
+        T: Clone + Send + Sync + Unpin + 'static,
+        // A server-side socket.
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
+        I: std::fmt::Debug + Send + Unpin + 'static,
+        // Fallback opaque stack.
         F: svc::NewService<T, Service = FSvc> + Clone + Send + Sync + 'static,
         FSvc: svc::Service<DetectIo<I>, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,
+        // Ingress HTTP stack.
         N: svc::NewService<HttpIngress<RequestTarget>, Service = NSvc>,
         N: Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<
@@ -189,16 +197,31 @@ impl TryFrom<discover::Discovery<HttpIngress<RequestTarget>>>
     fn try_from(
         parent: discover::Discovery<HttpIngress<RequestTarget>>,
     ) -> std::result::Result<Self, Self::Error> {
-        match &**parent {
-            RequestTarget::Named(addr) => {
-                if let Some(profile) = svc::Param::<Option<profiles::Receiver>>::param(&parent) {
-                    if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                        return Ok(HttpIngress {
-                            version: (*parent).param(),
-                            parent: http::logical::Target::Route(addr, profile),
-                        });
-                    }
+        match (
+            &**parent,
+            svc::Param::<Option<profiles::Receiver>>::param(&parent),
+        ) {
+            (RequestTarget::Named(addr), Some(profile)) => {
+                if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                    return Ok(HttpIngress {
+                        version: (*parent).param(),
+                        parent: http::logical::Target::Route(addr, profile),
+                    });
+                }
 
+                let (addr, metadata) = profile
+                    .endpoint()
+                    .ok_or_else(|| ProfileRequired(addr.clone()))?;
+                Ok(HttpIngress {
+                    version: (*parent).param(),
+                    parent: http::logical::Target::Forward(Remote(ServerAddr(addr)), metadata),
+                })
+            }
+
+            (RequestTarget::Named(addr), None) => Err(ProfileRequired(addr.clone())),
+
+            (RequestTarget::Orig(OrigDstAddr(addr)), profile) => {
+                if let Some(profile) = profile {
                     if let Some((addr, metadata)) = profile.endpoint() {
                         return Ok(HttpIngress {
                             version: (*parent).param(),
@@ -210,16 +233,14 @@ impl TryFrom<discover::Discovery<HttpIngress<RequestTarget>>>
                     }
                 }
 
-                Err(ProfileRequired(addr.clone()))
+                Ok(HttpIngress {
+                    version: (*parent).param(),
+                    parent: http::logical::Target::Forward(
+                        Remote(ServerAddr(*addr)),
+                        Default::default(),
+                    ),
+                })
             }
-
-            RequestTarget::Orig(OrigDstAddr(addr)) => Ok(HttpIngress {
-                version: (*parent).param(),
-                parent: http::logical::Target::Forward(
-                    Remote(ServerAddr(*addr)),
-                    Default::default(),
-                ),
-            }),
         }
     }
 }

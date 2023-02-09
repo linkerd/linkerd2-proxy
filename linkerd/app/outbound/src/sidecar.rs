@@ -36,6 +36,10 @@ impl Outbound<()> {
         // The protocol stack isn't (yet) able to reuse its inner stacks across
         // connections, so we include a (global) idle cache to hold
         //
+        // Discovery results are cached independently of the protocol stack, but
+        // we cache the HTTP and opaque stacks so that load balancers are reused
+        // appropriately.
+        //
         // FIXME(ver) this timeout should be separate from the discovery
         // timeout.
         let idle_timeout = self.config.discovery_idle_timeout;
@@ -53,7 +57,6 @@ impl Outbound<()> {
         opaq.push_protocol(http.into_inner())
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
             .push_discover(profiles)
-            .push_discover_cache()
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }

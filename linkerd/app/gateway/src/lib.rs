@@ -217,11 +217,14 @@ impl Gateway {
     {
         let http = svc::stack(inner)
             .push_map_target(HttpOut::orphan)
+            // Add headers to prevent loops.
             .push(NewHttpGateway::layer(identity::LocalId(
                 self.inbound.identity().name().clone(),
             )))
             .push_on_service(svc::LoadShed::layer())
             .lift_new()
+            // After protocol-downgrade, we need to build an inner stack for
+            // each request-level HTTP version.
             .push(svc::NewOneshotRoute::layer_via(|t: &HttpOut<T>| {
                 ByRequestVersion(t.clone())
             }))
