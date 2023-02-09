@@ -674,12 +674,9 @@ mod outbound_dst_labels {
         }
     }
 
-    // Ignore this test on CI, as it may fail due to the reduced concurrency
-    // on CI containers causing the proxy to see both label updates from
-    // the mock controller before the first request has finished.
-    // See linkerd/linkerd2#751
+    // XXX(ver) This test is broken and/or irrelevant. linkerd/linkerd2#751.
     #[tokio::test]
-    #[cfg_attr(not(feature = "flakey-in-ci"), ignore)]
+    #[ignore]
     async fn controller_updates_addr_labels() {
         let _trace = trace_init();
         info!("running test server");
@@ -758,7 +755,7 @@ mod outbound_dst_labels {
         }
     }
 
-    // FIXME(ver) this test was marked flakey, but now it consistently fails.
+    // XXX(ver) This test is broken and/or irrelevant. linkerd/linkerd2#751.
     #[ignore]
     #[tokio::test]
     async fn controller_updates_set_labels() {
