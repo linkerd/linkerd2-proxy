@@ -1,4 +1,43 @@
 //! The main entrypoint for the proxy.
+//!
+//! # linkerd2-proxy Developer Documentation
+//!
+//! This documentation is intended for developers working in the
+//! `linkerd2-proxy` repo. This is *not* documentation about how to use and
+//! operate Linkerd; for such documentation, see [linkerd.io/docs][docs-site]
+//! instead. Similarly, this is not intended as complete API documentation for
+//! every Linkerd crate; these crates are used as part of the Linkerd proxy
+//! application, and are not intended as general purpose libraries. Instead,
+//! this documentation aims to introduce developers working on the proxy to the
+//! core concepts and architecture of the project.
+//!
+//! The proxy developer documentation assumes that the reader has an
+//! intermediate working knowledge of the Rust programming language, and at
+//! least some familiarity with general networking and distributed systems
+//! principles. An introduction to programming in Rust is out of scope for this
+//! document; readers who are new to Rust may wish to consult the book [_The Rust
+//! Programming Language_][trpl], [Comprehensive Rust][comp-rust], or [other
+//! resources][learn-rust] before continuing.
+//!
+//! Similarly, an understanding of Linkerd, Kubernetes, and service mesh in
+//! general is also a prerequisite. The Linkerd documentation provides [an
+//! introduction to service mesh][whats-mesh] for readers unfamiliar with these
+//! systems.
+//!
+//! [docs-site]: https://linkerd.io/docs
+//! [trpl]: https://doc.rust-lang.org/stable/book/
+//! [comp-rust]: https://google.github.io/comprehensive-rust/
+//! [learn-rust]: https://www.rust-lang.org/learn
+//! [whats-mesh]: https://linkerd.io/what-is-a-service-mesh/
+//!
+//! ## 0. Background
+//!
+//! In order to understand the proxy, it is important to understand some of the
+//! key library dependencies used in its implementation. In particular,
+//! [`tokio`] and [`tower`].
+//!
+//! [`tokio`]: https://tokio.rs
+//! [`tower`]: https://github.com/tower-rs/tower
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
