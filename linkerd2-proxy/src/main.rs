@@ -36,8 +36,37 @@
 //! key library dependencies used in its implementation. In particular,
 //! [`tokio`] and [`tower`].
 //!
+//! Tokio is an asynchronous runtime for Rust applications. For a basic
+//! introduction to Tokio that also introduces asynchronous programming in Rust,
+//! see [the Tokio tutorial][tokio-tutorial]. The [the Async Rust
+//! book][async-book] may also be useful background reading.
+//!
+//! Tower is a library of composable components for network applications.
+//! The core abstraction of Tower, and by extension, the core abstraction of the
+//! Linkerd proxy codebase, is the [`Service` trait]. A `Service` represents an
+//! asynchronous function from a request value to a response value. A `Service`
+//! which represents a network client or server can be composed with other
+//! `Service`s that transform either the request value, the response value, or
+//! both, representing middleware middleware implement various behaviors in a
+//! generic way.
+//!
+//! Tower's design is strongly inspired by that of [Finagle], a similar system
+//! implemented in Scala. The paper ["Your Service as a Function"][funsrv], by
+//! Marius Eriksen, introduces the core concepts behind this design. While the
+//! paper focuses on Finagle in particular, and code examples are given in Scala,
+//! much of the content is applicable to Tower as well. For a gentle
+//! introduction to Tower's `Service` trait, with a discussion of the design
+//! decisions and tradeoffs behind it, I strongly recommend the blog post
+//! ["Inventing the `Service` Trait"][inventing-svc], by David Pedersen.
+//!
 //! [`tokio`]: https://tokio.rs
 //! [`tower`]: https://github.com/tower-rs/tower
+//! [tokio-tutorial]: https://tokio.rs/tokio/tutorial
+//! [async-book]: https://rust-lang.github.io/async-book/
+//! [`Service` trait]: https://docs.rs/tower/latest/tower/trait.Service.html
+//! [Finagle]: https://twitter.github.io/finagle/
+//! [funsrv]: https://monkey.org/~marius/funsrv.pdf
+//! [inventing-svc]: https://tokio.rs/blog/2021-05-14-inventing-the-service-trait
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
