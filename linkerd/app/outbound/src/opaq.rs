@@ -1,9 +1,9 @@
 //! Stacks for proxying 'opaque' TCP connections.
 
-pub mod concrete;
-pub mod forward;
-pub mod logical;
+mod concrete;
+mod forward;
+mod logical;
 
-pub type Logical = crate::logical::Logical<()>;
-pub type Concrete = crate::logical::Concrete<()>;
-pub type Endpoint = crate::endpoint::Endpoint<()>;
+type Logical = crate::logical::Logical<()>;
+type Concrete = crate::logical::Concrete<()>;
+type Endpoint = crate::endpoint::Endpoint<()>;
