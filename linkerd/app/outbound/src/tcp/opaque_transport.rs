@@ -142,7 +142,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::endpoint::Endpoint;
     use futures::future;
     use linkerd_app_core::{
         identity,
@@ -157,19 +156,84 @@ mod test {
     };
     use tower::util::{service_fn, ServiceExt};
 
-    fn ep(metadata: Metadata) -> Endpoint<()> {
-        Endpoint::from_metadata(
-            ([127, 0, 0, 2], 4321),
-            metadata,
-            tls::NoClientTls::NotProvidedByServiceDiscovery,
-            false,
-            &Default::default(),
-        )
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct Endpoint {
+        metadata: Metadata,
+        http: Option<http::Version>,
     }
 
-    fn http_ep(metadata: Metadata, version: http::Version) -> crate::http::Connect {
-        let e = crate::http::Endpoint::from((version, ep(metadata)));
-        crate::http::Connect::from((version, e))
+    fn ep(metadata: Metadata, http: impl Into<Option<http::Version>>) -> Endpoint {
+        Endpoint {
+            metadata,
+            http: http.into(),
+        }
+    }
+
+    impl svc::Param<Remote<ServerAddr>> for Endpoint {
+        fn param(&self) -> Remote<ServerAddr> {
+            Remote(ServerAddr(([127, 0, 0, 2], 4321).into()))
+        }
+    }
+
+    impl svc::Param<tls::ConditionalClientTls> for Endpoint {
+        // This is the same logic as the `client_tls` function in `endpoint.rs`
+        fn param(&self) -> tls::ConditionalClientTls {
+            // If we're transporting an opaque protocol OR we're communicating with
+            // a gateway, then set an ALPN value indicating support for a transport
+            // header.
+            let use_transport_header = self.metadata.opaque_transport_port().is_some()
+                || self.metadata.authority_override().is_some();
+
+            self.metadata
+                .identity()
+                .cloned()
+                .map(move |server_id| {
+                    Conditional::Some(tls::ClientTls {
+                        server_id,
+                        alpn: if use_transport_header {
+                            Some(tls::client::AlpnProtocols(vec![PROTOCOL.into()]))
+                        } else {
+                            None
+                        },
+                    })
+                })
+                .unwrap_or(Conditional::None(
+                    tls::NoClientTls::NotProvidedByServiceDiscovery,
+                ))
+        }
+    }
+
+    impl svc::Param<Option<PortOverride>> for Endpoint {
+        fn param(&self) -> Option<PortOverride> {
+            self.metadata.opaque_transport_port().map(PortOverride)
+        }
+    }
+
+    impl svc::Param<Option<http::AuthorityOverride>> for Endpoint {
+        fn param(&self) -> Option<http::AuthorityOverride> {
+            self.metadata
+                .authority_override()
+                .cloned()
+                .map(http::AuthorityOverride)
+        }
+    }
+
+    impl svc::Param<Option<SessionProtocol>> for Endpoint {
+        // This is the same logic as the `Param<Option<SessionProtocol>>` impl
+        // for `Connect<T>`.
+        fn param(&self) -> Option<SessionProtocol> {
+            // The discovered protocol hint indicates that this endpoint will treat
+            // all connections as opaque TCP streams. Don't send our detected
+            // session protocol as part of a transport header.
+            if self.metadata.protocol_hint() == ProtocolHint::Opaque {
+                return None;
+            }
+
+            match self.http? {
+                http::Version::Http1 => Some(SessionProtocol::Http1),
+                http::Version::H2 => Some(SessionProtocol::Http2),
+            }
+        }
     }
 
     fn expect_header(
@@ -211,7 +275,7 @@ mod test {
             }),
         };
         let (mut io, _meta) = svc
-            .oneshot(ep(Metadata::default()))
+            .oneshot(ep(Metadata::default(), None))
             .await
             .expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
@@ -229,15 +293,18 @@ mod test {
             })),
         };
 
-        let e = ep(Metadata::new(
+        let e = ep(
+            Metadata::new(
+                None,
+                ProtocolHint::Unknown,
+                Some(4143),
+                Some(tls::ServerId(
+                    identity::Name::from_str("server.id").unwrap(),
+                )),
+                None,
+            ),
             None,
-            ProtocolHint::Unknown,
-            Some(4143),
-            Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
-            None,
-        ));
+        );
         let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
@@ -254,15 +321,18 @@ mod test {
             })),
         };
 
-        let e = ep(Metadata::new(
+        let e = ep(
+            Metadata::new(
+                None,
+                ProtocolHint::Unknown,
+                Some(4143),
+                Some(tls::ServerId(
+                    identity::Name::from_str("server.id").unwrap(),
+                )),
+                Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
+            ),
             None,
-            ProtocolHint::Unknown,
-            Some(4143),
-            Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
-            Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
-        ));
+        );
         let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
@@ -279,15 +349,18 @@ mod test {
             })),
         };
 
-        let e = ep(Metadata::new(
+        let e = ep(
+            Metadata::new(
+                None,
+                ProtocolHint::Unknown,
+                Some(4143),
+                Some(tls::ServerId(
+                    identity::Name::from_str("server.id").unwrap(),
+                )),
+                None,
+            ),
             None,
-            ProtocolHint::Unknown,
-            Some(4143),
-            Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
-            None,
-        ));
+        );
         let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
@@ -304,15 +377,18 @@ mod test {
             })),
         };
 
-        let e = ep(Metadata::new(
+        let e = ep(
+            Metadata::new(
+                None,
+                ProtocolHint::Opaque,
+                Some(4143),
+                Some(tls::ServerId(
+                    identity::Name::from_str("server.id").unwrap(),
+                )),
+                None,
+            ),
             None,
-            ProtocolHint::Opaque,
-            Some(4143),
-            Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
-            None,
-        ));
+        );
         let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
@@ -329,15 +405,18 @@ mod test {
             })),
         };
 
-        let e = ep(Metadata::new(
+        let e = ep(
+            Metadata::new(
+                None,
+                ProtocolHint::Opaque,
+                Some(4143),
+                Some(tls::ServerId(
+                    identity::Name::from_str("server.id").unwrap(),
+                )),
+                Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
+            ),
             None,
-            ProtocolHint::Opaque,
-            Some(4143),
-            Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
-            Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
-        ));
+        );
         let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
@@ -354,15 +433,18 @@ mod test {
             })),
         };
 
-        let e = ep(Metadata::new(
+        let e = ep(
+            Metadata::new(
+                None,
+                ProtocolHint::Opaque,
+                Some(4143),
+                Some(tls::ServerId(
+                    identity::Name::from_str("server.id").unwrap(),
+                )),
+                None,
+            ),
             None,
-            ProtocolHint::Opaque,
-            Some(4143),
-            Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
-            None,
-        ));
+        );
         let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
@@ -379,7 +461,7 @@ mod test {
             })),
         };
 
-        let e = http_ep(
+        let e = ep(
             Metadata::new(
                 None,
                 ProtocolHint::Unknown,
@@ -409,7 +491,7 @@ mod test {
             })),
         };
 
-        let e = http_ep(
+        let e = ep(
             Metadata::new(
                 None,
                 ProtocolHint::Opaque,
@@ -439,7 +521,7 @@ mod test {
             })),
         };
 
-        let e = http_ep(
+        let e = ep(
             Metadata::new(
                 None,
                 ProtocolHint::Http2,
