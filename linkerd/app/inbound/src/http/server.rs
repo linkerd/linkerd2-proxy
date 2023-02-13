@@ -20,7 +20,16 @@ use tracing::debug_span;
 struct ServerRescue;
 
 impl<N> Inbound<N> {
-    /// Fails requests when the `NSvc`-typed inner service is not ready.
+    /// Prepares HTTP requests for inbound proxying.
+    ///
+    /// - Emits access logs (when configured).
+    /// - Initializes tracing.
+    /// - Handles proxy errors.
+    /// - Fails requests when the inner service is not ready.
+    /// - Enforces a concurrency limit.
+    /// - Downgrades HTTP/1 requests transported over HTTP/2 connections.
+    /// - Normalizes HTTP/1 requests with origin-form URIs.
+    /// - Sets the `l5d-server-id` header.
     pub fn push_http_server<T, B, NSvc>(
         self,
     ) -> Inbound<
@@ -85,9 +94,7 @@ impl<N> Inbound<N> {
                         .push(svc::LoadShed::layer()),
                 )
                 .push(rt.metrics.http_errors.to_layer())
-                .check_new::<T>()
                 .push(ServerRescue::layer())
-                .check_new::<T>()
                 .push_on_service(
                     svc::layers()
                         .push(http_tracing::server(
@@ -104,6 +111,8 @@ impl<N> Inbound<N> {
         })
     }
 
+    /// Terminates HTTP connections and dispatches HTTP requests to the inner
+    /// service.
     pub fn push_tcp_http_server<T, I, NSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         // Target
