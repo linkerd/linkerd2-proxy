@@ -1,13 +1,8 @@
 // Possibly unused, but useful during development.
 
-pub use crate::proxy::http;
-use crate::{disco_cache::NewCachedDiscover, idle_cache, Error};
+use crate::{disco_cache::NewCachedDiscover, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
-pub use linkerd_reconnect::NewReconnect;
-pub use linkerd_router::{self as router, NewOneshotRoute};
-pub use linkerd_stack::{self as stack, *};
-pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use std::{
     fmt,
     hash::Hash,
@@ -22,6 +17,13 @@ pub use tower::{
     layer::Layer, limit::GlobalConcurrencyLimitLayer as ConcurrencyLimitLayer, service_fn as mk,
     spawn_ready::SpawnReady, Service, ServiceExt,
 };
+
+pub use crate::proxy::http;
+pub use linkerd_idle_cache as idle_cache;
+pub use linkerd_reconnect::NewReconnect;
+pub use linkerd_router::{self as router, NewOneshotRoute};
+pub use linkerd_stack::{self as stack, *};
+pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 
 #[derive(Copy, Clone, Debug)]
 pub struct AlwaysReconnect(ExponentialBackoff);

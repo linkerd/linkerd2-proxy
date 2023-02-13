@@ -142,7 +142,7 @@ impl Config {
                     }
                 },
             )
-            .push(svc::ArcNewService::layer())
+            .lift_new_with_target()
             .push(detect::NewDetectService::layer(svc::stack::CloneParam::from(
                 detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT),
             )))
@@ -155,7 +155,6 @@ impl Config {
                     policy: policy.clone(),
                 }
             })
-            .push(svc::ArcNewService::layer())
             .push(tls::NewDetectTls::<identity::Server, _, _>::layer(TlsParams {
                 identity,
             }))

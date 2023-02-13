@@ -22,7 +22,7 @@ pub mod strip_header;
 pub mod timeout;
 pub mod trace;
 pub mod upgrade;
-mod version;
+pub mod version;
 
 pub use self::{
     balance::NewBalancePeakEwma,
@@ -33,7 +33,7 @@ pub use self::{
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,
-    server::NewServeHttp,
+    server::{NewServeHttp, ServeHttp},
     strip_header::StripHeader,
     timeout::{NewTimeout, ResponseTimeout, ResponseTimeoutError},
     version::Version,
