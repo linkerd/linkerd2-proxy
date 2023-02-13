@@ -90,6 +90,8 @@ impl<L> Layers<L> {
         self.push(layer::mk(NewCloneService::from))
     }
 
+    // Wraps the inner `N`-typed [`NewService`] with a layer that applies the
+    // given target to all inner stacks to produce its service.
     pub fn push_flatten_new<T, N>(
         self,
         target: T,
@@ -195,13 +197,6 @@ impl<S> Stack<S> {
         self,
     ) -> Stack<OnService<impl Layer<Svc, Service = NewCloneService<Svc>> + Clone, S>> {
         self.push_on_service(layer::mk(NewCloneService::from))
-    }
-
-    pub fn flatten_new<T>(self, target: T) -> Stack<S::Service>
-    where
-        S: NewService<T>,
-    {
-        Stack(self.0.new_service(target))
     }
 
     /// Wraps the inner service with a response timeout such that timeout errors are surfaced as a
