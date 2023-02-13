@@ -15,7 +15,6 @@ allow-loopback = []
 test-subscriber = []
 
 [dependencies]
-ahash = "0.8"
 bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }

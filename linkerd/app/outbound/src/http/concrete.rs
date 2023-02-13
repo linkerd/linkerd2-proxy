@@ -3,7 +3,6 @@
 
 use super::{balance, client, normalize_uri};
 use crate::{http, stack_labels, Outbound};
-use ahash::AHashSet;
 use linkerd_app_core::{
     metrics, profiles,
     proxy::{
@@ -17,6 +16,7 @@ use linkerd_app_core::{
     Error, Infallible, NameAddr,
 };
 use std::{
+    collections::HashSet,
     fmt::Debug,
     net::{IpAddr, SocketAddr},
     sync::Arc,
@@ -51,7 +51,7 @@ pub struct NewEndpoint<N> {
     inbound_ips: IpSet,
 }
 
-pub type IpSet = Arc<AHashSet<IpAddr>>;
+pub type IpSet = Arc<HashSet<IpAddr>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Balance<T> {
@@ -368,7 +368,7 @@ impl<N> NewEndpoint<N> {
     pub fn layer(
         inbound_ips: impl IntoIterator<Item = IpAddr>,
     ) -> impl svc::layer::Layer<N, Service = Self> + Clone {
-        let inbound_ips = Arc::new(inbound_ips.into_iter().collect::<AHashSet<_>>());
+        let inbound_ips = Arc::new(inbound_ips.into_iter().collect::<HashSet<_>>());
         svc::layer::mk(move |inner| Self::new(inbound_ips.clone(), inner))
     }
 }
