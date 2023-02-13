@@ -46,8 +46,8 @@ async fn forward() {
             let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
             future::ok::<_, support::io::Error>((io.build(), local))
         }))
-        .push_tcp_concrete(resolve)
-        .push_tcp_logical()
+        .push_opaq_concrete(resolve)
+        .push_opaq_logical()
         .into_inner();
 
     // Build a client to the endpoint and proxy a connection.
@@ -123,8 +123,8 @@ async fn balances() {
             }
             addr => unreachable!("unexpected endpoint: {}", addr),
         }))
-        .push_tcp_concrete(resolve)
-        .push_tcp_logical()
+        .push_opaq_concrete(resolve)
+        .push_opaq_logical()
         .into_inner()
         .new_service(logical);
 

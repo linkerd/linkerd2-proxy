@@ -6,10 +6,8 @@ use linkerd_app_core::{
     Error,
 };
 
-pub mod concrete;
 pub mod connect;
 mod endpoint;
-pub mod logical;
 pub mod opaque_transport;
 
 pub use self::connect::Connect;

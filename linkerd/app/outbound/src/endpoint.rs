@@ -281,7 +281,7 @@ impl<S> Outbound<S> {
             .push_http_server()
             .into_inner();
 
-        let opaque = self.push_tcp_endpoint().push_tcp_forward();
+        let opaque = self.push_tcp_endpoint().push_opaq_forward();
 
         opaque.push_detect_http(http).map_stack(|_, _, stk| {
             stk.instrument(|e: &tcp::Endpoint| info_span!("forward", endpoint = %e.addr))

@@ -32,7 +32,7 @@ impl<C> Outbound<C> {
     /// services.
     //
     // TODO(ver) make the outer target type generic/parameterized.
-    pub fn push_tcp_concrete<I, R>(
+    pub fn push_opaq_concrete<I, R>(
         self,
         resolve: R,
     ) -> Outbound<
