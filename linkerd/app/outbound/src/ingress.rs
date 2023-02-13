@@ -246,16 +246,17 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     .push(http::NewServeHttp::layer(*h2_settings, rt.drain.clone()))
                     .check_new_service::<Http<tcp::Accept>, I>()
                     .push_switch(
-                        |(http, t): (Option<http::Version>, T)| -> Result<_, Infallible> {
+                        |(detected, t): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {
                             let target = tcp::Accept::from(t.param());
-                            if let Some(version) = http {
-                                return Ok(svc::Either::A(Http { version, target }));
+                            if let Some(version) = detect::allow_timeout(detected) {
+                                Ok(svc::Either::A(Http { version, target }))
+                            } else {
+                                Ok(svc::Either::B(target))
                             }
-                            Ok(svc::Either::B(target))
                         },
                         fallback,
                     )
-                    .push_map_target(detect::allow_timeout)
+                    .lift_new_with_target()
                     .push(detect::NewDetectService::layer(detect_http))
                     .check_new_service::<T, I>()
                     .push_on_service(svc::BoxService::layer())

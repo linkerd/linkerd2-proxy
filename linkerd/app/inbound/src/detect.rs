@@ -250,6 +250,7 @@ impl<N> Inbound<N> {
                     },
                     forward.into_inner(),
                 )
+                .lift_new_with_target()
                 .push(detect::NewDetectService::layer(ConfigureHttpDetect));
 
             http.push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))

@@ -25,20 +25,26 @@ impl<N> Outbound<N> {
     // without deteciton.
     pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
+        // Target indicating whether detection should be skipped.
+        T: Param<Option<Skip>>,
+        T: Clone + Send + Sync + 'static,
+        // Inner target passed to the HTTP stack.
+        U: From<(http::Version, T)> + svc::Param<http::Version> + 'static,
+        // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: std::fmt::Debug + Send + Sync + Unpin + 'static,
+        // Inner opaque stack.
         N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc:
             svc::Service<io::EitherIo<I, io::PrefixedIo<I>>, Response = ()> + Send + Sync + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
+        // Inner HTTP stack.
         H: svc::NewService<U, Service = HSvc> + Clone + Send + Sync + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
         HSvc: Clone + Send + Sync + Unpin + 'static,
         HSvc::Error: Into<Error>,
         HSvc::Future: Send,
-        T: Param<Option<Skip>> + Clone + Send + Sync + 'static,
-        U: From<(http::Version, T)> + svc::Param<http::Version> + 'static,
     {
         self.map_stack(|config, rt, tcp| {
             let ServerConfig { h2_settings, .. } = config.proxy.server;
@@ -55,13 +61,6 @@ impl<N> Outbound<N> {
                 .unlift_new()
                 .check_new_new_service::<U, http::ClientHandle, http::Request<_>>()
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
-                .push_map_target(U::from)
-                .instrument(|_: &_| debug_span!("http"))
-                .push(svc::UnwrapOr::layer(
-                    tcp.clone()
-                        .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
-                        .into_inner(),
-                ))
                 .push_on_service(
                     svc::layers()
                         // `DetectService` oneshots the inner service, so we add
@@ -70,8 +69,19 @@ impl<N> Outbound<N> {
                         .push(svc::LoadShed::layer())
                         .push(svc::BoxService::layer()),
                 )
-                .check_new_service::<(Option<http::Version>, T), _>()
-                .push_map_target(detect::allow_timeout)
+                .push_switch(
+                    |(detect, target): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {
+                        if let Some(version) = detect::allow_timeout(detect) {
+                            Ok(svc::Either::A(U::from((version, target))))
+                        } else {
+                            Ok(svc::Either::B(target))
+                        }
+                    },
+                    tcp.clone()
+                        .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
+                        .into_inner(),
+                )
+                .lift_new_with_target()
                 .push(svc::ArcNewService::layer())
                 .push(detect::NewDetectService::layer(config.proxy.detect_http()))
                 .push_switch(
@@ -88,7 +98,6 @@ impl<N> Outbound<N> {
                     tcp.push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
                         .into_inner(),
                 )
-                .check_new_service::<T, _>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
