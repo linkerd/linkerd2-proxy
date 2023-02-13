@@ -29,9 +29,13 @@ impl<N> Outbound<N> {
     // without deteciton.
     pub fn push_detect_http<T, I, M, MSvc>(self) -> Outbound<svc::ArcNewTcp<T, I>>
     where
-        T: Param<Option<Skip>> + Clone + Send + Sync + 'static,
+        // Target indicating whether detection should be skipped.
+        T: Param<Option<Skip>>,
+        T: Clone + Send + Sync + 'static,
+        // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: std::fmt::Debug + Send + Sync + Unpin + 'static,
+        // Inner stack.
         N: svc::NewService<T, Service = M> + Clone + Send + Sync + 'static,
         M: svc::NewService<Option<http::Version>, Service = MSvc> + Clone + Send + Sync + 'static,
         MSvc:

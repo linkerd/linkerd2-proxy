@@ -143,9 +143,7 @@ impl Config {
                     }
                 },
             )
-            .check_new::<(Result<Option<http::Version>, detect::DetectTimeoutError<_>>, Tcp)>()
             .lift_new_with_target()
-            .check_new_new::<Tcp, Result<Option<http::Version>, detect::DetectTimeoutError<_>>>()
             .push(detect::NewDetectService::layer(svc::stack::CloneParam::from(
                 detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT),
             )))
