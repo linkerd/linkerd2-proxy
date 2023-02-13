@@ -26,7 +26,7 @@ impl<C> Outbound<C> {
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.
-    pub fn push_opaque<T, I, R>(
+    pub fn push_opaq<T, I, R>(
         self,
         resolve: R,
     ) -> Outbound<
@@ -51,8 +51,8 @@ impl<C> Outbound<C> {
         C::Future: Send + Unpin,
     {
         self.push_tcp_endpoint()
-            .push_opaque_concrete(resolve)
-            .push_opaque_logical()
+            .push_opaq_concrete(resolve)
+            .push_opaq_logical()
             .map_stack(|_, _, stk| {
                 stk.push_map_target(|t: T| Opaq(t.param()))
                     .push(svc::ArcNewService::layer())

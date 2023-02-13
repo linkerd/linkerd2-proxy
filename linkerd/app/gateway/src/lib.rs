@@ -57,7 +57,7 @@ pub struct HttpOut<T = OrigDstAddr> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Opaq<T>(outbound::Discovery<T>);
 
-pub type OpaqOut = outbound::opaque::logical::Target;
+pub type OpaqOut = outbound::opaq::logical::Target;
 
 /// Implements `svc::router::SelectRoute` for outbound HTTP requests. An
 /// `OutboundHttp` target is returned for each request using the request's HTTP
@@ -81,7 +81,7 @@ impl Gateway {
     pub fn stack<T, I, P, O, H, OSvc, HSvc>(
         self,
         profiles: P,
-        opaque: O,
+        opaq: O,
         http: H,
     ) -> svc::Stack<svc::ArcNewTcp<T, I>>
     where
@@ -132,7 +132,7 @@ impl Gateway {
             };
 
             self.http(http)
-                .push_switch(switch, self.opaque(opaque).into_inner())
+                .push_switch(switch, self.opaq(opaq).into_inner())
                 .into_inner()
         };
 
@@ -151,7 +151,7 @@ impl Gateway {
             .push(svc::ArcNewService::layer())
     }
 
-    fn opaque<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Opaq<T>, I>>
+    fn opaq<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Opaq<T>, I>>
     where
         // Target describing an inbound gateway connection.
         T: svc::Param<GatewayAddr>,
@@ -176,9 +176,9 @@ impl Gateway {
                     let profile = svc::Param::<Option<profiles::Receiver>>::param(&opaq)
                         .ok_or(GatewayDomainInvalid)?;
                     if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                        Ok(outbound::opaque::logical::Target::Route(addr, profile))
+                        Ok(outbound::opaq::logical::Target::Route(addr, profile))
                     } else if let Some((addr, metadata)) = profile.endpoint() {
-                        Ok(outbound::opaque::logical::Target::Forward(
+                        Ok(outbound::opaq::logical::Target::Forward(
                             Remote(ServerAddr(addr)),
                             metadata,
                         ))

@@ -1,7 +1,7 @@
 //! A stack that sends requests to an HTTP endpoint.
 
 use super::{NewRequireIdentity, NewStripProxyError, ProxyConnectionClose};
-use crate::{tcp::opaque_transport, Outbound};
+use crate::{tcp::tagged_transport, Outbound};
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
     proxy::{http, tap},
@@ -188,11 +188,11 @@ impl<T: svc::Param<tls::ConditionalClientTls>> svc::Param<tls::ConditionalClient
     }
 }
 
-impl<T: svc::Param<Option<opaque_transport::PortOverride>>>
-    svc::Param<Option<opaque_transport::PortOverride>> for Connect<T>
+impl<T: svc::Param<Option<tagged_transport::PortOverride>>>
+    svc::Param<Option<tagged_transport::PortOverride>> for Connect<T>
 {
     #[inline]
-    fn param(&self) -> Option<opaque_transport::PortOverride> {
+    fn param(&self) -> Option<tagged_transport::PortOverride> {
         self.inner.param()
     }
 }

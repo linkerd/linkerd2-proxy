@@ -34,7 +34,7 @@ mod discover;
 pub mod http;
 mod ingress;
 mod metrics;
-pub mod opaque;
+pub mod opaq;
 mod protocol;
 mod sidecar;
 pub mod tcp;

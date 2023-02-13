@@ -12,7 +12,7 @@ pub struct ForwardError {
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
-    pub fn push_opaque_forward<T, I>(
+    pub fn push_opaq_forward<T, I>(
         self,
     ) -> Outbound<
         svc::ArcNewService<
@@ -80,7 +80,7 @@ mod tests {
                     Local(ClientAddr(([0, 0, 0, 0], 0).into())),
                 ))
             }))
-            .push_opaque_forward()
+            .push_opaq_forward()
             .into_inner();
 
         let mut io = support::io();

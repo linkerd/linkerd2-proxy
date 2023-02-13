@@ -264,8 +264,8 @@ impl svc::Param<Option<http::detect::Skip>> for Endpoint {
     }
 }
 
-impl svc::Param<Option<tcp::opaque_transport::PortOverride>> for Endpoint {
-    fn param(&self) -> Option<tcp::opaque_transport::PortOverride> {
+impl svc::Param<Option<tcp::tagged_transport::PortOverride>> for Endpoint {
+    fn param(&self) -> Option<tcp::tagged_transport::PortOverride> {
         None
     }
 }

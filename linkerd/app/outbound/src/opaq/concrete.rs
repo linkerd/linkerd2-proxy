@@ -70,7 +70,7 @@ impl<C> Outbound<C> {
     /// services.
     //
     // TODO(ver) make the outer target type generic/parameterized.
-    pub fn push_opaque_concrete<T, I, R>(
+    pub fn push_opaq_concrete<T, I, R>(
         self,
         resolve: R,
     ) -> Outbound<
@@ -189,14 +189,14 @@ impl<T> svc::Param<Remote<ServerAddr>> for Endpoint<T> {
     }
 }
 
-impl<T> svc::Param<Option<crate::tcp::opaque_transport::PortOverride>> for Endpoint<T> {
-    fn param(&self) -> Option<crate::tcp::opaque_transport::PortOverride> {
+impl<T> svc::Param<Option<crate::tcp::tagged_transport::PortOverride>> for Endpoint<T> {
+    fn param(&self) -> Option<crate::tcp::tagged_transport::PortOverride> {
         if self.is_local {
             return None;
         }
         self.metadata
-            .opaque_transport_port()
-            .map(crate::tcp::opaque_transport::PortOverride)
+            .tagged_transport_port()
+            .map(crate::tcp::tagged_transport::PortOverride)
     }
 }
 
@@ -264,7 +264,7 @@ impl<T> svc::Param<tls::ConditionalClientTls> for Endpoint<T> {
         // If we're transporting an opaque protocol OR we're communicating with
         // a gateway, then set an ALPN value indicating support for a transport
         // header.
-        let use_transport_header = self.metadata.opaque_transport_port().is_some()
+        let use_transport_header = self.metadata.tagged_transport_port().is_some()
             || self.metadata.authority_override().is_some();
         self.metadata
             .identity()

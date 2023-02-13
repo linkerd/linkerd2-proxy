@@ -20,15 +20,15 @@ use tracing::{debug, trace, warn};
 pub struct PortOverride(pub u16);
 
 #[derive(Clone, Debug)]
-pub struct OpaqueTransport<S> {
+pub struct TaggedTransport<S> {
     inner: S,
 }
 
-// === impl OpaqueTransport ===
+// === impl TaggedTransport ===
 
-impl<S> OpaqueTransport<S> {
+impl<S> TaggedTransport<S> {
     pub fn layer() -> impl svc::Layer<S, Service = Self> + Copy {
-        svc::layer::mk(|inner| OpaqueTransport { inner })
+        svc::layer::mk(|inner| TaggedTransport { inner })
     }
 
     /// Determines whether the connection has negotiated support for the
@@ -43,7 +43,7 @@ impl<S> OpaqueTransport<S> {
     }
 }
 
-impl<T, S> svc::Service<T> for OpaqueTransport<S>
+impl<T, S> svc::Service<T> for TaggedTransport<S>
 where
     T: svc::Param<tls::ConditionalClientTls>
         + svc::Param<Remote<ServerAddr>>
@@ -140,7 +140,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    // use crate::endpoint::Endpoint;
     use futures::future;
     use linkerd_app_core::{
         identity,
@@ -206,7 +205,7 @@ mod test {
     async fn plain() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(|ep: Connect| {
                 let Remote(ServerAddr(sa)) = ep.addr;
                 assert_eq!(sa.port(), 4321);
@@ -230,7 +229,7 @@ mod test {
     async fn opaque_no_name() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(|ep: Connect| {
                 let Remote(ServerAddr(sa)) = ep.addr;
                 assert_eq!(sa.port(), 4143);
@@ -268,7 +267,7 @@ mod test {
     async fn opaque_named_with_port() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(|ep: Connect| {
                 let Remote(ServerAddr(sa)) = ep.addr;
                 assert_eq!(sa.port(), 4143);
@@ -306,7 +305,7 @@ mod test {
     async fn opaque_named_no_port() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(|ep: Connect| {
                 let Remote(ServerAddr(sa)) = ep.addr;
                 assert_eq!(sa.port(), 4143);

@@ -1,4 +1,4 @@
-use crate::{discover, http, opaque, tcp, Config, Outbound};
+use crate::{discover, http, opaq, tcp, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, io, metrics, profiles,
@@ -67,7 +67,7 @@ impl Outbound<()> {
         // on this ingress stack.
         let opaque = self
             .to_tcp_connect()
-            .push_opaque(resolve.clone())
+            .push_opaq(resolve.clone())
             .map_stack(|_, _, stk| stk.push_map_target(OpaqIngress))
             .push_discover(profiles.clone())
             // TODO replace this cache.
@@ -296,8 +296,8 @@ impl Param<tls::ConditionalClientTls> for HttpIngress<OrigDstAddr> {
     }
 }
 
-impl Param<Option<tcp::opaque_transport::PortOverride>> for HttpIngress<OrigDstAddr> {
-    fn param(&self) -> Option<tcp::opaque_transport::PortOverride> {
+impl Param<Option<tcp::tagged_transport::PortOverride>> for HttpIngress<OrigDstAddr> {
+    fn param(&self) -> Option<tcp::tagged_transport::PortOverride> {
         None
     }
 }
@@ -430,22 +430,22 @@ where
     }
 }
 
-impl<T> Param<opaque::logical::Target> for OpaqIngress<T>
+impl<T> Param<opaq::logical::Target> for OpaqIngress<T>
 where
     T: svc::Param<Option<profiles::Receiver>>,
     T: svc::Param<OrigDstAddr>,
 {
-    fn param(&self) -> opaque::logical::Target {
+    fn param(&self) -> opaq::logical::Target {
         if let Some(profile) = self.0.param() {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaque::logical::Target::Route(addr, profile);
+                return opaq::logical::Target::Route(addr, profile);
             }
 
             if let Some((addr, metadata)) = profile.endpoint() {
-                return opaque::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
+                return opaq::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
             }
         }
 
-        opaque::logical::Target::Forward(self.param(), Default::default())
+        opaq::logical::Target::Forward(self.param(), Default::default())
     }
 }

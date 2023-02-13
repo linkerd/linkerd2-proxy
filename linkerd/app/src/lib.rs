@@ -191,7 +191,7 @@ impl Config {
 
         let dst_addr = dst.addr.clone();
         let gateway = {
-            let opaq = outbound.to_tcp_connect().push_opaque(dst.resolve.clone());
+            let opaq = outbound.to_tcp_connect().push_opaq(dst.resolve.clone());
             let http = outbound.to_tcp_connect().push_http(dst.resolve.clone());
             let gw =
                 gateway::Gateway::new(gateway, inbound.clone(), outbound.clone().with_stack(()));

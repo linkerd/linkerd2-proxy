@@ -1,4 +1,4 @@
-use crate::{discover, http, opaque, Outbound};
+use crate::{discover, http, opaq, Outbound};
 use linkerd_app_core::{
     io, profiles,
     proxy::{
@@ -46,7 +46,7 @@ impl Outbound<()> {
 
         let opaq = self
             .to_tcp_connect()
-            .push_opaque(resolve.clone())
+            .push_opaq(resolve.clone())
             .map_stack(move |_, _, stk| stk.push_new_idle_cached(idle_timeout));
 
         let http = self
@@ -131,20 +131,20 @@ impl svc::Param<http::logical::Target> for Sidecar {
     }
 }
 
-impl svc::Param<opaque::logical::Target> for Sidecar {
-    fn param(&self) -> opaque::logical::Target {
+impl svc::Param<opaq::logical::Target> for Sidecar {
+    fn param(&self) -> opaq::logical::Target {
         if let Some(profile) = self.profile.clone() {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaque::logical::Target::Route(addr, profile);
+                return opaq::logical::Target::Route(addr, profile);
             }
 
             if let Some((addr, metadata)) = profile.endpoint() {
-                return opaque::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
+                return opaq::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
             }
         }
 
         let OrigDstAddr(addr) = self.orig_dst;
-        opaque::logical::Target::Forward(Remote(ServerAddr(addr)), Default::default())
+        opaq::logical::Target::Forward(Remote(ServerAddr(addr)), Default::default())
     }
 }
 
