@@ -13,7 +13,6 @@ on:
     paths:
       - "**/Cargo.toml"
       - "**/*.rs"
-      - .github/actions/list-changed-crates/*
       - .github/workflows/check-each.yml
       - justfile
 
@@ -25,8 +24,9 @@ env:
 
 jobs:
   list-changed-crates:
-    timeout-minutes: 3
+    timeout-minutes: 10
     runs-on: ubuntu-latest
+    container: docker://ghcr.io/linkerd/dev:v38-rust
     steps:
       - uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
       - uses: tj-actions/changed-files@210cc839c24f532fe4fbf510b7b3314ca9a2b90b
@@ -35,15 +35,12 @@ jobs:
           files: |
             **/Cargo.toml
             **/*.rs
-            .github/actions/list-changed-crates/*
             .github/workflows/check-each.yml
       - name: List changed crates
-        id: list-changed
-        uses: ./.github/actions/list-changed-crates
-        with:
-          files: ${{ steps.changed-files.outputs.all_changed_files }}
+        id: changed-crates
+        run: ./.github/list-crates.sh ${{ steps.changed-files.outputs.all_changed_files }}
     outputs:
-      crates: ${{ steps.list-changed.outputs.crates }}
+      crates: ${{ steps.changed-crates.outputs.crates }}
 
   check-each:
     needs: list-changed-crates
