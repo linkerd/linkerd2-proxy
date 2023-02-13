@@ -24,7 +24,7 @@ pub struct ConcreteError {
 
 impl<C> Outbound<C> {
     /// Builds a [`svc::NewService`] stack that builds buffered opaque TCP load
-    /// balancer services for [`Concrete`] targets.
+    /// balancer services for `Concrete` targets.
     ///
     /// When a balancer has no available inner services, it goes into
     /// 'failfast'. While in failfast, buffered requests are failed and the
