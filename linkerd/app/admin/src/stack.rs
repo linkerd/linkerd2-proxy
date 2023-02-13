@@ -1,7 +1,7 @@
 use linkerd_app_core::{
     classify,
     config::ServerConfig,
-    detect, drain, errors, identity, io,
+    detect, drain, errors, identity,
     metrics::{self, FmtMetrics},
     proxy::http,
     serve,
@@ -101,7 +101,6 @@ impl Config {
             .push_on_service(http::BoxResponse::layer())
             .unlift_new()
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
-            .check_new::<Http>()
             .push_filter(
                 |(http, tcp): (
                     Result<Option<http::Version>, detect::DetectTimeoutError<_>>,
@@ -147,9 +146,7 @@ impl Config {
             .push(detect::NewDetectService::layer(svc::stack::CloneParam::from(
                 detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT),
             )))
-            .check_new::<Tcp>()
             .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
-            .check_new::<Tcp>()
             .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
                 Tcp {
                     tls,
@@ -161,7 +158,6 @@ impl Config {
             .push(tls::NewDetectTls::<identity::Server, _, _>::layer(TlsParams {
                 identity,
             }))
-            .check_new_service::<B::Addrs, io::ScopedIo<B::Io>>()
             .into_inner();
 
         let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
