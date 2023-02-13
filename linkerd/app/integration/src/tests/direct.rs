@@ -42,7 +42,7 @@ async fn h2_hinted() {
     assert_eq!(client.get("/").await, "hello");
 }
 
-/// Reproduces linkerd/linkerd2#9888. A proxy receives HTTP traffic direct
+/// Reproduces linkerd/linkerd2#9888. A proxy receives HTTP direct
 /// traffic with a transport header, and the port is also in the
 /// `INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION` env var.
 #[tokio::test]
