@@ -15,7 +15,7 @@ pub struct Metadata {
     /// destination understands.
     protocol_hint: ProtocolHint,
 
-    opaque_transport_port: Option<u16>,
+    tagged_transport_port: Option<u16>,
 
     /// How to verify TLS for the endpoint.
     identity: Option<ServerId>,
@@ -41,7 +41,7 @@ impl Default for Metadata {
             labels: Labels::default(),
             identity: None,
             authority_override: None,
-            opaque_transport_port: None,
+            tagged_transport_port: None,
             protocol_hint: ProtocolHint::Unknown,
         }
     }
@@ -51,14 +51,14 @@ impl Metadata {
     pub fn new(
         labels: impl IntoIterator<Item = (String, String)>,
         protocol_hint: ProtocolHint,
-        opaque_transport_port: Option<u16>,
+        tagged_transport_port: Option<u16>,
         identity: Option<ServerId>,
         authority_override: Option<Authority>,
     ) -> Self {
         Self {
             labels: labels.into_iter().collect::<BTreeMap<_, _>>().into(),
             protocol_hint,
-            opaque_transport_port,
+            tagged_transport_port,
             identity,
             authority_override,
         }
@@ -77,8 +77,8 @@ impl Metadata {
         self.identity.as_ref()
     }
 
-    pub fn opaque_transport_port(&self) -> Option<u16> {
-        self.opaque_transport_port
+    pub fn tagged_transport_port(&self) -> Option<u16> {
+        self.tagged_transport_port
     }
 
     pub fn authority_override(&self) -> Option<&Authority> {
@@ -87,7 +87,7 @@ impl Metadata {
 
     pub fn clear_upgrade(&mut self) {
         self.protocol_hint = ProtocolHint::Unknown;
-        self.opaque_transport_port = None;
+        self.tagged_transport_port = None;
         self.authority_override = None;
     }
 }

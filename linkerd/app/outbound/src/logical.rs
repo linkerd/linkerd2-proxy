@@ -160,8 +160,8 @@ impl<C> Outbound<C> {
 
         let opaque = self
             .push_tcp_endpoint()
-            .push_tcp_concrete(resolve)
-            .push_tcp_logical()
+            .push_opaq_concrete(resolve)
+            .push_opaq_logical()
             // The detect stack doesn't cache its inner service, so we need a
             // process-global cache of logical TCP stacks.
             .map_stack(|config, _, stk| stk.push_new_idle_cached(config.discovery_idle_timeout));
