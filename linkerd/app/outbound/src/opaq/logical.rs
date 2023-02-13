@@ -1,4 +1,5 @@
-use super::{Concrete, Logical, Outbound};
+use super::{Concrete, Logical};
+use crate::Outbound;
 use linkerd_app_core::{
     io,
     profiles::{self, Profile},

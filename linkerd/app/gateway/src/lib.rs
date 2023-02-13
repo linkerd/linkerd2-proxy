@@ -247,12 +247,12 @@ where
     let logical = outbound
         .clone()
         .push_tcp_endpoint()
-        .push_tcp_concrete(resolve)
-        .push_tcp_logical();
+        .push_opaq_concrete(resolve)
+        .push_opaq_logical();
     let endpoint = outbound
         .clone()
         .push_tcp_endpoint()
-        .push_tcp_forward()
+        .push_opaq_forward()
         .into_stack();
     let inbound_ips = outbound.config().inbound_ips.clone();
     endpoint

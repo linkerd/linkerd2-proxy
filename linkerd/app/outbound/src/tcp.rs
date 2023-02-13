@@ -6,10 +6,9 @@ use linkerd_app_core::{
     Error,
 };
 
-pub mod concrete;
 pub mod connect;
-pub mod logical;
-pub mod opaque_transport;
+mod endpoint;
+pub mod tagged_transport;
 
 pub use self::connect::Connect;
 pub use linkerd_app_core::proxy::tcp::Forward;
