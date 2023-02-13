@@ -8,6 +8,7 @@ use linkerd_app_core::{
 
 pub mod concrete;
 pub mod connect;
+mod endpoint;
 pub mod logical;
 pub mod opaque_transport;
 
