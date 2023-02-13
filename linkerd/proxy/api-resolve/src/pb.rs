@@ -24,7 +24,7 @@ pub fn to_addr_meta(
         .map(|(k, v)| (k.clone(), v.clone()));
 
     let mut proto_hint = ProtocolHint::Unknown;
-    let mut opaque_transport_port = None;
+    let mut tagged_transport_port = None;
     if let Some(hint) = pb.protocol_hint {
         if let Some(proto) = hint.protocol {
             match proto {
@@ -36,7 +36,7 @@ pub fn to_addr_meta(
 
         if let Some(OpaqueTransport { inbound_port }) = hint.opaque_transport {
             if inbound_port > 0 && inbound_port < u16::MAX as u32 {
-                opaque_transport_port = Some(inbound_port as u16);
+                tagged_transport_port = Some(inbound_port as u16);
             }
         }
     }
@@ -45,7 +45,7 @@ pub fn to_addr_meta(
     let meta = Metadata::new(
         labels,
         proto_hint,
-        opaque_transport_port,
+        tagged_transport_port,
         tls_id,
         authority_override,
     );
