@@ -75,6 +75,8 @@ impl<C> Outbound<C> {
             .push_http_logical()
             .push_http_server()
             .map_stack(move |_, _, stk| {
+                // Use a dedicated target type to configure parameters for the
+                // HTTP stack.
                 stk.push_map_target(Http::new)
                     .push(svc::ArcNewService::layer())
                     .check_new_service::<T, http::Request<http::BoxBody>>()

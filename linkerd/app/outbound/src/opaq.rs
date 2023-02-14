@@ -21,8 +21,7 @@ struct Opaq(logical::Target);
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
-    /// Builds a stack that handles protocol detection as well as routing and
-    /// load balancing for a single logical destination.
+    /// Builds a stack that proxies opaque TCP connections.
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.

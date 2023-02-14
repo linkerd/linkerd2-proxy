@@ -1,6 +1,6 @@
 use crate::{http, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
-use linkerd_app_core::{io, svc, Error};
+use linkerd_app_core::{detect, io, svc, Error, Infallible};
 use std::{fmt::Debug, hash::Hash};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -9,22 +9,32 @@ pub struct Http<T> {
     parent: T,
 }
 
+/// Parameter type indicating how the proxy should handle a connection.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Protocol {
+    Http1,
+    Http2,
+    Detect,
+    Opaque,
+}
+
 // === impl Outbound ===
 
 impl<N> Outbound<N> {
     /// Builds a stack that handles protocol detection as well as routing and
     /// load balancing for a single logical destination.
     ///
-    /// This stack uses caching so that a router/load-balancer may be reused
-    /// across multiple connections.
+    /// The inner stack is built once for each `T` target when the protocol is
+    /// known. When `Protocol::Detect` is used, the inner stack is built for
+    /// each connection.
     pub fn push_protocol<T, I, H, HSvc, NSvc>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type indicating whether detection should be skipped.
         // TODO(ver): Enable additional hinting via discovery.
-        T: svc::Param<Option<http::detect::Skip>>,
+        T: svc::Param<Protocol>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         // Server-side socket.
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         // HTTP request stack.
         H: svc::NewService<Http<T>, Service = HSvc>,
@@ -43,26 +53,58 @@ impl<N> Outbound<N> {
         NSvc: Clone + Send + Sync + Unpin + 'static,
         NSvc::Future: Send,
     {
-        let http = self.clone().with_stack(http).map_stack(|config, rt, stk| {
+        let opaq = self.clone().into_stack();
+
+        let http = self.with_stack(http).map_stack(|config, rt, stk| {
             stk.push_on_service(http::BoxRequest::layer())
                 .unlift_new()
                 .push(http::NewServeHttp::layer(
                     config.proxy.server.h2_settings,
                     rt.drain.clone(),
                 ))
-                .check_new::<Http<T>>()
         });
 
-        let detect = http
-            .map_stack(|_, _, http| {
-                http.push_map_target(Http::from)
-                    .push(svc::UnwrapOr::layer(self.clone().into_inner()))
-                    .lift_new_with_target::<(Option<http::Version>, T)>()
-            })
-            .push_detect_http();
+        // The inner stacks are built for each connection and not cached.
+        let detect = http.clone().map_stack(|config, _, http| {
+            http.push_switch(
+                |(result, parent): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {
+                    Ok(match detect::allow_timeout(result) {
+                        Some(version) => svc::Either::A(Http { version, parent }),
+                        None => svc::Either::B(parent),
+                    })
+                },
+                opaq.clone().into_inner(),
+            )
+            // `DetectService` oneshots the inner service, so we add
+            // a loadshed to prevent leaking tasks if (for some
+            // unexpected reason) the inner service is not ready.
+            .push_on_service(svc::LoadShed::layer())
+            .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
+            .lift_new_with_target::<(detect::Result<http::Version>, T)>()
+            .push(detect::NewDetectService::layer(config.proxy.detect_http()))
+        });
 
-        detect.map_stack(|_, _, stk| {
-            stk.push_on_service(svc::BoxService::layer())
+        http.map_stack(|_, _, http| {
+            http.push_switch(Ok::<_, Infallible>, opaq.clone().into_inner())
+                .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
+                .push_switch(
+                    |parent: T| -> Result<_, Infallible> {
+                        match parent.param() {
+                            Protocol::Http1 => Ok(svc::Either::A(svc::Either::A(Http {
+                                version: http::Version::Http1,
+                                parent,
+                            }))),
+                            Protocol::Http2 => Ok(svc::Either::A(svc::Either::A(Http {
+                                version: http::Version::H2,
+                                parent,
+                            }))),
+                            Protocol::Opaque => Ok(svc::Either::A(svc::Either::B(parent))),
+                            Protocol::Detect => Ok(svc::Either::B(parent)),
+                        }
+                    },
+                    detect.into_inner(),
+                )
+                .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
     }

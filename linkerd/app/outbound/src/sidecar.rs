@@ -1,4 +1,4 @@
-use crate::{discover, http, opaq, Outbound};
+use crate::{discover, http, opaq, protocol::Protocol, Outbound};
 use linkerd_app_core::{
     io, profiles,
     proxy::{
@@ -33,15 +33,11 @@ impl Outbound<()> {
         // Endpoint resolver
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        // The protocol stack isn't (yet) able to reuse its inner stacks across
-        // connections, so we include a (global) idle cache to hold
+        // Cache the HTTP and opaque stacks so that a router/load-balancer may
+        // be reused across connections.
         //
-        // Discovery results are cached independently of the protocol stack, but
-        // we cache the HTTP and opaque stacks so that load balancers are reused
-        // appropriately.
-        //
-        // FIXME(ver) this timeout should be separate from the discovery
-        // timeout.
+        // TODO(ver) Should this timeout be separate from the discovery timeout?
+        // TODO(ver) decouple balancer discovery timeout from stack timeout.
         let idle_timeout = self.config.discovery_idle_timeout;
 
         let opaq = self
@@ -55,8 +51,12 @@ impl Outbound<()> {
             .map_stack(move |_, _, stk| stk.push_new_idle_cached(idle_timeout));
 
         opaq.push_protocol(http.into_inner())
+            // Use a dedicated target type to bind discovery results to the
+            // outbound sidecar stack configuration.
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
+            // Access cached discovery information.
             .push_discover(profiles)
+            // Instrument server-side connections for telemetry.
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
     }
@@ -102,15 +102,15 @@ impl svc::Param<Option<profiles::Receiver>> for Sidecar {
     }
 }
 
-impl svc::Param<Option<http::detect::Skip>> for Sidecar {
-    fn param(&self) -> Option<http::detect::Skip> {
+impl svc::Param<Protocol> for Sidecar {
+    fn param(&self) -> Protocol {
         if let Some(rx) = svc::Param::<Option<profiles::Receiver>>::param(self) {
             if rx.is_opaque_protocol() {
-                return Some(http::detect::Skip);
+                return Protocol::Opaque;
             }
         }
 
-        None
+        Protocol::Detect
     }
 }
 
