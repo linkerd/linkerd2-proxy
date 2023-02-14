@@ -5,18 +5,16 @@ use linkerd_app_core::{
     Error,
 };
 
-pub mod connect;
-pub mod endpoint;
+mod connect;
+mod endpoint;
 pub mod tagged_transport;
 
 pub use self::connect::Connect;
 pub use linkerd_app_core::proxy::tcp::Forward;
 
-// pub type Endpoint = crate::endpoint::Endpoint<()>;
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Accept {
-    pub orig_dst: OrigDstAddr,
+    orig_dst: OrigDstAddr,
 }
 
 // === impl Accept ===
