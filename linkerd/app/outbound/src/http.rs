@@ -18,8 +18,7 @@ pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
     profiles::{self, LogicalAddr},
     proxy::{api_resolve::ProtocolHint, tap},
-    svc::Param,
-    tls, Addr, Conditional, CANONICAL_DST_HEADER,
+    svc, tls, Addr, Conditional, CANONICAL_DST_HEADER,
 };
 use std::{net::SocketAddr, str::FromStr};
 
@@ -55,25 +54,25 @@ impl From<(Version, tcp::Logical)> for Logical {
     }
 }
 
-impl Param<CanonicalDstHeader> for Logical {
+impl svc::Param<CanonicalDstHeader> for Logical {
     fn param(&self) -> CanonicalDstHeader {
         CanonicalDstHeader(self.addr())
     }
 }
 
-impl Param<Version> for Logical {
+impl svc::Param<Version> for Logical {
     fn param(&self) -> Version {
         self.protocol
     }
 }
 
-impl Param<Option<Version>> for Logical {
+impl svc::Param<Option<Version>> for Logical {
     fn param(&self) -> Option<Version> {
         Some(self.protocol)
     }
 }
 
-impl Param<normalize_uri::DefaultAuthority> for Logical {
+impl svc::Param<normalize_uri::DefaultAuthority> for Logical {
     fn param(&self) -> normalize_uri::DefaultAuthority {
         normalize_uri::DefaultAuthority(Some(
             uri::Authority::from_str(&self.logical_addr.to_string())
@@ -98,7 +97,7 @@ impl From<(Version, tcp::Endpoint)> for Endpoint {
     }
 }
 
-impl Param<normalize_uri::DefaultAuthority> for Endpoint {
+impl svc::Param<normalize_uri::DefaultAuthority> for Endpoint {
     fn param(&self) -> normalize_uri::DefaultAuthority {
         if let Some(LogicalAddr(ref a)) = self.logical_addr {
             normalize_uri::DefaultAuthority(Some(
@@ -114,13 +113,13 @@ impl Param<normalize_uri::DefaultAuthority> for Endpoint {
     }
 }
 
-impl Param<Version> for Endpoint {
+impl svc::Param<Version> for Endpoint {
     fn param(&self) -> Version {
         self.protocol
     }
 }
 
-impl Param<client::Settings> for Endpoint {
+impl svc::Param<client::Settings> for Endpoint {
     fn param(&self) -> client::Settings {
         match self.protocol {
             Version::H2 => client::Settings::H2,

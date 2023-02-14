@@ -90,6 +90,19 @@ impl<L> Layers<L> {
         self.push(layer::mk(NewCloneService::from))
     }
 
+    // Wraps the inner `N`-typed [`NewService`] with a layer that applies the
+    // given target to all inner stacks to produce its service.
+    pub fn push_flatten_new<T, N>(
+        self,
+        target: T,
+    ) -> Layers<Pair<L, impl Layer<N, Service = N::Service> + Clone>>
+    where
+        T: Clone,
+        N: NewService<T>,
+    {
+        self.push(layer::mk(move |inner: N| inner.new_service(target.clone())))
+    }
+
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, NewInstrumentLayer<G>>> {
         self.push(NewInstrumentLayer::new(get_span))
     }

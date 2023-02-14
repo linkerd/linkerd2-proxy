@@ -12,8 +12,12 @@ use std::{
 pub struct BoxRequest<B, S>(S, PhantomData<fn(B)>);
 
 impl<B, S> BoxRequest<B, S> {
+    pub fn new(inner: S) -> Self {
+        BoxRequest(inner, PhantomData)
+    }
+
     pub fn layer() -> impl layer::Layer<S, Service = Self> + Clone + Copy {
-        layer::mk(|inner| BoxRequest(inner, PhantomData))
+        layer::mk(Self::new)
     }
 }
 

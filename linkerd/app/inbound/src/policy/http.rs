@@ -96,9 +96,9 @@ impl<N> NewHttpPolicy<N> {
 
 impl<T, N> svc::NewService<T> for NewHttpPolicy<N>
 where
-    T: svc::Param<AllowPolicy>
-        + svc::Param<Remote<ClientAddr>>
-        + svc::Param<tls::ConditionalServerTls>,
+    T: svc::Param<AllowPolicy>,
+    T: svc::Param<Remote<ClientAddr>>,
+    T: svc::Param<tls::ConditionalServerTls>,
     N: Clone,
 {
     type Service = HttpPolicyService<T, N>;
