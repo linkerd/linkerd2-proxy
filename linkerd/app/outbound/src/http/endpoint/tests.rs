@@ -3,12 +3,11 @@ use crate::{http, tcp, test_util::*};
 use ::http::header::{CONNECTION, UPGRADE};
 use linkerd_app_core::{
     io,
-    proxy::api_resolve::Metadata,
+    proxy::api_resolve::{ProtocolHint},
     svc::{NewService, ServiceExt},
     Infallible,
 };
 use std::net::SocketAddr;
-use support::resolver::ProtocolHint;
 
 static WAS_ORIG_PROTO: &str = "request-orig-proto";
 
@@ -32,7 +31,7 @@ async fn http11_forward() {
     let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
         version: http::Version::Http1,
-        metadata: Metadata::default(),
+        hint: ProtocolHint::Unknown,
     });
 
     let req = http::Request::builder()
@@ -65,7 +64,7 @@ async fn http2_forward() {
     let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
         version: http::Version::H2,
-        metadata: Metadata::default(),
+        hint: ProtocolHint::Unknown,
     });
 
     let req = http::Request::builder()
@@ -100,7 +99,7 @@ async fn orig_proto_upgrade() {
     let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
         version: http::Version::Http1,
-        metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
+        hint: ProtocolHint::Http2,
     });
 
     let req = http::Request::builder()
@@ -154,7 +153,7 @@ async fn orig_proto_skipped_on_http_upgrade() {
     let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
         version: http::Version::Http1,
-        metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
+        hint: ProtocolHint::Http2,
     });
 
     let req = http::Request::builder()
@@ -193,7 +192,7 @@ async fn orig_proto_http2_noop() {
     let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
         version: http::Version::H2,
-        metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
+        hint: ProtocolHint::Http2,
     });
 
     let req = http::Request::builder()
@@ -240,7 +239,7 @@ fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Endpoint {
     addr: Remote<ServerAddr>,
-    metadata: Metadata,
+    hint: ProtocolHint,
     version: http::Version,
 }
 
@@ -309,7 +308,7 @@ impl svc::Param<http::client::Settings> for Endpoint {
     fn param(&self) -> http::client::Settings {
         match self.version {
             http::Version::H2 => http::client::Settings::H2,
-            http::Version::Http1 => match self.metadata.protocol_hint() {
+            http::Version::Http1 => match self.hint {
                 ProtocolHint::Unknown => http::client::Settings::Http1,
                 ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
             },
