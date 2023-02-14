@@ -16,8 +16,9 @@ mod tests;
 pub(crate) use self::gateway::NewHttpGateway;
 pub(crate) use linkerd_app_core::proxy::http::*;
 
+/// Target for outbound HTTP gateway requests.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Target<T = OrigDstAddr> {
+pub struct Target<T = ()> {
     addr: GatewayAddr,
     target: outbound::http::logical::Target,
     version: http::Version,
@@ -58,7 +59,8 @@ impl Gateway {
         NSvc::Future: Send + 'static,
     {
         let http = svc::stack(inner)
-            .push_map_target(Target::orphan)
+            // Discard `T` and its associated client-specific metadata.
+            .push_map_target(Target::discard_parent)
             // Add headers to prevent loops.
             .push(NewHttpGateway::layer(identity::LocalId(
                 self.inbound.identity().name().clone(),
@@ -72,22 +74,27 @@ impl Gateway {
             }))
             .push_filter(
                 |(_, parent): (_, Http<T>)| -> Result<_, GatewayDomainInvalid> {
-                    let profile = svc::Param::<Option<profiles::Receiver>>::param(&parent)
-                        .ok_or(GatewayDomainInvalid)?;
+                    let target = {
+                        let profile = svc::Param::<Option<profiles::Receiver>>::param(&parent)
+                            .ok_or(GatewayDomainInvalid)?;
 
-                    let target = if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                        outbound::http::logical::Target::Route(addr, profile)
-                    } else if let Some((addr, metadata)) = profile.endpoint() {
-                        outbound::http::logical::Target::Forward(Remote(ServerAddr(addr)), metadata)
-                    } else {
-                        return Err(GatewayDomainInvalid);
+                        if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                            outbound::http::logical::Target::Route(addr, profile)
+                        } else if let Some((addr, metadata)) = profile.endpoint() {
+                            outbound::http::logical::Target::Forward(
+                                Remote(ServerAddr(addr)),
+                                metadata,
+                            )
+                        } else {
+                            return Err(GatewayDomainInvalid);
+                        }
                     };
 
                     Ok(Target {
                         target,
                         addr: (*parent).param(),
-                        parent: (*parent).param(),
                         version: parent.version,
+                        parent: (*parent).clone(),
                     })
                 },
             )
@@ -121,17 +128,13 @@ impl<B, T: Clone> svc::router::SelectRoute<http::Request<B>> for ByRequestVersio
 
 // === impl Target ===
 
-impl<T> Target<T>
-where
-    T: svc::Param<GatewayAddr>,
-    T: svc::Param<OrigDstAddr>,
-{
-    fn orphan(self) -> Target {
+impl<T> Target<T> {
+    fn discard_parent(self) -> Target {
         Target {
-            addr: self.parent.param(),
+            addr: self.addr,
             target: self.target,
             version: self.version,
-            parent: self.parent.param(),
+            parent: (),
         }
     }
 }
@@ -148,31 +151,12 @@ impl<T> svc::Param<http::Version> for Target<T> {
     }
 }
 
-impl<T> svc::Param<OrigDstAddr> for Target<T>
-where
-    T: svc::Param<OrigDstAddr>,
-{
-    fn param(&self) -> OrigDstAddr {
-        self.parent.param()
-    }
-}
-
 impl<T> svc::Param<tls::ClientId> for Target<T>
 where
     T: svc::Param<tls::ClientId>,
 {
     fn param(&self) -> tls::ClientId {
         self.parent.param()
-    }
-}
-
-impl<T> svc::Param<Remote<ServerAddr>> for Target<T>
-where
-    T: svc::Param<OrigDstAddr>,
-{
-    fn param(&self) -> Remote<ServerAddr> {
-        let OrigDstAddr(addr) = self.parent.param();
-        Remote(ServerAddr(addr))
     }
 }
 
