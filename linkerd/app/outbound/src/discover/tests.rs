@@ -76,8 +76,9 @@ async fn errors_propagate() {
 
 /// Tests that the discover stack caches resolutions for each unique destination address.
 ///
-/// This test obtains a service, drops it obtains the service again, and then drops it again,
-/// testing that only one service is built and that it is dropped after an idle timeout.
+/// This test obtains a service, drops it obtains the service again, and then
+/// drops it again, testing that only one profile lookup is performed. It also
+/// tests that a lookup is performed after a resolution idles out.
 #[tokio::test(flavor = "current_thread")]
 async fn caches_profiles_until_idle() {
     let _trace = linkerd_tracing::test::trace_init();
@@ -162,7 +163,7 @@ async fn caches_profiles_until_idle() {
     assert_eq!(
         profile_lookups.load(Ordering::SeqCst),
         2,
-        "exactly one profile lookup"
+        "second profile lookup after idle timeout"
     );
 
     task2.abort();
