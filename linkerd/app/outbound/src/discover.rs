@@ -71,36 +71,6 @@ impl<N> Outbound<N> {
                 .push(svc::ArcNewService::layer())
         })
     }
-
-    pub fn push_discover_cache<T, Req, NSvc>(
-        self,
-    ) -> Outbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<Req, Response = NSvc::Response, Error = Error, Future = impl Send> + Clone,
-        >,
-    >
-    where
-        T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-        Req: Send + 'static,
-        N: svc::NewService<T, Service = NSvc>,
-        N: Clone + Send + Sync + 'static,
-        NSvc: svc::Service<Req, Error = Error> + Send + 'static,
-        NSvc::Future: Send,
-    {
-        self.map_stack(|config, rt, stk| {
-            stk.push_on_service(
-                rt.metrics
-                    .proxy
-                    .stack
-                    .layer(crate::stack_labels("tcp", "discover")),
-            )
-            .push(svc::NewQueue::layer_via(config.tcp_connection_queue))
-            .push_new_idle_cached(config.discovery_idle_timeout)
-            .push(svc::ArcNewService::layer())
-            .check_new_service::<T, Req>()
-        })
-    }
 }
 
 // === impl Discovery ===
