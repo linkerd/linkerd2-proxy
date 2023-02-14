@@ -26,11 +26,14 @@ pub fn to_addr_meta(
     let mut proto_hint = ProtocolHint::Unknown;
     let mut tagged_transport_port = None;
     if let Some(hint) = pb.protocol_hint {
+        // the match will make sense later...
+        #[allow(clippy::collapsible_match, clippy::single_match)]
         if let Some(proto) = hint.protocol {
             match proto {
                 Protocol::H2(..) => {
                     proto_hint = ProtocolHint::Http2;
                 }
+                _ => {} // TODO(eliza): handle opaque protocol hints
             }
         }
 
