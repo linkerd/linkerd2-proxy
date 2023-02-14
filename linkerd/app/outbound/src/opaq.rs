@@ -37,7 +37,7 @@ impl<C> Outbound<C> {
     where
         // Opaque target
         T: svc::Param<logical::Target>,
-        T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+        T: Clone + Send + Sync + 'static,
         // Server-side connection
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
@@ -53,8 +53,10 @@ impl<C> Outbound<C> {
             .push_opaq_concrete(resolve)
             .push_opaq_logical()
             .map_stack(|config, _rt, stk| {
-                stk.push_map_target(|t: T| Opaq(t.param()))
-                    .push_new_idle_cached(config.discovery_idle_timeout)
+                stk.push_new_idle_cached(config.discovery_idle_timeout)
+                    // Use a dedicated target type to configure parameters for
+                    // the opaque stack. It also helps narrow the cache key.
+                    .push_map_target(|t: T| Opaq(t.param()))
                     .push(svc::ArcNewService::layer())
             })
     }

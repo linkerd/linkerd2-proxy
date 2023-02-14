@@ -60,7 +60,7 @@ impl<C> Outbound<C> {
         // Logical HTTP target.
         T: svc::Param<http::Version>,
         T: svc::Param<logical::Target>,
-        T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+        T: Clone + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         // TCP connector stack.
@@ -75,10 +75,10 @@ impl<C> Outbound<C> {
             .push_http_logical()
             .push_http_server()
             .map_stack(move |config, _, stk| {
-                // Use a dedicated target type to configure parameters for the
-                // HTTP stack.
-                stk.push_map_target(Http::new)
-                    .push_new_idle_cached(config.discovery_idle_timeout)
+                stk.push_new_idle_cached(config.discovery_idle_timeout)
+                    // Use a dedicated target type to configure parameters for the
+                    // HTTP stack. It also helps narrow the cache key.
+                    .push_map_target(Http::new)
                     .push(svc::ArcNewService::layer())
                     .check_new_service::<T, http::Request<http::BoxBody>>()
             })
