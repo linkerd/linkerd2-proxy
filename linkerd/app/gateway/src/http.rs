@@ -35,6 +35,8 @@ pub struct Target<T = ()> {
 struct ByRequestVersion<T>(Target<T>);
 
 impl Gateway {
+    /// Wrap the provided outbound HTTP stack with an HTTP server, inbound
+    /// authorization, and gateway request routing.
     pub(super) fn http<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Http<T>, I>>
     where
         // Target describing an inbound gateway connection.
@@ -47,9 +49,11 @@ impl Gateway {
         T: svc::Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + Unpin + 'static,
         // Server-side socket.
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
+        I: Send + Unpin + 'static,
         // HTTP outbound stack.
-        N: svc::NewService<Target, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        N: svc::NewService<Target, Service = NSvc>,
+        N: Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<
             http::Request<http::BoxBody>,
             Response = http::Response<http::BoxBody>,
@@ -72,6 +76,8 @@ impl Gateway {
             .push(svc::NewOneshotRoute::layer_via(|t: &Target<T>| {
                 ByRequestVersion(t.clone())
             }))
+            // Only permit gateway traffic to endpoints for which we have
+            // discovery information.
             .push_filter(
                 |(_, parent): (_, Http<T>)| -> Result<_, GatewayDomainInvalid> {
                     let target = {
@@ -98,12 +104,12 @@ impl Gateway {
                     })
                 },
             )
-            .push(self.inbound.authorize_http())
-            .into_inner();
+            // Authorize requests to the gateway.
+            .push(self.inbound.authorize_http());
 
         self.inbound
             .clone()
-            .with_stack(http)
+            .with_stack(http.into_inner())
             // Teminates HTTP connections.
             // XXX Sets an identity header -- this should probably not be done
             // in the gateway, though the value will be stripped by meshed

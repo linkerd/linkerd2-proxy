@@ -7,6 +7,8 @@ use linkerd_app_outbound as outbound;
 pub type Target = outbound::opaq::logical::Target;
 
 impl Gateway {
+    /// Wrap the provided outbound opaque stack with inbound authorization and
+    /// gateway request routing.
     pub(crate) fn opaq<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Opaq<T>, I>>
     where
         // Target describing an inbound gateway connection.
@@ -26,6 +28,8 @@ impl Gateway {
         NSvc::Future: Send + 'static,
     {
         svc::stack(inner)
+            // Only permit gateway traffic to endpoints for which we have
+            // discovery information.
             .push_filter(
                 |(_, Opaq(opaq)): (_, Opaq<T>)| -> Result<_, GatewayDomainInvalid> {
                     // Fail connections were not resolved.
@@ -43,6 +47,7 @@ impl Gateway {
                     }
                 },
             )
+            // Authorize connections to the gateway.
             .push(self.inbound.authorize_tcp())
             .push_on_service(svc::BoxService::layer())
             .push(svc::ArcNewService::layer())
