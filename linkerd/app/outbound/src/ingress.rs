@@ -16,16 +16,16 @@ use std::fmt::Debug;
 use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct HttpIngress<T> {
+struct Http<T> {
     parent: T,
     version: http::Version,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct OpaqIngress<T>(T);
+struct Opaq<T>(T);
 
 #[derive(Clone, Debug)]
-struct SelectTarget<T>(HttpIngress<T>);
+struct SelectTarget<T>(Http<T>);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum RequestTarget {
@@ -50,7 +50,7 @@ type DetectIo<I> = io::PrefixedIo<I>;
 impl Outbound<()> {
     /// Builds a an "ingress mode" proxy.
     ///
-    /// HttpIngress-mode proxies route based on request headers instead of using the
+    /// Ingress-mode proxies route based on request headers instead of using the
     /// original destination. Protocol detection is **always** performed. If it
     /// fails, we revert to using the normal IP-based discovery
     pub fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
@@ -68,7 +68,7 @@ impl Outbound<()> {
         let opaque = self
             .to_tcp_connect()
             .push_opaq_cached(resolve.clone())
-            .map_stack(|_, _, stk| stk.push_map_target(OpaqIngress))
+            .map_stack(|_, _, stk| stk.push_map_target(Opaq))
             .push_discover(profiles.clone())
             .into_inner();
 
@@ -76,8 +76,8 @@ impl Outbound<()> {
             .to_tcp_connect()
             .push_http_cached(resolve)
             .map_stack(|_, _, stk| {
-                stk.check_new_service::<HttpIngress<http::logical::Target>, _>()
-                    .push_filter(HttpIngress::try_from)
+                stk.check_new_service::<Http<http::logical::Target>, _>()
+                    .push_filter(Http::try_from)
             })
             .push_discover(profiles);
 
@@ -90,7 +90,7 @@ impl Outbound<()> {
 impl<N> Outbound<N> {
     /// Routes HTTP requests according to the l5d-dst-override header.
     ///
-    /// This is only intended for HttpIngress configurations, where we assume all
+    /// This is only intended for Http configurations, where we assume all
     /// outbound traffic is HTTP and HTTP detection is **always** performed. If
     /// HTTP detection fails, we revert to using the provided `fallback` stack.
     //
@@ -111,8 +111,8 @@ impl<N> Outbound<N> {
         F: svc::NewService<T, Service = FSvc> + Clone + Send + Sync + 'static,
         FSvc: svc::Service<DetectIo<I>, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,
-        // Ingress HTTP stack.
-        N: svc::NewService<HttpIngress<RequestTarget>, Service = NSvc>,
+        //  HTTP stack.
+        N: svc::NewService<Http<RequestTarget>, Service = NSvc>,
         N: Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<
             http::Request<http::BoxBody>,
@@ -141,7 +141,7 @@ impl<N> Outbound<N> {
             // Stacks with an override are cached and reused. Endpoint stacks
             // are not.
             let http = discover
-                .check_new_service::<HttpIngress<RequestTarget>, http::Request<http::BoxBody>>()
+                .check_new_service::<Http<RequestTarget>, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
@@ -150,21 +150,21 @@ impl<N> Outbound<N> {
                 )
                 .lift_new()
                 .push(svc::NewOneshotRoute::layer_via(
-                    |t: &HttpIngress<T>| SelectTarget(t.clone()),
+                    |t: &Http<T>| SelectTarget(t.clone()),
                 ))
-                .check_new_service::<HttpIngress<T>, http::Request<_>>();
+                .check_new_service::<Http<T>, http::Request<_>>();
 
             // HTTP detection is **always** performed. If detection fails, then we
             // use the `fallback` stack to process the connection by its original
             // destination address.
-            http.check_new_service::<HttpIngress<T>, http::Request<_>>()
+            http.check_new_service::<Http<T>, http::Request<_>>()
                 .unlift_new()
                 .push(http::NewServeHttp::layer(*h2_settings, rt.drain.clone()))
-                .check_new_service::<HttpIngress<T>, I>()
+                .check_new_service::<Http<T>, I>()
                 .push_switch(
                     |(detected, target): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {
                         if let Some(version) = detect::allow_timeout(detected) {
-                            return Ok(svc::Either::A(HttpIngress {
+                            return Ok(svc::Either::A(Http {
                                 version,
                                 parent: target,
                             }));
@@ -183,15 +183,13 @@ impl<N> Outbound<N> {
     }
 }
 
-// === impl HttpIngress ===
+// === impl Http ===
 
-impl TryFrom<discover::Discovery<HttpIngress<RequestTarget>>>
-    for HttpIngress<http::logical::Target>
-{
+impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::logical::Target> {
     type Error = ProfileRequired;
 
     fn try_from(
-        parent: discover::Discovery<HttpIngress<RequestTarget>>,
+        parent: discover::Discovery<Http<RequestTarget>>,
     ) -> std::result::Result<Self, Self::Error> {
         match (
             &**parent,
@@ -199,7 +197,7 @@ impl TryFrom<discover::Discovery<HttpIngress<RequestTarget>>>
         ) {
             (RequestTarget::Named(addr), Some(profile)) => {
                 if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                    return Ok(HttpIngress {
+                    return Ok(Http {
                         version: (*parent).param(),
                         parent: http::logical::Target::Route(addr, profile),
                     });
@@ -208,7 +206,7 @@ impl TryFrom<discover::Discovery<HttpIngress<RequestTarget>>>
                 let (addr, metadata) = profile
                     .endpoint()
                     .ok_or_else(|| ProfileRequired(addr.clone()))?;
-                Ok(HttpIngress {
+                Ok(Http {
                     version: (*parent).param(),
                     parent: http::logical::Target::Forward(Remote(ServerAddr(addr)), metadata),
                 })
@@ -219,7 +217,7 @@ impl TryFrom<discover::Discovery<HttpIngress<RequestTarget>>>
             (RequestTarget::Orig(OrigDstAddr(addr)), profile) => {
                 if let Some(profile) = profile {
                     if let Some((addr, metadata)) = profile.endpoint() {
-                        return Ok(HttpIngress {
+                        return Ok(Http {
                             version: (*parent).param(),
                             parent: http::logical::Target::Forward(
                                 Remote(ServerAddr(addr)),
@@ -229,7 +227,7 @@ impl TryFrom<discover::Discovery<HttpIngress<RequestTarget>>>
                     }
                 }
 
-                Ok(HttpIngress {
+                Ok(Http {
                     version: (*parent).param(),
                     parent: http::logical::Target::Forward(
                         Remote(ServerAddr(*addr)),
@@ -241,13 +239,13 @@ impl TryFrom<discover::Discovery<HttpIngress<RequestTarget>>>
     }
 }
 
-impl svc::Param<http::logical::Target> for HttpIngress<http::logical::Target> {
+impl svc::Param<http::logical::Target> for Http<http::logical::Target> {
     fn param(&self) -> http::logical::Target {
         self.parent.clone()
     }
 }
 
-impl<T> std::ops::Deref for HttpIngress<T> {
+impl<T> std::ops::Deref for Http<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -255,20 +253,20 @@ impl<T> std::ops::Deref for HttpIngress<T> {
     }
 }
 
-impl<T> Param<http::Version> for HttpIngress<T> {
+impl<T> Param<http::Version> for Http<T> {
     fn param(&self) -> http::Version {
         self.version
     }
 }
 
-impl Param<http::normalize_uri::DefaultAuthority> for HttpIngress<RequestTarget> {
+impl Param<http::normalize_uri::DefaultAuthority> for Http<RequestTarget> {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
         let profiles::LookupAddr(addr) = self.param();
         http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
     }
 }
 
-impl Param<profiles::LookupAddr> for HttpIngress<RequestTarget> {
+impl Param<profiles::LookupAddr> for Http<RequestTarget> {
     fn param(&self) -> profiles::LookupAddr {
         profiles::LookupAddr(match self.parent.clone() {
             RequestTarget::Named(addr) => addr.into(),
@@ -277,7 +275,7 @@ impl Param<profiles::LookupAddr> for HttpIngress<RequestTarget> {
     }
 }
 
-impl<T> Param<OrigDstAddr> for HttpIngress<T>
+impl<T> Param<OrigDstAddr> for Http<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
@@ -286,31 +284,31 @@ where
     }
 }
 
-impl Param<tls::ConditionalClientTls> for HttpIngress<OrigDstAddr> {
+impl Param<tls::ConditionalClientTls> for Http<OrigDstAddr> {
     fn param(&self) -> tls::ConditionalClientTls {
         tls::ConditionalClientTls::None(tls::NoClientTls::NotProvidedByServiceDiscovery)
     }
 }
 
-impl Param<Option<tcp::tagged_transport::PortOverride>> for HttpIngress<OrigDstAddr> {
+impl Param<Option<tcp::tagged_transport::PortOverride>> for Http<OrigDstAddr> {
     fn param(&self) -> Option<tcp::tagged_transport::PortOverride> {
         None
     }
 }
 
-impl Param<Option<http::AuthorityOverride>> for HttpIngress<OrigDstAddr> {
+impl Param<Option<http::AuthorityOverride>> for Http<OrigDstAddr> {
     fn param(&self) -> Option<http::AuthorityOverride> {
         None
     }
 }
 
-impl svc::Param<transport::labels::Key> for HttpIngress<OrigDstAddr> {
+impl svc::Param<transport::labels::Key> for Http<OrigDstAddr> {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::OutboundClient(self.param())
     }
 }
 
-impl svc::Param<metrics::OutboundEndpointLabels> for HttpIngress<OrigDstAddr> {
+impl svc::Param<metrics::OutboundEndpointLabels> for Http<OrigDstAddr> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
         let authority = self
             .parent
@@ -326,13 +324,13 @@ impl svc::Param<metrics::OutboundEndpointLabels> for HttpIngress<OrigDstAddr> {
     }
 }
 
-impl svc::Param<metrics::EndpointLabels> for HttpIngress<OrigDstAddr> {
+impl svc::Param<metrics::EndpointLabels> for Http<OrigDstAddr> {
     fn param(&self) -> metrics::EndpointLabels {
         metrics::EndpointLabels::Outbound(self.param())
     }
 }
 
-impl svc::Param<http::client::Settings> for HttpIngress<OrigDstAddr> {
+impl svc::Param<http::client::Settings> for Http<OrigDstAddr> {
     fn param(&self) -> http::client::Settings {
         match self.param() {
             http::Version::H2 => http::client::Settings::H2,
@@ -342,7 +340,7 @@ impl svc::Param<http::client::Settings> for HttpIngress<OrigDstAddr> {
 }
 
 // TODO(ver) move this into the endpoint stack?
-impl tap::Inspect for HttpIngress<OrigDstAddr> {
+impl tap::Inspect for Http<OrigDstAddr> {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<std::net::SocketAddr> {
         req.extensions().get::<http::ClientHandle>().map(|c| c.addr)
     }
@@ -378,7 +376,7 @@ impl<B, T> svc::router::SelectRoute<http::Request<B>> for SelectTarget<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
-    type Key = HttpIngress<RequestTarget>;
+    type Key = Http<RequestTarget>;
     type Error = InvalidOverrideHeader;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
@@ -399,16 +397,16 @@ where
             _ => unreachable!("Only HTTP/1 and HTTP/2 are supported"),
         };
 
-        Ok(HttpIngress {
+        Ok(Http {
             version,
             parent: target,
         })
     }
 }
 
-// === impl OpaqIngress ===
+// === impl Opaq ===
 
-impl<T> std::ops::Deref for OpaqIngress<T> {
+impl<T> std::ops::Deref for Opaq<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -416,7 +414,7 @@ impl<T> std::ops::Deref for OpaqIngress<T> {
     }
 }
 
-impl<T> Param<Remote<ServerAddr>> for OpaqIngress<T>
+impl<T> Param<Remote<ServerAddr>> for Opaq<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
@@ -426,7 +424,7 @@ where
     }
 }
 
-impl<T> Param<opaq::logical::Target> for OpaqIngress<T>
+impl<T> Param<opaq::logical::Target> for Opaq<T>
 where
     T: svc::Param<Option<profiles::Receiver>>,
     T: svc::Param<OrigDstAddr>,
