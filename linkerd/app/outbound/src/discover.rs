@@ -151,18 +151,6 @@ impl<T> svc::Param<Option<profiles::LogicalAddr>> for Discovery<T> {
     }
 }
 
-impl<T> svc::Param<Option<http::detect::Skip>> for Discovery<T> {
-    fn param(&self) -> Option<http::detect::Skip> {
-        if let Some(profile) = self.profile.as_ref() {
-            if profile.is_opaque_protocol() {
-                return Some(http::detect::Skip);
-            }
-        }
-
-        None
-    }
-}
-
 impl<T> Deref for Discovery<T> {
     type Target = T;
 

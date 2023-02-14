@@ -16,7 +16,6 @@ use linkerd_app_core::{
 use std::{fmt::Debug, hash::Hash};
 
 pub mod concrete;
-pub mod detect;
 mod endpoint;
 pub mod logical;
 mod proxy_connection_close;
