@@ -1,7 +1,7 @@
 use super::*;
 use crate::{tcp, test_util::*};
 use linkerd_app_core::{
-    io,
+    io, profiles,
     svc::{NewService, Service, ServiceExt},
     transport::addrs::OrigDstAddr,
     AddrMatch, IpNet,
@@ -43,7 +43,6 @@ async fn errors_propagate() {
     let stack = Outbound::new(default_config(), rt)
         .with_stack(stack)
         .push_discover(profiles)
-        .push_discover_cache()
         .into_inner();
 
     assert_eq!(
@@ -71,19 +70,15 @@ async fn errors_propagate() {
         1,
         "exactly one service has been created"
     );
-    assert_eq!(
-        handle.tracked_services(),
-        1,
-        "there should be exactly one service"
-    );
 
     task.await.unwrap().expect_err("service must fail");
 }
 
 /// Tests that the discover stack caches resolutions for each unique destination address.
 ///
-/// This test obtains a service, drops it obtains the service again, and then drops it again,
-/// testing that only one service is built and that it is dropped after an idle timeout.
+/// This test obtains a service, drops it obtains the service again, and then
+/// drops it again, testing that only one profile lookup is performed. It also
+/// tests that a lookup is performed after a resolution idles out.
 #[tokio::test(flavor = "current_thread")]
 async fn caches_profiles_until_idle() {
     let _trace = linkerd_tracing::test::trace_init();
@@ -95,16 +90,17 @@ async fn caches_profiles_until_idle() {
 
     // Mock an inner stack with a service that never returns, tracking the number of services
     // built & held.
-    let new_count = Arc::new(AtomicUsize::new(0));
-    let (handle, stack) = {
-        let new_count = new_count.clone();
-        support::track::new_service(move |_| {
-            new_count.fetch_add(1, Ordering::SeqCst);
-            svc::mk(move |_: io::DuplexStream| future::pending::<Result<(), Error>>())
+    let stack = |_: _| svc::mk(move |_: io::DuplexStream| future::pending::<Result<(), Error>>());
+
+    let profile_lookups = Arc::new(AtomicUsize::new(0));
+    let profiles = {
+        let profile = support::profile::resolver().profile(addr, profiles::Profile::default());
+        let lookups = profile_lookups.clone();
+        svc::mk(move |a: profiles::LookupAddr| {
+            lookups.fetch_add(1, Ordering::SeqCst);
+            profile.clone().oneshot(a)
         })
     };
-
-    let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
 
     // Create a profile stack that uses the tracked inner stack, configured to drop cached
     // service after `idle_timeout`.
@@ -117,16 +113,10 @@ async fn caches_profiles_until_idle() {
     let stack = Outbound::new(cfg, rt)
         .with_stack(stack)
         .push_discover(profiles)
-        .push_discover_cache()
         .into_inner();
 
     assert_eq!(
-        new_count.load(Ordering::SeqCst),
-        0,
-        "no services have been created yet"
-    );
-    assert_eq!(
-        handle.tracked_services(),
+        profile_lookups.load(Ordering::SeqCst),
         0,
         "no services have been created yet"
     );
@@ -141,14 +131,9 @@ async fn caches_profiles_until_idle() {
     // We have to let some time pass for the buffer to drive the profile to readiness.
     time::advance(time::Duration::from_millis(100)).await;
     assert_eq!(
-        new_count.load(Ordering::SeqCst),
+        profile_lookups.load(Ordering::SeqCst),
         1,
-        "exactly one service has been created"
-    );
-    assert_eq!(
-        handle.tracked_services(),
-        1,
-        "there should be exactly one service"
+        "exactly one profile lookup"
     );
 
     // Abort the pending task (simulating a disconnect from a client) and obtain the cached
@@ -160,29 +145,14 @@ async fn caches_profiles_until_idle() {
     // task is still running).
     time::sleep(sleep_time).await;
     assert_eq!(
-        new_count.load(Ordering::SeqCst),
+        profile_lookups.load(Ordering::SeqCst),
         1,
-        "only one service has been created"
-    );
-    assert_eq!(
-        handle.tracked_services(),
-        1,
-        "the service should be retained"
+        "exactly one profile lookup"
     );
 
     // Cancel the task and ensure the cached service is dropped after the idle timeout expires.
     task1.abort();
-    assert_eq!(
-        handle.tracked_services(),
-        1,
-        "the service should be retained for an idle timeout"
-    );
     time::sleep(sleep_time).await;
-    assert_eq!(
-        handle.tracked_services(),
-        0,
-        "the service should have been dropped"
-    );
 
     // When another stack is built for the same target, we create a new service (because the
     // prior service has been idled out).
@@ -191,18 +161,12 @@ async fn caches_profiles_until_idle() {
     // We have to let some time pass for the buffer to drive the profile to readiness.
     time::advance(time::Duration::from_millis(100)).await;
     assert_eq!(
-        new_count.load(Ordering::SeqCst),
+        profile_lookups.load(Ordering::SeqCst),
         2,
-        "exactly two services should be created"
+        "second profile lookup after idle timeout"
     );
-    assert_eq!(handle.tracked_services(), 1, "the service should be active");
+
     task2.abort();
-    time::sleep(sleep_time).await;
-    assert_eq!(
-        handle.tracked_services(),
-        0,
-        "the service should have been dropped"
-    );
 }
 
 /// Tests that the discover stack avoids resolutions when the stack is not configured to permit
@@ -238,7 +202,6 @@ async fn no_profiles_when_outside_search_nets() {
     let stack = Outbound::new(cfg, rt)
         .with_stack(stack)
         .push_discover(profiles)
-        .push_discover_cache()
         .into_inner();
 
     // Instantiate a service from the stack so that it instantiates the tracked inner service.
