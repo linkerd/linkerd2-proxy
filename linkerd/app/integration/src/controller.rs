@@ -464,16 +464,17 @@ impl DestinationBuilder {
     }
 }
 
-impl Into<pb::Update> for DestinationBuilder {
-    fn into(self) -> pb::Update {
-        let Self {
+impl From<DestinationBuilder> for pb::Update {
+    fn from(
+        DestinationBuilder {
             addr,
             hint,
             opaque_port,
             set_labels,
             addr_labels,
             identity,
-        } = self;
+        }: DestinationBuilder,
+    ) -> pb::Update {
         let protocol_hint = match (hint, opaque_port) {
             (Hint::Unknown, None) => None,
             (Hint::Unknown, Some(port)) => Some(pb::ProtocolHint {
