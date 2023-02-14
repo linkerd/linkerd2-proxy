@@ -122,10 +122,8 @@ impl<N> Outbound<N> {
                 .lift_new()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .check_new_new_service::<Routable<T>, Params<T>, I>()
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params<T>>())
                 .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
-                .check_new::<Routable<T>>()
                 .push_switch(
                     |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
@@ -140,9 +138,8 @@ impl<N> Outbound<N> {
                             }),
                         })
                     },
-                    concrete.check_new::<Concrete<T>>().into_inner(),
+                    concrete.into_inner(),
                 )
-                .check_new::<T>()
                 .push(svc::ArcNewService::layer())
         })
     }

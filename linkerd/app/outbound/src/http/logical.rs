@@ -163,13 +163,10 @@ impl<N> Outbound<N> {
             // router stack.
             concrete
                 .clone()
-                .check_new_service::<Concrete<T>, http::Request<_>>()
                 // Share the concrete stack with each router stack.
                 .lift_new()
-                .check_new_new_service::<Routable<T>, Concrete<T>, http::Request<_>>()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .check_new_new_service::<Routable<T>, Params<T>, http::Request<http::BoxBody>>()
                 .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params<T>>())
                 .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                 // Add l5d-dst-canonical header to requests.
@@ -179,7 +176,6 @@ impl<N> Outbound<N> {
                 //
                 // TODO(ver) do we need to strip headers here?
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
-                .check_new::<Routable<T>>()
                 .push_switch(
                     |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
@@ -194,7 +190,7 @@ impl<N> Outbound<N> {
                             }),
                         })
                     },
-                    concrete.check_new::<Concrete<T>>().into_inner(),
+                    concrete.into_inner(),
                 )
                 .push(svc::ArcNewService::layer())
         })
