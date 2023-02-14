@@ -6,8 +6,9 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{OrigDstAddr, Remote, ServerAddr},
-    AddrMatch, Error, Infallible, NameAddr,
+    AddrMatch, Error, Infallible, NameAddr, Result,
 };
+use std::fmt::Debug;
 use thiserror::Error;
 use tracing::{debug, debug_span, info_span};
 
@@ -63,6 +64,43 @@ impl Param<http::normalize_uri::DefaultAuthority> for Http<tcp::Accept> {
 }
 
 // === impl Outbound ===
+
+impl Outbound<()> {
+    /// Builds a an "ingress mode" proxy.
+    ///
+    /// Ingress-mode proxies route based on request headers instead of using the
+    /// original destination. Protocol detection is **always** performed. If it
+    /// fails, we revert to using the normal IP-based discovery
+    pub fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
+    where
+        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
+        I: Debug + Unpin + Send + Sync + 'static,
+        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
+        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        P: profiles::GetProfile<Error = Error>,
+    {
+        // The fallback stack is the same thing as the normal proxy stack, but
+        // it doesn't include TCP metrics, since they are already instrumented
+        // on this ingress stack.
+        let fallback = {
+            let logical = self.to_tcp_connect().push_logical(resolve.clone());
+            let forward = self.to_tcp_connect().push_forward();
+            forward
+                .push_switch_logical(logical.into_inner())
+                .push_discover(profiles.clone())
+                .push_discover_cache()
+                .into_inner()
+        };
+
+        self.to_tcp_connect()
+            .push_tcp_endpoint()
+            .push_http_endpoint()
+            .push_ingress(profiles, resolve, fallback)
+            .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
+            .into_inner()
+    }
+}
 
 impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
     /// Routes HTTP requests according to the l5d-dst-override header.
