@@ -1,3 +1,5 @@
+//! A stack that sends requests to an HTTP endpoint.
+
 use super::{NewRequireIdentity, NewStripProxyError, ProxyConnectionClose};
 use crate::{tcp::tagged_transport, Outbound};
 use linkerd_app_core::{
@@ -35,21 +37,24 @@ struct ClientRescue {
 impl<C> Outbound<C> {
     pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
     where
+        // Http endpoint target.
+        T: svc::Param<http::client::Settings>,
+        T: svc::Param<Remote<ServerAddr>>,
+        T: svc::Param<Option<http::AuthorityOverride>>,
+        T: svc::Param<metrics::EndpointLabels>,
+        T: svc::Param<tls::ConditionalClientTls>,
+        T: tap::Inspect,
         T: Clone + Send + Sync + 'static,
-        T: svc::Param<http::client::Settings>
-            + svc::Param<Remote<ServerAddr>>
-            + svc::Param<Option<http::AuthorityOverride>>
-            + svc::Param<metrics::EndpointLabels>
-            + svc::Param<tls::ConditionalClientTls>
-            + tap::Inspect,
+        // Http endpoint body.
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
+        // TCP endpoint stack.
         C: svc::MakeConnection<Connect<T>> + Clone + Send + Sync + Unpin + 'static,
         C::Connection: Send + Unpin,
         C::Metadata: Send + Unpin,
         C::Future: Send + Unpin + 'static,
     {
-        self.map_stack(|config, rt, connect| {
+        self.map_stack(|config, rt, inner| {
             let config::ConnectConfig {
                 h1_settings,
                 h2_settings,
@@ -60,7 +65,7 @@ impl<C> Outbound<C> {
             // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
             // is typically used (i.e. when communicating with other proxies); though
             // HTTP/1.x fallback is supported as needed.
-            svc::stack(connect.into_inner().into_service())
+            svc::stack(inner.into_inner().into_service())
                 .check_service::<Connect<T>>()
                 .push_map_target(|(version, inner)| Connect { version, inner })
                 .push(http::client::layer(h1_settings, h2_settings))

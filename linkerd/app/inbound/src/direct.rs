@@ -148,19 +148,19 @@ impl<N> Inbound<N> {
                 .push_switch(
                     {
                         let policies = policies.clone();
-                        move |(h, client): (TransportHeader, ClientInfo)| -> Result<_> {
+                        move |(h, client): (TransportHeader, ClientInfo)| -> Result<_, Infallible> {
                             match h {
                                 TransportHeader {
                                     port,
                                     name: None,
                                     protocol,
-                                } => {
+                                } => Ok(svc::Either::A({
                                     // When the transport header targets an alternate port (but does
                                     // not identify an alternate target name), we check the new
                                     // target's policy (rather than the inbound proxy's address).
                                     let addr = (client.local_addr.ip(), port).into();
                                     let policy = policies.get_policy(OrigDstAddr(addr));
-                                    let local = match protocol {
+                                    match protocol {
                                         None => svc::Either::A(LocalTcp {
                                             server_addr: Remote(ServerAddr(addr)),
                                             client_addr: client.client_addr,
@@ -178,31 +178,31 @@ impl<N> Inbound<N> {
                                                 client,
                                             })
                                         }
-                                    };
-                                    Ok(svc::Either::A(local))
-                                }
+                                    }
+                                })),
+
                                 TransportHeader {
                                     port,
                                     name: Some(name),
                                     protocol,
-                                } => {
+                                } => Ok(svc::Either::B({
                                     // When the transport header provides an alternate target, the
                                     // connection is a gateway connection. We check the _gateway
                                     // address's_ policy (rather than the target address).
                                     let policy = policies.get_policy(client.local_addr);
-                                    Ok(svc::Either::B(GatewayTransportHeader {
+                                    GatewayTransportHeader {
                                         target: NameAddr::from((name, port)),
                                         protocol,
                                         client,
                                         policy,
-                                    }))
-                                }
+                                    }
+                                })),
                             }
                         }
                     },
                     // HTTP detection is not necessary in this case, since the transport
                     // header indicates the connection's HTTP version.
-                    svc::stack(gateway.clone())
+                    svc::stack(gateway)
                         .push(transport::metrics::NewServer::layer(
                             rt.metrics.proxy.transport.clone(),
                         ))
@@ -422,6 +422,18 @@ impl Param<tls::ConditionalServerTls> for GatewayTransportHeader {
             client_id: Some(self.client.client_id.clone()),
             negotiated_protocol: self.client.alpn.clone(),
         })
+    }
+}
+
+impl Param<tls::ClientId> for GatewayTransportHeader {
+    fn param(&self) -> tls::ClientId {
+        self.client.client_id.clone()
+    }
+}
+
+impl Param<Option<SessionProtocol>> for GatewayTransportHeader {
+    fn param(&self) -> Option<SessionProtocol> {
+        self.protocol.clone()
     }
 }
 
