@@ -5,19 +5,6 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-mod discover;
-pub mod endpoint;
-pub mod http;
-mod ingress;
-pub mod logical;
-mod metrics;
-pub mod opaq;
-mod switch_logical;
-pub mod tcp;
-#[cfg(test)]
-pub(crate) mod test_util;
-
-pub use self::metrics::Metrics;
 use futures::Stream;
 use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
@@ -38,7 +25,22 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tracing::{info, info_span};
+use tracing::info;
+
+mod discover;
+pub mod endpoint;
+pub mod http;
+mod ingress;
+pub mod logical;
+mod metrics;
+pub mod opaq;
+mod sidecar;
+mod switch_logical;
+pub mod tcp;
+#[cfg(test)]
+pub(crate) mod test_util;
+
+pub use self::metrics::Metrics;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -177,64 +179,10 @@ impl Outbound<()> {
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, server, shutdown).await;
         } else {
-            let proxy = self.mk_proxy(profiles, resolve);
+            let proxy = self.mk_sidecar(profiles, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, proxy, shutdown).await;
         }
-    }
-
-    fn mk_proxy<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
-    where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
-        I: Debug + Unpin + Send + Sync + 'static,
-        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        P: profiles::GetProfile<Error = Error>,
-    {
-        let logical = self.to_tcp_connect().push_logical(resolve);
-        let forward = self.to_tcp_connect().push_forward();
-        forward
-            .push_switch_logical(logical.into_inner())
-            .push_discover(profiles)
-            .push_discover_cache()
-            .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
-            .into_inner()
-    }
-
-    /// Builds a an "ingress mode" proxy.
-    ///
-    /// Ingress-mode proxies route based on request headers instead of using the
-    /// original destination. Protocol detection is **always** performed. If it
-    /// fails, we revert to using the normal IP-based discovery
-    fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
-    where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
-        I: Debug + Unpin + Send + Sync + 'static,
-        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        P: profiles::GetProfile<Error = Error>,
-    {
-        // The fallback stack is the same thing as the normal proxy stack, but
-        // it doesn't include TCP metrics, since they are already instrumented
-        // on this ingress stack.
-        let fallback = {
-            let logical = self.to_tcp_connect().push_logical(resolve.clone());
-            let forward = self.to_tcp_connect().push_forward();
-            forward
-                .push_switch_logical(logical.into_inner())
-                .push_discover(profiles.clone())
-                .push_discover_cache()
-                .into_inner()
-        };
-
-        self.to_tcp_connect()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
-            .push_ingress(profiles, resolve, fallback)
-            .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
-            .into_inner()
     }
 }
 
