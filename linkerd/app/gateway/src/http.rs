@@ -10,6 +10,8 @@ use std::{
 };
 
 mod gateway;
+#[cfg(test)]
+mod tests;
 
 pub(crate) use self::gateway::NewHttpGateway;
 pub(crate) use linkerd_app_core::proxy::http::*;

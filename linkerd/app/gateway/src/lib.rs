@@ -11,8 +11,6 @@ use std::fmt::Debug;
 
 mod http;
 mod opaq;
-#[cfg(test)]
-mod tests;
 
 #[derive(Clone, Debug, Default)]
 pub struct Config {
