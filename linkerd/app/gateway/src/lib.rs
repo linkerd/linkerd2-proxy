@@ -1,19 +1,16 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-mod gateway;
-#[cfg(test)]
-mod tests;
+mod http;
+mod opaq;
 
-use self::gateway::NewHttpGateway;
 use linkerd_app_core::{
     identity, io, metrics, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve, http},
-    svc::{self, Param},
-    tls,
+    proxy::{api_resolve::Metadata, core::Resolve},
+    svc, tls,
     transport::{ClientAddr, Local, OrigDstAddr, Remote},
     transport_header::SessionProtocol,
-    Error, Infallible, NameAddr, NameMatch,
+    Error, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::{
     direct::{ClientInfo, GatewayTransportHeader},
@@ -26,24 +23,6 @@ use thiserror::Error;
 #[derive(Clone, Debug, Default)]
 pub struct Config {
     pub allow_discovery: NameMatch,
-}
-
-/// A target type describing an HTTP gateway connection from an inbound proxy,
-/// including enough information to enforce inbound policy on the gatewayed
-/// requests.
-#[derive(Clone, Debug)]
-struct InboundHttp {
-    client: ClientInfo,
-    inbound_policy: policy::AllowPolicy,
-    outbound: OutboundHttp,
-}
-
-/// A target type describing outbound HTTP traffic.
-#[derive(Clone, Debug)]
-struct OutboundHttp {
-    target: NameAddr,
-    profile: Option<profiles::Receiver>,
-    version: http::Version,
 }
 
 /// A target type describing an opaque gateway connection from an inbound proxy,
@@ -74,6 +53,24 @@ struct RefusedNoTarget(());
 #[error("the provided address could not be resolved: {}", self.0)]
 struct RefusedNotResolved(NameAddr);
 
+/// A target type describing an HTTP gateway connection from an inbound proxy,
+/// including enough information to enforce inbound policy on the gatewayed
+/// requests.
+#[derive(Clone, Debug)]
+struct InboundHttp {
+    client: ClientInfo,
+    inbound_policy: policy::AllowPolicy,
+    outbound: OutboundHttp,
+}
+
+/// A target type describing outbound HTTP traffic.
+#[derive(Clone, Debug)]
+struct OutboundHttp {
+    target: NameAddr,
+    profile: Option<profiles::Receiver>,
+    version: http::Version,
+}
+
 /// Builds a gateway between inbound and outbound proxy stacks.
 pub fn stack<I, O, P, R>(
     Config { allow_discovery }: Config,
@@ -95,7 +92,7 @@ where
     let local_id = identity::LocalId(inbound.identity().name().clone());
 
     let opaque = {
-        let stk = new_opaque(outbound.clone(), resolve.clone());
+        let stk = opaq::stack(outbound.clone(), resolve.clone());
         svc::stack(stk)
             .push_map_target(|(_permit, opaque): (_, Opaque)| opaque)
             .push(inbound.authorize_tcp())
@@ -103,7 +100,7 @@ where
     };
 
     let http = {
-        let stk = new_http(local_id, outbound.clone(), resolve);
+        let stk = http::stack(local_id, outbound.clone(), resolve);
         inbound
             .clone()
             .with_stack(
@@ -187,151 +184,27 @@ where
         .into_inner()
 }
 
-/// Builds an outbound HTTP stack.
-///
-/// A gateway-specififc module is inserted to requests from looping through
-/// gateways. Discovery errors are lifted into the HTTP stack so that individual
-/// requests are failed with an HTTP-level error repsonse.
-fn new_http<O, R>(
-    local_id: identity::LocalId,
-    outbound: Outbound<O>,
-    resolve: R,
-) -> svc::ArcNewService<
-    OutboundHttp,
-    impl svc::Service<
-        http::Request<http::BoxBody>,
-        Response = http::Response<http::BoxBody>,
-        Error = Error,
-        Future = impl Send,
-    >,
->
-where
-    O: Clone + Send + Sync + Unpin + 'static,
-    O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
-    O::Connection: Send + Unpin,
-    O::Future: Send + Unpin + 'static,
-    R: Resolve<outbound::http::Concrete, Endpoint = Metadata, Error = Error>,
-{
-    let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
-    endpoint
-        .clone()
-        .push_http_concrete(resolve)
-        .push_http_logical()
-        .into_stack()
-        .push_switch(Ok::<_, Infallible>, endpoint.into_stack())
-        .push(NewHttpGateway::layer(local_id))
-        .push(svc::ArcNewService::layer())
-        .check_new::<OutboundHttp>()
-        .into_inner()
-}
+// === impl Opaque ===
 
-/// Builds an outbound opaque stack.
-///
-/// Requires that the connection targets either a logical service or a known
-/// endpoint.
-fn new_opaque<I, O, R>(
-    outbound: Outbound<O>,
-    resolve: R,
-) -> svc::ArcNewService<
-    Opaque,
-    impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
->
-where
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
-    O: Clone + Send + Sync + Unpin + 'static,
-    O: svc::MakeConnection<outbound::tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
-    O::Connection: Send + Unpin,
-    O::Future: Send + Unpin + 'static,
-    R: Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
-{
-    let logical = outbound
-        .clone()
-        .push_tcp_endpoint()
-        .push_opaq_concrete(resolve)
-        .push_opaq_logical();
-    let endpoint = outbound
-        .clone()
-        .push_tcp_endpoint()
-        .push_opaq_forward()
-        .into_stack();
-    let inbound_ips = outbound.config().inbound_ips.clone();
-    endpoint
-        .push_switch(
-            move |opaque: Opaque| -> Result<_, Error> {
-                if let Some((addr, metadata)) = opaque.profile.endpoint() {
-                    return Ok(svc::Either::A(outbound::tcp::Endpoint::from_metadata(
-                        addr,
-                        metadata,
-                        tls::NoClientTls::NotProvidedByServiceDiscovery,
-                        opaque.profile.is_opaque_protocol(),
-                        &inbound_ips,
-                    )));
-                }
-
-                let logical_addr = opaque
-                    .profile
-                    .logical_addr()
-                    .ok_or(RefusedNotResolved(opaque.target))?;
-                Ok(svc::Either::B(outbound::tcp::Logical {
-                    profile: opaque.profile,
-                    logical_addr,
-                    protocol: (),
-                }))
-            },
-            logical.into_inner(),
-        )
-        .push(svc::ArcNewService::layer())
-        .check_new_service::<Opaque, I>()
-        .into_inner()
-}
-
-// === impl OutboundHttp ===
-
-impl Param<http::Version> for OutboundHttp {
-    fn param(&self) -> http::Version {
-        self.version
+impl svc::Param<policy::AllowPolicy> for Opaque {
+    fn param(&self) -> policy::AllowPolicy {
+        self.inbound_policy.clone()
     }
 }
 
-// === impl InboundHttp ===
-
-impl Param<http::normalize_uri::DefaultAuthority> for InboundHttp {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(Some(self.outbound.target.as_http_authority()))
-    }
-}
-
-impl Param<Option<identity::Name>> for InboundHttp {
-    fn param(&self) -> Option<identity::Name> {
-        Some(self.client.client_id.clone().0)
-    }
-}
-
-impl Param<http::Version> for InboundHttp {
-    fn param(&self) -> http::Version {
-        self.outbound.version
-    }
-}
-
-impl Param<tls::ClientId> for InboundHttp {
-    fn param(&self) -> tls::ClientId {
-        self.client.client_id.clone()
-    }
-}
-
-impl Param<OrigDstAddr> for InboundHttp {
+impl svc::Param<OrigDstAddr> for Opaque {
     fn param(&self) -> OrigDstAddr {
         self.client.local_addr
     }
 }
 
-impl Param<Remote<ClientAddr>> for InboundHttp {
+impl svc::Param<Remote<ClientAddr>> for Opaque {
     fn param(&self) -> Remote<ClientAddr> {
         self.client.client_addr
     }
 }
 
-impl Param<tls::ConditionalServerTls> for InboundHttp {
+impl svc::Param<tls::ConditionalServerTls> for Opaque {
     fn param(&self) -> tls::ConditionalServerTls {
         tls::ConditionalServerTls::Some(tls::ServerTls::Established {
             client_id: Some(self.client.client_id.clone()),
@@ -340,13 +213,68 @@ impl Param<tls::ConditionalServerTls> for InboundHttp {
     }
 }
 
-impl Param<policy::AllowPolicy> for InboundHttp {
+// === impl OutboundHttp ===
+
+impl svc::Param<http::Version> for OutboundHttp {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+// === impl InboundHttp ===
+
+impl svc::Param<http::normalize_uri::DefaultAuthority> for InboundHttp {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(Some(self.outbound.target.as_http_authority()))
+    }
+}
+
+impl svc::Param<Option<identity::Name>> for InboundHttp {
+    fn param(&self) -> Option<identity::Name> {
+        Some(self.client.client_id.clone().0)
+    }
+}
+
+impl svc::Param<http::Version> for InboundHttp {
+    fn param(&self) -> http::Version {
+        self.outbound.version
+    }
+}
+
+impl svc::Param<tls::ClientId> for InboundHttp {
+    fn param(&self) -> tls::ClientId {
+        self.client.client_id.clone()
+    }
+}
+
+impl svc::Param<OrigDstAddr> for InboundHttp {
+    fn param(&self) -> OrigDstAddr {
+        self.client.local_addr
+    }
+}
+
+impl svc::Param<Remote<ClientAddr>> for InboundHttp {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client.client_addr
+    }
+}
+
+impl svc::Param<tls::ConditionalServerTls> for InboundHttp {
+    fn param(&self) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(self.client.client_id.clone()),
+            negotiated_protocol: self.client.alpn.clone(),
+        })
+    }
+}
+
+impl svc::Param<policy::AllowPolicy> for InboundHttp {
     fn param(&self) -> policy::AllowPolicy {
         self.inbound_policy.clone()
     }
 }
 
-impl Param<policy::ServerLabel> for InboundHttp {
+impl svc::Param<policy::ServerLabel> for InboundHttp {
     fn param(&self) -> policy::ServerLabel {
         self.inbound_policy.server_label()
     }
@@ -362,35 +290,6 @@ impl<B> svc::router::SelectRoute<http::Request<B>> for ByRequestVersion {
         Ok(OutboundHttp {
             version: req.version().try_into()?,
             ..self.0.clone()
-        })
-    }
-}
-
-// === impl Opaque ===
-
-impl Param<policy::AllowPolicy> for Opaque {
-    fn param(&self) -> policy::AllowPolicy {
-        self.inbound_policy.clone()
-    }
-}
-
-impl Param<OrigDstAddr> for Opaque {
-    fn param(&self) -> OrigDstAddr {
-        self.client.local_addr
-    }
-}
-
-impl Param<Remote<ClientAddr>> for Opaque {
-    fn param(&self) -> Remote<ClientAddr> {
-        self.client.client_addr
-    }
-}
-
-impl Param<tls::ConditionalServerTls> for Opaque {
-    fn param(&self) -> tls::ConditionalServerTls {
-        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-            client_id: Some(self.client.client_id.clone()),
-            negotiated_protocol: self.client.alpn.clone(),
         })
     }
 }
