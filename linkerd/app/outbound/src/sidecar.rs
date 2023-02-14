@@ -28,9 +28,9 @@ impl Outbound<()> {
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        // Route discovery
+        // Route discovery.
         P: profiles::GetProfile<Error = Error>,
-        // Endpoint resolver
+        // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());

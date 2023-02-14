@@ -55,12 +55,16 @@ impl Outbound<()> {
     /// fails, we revert to using the normal IP-based discovery
     pub fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
     where
+        // Target type for outbund ingress-mode connections.
         T: Param<OrigDstAddr>,
         T: Clone + Send + Sync + 'static,
+        // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        // Route discovery.
         P: profiles::GetProfile<Error = Error>,
+        // Endpoint resolver.
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
         // The fallback stack is the same thing as the normal proxy stack, but
         // it doesn't include TCP metrics, since they are already instrumented
