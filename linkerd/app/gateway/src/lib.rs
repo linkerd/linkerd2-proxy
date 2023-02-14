@@ -42,10 +42,6 @@ struct Http<T> {
     parent: outbound::Discovery<T>,
 }
 
-// XXX These outbound types can't just reflect `T` blindly, because it will bust
-// caching. We probably  need to extract everything we need from the inner `T`
-// and move on with a new type.
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HttpOut<T = OrigDstAddr> {
     addr: GatewayAddr,
@@ -117,8 +113,6 @@ impl Gateway {
         HSvc::Future: Send + 'static,
     {
         let protocol = {
-            // XXX TODO THIS STACK PROBABLY NEEDS TO HANDLE CACHING LOAD BALANCERS,
-            // etc.
             let switch = |parent: outbound::Discovery<T>| -> Result<_, GatewayDomainInvalid> {
                 if let Some(proto) = (*parent).param() {
                     let version = match proto {
