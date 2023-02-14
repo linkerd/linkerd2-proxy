@@ -98,42 +98,49 @@ impl<C> Outbound<C> {
             svc::MapTargetLayer::new(|t: Balance<T>| -> ConcreteAddr { ConcreteAddr(t.addr) })
                 .layer(resolve.into_service());
 
-        self.map_stack(|config, rt, connect| {
+        self.map_stack(|config, rt, inner| {
             let crate::Config {
                 tcp_connection_queue,
                 ..
             } = config;
 
-            let endpoint = connect
+            let connect = inner
                 .push(svc::stack::WithoutConnectionMetadata::layer())
-                .push_new_thunk()
+                .push_new_thunk();
+
+            let forward = connect
+                .clone()
                 .push_on_service(
                     rt.metrics
                         .proxy
                         .stack
-                        .layer(stack_labels("tcp", "endpoint")),
+                        .layer(stack_labels("opaq", "forward")),
+                )
+                .instrument(|e: &Endpoint<T>| info_span!("forward", addr = %e.addr));
+
+            let endpoint = connect
+                .push_on_service(
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(stack_labels("opaq", "endpoint")),
                 )
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
-            endpoint
-                .clone()
-                .check_new_service::<Endpoint<T>, ()>()
+            let balance = endpoint
                 .push(NewEndpoint::layer(config.inbound_ips.iter().copied()))
                 .lift_new_with_target()
-                .check_new_new_service::<Balance<T>, (_, _), ()>()
                 .push(tcp::NewBalancePeakEwma::layer(resolve))
-                .check_new_service::<Balance<T>, ()>()
-                .push_on_service(
-                    svc::layers().push(
-                        rt.metrics
-                            .proxy
-                            .stack
-                            .layer(stack_labels("opaque", "concrete")),
-                    ),
-                )
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
-                .instrument(|t: &Balance<T>| info_span!("concrete", addr = %t.addr))
-                .check_new_service::<Balance<T>, ()>()
+                .push_on_service(
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(stack_labels("opaq", "balance")),
+                )
+                .instrument(|t: &Balance<T>| info_span!("balance", addr = %t.addr));
+
+            balance
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
@@ -148,15 +155,11 @@ impl<C> Outbound<C> {
                             }),
                         })
                     },
-                    endpoint.check_new_service::<Endpoint<T>, ()>().into_inner(),
+                    forward.into_inner(),
                 )
-                .push_on_service(
-                    svc::layers()
-                        .push(tcp::Forward::layer())
-                        .push(drain::Retain::layer(rt.drain.clone())),
-                )
+                .push_on_service(tcp::Forward::layer())
+                .push_on_service(drain::Retain::layer(rt.drain.clone()))
                 .push(svc::NewQueue::layer_via(*tcp_connection_queue))
-                .check_new_service::<T, I>()
                 .push(svc::ArcNewService::layer())
         })
     }

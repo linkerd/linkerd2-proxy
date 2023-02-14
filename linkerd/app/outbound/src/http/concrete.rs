@@ -104,37 +104,44 @@ impl<N> Outbound<N> {
             svc::MapTargetLayer::new(|t: Balance<T>| -> ConcreteAddr { ConcreteAddr(t.addr) })
                 .layer(resolve.into_service());
 
-        self.map_stack(|config, rt, endpoint| {
+        self.map_stack(|config, rt, inner| {
             let inbound_ips = config.inbound_ips.clone();
 
-            let endpoint = endpoint
+            let forward = inner
+                .clone()
+                .push_on_service(
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(stack_labels("http", "forward")),
+                )
+                .instrument(|e: &Endpoint<T>| info_span!("forward", addr = %e.addr));
+
+            let endpoint = inner
                 .push_on_service(
                     rt.metrics
                         .proxy
                         .stack
                         .layer(stack_labels("http", "endpoint")),
                 )
-                .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr))
-                .check_new_service::<Endpoint<T>, http::Request<_>>();
+                .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
-            endpoint
-                .clone()
+            let balance = endpoint
                 .push(NewEndpoint::layer(inbound_ips.iter().copied()))
                 .lift_new_with_target()
-                .check_new_new_service::<Balance<T>, (_, _), http::Request<_>>()
                 .push(http::NewBalancePeakEwma::layer(resolve))
-                .check_new_service::<Balance<T>, http::Request<_>>()
                 // Drives the initial resolution via the service's readiness.
-                .push_on_service(
-                    svc::layers().push(http::BoxResponse::layer()).push(
-                        rt.metrics
-                            .proxy
-                            .stack
-                            .layer(stack_labels("http", "concrete")),
-                    ),
-                )
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
-                .instrument(|t: &Balance<T>| info_span!("concrete", addr = %t.addr))
+                .push_on_service(http::BoxResponse::layer())
+                .push_on_service(
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(stack_labels("http", "balance")),
+                )
+                .instrument(|t: &Balance<T>| info_span!("balance", addr = %t.addr));
+
+            balance
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
@@ -152,10 +159,9 @@ impl<N> Outbound<N> {
                             }),
                         })
                     },
-                    endpoint.into_inner(),
+                    forward.into_inner(),
                 )
                 .push(svc::NewQueue::layer_via(config.http_request_queue))
-                .check_new_service::<T, http::Request<_>>()
                 .push(svc::ArcNewService::layer())
         })
     }

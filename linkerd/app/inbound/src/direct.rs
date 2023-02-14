@@ -138,7 +138,7 @@ impl<N> Inbound<N> {
                 })
                 .check_new_service::<(policy::ServerPermit, LocalTcp), _>()
                 .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()))
-                .instrument(|_: &_| debug_span!("opaque"))
+                .instrument(|_: &_| debug_span!("opaq"))
                 .check_new_service::<LocalTcp, _>()
                 // When the transport header is present, it may be used for either local TCP
                 // forwarding, or we may be processing an HTTP gateway connection. HTTP gateway
