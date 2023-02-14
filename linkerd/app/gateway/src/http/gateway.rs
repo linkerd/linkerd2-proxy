@@ -11,15 +11,18 @@ use std::{
     task::{Context, Poll},
 };
 
+/// A `NewService` that wraps inner services with [`HttpGateway`].
 #[derive(Clone, Debug)]
 pub(crate) struct NewHttpGateway<N> {
     inner: N,
     local_id: tls::LocalId,
 }
 
+/// A `Service` middleware that fails requests that would loop. It reads and
+/// updates the `forwarded` header to detect loops.
 #[derive(Clone, Debug)]
-pub(crate) struct HttpGateway<N> {
-    inner: N,
+pub(crate) struct HttpGateway<S> {
+    inner: S,
     host: String,
     client_id: tls::ClientId,
     local_id: tls::LocalId,
@@ -73,14 +76,15 @@ where
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // If the client ID is the same as the gateway's, then we're in a loop.
+        if *self.client_id == *self.local_id {
+            return Poll::Ready(Err(GatewayLoop.into()));
+        }
+
         self.inner.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
-        if *self.client_id == *self.local_id {
-            return Box::pin(future::err(GatewayLoop.into()));
-        }
-
         // Check forwarded headers to see if this request has already
         // transited through this gateway.
         for forwarded in request
