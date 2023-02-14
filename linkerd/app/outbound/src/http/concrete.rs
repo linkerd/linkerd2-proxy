@@ -68,8 +68,6 @@ impl<N> Outbound<N> {
     /// 'failfast'. While in failfast, buffered requests are failed and the
     /// service becomes unavailable so callers may choose alternate concrete
     /// services.
-    //
-    // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_http_concrete<T, NSvc, R>(
         self,
         resolve: R,

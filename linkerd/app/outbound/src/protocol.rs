@@ -30,7 +30,6 @@ impl<N> Outbound<N> {
     pub fn push_protocol<T, I, H, HSvc, NSvc>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type indicating whether detection should be skipped.
-        // TODO(ver): Enable additional hinting via discovery.
         T: svc::Param<Protocol>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
