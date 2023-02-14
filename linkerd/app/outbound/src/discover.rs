@@ -1,8 +1,7 @@
-use crate::{http, Outbound};
+use crate::Outbound;
 use linkerd_app_core::{
     profiles,
     svc::{self, stack::Param},
-    transport::addrs::*,
     Error, Infallible,
 };
 use std::{
@@ -109,33 +108,6 @@ impl<N> Outbound<N> {
 impl<T> From<(Option<profiles::Receiver>, T)> for Discovery<T> {
     fn from((profile, parent): (Option<profiles::Receiver>, T)) -> Self {
         Self { parent, profile }
-    }
-}
-
-impl<T> svc::Param<http::Version> for Discovery<T>
-where
-    T: svc::Param<http::Version>,
-{
-    fn param(&self) -> http::Version {
-        self.parent.param()
-    }
-}
-
-impl<T> svc::Param<OrigDstAddr> for Discovery<T>
-where
-    T: svc::Param<OrigDstAddr>,
-{
-    fn param(&self) -> OrigDstAddr {
-        self.parent.param()
-    }
-}
-
-impl<T> svc::Param<Remote<ServerAddr>> for Discovery<T>
-where
-    T: svc::Param<Remote<ServerAddr>>,
-{
-    fn param(&self) -> Remote<ServerAddr> {
-        self.parent.param()
     }
 }
 

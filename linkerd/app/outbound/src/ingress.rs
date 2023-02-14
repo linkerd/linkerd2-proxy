@@ -22,7 +22,7 @@ struct Http<T> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Opaq<T>(T);
+struct Opaq<T>(discover::Discovery<T>);
 
 #[derive(Clone, Debug)]
 struct SelectTarget<T>(Http<T>);
@@ -423,18 +423,17 @@ where
     T: svc::Param<OrigDstAddr>,
 {
     fn param(&self) -> Remote<ServerAddr> {
-        let OrigDstAddr(addr) = self.0.param();
+        let OrigDstAddr(addr) = (*self.0).param();
         Remote(ServerAddr(addr))
     }
 }
 
 impl<T> Param<opaq::logical::Target> for Opaq<T>
 where
-    T: svc::Param<Option<profiles::Receiver>>,
     T: svc::Param<OrigDstAddr>,
 {
     fn param(&self) -> opaq::logical::Target {
-        if let Some(profile) = self.0.param() {
+        if let Some(profile) = svc::Param::<Option<profiles::Receiver>>::param(&self.0) {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
                 return opaq::logical::Target::Route(addr, profile);
             }
