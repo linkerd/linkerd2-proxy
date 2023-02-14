@@ -191,8 +191,12 @@ impl Config {
 
         let dst_addr = dst.addr.clone();
         let gateway = {
-            let opaq = outbound.to_tcp_connect().push_opaq(dst.resolve.clone());
-            let http = outbound.to_tcp_connect().push_http(dst.resolve.clone());
+            let opaq = outbound
+                .to_tcp_connect()
+                .push_opaq_cached(dst.resolve.clone());
+            let http = outbound
+                .to_tcp_connect()
+                .push_http_cached(dst.resolve.clone());
             let gw =
                 gateway::Gateway::new(gateway, inbound.clone(), outbound.clone().with_stack(()));
             gw.stack(dst.profiles.clone(), opaq.into_inner(), http.into_inner())

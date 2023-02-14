@@ -25,7 +25,7 @@ impl<C> Outbound<C> {
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.
-    pub fn push_opaq<T, I, R>(
+    pub fn push_opaq_cached<T, I, R>(
         self,
         resolve: R,
     ) -> Outbound<
@@ -37,7 +37,7 @@ impl<C> Outbound<C> {
     where
         // Opaque target
         T: svc::Param<logical::Target>,
-        T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+        T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
         // Server-side connection
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
@@ -52,8 +52,9 @@ impl<C> Outbound<C> {
         self.push_tcp_endpoint()
             .push_opaq_concrete(resolve)
             .push_opaq_logical()
-            .map_stack(|_, _, stk| {
+            .map_stack(|config, _rt, stk| {
                 stk.push_map_target(|t: T| Opaq(t.param()))
+                    .push_new_idle_cached(config.discovery_idle_timeout)
                     .push(svc::ArcNewService::layer())
             })
     }

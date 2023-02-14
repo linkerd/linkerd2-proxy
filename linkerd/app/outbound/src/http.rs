@@ -42,7 +42,7 @@ impl<C> Outbound<C> {
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.
-    pub fn push_http<T, R>(
+    pub fn push_http_cached<T, R>(
         self,
         resolve: R,
     ) -> Outbound<
@@ -60,7 +60,7 @@ impl<C> Outbound<C> {
         // Logical HTTP target.
         T: svc::Param<http::Version>,
         T: svc::Param<logical::Target>,
-        T: Clone + Send + Sync + 'static,
+        T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         // TCP connector stack.
@@ -74,10 +74,11 @@ impl<C> Outbound<C> {
             .push_http_concrete(resolve)
             .push_http_logical()
             .push_http_server()
-            .map_stack(move |_, _, stk| {
+            .map_stack(move |config, _, stk| {
                 // Use a dedicated target type to configure parameters for the
                 // HTTP stack.
                 stk.push_map_target(Http::new)
+                    .push_new_idle_cached(config.discovery_idle_timeout)
                     .push(svc::ArcNewService::layer())
                     .check_new_service::<T, http::Request<http::BoxBody>>()
             })

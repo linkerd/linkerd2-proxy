@@ -67,23 +67,19 @@ impl Outbound<()> {
         // on this ingress stack.
         let opaque = self
             .to_tcp_connect()
-            .push_opaq(resolve.clone())
+            .push_opaq_cached(resolve.clone())
             .map_stack(|_, _, stk| stk.push_map_target(OpaqIngress))
             .push_discover(profiles.clone())
-            // TODO replace this cache.
-            .push_discover_cache()
             .into_inner();
 
         let http = self
             .to_tcp_connect()
-            .push_http(resolve)
+            .push_http_cached(resolve)
             .map_stack(|_, _, stk| {
                 stk.check_new_service::<HttpIngress<http::logical::Target>, _>()
                     .push_filter(HttpIngress::try_from)
             })
-            .push_discover(profiles)
-            // TODO replace this cache.
-            .push_discover_cache();
+            .push_discover(profiles);
 
         http.push_ingress(opaque)
             .push_tcp_instrument(|t: &T| tracing::info_span!("ingress", addr = %t.param()))
@@ -123,7 +119,7 @@ impl<N> Outbound<N> {
             Response = http::Response<http::BoxBody>,
             Error = Error,
         >,
-        NSvc: Clone + Send + Sync + Unpin + 'static,
+        NSvc: Send + Unpin + 'static,
         NSvc::Future: Send,
     {
         self.map_stack(|config, rt, discover| {

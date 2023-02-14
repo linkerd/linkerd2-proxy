@@ -5,6 +5,10 @@ use std::{
 };
 use tokio::time::Instant;
 
+/// A service that tracks metrics about its readiness.
+///
+/// This service does NOT implement `Clone` because we want the drop count to
+/// reflect actual drops.
 #[derive(Debug)]
 pub struct TrackService<S> {
     inner: S,

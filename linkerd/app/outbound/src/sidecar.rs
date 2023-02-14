@@ -33,22 +33,8 @@ impl Outbound<()> {
         // Endpoint resolver
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        // Cache the HTTP and opaque stacks so that a router/load-balancer may
-        // be reused across connections.
-        //
-        // TODO(ver) Should this timeout be separate from the discovery timeout?
-        // TODO(ver) decouple balancer discovery timeout from stack timeout.
-        let idle_timeout = self.config.discovery_idle_timeout;
-
-        let opaq = self
-            .to_tcp_connect()
-            .push_opaq(resolve.clone())
-            .map_stack(move |_, _, stk| stk.push_new_idle_cached(idle_timeout));
-
-        let http = self
-            .to_tcp_connect()
-            .push_http(resolve)
-            .map_stack(move |_, _, stk| stk.push_new_idle_cached(idle_timeout));
+        let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
+        let http = self.to_tcp_connect().push_http_cached(resolve);
 
         opaq.push_protocol(http.into_inner())
             // Use a dedicated target type to bind discovery results to the
