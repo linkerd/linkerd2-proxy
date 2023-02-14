@@ -3,7 +3,7 @@ use crate::{http, tcp, test_util::*};
 use ::http::header::{CONNECTION, UPGRADE};
 use linkerd_app_core::{
     io,
-    proxy::api_resolve::{ProtocolHint},
+    proxy::api_resolve::ProtocolHint,
     svc::{NewService, ServiceExt},
     Infallible,
 };
