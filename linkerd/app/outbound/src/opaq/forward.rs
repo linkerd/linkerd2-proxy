@@ -34,8 +34,21 @@ impl<C> Outbound<C> {
                 .push_on_service(tcp::Forward::layer())
                 .push(svc::NewMapErr::layer_from_target())
                 .push(svc::ArcNewService::layer())
-                .check_new_service::<T, I>()
         })
+    }
+}
+
+// === impl ForwardError ===
+
+impl<T> From<(&T, Error)> for ForwardError
+where
+    T: svc::Param<Remote<ServerAddr>>,
+{
+    fn from((target, source): (&T, Error)) -> Self {
+        Self {
+            addr: target.param(),
+            source,
+        }
     }
 }
 
@@ -90,19 +103,5 @@ mod tests {
             .oneshot(io.build())
             .await
             .expect("forward must complete successfully");
-    }
-}
-
-// === impl ForwardError ===
-
-impl<T> From<(&T, Error)> for ForwardError
-where
-    T: svc::Param<Remote<ServerAddr>>,
-{
-    fn from((target, source): (&T, Error)) -> Self {
-        Self {
-            addr: target.param(),
-            source,
-        }
     }
 }
