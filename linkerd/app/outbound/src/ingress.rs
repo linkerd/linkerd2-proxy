@@ -43,8 +43,6 @@ struct InvalidOverrideHeader;
 
 const DST_OVERRIDE_HEADER: &str = "l5d-dst-override";
 
-type DetectIo<I> = io::PrefixedIo<I>;
-
 // === impl Outbound ===
 
 impl Outbound<()> {
@@ -113,7 +111,7 @@ impl<N> Outbound<N> {
         I: std::fmt::Debug + Send + Unpin + 'static,
         // Fallback opaque stack.
         F: svc::NewService<T, Service = FSvc> + Clone + Send + Sync + 'static,
-        FSvc: svc::Service<DetectIo<I>, Response = (), Error = Error> + Send + 'static,
+        FSvc: svc::Service<io::PrefixedIo<I>, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,
         //  HTTP stack.
         N: svc::NewService<Http<RequestTarget>, Service = NSvc>,
@@ -249,17 +247,18 @@ impl svc::Param<http::logical::Target> for Http<http::logical::Target> {
     }
 }
 
-impl<T> std::ops::Deref for Http<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.parent
-    }
-}
-
 impl<T> Param<http::Version> for Http<T> {
     fn param(&self) -> http::Version {
         self.version
+    }
+}
+
+impl<T> Param<OrigDstAddr> for Http<T>
+where
+    T: svc::Param<OrigDstAddr>,
+{
+    fn param(&self) -> OrigDstAddr {
+        self.parent.param()
     }
 }
 
@@ -276,15 +275,6 @@ impl Param<profiles::LookupAddr> for Http<RequestTarget> {
             RequestTarget::Named(addr) => addr.into(),
             RequestTarget::Orig(OrigDstAddr(addr)) => addr.into(),
         })
-    }
-}
-
-impl<T> Param<OrigDstAddr> for Http<T>
-where
-    T: svc::Param<OrigDstAddr>,
-{
-    fn param(&self) -> OrigDstAddr {
-        self.parent.param()
     }
 }
 
@@ -371,6 +361,14 @@ impl tap::Inspect for Http<OrigDstAddr> {
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
         true
+    }
+}
+
+impl<T> std::ops::Deref for Http<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.parent
     }
 }
 
