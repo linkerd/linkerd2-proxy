@@ -337,7 +337,7 @@ mod require_id_header {
                 let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
                 let dst = ctrl
                     .destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
-                dst.send(controller::destination_add_tls(srv.addr, app_name));
+                dst.send(controller::destination_add(srv.addr).identity(app_name));
 
                 // Make a proxy that has `proxy_identity` identity and no
                 // SO_ORIGINAL_DST backup
