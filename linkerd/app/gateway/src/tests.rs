@@ -1,4 +1,4 @@
-use super::*;
+use crate::{http::NewHttpGateway, *};
 use linkerd_app_core::{
     dns, profiles,
     proxy::{api_resolve::Metadata, http},
