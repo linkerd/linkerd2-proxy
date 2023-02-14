@@ -255,15 +255,11 @@ impl Gateway {
         self.inbound
             .clone()
             .with_stack(http)
-            // - May write access logs.
-            // - Handle HTTP downgrading, inbound-policy errors.
-            // - XXX Set an identity header -- this should probably not be done
-            //   in the gateway, though the value will be stripped by meshed
-            //   servers.
-            // - Initializes tracing.
+            // Teminates HTTP connections.
+            // XXX Sets an identity header -- this should probably not be done
+            // in the gateway, though the value will be stripped by meshed
+            // servers.
             .push_http_server()
-            // Teminate HTTP connections.
-            .push_tcp_http_server()
             .into_stack()
     }
 }

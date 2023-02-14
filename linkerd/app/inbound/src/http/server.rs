@@ -5,12 +5,13 @@ pub use linkerd_app_core::proxy::http::{
     Version,
 };
 use linkerd_app_core::{
-    config, errors, http_tracing, io,
+    config::{ProxyConfig, ServerConfig},
+    errors, http_tracing, io,
     metrics::ServerLabel,
     proxy::http,
     svc::{self, ExtractParam, Param},
     tls,
-    transport::addrs::*,
+    transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
 use linkerd_http_access_log::NewAccessLog;
@@ -19,51 +20,30 @@ use tracing::debug_span;
 #[derive(Copy, Clone, Debug)]
 struct ServerRescue;
 
-impl<N> Inbound<N> {
-    /// Prepares HTTP requests for inbound proxying.
-    ///
-    /// - Emits access logs (when configured).
-    /// - Initializes tracing.
-    /// - Handles proxy errors.
-    /// - Fails requests when the inner service is not ready.
-    /// - Enforces a concurrency limit.
-    /// - Downgrades HTTP/1 requests transported over HTTP/2 connections.
-    /// - Normalizes HTTP/1 requests with origin-form URIs.
-    /// - Sets the `l5d-server-id` header.
-    pub fn push_http_server<T, B, NSvc>(
-        self,
-    ) -> Inbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<
-                    http::Request<B>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    >
+impl<H> Inbound<H> {
+    /// Fails requests when the `HSvc`-typed inner service is not ready.
+    pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
     where
-        // Target
-        T: Param<http::normalize_uri::DefaultAuthority>,
-        T: Param<tls::ConditionalServerTls>,
-        T: Param<ServerLabel>,
-        T: Param<OrigDstAddr>,
-        T: Param<Remote<ClientAddr>>,
+        T: Param<Version>
+            + Param<http::normalize_uri::DefaultAuthority>
+            + Param<tls::ConditionalServerTls>
+            + Param<ServerLabel>
+            + Param<OrigDstAddr>
+            + Param<Remote<ClientAddr>>,
         T: Clone + Send + Unpin + 'static,
-        // Outer request type.
-        B: http::HttpBody + std::fmt::Debug + Send + 'static,
-        B::Data: Send + 'static,
-        B::Error: Into<Error>,
-        // Inner stack
-        N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
-        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
-        NSvc: Clone + Send + Unpin + 'static,
-        NSvc::Error: Into<Error>,
-        NSvc::Future: Send,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
+        HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Clone
+            + Send
+            + Unpin
+            + 'static,
+        HSvc::Error: Into<Error>,
+        HSvc::Future: Send,
     {
         self.map_stack(|config, rt, http| {
-            let config::ProxyConfig {
+            let ProxyConfig {
+                server: ServerConfig { h2_settings, .. },
                 max_in_flight_requests,
                 ..
             } = config.proxy;
@@ -73,9 +53,7 @@ impl<N> Inbound<N> {
                 // `Client`. This must be below the `orig_proto::Downgrade` layer, since
                 // the request may have been downgraded from a HTTP/2 orig-proto request.
                 .push(http::NewNormalizeUri::layer())
-                .check_new::<T>()
                 .push(NewSetIdentityHeader::layer(()))
-                .check_new::<T>()
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
@@ -107,35 +85,11 @@ impl<N> Inbound<N> {
                 )
                 .push(NewAccessLog::layer())
                 .instrument(|_: &T| debug_span!("http"))
-                .push(svc::ArcNewService::layer())
-        })
-    }
-
-    /// Terminates HTTP connections and dispatches HTTP requests to the inner
-    /// service.
-    pub fn push_tcp_http_server<T, I, NSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
-    where
-        // Target
-        T: svc::Param<Version>,
-        T: Clone + Send + Unpin + 'static,
-        // Server-side socket
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
-        // Inner stack
-        N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
-        NSvc: svc::Service<
-            http::Request<http::UpgradeBody>,
-            Response = http::Response<http::BoxBody>,
-            Error = Error,
-        >,
-        NSvc: Clone + Send + Unpin + 'static,
-        NSvc::Future: Send,
-    {
-        self.map_stack(|config, rt, http| {
-            http.unlift_new()
-                .push(http::NewServeHttp::layer(
-                    config.proxy.server.h2_settings,
-                    rt.drain.clone(),
-                ))
+                .check_new_service::<T, http::Request<_>>()
+                .unlift_new()
+                .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
+                .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
+                .check_new_service::<T, I>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
