@@ -78,7 +78,7 @@ impl Outbound<()> {
             .to_tcp_connect()
             .push_http_cached(resolve)
             .map_stack(|_, _, stk| {
-                stk.check_new_service::<Http<http::logical::Target>, _>()
+                stk.check_new_service::<Http<http::Target>, _>()
                     .push_filter(Http::try_from)
             })
             .push_discover(profiles);
@@ -187,7 +187,7 @@ impl<N> Outbound<N> {
 
 // === impl Http ===
 
-impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::logical::Target> {
+impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::Target> {
     type Error = ProfileRequired;
 
     fn try_from(
@@ -201,7 +201,7 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::logical::T
                 if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
                     return Ok(Http {
                         version: (*parent).param(),
-                        parent: http::logical::Target::Route(addr, profile),
+                        parent: http::Target::Route(addr, profile),
                     });
                 }
 
@@ -210,7 +210,7 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::logical::T
                     .ok_or_else(|| ProfileRequired(addr.clone()))?;
                 Ok(Http {
                     version: (*parent).param(),
-                    parent: http::logical::Target::Forward(Remote(ServerAddr(addr)), metadata),
+                    parent: http::Target::Forward(Remote(ServerAddr(addr)), metadata),
                 })
             }
 
@@ -221,28 +221,22 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::logical::T
                     if let Some((addr, metadata)) = profile.endpoint() {
                         return Ok(Http {
                             version: (*parent).param(),
-                            parent: http::logical::Target::Forward(
-                                Remote(ServerAddr(addr)),
-                                metadata,
-                            ),
+                            parent: http::Target::Forward(Remote(ServerAddr(addr)), metadata),
                         });
                     }
                 }
 
                 Ok(Http {
                     version: (*parent).param(),
-                    parent: http::logical::Target::Forward(
-                        Remote(ServerAddr(*addr)),
-                        Default::default(),
-                    ),
+                    parent: http::Target::Forward(Remote(ServerAddr(*addr)), Default::default()),
                 })
             }
         }
     }
 }
 
-impl svc::Param<http::logical::Target> for Http<http::logical::Target> {
-    fn param(&self) -> http::logical::Target {
+impl svc::Param<http::Target> for Http<http::Target> {
+    fn param(&self) -> http::Target {
         self.parent.clone()
     }
 }
@@ -426,21 +420,21 @@ where
     }
 }
 
-impl<T> Param<opaq::logical::Target> for Opaq<T>
+impl<T> Param<opaq::Target> for Opaq<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
-    fn param(&self) -> opaq::logical::Target {
+    fn param(&self) -> opaq::Target {
         if let Some(profile) = svc::Param::<Option<profiles::Receiver>>::param(&self.0) {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaq::logical::Target::Route(addr, profile);
+                return opaq::Target::Route(addr, profile);
             }
 
             if let Some((addr, metadata)) = profile.endpoint() {
-                return opaq::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
+                return opaq::Target::Forward(Remote(ServerAddr(addr)), metadata);
             }
         }
 
-        opaq::logical::Target::Forward(self.param(), Default::default())
+        opaq::Target::Forward(self.param(), Default::default())
     }
 }

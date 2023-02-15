@@ -123,11 +123,11 @@ impl<T> svc::Param<http::Version> for Http<T> {
     }
 }
 
-impl<T> svc::Param<http::logical::Target> for Http<T>
+impl<T> svc::Param<http::Target> for Http<T>
 where
-    T: svc::Param<http::logical::Target>,
+    T: svc::Param<http::Target>,
 {
-    fn param(&self) -> http::logical::Target {
+    fn param(&self) -> http::Target {
         self.parent.param()
     }
 }

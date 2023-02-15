@@ -11,12 +11,13 @@ use linkerd_app_core::{
 };
 use std::{fmt::Debug, hash::Hash};
 
-pub mod concrete;
-pub mod forward;
-pub mod logical;
+mod concrete;
+mod logical;
+
+pub use self::logical::Target;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Opaq(logical::Target);
+struct Opaq(Target);
 
 // === impl Outbound ===
 
@@ -36,7 +37,7 @@ impl<C> Outbound<C> {
     >
     where
         // Opaque target
-        T: svc::Param<logical::Target>,
+        T: svc::Param<Target>,
         T: Clone + Send + Sync + 'static,
         // Server-side connection
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -64,8 +65,8 @@ impl<C> Outbound<C> {
 
 // === impl Opaq ===
 
-impl svc::Param<logical::Target> for Opaq {
-    fn param(&self) -> logical::Target {
+impl svc::Param<Target> for Opaq {
+    fn param(&self) -> Target {
         self.0.clone()
     }
 }
@@ -73,7 +74,7 @@ impl svc::Param<logical::Target> for Opaq {
 impl svc::Param<Option<profiles::Receiver>> for Opaq {
     fn param(&self) -> Option<profiles::Receiver> {
         match self.0.param() {
-            logical::Target::Route(_, rx) => Some(rx),
+            Target::Route(_, rx) => Some(rx),
             _ => None,
         }
     }

@@ -4,7 +4,7 @@ use linkerd_app_core::{io, profiles, svc, tls, transport::addrs::*, Error};
 use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
 
-pub type Target = outbound::opaq::logical::Target;
+pub type Target = outbound::opaq::Target;
 
 impl Gateway {
     /// Wrap the provided outbound opaque stack with inbound authorization and
@@ -36,9 +36,9 @@ impl Gateway {
                     let profile = svc::Param::<Option<profiles::Receiver>>::param(&*opaq)
                         .ok_or(GatewayDomainInvalid)?;
                     if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                        Ok(outbound::opaq::logical::Target::Route(addr, profile))
+                        Ok(outbound::opaq::Target::Route(addr, profile))
                     } else if let Some((addr, metadata)) = profile.endpoint() {
-                        Ok(outbound::opaq::logical::Target::Forward(
+                        Ok(outbound::opaq::Target::Forward(
                             Remote(ServerAddr(addr)),
                             metadata,
                         ))

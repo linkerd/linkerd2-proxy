@@ -15,21 +15,22 @@ use linkerd_app_core::{
 };
 use std::{fmt::Debug, hash::Hash};
 
-pub mod concrete;
+mod concrete;
 mod endpoint;
-pub mod logical;
+mod logical;
 mod proxy_connection_close;
 mod require_id_header;
 mod retry;
 mod server;
 mod strip_proxy_error;
 
+pub use self::logical::Target;
 pub(crate) use self::require_id_header::IdentityRequired;
 pub use linkerd_app_core::proxy::http::{self as http, *};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Http {
-    target: logical::Target,
+    target: Target,
     version: http::Version,
 }
 
@@ -58,7 +59,7 @@ impl<C> Outbound<C> {
     where
         // Logical HTTP target.
         T: svc::Param<http::Version>,
-        T: svc::Param<logical::Target>,
+        T: svc::Param<Target>,
         T: Clone + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
@@ -89,7 +90,7 @@ impl<C> Outbound<C> {
 impl Http {
     pub fn new<T>(parent: T) -> Self
     where
-        T: svc::Param<logical::Target>,
+        T: svc::Param<Target>,
         T: svc::Param<http::Version>,
     {
         Self {
@@ -105,8 +106,8 @@ impl svc::Param<http::Version> for Http {
     }
 }
 
-impl svc::Param<logical::Target> for Http {
-    fn param(&self) -> logical::Target {
+impl svc::Param<Target> for Http {
+    fn param(&self) -> Target {
         self.target.clone()
     }
 }
@@ -114,8 +115,8 @@ impl svc::Param<logical::Target> for Http {
 impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
         let addr = match self.target.param() {
-            logical::Target::Route(addr, _) => Addr::from(addr),
-            logical::Target::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
+            Target::Route(addr, _) => Addr::from(addr),
+            Target::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
         };
 
         http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
@@ -125,8 +126,8 @@ impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
 impl svc::Param<Option<profiles::LogicalAddr>> for Http {
     fn param(&self) -> Option<profiles::LogicalAddr> {
         match self.target {
-            logical::Target::Route(ref addr, _) => Some(profiles::LogicalAddr(addr.clone())),
-            logical::Target::Forward(_, _) => None,
+            Target::Route(ref addr, _) => Some(profiles::LogicalAddr(addr.clone())),
+            Target::Forward(_, _) => None,
         }
     }
 }
@@ -134,8 +135,8 @@ impl svc::Param<Option<profiles::LogicalAddr>> for Http {
 impl svc::Param<Option<profiles::Receiver>> for Http {
     fn param(&self) -> Option<profiles::Receiver> {
         match self.target {
-            logical::Target::Route(_, ref rx) => Some(rx.clone()),
-            logical::Target::Forward(_, _) => None,
+            Target::Route(_, ref rx) => Some(rx.clone()),
+            Target::Forward(_, _) => None,
         }
     }
 }

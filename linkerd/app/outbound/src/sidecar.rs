@@ -100,37 +100,37 @@ impl svc::Param<Protocol> for Sidecar {
     }
 }
 
-impl svc::Param<http::logical::Target> for Sidecar {
-    fn param(&self) -> http::logical::Target {
+impl svc::Param<http::Target> for Sidecar {
+    fn param(&self) -> http::Target {
         if let Some(profile) = self.profile.clone() {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return http::logical::Target::Route(addr, profile);
+                return http::Target::Route(addr, profile);
             }
 
             if let Some((addr, metadata)) = profile.endpoint() {
-                return http::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
+                return http::Target::Forward(Remote(ServerAddr(addr)), metadata);
             }
         }
 
         let OrigDstAddr(addr) = self.orig_dst;
-        http::logical::Target::Forward(Remote(ServerAddr(addr)), Default::default())
+        http::Target::Forward(Remote(ServerAddr(addr)), Default::default())
     }
 }
 
-impl svc::Param<opaq::logical::Target> for Sidecar {
-    fn param(&self) -> opaq::logical::Target {
+impl svc::Param<opaq::Target> for Sidecar {
+    fn param(&self) -> opaq::Target {
         if let Some(profile) = self.profile.clone() {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaq::logical::Target::Route(addr, profile);
+                return opaq::Target::Route(addr, profile);
             }
 
             if let Some((addr, metadata)) = profile.endpoint() {
-                return opaq::logical::Target::Forward(Remote(ServerAddr(addr)), metadata);
+                return opaq::Target::Forward(Remote(ServerAddr(addr)), metadata);
             }
         }
 
         let OrigDstAddr(addr) = self.orig_dst;
-        opaq::logical::Target::Forward(Remote(ServerAddr(addr)), Default::default())
+        opaq::Target::Forward(Remote(ServerAddr(addr)), Default::default())
     }
 }
 
