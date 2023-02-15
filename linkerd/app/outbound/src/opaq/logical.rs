@@ -73,8 +73,6 @@ impl<N> Outbound<N> {
     /// services. Only available inner services are used for routing. When
     /// there are no available backends, requests are failed with a
     /// [`svc::stack::LoadShedError`].
-    ///
-    // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_opaq_logical<T, I, NSvc>(
         self,
     ) -> Outbound<
@@ -114,7 +112,7 @@ impl<N> Outbound<N> {
                 .push_on_service(route)
                 .push(svc::NewOneshotRoute::<Params<T>, _, _>::layer_cached());
 
-            // For each `Logical` target, watch its `Profile`, maintaining a
+            // For each `Routable` target, watch its `Profile`, maintaining a
             // cache of all concrete services used by the router.
             concrete
                 .clone()

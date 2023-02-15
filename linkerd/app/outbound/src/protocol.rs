@@ -63,7 +63,6 @@ impl<N> Outbound<N> {
                 ))
         });
 
-        // The inner stacks are built for each connection and not cached.
         let detect = http.clone().map_stack(|config, _, http| {
             http.push_switch(
                 |(result, parent): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {
@@ -84,6 +83,8 @@ impl<N> Outbound<N> {
         });
 
         http.map_stack(|_, _, http| {
+            // First separate traffic that needs protocol detection. Then switch
+            // between traffic that is known to be HTTP or opaque.
             http.push_switch(Ok::<_, Infallible>, opaq.clone().into_inner())
                 .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
                 .push_switch(

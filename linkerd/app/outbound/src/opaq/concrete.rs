@@ -52,15 +52,15 @@ struct Balance<T> {
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
-    /// Builds a [`svc::NewService`] stack that builds buffered opaque TCP load
-    /// balancer services for `T`-typed concrete targets.
+    /// Builds a [`svc::NewService`] stack that builds buffered opaque services
+    /// for `T`-typed concrete targets. Connections may be load balanced across
+    /// a discovered set of replicas or forwarded to a single endpoint,
+    /// depending on the value of the `Dispatch` parameter.
     ///
     /// When a balancer has no available inner services, it goes into
     /// 'failfast'. While in failfast, buffered requests are failed and the
     /// service becomes unavailable so callers may choose alternate concrete
     /// services.
-    //
-    // TODO(ver) make the outer target type generic/parameterized.
     pub fn push_opaq_concrete<T, I, R>(
         self,
         resolve: R,

@@ -37,11 +37,8 @@ struct Http {
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
-    /// Builds a stack that handles protocol detection as well as routing and
+    /// Builds a stack that handles protocol detection, routing, and
     /// load balancing for a single logical destination.
-    ///
-    /// This stack uses caching so that a router/load-balancer may be reused
-    /// across multiple connections.
     pub fn push_http_cached<T, R>(
         self,
         resolve: R,
@@ -77,10 +74,11 @@ impl<C> Outbound<C> {
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
                     // Use a dedicated target type to configure parameters for the
-                    // HTTP stack. It also helps narrow the cache key.
+                    // HTTP stack. It also helps narrow the cache key to just the
+                    // logical target and HTTP version, discarding any other target
+                    // information.
                     .push_map_target(Http::new)
                     .push(svc::ArcNewService::layer())
-                    .check_new_service::<T, http::Request<http::BoxBody>>()
             })
     }
 }

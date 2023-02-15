@@ -54,8 +54,10 @@ struct Balance<T> {
 // === impl Outbound ===
 
 impl<N> Outbound<N> {
-    /// Builds a [`svc::NewService`] stack that builds buffered HTTP load
-    /// balancer services for `T`-typed concrete targets.
+    /// Builds a [`svc::NewService`] stack that builds buffered HTTP services
+    /// for `T`-typed concrete targets. Requests may be load balanced across a
+    /// discovered set of replicas or forwarded to a single endpoint, depending
+    /// on the value of the `Dispatch` parameter.
     ///
     /// When a balancer has no available inner services, it goes into
     /// 'failfast'. While in failfast, buffered requests are failed and the
@@ -78,8 +80,7 @@ impl<N> Outbound<N> {
     where
         // Concrete target type.
         T: svc::Param<Dispatch>,
-        // T: svc::Param<svc::queue::Capacity>,
-        // T: svc::Param<svc::queue::Timeout>,
+        // TODO(ver) T: svc::Param<svc::queue::Capacity> + svc::Param<svc::queue::Timeout>,
         T: Clone + Debug + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
@@ -117,23 +118,22 @@ impl<N> Outbound<N> {
                 )
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
-            let inbound_ips_ = inbound_ips.clone();
             let balance = endpoint
-                .push_map_target(
+                .push_map_target({
+                    let inbound_ips = inbound_ips.clone();
                     move |((addr, metadata), target): ((SocketAddr, Metadata), Balance<T>)| {
                         tracing::trace!(%addr, ?metadata, ?target, "Resolved endpoint");
-                        let is_local = inbound_ips_.contains(&addr.ip());
+                        let is_local = inbound_ips.contains(&addr.ip());
                         Endpoint {
                             addr: Remote(ServerAddr(addr)),
                             metadata,
                             is_local,
                             parent: target.parent,
                         }
-                    },
-                )
+                    }
+                })
                 .lift_new_with_target()
                 .push(http::NewBalancePeakEwma::layer(resolve))
-                // Drives the initial resolution via the service's readiness.
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(http::BoxResponse::layer())
                 .push_on_service(
