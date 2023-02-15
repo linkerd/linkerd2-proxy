@@ -1,6 +1,6 @@
 use crate::{
     policy::{self, AllowPolicy},
-    Inbound,
+    GatewayAddr, Inbound,
 };
 use linkerd_app_core::{
     identity, io, profiles,
@@ -138,7 +138,7 @@ impl<N> Inbound<N> {
                 })
                 .check_new_service::<(policy::ServerPermit, LocalTcp), _>()
                 .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()))
-                .instrument(|_: &_| debug_span!("opaque"))
+                .instrument(|_: &_| debug_span!("opaq"))
                 .check_new_service::<LocalTcp, _>()
                 // When the transport header is present, it may be used for either local TCP
                 // forwarding, or we may be processing an HTTP gateway connection. HTTP gateway
@@ -387,6 +387,12 @@ impl svc::Param<tls::ConditionalServerTls> for LocalHttp {
 }
 
 // === impl GatewayTransportHeader ===
+
+impl Param<GatewayAddr> for GatewayTransportHeader {
+    fn param(&self) -> GatewayAddr {
+        GatewayAddr(self.target.clone())
+    }
+}
 
 impl Param<transport::labels::Key> for GatewayTransportHeader {
     fn param(&self) -> transport::labels::Key {

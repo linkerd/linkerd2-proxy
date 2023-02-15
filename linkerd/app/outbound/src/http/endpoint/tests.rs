@@ -257,12 +257,6 @@ impl svc::Param<tls::ConditionalClientTls> for Endpoint {
     }
 }
 
-impl svc::Param<Option<http::detect::Skip>> for Endpoint {
-    fn param(&self) -> Option<http::detect::Skip> {
-        None
-    }
-}
-
 impl svc::Param<Option<tcp::tagged_transport::PortOverride>> for Endpoint {
     fn param(&self) -> Option<tcp::tagged_transport::PortOverride> {
         None

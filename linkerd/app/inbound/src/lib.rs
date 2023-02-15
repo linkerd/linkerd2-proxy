@@ -25,7 +25,7 @@ use linkerd_app_core::{
     proxy::{tap, tcp},
     svc,
     transport::{self, Remote, ServerAddr},
-    Error, NameMatch, ProxyRuntime,
+    Error, NameAddr, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, time::Duration};
 use thiserror::Error;
@@ -68,6 +68,9 @@ struct Runtime {
     span_sink: OpenCensusSink,
     drain: drain::Watch,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct GatewayAddr(pub NameAddr);
 
 // The inbound HTTP server handles gateway traffic; so gateway error types are defined here (so that
 // error metrics can be recorded properly).

@@ -11,11 +11,15 @@ use linkerd_app_core::{
     drain,
     http_tracing::OpenCensusSink,
     identity, io, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve, tap},
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        tap,
+    },
     serve,
     svc::{self, stack::Param},
     tls,
-    transport::{self, addrs::*},
+    transport::addrs::*,
     AddrMatch, Error, ProxyRuntime, Result,
 };
 use std::{
@@ -25,22 +29,19 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tracing::info;
 
 mod discover;
-pub mod endpoint;
 pub mod http;
 mod ingress;
-pub mod logical;
 mod metrics;
 pub mod opaq;
+mod protocol;
 mod sidecar;
-mod switch_logical;
 pub mod tcp;
 #[cfg(test)]
 pub(crate) mod test_util;
 
-pub use self::metrics::Metrics;
+pub use self::{discover::Discovery, metrics::Metrics};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -110,15 +111,15 @@ impl Outbound<()> {
             stack: svc::stack(()),
         }
     }
-
-    pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
-        self.map_stack(move |_, _, _| svc::stack(stack))
-    }
 }
 
 impl<S> Outbound<S> {
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    pub fn config_mut(&mut self) -> &mut Config {
+        &mut self.config
     }
 
     pub fn metrics(&self) -> Metrics {
@@ -129,6 +130,10 @@ impl<S> Outbound<S> {
         self.runtime.metrics.proxy.stack.clone()
     }
 
+    pub fn with_stack<Svc>(self, stack: Svc) -> Outbound<Svc> {
+        self.map_stack(move |_, _, _| svc::stack(stack))
+    }
+
     pub fn into_stack(self) -> svc::Stack<S> {
         self.stack
     }
@@ -137,10 +142,7 @@ impl<S> Outbound<S> {
         self.stack.into_inner()
     }
 
-    fn no_tls_reason(&self) -> tls::NoClientTls {
-        tls::NoClientTls::NotProvidedByServiceDiscovery
-    }
-
+    /// Wraps the inner `S`-typed stack in the given `L`-typed [`Layer`].
     pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
         self.map_stack(move |_, _, stack| stack.push(layer))
     }
@@ -157,24 +159,37 @@ impl<S> Outbound<S> {
             stack,
         }
     }
+
+    pub fn check_new_service<T, Req>(self) -> Self
+    where
+        S: svc::NewService<T> + Clone + Send + Sync + 'static,
+        S::Service: svc::Service<Req>,
+    {
+        self
+    }
 }
 
 impl Outbound<()> {
-    pub async fn serve<A, I, P, R>(
+    pub async fn serve<T, I, P, R>(
         self,
-        listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
+        listen: impl Stream<Item = Result<(T, I)>> + Send + Sync + 'static,
         profiles: P,
         resolve: R,
     ) where
-        A: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        // Target describing a server-side connection.
+        T: Param<Remote<ClientAddr>>,
+        T: Param<OrigDstAddr>,
+        T: Clone + Send + Sync + 'static,
+        // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        // Configuration discovery.
         P: profiles::GetProfile<Error = Error>,
+        // Endpoint resolution.
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
         if self.config.ingress_mode {
-            info!("Outbound routing in ingress-mode");
+            tracing::info!("Outbound routing in ingress-mode");
             let server = self.mk_ingress(profiles, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, server, shutdown).await;

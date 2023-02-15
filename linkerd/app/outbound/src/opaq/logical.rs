@@ -1,15 +1,31 @@
-use super::{Concrete, Logical};
+use super::concrete;
 use crate::Outbound;
 use linkerd_app_core::{
     io,
     profiles::{self, Profile},
-    proxy::api_resolve::ConcreteAddr,
-    svc, Error,
+    proxy::{api_resolve::Metadata, tcp::balance},
+    svc,
+    transport::addrs::*,
+    Error, Infallible, NameAddr,
 };
 use linkerd_distribute as distribute;
+use std::{fmt::Debug, hash::Hash, time};
+use tokio::sync::watch;
 
-#[cfg(tests)]
+#[cfg(test)]
 mod tests;
+
+#[derive(Clone, Debug)]
+pub enum Logical {
+    Route(NameAddr, profiles::Receiver),
+    Forward(Remote<ServerAddr>, Metadata),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Concrete<T> {
+    target: concrete::Dispatch,
+    parent: T,
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("no route")]
@@ -18,26 +34,33 @@ pub struct NoRoute;
 #[derive(Debug, thiserror::Error)]
 #[error("logical service {addr}: {source}")]
 pub struct LogicalError {
-    addr: profiles::LogicalAddr,
+    addr: NameAddr,
     #[source]
     source: Error,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Params {
-    logical: Logical,
-    route: RouteParams,
-    backends: distribute::Backends<Concrete>,
+struct Params<T: Eq + Hash + Clone + Debug> {
+    parent: T,
+    route: RouteParams<T>,
+    backends: distribute::Backends<Concrete<T>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct RouteParams {
-    logical: Logical,
-    distribution: Distribution,
+struct RouteParams<T> {
+    parent: T,
+    distribution: Distribution<T>,
 }
 
-type BackendCache<N, S> = distribute::BackendCache<Concrete, N, S>;
-type Distribution = distribute::Distribution<Concrete>;
+type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
+type Distribution<T> = distribute::Distribution<Concrete<T>>;
+
+#[derive(Clone, Debug)]
+struct Routable<T> {
+    parent: T,
+    addr: NameAddr,
+    profile: profiles::Receiver,
+}
 
 // === impl Outbound ===
 
@@ -50,22 +73,25 @@ impl<N> Outbound<N> {
     /// services. Only available inner services are used for routing. When
     /// there are no available backends, requests are failed with a
     /// [`svc::stack::LoadShedError`].
-    ///
-    // TODO(ver) make the outer target type generic/parameterized.
-    pub fn push_opaq_logical<I, NSvc>(
+    pub fn push_opaq_logical<T, I, NSvc>(
         self,
     ) -> Outbound<
         svc::ArcNewService<
-            Logical,
-            impl svc::Service<I, Response = (), Error = LogicalError, Future = impl Send> + Clone,
+            T,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
     >
     where
-        N: svc::NewService<Concrete, Service = NSvc> + Clone + Send + Sync + 'static,
+        // Opaque logical target.
+        T: svc::Param<Logical>,
+        T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
+        // Server-side socket.
+        I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
+        // Concrete stack.
+        N: svc::NewService<Concrete<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<I, Response = ()> + Clone + Send + Sync + 'static,
         NSvc::Future: Send,
         NSvc::Error: Into<Error>,
-        I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
     {
         self.map_stack(|_, _, concrete| {
             let route = svc::layers()
@@ -84,31 +110,64 @@ impl<N> Outbound<N> {
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(route)
-                .push(svc::NewOneshotRoute::<Params, _, _>::layer_cached());
+                .push(svc::NewOneshotRoute::<Params<T>, _, _>::layer_cached());
 
-            // For each `Logical` target, watch its `Profile`, maintaining a
+            // For each `Routable` target, watch its `Profile`, maintaining a
             // cache of all concrete services used by the router.
             concrete
+                .clone()
                 // Share the concrete stack with each router stack.
                 .lift_new()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params>())
-                .push(svc::NewMapErr::layer_from_target())
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params<T>>())
+                .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
+                .push_switch(
+                    |parent: T| -> Result<_, Infallible> {
+                        Ok(match parent.param() {
+                            Logical::Route(addr, profile) => svc::Either::A(Routable {
+                                addr,
+                                parent,
+                                profile,
+                            }),
+                            Logical::Forward(addr, meta) => svc::Either::B(Concrete {
+                                target: concrete::Dispatch::Forward(addr, meta),
+                                parent,
+                            }),
+                        })
+                    },
+                    concrete.into_inner(),
+                )
                 .push(svc::ArcNewService::layer())
         })
     }
 }
 
+// === impl Routable ===
+
+impl<T> svc::Param<watch::Receiver<profiles::Profile>> for Routable<T> {
+    fn param(&self) -> watch::Receiver<profiles::Profile> {
+        self.profile.clone().into()
+    }
+}
+
 // === impl Params ===
 
-impl From<(Profile, Logical)> for Params {
-    fn from((profile, logical): (Profile, Logical)) -> Self {
+impl<T> From<(Profile, Routable<T>)> for Params<T>
+where
+    T: Eq + Hash + Clone + Debug,
+{
+    fn from((profile, routable): (Profile, Routable<T>)) -> Self {
+        const EWMA: balance::EwmaConfig = balance::EwmaConfig {
+            default_rtt: time::Duration::from_millis(30),
+            decay: time::Duration::from_secs(10),
+        };
+
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if profile.targets.is_empty() {
-            let concrete = super::Concrete {
-                resolve: ConcreteAddr(logical.logical_addr.clone().into()),
-                logical: logical.clone(),
+            let concrete = Concrete {
+                target: concrete::Dispatch::Balance(routable.addr, EWMA),
+                parent: routable.parent.clone(),
             };
             let backends = std::iter::once(concrete.clone()).collect();
             let distribution = Distribution::first_available(std::iter::once(concrete));
@@ -117,16 +176,16 @@ impl From<(Profile, Logical)> for Params {
             let backends = profile
                 .targets
                 .iter()
-                .map(|t| super::Concrete {
-                    resolve: ConcreteAddr(t.addr.clone()),
-                    logical: logical.clone(),
+                .map(|t| Concrete {
+                    target: concrete::Dispatch::Balance(t.addr.clone(), EWMA),
+                    parent: routable.parent.clone(),
                 })
                 .collect();
             let distribution = Distribution::random_available(profile.targets.iter().cloned().map(
                 |profiles::Target { addr, weight }| {
                     let concrete = Concrete {
-                        logical: logical.clone(),
-                        resolve: ConcreteAddr(addr),
+                        target: concrete::Dispatch::Balance(addr, EWMA),
+                        parent: routable.parent.clone(),
                     };
                     (concrete, weight)
                 },
@@ -137,32 +196,42 @@ impl From<(Profile, Logical)> for Params {
         };
 
         let route = RouteParams {
-            logical: logical.clone(),
+            parent: routable.parent.clone(),
             distribution,
         };
 
         Self {
-            logical,
+            parent: routable.parent,
             backends,
             route,
         }
     }
 }
 
-impl svc::Param<distribute::Backends<Concrete>> for Params {
-    fn param(&self) -> distribute::Backends<Concrete> {
+impl<T> svc::Param<distribute::Backends<Concrete<T>>> for Params<T>
+where
+    T: Clone + Eq + Hash + Debug,
+{
+    fn param(&self) -> distribute::Backends<Concrete<T>> {
         self.backends.clone()
     }
 }
 
-impl svc::Param<profiles::LogicalAddr> for Params {
+impl<T> svc::Param<profiles::LogicalAddr> for Params<T>
+where
+    T: svc::Param<profiles::LogicalAddr>,
+    T: Clone + Eq + Hash + Debug,
+{
     fn param(&self) -> profiles::LogicalAddr {
-        self.logical.logical_addr.clone()
+        self.parent.param()
     }
 }
 
-impl<I> svc::router::SelectRoute<I> for Params {
-    type Key = RouteParams;
+impl<T, I> svc::router::SelectRoute<I> for Params<T>
+where
+    T: Clone + Eq + Hash + Debug,
+{
+    type Key = RouteParams<T>;
     type Error = std::convert::Infallible;
 
     fn select(&self, _: &I) -> Result<Self::Key, Self::Error> {
@@ -172,22 +241,74 @@ impl<I> svc::router::SelectRoute<I> for Params {
 
 // === impl RouteParams ===
 
-impl svc::Param<Distribution> for RouteParams {
-    fn param(&self) -> Distribution {
+impl<T: Clone> svc::Param<Distribution<T>> for RouteParams<T> {
+    fn param(&self) -> Distribution<T> {
         self.distribution.clone()
     }
 }
 
 // === impl LogicalError ===
 
-impl<T> From<(&T, Error)> for LogicalError
-where
-    T: svc::Param<profiles::LogicalAddr>,
-{
-    fn from((target, source): (&T, Error)) -> Self {
+impl<T> From<(&Routable<T>, Error)> for LogicalError {
+    fn from((target, source): (&Routable<T>, Error)) -> Self {
         Self {
-            addr: target.param(),
+            addr: target.addr.clone(),
             source,
+        }
+    }
+}
+
+// === impl Concrete ===
+
+impl<T> std::ops::Deref for Concrete<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.parent
+    }
+}
+
+impl<T> svc::Param<Option<profiles::LogicalAddr>> for Concrete<T>
+where
+    T: svc::Param<Option<profiles::Receiver>>,
+{
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        (**self).param()?.logical_addr()
+    }
+}
+
+impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
+    fn param(&self) -> concrete::Dispatch {
+        self.target.clone()
+    }
+}
+
+// === impl Logical ===
+
+impl std::cmp::PartialEq for Logical {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Route(laddr, _), Self::Route(raddr, _)) => laddr == raddr,
+            (Self::Forward(laddr, lmeta), Self::Forward(raddr, rmeta)) => {
+                laddr == raddr && lmeta == rmeta
+            }
+            _ => false,
+        }
+    }
+}
+
+impl std::cmp::Eq for Logical {}
+
+impl std::hash::Hash for Logical {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Route(addr, _) => {
+                addr.hash(state);
+            }
+            Self::Forward(addr, meta) => {
+                addr.hash(state);
+                meta.hash(state);
+            }
         }
     }
 }

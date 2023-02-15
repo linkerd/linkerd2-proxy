@@ -183,8 +183,8 @@ async fn no_profiles_when_outside_search_nets() {
     let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
 
     // Mock an inner stack with a service that asserts that no profile is built.
-    let stack = |(profile, _): (Option<profiles::Receiver>, _)| {
-        assert!(profile.is_none(), "profile must not resolve");
+    let stack = |d: Discovery<_>| {
+        assert!(d.profile.is_none(), "profile must not resolve");
         svc::mk(move |_: io::DuplexStream| future::ok::<(), Error>(()))
     };
 
