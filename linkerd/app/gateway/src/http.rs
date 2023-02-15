@@ -19,7 +19,7 @@ pub(crate) use self::gateway::NewHttpGateway;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Target<T = ()> {
     addr: GatewayAddr,
-    target: outbound::http::Target,
+    target: outbound::http::Logical,
     version: http::Version,
     parent: T,
 }
@@ -84,9 +84,9 @@ impl Gateway {
                             .ok_or(GatewayDomainInvalid)?;
 
                         if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                            outbound::http::Target::Route(addr, profile)
+                            outbound::http::Logical::Route(addr, profile)
                         } else if let Some((addr, metadata)) = profile.endpoint() {
-                            outbound::http::Target::Forward(Remote(ServerAddr(addr)), metadata)
+                            outbound::http::Logical::Forward(Remote(ServerAddr(addr)), metadata)
                         } else {
                             return Err(GatewayDomainInvalid);
                         }
@@ -162,8 +162,8 @@ where
     }
 }
 
-impl<T> svc::Param<outbound::http::Target> for Target<T> {
-    fn param(&self) -> outbound::http::Target {
+impl<T> svc::Param<outbound::http::Logical> for Target<T> {
+    fn param(&self) -> outbound::http::Logical {
         self.target.clone()
     }
 }

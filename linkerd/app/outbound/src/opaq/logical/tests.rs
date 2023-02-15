@@ -22,7 +22,7 @@ async fn forward() {
         addr: Some(profiles::LogicalAddr(laddr.clone())),
         ..Default::default()
     });
-    let logical = Target::Route(laddr.clone(), rx.into());
+    let logical = Logical::Route(laddr.clone(), rx.into());
 
     // The resolution resolves a single endpoint.
     let ep_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
@@ -32,7 +32,7 @@ async fn forward() {
     // Build the TCP logical stack with a mocked connector.
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
-        .with_stack(svc::mk(move |ep: concrete::Endpoint<Concrete<Target>>| {
+        .with_stack(svc::mk(move |ep: concrete::Endpoint<Concrete<Logical>>| {
             let Remote(ServerAddr(ea)) = svc::Param::param(&ep);
             assert_eq!(ea, ep_addr);
             let mut io = support::io();
@@ -73,7 +73,7 @@ async fn balances() {
         addr: Some(profiles::LogicalAddr(laddr.clone())),
         ..Default::default()
     });
-    let logical = Target::Route(laddr.clone(), rx.into());
+    let logical = Logical::Route(laddr.clone(), rx.into());
 
     // The resolution resolves a single endpoint.
     let ep0_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
@@ -87,7 +87,7 @@ async fn balances() {
     let (rt, _shutdown) = runtime();
     let svc = Outbound::new(default_config(), rt)
         .with_stack(svc::mk(
-            move |ep: concrete::Endpoint<Concrete<Target>>| match svc::Param::param(&ep) {
+            move |ep: concrete::Endpoint<Concrete<Logical>>| match svc::Param::param(&ep) {
                 Remote(ServerAddr(addr)) if addr == ep0_addr => {
                     tracing::debug!(%addr, "writing ep0");
                     let mut io = support::io();

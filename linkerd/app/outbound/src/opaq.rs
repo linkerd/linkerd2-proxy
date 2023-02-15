@@ -14,10 +14,10 @@ use std::{fmt::Debug, hash::Hash};
 mod concrete;
 mod logical;
 
-pub use self::logical::Target;
+pub use self::logical::Logical;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Opaq(Target);
+struct Opaq(Logical);
 
 // === impl Outbound ===
 
@@ -37,7 +37,7 @@ impl<C> Outbound<C> {
     >
     where
         // Opaque target
-        T: svc::Param<Target>,
+        T: svc::Param<Logical>,
         T: Clone + Send + Sync + 'static,
         // Server-side connection
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -65,8 +65,8 @@ impl<C> Outbound<C> {
 
 // === impl Opaq ===
 
-impl svc::Param<Target> for Opaq {
-    fn param(&self) -> Target {
+impl svc::Param<Logical> for Opaq {
+    fn param(&self) -> Logical {
         self.0.clone()
     }
 }
@@ -74,7 +74,7 @@ impl svc::Param<Target> for Opaq {
 impl svc::Param<Option<profiles::Receiver>> for Opaq {
     fn param(&self) -> Option<profiles::Receiver> {
         match self.0.param() {
-            Target::Route(_, rx) => Some(rx),
+            Logical::Route(_, rx) => Some(rx),
             _ => None,
         }
     }

@@ -18,7 +18,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc, time};
 use tokio::sync::watch;
 
 #[derive(Clone, Debug)]
-pub enum Target {
+pub enum Logical {
     Route(NameAddr, profiles::Receiver),
     Forward(Remote<ServerAddr>, Metadata),
 }
@@ -95,7 +95,7 @@ impl<N> Outbound<N> {
     >
     where
         // Logical target.
-        T: svc::Param<Target>,
+        T: svc::Param<Logical>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Concrete stack.
         N: svc::NewService<Concrete<T>, Service = NSvc> + Clone + Send + Sync + 'static,
@@ -179,12 +179,12 @@ impl<N> Outbound<N> {
                 .push_switch(
                     |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Target::Route(addr, profile) => svc::Either::A(Routable {
+                            Logical::Route(addr, profile) => svc::Either::A(Routable {
                                 addr,
                                 parent,
                                 profile,
                             }),
-                            Target::Forward(addr, meta) => svc::Either::B(Concrete {
+                            Logical::Forward(addr, meta) => svc::Either::B(Concrete {
                                 target: concrete::Dispatch::Forward(addr, meta),
                                 parent,
                             }),
@@ -401,9 +401,9 @@ impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
     }
 }
 
-// === impl Target ===
+// === impl Logical ===
 
-impl std::cmp::PartialEq for Target {
+impl std::cmp::PartialEq for Logical {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Route(laddr, _), Self::Route(raddr, _)) => laddr == raddr,
@@ -415,9 +415,9 @@ impl std::cmp::PartialEq for Target {
     }
 }
 
-impl std::cmp::Eq for Target {}
+impl std::cmp::Eq for Logical {}
 
-impl std::hash::Hash for Target {
+impl std::hash::Hash for Logical {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
             Self::Route(addr, _) => {
