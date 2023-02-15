@@ -1,4 +1,22 @@
 //! Utilities for composing Tower Services.
+//!
+//! ## Table of Contents
+//!
+//! 1. [Introduction](../linkerd2-proxy)
+//! 2. **linkerd-stack**
+//! 3. [linkerd-app](../linkerd-app)
+//!    a. [linkerd-app-outbound](../linkerd-app-outbound)
+//!    b. [linkerd-app-inbound](../linkerd-app-inbound)
+//!
+//! [`tower`] defines abstractions central to the design of the Linkerd proxy.
+//! The central abstraction is the [`Service`] trait, which represents [a
+//! fallible asynchronous function][call] from some request type to some
+//! response type, with the added ability to [advertise whether a given instance
+//! of a `Service` is ready to accept a request][poll_ready].
+//!
+//! [`Service`]: tower::Service
+//! [call]: tower::Service::call
+//! [poll_ready]: tower::Service::poll_ready
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]

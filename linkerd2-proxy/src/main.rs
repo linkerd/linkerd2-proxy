@@ -2,6 +2,16 @@
 //!
 //! # linkerd2-proxy Developer Documentation
 //!
+//! ## Table of Contents
+//!
+//! 1. **Introduction**
+//!     1. [Background](#background)
+//!     2. [Navigating the Codebase](#navigating-the-codebase)
+//! 2. [linkerd-stack](../linkerd-stack)
+//! 3. [linkerd-app](../linkerd-app)
+//!     1. [linkerd-app-outbound](../linkerd-app-outbound)
+//!     2. [linkerd-app-inbound](../linkerd-app-inbound)
+//!
 //! This documentation is intended for developers working in the
 //! `linkerd2-proxy` repo. This is *not* documentation about how to use and
 //! operate Linkerd; for such documentation, see [linkerd.io/docs][docs-site]
@@ -30,7 +40,7 @@
 //! [learn-rust]: https://www.rust-lang.org/learn
 //! [whats-mesh]: https://linkerd.io/what-is-a-service-mesh/
 //!
-//! ## 0. Background
+//! ### Background
 //!
 //! In order to understand the proxy, it is important to understand some of the
 //! key library dependencies used in its implementation. In particular,
@@ -58,6 +68,12 @@
 //! introduction to Tower's `Service` trait, with a discussion of the design
 //! decisions and tradeoffs behind it, I strongly recommend the blog post
 //! ["Inventing the `Service` Trait"][inventing-svc], by David Pedersen.
+//!
+//! ### Navigating the Codebase
+//!
+//! The `linkerd2-proxy` codebase is split into a large number of crates (Rust
+//! packages) which contain individual pieces of the proxy. Many of these crates
+//! are additionally grouped into sub-directories.
 //!
 //! [`tokio`]: https://tokio.rs
 //! [`tower`]: https://github.com/tower-rs/tower
