@@ -337,6 +337,12 @@ where
     }
 }
 
+impl<T> svc::Param<ProtocolHint> for Endpoint<T> {
+    fn param(&self) -> ProtocolHint {
+        self.metadata.protocol_hint()
+    }
+}
+
 // TODO(ver) move this into the endpoint stack?
 impl<T> tap::Inspect for Endpoint<T> {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {

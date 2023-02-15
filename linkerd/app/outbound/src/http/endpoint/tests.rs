@@ -310,6 +310,12 @@ impl svc::Param<http::client::Settings> for Endpoint {
     }
 }
 
+impl svc::Param<ProtocolHint> for Endpoint {
+    fn param(&self) -> ProtocolHint {
+        self.hint
+    }
+}
+
 impl tap::Inspect for Endpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
         req.extensions().get::<http::ClientHandle>().map(|c| c.addr)
