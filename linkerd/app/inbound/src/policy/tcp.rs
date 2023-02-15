@@ -8,7 +8,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
-use linkerd_server_policy::{Protocol, ServerPolicy};
+use linkerd_proxy_server_policy::{Protocol, ServerPolicy};
 use std::{future::Future, pin::Pin, task};
 #[cfg(test)]
 mod tests;

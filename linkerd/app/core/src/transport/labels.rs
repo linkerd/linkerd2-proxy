@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn server_labels() {
-        use linkerd_server_policy::Meta;
+        use linkerd_proxy_server_policy::Meta;
         use std::sync::Arc;
 
         let labels = ServerLabels::inbound(
