@@ -14,7 +14,7 @@ use std::{
     task::{Context, Poll},
 };
 use tower::Service;
-use tracing::debug;
+use tracing::{debug, Instrument};
 
 type Server = hyper::server::conn::Http<trace::Executor>;
 
@@ -117,59 +117,64 @@ where
         } = self.clone();
         debug!(?version, "Handling as HTTP");
 
-        Box::pin(async move {
-            let client_addr = io.peer_addr()?;
-            let (client_handle, closed) = ClientHandle::new(client_addr);
-            let svc = SetClientHandle::new(client_handle.clone(), inner.new_service(client_handle));
+        Box::pin(
+            async move {
+                let client_addr = io.peer_addr()?;
+                let (client_handle, closed) = ClientHandle::new(client_addr);
+                // TODO(ver): Move this into the inner stack.
+                let svc =
+                    SetClientHandle::new(client_handle.clone(), inner.new_service(client_handle));
 
-            match version {
-                Version::Http1 => {
-                    // Enable support for HTTP upgrades (CONNECT and websockets).
-                    let mut conn = server
-                        .http1_only(true)
-                        .serve_connection(io, upgrade::Service::new(svc, drain.clone()))
-                        .with_upgrades();
-                    tokio::select! {
-                        res = &mut conn => {
-                            debug!(?res, "The client is shutting down the connection");
-                            res?
+                match version {
+                    Version::Http1 => {
+                        // Enable support for HTTP upgrades (CONNECT and websockets).
+                        let mut conn = server
+                            .http1_only(true)
+                            .serve_connection(io, upgrade::Service::new(svc, drain.clone()))
+                            .with_upgrades();
+                        tokio::select! {
+                            res = &mut conn => {
+                                debug!(?res, "The client is shutting down the connection");
+                                res?
+                            }
+                            shutdown = drain.signaled() => {
+                                debug!("The process is shutting down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                shutdown.release_after(conn).await?;
+                            }
+                            () = closed => {
+                                debug!("The stack is tearing down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                conn.await?;
+                            }
                         }
-                        shutdown = drain.signaled() => {
-                            debug!("The process is shutting down the connection");
-                            Pin::new(&mut conn).graceful_shutdown();
-                            shutdown.release_after(conn).await?;
-                        }
-                        () = closed => {
-                            debug!("The stack is tearing down the connection");
-                            Pin::new(&mut conn).graceful_shutdown();
-                            conn.await?;
+                    }
+
+                    Version::H2 => {
+                        let mut conn = server
+                            .http2_only(true)
+                            .serve_connection(io, HyperServerSvc::new(svc));
+                        tokio::select! {
+                            res = &mut conn => {
+                                debug!(?res, "The client is shutting down the connection");
+                                res?
+                            }
+                            shutdown = drain.signaled() => {
+                                debug!("The process is shutting down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                shutdown.release_after(conn).await?;
+                            }
+                            () = closed => {
+                                debug!("The stack is tearing down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                conn.await?;
+                            }
                         }
                     }
                 }
-
-                Version::H2 => {
-                    let mut conn = server
-                        .http2_only(true)
-                        .serve_connection(io, HyperServerSvc::new(svc));
-                    tokio::select! {
-                        res = &mut conn => {
-                            debug!(?res, "The client is shutting down the connection");
-                            res?
-                        }
-                        shutdown = drain.signaled() => {
-                            debug!("The process is shutting down the connection");
-                            Pin::new(&mut conn).graceful_shutdown();
-                            shutdown.release_after(conn).await?;
-                        }
-                        () = closed => {
-                            debug!("The stack is tearing down the connection");
-                            Pin::new(&mut conn).graceful_shutdown();
-                            conn.await?;
-                        }
-                    }
-                }
+                Ok(())
             }
-            Ok(())
-        })
+            .instrument(tracing::debug_span!("http")),
+        )
     }
 }

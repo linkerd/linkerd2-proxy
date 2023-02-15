@@ -1,7 +1,7 @@
 use super::{IdentityRequired, ProxyConnectionClose};
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{
-    errors, http_tracing,
+    errors, http_tracing, io,
     svc::{self, ExtractParam},
     Error, Result,
 };
@@ -33,12 +33,12 @@ impl<N> Outbound<N> {
         >,
     >
     where
+        // Target with a default HTTP authority.
         T: svc::Param<http::normalize_uri::DefaultAuthority>,
+        // HTTP outbound stack
         N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-            + Clone
-            + Send
-            + 'static,
+        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
+        NSvc: Clone + Send + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
     {
@@ -46,7 +46,6 @@ impl<N> Outbound<N> {
             http.check_new_service::<T, _>()
                 .push_on_service(
                     svc::layers()
-                        .push(http::BoxRequest::layer())
                         // Limit the number of in-flight outbound requests
                         // (across all targets).
                         //
@@ -82,6 +81,35 @@ impl<N> Outbound<N> {
                 // Record when a HTTP/1 URI originated in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push(svc::ArcNewService::layer())
+        })
+    }
+
+    pub fn push_tcp_http_server<T, I, NSvc>(
+        self,
+    ) -> Outbound<http::NewServeHttp<svc::ArcNewService<T, svc::NewCloneService<NSvc>>>>
+    where
+        // Target
+        T: svc::Param<http::Version>,
+        T: Clone + Send + Unpin + 'static,
+        // Server-side socket
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        // Inner stack
+        N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        NSvc: Clone + Send + Unpin + 'static,
+        NSvc::Future: Send,
+    {
+        self.map_stack(|config, rt, http| {
+            http.unlift_new()
+                .push(svc::ArcNewService::layer())
+                .push(http::NewServeHttp::layer(
+                    config.proxy.server.h2_settings,
+                    rt.drain.clone(),
+                ))
         })
     }
 }

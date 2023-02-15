@@ -177,8 +177,8 @@ fn grpc_unexpected_request() -> grpc::Status {
 }
 
 impl DstSender {
-    pub fn send(&self, up: pb::Update) {
-        self.0.send(Ok(up)).expect("send dst update")
+    pub fn send(&self, up: impl Into<pb::Update>) {
+        self.0.send(Ok(up.into())).expect("send dst update")
     }
 
     pub fn send_err(&self, e: grpc::Status) {
@@ -189,17 +189,8 @@ impl DstSender {
         self.send(destination_add(addr))
     }
 
-    pub fn send_labeled(&self, addr: SocketAddr, addr_labels: Labels, parent_labels: Labels) {
-        self.send(destination_add_labeled(
-            addr,
-            Hint::Unknown,
-            addr_labels,
-            parent_labels,
-        ));
-    }
-
     pub fn send_h2_hinted(&self, addr: SocketAddr) {
-        self.send(destination_add_hinted(addr, Hint::H2));
+        self.send(destination_add(addr).hint(Hint::H2));
     }
 
     pub fn send_no_endpoints(&self) {
@@ -408,66 +399,136 @@ where
 pub enum Hint {
     Unknown,
     H2,
+    Opaque,
 }
 
-pub fn destination_add(addr: SocketAddr) -> pb::Update {
-    destination_add_hinted(addr, Hint::Unknown)
-}
-
-pub fn destination_add_hinted(addr: SocketAddr, hint: Hint) -> pb::Update {
-    destination_add_labeled(addr, hint, HashMap::new(), HashMap::new())
-}
-
-pub fn destination_add_labeled(
+pub struct DestinationBuilder {
     addr: SocketAddr,
     hint: Hint,
+    opaque_port: Option<u16>,
     set_labels: HashMap<String, String>,
     addr_labels: HashMap<String, String>,
-) -> pb::Update {
-    let protocol_hint = match hint {
-        Hint::Unknown => None,
-        Hint::H2 => Some(pb::ProtocolHint {
-            protocol: Some(pb::protocol_hint::Protocol::H2(pb::protocol_hint::H2 {})),
-            ..Default::default()
-        }),
-    };
-    pb::Update {
-        update: Some(pb::update::Update::Add(pb::WeightedAddrSet {
-            addrs: vec![pb::WeightedAddr {
-                addr: Some(net::TcpAddress {
-                    ip: Some(ip_conv(addr.ip())),
-                    port: u32::from(addr.port()),
-                }),
-                weight: 0,
-                metric_labels: addr_labels,
-                protocol_hint,
-                ..Default::default()
-            }],
-            metric_labels: set_labels,
-        })),
+    identity: Option<String>,
+}
+
+impl DestinationBuilder {
+    pub fn new(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            hint: Hint::Unknown,
+            opaque_port: None,
+            set_labels: Default::default(),
+            addr_labels: Default::default(),
+            identity: None,
+        }
+    }
+
+    pub fn hint(self, hint: Hint) -> Self {
+        Self { hint, ..self }
+    }
+
+    pub fn opaque_port(self, port: impl Into<Option<u16>>) -> Self {
+        let opaque_port = port.into();
+        Self {
+            opaque_port,
+            ..self
+        }
+    }
+
+    pub fn identity(self, identity: impl ToString) -> Self {
+        Self {
+            identity: Some(identity.to_string()),
+            ..self
+        }
+    }
+
+    pub fn set_labels(mut self, labels: impl IntoIterator<Item = (String, String)>) -> Self {
+        self.set_labels.extend(labels);
+        self
+    }
+
+    pub fn addr_labels(mut self, labels: impl IntoIterator<Item = (String, String)>) -> Self {
+        self.addr_labels.extend(labels);
+        self
+    }
+
+    pub fn set_label(mut self, label: impl ToString, value: impl ToString) -> Self {
+        self.set_labels.insert(label.to_string(), value.to_string());
+        self
+    }
+
+    pub fn addr_label(mut self, label: impl ToString, value: impl ToString) -> Self {
+        self.addr_labels
+            .insert(label.to_string(), value.to_string());
+        self
     }
 }
 
-pub fn destination_add_tls(addr: SocketAddr, local_id: &str) -> pb::Update {
-    pb::Update {
-        update: Some(pb::update::Update::Add(pb::WeightedAddrSet {
-            addrs: vec![pb::WeightedAddr {
-                addr: Some(net::TcpAddress {
-                    ip: Some(ip_conv(addr.ip())),
-                    port: u32::from(addr.port()),
+impl From<DestinationBuilder> for pb::Update {
+    fn from(
+        DestinationBuilder {
+            addr,
+            hint,
+            opaque_port,
+            set_labels,
+            addr_labels,
+            identity,
+        }: DestinationBuilder,
+    ) -> pb::Update {
+        let protocol_hint = match (hint, opaque_port) {
+            (Hint::Unknown, None) => None,
+            (Hint::Unknown, Some(port)) => Some(pb::ProtocolHint {
+                protocol: None,
+                opaque_transport: Some(pb::protocol_hint::OpaqueTransport {
+                    inbound_port: port as u32,
                 }),
-                tls_identity: Some(pb::TlsIdentity {
-                    strategy: Some(pb::tls_identity::Strategy::DnsLikeIdentity(
-                        pb::tls_identity::DnsLikeIdentity {
-                            name: local_id.into(),
-                        },
+            }),
+            (hint, port) => {
+                let protocol = match hint {
+                    Hint::Unknown => None,
+                    Hint::H2 => Some(pb::protocol_hint::Protocol::H2(pb::protocol_hint::H2 {})),
+                    Hint::Opaque => Some(pb::protocol_hint::Protocol::Opaque(
+                        pb::protocol_hint::Opaque {},
                     )),
-                }),
-                ..Default::default()
-            }],
-            ..Default::default()
-        })),
+                };
+                let opaque_transport = port.map(|port| pb::protocol_hint::OpaqueTransport {
+                    inbound_port: port as u32,
+                });
+
+                Some(pb::ProtocolHint {
+                    protocol,
+                    opaque_transport,
+                })
+            }
+        };
+
+        let tls_identity = identity.map(|name| pb::TlsIdentity {
+            strategy: Some(pb::tls_identity::Strategy::DnsLikeIdentity(
+                pb::tls_identity::DnsLikeIdentity { name },
+            )),
+        });
+
+        pb::Update {
+            update: Some(pb::update::Update::Add(pb::WeightedAddrSet {
+                addrs: vec![pb::WeightedAddr {
+                    addr: Some(net::TcpAddress {
+                        ip: Some(ip_conv(addr.ip())),
+                        port: u32::from(addr.port()),
+                    }),
+                    weight: 1,
+                    metric_labels: addr_labels,
+                    protocol_hint,
+                    tls_identity,
+                    authority_override: None,
+                }],
+                metric_labels: set_labels,
+            })),
+        }
     }
+}
+
+pub fn destination_add(addr: SocketAddr) -> DestinationBuilder {
+    DestinationBuilder::new(addr)
 }
 
 pub fn destination_add_none() -> pb::Update {

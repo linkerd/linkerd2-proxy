@@ -1,0 +1,26 @@
+[package]
+name = "linkerd-proxy-server-policy"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[features]
+proto = ["linkerd-http-route/proto", "linkerd2-proxy-api", "prost-types"]
+
+[dependencies]
+ipnet = "2"
+http = "0.2"
+linkerd-http-route = { path = "../../http-route" }
+prost-types = { version = "0.11", optional = true }
+thiserror = "1"
+
+[dependencies.linkerd2-proxy-api]
+version = "0.8"
+features = ["inbound"]
+optional = true
+
+[dev-dependencies]
+maplit = "1"
+quickcheck = { version = "1", default-features = false }

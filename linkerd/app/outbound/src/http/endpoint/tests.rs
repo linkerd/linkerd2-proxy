@@ -1,14 +1,13 @@
 use super::*;
-use crate::{http, test_util::*};
+use crate::{http, tcp, test_util::*};
 use ::http::header::{CONNECTION, UPGRADE};
 use linkerd_app_core::{
     io,
-    proxy::api_resolve::Metadata,
+    proxy::api_resolve::ProtocolHint,
     svc::{NewService, ServiceExt},
     Infallible,
 };
 use std::net::SocketAddr;
-use support::resolver::ProtocolHint;
 
 static WAS_ORIG_PROTO: &str = "request-orig-proto";
 
@@ -19,8 +18,8 @@ async fn http11_forward() {
 
     let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 
-    let connect = support::connect()
-        .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_11));
+    let connect =
+        support::connect().endpoint_fn_boxed(addr, |_: _| serve(::http::Version::HTTP_11));
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();
@@ -29,13 +28,10 @@ async fn http11_forward() {
         .push_http_endpoint::<_, http::BoxBody>()
         .into_inner();
 
-    let svc = stack.new_service(http::Endpoint {
+    let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
-        protocol: http::Version::Http1,
-        logical_addr: None,
-        opaque_protocol: false,
-        tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
-        metadata: Metadata::default(),
+        version: http::Version::Http1,
+        hint: ProtocolHint::Unknown,
     });
 
     let req = http::Request::builder()
@@ -56,8 +52,7 @@ async fn http2_forward() {
 
     let addr = SocketAddr::new([192, 0, 2, 41].into(), 2042);
 
-    let connect = support::connect()
-        .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_2));
+    let connect = support::connect().endpoint_fn_boxed(addr, |_: _| serve(::http::Version::HTTP_2));
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();
@@ -66,13 +61,10 @@ async fn http2_forward() {
         .push_http_endpoint::<_, http::BoxBody>()
         .into_inner();
 
-    let svc = stack.new_service(http::Endpoint {
+    let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
-        protocol: http::Version::H2,
-        logical_addr: None,
-        opaque_protocol: false,
-        tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
-        metadata: Metadata::default(),
+        version: http::Version::H2,
+        hint: ProtocolHint::Unknown,
     });
 
     let req = http::Request::builder()
@@ -95,8 +87,7 @@ async fn orig_proto_upgrade() {
     let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 
     // Pretend the upstream is a proxy that supports proto upgrades...
-    let connect = support::connect()
-        .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_2));
+    let connect = support::connect().endpoint_fn_boxed(addr, |_: _| serve(::http::Version::HTTP_2));
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();
@@ -105,13 +96,10 @@ async fn orig_proto_upgrade() {
         .push_http_endpoint::<_, http::BoxBody>()
         .into_inner();
 
-    let svc = stack.new_service(http::Endpoint {
+    let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
-        protocol: http::Version::Http1,
-        logical_addr: None,
-        opaque_protocol: false,
-        tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
-        metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
+        version: http::Version::Http1,
+        hint: ProtocolHint::Http2,
     });
 
     let req = http::Request::builder()
@@ -139,7 +127,7 @@ async fn orig_proto_skipped_on_http_upgrade() {
     // Pretend the upstream is a proxy that supports proto upgrades. The service needs to
     // support both HTTP/1 and HTTP/2 because an HTTP/2 connection is maintained by default and
     // HTTP/1 connections are created as-needed.
-    let connect = support::connect().endpoint_fn_boxed(addr, |c: http::Connect| {
+    let connect = support::connect().endpoint_fn_boxed(addr, |c: Connect<_>| {
         serve(match svc::Param::param(&c) {
             Some(SessionProtocol::Http1) => ::http::Version::HTTP_11,
             Some(SessionProtocol::Http2) => ::http::Version::HTTP_2,
@@ -162,13 +150,10 @@ async fn orig_proto_skipped_on_http_upgrade() {
         }))
         .into_inner();
 
-    let svc = stack.new_service(http::Endpoint {
+    let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
-        protocol: http::Version::Http1,
-        logical_addr: None,
-        opaque_protocol: false,
-        tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
-        metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
+        version: http::Version::Http1,
+        hint: ProtocolHint::Http2,
     });
 
     let req = http::Request::builder()
@@ -195,8 +180,7 @@ async fn orig_proto_http2_noop() {
     let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 
     // Pretend the upstream is a proxy that supports proto upgrades...
-    let connect = support::connect()
-        .endpoint_fn_boxed(addr, |_: http::Connect| serve(::http::Version::HTTP_2));
+    let connect = support::connect().endpoint_fn_boxed(addr, |_: _| serve(::http::Version::HTTP_2));
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();
@@ -205,13 +189,10 @@ async fn orig_proto_http2_noop() {
         .push_http_endpoint::<_, http::BoxBody>()
         .into_inner();
 
-    let svc = stack.new_service(http::Endpoint {
+    let svc = stack.new_service(Endpoint {
         addr: Remote(ServerAddr(addr)),
-        protocol: http::Version::H2,
-        logical_addr: None,
-        opaque_protocol: false,
-        tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
-        metadata: Metadata::new(None, ProtocolHint::Http2, None, None, None),
+        version: http::Version::H2,
+        hint: ProtocolHint::Http2,
     });
 
     let req = http::Request::builder()
@@ -253,4 +234,114 @@ fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
     let (client_io, server_io) = io::duplex(4096);
     tokio::spawn(http.serve_connection(server_io, svc));
     Ok(io::BoxedIo::new(client_io))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Endpoint {
+    addr: Remote<ServerAddr>,
+    hint: ProtocolHint,
+    version: http::Version,
+}
+
+// === impl Endpoint ===
+
+impl svc::Param<Remote<ServerAddr>> for Endpoint {
+    fn param(&self) -> Remote<ServerAddr> {
+        self.addr
+    }
+}
+
+impl svc::Param<tls::ConditionalClientTls> for Endpoint {
+    fn param(&self) -> tls::ConditionalClientTls {
+        tls::ConditionalClientTls::None(tls::NoClientTls::Disabled)
+    }
+}
+
+impl svc::Param<Option<tcp::tagged_transport::PortOverride>> for Endpoint {
+    fn param(&self) -> Option<tcp::tagged_transport::PortOverride> {
+        None
+    }
+}
+
+impl svc::Param<Option<http::AuthorityOverride>> for Endpoint {
+    fn param(&self) -> Option<http::AuthorityOverride> {
+        None
+    }
+}
+
+impl svc::Param<transport::labels::Key> for Endpoint {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::OutboundClient(self.param())
+    }
+}
+
+impl svc::Param<metrics::OutboundEndpointLabels> for Endpoint {
+    fn param(&self) -> metrics::OutboundEndpointLabels {
+        metrics::OutboundEndpointLabels {
+            authority: None,
+            labels: None,
+            server_id: self.param(),
+            target_addr: self.addr.into(),
+        }
+    }
+}
+
+impl svc::Param<metrics::EndpointLabels> for Endpoint {
+    fn param(&self) -> metrics::EndpointLabels {
+        svc::Param::<metrics::OutboundEndpointLabels>::param(self).into()
+    }
+}
+
+impl svc::Param<http::Version> for Endpoint {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+impl svc::Param<http::client::Settings> for Endpoint {
+    fn param(&self) -> http::client::Settings {
+        match self.version {
+            http::Version::H2 => http::client::Settings::H2,
+            http::Version::Http1 => match self.hint {
+                ProtocolHint::Unknown | ProtocolHint::Opaque => http::client::Settings::Http1,
+                ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
+            },
+        }
+    }
+}
+
+impl svc::Param<ProtocolHint> for Endpoint {
+    fn param(&self) -> ProtocolHint {
+        self.hint
+    }
+}
+
+impl tap::Inspect for Endpoint {
+    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
+        req.extensions().get::<http::ClientHandle>().map(|c| c.addr)
+    }
+
+    fn src_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::None(tls::NoServerTls::Loopback)
+    }
+
+    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
+        Some(self.addr.into())
+    }
+
+    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<tap::Labels> {
+        None
+    }
+
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalClientTls {
+        svc::Param::param(self)
+    }
+
+    fn route_labels<B>(&self, _: &http::Request<B>) -> Option<tap::Labels> {
+        None
+    }
+
+    fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
+        true
+    }
 }

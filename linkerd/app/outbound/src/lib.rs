@@ -5,29 +5,21 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-mod discover;
-pub mod endpoint;
-pub mod http;
-mod ingress;
-pub mod logical;
-mod metrics;
-mod switch_logical;
-pub mod tcp;
-#[cfg(test)]
-pub(crate) mod test_util;
-
-pub use self::metrics::Metrics;
 use futures::Stream;
 use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
     drain,
     http_tracing::OpenCensusSink,
     identity, io, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve, tap},
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        tap,
+    },
     serve,
     svc::{self, stack::Param},
     tls,
-    transport::{self, addrs::*},
+    transport::addrs::*,
     AddrMatch, Error, ProxyRuntime, Result,
 };
 use std::{
@@ -37,7 +29,19 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tracing::{info, info_span};
+
+mod discover;
+pub mod http;
+mod ingress;
+mod metrics;
+pub mod opaq;
+mod protocol;
+mod sidecar;
+pub mod tcp;
+#[cfg(test)]
+pub(crate) mod test_util;
+
+pub use self::{discover::Discovery, metrics::Metrics};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -107,15 +111,15 @@ impl Outbound<()> {
             stack: svc::stack(()),
         }
     }
-
-    pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
-        self.map_stack(move |_, _, _| svc::stack(stack))
-    }
 }
 
 impl<S> Outbound<S> {
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    pub fn config_mut(&mut self) -> &mut Config {
+        &mut self.config
     }
 
     pub fn metrics(&self) -> Metrics {
@@ -126,6 +130,10 @@ impl<S> Outbound<S> {
         self.runtime.metrics.proxy.stack.clone()
     }
 
+    pub fn with_stack<Svc>(self, stack: Svc) -> Outbound<Svc> {
+        self.map_stack(move |_, _, _| svc::stack(stack))
+    }
+
     pub fn into_stack(self) -> svc::Stack<S> {
         self.stack
     }
@@ -134,10 +142,7 @@ impl<S> Outbound<S> {
         self.stack.into_inner()
     }
 
-    fn no_tls_reason(&self) -> tls::NoClientTls {
-        tls::NoClientTls::NotProvidedByServiceDiscovery
-    }
-
+    /// Wraps the inner `S`-typed stack in the given `L`-typed [`Layer`].
     pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
         self.map_stack(move |_, _, stack| stack.push(layer))
     }
@@ -154,86 +159,45 @@ impl<S> Outbound<S> {
             stack,
         }
     }
+
+    pub fn check_new_service<T, Req>(self) -> Self
+    where
+        S: svc::NewService<T> + Clone + Send + Sync + 'static,
+        S::Service: svc::Service<Req>,
+    {
+        self
+    }
 }
 
 impl Outbound<()> {
-    pub async fn serve<A, I, P, R>(
+    pub async fn serve<T, I, P, R>(
         self,
-        listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
+        listen: impl Stream<Item = Result<(T, I)>> + Send + Sync + 'static,
         profiles: P,
         resolve: R,
     ) where
-        A: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        // Target describing a server-side connection.
+        T: Param<Remote<ClientAddr>>,
+        T: Param<OrigDstAddr>,
+        T: Clone + Send + Sync + 'static,
+        // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        // Configuration discovery.
         P: profiles::GetProfile<Error = Error>,
+        // Endpoint resolution.
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
         if self.config.ingress_mode {
-            info!("Outbound routing in ingress-mode");
+            tracing::info!("Outbound routing in ingress-mode");
             let server = self.mk_ingress(profiles, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, server, shutdown).await;
         } else {
-            let proxy = self.mk_proxy(profiles, resolve);
+            let proxy = self.mk_sidecar(profiles, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, proxy, shutdown).await;
         }
-    }
-
-    fn mk_proxy<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
-    where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
-        I: Debug + Unpin + Send + Sync + 'static,
-        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        P: profiles::GetProfile<Error = Error>,
-    {
-        let logical = self.to_tcp_connect().push_logical(resolve);
-        let forward = self.to_tcp_connect().push_forward();
-        forward
-            .push_switch_logical(logical.into_inner())
-            .push_discover(profiles)
-            .push_discover_cache()
-            .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
-            .into_inner()
-    }
-
-    /// Builds a an "ingress mode" proxy.
-    ///
-    /// Ingress-mode proxies route based on request headers instead of using the
-    /// original destination. Protocol detection is **always** performed. If it
-    /// fails, we revert to using the normal IP-based discovery
-    fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
-    where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
-        I: Debug + Unpin + Send + Sync + 'static,
-        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        P: profiles::GetProfile<Error = Error>,
-    {
-        // The fallback stack is the same thing as the normal proxy stack, but
-        // it doesn't include TCP metrics, since they are already instrumented
-        // on this ingress stack.
-        let fallback = {
-            let logical = self.to_tcp_connect().push_logical(resolve.clone());
-            let forward = self.to_tcp_connect().push_forward();
-            forward
-                .push_switch_logical(logical.into_inner())
-                .push_discover(profiles.clone())
-                .push_discover_cache()
-                .into_inner()
-        };
-
-        self.to_tcp_connect()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
-            .push_ingress(profiles, resolve, fallback)
-            .push_tcp_instrument(|t: &T| info_span!("ingress", addr = %t.param()))
-            .into_inner()
     }
 }
 

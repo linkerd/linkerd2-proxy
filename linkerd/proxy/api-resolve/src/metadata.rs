@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 pub type Labels = std::sync::Arc<BTreeMap<String, String>>;
 
 /// Metadata describing an endpoint.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Metadata {
     /// Arbitrary endpoint labels. Primarily used for telemetry.
     labels: Labels,
@@ -15,7 +15,7 @@ pub struct Metadata {
     /// destination understands.
     protocol_hint: ProtocolHint,
 
-    opaque_transport_port: Option<u16>,
+    tagged_transport_port: Option<u16>,
 
     /// How to verify TLS for the endpoint.
     identity: Option<ServerId>,
@@ -24,7 +24,7 @@ pub struct Metadata {
     authority_override: Option<Authority>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum ProtocolHint {
     /// We don't know what the destination understands, so forward messages in the
     /// protocol we received them in.
@@ -44,7 +44,7 @@ impl Default for Metadata {
             labels: Labels::default(),
             identity: None,
             authority_override: None,
-            opaque_transport_port: None,
+            tagged_transport_port: None,
             protocol_hint: ProtocolHint::Unknown,
         }
     }
@@ -54,14 +54,14 @@ impl Metadata {
     pub fn new(
         labels: impl IntoIterator<Item = (String, String)>,
         protocol_hint: ProtocolHint,
-        opaque_transport_port: Option<u16>,
+        tagged_transport_port: Option<u16>,
         identity: Option<ServerId>,
         authority_override: Option<Authority>,
     ) -> Self {
         Self {
             labels: labels.into_iter().collect::<BTreeMap<_, _>>().into(),
             protocol_hint,
-            opaque_transport_port,
+            tagged_transport_port,
             identity,
             authority_override,
         }
@@ -80,17 +80,11 @@ impl Metadata {
         self.identity.as_ref()
     }
 
-    pub fn opaque_transport_port(&self) -> Option<u16> {
-        self.opaque_transport_port
+    pub fn tagged_transport_port(&self) -> Option<u16> {
+        self.tagged_transport_port
     }
 
     pub fn authority_override(&self) -> Option<&Authority> {
         self.authority_override.as_ref()
-    }
-
-    pub fn clear_upgrade(&mut self) {
-        self.protocol_hint = ProtocolHint::Unknown;
-        self.opaque_transport_port = None;
-        self.authority_override = None;
     }
 }

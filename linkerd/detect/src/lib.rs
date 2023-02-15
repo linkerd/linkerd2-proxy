@@ -9,6 +9,7 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
+    result::Result as StdResult,
     task::{Context, Poll},
 };
 use thiserror::Error;
@@ -20,11 +21,14 @@ use tracing::{debug, info, trace};
 pub trait Detect<I>: Clone + Send + Sync + 'static {
     type Protocol: Send;
 
-    async fn detect(&self, io: &mut I, buf: &mut BytesMut)
-        -> Result<Option<Self::Protocol>, Error>;
+    async fn detect(
+        &self,
+        io: &mut I,
+        buf: &mut BytesMut,
+    ) -> StdResult<Option<Self::Protocol>, Error>;
 }
 
-pub type DetectResult<P> = Result<Option<P>, DetectTimeoutError<P>>;
+pub type Result<P> = StdResult<Option<P>, DetectTimeoutError<P>>;
 
 #[derive(Error)]
 #[error("{} protocol detection timed out after {0:?}", std::any::type_name::<P>())]
@@ -45,18 +49,17 @@ pub struct NewDetectService<P, D, N> {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct DetectService<T, D, N> {
-    target: T,
+pub struct DetectService<D, N> {
     config: Config<D>,
     inner: N,
 }
 
-pub fn allow_timeout<P, T>((p, t): (DetectResult<P>, T)) -> (Option<P>, T) {
+pub fn allow_timeout<P>(p: Result<P>) -> Option<P> {
     match p {
-        Ok(p) => (p, t),
+        Ok(p) => p,
         Err(e) => {
             info!("Continuing after timeout: {}", e);
-            (None, t)
+            None
         }
     }
 }
@@ -94,41 +97,40 @@ impl<P, D, N> NewDetectService<P, D, N> {
     }
 }
 
-impl<T, P, D, N: Clone> NewService<T> for NewDetectService<P, D, N>
+impl<T, P, D, N> NewService<T> for NewDetectService<P, D, N>
 where
     P: ExtractParam<Config<D>, T>,
+    N: NewService<T>,
 {
-    type Service = DetectService<T, D, N>;
+    type Service = DetectService<D, N::Service>;
 
-    fn new_service(&self, target: T) -> DetectService<T, D, N> {
+    fn new_service(&self, target: T) -> Self::Service {
         let config = self.params.extract_param(&target);
         DetectService {
-            target,
             config,
-            inner: self.inner.clone(),
+            inner: self.inner.new_service(target),
         }
     }
 }
 
 // === impl DetectService ===
 
-impl<I, T, D, N, NSvc> tower::Service<I> for DetectService<T, D, N>
+impl<I, D, N, NSvc> tower::Service<I> for DetectService<D, N>
 where
-    T: Clone + Send + 'static,
     I: Send + 'static,
     D: Detect<I>,
     D::Protocol: std::fmt::Debug,
-    N: NewService<(DetectResult<D::Protocol>, T), Service = NSvc> + Clone + Send + 'static,
+    N: NewService<Result<D::Protocol>, Service = NSvc> + Clone + Send + 'static,
     NSvc: tower::Service<io::PrefixedIo<I>, Response = ()> + Send,
     NSvc::Error: Into<Error>,
     NSvc::Future: Send,
 {
     type Response = ();
     type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
+    type Future = Pin<Box<dyn Future<Output = StdResult<(), Error>> + Send + 'static>>;
 
     #[inline]
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<StdResult<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
@@ -138,7 +140,6 @@ where
             capacity,
             timeout,
         } = self.config.clone();
-        let target = self.target.clone();
         let inner = self.inner.clone();
         Box::pin(async move {
             trace!(%capacity, ?timeout, "Starting protocol detection");
@@ -147,7 +148,11 @@ where
             let mut buf = BytesMut::with_capacity(capacity);
             let detected = match time::timeout(timeout, detect.detect(&mut io, &mut buf)).await {
                 Ok(Ok(protocol)) => {
-                    debug!(?protocol, elapsed = ?time::Instant::now().saturating_duration_since(t0), "DetectResult");
+                    debug!(
+                        ?protocol,
+                        elapsed = ?time::Instant::now().saturating_duration_since(t0),
+                        "Detected protocol",
+                    );
                     Ok(protocol)
                 }
                 Err(_) => Err(DetectTimeoutError(timeout, std::marker::PhantomData)),
@@ -155,7 +160,7 @@ where
             };
 
             trace!("Dispatching connection");
-            let svc = inner.new_service((detected, target));
+            let svc = inner.new_service(detected);
             let mut svc = svc.ready_oneshot().await.map_err(Into::into)?;
             svc.call(io::PrefixedIo::new(buf.freeze(), io))
                 .await
