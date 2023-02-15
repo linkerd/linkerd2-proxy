@@ -327,7 +327,10 @@ where
         match self.param() {
             http::Version::H2 => client::Settings::H2,
             http::Version::Http1 => match self.metadata.protocol_hint() {
-                ProtocolHint::Unknown => client::Settings::Http1,
+                // If the protocol hint is unknown or indicates that the
+                // endpoint's proxy will treat connections as opaque, do not
+                // perform a protocol upgrade to HTTP/2.
+                ProtocolHint::Unknown | ProtocolHint::Opaque => client::Settings::Http1,
                 ProtocolHint::Http2 => client::Settings::OrigProtoUpgrade,
             },
         }

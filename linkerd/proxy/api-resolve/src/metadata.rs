@@ -31,6 +31,9 @@ pub enum ProtocolHint {
     Unknown,
     /// The destination can receive HTTP2 messages.
     Http2,
+    /// The destination will handle traffic as opaque, regardless of
+    /// the local proxy's handling of the traffic.
+    Opaque,
 }
 
 // === impl Metadata ===
