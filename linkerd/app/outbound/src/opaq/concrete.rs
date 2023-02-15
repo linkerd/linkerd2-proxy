@@ -13,20 +13,17 @@ use linkerd_app_core::{
     transport_header::SessionProtocol,
     Error, Infallible, NameAddr,
 };
-use std::{
-    collections::HashSet,
-    fmt::Debug,
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
-};
+use std::{fmt::Debug, net::SocketAddr};
 use tracing::info_span;
 
+/// Parameter configuring dispatcher behavior.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Target {
+pub enum Dispatch {
     Balance(NameAddr, balance::EwmaConfig),
     Forward(Remote<ServerAddr>, Metadata),
 }
 
+/// Wraps errors encountered in this module.
 #[derive(Debug, thiserror::Error)]
 #[error("concrete service {addr}: {source}")]
 pub struct ConcreteError {
@@ -35,6 +32,7 @@ pub struct ConcreteError {
     source: Error,
 }
 
+/// Inner stack target type.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint<T> {
     addr: Remote<ServerAddr>,
@@ -43,14 +41,7 @@ pub struct Endpoint<T> {
     parent: T,
 }
 
-#[derive(Clone, Debug)]
-struct NewEndpoint<N> {
-    inner: N,
-    inbound_ips: IpSet,
-}
-
-type IpSet = Arc<HashSet<IpAddr>>;
-
+/// A target configuring a load balancer stack.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Balance<T> {
     addr: NameAddr,
@@ -81,7 +72,7 @@ impl<C> Outbound<C> {
     >
     where
         // Logical target.c
-        T: svc::Param<Target>,
+        T: svc::Param<Dispatch>,
         T: Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
@@ -127,8 +118,20 @@ impl<C> Outbound<C> {
                 )
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
+            let inbound_ips = config.inbound_ips.clone();
             let balance = endpoint
-                .push(NewEndpoint::layer(config.inbound_ips.iter().copied()))
+                .push_map_target(
+                    move |((addr, metadata), target): ((SocketAddr, Metadata), Balance<T>)| {
+                        tracing::trace!(%addr, ?metadata, ?target, "Resolved endpoint");
+                        let is_local = inbound_ips.contains(&addr.ip());
+                        Endpoint {
+                            addr: Remote(ServerAddr(addr)),
+                            metadata,
+                            is_local,
+                            parent: target.parent,
+                        }
+                    },
+                )
                 .lift_new_with_target()
                 .push(tcp::NewBalancePeakEwma::layer(resolve))
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
@@ -144,10 +147,10 @@ impl<C> Outbound<C> {
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Target::Balance(addr, ewma) => {
+                            Dispatch::Balance(addr, ewma) => {
                                 svc::Either::A(Balance { addr, ewma, parent })
                             }
-                            Target::Forward(addr, meta) => svc::Either::B(Endpoint {
+                            Dispatch::Forward(addr, meta) => svc::Either::B(Endpoint {
                                 addr,
                                 is_local: false,
                                 metadata: meta,
@@ -177,6 +180,14 @@ impl<T> From<(&Balance<T>, Error)> for ConcreteError {
 }
 
 // === impl Balance ===
+
+impl<T> std::ops::Deref for Balance<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.parent
+    }
+}
 
 impl<T> svc::Param<balance::EwmaConfig> for Balance<T> {
     fn param(&self) -> balance::EwmaConfig {
@@ -286,42 +297,5 @@ impl<T> svc::Param<tls::ConditionalClientTls> for Endpoint<T> {
             .unwrap_or(tls::ConditionalClientTls::None(
                 tls::NoClientTls::NotProvidedByServiceDiscovery,
             ))
-    }
-}
-
-/// === impl NewEndpoint ===
-
-impl<N> NewEndpoint<N> {
-    pub fn new(inbound_ips: IpSet, inner: N) -> Self {
-        Self { inbound_ips, inner }
-    }
-
-    pub fn layer(
-        inbound_ips: impl IntoIterator<Item = IpAddr>,
-    ) -> impl svc::Layer<N, Service = Self> + Clone {
-        let inbound_ips = Arc::new(inbound_ips.into_iter().collect::<HashSet<_>>());
-        svc::layer::mk(move |inner| Self::new(inbound_ips.clone(), inner))
-    }
-}
-
-impl<T, N> svc::NewService<((SocketAddr, Metadata), Balance<T>)> for NewEndpoint<N>
-where
-    T: Clone + Debug,
-    N: svc::NewService<Endpoint<T>>,
-{
-    type Service = N::Service;
-
-    fn new_service(
-        &self,
-        ((addr, metadata), target): ((SocketAddr, Metadata), Balance<T>),
-    ) -> Self::Service {
-        tracing::trace!(%addr, ?metadata, ?target, "Resolved endpoint");
-        let is_local = self.inbound_ips.contains(&addr.ip());
-        self.inner.new_service(Endpoint {
-            addr: Remote(ServerAddr(addr)),
-            metadata,
-            is_local,
-            parent: target.parent,
-        })
     }
 }

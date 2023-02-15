@@ -23,7 +23,7 @@ pub enum Target {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Concrete<T> {
-    target: concrete::Target,
+    target: concrete::Dispatch,
     parent: T,
 }
 
@@ -133,7 +133,7 @@ impl<N> Outbound<N> {
                                 profile,
                             }),
                             Target::Forward(addr, meta) => svc::Either::B(Concrete {
-                                target: concrete::Target::Forward(addr, meta),
+                                target: concrete::Dispatch::Forward(addr, meta),
                                 parent,
                             }),
                         })
@@ -168,7 +168,7 @@ where
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if profile.targets.is_empty() {
             let concrete = Concrete {
-                target: concrete::Target::Balance(routable.addr, EWMA),
+                target: concrete::Dispatch::Balance(routable.addr, EWMA),
                 parent: routable.parent.clone(),
             };
             let backends = std::iter::once(concrete.clone()).collect();
@@ -179,14 +179,14 @@ where
                 .targets
                 .iter()
                 .map(|t| Concrete {
-                    target: concrete::Target::Balance(t.addr.clone(), EWMA),
+                    target: concrete::Dispatch::Balance(t.addr.clone(), EWMA),
                     parent: routable.parent.clone(),
                 })
                 .collect();
             let distribution = Distribution::random_available(profile.targets.iter().cloned().map(
                 |profiles::Target { addr, weight }| {
                     let concrete = Concrete {
-                        target: concrete::Target::Balance(addr, EWMA),
+                        target: concrete::Dispatch::Balance(addr, EWMA),
                         parent: routable.parent.clone(),
                     };
                     (concrete, weight)
@@ -279,8 +279,8 @@ where
     }
 }
 
-impl<T> svc::Param<concrete::Target> for Concrete<T> {
-    fn param(&self) -> concrete::Target {
+impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
+    fn param(&self) -> concrete::Dispatch {
         self.target.clone()
     }
 }
