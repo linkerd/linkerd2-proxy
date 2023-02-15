@@ -1,15 +1,13 @@
-use crate::{discover, http, opaq, tcp, Config, Outbound};
+use crate::{discover, http, opaq, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, io, metrics, profiles,
+    detect, io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
-        tap,
     },
     svc::{self, stack::Param},
-    tls,
-    transport::{self, addrs::*},
+    transport::addrs::*,
     Error, Infallible, NameAddr, Result,
 };
 use std::fmt::Debug;
@@ -187,6 +185,44 @@ impl<N> Outbound<N> {
 
 // === impl Http ===
 
+impl<T> Param<http::Version> for Http<T> {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+impl<T> Param<OrigDstAddr> for Http<T>
+where
+    T: svc::Param<OrigDstAddr>,
+{
+    fn param(&self) -> OrigDstAddr {
+        self.parent.param()
+    }
+}
+
+impl<T> std::ops::Deref for Http<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.parent
+    }
+}
+
+impl Param<profiles::LookupAddr> for Http<RequestTarget> {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(match self.parent.clone() {
+            RequestTarget::Named(addr) => addr.into(),
+            RequestTarget::Orig(OrigDstAddr(addr)) => addr.into(),
+        })
+    }
+}
+
+impl svc::Param<http::Logical> for Http<http::Logical> {
+    fn param(&self) -> http::Logical {
+        self.parent.clone()
+    }
+}
+
 impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::Logical> {
     type Error = ProfileRequired;
 
@@ -232,137 +268,6 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::Logical> {
                 })
             }
         }
-    }
-}
-
-impl svc::Param<http::Logical> for Http<http::Logical> {
-    fn param(&self) -> http::Logical {
-        self.parent.clone()
-    }
-}
-
-impl<T> Param<http::Version> for Http<T> {
-    fn param(&self) -> http::Version {
-        self.version
-    }
-}
-
-impl<T> Param<OrigDstAddr> for Http<T>
-where
-    T: svc::Param<OrigDstAddr>,
-{
-    fn param(&self) -> OrigDstAddr {
-        self.parent.param()
-    }
-}
-
-impl Param<http::normalize_uri::DefaultAuthority> for Http<RequestTarget> {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        let profiles::LookupAddr(addr) = self.param();
-        http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
-    }
-}
-
-impl Param<profiles::LookupAddr> for Http<RequestTarget> {
-    fn param(&self) -> profiles::LookupAddr {
-        profiles::LookupAddr(match self.parent.clone() {
-            RequestTarget::Named(addr) => addr.into(),
-            RequestTarget::Orig(OrigDstAddr(addr)) => addr.into(),
-        })
-    }
-}
-
-impl Param<tls::ConditionalClientTls> for Http<OrigDstAddr> {
-    fn param(&self) -> tls::ConditionalClientTls {
-        tls::ConditionalClientTls::None(tls::NoClientTls::NotProvidedByServiceDiscovery)
-    }
-}
-
-impl Param<Option<tcp::tagged_transport::PortOverride>> for Http<OrigDstAddr> {
-    fn param(&self) -> Option<tcp::tagged_transport::PortOverride> {
-        None
-    }
-}
-
-impl Param<Option<http::AuthorityOverride>> for Http<OrigDstAddr> {
-    fn param(&self) -> Option<http::AuthorityOverride> {
-        None
-    }
-}
-
-impl svc::Param<transport::labels::Key> for Http<OrigDstAddr> {
-    fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::OutboundClient(self.param())
-    }
-}
-
-impl svc::Param<metrics::OutboundEndpointLabels> for Http<OrigDstAddr> {
-    fn param(&self) -> metrics::OutboundEndpointLabels {
-        let authority = self
-            .parent
-            .to_string()
-            .parse()
-            .expect("address must be a valid authority");
-        metrics::OutboundEndpointLabels {
-            authority: Some(authority),
-            labels: Default::default(),
-            server_id: self.param(),
-            target_addr: self.parent.into(),
-        }
-    }
-}
-
-impl svc::Param<metrics::EndpointLabels> for Http<OrigDstAddr> {
-    fn param(&self) -> metrics::EndpointLabels {
-        metrics::EndpointLabels::Outbound(self.param())
-    }
-}
-
-impl svc::Param<http::client::Settings> for Http<OrigDstAddr> {
-    fn param(&self) -> http::client::Settings {
-        match self.param() {
-            http::Version::H2 => http::client::Settings::H2,
-            http::Version::Http1 => http::client::Settings::Http1,
-        }
-    }
-}
-
-// TODO(ver) move this into the endpoint stack?
-impl tap::Inspect for Http<OrigDstAddr> {
-    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<std::net::SocketAddr> {
-        req.extensions().get::<http::ClientHandle>().map(|c| c.addr)
-    }
-
-    fn src_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerTls {
-        tls::ConditionalServerTls::None(tls::NoServerTls::Loopback)
-    }
-
-    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<std::net::SocketAddr> {
-        Some(self.parent.into())
-    }
-
-    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<tap::Labels> {
-        None
-    }
-
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalClientTls {
-        self.param()
-    }
-
-    fn route_labels<B>(&self, _: &http::Request<B>) -> Option<tap::Labels> {
-        None
-    }
-
-    fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
-        true
-    }
-}
-
-impl<T> std::ops::Deref for Http<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.parent
     }
 }
 
