@@ -31,13 +31,6 @@ impl svc::Param<OrigDstAddr> for Accept {
     }
 }
 
-impl svc::Param<Remote<ServerAddr>> for Accept {
-    fn param(&self) -> Remote<ServerAddr> {
-        let OrigDstAddr(addr) = self.orig_dst;
-        Remote(ServerAddr(addr))
-    }
-}
-
 impl svc::Param<profiles::LookupAddr> for Accept {
     fn param(&self) -> profiles::LookupAddr {
         profiles::LookupAddr((*self.orig_dst).into())
