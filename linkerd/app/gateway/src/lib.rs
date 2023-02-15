@@ -65,10 +65,8 @@ impl Gateway {
         D: profiles::GetProfile<Error = Error>,
     {
         let opaq = {
-            let opaq = self
-                .outbound
-                .to_tcp_connect()
-                .push_opaq_cached(resolve.clone());
+            let resolve = resolve.clone();
+            let opaq = self.outbound.to_tcp_connect().push_opaq_cached(resolve);
             self.opaq(opaq.into_inner()).into_inner()
         };
 
