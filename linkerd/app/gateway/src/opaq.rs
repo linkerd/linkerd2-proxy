@@ -1,4 +1,4 @@
-use super::{Gateway, Opaq};
+use super::{server::Opaq, Gateway};
 use inbound::{GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_core::{io, profiles, svc, tls, transport::addrs::*, Error};
 use linkerd_app_inbound as inbound;
@@ -9,7 +9,7 @@ pub type Target = outbound::opaq::logical::Target;
 impl Gateway {
     /// Wrap the provided outbound opaque stack with inbound authorization and
     /// gateway request routing.
-    pub(crate) fn opaq<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Opaq<T>, I>>
+    pub fn opaq<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Opaq<T>, I>>
     where
         // Target describing an inbound gateway connection.
         T: svc::Param<GatewayAddr>,
@@ -31,9 +31,9 @@ impl Gateway {
             // Only permit gateway traffic to endpoints for which we have
             // discovery information.
             .push_filter(
-                |(_, Opaq(opaq)): (_, Opaq<T>)| -> Result<_, GatewayDomainInvalid> {
+                |(_, opaq): (_, Opaq<T>)| -> Result<_, GatewayDomainInvalid> {
                     // Fail connections were not resolved.
-                    let profile = svc::Param::<Option<profiles::Receiver>>::param(&opaq)
+                    let profile = svc::Param::<Option<profiles::Receiver>>::param(&*opaq)
                         .ok_or(GatewayDomainInvalid)?;
                     if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
                         Ok(outbound::opaq::logical::Target::Route(addr, profile))

@@ -190,17 +190,8 @@ impl Config {
         };
 
         let dst_addr = dst.addr.clone();
-        let gateway = {
-            let opaq = outbound
-                .to_tcp_connect()
-                .push_opaq_cached(dst.resolve.clone());
-            let http = outbound
-                .to_tcp_connect()
-                .push_http_cached(dst.resolve.clone());
-            let gw =
-                gateway::Gateway::new(gateway, inbound.clone(), outbound.clone().with_stack(()));
-            gw.stack(dst.profiles.clone(), opaq.into_inner(), http.into_inner())
-        };
+        let gateway = gateway::Gateway::new(gateway, inbound.clone(), outbound.clone())
+            .stack(dst.resolve.clone(), dst.profiles.clone());
 
         // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
         // stacks until the proxy starts running.
@@ -235,7 +226,7 @@ impl Config {
                             inbound_listen,
                             inbound_policies,
                             profiles,
-                            gateway,
+                            gateway.into_inner(),
                         )
                         .instrument(info_span!("inbound").or_current()),
                 );

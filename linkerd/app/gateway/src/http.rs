@@ -1,4 +1,4 @@
-use super::{Gateway, Http};
+use super::{server::Http, Gateway};
 use inbound::{GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_core::{identity, io, profiles, proxy::http, svc, tls, transport::addrs::*, Error};
 use linkerd_app_inbound as inbound;
@@ -14,7 +14,6 @@ mod gateway;
 mod tests;
 
 pub(crate) use self::gateway::NewHttpGateway;
-pub(crate) use linkerd_app_core::proxy::http::*;
 
 /// Target for outbound HTTP gateway requests.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -37,7 +36,7 @@ struct ByRequestVersion<T>(Target<T>);
 impl Gateway {
     /// Wrap the provided outbound HTTP stack with an HTTP server, inbound
     /// authorization, and gateway request routing.
-    pub(super) fn http<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Http<T>, I>>
+    pub fn http<T, I, N, NSvc>(&self, inner: N) -> svc::Stack<svc::ArcNewTcp<Http<T>, I>>
     where
         // Target describing an inbound gateway connection.
         T: svc::Param<GatewayAddr>,
@@ -99,8 +98,8 @@ impl Gateway {
                     Ok(Target {
                         target,
                         addr: (*parent).param(),
-                        version: parent.version,
-                        parent: (*parent).clone(),
+                        version: svc::Param::param(&parent),
+                        parent: (**parent).clone(),
                     })
                 },
             )
