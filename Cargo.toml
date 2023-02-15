@@ -40,6 +40,7 @@ members = [
     "linkerd/opencensus",
     "linkerd/proxy/api-resolve",
     "linkerd/proxy/balance",
+    "linkerd/proxy/client-policy",
     "linkerd/proxy/core",
     "linkerd/proxy/dns-resolve",
     "linkerd/proxy/http",
