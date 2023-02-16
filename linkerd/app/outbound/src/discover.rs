@@ -48,87 +48,64 @@ impl<N> Outbound<N> {
         // Mock out the policy discovery service.
         let queue = self.config.tcp_connection_queue;
         let policy = svc::mk(move |addr: Addr| {
-            Box::pin(async move {
-                let (tx, rx) = watch::channel(match addr {
-                    Addr::Socket(addr) => {
-                        let backend = policy::Backend {
-                            meta: policy::Meta::new_default("default"),
-                            queue: policy::Queue {
-                                capacity: queue.capacity,
-                                failfast_timeout: queue.failfast_timeout,
-                            },
-                            dispatcher: policy::BackendDispatcher::Forward(
-                                addr,
-                                Default::default(),
-                            ),
-                        };
-                        let policy = policy::opaq::Policy {
-                            meta: policy::Meta::new_default("default"),
-                            filters: Arc::new([]),
-                            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
-                                policy::RouteBackend {
-                                    filters: Arc::new([]),
-                                    backend: backend.clone(),
-                                },
-                            ])),
-                        };
-                        ClientPolicy {
-                            protocol: policy::Protocol::Opaque(policy::opaq::Opaque {
-                                policy: Some(policy),
-                            }),
-                            backends: Arc::new([backend]),
-                        }
-                    }
+            tracing::info!("looking up policy for {addr}");
+            const EWMA: policy::PeakEwma = policy::PeakEwma {
+                default_rtt: time::Duration::from_millis(30),
+                decay: time::Duration::from_secs(10),
+            };
+            let backend = match addr {
+                Addr::Socket(addr) => policy::Backend {
+                    meta: policy::Meta::new_default("default"),
+                    queue: policy::Queue {
+                        capacity: queue.capacity,
+                        failfast_timeout: queue.failfast_timeout,
+                    },
+                    dispatcher: policy::BackendDispatcher::Forward(addr, Default::default()),
+                },
 
-                    Addr::Name(addr) => {
-                        const EWMA: policy::PeakEwma = policy::PeakEwma {
-                            default_rtt: time::Duration::from_millis(30),
-                            decay: time::Duration::from_secs(10),
-                        };
-                        let backend = policy::Backend {
-                            meta: policy::Meta::new_default("default"),
-                            queue: policy::Queue {
-                                capacity: queue.capacity,
-                                failfast_timeout: queue.failfast_timeout,
-                            },
-                            dispatcher: policy::BackendDispatcher::BalanceP2c(
-                                policy::Load::PeakEwma(EWMA),
-                                policy::EndpointDiscovery::DestinationGet {
-                                    path: addr.to_string(),
-                                },
-                            ),
-                        };
-                        let policy = policy::opaq::Policy {
-                            meta: policy::Meta::new_default("default"),
-                            filters: Arc::new([]),
-                            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
-                                policy::RouteBackend {
-                                    filters: Arc::new([]),
-                                    backend: backend.clone(),
-                                },
-                            ])),
-                        };
-                        ClientPolicy {
-                            protocol: policy::Protocol::Opaque(policy::opaq::Opaque {
-                                policy: Some(policy),
-                            }),
-                            backends: Arc::new([backend]),
-                        }
-                    }
-                });
-                tokio::spawn(async move {
-                    tx.closed().await;
-                });
-                Ok::<_, Infallible>(rx)
-            })
+                Addr::Name(addr) => policy::Backend {
+                    meta: policy::Meta::new_default("default"),
+                    queue: policy::Queue {
+                        capacity: queue.capacity,
+                        failfast_timeout: queue.failfast_timeout,
+                    },
+                    dispatcher: policy::BackendDispatcher::BalanceP2c(
+                        policy::Load::PeakEwma(EWMA),
+                        policy::EndpointDiscovery::DestinationGet {
+                            path: addr.to_string(),
+                        },
+                    ),
+                },
+            };
+            let policy = policy::opaq::Policy {
+                meta: policy::Meta::new_default("default"),
+                filters: Arc::new([]),
+                distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                    policy::RouteBackend {
+                        filters: Arc::new([]),
+                        backend: backend.clone(),
+                    },
+                ])),
+            };
+            let (tx, rx) = watch::channel(ClientPolicy {
+                protocol: policy::Protocol::Opaque(policy::opaq::Opaque {
+                    policy: Some(policy),
+                }),
+                backends: Arc::new([backend]),
+            });
+            tokio::spawn(async move {
+                tx.closed().await;
+            });
+            futures::future::ok::<_, Infallible>(rx)
         });
 
         let allow = self.config.allow_discovery.clone();
         let discover = svc::mk(move |profiles::LookupAddr(addr): profiles::LookupAddr| {
+            tracing::info!("discovering config for {addr}");
             let allow = allow.clone();
             let profiles = profiles.clone();
             Box::pin(async move {
-                let profile = if !allow.matches(&addr) {
+                let profile = if allow.matches(&addr) {
                     profiles
                         .get_profile(profiles::LookupAddr(addr.clone()))
                         .await?
