@@ -1,13 +1,17 @@
 use crate::Outbound;
 use linkerd_app_core::{
     profiles,
-    svc::{self, stack::Param},
-    Error, Infallible,
+    svc::{self, ServiceExt},
+    Addr, Error, Infallible,
 };
+use linkerd_proxy_client_policy::{self as policy, ClientPolicy};
 use std::{
     hash::{Hash, Hasher},
     ops::Deref,
+    sync::Arc,
+    time,
 };
+use tokio::sync::watch;
 use tracing::debug;
 
 #[cfg(test)]
@@ -18,6 +22,7 @@ mod tests;
 pub struct Discovery<T> {
     parent: T,
     profile: Option<profiles::Receiver>,
+    policy: watch::Receiver<ClientPolicy>,
 }
 
 impl<N> Outbound<N> {
@@ -28,7 +33,7 @@ impl<N> Outbound<N> {
     ) -> Outbound<svc::ArcNewService<T, svc::BoxService<Req, NSvc::Response, Error>>>
     where
         // Discoverable target.
-        T: Param<profiles::LookupAddr>,
+        T: svc::Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + 'static,
         // Request type.
         Req: Send + 'static,
@@ -40,33 +45,109 @@ impl<N> Outbound<N> {
         NSvc: svc::Service<Req, Error = Error> + Send + 'static,
         NSvc::Future: Send,
     {
-        self.map_stack(|config, _, stk| {
-            let allow = config.allow_discovery.clone();
-            stk.clone()
-                .lift_new_with_target()
-                .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
-                .push_switch(
-                    move |parent: T| -> Result<_, Infallible> {
-                        // TODO(ver) Should this allowance be parameterized by
-                        // the target type?
-                        let profiles::LookupAddr(addr) = parent.param();
-                        if allow.matches(&addr) {
-                            debug!(%addr, "Discovery allowed");
-                            return Ok(svc::Either::A(parent));
+        // Mock out the policy discovery service.
+        let queue = self.config.tcp_connection_queue;
+        let policy = svc::mk(move |addr: Addr| {
+            Box::pin(async move {
+                let (tx, rx) = watch::channel(match addr {
+                    Addr::Socket(addr) => {
+                        let backend = policy::Backend {
+                            meta: policy::Meta::new_default("default"),
+                            queue: policy::Queue {
+                                capacity: queue.capacity,
+                                failfast_timeout: queue.failfast_timeout,
+                            },
+                            dispatcher: policy::BackendDispatcher::Forward(
+                                addr,
+                                Default::default(),
+                            ),
+                        };
+                        ClientPolicy {
+                            protocol: policy::Protocol::Opaque(policy::opaq::Opaque {
+                                policy: Some(policy::opaq::Policy {
+                                    meta: policy::Meta::new_default("default"),
+                                    filters: Arc::new([]),
+                                    distribution: policy::RouteDistribution::FirstAvailable(
+                                        Arc::new([policy::RouteBackend {
+                                            filters: Arc::new([]),
+                                            backend: backend.clone(),
+                                        }]),
+                                    ),
+                                }),
+                            }),
+                            backends: Arc::new([backend]),
                         }
-                        debug!(
-                            %addr,
-                            domains = %allow.names(),
-                            networks = %allow.nets(),
-                            "Discovery skipped",
-                        );
-                        Ok(svc::Either::B(Discovery {
-                            parent,
-                            profile: None,
-                        }))
-                    },
-                    stk.into_inner(),
-                )
+                    }
+
+                    Addr::Name(addr) => {
+                        const EWMA: policy::PeakEwma = policy::PeakEwma {
+                            default_rtt: time::Duration::from_millis(30),
+                            decay: time::Duration::from_secs(10),
+                        };
+                        let backend = policy::Backend {
+                            meta: policy::Meta::new_default("default"),
+                            queue: policy::Queue {
+                                capacity: queue.capacity,
+                                failfast_timeout: queue.failfast_timeout,
+                            },
+                            dispatcher: policy::BackendDispatcher::BalanceP2c(
+                                policy::Load::PeakEwma(EWMA),
+                                policy::EndpointDiscovery::DestinationGet {
+                                    path: addr.to_string(),
+                                },
+                            ),
+                        };
+                        ClientPolicy {
+                            protocol: policy::Protocol::Opaque(policy::opaq::Opaque {
+                                policy: Some(policy::opaq::Policy {
+                                    meta: policy::Meta::new_default("default"),
+                                    filters: Arc::new([]),
+                                    distribution: policy::RouteDistribution::FirstAvailable(
+                                        Arc::new([policy::RouteBackend {
+                                            filters: Arc::new([]),
+                                            backend: backend.clone(),
+                                        }]),
+                                    ),
+                                }),
+                            }),
+                            backends: Arc::new([backend]),
+                        }
+                    }
+                });
+                tokio::spawn(async move {
+                    tx.closed().await;
+                });
+                Ok::<_, Infallible>(rx)
+            })
+        });
+
+        let allow = self.config.allow_discovery.clone();
+        let discover = svc::mk(move |profiles::LookupAddr(addr): profiles::LookupAddr| {
+            let allow = allow.clone();
+            let profiles = profiles.clone();
+            Box::pin(async move {
+                let profile = if !allow.matches(&addr) {
+                    profiles
+                        .get_profile(profiles::LookupAddr(addr.clone()))
+                        .await?
+                } else {
+                    debug!(
+                        %addr,
+                        domains = %allow.names(),
+                        networks = %allow.nets(),
+                        "Discovery skipped",
+                    );
+                    None
+                };
+
+                let policy_rx = policy.oneshot(addr).await?;
+                Ok((profile, policy_rx))
+            })
+        });
+
+        self.map_stack(|config, _, stk| {
+            stk.lift_new_with_target()
+                .push_new_cached_discover(discover, config.discovery_idle_timeout)
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
@@ -75,9 +156,29 @@ impl<N> Outbound<N> {
 
 // === impl Discovery ===
 
-impl<T> From<(Option<profiles::Receiver>, T)> for Discovery<T> {
-    fn from((profile, parent): (Option<profiles::Receiver>, T)) -> Self {
-        Self { parent, profile }
+impl<T>
+    From<(
+        (Option<profiles::Receiver>, watch::Receiver<ClientPolicy>),
+        T,
+    )> for Discovery<T>
+{
+    fn from(
+        ((profile, policy), parent): (
+            (Option<profiles::Receiver>, watch::Receiver<ClientPolicy>),
+            T,
+        ),
+    ) -> Self {
+        Self {
+            parent,
+            profile,
+            policy,
+        }
+    }
+}
+
+impl<T> svc::Param<watch::Receiver<ClientPolicy>> for Discovery<T> {
+    fn param(&self) -> watch::Receiver<ClientPolicy> {
+        self.policy.clone()
     }
 }
 

@@ -23,6 +23,7 @@ linkerd-distribute = { path = "../../distribute" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
+linkerd-proxy-client-policy = { path = "../../proxy/client-policy" }
 linkerd-retry = { path = "../../retry" }
 parking_lot = "0.12"
 thiserror = "1"

@@ -77,7 +77,7 @@ pub trait GetProfile: Clone + Send + Sync + Unpin + 'static {
     type Error: Into<Error>;
     type Future: Future<Output = Result<Option<Receiver>, Self::Error>> + Send + Unpin;
 
-    fn get_profile(&mut self, target: LookupAddr) -> Self::Future;
+    fn get_profile(&self, target: LookupAddr) -> Self::Future;
 
     fn into_service(self) -> GetProfileService<Self>
     where
@@ -102,7 +102,7 @@ where
     type Future = Oneshot<S, LookupAddr>;
 
     #[inline]
-    fn get_profile(&mut self, target: LookupAddr) -> Self::Future {
+    fn get_profile(&self, target: LookupAddr) -> Self::Future {
         self.clone().oneshot(target)
     }
 }
