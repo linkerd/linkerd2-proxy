@@ -62,18 +62,19 @@ impl<N> Outbound<N> {
                                 Default::default(),
                             ),
                         };
+                        let policy = policy::opaq::Policy {
+                            meta: policy::Meta::new_default("default"),
+                            filters: Arc::new([]),
+                            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                                policy::RouteBackend {
+                                    filters: Arc::new([]),
+                                    backend: backend.clone(),
+                                },
+                            ])),
+                        };
                         ClientPolicy {
                             protocol: policy::Protocol::Opaque(policy::opaq::Opaque {
-                                policy: Some(policy::opaq::Policy {
-                                    meta: policy::Meta::new_default("default"),
-                                    filters: Arc::new([]),
-                                    distribution: policy::RouteDistribution::FirstAvailable(
-                                        Arc::new([policy::RouteBackend {
-                                            filters: Arc::new([]),
-                                            backend: backend.clone(),
-                                        }]),
-                                    ),
-                                }),
+                                policy: Some(policy),
                             }),
                             backends: Arc::new([backend]),
                         }
@@ -97,18 +98,19 @@ impl<N> Outbound<N> {
                                 },
                             ),
                         };
+                        let policy = policy::opaq::Policy {
+                            meta: policy::Meta::new_default("default"),
+                            filters: Arc::new([]),
+                            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                                policy::RouteBackend {
+                                    filters: Arc::new([]),
+                                    backend: backend.clone(),
+                                },
+                            ])),
+                        };
                         ClientPolicy {
                             protocol: policy::Protocol::Opaque(policy::opaq::Opaque {
-                                policy: Some(policy::opaq::Policy {
-                                    meta: policy::Meta::new_default("default"),
-                                    filters: Arc::new([]),
-                                    distribution: policy::RouteDistribution::FirstAvailable(
-                                        Arc::new([policy::RouteBackend {
-                                            filters: Arc::new([]),
-                                            backend: backend.clone(),
-                                        }]),
-                                    ),
-                                }),
+                                policy: Some(policy),
                             }),
                             backends: Arc::new([backend]),
                         }

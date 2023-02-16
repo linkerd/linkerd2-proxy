@@ -9,7 +9,9 @@ use linkerd_app_core::{
     transport::addrs::*,
     Error,
 };
+use linkerd_proxy_client_policy::{self as policy, ClientPolicy};
 use std::fmt::Debug;
+use tokio::sync::watch;
 use tracing::info_span;
 
 /// A target type holding discovery information for a sidecar proxy.
@@ -17,6 +19,7 @@ use tracing::info_span;
 struct Sidecar {
     orig_dst: OrigDstAddr,
     profile: Option<profiles::Receiver>,
+    policy: watch::Receiver<ClientPolicy>,
 }
 
 impl Outbound<()> {
@@ -55,9 +58,9 @@ where
     T: svc::Param<OrigDstAddr>,
 {
     fn from(parent: discover::Discovery<T>) -> Self {
-        use svc::Param;
         Self {
-            profile: parent.param(),
+            profile: svc::Param::param(&parent),
+            policy: svc::Param::param(&parent),
             orig_dst: (*parent).param(),
         }
     }
@@ -90,13 +93,28 @@ impl svc::Param<Option<profiles::Receiver>> for Sidecar {
 
 impl svc::Param<Protocol> for Sidecar {
     fn param(&self) -> Protocol {
-        if let Some(rx) = svc::Param::<Option<profiles::Receiver>>::param(self) {
+        if let Some(rx) = self.profile.as_ref() {
             if rx.is_opaque_protocol() {
                 return Protocol::Opaque;
             }
+
+            if rx.logical_addr().is_some() || rx.endpoint().is_some() {
+                return Protocol::Detect;
+            }
         }
 
-        Protocol::Detect
+        match svc::Param::<watch::Receiver<ClientPolicy>>::param(&self.policy)
+            .borrow()
+            .protocol
+        {
+            // TODO(ver) configure detect
+            policy::Protocol::Detect { .. } => Protocol::Detect,
+            policy::Protocol::Http1(_) => Protocol::Http1,
+            policy::Protocol::Http2(_) => Protocol::Http2,
+            policy::Protocol::Grpc(_) => Protocol::Http2,
+            policy::Protocol::Opaque(_) => Protocol::Opaque,
+            policy::Protocol::Tls(_) => Protocol::Opaque,
+        }
     }
 }
 
