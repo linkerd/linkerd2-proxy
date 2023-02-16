@@ -74,7 +74,7 @@ impl svc::Param<Logical> for Opaq {
 impl svc::Param<Option<profiles::Receiver>> for Opaq {
     fn param(&self) -> Option<profiles::Receiver> {
         match self.0.param() {
-            Logical::Route(_, rx) => Some(rx),
+            Logical::Route(_, rx, _) => Some(rx),
             _ => None,
         }
     }

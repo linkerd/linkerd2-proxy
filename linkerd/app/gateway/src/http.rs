@@ -84,7 +84,11 @@ impl Gateway {
                             .ok_or(GatewayDomainInvalid)?;
 
                         if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                            outbound::http::Logical::Route(addr, profile)
+                            outbound::http::Logical::Route(
+                                addr,
+                                profile,
+                                svc::Param::param(&*parent),
+                            )
                         } else if let Some((addr, metadata)) = profile.endpoint() {
                             outbound::http::Logical::Forward(Remote(ServerAddr(addr)), metadata)
                         } else {

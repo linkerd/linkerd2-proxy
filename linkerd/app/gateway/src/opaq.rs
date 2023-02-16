@@ -36,7 +36,11 @@ impl Gateway {
                     let profile = svc::Param::<Option<profiles::Receiver>>::param(&*opaq)
                         .ok_or(GatewayDomainInvalid)?;
                     if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                        Ok(outbound::opaq::Logical::Route(addr, profile))
+                        Ok(outbound::opaq::Logical::Route(
+                            addr,
+                            profile,
+                            svc::Param::param(&*opaq),
+                        ))
                     } else if let Some((addr, metadata)) = profile.endpoint() {
                         Ok(outbound::opaq::Logical::Forward(
                             Remote(ServerAddr(addr)),

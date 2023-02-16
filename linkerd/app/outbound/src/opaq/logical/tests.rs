@@ -7,6 +7,7 @@ use linkerd_app_core::{
     profiles::{self, Profile},
     svc::{self, NewService, ServiceExt},
 };
+use linkerd_proxy_client_policy::{self as policy, ClientPolicy};
 use std::net::SocketAddr;
 use tokio::time;
 
@@ -18,11 +19,15 @@ async fn forward() {
 
     // We create a logical target to be resolved to endpoints.
     let laddr = "xyz.example.com:4444".parse::<NameAddr>().unwrap();
-    let (_tx, rx) = tokio::sync::watch::channel(Profile {
+    let (_tx, profile) = tokio::sync::watch::channel(Profile {
         addr: Some(profiles::LogicalAddr(laddr.clone())),
         ..Default::default()
     });
-    let logical = Logical::Route(laddr.clone(), rx.into());
+    let (_ptx, policy) = tokio::sync::watch::channel(ClientPolicy {
+        protocol: policy::Protocol::Opaque(Default::default()),
+        routes: Default::default(),
+    });
+    let logical = Logical::Route(laddr.clone(), profile.into(), policy);
 
     // The resolution resolves a single endpoint.
     let ep_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);

@@ -10,8 +10,10 @@ use linkerd_app_core::{
     transport::addrs::*,
     Error, Infallible, NameAddr, Result,
 };
+use linkerd_proxy_client_policy::ClientPolicy;
 use std::fmt::Debug;
 use thiserror::Error;
+use tokio::sync::watch;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Http<T> {
@@ -232,12 +234,13 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::Logical> {
         match (
             &**parent,
             svc::Param::<Option<profiles::Receiver>>::param(&parent),
+            svc::Param::<watch::Receiver<ClientPolicy>>::param(&parent),
         ) {
-            (RequestTarget::Named(addr), Some(profile)) => {
+            (RequestTarget::Named(addr), Some(profile), policy) => {
                 if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
                     return Ok(Http {
                         version: (*parent).param(),
-                        parent: http::Logical::Route(addr, profile),
+                        parent: http::Logical::Route(addr, profile, policy),
                     });
                 }
 
@@ -250,9 +253,9 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::Logical> {
                 })
             }
 
-            (RequestTarget::Named(addr), None) => Err(ProfileRequired(addr.clone())),
+            (RequestTarget::Named(addr), None, _) => Err(ProfileRequired(addr.clone())),
 
-            (RequestTarget::Orig(OrigDstAddr(addr)), profile) => {
+            (RequestTarget::Orig(OrigDstAddr(addr)), profile, _policy) => {
                 if let Some(profile) = profile {
                     if let Some((addr, metadata)) = profile.endpoint() {
                         return Ok(Http {
@@ -332,7 +335,7 @@ where
     fn param(&self) -> opaq::Logical {
         if let Some(profile) = svc::Param::<Option<profiles::Receiver>>::param(&self.0) {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaq::Logical::Route(addr, profile);
+                return opaq::Logical::Route(addr, profile, svc::Param::param(&self.0));
             }
 
             if let Some((addr, metadata)) = profile.endpoint() {

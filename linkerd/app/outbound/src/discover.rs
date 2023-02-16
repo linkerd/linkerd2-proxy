@@ -51,109 +51,42 @@ impl<N> Outbound<N> {
         // Mock out the policy discovery service.
         let queue = self.config.tcp_connection_queue;
         let detect_timeout = self.config.proxy.detect_protocol_timeout;
-        let policy = svc::mk(move |addr: Addr| {
-            tracing::info!("looking up policy for {addr}");
-            const EWMA: policy::PeakEwma = policy::PeakEwma {
-                default_rtt: time::Duration::from_millis(30),
-                decay: time::Duration::from_secs(10),
-            };
-            let backend = match addr {
-                Addr::Socket(addr) => policy::Backend {
-                    meta: policy::Meta::new_default("default"),
-                    queue: policy::Queue {
-                        capacity: queue.capacity,
-                        failfast_timeout: queue.failfast_timeout,
-                    },
-                    dispatcher: policy::BackendDispatcher::Forward(addr, Default::default()),
-                },
-
-                Addr::Name(addr) => policy::Backend {
-                    meta: policy::Meta::new_default("default"),
-                    queue: policy::Queue {
-                        capacity: queue.capacity,
-                        failfast_timeout: queue.failfast_timeout,
-                    },
-                    dispatcher: policy::BackendDispatcher::BalanceP2c(
-                        policy::Load::PeakEwma(EWMA),
-                        policy::EndpointDiscovery::DestinationGet {
-                            path: addr.to_string(),
-                        },
-                    ),
-                },
-            };
-
-            let (tx, rx) = watch::channel(ClientPolicy {
-                protocol: policy::Protocol::Detect {
-                    timeout: detect_timeout,
-                    http1: policy::http::Http1 {
-                        routes: Arc::new([policy::http::default(
-                            policy::RouteDistribution::FirstAvailable(Arc::new([
-                                policy::RouteBackend {
-                                    filters: Arc::new([]),
-                                    backend: backend.clone(),
-                                },
-                            ])),
-                        )]),
-                    },
-                    http2: policy::http::Http2 {
-                        routes: Arc::new([policy::http::default(
-                            policy::RouteDistribution::FirstAvailable(Arc::new([
-                                policy::RouteBackend {
-                                    filters: Arc::new([]),
-                                    backend: backend.clone(),
-                                },
-                            ])),
-                        )]),
-                    },
-                    opaque: policy::opaq::Opaque {
-                        policy: Some(policy::opaq::Policy {
-                            meta: policy::Meta::new_default("default"),
-                            filters: Arc::new([]),
-                            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
-                                policy::RouteBackend {
-                                    filters: Arc::new([]),
-                                    backend: backend.clone(),
-                                },
-                            ])),
-                        }),
-                    },
-                },
-                backends: Arc::new([backend]),
-            });
-            tokio::spawn(async move {
-                tx.closed().await;
-            });
-
+        let discover_policy = svc::mk(move |addr: Addr| {
+            tracing::debug!("Looking up policy");
+            let rx = crate::spawn_default_client_policy_rx(addr, queue, detect_timeout);
             futures::future::ok::<_, Infallible>(rx)
         });
 
         let allow = self.config.allow_discovery.clone();
-        let discover = svc::mk(move |profiles::LookupAddr(addr): profiles::LookupAddr| {
-            tracing::info!("discovering config for {addr}");
+        let discover_profile = svc::mk(move |addr: Addr| {
             let allow = allow.clone();
             let profiles = profiles.clone();
             Box::pin(async move {
-                let policy_fut = policy.oneshot(addr.clone()).map_err(Into::into);
+                if allow.matches(&addr) {
+                    tracing::debug!("Looking up profile");
+                    profiles
+                        .get_profile(profiles::LookupAddr(addr.clone()))
+                        .await
+                } else {
+                    debug!(
+                        %addr,
+                        domains = %allow.names(),
+                        networks = %allow.nets(),
+                        "Discovery skipped",
+                    );
+                    Ok(None)
+                }
+            })
+        });
 
-                let allow = allow.clone();
-                let profiles = profiles.clone();
-                let profile_fut = async move {
-                    if allow.matches(&addr) {
-                        profiles
-                            .get_profile(profiles::LookupAddr(addr.clone()))
-                            .await
-                    } else {
-                        debug!(
-                            %addr,
-                            domains = %allow.names(),
-                            networks = %allow.nets(),
-                            "Discovery skipped",
-                        );
-                        Ok(None)
-                    }
-                };
-
-                tokio::try_join!(profile_fut, policy_fut)
+        let discover = svc::mk(move |profiles::LookupAddr(addr): profiles::LookupAddr| {
+            tracing::debug!("Discovering");
+            let discover_profile = discover_profile.clone();
+            Box::pin(async move {
+                tokio::try_join!(
+                    discover_profile.oneshot(addr.clone()),
+                    discover_policy.oneshot(addr).map_err(Into::into)
+                )
             })
         });
 

@@ -9,6 +9,7 @@ use linkerd_app_core::{
     Error, Infallible, NameAddr,
 };
 use linkerd_distribute as distribute;
+use linkerd_proxy_client_policy::ClientPolicy;
 use std::{fmt::Debug, hash::Hash, time};
 use tokio::sync::watch;
 
@@ -17,7 +18,7 @@ mod tests;
 
 #[derive(Clone, Debug)]
 pub enum Logical {
-    Route(NameAddr, profiles::Receiver),
+    Route(NameAddr, profiles::Receiver, watch::Receiver<ClientPolicy>),
     Forward(Remote<ServerAddr>, Metadata),
 }
 
@@ -125,7 +126,7 @@ impl<N> Outbound<N> {
                 .push_switch(
                     |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Logical::Route(addr, profile) => svc::Either::A(Routable {
+                            Logical::Route(addr, profile, _policy) => svc::Either::A(Routable {
                                 addr,
                                 parent,
                                 profile,
@@ -288,7 +289,7 @@ impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
 impl std::cmp::PartialEq for Logical {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Route(laddr, _), Self::Route(raddr, _)) => laddr == raddr,
+            (Self::Route(laddr, _, _), Self::Route(raddr, _, _)) => laddr == raddr,
             (Self::Forward(laddr, lmeta), Self::Forward(raddr, rmeta)) => {
                 laddr == raddr && lmeta == rmeta
             }
@@ -302,7 +303,7 @@ impl std::cmp::Eq for Logical {}
 impl std::hash::Hash for Logical {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            Self::Route(addr, _) => {
+            Self::Route(addr, _, _) => {
                 addr.hash(state);
             }
             Self::Forward(addr, meta) => {

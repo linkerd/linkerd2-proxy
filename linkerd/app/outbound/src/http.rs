@@ -113,7 +113,7 @@ impl svc::Param<Logical> for Http {
 impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
         let addr = match self.target.param() {
-            Logical::Route(addr, _) => Addr::from(addr),
+            Logical::Route(addr, _, _) => Addr::from(addr),
             Logical::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
         };
 
@@ -124,7 +124,7 @@ impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
 impl svc::Param<Option<profiles::LogicalAddr>> for Http {
     fn param(&self) -> Option<profiles::LogicalAddr> {
         match self.target {
-            Logical::Route(ref addr, _) => Some(profiles::LogicalAddr(addr.clone())),
+            Logical::Route(ref addr, _, _) => Some(profiles::LogicalAddr(addr.clone())),
             Logical::Forward(_, _) => None,
         }
     }
@@ -133,7 +133,7 @@ impl svc::Param<Option<profiles::LogicalAddr>> for Http {
 impl svc::Param<Option<profiles::Receiver>> for Http {
     fn param(&self) -> Option<profiles::Receiver> {
         match self.target {
-            Logical::Route(_, ref rx) => Some(rx.clone()),
+            Logical::Route(_, ref rx, _) => Some(rx.clone()),
             Logical::Forward(_, _) => None,
         }
     }

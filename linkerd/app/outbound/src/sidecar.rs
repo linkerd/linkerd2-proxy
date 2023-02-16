@@ -122,13 +122,13 @@ impl svc::Param<Protocol> for Sidecar {
 
 impl svc::Param<http::Logical> for Sidecar {
     fn param(&self) -> http::Logical {
-        if let Some(profile) = self.profile.clone() {
-            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return http::Logical::Route(addr, profile);
-            }
-
+        if let Some(profile) = self.profile.as_ref() {
             if let Some((addr, metadata)) = profile.endpoint() {
                 return http::Logical::Forward(Remote(ServerAddr(addr)), metadata);
+            }
+
+            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                return http::Logical::Route(addr, profile.clone(), self.policy.clone());
             }
         }
 
@@ -139,13 +139,13 @@ impl svc::Param<http::Logical> for Sidecar {
 
 impl svc::Param<opaq::Logical> for Sidecar {
     fn param(&self) -> opaq::Logical {
-        if let Some(profile) = self.profile.clone() {
-            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaq::Logical::Route(addr, profile);
-            }
-
+        if let Some(profile) = self.profile.as_ref() {
             if let Some((addr, metadata)) = profile.endpoint() {
                 return opaq::Logical::Forward(Remote(ServerAddr(addr)), metadata);
+            }
+
+            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
+                return opaq::Logical::Route(addr, profile.clone(), self.policy.clone());
             }
         }
 

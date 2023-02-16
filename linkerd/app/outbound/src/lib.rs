@@ -20,15 +20,17 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::addrs::*,
-    AddrMatch, Error, ProxyRuntime, Result,
+    Addr, AddrMatch, Error, ProxyRuntime, Result,
 };
+use linkerd_proxy_client_policy::{self as policy, ClientPolicy};
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     net::IpAddr,
     sync::Arc,
-    time::Duration,
+    time,
 };
+use tokio::sync::watch;
 
 mod discover;
 pub mod http;
@@ -52,7 +54,7 @@ pub struct Config {
     /// Configures the duration the proxy will retain idle stacks (with no
     /// active connections) for an outbound address. When an idle stack is
     /// dropped, all cached service discovery information is dropped.
-    pub discovery_idle_timeout: Duration,
+    pub discovery_idle_timeout: time::Duration,
 
     /// Configures how connections are buffered *for each outbound address*.
     ///
@@ -209,4 +211,81 @@ pub fn trace_labels() -> HashMap<String, String> {
     let mut l = HashMap::new();
     l.insert("direction".to_string(), "outbound".to_string());
     l
+}
+
+pub(crate) fn spawn_default_client_policy_rx(
+    addr: Addr,
+    queue: QueueConfig,
+    detect_timeout: time::Duration,
+) -> watch::Receiver<ClientPolicy> {
+    const EWMA: policy::PeakEwma = policy::PeakEwma {
+        default_rtt: time::Duration::from_millis(30),
+        decay: time::Duration::from_secs(10),
+    };
+    let backend = match addr {
+        Addr::Socket(addr) => policy::Backend {
+            meta: policy::Meta::new_default("default"),
+            queue: policy::Queue {
+                capacity: queue.capacity,
+                failfast_timeout: queue.failfast_timeout,
+            },
+            dispatcher: policy::BackendDispatcher::Forward(addr, Default::default()),
+        },
+
+        Addr::Name(addr) => policy::Backend {
+            meta: policy::Meta::new_default("default"),
+            queue: policy::Queue {
+                capacity: queue.capacity,
+                failfast_timeout: queue.failfast_timeout,
+            },
+            dispatcher: policy::BackendDispatcher::BalanceP2c(
+                policy::Load::PeakEwma(EWMA),
+                policy::EndpointDiscovery::DestinationGet {
+                    path: addr.to_string(),
+                },
+            ),
+        },
+    };
+
+    let (tx, rx) = watch::channel(ClientPolicy {
+        protocol: policy::Protocol::Detect {
+            timeout: detect_timeout,
+            http1: policy::http::Http1 {
+                routes: Arc::new([policy::http::default(
+                    policy::RouteDistribution::FirstAvailable(Arc::new([policy::RouteBackend {
+                        filters: Arc::new([]),
+                        backend: backend.clone(),
+                    }])),
+                )]),
+            },
+            http2: policy::http::Http2 {
+                routes: Arc::new([policy::http::default(
+                    policy::RouteDistribution::FirstAvailable(Arc::new([policy::RouteBackend {
+                        filters: Arc::new([]),
+                        backend: backend.clone(),
+                    }])),
+                )]),
+            },
+            opaque: policy::opaq::Opaque {
+                policy: Some(policy::opaq::Policy {
+                    meta: policy::Meta::new_default("default"),
+                    filters: Arc::new([]),
+                    distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                        policy::RouteBackend {
+                            filters: Arc::new([]),
+                            backend: backend.clone(),
+                        },
+                    ])),
+                }),
+            },
+        },
+        backends: Arc::new([backend]),
+    });
+
+    // Hold the watch open until all receivers are dropped.
+    tokio::spawn(async move {
+        tx.closed().await;
+    });
+
+    rx
 }
