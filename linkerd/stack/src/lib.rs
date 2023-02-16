@@ -4,19 +4,65 @@
 //!
 //! 1. [Introduction](../linkerd2-proxy)
 //! 2. **linkerd-stack**
+//!    1. [`Service`](#service)
+//!    2. [`Layer`](#layer)
+//!    3. [`NewService`](#newservice)
+//!    4. [`Stack`](#stack)
+//!    5. [`Param`](#param)
 //! 3. [linkerd-app](../linkerd-app)
-//!    a. [linkerd-app-outbound](../linkerd-app-outbound)
-//!    b. [linkerd-app-inbound](../linkerd-app-inbound)
+//!    1. [linkerd-app-outbound](../linkerd-app-outbound)
+//!    2. [linkerd-app-inbound](../linkerd-app-inbound)
 //!
-//! [`tower`] defines abstractions central to the design of the Linkerd proxy.
+//! The [`tower`] crate defines abstractions central to the design of the
+//! Linkerd proxy,the [`Service`] and [`Layer`] traits. This crate contains
+//! implementations of `tower` middleware, and utilities for working with
+//! `tower` `Service`s and `Layer`s.
+//!
+//! ## Service
+//!
 //! The central abstraction is the [`Service`] trait, which represents [a
 //! fallible asynchronous function][call] from some request type to some
 //! response type, with the added ability to [advertise whether a given instance
 //! of a `Service` is ready to accept a request][poll_ready].
 //!
+//! A client to some remote network endpoint can be represented as a `Service`.
+//! Similarly, a `Service` can model the logic used by a server to produce a
+//! response. _Middleware_ that implements behaviors such as adding a timeout
+//! to requests, can be represented as a `Service` as well, by wrapping a
+//! generic inner `Service` and modifying the requests passed to that service,
+//! the responses returned by that service, or both. `Service`s which are not
+//! middleware (i.e. that do not wrap another `Service`) are often referred to
+//! as _leaf services_.
+//!
+//! ## Layer
+//!
+//! To model the composition of middleware with leaf services, `tower` defines
+//! the [`Layer`] trait. Conceptually, a [`Layer`] is quite simple: a `Layer<S>`
+//! defines a single method (creatively named [`layer`]), which takes an
+//! `S`-typed `Service`, and returns a new `Service` of a different type. Most
+//! middleware `Service`s provide a corresponding `Layer` implementation that
+//! wraps an inner `Service` in that middleware.
+//!
+//! Since a `Layer` is essentially a function from one type to another, multiple
+//! `Layer`s whose input and output types are compatible can be composed
+//! together to form a `Layer` that wraps a leaf `Service` in multiple middleware
+//! `Service`s. This way, we can define a "stack" of middlware that can be
+//! applied to multiple `Service` instances. For example, we might compose
+//! layers that add timeouts, retries, and error handling, and then apply those
+//! layers to a set of leaf `Service`s representing client connections to
+//! individual endpoints.
+//!
+//! ## NewService
+//!
+//! ## Stack
+//!
+//! ## Param
+//!
 //! [`Service`]: tower::Service
 //! [call]: tower::Service::call
 //! [poll_ready]: tower::Service::poll_ready
+//! [`Layer`]: tower::Layer
+//! [`layer`]: tower::Layer::layer
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]

@@ -73,7 +73,9 @@
 //!
 //! The `linkerd2-proxy` codebase is split into a large number of crates (Rust
 //! packages) which contain individual pieces of the proxy. Many of these crates
-//! are additionally grouped into sub-directories.
+//! are additionally grouped into sub-directories. Many of the crates in the
+//! workspace implement fairly specific, self-contained units of functionality,
+//! and their names reflect this --- they "do what it says on the can". However,
 //!
 //! [`tokio`]: https://tokio.rs
 //! [`tower`]: https://github.com/tower-rs/tower
