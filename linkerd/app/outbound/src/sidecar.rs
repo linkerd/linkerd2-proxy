@@ -1,3 +1,5 @@
+#![allow(unused_imports, dead_code)]
+
 use crate::{discover, http, opaq, protocol::Protocol, Outbound};
 use linkerd_app_core::{
     io, profiles,
@@ -59,9 +61,9 @@ where
 {
     fn from(parent: discover::Discovery<T>) -> Self {
         Self {
+            orig_dst: (*parent).param(),
             profile: svc::Param::param(&parent),
             policy: svc::Param::param(&parent),
-            orig_dst: (*parent).param(),
         }
     }
 }

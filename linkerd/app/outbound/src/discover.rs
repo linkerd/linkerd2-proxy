@@ -1,4 +1,7 @@
+#![allow(unused_imports)]
+
 use crate::Outbound;
+use futures::prelude::*;
 use linkerd_app_core::{
     profiles,
     svc::{self, ServiceExt},
@@ -47,6 +50,7 @@ impl<N> Outbound<N> {
     {
         // Mock out the policy discovery service.
         let queue = self.config.tcp_connection_queue;
+        let detect_timeout = self.config.proxy.detect_protocol_timeout;
         let policy = svc::mk(move |addr: Addr| {
             tracing::info!("looking up policy for {addr}");
             const EWMA: policy::PeakEwma = policy::PeakEwma {
@@ -77,25 +81,49 @@ impl<N> Outbound<N> {
                     ),
                 },
             };
-            let policy = policy::opaq::Policy {
-                meta: policy::Meta::new_default("default"),
-                filters: Arc::new([]),
-                distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
-                    policy::RouteBackend {
-                        filters: Arc::new([]),
-                        backend: backend.clone(),
-                    },
-                ])),
-            };
+
             let (tx, rx) = watch::channel(ClientPolicy {
-                protocol: policy::Protocol::Opaque(policy::opaq::Opaque {
-                    policy: Some(policy),
-                }),
+                protocol: policy::Protocol::Detect {
+                    timeout: detect_timeout,
+                    http1: policy::http::Http1 {
+                        routes: Arc::new([policy::http::default(
+                            policy::RouteDistribution::FirstAvailable(Arc::new([
+                                policy::RouteBackend {
+                                    filters: Arc::new([]),
+                                    backend: backend.clone(),
+                                },
+                            ])),
+                        )]),
+                    },
+                    http2: policy::http::Http2 {
+                        routes: Arc::new([policy::http::default(
+                            policy::RouteDistribution::FirstAvailable(Arc::new([
+                                policy::RouteBackend {
+                                    filters: Arc::new([]),
+                                    backend: backend.clone(),
+                                },
+                            ])),
+                        )]),
+                    },
+                    opaque: policy::opaq::Opaque {
+                        policy: Some(policy::opaq::Policy {
+                            meta: policy::Meta::new_default("default"),
+                            filters: Arc::new([]),
+                            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                                policy::RouteBackend {
+                                    filters: Arc::new([]),
+                                    backend: backend.clone(),
+                                },
+                            ])),
+                        }),
+                    },
+                },
                 backends: Arc::new([backend]),
             });
             tokio::spawn(async move {
                 tx.closed().await;
             });
+
             futures::future::ok::<_, Infallible>(rx)
         });
 
@@ -105,22 +133,27 @@ impl<N> Outbound<N> {
             let allow = allow.clone();
             let profiles = profiles.clone();
             Box::pin(async move {
-                let profile = if allow.matches(&addr) {
-                    profiles
-                        .get_profile(profiles::LookupAddr(addr.clone()))
-                        .await?
-                } else {
-                    debug!(
-                        %addr,
-                        domains = %allow.names(),
-                        networks = %allow.nets(),
-                        "Discovery skipped",
-                    );
-                    None
+                let policy_fut = policy.oneshot(addr.clone()).map_err(Into::into);
+
+                let allow = allow.clone();
+                let profiles = profiles.clone();
+                let profile_fut = async move {
+                    if allow.matches(&addr) {
+                        profiles
+                            .get_profile(profiles::LookupAddr(addr.clone()))
+                            .await
+                    } else {
+                        debug!(
+                            %addr,
+                            domains = %allow.names(),
+                            networks = %allow.nets(),
+                            "Discovery skipped",
+                        );
+                        Ok(None)
+                    }
                 };
 
-                let policy_rx = policy.oneshot(addr).await?;
-                Ok((profile, policy_rx))
+                tokio::try_join!(profile_fut, policy_fut)
             })
         });
 
@@ -138,12 +171,15 @@ impl<N> Outbound<N> {
 impl<T>
     From<(
         (Option<profiles::Receiver>, watch::Receiver<ClientPolicy>),
+        // Option<profiles::Receiver>,
         T,
     )> for Discovery<T>
 {
     fn from(
         ((profile, policy), parent): (
+            // (profile, parent): (
             (Option<profiles::Receiver>, watch::Receiver<ClientPolicy>),
+            // Option<profiles::Receiver>,
             T,
         ),
     ) -> Self {
