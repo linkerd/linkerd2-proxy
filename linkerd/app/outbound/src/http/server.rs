@@ -1,15 +1,19 @@
-use super::{IdentityRequired, ProxyConnectionClose};
+use super::{IdentityRequired, Logical, ProxyConnectionClose};
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{
     errors, http_tracing, io,
     svc::{self, ExtractParam},
-    Error, Result,
+    transport::addrs::*,
+    Addr, Error, Result,
 };
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ServerRescue {
     emit_headers: bool,
 }
+
+#[derive(Copy, Clone, Debug)]
+struct Target<T>(T);
 
 impl<N> Outbound<N> {
     /// Builds a [`svc::NewService`] stack that prepares HTTP requests to be
@@ -33,8 +37,7 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        // Target with a default HTTP authority.
-        T: svc::Param<http::normalize_uri::DefaultAuthority>,
+        T: svc::Param<Logical> + 'static,
         // HTTP outbound stack
         N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
@@ -75,9 +78,11 @@ impl<N> Outbound<N> {
                         .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                         .push(http::BoxResponse::layer()),
                 )
+                .push_map_target(|Target(t)| t)
                 // Convert origin form HTTP/1 URIs to absolute form for Hyper's
                 // `Client`.
                 .push(http::NewNormalizeUri::layer())
+                .push_map_target(Target)
                 // Record when a HTTP/1 URI originated in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push(svc::ArcNewService::layer())
@@ -111,6 +116,22 @@ impl<N> Outbound<N> {
                     rt.drain.clone(),
                 ))
         })
+    }
+}
+
+// === impl Target ===
+
+impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Target<T>
+where
+    T: svc::Param<Logical>,
+{
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        let addr = match self.0.param() {
+            Logical::Route(addr, _) => Addr::from(addr),
+            Logical::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
+        };
+
+        http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
     }
 }
 

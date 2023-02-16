@@ -132,12 +132,3 @@ where
         self.parent.param()
     }
 }
-
-impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Http<T>
-where
-    T: svc::Param<http::normalize_uri::DefaultAuthority>,
-{
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        self.parent.param()
-    }
-}

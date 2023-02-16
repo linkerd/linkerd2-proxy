@@ -38,8 +38,8 @@ pub mod opaq;
 mod protocol;
 mod sidecar;
 pub mod tcp;
-#[cfg(test)]
-pub(crate) mod test_util;
+#[cfg(any(test, feature = "test-util"))]
+pub mod test_util;
 
 pub use self::{discover::Discovery, metrics::Metrics};
 
@@ -110,6 +110,13 @@ impl Outbound<()> {
             runtime,
             stack: svc::stack(()),
         }
+    }
+
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn for_test() -> (Self, drain::Signal) {
+        let (rt, drain) = test_util::runtime();
+        let this = Self::new(test_util::default_config(), rt);
+        (this, drain)
     }
 }
 

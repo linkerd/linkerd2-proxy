@@ -74,7 +74,10 @@ impl Outbound<()> {
 
         let http = self
             .to_tcp_connect()
+            .push_tcp_endpoint()
+            .push_http_client()
             .push_http_cached(resolve)
+            .push_http_server()
             .map_stack(|_, _, stk| {
                 stk.check_new_service::<Http<http::Logical>, _>()
                     .push_filter(Http::try_from)

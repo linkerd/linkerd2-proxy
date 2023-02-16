@@ -25,7 +25,8 @@ async fn http11_forward() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
-        .push_http_endpoint::<_, http::BoxBody>()
+        .push_http_client()
+        .push_http_endpoint::<_, http::BoxBody, _>()
         .into_inner();
 
     let svc = stack.new_service(Endpoint {
@@ -58,7 +59,8 @@ async fn http2_forward() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
-        .push_http_endpoint::<_, http::BoxBody>()
+        .push_http_client()
+        .push_http_endpoint::<_, http::BoxBody, _>()
         .into_inner();
 
     let svc = stack.new_service(Endpoint {
@@ -93,7 +95,8 @@ async fn orig_proto_upgrade() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
-        .push_http_endpoint::<_, http::BoxBody>()
+        .push_http_client()
+        .push_http_endpoint::<_, http::BoxBody, _>()
         .into_inner();
 
     let svc = stack.new_service(Endpoint {
@@ -140,7 +143,8 @@ async fn orig_proto_skipped_on_http_upgrade() {
     let drain = rt.drain.clone();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
-        .push_http_endpoint::<_, http::BoxBody>()
+        .push_http_client()
+        .push_http_endpoint::<_, http::BoxBody, _>()
         .into_stack()
         .push_on_service(http::BoxRequest::layer())
         // We need the server-side upgrade layer to annotate the request so that the client
@@ -186,7 +190,8 @@ async fn orig_proto_http2_noop() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
-        .push_http_endpoint::<_, http::BoxBody>()
+        .push_http_client()
+        .push_http_endpoint::<_, http::BoxBody, _>()
         .into_inner();
 
     let svc = stack.new_service(Endpoint {

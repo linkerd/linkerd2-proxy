@@ -1,7 +1,7 @@
 //! A stack that (optionally) resolves a service to a set of endpoint replicas
 //! and distributes HTTP requests among them.
 
-use super::{balance, client, normalize_uri};
+use super::{balance, client};
 use crate::{http, stack_labels, Outbound};
 use linkerd_app_core::{
     metrics, profiles,
@@ -285,28 +285,6 @@ impl<T> svc::Param<tls::ConditionalClientTls> for Endpoint<T> {
             .unwrap_or(tls::ConditionalClientTls::None(
                 tls::NoClientTls::NotProvidedByServiceDiscovery,
             ))
-    }
-}
-
-impl<T> svc::Param<normalize_uri::DefaultAuthority> for Endpoint<T>
-where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
-{
-    fn param(&self) -> normalize_uri::DefaultAuthority {
-        if let Some(profiles::LogicalAddr(ref a)) = self.parent.param() {
-            return normalize_uri::DefaultAuthority(Some(
-                a.to_string()
-                    .parse()
-                    .expect("Address must be a valid authority"),
-            ));
-        }
-
-        normalize_uri::DefaultAuthority(Some(
-            self.addr
-                .to_string()
-                .parse()
-                .expect("Address must be a valid authority"),
-        ))
     }
 }
 

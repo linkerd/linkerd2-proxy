@@ -71,8 +71,17 @@ impl Gateway {
         };
 
         let http = {
-            let http = self.outbound.to_tcp_connect().push_http_cached(resolve);
-            self.http(http.into_inner()).into_inner()
+            let http = self
+                .outbound
+                .to_tcp_connect()
+                .push_tcp_endpoint()
+                .push_http_client();
+            let http = self.http(http.into_inner(), resolve);
+            self.inbound
+                .clone()
+                .with_stack(http.into_inner())
+                .push_http_tcp_server()
+                .into_inner()
         };
 
         self.server(disco, opaq, http)

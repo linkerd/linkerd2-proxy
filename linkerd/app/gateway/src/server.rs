@@ -182,6 +182,15 @@ where
     }
 }
 
+impl<T> svc::Param<GatewayAddr> for Http<T>
+where
+    T: svc::Param<GatewayAddr>,
+{
+    fn param(&self) -> GatewayAddr {
+        (***self).param()
+    }
+}
+
 impl<T> svc::Param<OrigDstAddr> for Http<T>
 where
     T: svc::Param<OrigDstAddr>,
