@@ -20,6 +20,15 @@ use tracing::debug_span;
 #[derive(Copy, Clone, Debug)]
 struct ServerRescue;
 
+#[derive(Debug, thiserror::Error)]
+#[error("client {client}: server: {dst}: {source}")]
+struct ServerError {
+    client: Remote<ClientAddr>,
+    dst: OrigDstAddr,
+    #[source]
+    source: Error,
+}
+
 impl<H> Inbound<H> {
     /// Fails requests when the `HSvc`-typed inner service is not ready.
     pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
@@ -71,6 +80,8 @@ impl<H> Inbound<H> {
                         // limit is reached.
                         .push(svc::LoadShed::layer()),
                 )
+                .push(svc::NewMapErr::layer_from_target::<ServerError, _>())
+                .push_on_service(svc::MapErr::layer_boxed())
                 .push(rt.metrics.http_errors.to_layer())
                 .push(ServerRescue::layer())
                 .push_on_service(
@@ -93,6 +104,20 @@ impl<H> Inbound<H> {
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
+    }
+}
+
+impl<T> From<(&T, Error)> for ServerError
+where
+    T: Param<OrigDstAddr>,
+    T: Param<Remote<ClientAddr>>,
+{
+    fn from((t, source): (&T, Error)) -> Self {
+        Self {
+            client: t.param(),
+            dst: t.param(),
+            source,
+        }
     }
 }
 
