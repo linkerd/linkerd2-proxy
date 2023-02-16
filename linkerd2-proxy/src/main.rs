@@ -7,10 +7,10 @@
 //! 1. **Introduction**
 //!     1. [Background](#background)
 //!     2. [Navigating the Codebase](#navigating-the-codebase)
-//! 2. [linkerd-stack](../linkerd-stack)
-//! 3. [linkerd-app](../linkerd-app)
-//!     1. [linkerd-app-outbound](../linkerd-app-outbound)
-//!     2. [linkerd-app-inbound](../linkerd-app-inbound)
+//! 2. [linkerd-stack](../linkerd_stack/index.html)
+//! 3. [linkerd-app](../linkerd_app/index.html)
+//!     1. [linkerd-app-outbound](../linkerd_app_outbound/index.html)
+//!     2. [linkerd-app-inbound](../linkerd_app_inbound/index.html)
 //!
 //! This documentation is intended for developers working in the
 //! `linkerd2-proxy` repo. This is *not* documentation about how to use and

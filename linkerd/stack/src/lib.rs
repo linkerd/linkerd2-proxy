@@ -2,16 +2,16 @@
 //!
 //! ## Table of Contents
 //!
-//! 1. [Introduction](../linkerd2-proxy)
+//! 1. [Introduction](../linkerd2_proxy/index.html)
 //! 2. **linkerd-stack**
 //!    1. [`Service`](#service)
 //!    2. [`Layer`](#layer)
 //!    3. [`NewService`](#newservice)
 //!    4. [`Stack`](#stack)
 //!    5. [`Param`](#param)
-//! 3. [linkerd-app](../linkerd-app)
-//!    1. [linkerd-app-outbound](../linkerd-app-outbound)
-//!    2. [linkerd-app-inbound](../linkerd-app-inbound)
+//! 3. [linkerd-app](../linkerd_app/index.html)
+//!    1. [linkerd-app-outbound](../linkerd_app_outbound/index.html)
+//!    2. [linkerd-app-inbound](../linkerd_app_inbound/index.html)
 //!
 //! The [`tower`] crate defines abstractions central to the design of the
 //! Linkerd proxy,the [`Service`] and [`Layer`] traits. This crate contains
