@@ -93,12 +93,9 @@ impl<N> Outbound<N> {
     /// This is only intended for Http configurations, where we assume all
     /// outbound traffic is HTTP and HTTP detection is **always** performed. If
     /// HTTP detection fails, we revert to using the provided `fallback` stack.
-    //
-    // Profile-based stacks are cached so that they can be reused across
-    // multiple requests to the same logical destination (even if the
-    // connections target individual endpoints in a service). No other caching
-    // is employed here: per-endpoint stacks are uncached, and fallback stacks
-    // are expected to be cached elsewhere, if necessary.
+    ///
+    /// The inner stack is used to create a service for each HTTP request. This
+    /// stack must handle its own caching.
     fn push_ingress<T, I, F, FSvc, NSvc>(self, fallback: F) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type describing an outbound connection.
@@ -122,7 +119,7 @@ impl<N> Outbound<N> {
         NSvc: Send + Unpin + 'static,
         NSvc::Future: Send,
     {
-        self.map_stack(|config, rt, discover| {
+        self.map_stack(|config, rt, inner| {
             let detect_http = config.proxy.detect_http();
             let Config {
                 proxy:
@@ -138,20 +135,21 @@ impl<N> Outbound<N> {
             // stack. Route requests without the header through the endpoint
             // stack.
             //
-            // Stacks with an override are cached and reused. Endpoint stacks
-            // are not.
-            let http = discover
+            // Errors are not handled gracefully by this stack -- they hit the
+            // Hyper server.
+            //
+            // This stack creates one-off services for each request--so it is
+            // important that the inner stack caches any state that should be
+            // shared across requests.
+            let http = inner
                 .check_new_service::<Http<RequestTarget>, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
                         .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
-                        .push(svc::LoadShed::layer()),
                 )
                 .lift_new()
-                .push(svc::NewOneshotRoute::layer_via(
-                    |t: &Http<T>| SelectTarget(t.clone()),
-                ))
+                .push(svc::NewOneshotRoute::layer_via(|t: &Http<T>| SelectTarget(t.clone())))
                 .check_new_service::<Http<T>, http::Request<_>>();
 
             // HTTP detection is **always** performed. If detection fails, then we
@@ -179,6 +177,40 @@ impl<N> Outbound<N> {
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
+        })
+    }
+}
+
+// === impl SelectTarget ===
+
+impl<B, T> svc::router::SelectRoute<http::Request<B>> for SelectTarget<T>
+where
+    T: svc::Param<OrigDstAddr>,
+{
+    type Key = Http<RequestTarget>;
+    type Error = InvalidOverrideHeader;
+
+    fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
+        // Use either the override header or the original destination address.
+        let target = http::authority_from_header(req, DST_OVERRIDE_HEADER)
+            .map(|a| {
+                NameAddr::from_authority_with_default_port(&a, 80)
+                    .map(RequestTarget::Named)
+                    .map_err(|_| InvalidOverrideHeader)
+            })
+            .transpose()?
+            .unwrap_or_else(|| RequestTarget::Orig((*self.0).param()));
+
+        // Use the request's version.
+        let version = match req.version() {
+            ::http::Version::HTTP_2 => http::Version::H2,
+            ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => http::Version::Http1,
+            _ => unreachable!("Only HTTP/1 and HTTP/2 are supported"),
+        };
+
+        Ok(Http {
+            version,
+            parent: target,
         })
     }
 }
@@ -271,40 +303,6 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::Logical> {
     }
 }
 
-// === impl SelectTarget ===
-
-impl<B, T> svc::router::SelectRoute<http::Request<B>> for SelectTarget<T>
-where
-    T: svc::Param<OrigDstAddr>,
-{
-    type Key = Http<RequestTarget>;
-    type Error = InvalidOverrideHeader;
-
-    fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
-        // Use either the override header or the original destination address.
-        let target = http::authority_from_header(req, DST_OVERRIDE_HEADER)
-            .map(|a| {
-                NameAddr::from_authority_with_default_port(&a, 80)
-                    .map(RequestTarget::Named)
-                    .map_err(|_| InvalidOverrideHeader)
-            })
-            .transpose()?
-            .unwrap_or_else(|| RequestTarget::Orig((*self.0).param()));
-
-        // Use the request's version.
-        let version = match req.version() {
-            ::http::Version::HTTP_2 => http::Version::H2,
-            ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => http::Version::Http1,
-            _ => unreachable!("Only HTTP/1 and HTTP/2 are supported"),
-        };
-
-        Ok(Http {
-            version,
-            parent: target,
-        })
-    }
-}
-
 // === impl Opaq ===
 
 impl<T> std::ops::Deref for Opaq<T> {
@@ -341,5 +339,88 @@ where
         }
 
         opaq::Logical::Forward(self.param(), Default::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use svc::{NewService, ServiceExt};
+    use tokio::{io::AsyncReadExt, io::AsyncWriteExt, time};
+    use tower_test::mock;
+
+    /// The ingress stack must not require that inner HTTP stack is immediately
+    /// ready.
+    #[tokio::test(flavor = "current_thread")]
+    async fn http_backpressure_ok() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        // Create mocked inner services that are not ready.
+        let (not_ready_http, mut http) = mock::pair();
+        http.allow(0);
+        let (not_ready_opaq, mut opaq) = mock::pair();
+        opaq.allow(0);
+
+        let config = crate::test_util::default_config();
+        let (runtime, _drain) = crate::test_util::runtime();
+        let svc = Outbound::new(config, runtime)
+            .with_stack(move |_: _| not_ready_http.clone())
+            .push_ingress(move |_: _| not_ready_opaq.clone())
+            .into_inner()
+            .new_service(OrigDstAddr(([127, 0, 0, 1], 80).into()));
+
+        // Create a mocked IO stream that will be used to drive the service.
+        let (mut client, server) = tokio::io::duplex(1000);
+        let mut task = svc.oneshot(server);
+
+        tokio::select! {
+            _ = client.write(b"GET / HTTP/1.1\r\n\r\nl5d-dst-override: foo\r\n\r\n") => {}
+            _ = time::sleep(time::Duration::from_secs(1)) => panic!("write timed out"),
+            _ = &mut task => panic!("task should not complete"),
+        }
+        let mut buf = bytes::BytesMut::with_capacity(1000);
+        tokio::select! {
+            _ = time::sleep(time::Duration::from_secs(10)) => {}
+            _ = client.read_buf(&mut buf) => panic!("unexpected read"),
+            _ = &mut task => panic!("task should not complete"),
+        }
+    }
+
+    /// The ingress stack must not require that inner opaque stack is immediately
+    /// ready.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_opaq_backpressure_ok() {
+        let _trace = linkerd_tracing::test::trace_init();
+        time::pause(); // Run the test with a mocked clock.
+
+        // Create mocked inner services that are not ready.
+        let (not_ready_http, mut http) = mock::pair();
+        http.allow(0);
+        let (not_ready_opaq, mut opaq) = mock::pair();
+        opaq.allow(0);
+
+        let config = crate::test_util::default_config();
+        let (runtime, _drain) = crate::test_util::runtime();
+        let svc = Outbound::new(config, runtime)
+            .with_stack(move |_: _| not_ready_http.clone())
+            .push_ingress(move |_: _| not_ready_opaq.clone())
+            .into_inner()
+            .new_service(OrigDstAddr(([127, 0, 0, 1], 80).into()));
+
+        // Create a mocked IO stream that will be used to drive the service.
+        let (mut client, server) = tokio::io::duplex(1000);
+        let mut task = svc.oneshot(server);
+
+        tokio::select! {
+            _ = client.write(b"foo.bar.baz/v1\r\n") => {}
+            _ = time::sleep(time::Duration::from_secs(1)) => panic!("write timed out"),
+            _ = &mut task => panic!("task should not complete"),
+        }
+        let mut buf = bytes::BytesMut::with_capacity(1000);
+        tokio::select! {
+            _ = time::sleep(time::Duration::from_secs(10)) => {}
+            _ = client.read_buf(&mut buf) => panic!("unexpected read"),
+            _ = &mut task => panic!("task should not complete"),
+        }
     }
 }
