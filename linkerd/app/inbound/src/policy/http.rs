@@ -215,16 +215,18 @@ impl<T, N> HttpPolicyService<T, N> {
                     client.ip = %self.connection.client.ip(),
                     "Request denied",
                 );
-                if route.authorizations.is_empty() {
-                    tracing::debug!("No authorizations defined",);
-                }
-                for authz in &*route.authorizations {
-                    tracing::debug!(
-                        authz.group = %authz.meta.group(),
-                        authz.kind = %authz.meta.kind(),
-                        authz.name = %authz.meta.name(),
-                        "Authorization did not apply",
-                    );
+                if tracing::event_enabled!(tracing::Level::DEBUG) {
+                    if route.authorizations.is_empty() {
+                        tracing::debug!("No authorizations defined",);
+                    }
+                    for authz in &*route.authorizations {
+                        tracing::debug!(
+                            authz.group = %authz.meta.group(),
+                            authz.kind = %authz.meta.kind(),
+                            authz.name = %authz.meta.name(),
+                            "Authorization did not apply",
+                        );
+                    }
                 }
                 self.metrics
                     .deny(labels, self.connection.dst, self.connection.tls.clone());
