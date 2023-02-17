@@ -35,11 +35,6 @@
 			"source": "/var/run/docker.sock",
 			"target": "/var/run/docker-host.sock",
 			"type": "bind"
-		},
-		{
-			"source": "${localEnv:HOME}/.docker",
-			"target": "/home/code/.docker",
-			"type": "bind"
 		}
 	]
 }
