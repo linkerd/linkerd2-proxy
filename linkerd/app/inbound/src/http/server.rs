@@ -99,7 +99,6 @@ impl<H> Inbound<H> {
         })
     }
 
-    /// Fails requests when the `HSvc`-typed inner service is not ready.
     pub fn push_http_tcp_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: Param<Version>,

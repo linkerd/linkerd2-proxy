@@ -46,8 +46,9 @@ pub struct Target<T = ()> {
 struct ByRequestVersion<T>(Target<T>);
 
 impl Gateway {
-    /// Wrap the provided outbound HTTP stack with an HTTP server, inbound
-    /// authorization, and gateway request routing.
+    /// Wrap the provided outbound HTTP client with the inbound HTTP server,
+    /// inbound authorization, tagged-transport gateway routing, and the
+    /// outbound router.
     pub fn http<T, N, R, NSvc>(
         &self,
         inner: N,
