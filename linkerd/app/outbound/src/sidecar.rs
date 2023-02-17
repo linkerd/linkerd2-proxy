@@ -37,7 +37,7 @@ impl Outbound<()> {
         let http = self
             .to_tcp_connect()
             .push_tcp_endpoint()
-            .push_http_client()
+            .push_http_tcp_client()
             .push_http_cached(resolve)
             .push_http_server();
 

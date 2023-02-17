@@ -35,7 +35,7 @@ struct ClientRescue {
 }
 
 impl<C> Outbound<C> {
-    pub fn push_http_client<T, B>(
+    pub fn push_http_tcp_client<T, B>(
         self,
     ) -> Outbound<
         svc::ArcNewService<

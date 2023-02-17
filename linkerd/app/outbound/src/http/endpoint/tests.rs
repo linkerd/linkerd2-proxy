@@ -25,7 +25,7 @@ async fn http11_forward() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
-        .push_http_client()
+        .push_http_tcp_client()
         .push_http_endpoint::<_, http::BoxBody, _>()
         .into_inner();
 
@@ -59,7 +59,7 @@ async fn http2_forward() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
-        .push_http_client()
+        .push_http_tcp_client()
         .push_http_endpoint::<_, http::BoxBody, _>()
         .into_inner();
 
@@ -95,7 +95,7 @@ async fn orig_proto_upgrade() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
-        .push_http_client()
+        .push_http_tcp_client()
         .push_http_endpoint::<_, http::BoxBody, _>()
         .into_inner();
 
@@ -143,7 +143,7 @@ async fn orig_proto_skipped_on_http_upgrade() {
     let drain = rt.drain.clone();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
-        .push_http_client()
+        .push_http_tcp_client()
         .push_http_endpoint::<_, http::BoxBody, _>()
         .into_stack()
         .push_on_service(http::BoxRequest::layer())
@@ -190,7 +190,7 @@ async fn orig_proto_http2_noop() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
-        .push_http_client()
+        .push_http_tcp_client()
         .push_http_endpoint::<_, http::BoxBody, _>()
         .into_inner();
 

@@ -75,7 +75,7 @@ impl Gateway {
                 .outbound
                 .to_tcp_connect()
                 .push_tcp_endpoint()
-                .push_http_client();
+                .push_http_tcp_client();
             let http = self.http(http.into_inner(), resolve);
             self.inbound
                 .clone()
