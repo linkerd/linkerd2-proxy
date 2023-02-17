@@ -6,9 +6,11 @@
 //! 2. **linkerd-stack**
 //!    1. [`Service`](#service)
 //!    2. [`Layer`](#layer)
-//!    3. [`NewService`](#newservice)
+//!    3. [Service Creation](#service-creation)
+//!         1. [`MakeService` and `NewService`](#makeservice-and-newservice)
+//!         2. [`Param`](#param)
 //!    4. [`Stack`](#stack)
-//!    5. [`Param`](#param)
+//!    5. [Cloning, Backpressure, and Readiness](#cloning-backpressure-and-readiness)
 //! 3. [linkerd-app](../linkerd_app/index.html)
 //!    1. [linkerd-app-outbound](../linkerd_app_outbound/index.html)
 //!    2. [linkerd-app-inbound](../linkerd_app_inbound/index.html)
@@ -52,19 +54,87 @@
 //! layers to a set of leaf `Service`s representing client connections to
 //! individual endpoints.
 //!
-//! ## NewService
+//! ## Service Creation
 //!
-//! ## Stack
+//! If we model a client connection to an endpoint or a server bound to an
+//! accepted connection as `Service`s, then constructing an instance of those
+//! `Service`s represents establishing a connection to an upstream host, or
+//! acquiring the resources necessary to serve an incoming connection.
 //!
-//! ## Param
+//! In an application that serves a specific set of RPC endpoints, or
+//! communicates  with a known set of remote hosts, we might construct these services "by
+//! hand", applying any desired middleware using `Layer`s. However, the Linkerd
+//! proxy must dynamically handle traffic with destinations and policies that
+//! are determined at runtime. Constructing a `Service` instance to serve a connection
+//! accepted by a proxy is quite complex: we must determine the ultimate
+//! destination of that traffic, discover the endpoints that comprise that
+//! destination, and determine what policies to apply --- which determines what
+//! middleware will compose the constructed service, and how that middleware
+//! will be configured. Therefore, an abstraction for constructing `Service`s is
+//! necessary.
+//!
+//! ### `MakeService` and `NewService`
+//!
+//! In `tower`, the [`MakeService`] trait is often used to represent a way to
+//! create `Service`s. `MakeService` is a trait alias[^1] implemented by any
+//! type which implements `Service` with a `Response` type that also implements
+//! `Service`. A `MakeService` is called with a request --- referred to as a
+//! _target_ --- which describes the
+//! `Service` to be created, and returns a `Future` that performs the necessary
+//! steps to construct that `Service` (such as establishing a client
+//! connection).
+//!
+//! Because all `MakeService`s are implementors of the `Service` trait, the same
+//! middleware that is used with any other `Service` can be applied to
+//! `MakeService`s. For example, if we want to add a response timeout to a
+//! client, we can wrap the client `Service` in a timeout middleware. If we also
+//! want to add a timeout that limits how long we spend establishing a client
+//! connection, we can use the *same* timeout middleware to wrap the
+//! `MakeService` that establishes client connections.
+//!
+//! Since a `Service` is an asynchronous, fallible function from a request to a
+//! response, with backpressure, a `MakeService` implementation represents
+//! an_asynchronous and fallible mechanism for constructing a `Service`, which
+//! can also exert backpressure. This is important to model operations necessary
+//! to construct a `Service` which require I/O, such as establishing
+//! connections. However, only some service construction requires performing a
+//! fallible asynchronous operation. For example, if we have a pool of client
+//! connections to a given upstream service, creating those connections is a
+//! fallible, asynchronous operation, but pulling an existing connection from
+//! the pool is not. Therefore, the `linkerd-stack` crate includes an additional
+//! trait, called [`NewService`], which represents a synchronous, infallible
+//! operation that (typically) returns a `Service`.
+//!
+//! The `NewService` trait is much simpler than the [`MakeService`] trait. Like
+//! a `MakeService`, it is generic over a target type that describes the
+//! service to be created, and has an associated [`NewSercice::Service`] type which it
+//! produces. `NewService` only defines a single method,
+//! [`NewService::new_service`], which, given a target, immediately and
+//! infallibly returns a `Self::Service` instance for that target.
+//!
+//! ### `Param`
+//!
+//! ### Stack
+//!
+//! ## Cloning, Backpressure, and Readiness
+//!
 //!
 //! [`Service`]: tower::Service
 //! [call]: tower::Service::call
 //! [poll_ready]: tower::Service::poll_ready
 //! [`Layer`]: tower::Layer
 //! [`layer`]: tower::Layer::layer
-
-#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
+//!
+//! [^1]: A trait which, rather than being implemented directly, has a blanket
+//!     implementation for all types with implementations of some other trait
+//!     that match additional constraints on the generic parameters and/or
+//!     associated types of that other trait.
+#![deny(
+    rust_2018_idioms,
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    rustdoc::broken_intra_doc_links
+)]
 #![forbid(unsafe_code)]
 
 mod arc_new_service;
