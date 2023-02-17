@@ -1,44 +1,20 @@
 use super::*;
 use linkerd_app_core::{
-    dns, profiles,
-    proxy::{api_resolve::Metadata, http},
-    svc::NewService,
-    tls, Error, NameAddr, NameMatch,
+    proxy::http,
+    svc::{NewService, ServiceExt},
+    tls,
+    trace::test::trace_init,
+    Error, NameAddr,
 };
 use linkerd_app_inbound::GatewayLoop;
-use linkerd_app_test as support;
-use std::str::FromStr;
-use tower::util::ServiceExt;
+use linkerd_proxy_server_policy as policy;
+use std::{str::FromStr, sync::Arc, time};
 use tower_test::mock;
 
 #[tokio::test]
 async fn gateway() {
     assert_eq!(
-        Test::default()
-            .with_default_profile()
-            .run()
-            .await
-            .unwrap()
-            .status(),
-        http::StatusCode::NO_CONTENT
-    );
-}
-
-#[tokio::test]
-async fn gateway_endpoint() {
-    let addr = std::net::SocketAddr::new([192, 0, 2, 10].into(), 777);
-    let profile = support::profile::only(profiles::Profile {
-        endpoint: Some((addr, Metadata::default())),
-        ..profiles::Profile::default()
-    });
-
-    assert_eq!(
-        Test::default()
-            .with_profile(profile)
-            .run()
-            .await
-            .unwrap()
-            .status(),
+        Test::default().run().await.unwrap().status(),
         http::StatusCode::NO_CONTENT
     );
 }
@@ -51,26 +27,176 @@ async fn forward_loop() {
         ),
         ..Default::default()
     };
-    let e = test.with_default_profile().run().await.unwrap_err();
+    let e = test.run().await.unwrap_err();
     assert!(e.is::<GatewayLoop>());
 }
 
+/// If the HTTP stack is misconfigured--specifically if two server stacks are
+/// instrumented--it may incorrectly determine that an upgraded origin-form
+/// HTTP/1.1 request should be in absolute-form.
+///
+/// This test validates that origin-form requests are not marked as
+/// absolute-form.
+#[tokio::test(flavor = "current_thread")]
+async fn upgraded_request_remains_relative_form() {
+    let _trace = trace_init();
+
+    #[derive(Clone, Debug)]
+    struct Target;
+
+    impl svc::Param<GatewayAddr> for Target {
+        fn param(&self) -> GatewayAddr {
+            GatewayAddr("web.test.example.com:80".parse().unwrap())
+        }
+    }
+
+    impl svc::Param<OrigDstAddr> for Target {
+        fn param(&self) -> OrigDstAddr {
+            OrigDstAddr(([10, 10, 10, 10], 4143).into())
+        }
+    }
+
+    impl svc::Param<Remote<ClientAddr>> for Target {
+        fn param(&self) -> Remote<ClientAddr> {
+            Remote(ClientAddr(([10, 10, 10, 11], 41430).into()))
+        }
+    }
+
+    impl svc::Param<ServerLabel> for Target {
+        fn param(&self) -> ServerLabel {
+            ServerLabel(policy::Meta::new_default("test"))
+        }
+    }
+
+    impl svc::Param<tls::ClientId> for Target {
+        fn param(&self) -> tls::ClientId {
+            tls::ClientId::from_str("client.id.test").unwrap()
+        }
+    }
+
+    impl svc::Param<tls::ConditionalServerTls> for Target {
+        fn param(&self) -> tls::ConditionalServerTls {
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some(self.param()),
+                negotiated_protocol: None,
+            })
+        }
+    }
+
+    impl svc::Param<Option<profiles::Receiver>> for Target {
+        fn param(&self) -> Option<profiles::Receiver> {
+            Some(linkerd_app_test::profile::only(profiles::Profile {
+                addr: Some(profiles::LogicalAddr(
+                    "web.test.example.com:80".parse().unwrap(),
+                )),
+                ..profiles::Profile::default()
+            }))
+        }
+    }
+
+    impl svc::Param<http::Version> for Target {
+        fn param(&self) -> http::Version {
+            http::Version::H2
+        }
+    }
+
+    impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
+        fn param(&self) -> http::normalize_uri::DefaultAuthority {
+            http::normalize_uri::DefaultAuthority(Some(
+                http::uri::Authority::from_str("web.test.example.com").unwrap(),
+            ))
+        }
+    }
+
+    impl svc::Param<inbound::policy::AllowPolicy> for Target {
+        fn param(&self) -> inbound::policy::AllowPolicy {
+            let policy = policy::ServerPolicy {
+                meta: inbound::policy::Meta::new_default("test"),
+                protocol: policy::Protocol::Detect {
+                    timeout: time::Duration::from_secs(10),
+                    tcp_authorizations: Arc::new([]),
+                    http: Arc::new([policy::http::default(Arc::new([policy::Authorization {
+                        authentication: policy::Authentication::TlsUnauthenticated,
+                        networks: vec![svc::Param::<Remote<ClientAddr>>::param(self).ip().into()],
+                        meta: Arc::new(policy::Meta::Resource {
+                            group: "policy.linkerd.io".into(),
+                            kind: "authorizationpolicy".into(),
+                            name: "testsaz".into(),
+                        }),
+                    }]))]),
+                },
+            };
+            let (policy, tx) = inbound::policy::AllowPolicy::for_test(self.param(), policy);
+            tokio::spawn(async move {
+                tx.closed().await;
+            });
+            policy
+        }
+    }
+
+    let (inner, mut handle) =
+        mock::pair::<http::Request<http::BoxBody>, http::Response<http::BoxBody>>();
+    handle.allow(1);
+
+    let outer = {
+        let (outbound, _outbound_shutdown) = crate::Outbound::for_test();
+        let (inbound, _inbound_shutdown) = crate::Inbound::for_test();
+        let gateway = Gateway {
+            inbound,
+            outbound,
+            config: crate::Config {
+                allow_discovery: std::iter::once("example.com".parse().unwrap())
+                    .into_iter()
+                    .collect(),
+            },
+        };
+
+        let resolve = linkerd_app_test::resolver::Dst::default().endpoint_exists(
+            svc::Param::<GatewayAddr>::param(&Target).0,
+            svc::Param::<Remote<ClientAddr>>::param(&Target).into(),
+            Metadata::default(),
+        );
+        gateway
+            .http(move |_: _| inner.clone(), resolve)
+            .new_service(Target)
+    };
+
+    // Process a request in the background so we can handle it ourselves to see
+    // how the request was mutated
+    tokio::spawn(async move {
+        let (handle, _closed) =
+            http::ClientHandle::new(svc::Param::<Remote<ClientAddr>>::param(&Target).into());
+        let req = http::Request::builder()
+            .method(http::Method::GET)
+            .version(::http::Version::HTTP_2)
+            .uri("http://web-original.test.example.com/test.txt")
+            .header("l5d-orig-proto", "HTTP/1.1")
+            .extension(handle)
+            .body(http::BoxBody::default())
+            .unwrap();
+        let _rsp = outer.oneshot(req).await.unwrap();
+        drop(_closed);
+    });
+
+    let (request, _respond) = handle.next_request().await.unwrap();
+    assert!(request
+        .extensions()
+        .get::<http::h1::WasAbsoluteForm>()
+        .is_none());
+}
+
 struct Test {
-    suffix: &'static str,
     target: NameAddr,
     client_id: tls::ClientId,
     orig_fwd: Option<&'static str>,
-    profile: Option<profiles::Receiver>,
 }
 
 impl Default for Test {
     fn default() -> Self {
         Self {
-            suffix: "test.example.com",
             target: NameAddr::from_str("dst.test.example.com:4321").unwrap(),
             client_id: tls::ClientId::from_str("client.id.test").unwrap(),
             orig_fwd: None,
-            profile: None,
         }
     }
 }
@@ -141,23 +267,5 @@ impl Test {
         let rsp = gateway.oneshot(req).await?;
         bg.await?;
         Ok(rsp)
-    }
-
-    fn with_profile(mut self, profile: profiles::Receiver) -> Self {
-        let allow = Some(dns::Suffix::from_str(self.suffix).unwrap())
-            .into_iter()
-            .collect::<NameMatch>();
-        if allow.matches(self.target.name()) {
-            self.profile = Some(profile);
-        }
-        self
-    }
-
-    fn with_default_profile(self) -> Self {
-        let target = self.target.clone();
-        self.with_profile(support::profile::only(profiles::Profile {
-            addr: Some(target.into()),
-            ..profiles::Profile::default()
-        }))
     }
 }

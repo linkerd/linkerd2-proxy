@@ -38,6 +38,7 @@ where
         })
         .push_http_router(profiles)
         .push_http_server()
+        .push_http_tcp_server()
         .into_inner()
 }
 

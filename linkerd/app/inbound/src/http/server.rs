@@ -15,7 +15,6 @@ use linkerd_app_core::{
     Error, Result,
 };
 use linkerd_http_access_log::NewAccessLog;
-use tracing::debug_span;
 
 #[derive(Copy, Clone, Debug)]
 struct ServerRescue;
@@ -30,17 +29,31 @@ struct ServerError {
 }
 
 impl<H> Inbound<H> {
-    /// Fails requests when the `HSvc`-typed inner service is not ready.
-    pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
+    /// Prepares HTTP requests for inbound processing. Fails requests when the
+    /// `HSvc`-typed inner service is not ready.
+    pub fn push_http_server<T, HSvc>(
+        self,
+    ) -> Inbound<
+        svc::ArcNewService<
+            T,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    >
     where
+        // Connection target.
         T: Param<Version>
-            + Param<http::normalize_uri::DefaultAuthority>
+            + Param<normalize_uri::DefaultAuthority>
             + Param<tls::ConditionalServerTls>
             + Param<ServerLabel>
             + Param<OrigDstAddr>
             + Param<Remote<ClientAddr>>,
-        T: Clone + Send + Unpin + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        T: Clone + Send + Sync + Unpin + 'static,
+        // Inner HTTP stack.
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Clone
@@ -52,7 +65,6 @@ impl<H> Inbound<H> {
     {
         self.map_stack(|config, rt, http| {
             let ProxyConfig {
-                server: ServerConfig { h2_settings, .. },
                 max_in_flight_requests,
                 ..
             } = config.proxy;
@@ -65,7 +77,6 @@ impl<H> Inbound<H> {
                 .push(NewSetIdentityHeader::layer(()))
                 .push_on_service(
                     svc::layers()
-                        .push(http::BoxRequest::layer())
                         // Downgrades the protocol if upgraded by an outbound proxy.
                         .push(http::orig_proto::Downgrade::layer())
                         // Limit the number of in-flight inbound requests.
@@ -95,7 +106,39 @@ impl<H> Inbound<H> {
                         .push(http::BoxResponse::layer()),
                 )
                 .push(NewAccessLog::layer())
-                .instrument(|_: &T| debug_span!("http"))
+                .check_new_service::<T, http::Request<_>>()
+                .push(svc::ArcNewService::layer())
+        })
+    }
+
+    /// Uses the inner stack to serve HTTP requests for the given server-side
+    /// socket.
+    pub fn push_http_tcp_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
+    where
+        // Connection target.
+        T: Param<Version>,
+        T: Clone + Send + Unpin + 'static,
+        // Server-side socket.
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        // Inner HTTP stack.
+        H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
+        HSvc: svc::Service<
+                http::Request<http::BoxBody>,
+                Response = http::Response<http::BoxBody>,
+                Error = Error,
+            > + Clone
+            + Send
+            + Unpin
+            + 'static,
+        HSvc::Future: Send,
+    {
+        self.map_stack(|config, rt, http| {
+            let ProxyConfig {
+                server: ServerConfig { h2_settings, .. },
+                ..
+            } = config.proxy;
+
+            http.push_on_service(http::BoxRequest::layer())
                 .check_new_service::<T, http::Request<_>>()
                 .unlift_new()
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()

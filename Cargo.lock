@@ -859,6 +859,7 @@ dependencies = [
  "linkerd-app-inbound",
  "linkerd-app-outbound",
  "linkerd-app-test",
+ "linkerd-proxy-server-policy",
  "thiserror",
  "tokio",
  "tokio-test",
