@@ -128,34 +128,32 @@ async fn upgraded_request_remains_relative_form() {
         }
     }
 
-    let (outbound, _outbound_shutdown) = crate::Outbound::for_test();
-    let (inbound, _inbound_shutdown) = crate::Inbound::for_test();
-    let gateway = Gateway {
-        config: crate::Config {
-            allow_discovery: std::iter::once("example.com".parse().unwrap())
-                .into_iter()
-                .collect(),
-        },
-        inbound,
-        outbound,
-    };
-
     let (inner, mut handle) =
         mock::pair::<http::Request<http::BoxBody>, http::Response<http::BoxBody>>();
     handle.allow(1);
-    let inner = gateway
-        .outbound
-        .clone()
-        .with_stack(move |_: _| inner.clone());
-    // let (resolve, resolve_handle) = linkerd_app_test::resolver::Dst::<Metadata>::with_handle();
-    let resolve = linkerd_app_test::resolver::Dst::<Metadata>::default().endpoint_exists(
-        svc::Param::<GatewayAddr>::param(&Target).0,
-        svc::Param::<Remote<ClientAddr>>::param(&Target).into(),
-        Default::default(),
-    );
-    let service = gateway
-        .http(inner.into_inner(), resolve)
-        .new_service(Target);
+
+    let outer = {
+        let (outbound, _outbound_shutdown) = crate::Outbound::for_test();
+        let (inbound, _inbound_shutdown) = crate::Inbound::for_test();
+        let gateway = Gateway {
+            inbound,
+            outbound,
+            config: crate::Config {
+                allow_discovery: std::iter::once("example.com".parse().unwrap())
+                    .into_iter()
+                    .collect(),
+            },
+        };
+
+        let resolve = linkerd_app_test::resolver::Dst::default().endpoint_exists(
+            svc::Param::<GatewayAddr>::param(&Target).0,
+            svc::Param::<Remote<ClientAddr>>::param(&Target).into(),
+            Metadata::default(),
+        );
+        gateway
+            .http(move |_: _| inner.clone(), resolve)
+            .new_service(Target)
+    };
 
     // Process a request in the background so we can handle it ourselves to see
     // how the request was mutated
@@ -170,7 +168,7 @@ async fn upgraded_request_remains_relative_form() {
             .extension(handle)
             .body(http::BoxBody::default())
             .unwrap();
-        let _rsp = service.oneshot(req).await.unwrap();
+        let _rsp = outer.oneshot(req).await.unwrap();
         drop(_closed);
     });
 
