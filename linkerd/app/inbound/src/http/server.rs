@@ -20,7 +20,8 @@ use linkerd_http_access_log::NewAccessLog;
 struct ServerRescue;
 
 impl<H> Inbound<H> {
-    /// Fails requests when the `HSvc`-typed inner service is not ready.
+    /// Prepares HTTP requests for inbound processing. Fails requests when the
+    /// `HSvc`-typed inner service is not ready.
     pub fn push_http_server<T, HSvc>(
         self,
     ) -> Inbound<
@@ -43,7 +44,7 @@ impl<H> Inbound<H> {
             + Param<OrigDstAddr>
             + Param<Remote<ClientAddr>>,
         T: Clone + Send + Sync + Unpin + 'static,
-        // Inner stack.
+        // Inner HTTP stack.
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Clone
@@ -99,11 +100,16 @@ impl<H> Inbound<H> {
         })
     }
 
+    /// Uses the inner stack to serve HTTP requests for the given server-side
+    /// socket.
     pub fn push_http_tcp_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
     where
+        // Connection target.
         T: Param<Version>,
         T: Clone + Send + Unpin + 'static,
+        // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        // Inner HTTP stack.
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<
                 http::Request<http::BoxBody>,
