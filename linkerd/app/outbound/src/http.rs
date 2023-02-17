@@ -35,8 +35,9 @@ pub struct Http {
 // === impl Outbound ===
 
 impl<N> Outbound<N> {
-    /// Builds a stack that handles protocol detection, routing, and
-    /// load balancing for a single logical destination.
+    /// Builds a stack that routes HTTP requests to endpoint stacks.
+    ///
+    /// Buffered concrete services are cached in and evicted when idle.
     pub fn push_http_cached<T, R, NSvc>(
         self,
         resolve: R,
