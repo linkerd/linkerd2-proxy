@@ -31,6 +31,12 @@ async fn forward_loop() {
     assert!(e.is::<GatewayLoop>());
 }
 
+/// If the HTTP stack is misconfigured--specifically if two server stacks are
+/// instrumented--it may incorrectly determine that an upgraded origin-form
+/// HTTP/1.1 request should be in absolute-form.
+///
+/// This test validates that origin-form requests are not marked as
+/// absolute-form.
 #[tokio::test(flavor = "current_thread")]
 async fn upgraded_request_remains_relative_form() {
     let _trace = trace_init();
