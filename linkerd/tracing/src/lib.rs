@@ -201,7 +201,9 @@ impl Settings {
 
             // Parse the initial filter. If the filter includes invalid
             // directives, an error is printed sto stderr.
-            let filter = level::filter_builder().parse_lossy(self.filter);
+            let filter = level::filter_builder()
+                .parse_lossy(self.filter)
+                .add_directive(format!("{}=off", access_log::TRACE_TARGET).parse().unwrap());
 
             // Make the level dynamic and register the layer.
             let (layer, level) = reload::Layer::new(stdout.with_filter(filter));
