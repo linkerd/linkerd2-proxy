@@ -18,6 +18,9 @@ tower = { version = "0.4", default-features = false }
 tracing = "0.1"
 
 [dev-dependencies]
+linkerd-app-inbound = { path = "../inbound", features = ["test-util"] }
+linkerd-app-outbound = { path = "../outbound", features = ["test-util"] }
+linkerd-proxy-server-policy = { path = "../../proxy/server-policy" }
 tokio = { version = "1", features = ["rt", "macros"] }
 tokio-test = "0.4"
 tower = { version = "0.4", default-features = false, features = ["util"] }

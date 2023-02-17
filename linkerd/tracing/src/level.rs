@@ -35,7 +35,11 @@ impl Handle {
 
     pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
         let level = level.as_ref();
-        let filter = filter_builder().parse(level)?;
+        let filter = filter_builder().parse(level)?.add_directive(
+            format!("{}=off", super::access_log::TRACE_TARGET)
+                .parse()
+                .unwrap(),
+        );
         self.0.modify(|layer| {
             *layer.filter_mut() = filter;
         })?;

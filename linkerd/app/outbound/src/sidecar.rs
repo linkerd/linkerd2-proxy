@@ -39,7 +39,12 @@ impl Outbound<()> {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
-        let http = self.to_tcp_connect().push_http_cached(resolve);
+        let http = self
+            .to_tcp_connect()
+            .push_tcp_endpoint()
+            .push_http_tcp_client()
+            .push_http_cached(resolve)
+            .push_http_server();
 
         opaq.push_protocol(http.into_inner())
             // Use a dedicated target type to bind discovery results to the

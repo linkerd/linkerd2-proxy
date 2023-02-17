@@ -40,8 +40,8 @@ pub mod opaq;
 mod protocol;
 mod sidecar;
 pub mod tcp;
-#[cfg(test)]
-pub(crate) mod test_util;
+#[cfg(any(test, feature = "test-util"))]
+pub mod test_util;
 
 pub use self::{discover::Discovery, metrics::Metrics};
 
@@ -113,6 +113,13 @@ impl Outbound<()> {
             stack: svc::stack(()),
         }
     }
+
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn for_test() -> (Self, drain::Signal) {
+        let (rt, drain) = test_util::runtime();
+        let this = Self::new(test_util::default_config(), rt);
+        (this, drain)
+    }
 }
 
 impl<S> Outbound<S> {
@@ -144,7 +151,7 @@ impl<S> Outbound<S> {
         self.stack.into_inner()
     }
 
-    /// Wraps the inner `S`-typed stack in the given `L`-typed [`Layer`].
+    /// Wraps the inner `S`-typed stack in the given `L`-typed [`svc::Layer`].
     pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
         self.map_stack(move |_, _, stack| stack.push(layer))
     }

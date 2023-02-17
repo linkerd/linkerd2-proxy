@@ -42,7 +42,6 @@ impl<S, T, R, E> Resolve<T> for S
 where
     T: Send + 'static,
     S: tower::Service<T, Response = R> + Clone + Send + Sync + Unpin + 'static,
-    S::Response: Send + 'static,
     S::Error: Into<Error>,
     S::Future: Send + Unpin + 'static,
     R: Stream<Item = Result<Update<E>, S::Error>> + Send + 'static,

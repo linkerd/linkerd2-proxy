@@ -98,11 +98,8 @@ impl From<DefaultPolicy> for ServerPolicy {
 // === impl AllowPolicy ===
 
 impl AllowPolicy {
-    #[cfg(any(test, fuzzing))]
-    pub(crate) fn for_test(
-        dst: OrigDstAddr,
-        server: ServerPolicy,
-    ) -> (Self, watch::Sender<ServerPolicy>) {
+    #[cfg(any(test, fuzzing, feature = "test-util"))]
+    pub fn for_test(dst: OrigDstAddr, server: ServerPolicy) -> (Self, watch::Sender<ServerPolicy>) {
         let (tx, server) = watch::channel(server);
         let server = Cached::uncached(server);
         let p = Self { dst, server };

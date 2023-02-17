@@ -2,22 +2,20 @@ use self::{
     proxy_connection_close::ProxyConnectionClose, require_id_header::NewRequireIdentity,
     strip_proxy_error::NewStripProxyError,
 };
-use crate::{tcp, Outbound};
+use crate::Outbound;
 use linkerd_app_core::{
-    io, profiles,
+    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
     },
-    svc,
-    transport::addrs::*,
-    Addr, Error,
+    svc, Error,
 };
 use std::{fmt::Debug, hash::Hash};
 
-mod concrete;
+pub mod concrete;
 mod endpoint;
-mod logical;
+pub mod logical;
 mod proxy_connection_close;
 mod require_id_header;
 mod retry;
@@ -29,17 +27,18 @@ pub(crate) use self::require_id_header::IdentityRequired;
 pub use linkerd_app_core::proxy::http::{self as http, *};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Http {
+pub struct Http {
     target: Logical,
     version: http::Version,
 }
 
 // === impl Outbound ===
 
-impl<C> Outbound<C> {
-    /// Builds a stack that handles protocol detection, routing, and
-    /// load balancing for a single logical destination.
-    pub fn push_http_cached<T, R>(
+impl<N> Outbound<N> {
+    /// Builds a stack that routes HTTP requests to endpoint stacks.
+    ///
+    /// Buffered concrete services are cached in and evicted when idle.
+    pub fn push_http_cached<T, R, NSvc>(
         self,
         resolve: R,
     ) -> Outbound<
@@ -60,17 +59,20 @@ impl<C> Outbound<C> {
         T: Clone + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        // TCP connector stack.
-        C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
-        C: Clone + Send + Sync + Unpin + 'static,
-        C::Connection: Send + Unpin,
-        C::Future: Send,
+        // HTTP client stack
+        N: svc::NewService<concrete::Endpoint<logical::Concrete<Http>>, Service = NSvc>,
+        N: Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        NSvc: Send + 'static,
+        NSvc::Future: Send + Unpin + 'static,
     {
-        self.push_tcp_endpoint()
-            .push_http_endpoint()
+        self.push_http_endpoint()
             .push_http_concrete(resolve)
             .push_http_logical()
-            .push_http_server()
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
                     // Use a dedicated target type to configure parameters for the
@@ -107,17 +109,6 @@ impl svc::Param<http::Version> for Http {
 impl svc::Param<Logical> for Http {
     fn param(&self) -> Logical {
         self.target.clone()
-    }
-}
-
-impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        let addr = match self.target.param() {
-            Logical::Route(addr, _, _) => Addr::from(addr),
-            Logical::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
-        };
-
-        http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
     }
 }
 

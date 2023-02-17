@@ -162,14 +162,15 @@ impl<N> Outbound<N> {
 
             // For each `T` target, watch its `Profile`, rebuilding a
             // router stack.
-            concrete
+            let watch = concrete
                 .clone()
                 // Share the concrete stack with each router stack.
                 .lift_new()
                 // Rebuild this router stack every time the profile changes.
                 .push_on_service(router)
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params<T>>())
-                .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
+                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params<T>>());
+
+            watch
                 // Add l5d-dst-canonical header to requests.
                 //
                 // TODO(ver) move this into the endpoint stack so that we can only
@@ -177,6 +178,7 @@ impl<N> Outbound<N> {
                 //
                 // TODO(ver) do we need to strip headers here?
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
+                .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                 .push_switch(
                     |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {

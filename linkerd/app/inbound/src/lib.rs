@@ -13,8 +13,9 @@ mod http;
 mod metrics;
 pub mod policy;
 mod server;
-#[cfg(any(test, fuzzing))]
-pub(crate) mod test_util;
+
+#[cfg(any(test, feature = "test-util", fuzzing))]
+pub mod test_util;
 
 pub use self::{metrics::Metrics, policy::DefaultPolicy};
 use linkerd_app_core::{
@@ -159,6 +160,13 @@ impl Inbound<()> {
             runtime,
             stack: svc::stack(()),
         }
+    }
+
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn for_test() -> (Self, drain::Signal) {
+        let (rt, drain) = test_util::runtime();
+        let this = Self::new(test_util::default_config(), rt);
+        (this, drain)
     }
 
     pub fn metrics(&self) -> Metrics {
