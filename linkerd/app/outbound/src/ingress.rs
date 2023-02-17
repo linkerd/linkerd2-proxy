@@ -94,8 +94,8 @@ impl<N> Outbound<N> {
     /// outbound traffic is HTTP and HTTP detection is **always** performed. If
     /// HTTP detection fails, we revert to using the provided `fallback` stack.
     ///
-    /// An inner stack is service for each HTTP request. This stack must handle
-    /// its own caching.
+    /// The inner stack is used to create a service for each HTTP request. This
+    /// stack must handle its own caching.
     fn push_ingress<T, I, F, FSvc, NSvc>(self, fallback: F) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type describing an outbound connection.
@@ -354,7 +354,6 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn http_backpressure_ok() {
         let _trace = linkerd_tracing::test::trace_init();
-        time::pause(); // Run the test with a mocked clock.
 
         // Create mocked inner services that are not ready.
         let (not_ready_http, mut http) = mock::pair();
