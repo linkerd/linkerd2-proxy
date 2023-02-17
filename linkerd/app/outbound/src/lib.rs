@@ -149,7 +149,7 @@ impl<S> Outbound<S> {
         self.stack.into_inner()
     }
 
-    /// Wraps the inner `S`-typed stack in the given `L`-typed [`Layer`].
+    /// Wraps the inner `S`-typed stack in the given `L`-typed [`svc::Layer`].
     pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
         self.map_stack(move |_, _, stack| stack.push(layer))
     }
