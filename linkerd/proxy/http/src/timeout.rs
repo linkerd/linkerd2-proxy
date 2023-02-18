@@ -1,14 +1,7 @@
 use linkerd_error::Error;
-use linkerd_stack::{layer, MapErr, NewService, Param, Timeout, TimeoutError};
+use linkerd_stack::{layer, ExtractParam, MapErr, NewService, Timeout, TimeoutError};
 use std::time::Duration;
 use thiserror::Error;
-
-#[derive(Clone, Debug)]
-pub struct ResponseTimeout(pub Option<Duration>);
-
-#[derive(Clone, Debug, Error)]
-#[error("HTTP response timeout after {0:?}")]
-pub struct ResponseTimeoutError(Duration);
 
 /// An HTTP-specific optional timeout layer.
 ///
@@ -18,25 +11,45 @@ pub struct ResponseTimeoutError(Duration);
 /// Timeout errors are translated into `http::Response`s with appropiate
 /// status codes.
 #[derive(Clone, Debug)]
-pub struct NewTimeout<M> {
-    inner: M,
+pub struct NewTimeout<X, N> {
+    inner: N,
+    extract: X,
 }
 
-impl<N> NewTimeout<N> {
-    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
-        layer::mk(|inner| Self { inner })
+/// Param type configuring a timeout for HTTP responses.
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ResponseTimeout(pub Option<Duration>);
+
+#[derive(Clone, Debug, Error)]
+#[error("HTTP response timeout after {0:?}")]
+pub struct ResponseTimeoutError(Duration);
+
+// === impl NewTimeout ===
+
+impl<X: Clone, N> NewTimeout<X, N> {
+    pub fn layer_via(extract: X) -> impl tower::layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self {
+            inner,
+            extract: extract.clone(),
+        })
     }
 }
 
-impl<T, M> NewService<T> for NewTimeout<M>
+impl<N> NewTimeout<(), N> {
+    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via(())
+    }
+}
+
+impl<T, X, N> NewService<T> for NewTimeout<X, N>
 where
-    T: Param<ResponseTimeout>,
-    M: NewService<T>,
+    X: ExtractParam<ResponseTimeout, T>,
+    N: NewService<T>,
 {
-    type Service = MapErr<fn(Error) -> Error, Timeout<M::Service>>;
+    type Service = MapErr<fn(Error) -> Error, Timeout<N::Service>>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let svc = match target.param() {
+        let svc = match self.extract.extract_param(&target) {
             ResponseTimeout(Some(t)) => Timeout::new(self.inner.new_service(target), t),
             ResponseTimeout(None) => Timeout::passthru(self.inner.new_service(target)),
         };
