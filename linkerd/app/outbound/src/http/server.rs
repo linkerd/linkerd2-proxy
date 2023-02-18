@@ -78,11 +78,16 @@ impl<N> Outbound<N> {
                         .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                         .push(http::BoxResponse::layer()),
                 )
-                .push_map_target(|Target(t)| t)
                 // Convert origin form HTTP/1 URIs to absolute form for Hyper's
                 // `Client`.
-                .push(http::NewNormalizeUri::layer())
-                .push_map_target(Target)
+                .push(http::NewNormalizeUri::layer_via(|target: &T| {
+                    let addr = match target.param() {
+                        Logical::Route(addr, _) => Addr::from(addr),
+                        Logical::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
+                    };
+
+                    http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
+                }))
                 // Record when a HTTP/1 URI originated in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push(svc::ArcNewService::layer())
@@ -116,22 +121,6 @@ impl<N> Outbound<N> {
                     rt.drain.clone(),
                 ))
         })
-    }
-}
-
-// === impl Target ===
-
-impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Target<T>
-where
-    T: svc::Param<Logical>,
-{
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        let addr = match self.0.param() {
-            Logical::Route(addr, _) => Addr::from(addr),
-            Logical::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
-        };
-
-        http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
     }
 }
 
