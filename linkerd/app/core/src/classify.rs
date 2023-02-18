@@ -1,19 +1,20 @@
 use crate::profiles;
 use linkerd_error::Error;
 use linkerd_http_classify as classify;
-pub use linkerd_http_classify::{CanClassify, NewClassify};
 use linkerd_proxy_http::{HasH2Reason, ResponseTimeoutError};
 use std::borrow::Cow;
 use tonic as grpc;
 use tracing::trace;
 
-#[derive(Clone, Debug)]
+pub type NewClassify<N, X = ()> = classify::NewClassify<Request, X, N>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Request {
     Default,
     Profile(profiles::http::ResponseClasses),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Response {
     Default,
     Grpc,

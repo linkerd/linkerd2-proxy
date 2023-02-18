@@ -52,10 +52,3 @@ pub trait ClassifyEos {
     /// returned.
     fn error(self, error: &Error) -> Self::Class;
 }
-
-// Used for stack targets that can produce a `Classify` implementation.
-pub trait CanClassify {
-    type Classify: Classify;
-
-    fn classify(&self) -> Self::Classify;
-}
