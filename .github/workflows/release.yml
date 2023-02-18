@@ -61,7 +61,7 @@ jobs:
     timeout-minutes: 40
     container: docker://ghcr.io/linkerd/dev:v38-rust-musl
     steps:
-      - uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
       - run: just fetch
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=release build
