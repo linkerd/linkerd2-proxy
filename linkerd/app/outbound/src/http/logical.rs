@@ -358,10 +358,8 @@ impl<T> svc::Param<http::ResponseTimeout> for RouteParams<T> {
     }
 }
 
-impl<T> classify::CanClassify for RouteParams<T> {
-    type Classify = classify::Request;
-
-    fn classify(&self) -> classify::Request {
+impl<T> svc::Param<classify::Request> for RouteParams<T> {
+    fn param(&self) -> classify::Request {
         self.profile.response_classes().clone().into()
     }
 }

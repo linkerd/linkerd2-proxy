@@ -1,9 +1,14 @@
-use linkerd_stack::{layer, NewService, Proxy, Service};
-use std::task::{Context, Poll};
+use linkerd_stack::{layer, ExtractParam, NewService, Proxy, Service};
+use std::{
+    marker::PhantomData,
+    task::{Context, Poll},
+};
 
 #[derive(Clone, Debug)]
-pub struct NewClassify<N> {
+pub struct NewClassify<C, X, N> {
     inner: N,
+    extract: X,
+    _marker: PhantomData<fn() -> C>,
 }
 
 #[derive(Clone, Debug)]
@@ -12,21 +17,32 @@ pub struct Classify<C, P> {
     inner: P,
 }
 
-impl<N> NewClassify<N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone + Copy {
-        layer::mk(|inner| Self { inner })
+impl<C, X: Clone, N> NewClassify<C, X, N> {
+    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self {
+            inner,
+            extract: extract.clone(),
+            _marker: PhantomData,
+        })
     }
 }
 
-impl<T, N> NewService<T> for NewClassify<N>
+impl<C, N> NewClassify<C, (), N> {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via(())
+    }
+}
+
+impl<T, C, X, N> NewService<T> for NewClassify<C, X, N>
 where
-    T: super::CanClassify,
+    C: super::Classify,
+    X: ExtractParam<C, T>,
     N: NewService<T>,
 {
-    type Service = Classify<T::Classify, N::Service>;
+    type Service = Classify<C, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let classify = target.classify();
+        let classify = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
         Classify { classify, inner }
     }
