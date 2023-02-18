@@ -30,7 +30,7 @@ jobs:
     container: docker://rust:1.64.0-bullseye
     steps:
       - run: apt update && apt install -y jo
-      - uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
       - uses: tj-actions/changed-files@5a331a4999f9f21a3ef2a6459edee90393a8b92a
         id: changed-files
       - name: list changed crates
@@ -54,7 +54,7 @@ jobs:
     steps:
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz
-      - uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
       - working-directory: ${{matrix.dir}}
         run: cargo +nightly fetch
       - working-directory: ${{matrix.dir}}
