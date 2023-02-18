@@ -258,6 +258,15 @@ impl svc::Param<http::Logical> for Http<http::Logical> {
     }
 }
 
+impl svc::Param<http::normalize_uri::DefaultAuthority> for Http<http::Logical> {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(match &self.parent {
+            http::Logical::Route(addr, _) => Some(addr.as_http_authority()),
+            http::Logical::Forward(..) => None,
+        })
+    }
+}
+
 impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::Logical> {
     type Error = ProfileRequired;
 
