@@ -6,6 +6,7 @@ use linkerd_app_core::{
 use linkerd_app_inbound::{self as inbound, GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_outbound::{self as outbound};
 use std::fmt::Debug;
+use tokio::sync::watch;
 
 /// Target for HTTP stacks.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -169,6 +170,12 @@ impl<T> svc::Param<http::Version> for Http<T> {
 
 impl<T> svc::Param<Option<profiles::Receiver>> for Http<T> {
     fn param(&self) -> Option<profiles::Receiver> {
+        self.parent.param()
+    }
+}
+
+impl<T> svc::Param<Option<watch::Receiver<profiles::Profile>>> for Http<T> {
+    fn param(&self) -> Option<watch::Receiver<profiles::Profile>> {
         self.parent.param()
     }
 }

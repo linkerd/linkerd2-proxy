@@ -222,7 +222,7 @@ impl<T> svc::Param<Option<http::AuthorityOverride>> for Endpoint<T> {
 
 impl<T> svc::Param<transport::labels::Key> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Option<http::uri::Authority>>,
 {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::OutboundClient(self.param())
@@ -231,16 +231,11 @@ where
 
 impl<T> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Option<http::uri::Authority>>,
 {
     fn param(&self) -> metrics::OutboundEndpointLabels {
-        let authority = self
-            .parent
-            .param()
-            .as_ref()
-            .map(|profiles::LogicalAddr(a)| a.as_http_authority());
         metrics::OutboundEndpointLabels {
-            authority,
+            authority: self.parent.param(),
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.param(),
             target_addr: self.addr.into(),
@@ -250,10 +245,10 @@ where
 
 impl<T> svc::Param<metrics::EndpointLabels> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Option<http::uri::Authority>>,
 {
     fn param(&self) -> metrics::EndpointLabels {
-        metrics::EndpointLabels::from(svc::Param::<metrics::OutboundEndpointLabels>::param(self))
+        metrics::EndpointLabels::Outbound(self.param())
     }
 }
 
@@ -335,6 +330,7 @@ impl<T> tap::Inspect for Endpoint<T> {
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<tap::Labels> {
+        // FIXME(ver) create a dedicated extension type for route labels.
         req.extensions()
             .get::<profiles::http::Route>()
             .map(|r| r.labels().clone())

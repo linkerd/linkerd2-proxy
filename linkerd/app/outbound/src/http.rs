@@ -9,9 +9,12 @@ use linkerd_app_core::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
     },
-    svc, Error,
+    svc,
+    transport::addrs::*,
+    Error,
 };
 use std::{fmt::Debug, hash::Hash};
+use tokio::sync::watch;
 
 pub mod concrete;
 mod endpoint;
@@ -22,14 +25,46 @@ mod retry;
 mod server;
 mod strip_proxy_error;
 
-pub use self::logical::Logical;
+pub use self::logical::{LogicalAddr, ProfileRoutes, Routes};
 pub(crate) use self::require_id_header::IdentityRequired;
 pub use linkerd_app_core::proxy::http::{self as http, *};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Http {
-    target: Logical,
-    version: http::Version,
+pub struct Http<T>(T);
+
+pub fn spawn_routes(
+    mut profile_rx: watch::Receiver<profiles::Profile>,
+    mut mk: impl FnMut(&profiles::Profile) -> Routes + Send + Sync + 'static,
+) -> watch::Receiver<Routes> {
+    let (tx, rx) = {
+        let routes = (mk)(&*profile_rx.borrow());
+        watch::channel(routes)
+    };
+
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                biased;
+                _ = tx.closed() => return,
+                _ = profile_rx.changed() => {
+                    let routes = (mk)(&*profile_rx.borrow());
+                    if tx.send(routes).is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+    });
+
+    rx
+}
+
+pub fn spawn_routes_default(addr: Remote<ServerAddr>) -> watch::Receiver<Routes> {
+    let (tx, rx) = watch::channel(Routes::Endpoint(addr, Default::default()));
+    tokio::spawn(async move {
+        tx.closed().await;
+    });
+    rx
 }
 
 // === impl Outbound ===
@@ -55,12 +90,12 @@ impl<N> Outbound<N> {
     where
         // Logical HTTP target.
         T: svc::Param<http::Version>,
-        T: svc::Param<Logical>,
-        T: Clone + Send + Sync + 'static,
+        T: svc::Param<watch::Receiver<Routes>>,
+        T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         // HTTP client stack
-        N: svc::NewService<concrete::Endpoint<logical::Concrete<Http>>, Service = NSvc>,
+        N: svc::NewService<concrete::Endpoint<logical::Concrete<Http<T>>>, Service = NSvc>,
         N: Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<
             http::Request<http::BoxBody>,
@@ -75,11 +110,7 @@ impl<N> Outbound<N> {
             .push_http_logical()
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
-                    // Use a dedicated target type to configure parameters for the
-                    // HTTP stack. It also helps narrow the cache key to just the
-                    // logical target and HTTP version, discarding any other target
-                    // information.
-                    .push_map_target(Http::new)
+                    .push_map_target(Http)
                     .push(svc::ArcNewService::layer())
             })
     }
@@ -87,45 +118,20 @@ impl<N> Outbound<N> {
 
 // === impl Http ===
 
-impl Http {
-    pub fn new<T>(parent: T) -> Self
-    where
-        T: svc::Param<Logical>,
-        T: svc::Param<http::Version>,
-    {
-        Self {
-            target: parent.param(),
-            version: parent.param(),
-        }
-    }
-}
-
-impl svc::Param<http::Version> for Http {
+impl<T> svc::Param<http::Version> for Http<T>
+where
+    T: svc::Param<http::Version>,
+{
     fn param(&self) -> http::Version {
-        self.version
+        self.0.param()
     }
 }
 
-impl svc::Param<Logical> for Http {
-    fn param(&self) -> Logical {
-        self.target.clone()
-    }
-}
-
-impl svc::Param<Option<profiles::LogicalAddr>> for Http {
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        match self.target {
-            Logical::Route(ref addr, _) => Some(profiles::LogicalAddr(addr.clone())),
-            Logical::Forward(_, _) => None,
-        }
-    }
-}
-
-impl svc::Param<Option<profiles::Receiver>> for Http {
-    fn param(&self) -> Option<profiles::Receiver> {
-        match self.target {
-            Logical::Route(_, ref rx) => Some(rx.clone()),
-            Logical::Forward(_, _) => None,
-        }
+impl<T> svc::Param<watch::Receiver<Routes>> for Http<T>
+where
+    T: svc::Param<watch::Receiver<Routes>>,
+{
+    fn param(&self) -> watch::Receiver<Routes> {
+        self.0.param()
     }
 }
