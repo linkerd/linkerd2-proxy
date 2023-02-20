@@ -45,7 +45,6 @@ pub(super) struct RouteParams<T, F> {
 // Wraps a `NewService`--instantiated once per logical target--that caches a set
 // of concrete services so that, as the watch provides new `Params`, we can
 // reuse inner services.
-#[allow(dead_code)]
 pub(super) fn layer<T, M, F, N, S>() -> impl svc::Layer<
     N,
     Service = svc::ArcNewService<
