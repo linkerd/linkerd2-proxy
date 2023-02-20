@@ -149,43 +149,23 @@ where
     M: Clone,
     F: Clone,
 {
-    fn from((routes, parent): (Routes<M, F>, T)) -> Self {
-        let addr = routes.addr.clone();
+    fn from((rts, parent): (Routes<M, F>, T)) -> Self {
+        let Routes {
+            addr,
+            routes,
+            backends,
+        } = rts;
 
-        let backends = routes
-            .backends
-            .iter()
-            .map(|t| match t.dispatcher.clone() {
-                policy::BackendDispatcher::BalanceP2c(
-                    policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
-                    policy::EndpointDiscovery::DestinationGet { path },
-                ) => Concrete {
-                    target: concrete::Dispatch::Balance(
-                        path.parse().expect("destination must be a nameaddr"),
-                        balance::EwmaConfig { decay, default_rtt },
-                    ),
-                    authority: None, // FIXME?
-                    parent: parent.clone(),
-                },
-                policy::BackendDispatcher::Forward(addr, metadata) => Concrete {
-                    target: concrete::Dispatch::Forward(Remote(ServerAddr(addr)), metadata),
-                    authority: None,
-                    parent: parent.clone(),
-                },
-            })
-            .collect();
+        let authority = addr.to_http_authority();
 
         let routes = routes
-            .routes
             .iter()
             .map(|route| {
                 let rules = route.rules.iter().map(
                     |route::Rule { matches, policy }| -> route::Rule<M, RouteParams<T, F>> {
                         let filters = policy.filters.clone();
-
                         let distribution = match policy.distribution.clone() {
                             policy::RouteDistribution::Empty => Distribution::Empty,
-
                             policy::RouteDistribution::FirstAvailable(backends) => {
                                 Distribution::first_available(backends.iter().map(|rb| {
                                     match rb.backend.dispatcher.clone() {
@@ -201,7 +181,7 @@ where
                                                     .expect("destination must be a nameaddr"),
                                                 balance::EwmaConfig { decay, default_rtt },
                                             ),
-                                            authority: None, // FIXME?
+                                            authority: Some(authority.clone()),
                                             parent: parent.clone(),
                                         },
                                         policy::BackendDispatcher::Forward(addr, metadata) => {
@@ -210,14 +190,13 @@ where
                                                     Remote(ServerAddr(addr)),
                                                     metadata,
                                                 ),
-                                                authority: None,
+                                                authority: Some(authority.clone()),
                                                 parent: parent.clone(),
                                             }
                                         }
                                     }
                                 }))
                             }
-
                             policy::RouteDistribution::RandomAvailable(backends) => {
                                 Distribution::random_available(backends.iter().map(
                                     |(rb, weight)| {
@@ -234,7 +213,7 @@ where
                                                         .expect("destination must be a nameaddr"),
                                                     balance::EwmaConfig { decay, default_rtt },
                                                 ),
-                                                authority: Some(addr.to_http_authority()),
+                                                authority: Some(authority.clone()),
                                                 parent: parent.clone(),
                                             },
                                             policy::BackendDispatcher::Forward(ep, metadata) => {
@@ -243,7 +222,7 @@ where
                                                         Remote(ServerAddr(ep)),
                                                         metadata,
                                                     ),
-                                                    authority: Some(addr.to_http_authority()),
+                                                    authority: Some(authority.clone()),
                                                     parent: parent.clone(),
                                                 }
                                             }
@@ -274,6 +253,28 @@ where
                 }
             })
             .collect::<Arc<[_]>>();
+
+        let backends = backends
+            .iter()
+            .map(|t| match t.dispatcher.clone() {
+                policy::BackendDispatcher::BalanceP2c(
+                    policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
+                    policy::EndpointDiscovery::DestinationGet { path },
+                ) => Concrete {
+                    target: concrete::Dispatch::Balance(
+                        path.parse().expect("destination must be a nameaddr"),
+                        balance::EwmaConfig { decay, default_rtt },
+                    ),
+                    authority: Some(addr.to_http_authority()),
+                    parent: parent.clone(),
+                },
+                policy::BackendDispatcher::Forward(addr, metadata) => Concrete {
+                    target: concrete::Dispatch::Forward(Remote(ServerAddr(addr)), metadata),
+                    authority: Some(authority.clone()),
+                    parent: parent.clone(),
+                },
+            })
+            .collect();
 
         Self {
             addr,
