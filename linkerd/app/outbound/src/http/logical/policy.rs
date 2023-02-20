@@ -258,111 +258,65 @@ where
             }
         };
 
+        let mk_dispatch = move |bd: &policy::BackendDispatcher| match *bd {
+            policy::BackendDispatcher::BalanceP2c(
+                policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
+                policy::EndpointDiscovery::DestinationGet { ref path },
+            ) => mk_concrete(concrete::Dispatch::Balance(
+                path.parse().expect("destination must be a nameaddr"),
+                balance::EwmaConfig { decay, default_rtt },
+            )),
+            policy::BackendDispatcher::Forward(addr, ref metadata) => mk_concrete(
+                concrete::Dispatch::Forward(Remote(ServerAddr(addr)), metadata.clone()),
+            ),
+        };
+
+        let mk_distribution = |d: &policy::RouteDistribution<F>| match d {
+            policy::RouteDistribution::Empty => Distribution::Empty,
+            policy::RouteDistribution::FirstAvailable(backends) => Distribution::first_available(
+                backends
+                    .iter()
+                    .map(|rb| mk_dispatch(&rb.backend.dispatcher)),
+            ),
+            policy::RouteDistribution::RandomAvailable(backends) => Distribution::random_available(
+                backends
+                    .iter()
+                    .map(|(rb, weight)| (mk_dispatch(&rb.backend.dispatcher), *weight)),
+            )
+            .expect("distribution must be valid"),
+        };
+
         let routes = routes
             .iter()
-            .map(|route| {
-                let rules = route.rules.iter().map(
-                    |route::Rule { matches, policy }| -> route::Rule<M, RouteParams<T, F>> {
-                        let filters = policy.filters.clone();
-                        let distribution = match policy.distribution.clone() {
-                            policy::RouteDistribution::Empty => Distribution::Empty,
-
-                            policy::RouteDistribution::FirstAvailable(backends) => {
-                                Distribution::first_available(backends.iter().map(|rb| {
-                                    match rb.backend.dispatcher.clone() {
-                                        policy::BackendDispatcher::BalanceP2c(
-                                            policy::Load::PeakEwma(policy::PeakEwma {
-                                                decay,
-                                                default_rtt,
-                                            }),
-                                            policy::EndpointDiscovery::DestinationGet { path },
-                                        ) => mk_concrete(concrete::Dispatch::Balance(
-                                            path.parse().expect("destination must be a nameaddr"),
-                                            balance::EwmaConfig { decay, default_rtt },
-                                        )),
-
-                                        policy::BackendDispatcher::Forward(addr, metadata) => {
-                                            mk_concrete(concrete::Dispatch::Forward(
-                                                Remote(ServerAddr(addr)),
-                                                metadata,
-                                            ))
-                                        }
-                                    }
-                                }))
-                            }
-
-                            policy::RouteDistribution::RandomAvailable(backends) => {
-                                Distribution::random_available(backends.iter().map(
-                                    |(rb, weight)| {
-                                        let concrete = match rb.backend.dispatcher.clone() {
-                                            policy::BackendDispatcher::BalanceP2c(
-                                                policy::Load::PeakEwma(policy::PeakEwma {
-                                                    decay,
-                                                    default_rtt,
-                                                }),
-                                                policy::EndpointDiscovery::DestinationGet { path },
-                                            ) => mk_concrete(concrete::Dispatch::Balance(
-                                                path.parse()
-                                                    .expect("destination must be a nameaddr"),
-                                                balance::EwmaConfig { decay, default_rtt },
-                                            )),
-
-                                            policy::BackendDispatcher::Forward(ep, metadata) => {
-                                                mk_concrete(concrete::Dispatch::Forward(
-                                                    Remote(ServerAddr(ep)),
-                                                    metadata,
-                                                ))
-                                            }
-                                        };
-
-                                        (concrete, *weight)
-                                    },
-                                ))
-                                .expect("distribution must be valid")
-                            }
-                        };
-
-                        route::Rule {
-                            matches: matches.clone(),
-                            policy: RouteParams {
-                                addr: addr.clone(),
-                                parent: parent.clone(),
-                                meta: policy.meta.clone(),
-                                filters,
-                                distribution,
-                            },
-                        }
-                    },
-                );
-
-                route::Route {
-                    hosts: route.hosts.clone(),
-                    rules: rules.collect(),
-                }
-            })
-            .collect::<Arc<[_]>>();
-
-        let backends = backends
-            .iter()
-            .map(|t| match t.dispatcher.clone() {
-                policy::BackendDispatcher::BalanceP2c(
-                    policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
-                    policy::EndpointDiscovery::DestinationGet { path },
-                ) => mk_concrete(concrete::Dispatch::Balance(
-                    path.parse().expect("destination must be a nameaddr"),
-                    balance::EwmaConfig { decay, default_rtt },
-                )),
-                policy::BackendDispatcher::Forward(addr, metadata) => mk_concrete(
-                    concrete::Dispatch::Forward(Remote(ServerAddr(addr)), metadata),
-                ),
+            .map(|route| route::Route {
+                hosts: route.hosts.clone(),
+                rules: route
+                    .rules
+                    .iter()
+                    .map(|route::Rule { matches, policy }| route::Rule {
+                        matches: matches.clone(),
+                        policy: RouteParams {
+                            addr: addr.clone(),
+                            parent: parent.clone(),
+                            meta: policy.meta.clone(),
+                            filters: policy.filters.clone(),
+                            distribution: mk_distribution(&policy.distribution),
+                        },
+                    })
+                    .collect(),
             })
             .collect();
 
+        let backends = backends
+            .iter()
+            .map(|t| mk_dispatch(&t.dispatcher))
+            .collect();
+
         Self {
-            addr,
-            parent,
             routes,
             backends,
+            addr,
+            parent,
         }
     }
 }
