@@ -90,8 +90,7 @@ impl<T> svc::Param<Option<profiles::Receiver>> for Discovery<T> {
 
 impl<T> svc::Param<Option<watch::Receiver<profiles::Profile>>> for Discovery<T> {
     fn param(&self) -> Option<watch::Receiver<profiles::Profile>> {
-        let p = self.profile.clone()?;
-        Some(p.into())
+        self.profile.clone().map(Into::into)
     }
 }
 

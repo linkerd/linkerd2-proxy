@@ -96,15 +96,7 @@ async fn upgraded_request_remains_relative_form() {
 
     impl svc::Param<Option<watch::Receiver<profiles::Profile>>> for Target {
         fn param(&self) -> Option<watch::Receiver<profiles::Profile>> {
-            Some(
-                linkerd_app_test::profile::only(profiles::Profile {
-                    addr: Some(profiles::LogicalAddr(
-                        "web.test.example.com:80".parse().unwrap(),
-                    )),
-                    ..profiles::Profile::default()
-                })
-                .into(),
-            )
+            svc::Param::<Option<profiles::Receiver>>::param(self).map(Into::into)
         }
     }
 
