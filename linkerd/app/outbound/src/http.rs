@@ -25,9 +25,7 @@ mod retry;
 mod server;
 mod strip_proxy_error;
 
-pub use self::logical::{
-    LogicalAddr, PolicyGrpcRoutes, PolicyHttpRoutes, PolicyRoutes, ProfileRoutes, Routes,
-};
+pub use self::logical::{policy, profile, LogicalAddr, Routes};
 pub(crate) use self::require_id_header::IdentityRequired;
 pub use linkerd_app_core::proxy::http::{self as http, *};
 

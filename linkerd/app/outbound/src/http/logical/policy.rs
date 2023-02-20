@@ -12,39 +12,39 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 pub use linkerd_proxy_client_policy::ClientPolicy;
 
+/// HTTP or gRPC policy routes.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Routes<M, F> {
+pub enum Routes {
+    Http(HttpRoutes),
+    Grpc(GrpcRoutes),
+}
+
+pub type HttpRoutes = RouterRoutes<route::http::MatchRequest, policy::http::Filter>;
+pub type GrpcRoutes = RouterRoutes<route::grpc::MatchRoute, policy::grpc::Filter>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RouterRoutes<M, F> {
     pub addr: Addr,
     pub routes: Arc<[route::Route<M, policy::RoutePolicy<F>>]>,
     pub backends: Arc<[policy::Backend]>,
 }
 
-/// HTTP or gRPC policy routes.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PolicyRoutes {
-    Http(HttpRoutes),
-    Grpc(GrpcRoutes),
+pub(super) enum Params<T: Clone + Debug + Eq + Hash> {
+    Http(HttpParams<T>),
+    Grpc(GrpcParams<T>),
 }
 
-pub type HttpRoutes = Routes<route::http::MatchRequest, policy::http::Filter>;
-pub type GrpcRoutes = Routes<route::grpc::MatchRoute, policy::grpc::Filter>;
+pub(super) type HttpParams<T> = RouterParams<T, route::http::MatchRequest, policy::http::Filter>;
+pub(super) type GrpcParams<T> = RouterParams<T, route::grpc::MatchRoute, policy::grpc::Filter>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Params<T: Clone + Debug + Eq + Hash, M, F> {
+pub(super) struct RouterParams<T: Clone + Debug + Eq + Hash, M, F> {
     parent: T,
     addr: Addr,
     routes: Arc<[route::Route<M, RouteParams<T, F>>]>,
     backends: distribute::Backends<Concrete<T>>,
 }
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum PolicyParams<T: Clone + Debug + Eq + Hash> {
-    Http(HttpParams<T>),
-    Grpc(GrpcParams<T>),
-}
-
-pub(super) type HttpParams<T> = Params<T, route::http::MatchRequest, policy::http::Filter>;
-pub(super) type GrpcParams<T> = Params<T, route::grpc::MatchRoute, policy::grpc::Filter>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) struct RouteParams<T, F> {
@@ -59,7 +59,7 @@ pub(super) struct RouteParams<T, F> {
 pub(super) fn layer<T, N, S>() -> impl svc::Layer<
     N,
     Service = svc::ArcNewService<
-        PolicyParams<T>,
+        Params<T>,
         impl svc::Service<
                 http::Request<http::BoxBody>,
                 Response = http::Response<http::BoxBody>,
@@ -87,10 +87,10 @@ where
         let grpc = svc::stack(inner).push(routes_layer());
 
         http.push_switch(
-            |pp: PolicyParams<T>| {
+            |pp: Params<T>| {
                 Ok::<_, Infallible>(match pp {
-                    PolicyParams::Http(http) => svc::Either::A(http),
-                    PolicyParams::Grpc(grpc) => svc::Either::B(grpc),
+                    Params::Http(http) => svc::Either::A(http),
+                    Params::Grpc(grpc) => svc::Either::B(grpc),
                 })
             },
             grpc.into_inner(),
@@ -106,7 +106,7 @@ where
 fn routes_layer<T, M, F, N, S>() -> impl svc::Layer<
     N,
     Service = svc::ArcNewService<
-        Params<T, M, F>,
+        RouterParams<T, M, F>,
         impl svc::Service<
                 http::Request<http::BoxBody>,
                 Response = http::Response<http::BoxBody>,
@@ -124,7 +124,7 @@ where
     F: Eq + Hash,
     F: Clone + Send + Sync + 'static,
     // Assert that we can route the provided `Params`.
-    Params<T, M, F>: svc::router::SelectRoute<
+    RouterParams<T, M, F>: svc::router::SelectRoute<
         http::Request<http::BoxBody>,
         Key = RouteParams<T, F>,
         Error = NoRoute,
@@ -148,7 +148,7 @@ where
             // Lazily cache a service for each `RouteParams` returned from the
             // `SelectRoute` impl.
             .push_on_service(route_layer())
-            .push(svc::NewOneshotRoute::<Params<T, M, F>, (), _>::layer_cached())
+            .push(svc::NewOneshotRoute::<RouterParams<T, M, F>, (), _>::layer_cached())
             .push(svc::ArcNewService::layer())
             .into_inner()
     })
@@ -195,51 +195,51 @@ where
 
 // === impl PolicyRoutes ===
 
-impl PolicyRoutes {
+impl Routes {
     pub fn addr(&self) -> &Addr {
         match self {
-            PolicyRoutes::Http(Routes { ref addr, .. })
-            | PolicyRoutes::Grpc(Routes { ref addr, .. }) => addr,
+            Routes::Http(RouterRoutes { ref addr, .. })
+            | Routes::Grpc(RouterRoutes { ref addr, .. }) => addr,
         }
     }
 }
 
 // === impl PolicyParams ===
 
-impl<T> From<(PolicyRoutes, T)> for PolicyParams<T>
+impl<T> From<(Routes, T)> for Params<T>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    fn from((pr, parent): (PolicyRoutes, T)) -> Self {
+    fn from((pr, parent): (Routes, T)) -> Self {
         match pr {
-            PolicyRoutes::Http(rts) => PolicyParams::Http(Params::from((rts, parent))),
-            PolicyRoutes::Grpc(rts) => PolicyParams::Grpc(Params::from((rts, parent))),
+            Routes::Http(http) => Params::Http(RouterParams::from((http, parent))),
+            Routes::Grpc(grpc) => Params::Grpc(RouterParams::from((grpc, parent))),
         }
     }
 }
 
-impl<T> svc::Param<super::LogicalAddr> for PolicyParams<T>
+impl<T> svc::Param<super::LogicalAddr> for Params<T>
 where
     T: Eq + Hash + Clone + Debug,
 {
     fn param(&self) -> super::LogicalAddr {
         match self {
-            PolicyParams::Http(p) => p.param(),
-            PolicyParams::Grpc(p) => p.param(),
+            Params::Http(p) => p.param(),
+            Params::Grpc(p) => p.param(),
         }
     }
 }
 
 // === impl Params ===
 
-impl<T, M, F> From<(Routes<M, F>, T)> for Params<T, M, F>
+impl<T, M, F> From<(RouterRoutes<M, F>, T)> for RouterParams<T, M, F>
 where
     T: Eq + Hash + Clone + Debug,
     M: Clone,
     F: Clone,
 {
-    fn from((rts, parent): (Routes<M, F>, T)) -> Self {
-        let Routes {
+    fn from((rts, parent): (RouterRoutes<M, F>, T)) -> Self {
+        let RouterRoutes {
             addr,
             routes,
             backends,
@@ -364,7 +364,7 @@ where
     }
 }
 
-impl<T, M, F> svc::Param<distribute::Backends<Concrete<T>>> for Params<T, M, F>
+impl<T, M, F> svc::Param<distribute::Backends<Concrete<T>>> for RouterParams<T, M, F>
 where
     T: Eq + Hash + Clone + Debug,
 {
@@ -374,7 +374,7 @@ where
 }
 
 impl<B, T> svc::router::SelectRoute<http::Request<B>>
-    for Params<T, route::http::MatchRequest, policy::http::Filter>
+    for RouterParams<T, route::http::MatchRequest, policy::http::Filter>
 where
     T: Eq + Hash + Clone + Debug,
 {
@@ -388,7 +388,7 @@ where
 }
 
 impl<T, B> svc::router::SelectRoute<http::Request<B>>
-    for Params<T, route::grpc::MatchRoute, policy::grpc::Filter>
+    for RouterParams<T, route::grpc::MatchRoute, policy::grpc::Filter>
 where
     T: Eq + Hash + Clone + Debug,
 {
@@ -401,7 +401,7 @@ where
     }
 }
 
-impl<T, M, F> svc::Param<super::LogicalAddr> for Params<T, M, F>
+impl<T, M, F> svc::Param<super::LogicalAddr> for RouterParams<T, M, F>
 where
     T: Eq + Hash + Clone + Debug,
 {

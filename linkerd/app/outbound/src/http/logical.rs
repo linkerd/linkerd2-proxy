@@ -13,13 +13,10 @@ use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
-mod policy;
-mod profile;
+pub mod policy;
+pub mod profile;
 
-pub use self::{
-    policy::{GrpcRoutes as PolicyGrpcRoutes, HttpRoutes as PolicyHttpRoutes, PolicyRoutes},
-    profile::Routes as ProfileRoutes,
-};
+pub use self::profile::Routes as ProfileRoutes;
 
 /// Indicates the address used for logical routing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -29,7 +26,7 @@ pub struct LogicalAddr(pub Addr);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Routes {
     /// Policy routes.
-    Policy(PolicyRoutes),
+    Policy(policy::Routes),
 
     /// Service profile routes.
     Profile(profile::Routes),
@@ -60,7 +57,7 @@ pub struct LogicalError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum RouterParams<T: Clone + Debug + Eq + Hash> {
-    Policy(policy::PolicyParams<T>),
+    Policy(policy::Params<T>),
 
     Profile(profile::Params<T>),
 
