@@ -16,8 +16,6 @@ use tokio::sync::watch;
 pub mod policy;
 pub mod profile;
 
-pub use self::profile::Routes as ProfileRoutes;
-
 /// Indicates the address used for logical routing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LogicalAddr(pub Addr);
