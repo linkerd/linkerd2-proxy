@@ -59,10 +59,20 @@ pub(super) fn layer<T, M, F, N, S>() -> impl svc::Layer<
     >,
 > + Clone
 where
+    // Parent target type.
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+    // Request matcher.
     M: Clone + Send + Sync + 'static,
+    // Request filter.
     F: Eq + Hash,
     F: Clone + Send + Sync + 'static,
+    // Assert that we can route the provided `Params`.
+    Params<T, M, F>: svc::router::SelectRoute<
+        http::Request<http::BoxBody>,
+        Key = RouteParams<T, F>,
+        Error = NoRoute,
+    >,
+    // Inner stack.
     N: svc::NewService<Concrete<T>, Service = S>,
     N: Clone + Send + Sync + 'static,
     S: svc::Service<
@@ -72,11 +82,6 @@ where
     >,
     S: Clone + Send + Sync + 'static,
     S::Future: Send,
-    Params<T, M, F>: svc::router::SelectRoute<
-        http::Request<http::BoxBody>,
-        Key = RouteParams<T, F>,
-        Error = NoRoute,
-    >,
 {
     svc::layer::mk(move |inner| {
         svc::stack(inner)
@@ -110,8 +115,11 @@ fn route_layer<T, F, N, S>() -> impl svc::Layer<
     >,
 > + Clone
 where
+    // Parent target.
     T: Send + Sync + 'static,
+    // Request filter.
     F: Clone + Send + Sync + 'static,
+    // Inner stack.
     N: svc::NewService<RouteParams<T, F>, Service = S>,
     N: Clone + Send + Sync + 'static,
     S: svc::Service<
