@@ -63,7 +63,7 @@ impl Outbound<()> {
                     Some(profile) => {
                         http::spawn_routes(profile.into(), move |profile: &profiles::Profile| {
                             if let Some(addr) = profile.addr.clone() {
-                                return http::Routes::Profile(http::ProfileRoutes {
+                                return http::Routes::Profile(http::profile::Routes {
                                     addr,
                                     routes: profile.http_routes.clone(),
                                     targets: profile.targets.clone(),

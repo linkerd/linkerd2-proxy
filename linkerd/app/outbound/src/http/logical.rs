@@ -13,9 +13,7 @@ use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
-mod profile;
-
-pub use self::profile::Routes as ProfileRoutes;
+pub mod profile;
 
 /// Indicates the address used for logical routing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

@@ -353,7 +353,7 @@ fn mk_route(
     }: &profiles::Profile,
 ) -> Option<http::Routes> {
     if let Some(addr) = addr.clone() {
-        return Some(http::Routes::Profile(http::ProfileRoutes {
+        return Some(http::Routes::Profile(http::profile::Routes {
             addr,
             routes: http_routes.clone(),
             targets: targets.clone(),

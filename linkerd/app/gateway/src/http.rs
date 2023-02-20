@@ -156,7 +156,7 @@ impl Gateway {
 fn mk_route(profile: &profiles::Profile) -> Option<outbound::http::Routes> {
     if let Some(addr) = profile.addr.clone() {
         return Some(outbound::http::Routes::Profile(
-            outbound::http::ProfileRoutes {
+            outbound::http::profile::Routes {
                 addr,
                 routes: profile.http_routes.clone(),
                 targets: profile.targets.clone(),
