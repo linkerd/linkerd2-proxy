@@ -107,6 +107,7 @@ where
 {
     svc::layer::mk(move |inner| {
         svc::stack(inner)
+            .check_new_service::<RouteParams<T>, http::Request<http::BoxBody>>()
             .push_on_service(
                 svc::layers()
                     .push(http::BoxRequest::layer())
