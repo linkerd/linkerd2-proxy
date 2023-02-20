@@ -193,6 +193,17 @@ where
     })
 }
 
+// === impl PolicyRoutes ===
+
+impl PolicyRoutes {
+    pub fn addr(&self) -> &Addr {
+        match self {
+            PolicyRoutes::Http(Routes { ref addr, .. })
+            | PolicyRoutes::Grpc(Routes { ref addr, .. }) => addr,
+        }
+    }
+}
+
 // === impl PolicyParams ===
 
 impl<T> From<(PolicyRoutes, T)> for PolicyParams<T>
