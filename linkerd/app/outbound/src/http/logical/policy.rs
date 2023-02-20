@@ -3,7 +3,7 @@ use linkerd_app_core::{
     proxy::http::{self, balance},
     svc,
     transport::addrs::*,
-    Addr, Error,
+    Addr, Error, Infallible,
 };
 use linkerd_distribute as distribute;
 use linkerd_http_route as route;
@@ -19,6 +19,13 @@ pub struct Routes<M, F> {
     pub backends: Arc<[policy::Backend]>,
 }
 
+/// HTTP or gRPC policy routes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PolicyRoutes {
+    Http(HttpRoutes),
+    Grpc(GrpcRoutes),
+}
+
 pub type HttpRoutes = Routes<route::http::MatchRequest, policy::http::Filter>;
 pub type GrpcRoutes = Routes<route::grpc::MatchRoute, policy::grpc::Filter>;
 
@@ -28,6 +35,12 @@ pub(super) struct Params<T: Clone + Debug + Eq + Hash, M, F> {
     addr: Addr,
     routes: Arc<[route::Route<M, RouteParams<T, F>>]>,
     backends: distribute::Backends<Concrete<T>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum PolicyParams<T: Clone + Debug + Eq + Hash> {
+    Http(HttpParams<T>),
+    Grpc(GrpcParams<T>),
 }
 
 pub(super) type HttpParams<T> = Params<T, route::http::MatchRequest, policy::http::Filter>;
@@ -42,10 +55,55 @@ pub(super) struct RouteParams<T, F> {
     distribution: Distribution<T>,
 }
 
+/// HTTP or gRPC policy routing.
+pub(super) fn layer<T, N, S>() -> impl svc::Layer<
+    N,
+    Service = svc::ArcNewService<
+        PolicyParams<T>,
+        impl svc::Service<
+                http::Request<http::BoxBody>,
+                Response = http::Response<http::BoxBody>,
+                Error = Error,
+                Future = impl Send,
+            > + Clone,
+    >,
+> + Clone
+where
+    // Parent target type.
+    T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+    // Inner stack.
+    N: svc::NewService<Concrete<T>, Service = S>,
+    N: Clone + Send + Sync + 'static,
+    S: svc::Service<
+        http::Request<http::BoxBody>,
+        Response = http::Response<http::BoxBody>,
+        Error = Error,
+    >,
+    S: Clone + Send + Sync + 'static,
+    S::Future: Send,
+{
+    svc::layer::mk(|inner: N| {
+        let http = svc::stack(inner.clone()).push(routes_layer());
+        let grpc = svc::stack(inner).push(routes_layer());
+
+        http.push_switch(
+            |pp: PolicyParams<T>| {
+                Ok::<_, Infallible>(match pp {
+                    PolicyParams::Http(http) => svc::Either::A(http),
+                    PolicyParams::Grpc(grpc) => svc::Either::B(grpc),
+                })
+            },
+            grpc.into_inner(),
+        )
+        .push(svc::ArcNewService::layer())
+        .into_inner()
+    })
+}
+
 // Wraps a `NewService`--instantiated once per logical target--that caches a set
 // of concrete services so that, as the watch provides new `Params`, we can
 // reuse inner services.
-pub(super) fn layer<T, M, F, N, S>() -> impl svc::Layer<
+fn routes_layer<T, M, F, N, S>() -> impl svc::Layer<
     N,
     Service = svc::ArcNewService<
         Params<T, M, F>,
@@ -82,7 +140,7 @@ where
     S: Clone + Send + Sync + 'static,
     S::Future: Send,
 {
-    svc::layer::mk(move |inner| {
+    svc::layer::mk(|inner| {
         svc::stack(inner)
             // Each `RouteParams` provides a `Distribution` that is used to
             // choose a concrete service for a given route.
@@ -124,7 +182,7 @@ where
     S: Clone + Send + Sync + 'static,
     S::Future: Send,
 {
-    svc::layer::mk(move |inner| {
+    svc::layer::mk(|inner| {
         svc::stack(inner)
             // The router does not take the backend's availability into
             // consideration, so we must eagerly fail requests to prevent
@@ -133,6 +191,32 @@ where
             .push(svc::ArcNewService::layer())
             .into_inner()
     })
+}
+
+// === impl PolicyParams ===
+
+impl<T> From<(PolicyRoutes, T)> for PolicyParams<T>
+where
+    T: Eq + Hash + Clone + Debug,
+{
+    fn from((pr, parent): (PolicyRoutes, T)) -> Self {
+        match pr {
+            PolicyRoutes::Http(rts) => PolicyParams::Http(Params::from((rts, parent))),
+            PolicyRoutes::Grpc(rts) => PolicyParams::Grpc(Params::from((rts, parent))),
+        }
+    }
+}
+
+impl<T> svc::Param<super::LogicalAddr> for PolicyParams<T>
+where
+    T: Eq + Hash + Clone + Debug,
+{
+    fn param(&self) -> super::LogicalAddr {
+        match self {
+            PolicyParams::Http(p) => p.param(),
+            PolicyParams::Grpc(p) => p.param(),
+        }
+    }
 }
 
 // === impl Params ===
