@@ -195,8 +195,8 @@ impl svc::Param<http::Version> for HttpSidecar {
 impl svc::Param<http::LogicalAddr> for HttpSidecar {
     fn param(&self) -> http::LogicalAddr {
         http::LogicalAddr(match *self.routes.borrow() {
-            http::Routes::Endpoint(Remote(ServerAddr(addr)), ..) => addr.into(),
             http::Routes::Profile(ref routes) => routes.addr.0.clone().into(),
+            http::Routes::Endpoint(Remote(ServerAddr(addr)), ..) => addr.into(),
         })
     }
 }

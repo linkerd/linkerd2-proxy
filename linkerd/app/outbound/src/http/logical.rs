@@ -17,13 +17,16 @@ mod profile;
 
 pub use self::profile::Routes as ProfileRoutes;
 
+/// Indicates the address used for logical routing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LogicalAddr(pub Addr);
 
+/// Configures the flavor of HTTP routing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Routes {
     Profile(profile::Routes),
-    // XXX Remove this variant when policy routes are added.
+
+    // TODO(ver) Remove this variant when policy routes are fully wired up.
     Endpoint(Remote<ServerAddr>, Metadata),
 }
 
@@ -49,7 +52,8 @@ pub struct LogicalError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum RouterParams<T: Clone + Debug + Eq + Hash> {
     Profile(profile::Params<T>),
-    // XXX Remove this variant when policy routes are added.
+
+    // TODO(ver) Remove this variant when policy routes are fully wired up.
     Endpoint(Remote<ServerAddr>, Metadata, T),
 }
 
@@ -64,9 +68,6 @@ type Distribution<T> = distribute::Distribution<Concrete<T>>;
 // set this on meshed connections.
 #[derive(Clone, Debug)]
 struct CanonicalDstHeader(NameAddr);
-
-#[derive(Clone, Debug)]
-struct Router {}
 
 // === impl Outbound ===
 
