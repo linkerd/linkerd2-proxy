@@ -18,15 +18,24 @@ mod profile;
 
 pub use self::{policy::Routes as PolicyRoutes, profile::Routes as ProfileRoutes};
 
+/// Indicates the address used for logical routing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LogicalAddr(pub Addr);
 
+/// Configures the flavor of HTTP routing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Routes {
+    /// HTTP policy routes.
     PolicyHttp(policy::HttpRoutes),
+
+    /// gRPC policy routes.
     PolicyGrpc(policy::GrpcRoutes),
+
+    /// Service profile routes.
     Profile(profile::Routes),
-    // XXX Remove this variant when policy routes are powered by the API.
+
+    /// Fallback endpoint forwarding.
+    // TODO(ver) Remove this variant when policy routes are fully wired up.
     Endpoint(Remote<ServerAddr>, Metadata),
 }
 
@@ -51,11 +60,11 @@ pub struct LogicalError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum RouterParams<T: Clone + Debug + Eq + Hash> {
+    // TODO(ver) Remove this variant when policy routes are fully wired up.
+    Endpoint(Remote<ServerAddr>, Metadata, T),
     PolicyHttp(policy::HttpParams<T>),
     PolicyGrpc(policy::GrpcParams<T>),
     Profile(profile::Params<T>),
-    // XXX Remove this variant when policy routes are wired up fully.
-    Endpoint(Remote<ServerAddr>, Metadata, T),
 }
 
 type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
