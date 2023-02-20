@@ -1,7 +1,7 @@
 use linkerd_http_route::http;
 use std::sync::Arc;
 
-pub use linkerd_http_route::http::{filter, r#match, RouteMatch};
+pub use linkerd_http_route::http::{filter, find, r#match, RouteMatch};
 
 pub type Policy = crate::RoutePolicy<Filter>;
 pub type Route = http::Route<Policy>;
@@ -25,14 +25,6 @@ pub enum Filter {
     Redirect(filter::RedirectRequest),
     RequestHeaders(filter::ModifyHeader),
     InternalError(&'static str),
-}
-
-#[inline]
-pub fn find<'r, B>(
-    routes: &'r [Route],
-    req: &::http::Request<B>,
-) -> Option<(http::RouteMatch, &'r Policy)> {
-    http::find(routes, req)
 }
 
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {

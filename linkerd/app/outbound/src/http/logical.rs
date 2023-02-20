@@ -13,17 +13,19 @@ use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
+mod policy;
 mod profile;
 
-pub use self::profile::Routes as ProfileRoutes;
+pub use self::{policy::Routes as PolicyRoutes, profile::Routes as ProfileRoutes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LogicalAddr(pub Addr);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Routes {
+    Policy(policy::Routes),
     Profile(profile::Routes),
-    // XXX Remove this variant when policy routes are added.
+    // XXX Remove this variant when policy routes are powered by the API.
     Endpoint(Remote<ServerAddr>, Metadata),
 }
 
@@ -48,8 +50,9 @@ pub struct LogicalError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum RouterParams<T: Clone + Debug + Eq + Hash> {
+    Policy(policy::Params<T>),
     Profile(profile::Params<T>),
-    // XXX Remove this variant when policy routes are added.
+    // XXX Remove this variant when policy routes are wired up fully.
     Endpoint(Remote<ServerAddr>, Metadata, T),
 }
 
@@ -64,9 +67,6 @@ type Distribution<T> = distribute::Distribution<Concrete<T>>;
 // set this on meshed connections.
 #[derive(Clone, Debug)]
 struct CanonicalDstHeader(NameAddr);
-
-#[derive(Clone, Debug)]
-struct Router {}
 
 // === impl Outbound ===
 
@@ -158,11 +158,16 @@ where
                             authority: None,
                             parent,
                         }),
-                        RouterParams::Profile(ps) => svc::Either::B(ps),
+                        RouterParams::Profile(ps) => svc::Either::B(svc::Either::A(ps)),
+                        RouterParams::Policy(ps) => svc::Either::B(svc::Either::B(ps)),
                     })
                 },
-                svc::stack(concrete)
+                svc::stack(concrete.clone())
                     .push(profile::layer(metrics.clone()))
+                    .push_switch(
+                        Ok::<_, Infallible>,
+                        svc::stack(concrete).push(policy::layer()),
+                    )
                     .into_inner(),
             )
             .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
@@ -180,6 +185,7 @@ where
 {
     fn from((routes, parent): (Routes, T)) -> Self {
         match routes {
+            Routes::Policy(routes) => Self::Policy((routes, parent).into()),
             Routes::Profile(routes) => Self::Profile((routes, parent).into()),
             Routes::Endpoint(addr, metadata) => Self::Endpoint(addr, metadata, parent),
         }
@@ -191,13 +197,14 @@ where
     T: Clone + Debug + Eq + Hash,
 {
     fn param(&self) -> LogicalAddr {
-        LogicalAddr(match self {
+        match self {
+            Self::Policy(ref p) => p.param(),
             Self::Profile(ref p) => {
                 let profile::LogicalAddr(addr) = p.param();
-                addr.into()
+                LogicalAddr(addr.into())
             }
-            Self::Endpoint(Remote(ServerAddr(ref addr)), ..) => (*addr).into(),
-        })
+            Self::Endpoint(Remote(ServerAddr(ref addr)), ..) => LogicalAddr((*addr).into()),
+        }
     }
 }
 

@@ -10,11 +10,11 @@ Configures and runs the outbound proxy
 """
 
 [features]
-test-util = ["linkerd-app-test", "linkerd-meshtls-rustls/test-util"]
-
 default = []
 allow-loopback = []
 test-subscriber = []
+test-util = ["linkerd-app-test", "linkerd-meshtls-rustls/test-util"]
+
 [dependencies]
 bytes = "1"
 http = "0.2"
@@ -24,8 +24,10 @@ linkerd-app-test = { path = "../test", optional = true }
 linkerd-distribute = { path = "../../distribute" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-retry = { path = "../../http-retry" }
+linkerd-http-route = { path = "../../http-route" }
 linkerd-identity = { path = "../../identity" }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true }
+linkerd-proxy-client-policy = { path = "../../proxy/client-policy" }
 linkerd-retry = { path = "../../retry" }
 parking_lot = "0.12"
 thiserror = "1"
