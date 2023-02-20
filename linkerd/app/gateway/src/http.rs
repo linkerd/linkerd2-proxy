@@ -227,8 +227,6 @@ impl<T> svc::Param<watch::Receiver<outbound::http::Routes>> for Target<T> {
     }
 }
 
-// Implement PartialEq, Eq, and Hash for Target<T>, ignoring the watch.
-
 impl<T> PartialEq for Target<T> {
     fn eq(&self, other: &Self) -> bool {
         self.addr == other.addr && self.version == other.version
