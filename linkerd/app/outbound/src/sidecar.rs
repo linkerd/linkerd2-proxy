@@ -105,6 +105,15 @@ impl svc::Param<Protocol> for Sidecar {
     }
 }
 
+impl svc::Param<http::normalize_uri::DefaultAuthority> for Sidecar {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(self.profile.as_ref().and_then(|p| {
+            p.logical_addr()
+                .map(|profiles::LogicalAddr(a)| a.as_http_authority())
+        }))
+    }
+}
+
 impl svc::Param<http::Logical> for Sidecar {
     fn param(&self) -> http::Logical {
         if let Some(profile) = self.profile.clone() {

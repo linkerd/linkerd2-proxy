@@ -1,19 +1,15 @@
-use super::{IdentityRequired, Logical, ProxyConnectionClose};
+use super::{IdentityRequired, ProxyConnectionClose};
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{
     errors, http_tracing, io,
     svc::{self, ExtractParam},
-    transport::addrs::*,
-    Addr, Error, Result,
+    Error, Result,
 };
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ServerRescue {
     emit_headers: bool,
 }
-
-#[derive(Copy, Clone, Debug)]
-struct Target<T>(T);
 
 impl<N> Outbound<N> {
     /// Builds a [`svc::NewService`] stack that prepares HTTP requests to be
@@ -37,7 +33,8 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        T: svc::Param<Logical> + 'static,
+        // Target
+        T: svc::Param<http::normalize_uri::DefaultAuthority>,
         // HTTP outbound stack
         N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
@@ -80,14 +77,7 @@ impl<N> Outbound<N> {
                 )
                 // Convert origin form HTTP/1 URIs to absolute form for Hyper's
                 // `Client`.
-                .push(http::NewNormalizeUri::layer_via(|target: &T| {
-                    let addr = match target.param() {
-                        Logical::Route(addr, _) => Addr::from(addr),
-                        Logical::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
-                    };
-
-                    http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
-                }))
+                .push(http::NewNormalizeUri::layer())
                 // Record when a HTTP/1 URI originated in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push(svc::ArcNewService::layer())
