@@ -197,7 +197,8 @@ impl svc::Param<http::LogicalAddr> for HttpSidecar {
         http::LogicalAddr(match *self.routes.borrow() {
             http::Routes::Endpoint(Remote(ServerAddr(addr)), ..) => addr.into(),
             http::Routes::Profile(ref routes) => routes.addr.0.clone().into(),
-            http::Routes::Policy(ref routes) => routes.addr.clone(),
+            http::Routes::PolicyHttp(ref routes) => routes.addr.clone(),
+            http::Routes::PolicyGrpc(ref routes) => routes.addr.clone(),
         })
     }
 }
@@ -211,7 +212,8 @@ impl svc::Param<watch::Receiver<http::Routes>> for HttpSidecar {
 impl svc::Param<http::normalize_uri::DefaultAuthority> for HttpSidecar {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
         http::normalize_uri::DefaultAuthority(match *self.routes.borrow() {
-            http::Routes::Policy(ref routes) => Some(routes.addr.to_http_authority()),
+            http::Routes::PolicyHttp(ref routes) => Some(routes.addr.to_http_authority()),
+            http::Routes::PolicyGrpc(ref routes) => Some(routes.addr.to_http_authority()),
             http::Routes::Profile(ref routes) => Some((*routes.addr).as_http_authority()),
             http::Routes::Endpoint(..) => None,
         })

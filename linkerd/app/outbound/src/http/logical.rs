@@ -23,7 +23,8 @@ pub struct LogicalAddr(pub Addr);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Routes {
-    Policy(policy::Routes),
+    PolicyHttp(policy::HttpRoutes),
+    PolicyGrpc(policy::GrpcRoutes),
     Profile(profile::Routes),
     // XXX Remove this variant when policy routes are powered by the API.
     Endpoint(Remote<ServerAddr>, Metadata),
@@ -50,7 +51,8 @@ pub struct LogicalError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum RouterParams<T: Clone + Debug + Eq + Hash> {
-    Policy(policy::Params<T>),
+    PolicyHttp(policy::HttpParams<T>),
+    PolicyGrpc(policy::GrpcParams<T>),
     Profile(profile::Params<T>),
     // XXX Remove this variant when policy routes are wired up fully.
     Endpoint(Remote<ServerAddr>, Metadata, T),
@@ -149,7 +151,12 @@ where
     S::Future: Send,
 {
     svc::layer::mk(move |concrete: N| {
-        svc::stack(concrete.clone())
+        let profile = svc::stack(concrete.clone()).push(profile::layer(metrics.clone()));
+
+        let policy_http = svc::stack(concrete.clone()).push(policy::layer());
+        let policy_grpc = svc::stack(concrete.clone()).push(policy::layer());
+
+        svc::stack(concrete)
             .push_switch(
                 |prms: RouterParams<T>| {
                     Ok::<_, Infallible>(match prms {
@@ -158,15 +165,21 @@ where
                             authority: None,
                             parent,
                         }),
-                        RouterParams::Profile(ps) => svc::Either::B(svc::Either::A(ps)),
-                        RouterParams::Policy(ps) => svc::Either::B(svc::Either::B(ps)),
+                        RouterParams::Profile(profile) => svc::Either::B(svc::Either::A(profile)),
+                        RouterParams::PolicyHttp(http) => {
+                            svc::Either::B(svc::Either::B(svc::Either::A(http)))
+                        }
+                        RouterParams::PolicyGrpc(grpc) => {
+                            svc::Either::B(svc::Either::B(svc::Either::B(grpc)))
+                        }
                     })
                 },
-                svc::stack(concrete.clone())
-                    .push(profile::layer(metrics.clone()))
+                profile
                     .push_switch(
                         Ok::<_, Infallible>,
-                        svc::stack(concrete).push(policy::layer()),
+                        policy_http
+                            .push_switch(Ok::<_, Infallible>, policy_grpc.into_inner())
+                            .into_inner(),
                     )
                     .into_inner(),
             )
@@ -185,7 +198,8 @@ where
 {
     fn from((routes, parent): (Routes, T)) -> Self {
         match routes {
-            Routes::Policy(routes) => Self::Policy((routes, parent).into()),
+            Routes::PolicyHttp(routes) => Self::PolicyHttp((routes, parent).into()),
+            Routes::PolicyGrpc(routes) => Self::PolicyGrpc((routes, parent).into()),
             Routes::Profile(routes) => Self::Profile((routes, parent).into()),
             Routes::Endpoint(addr, metadata) => Self::Endpoint(addr, metadata, parent),
         }
@@ -198,7 +212,8 @@ where
 {
     fn param(&self) -> LogicalAddr {
         match self {
-            Self::Policy(ref p) => p.param(),
+            Self::PolicyHttp(ref p) => p.param(),
+            Self::PolicyGrpc(ref p) => p.param(),
             Self::Profile(ref p) => {
                 let profile::LogicalAddr(addr) = p.param();
                 LogicalAddr(addr.into())

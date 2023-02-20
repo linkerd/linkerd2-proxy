@@ -68,13 +68,18 @@ where
 {
     svc::layer::mk(move |inner| {
         svc::stack(inner)
+            .check_new_service::<Concrete<T>, http::Request<http::BoxBody>>()
             // Each `RouteParams` provides a `Distribution` that is used to
             // choose a concrete service for a given route.
             .push(BackendCache::layer())
+            .check_new_new_service::<Params<T>, RouteParams<T>, http::Request<http::BoxBody>>()
             // Lazily cache a service for each `RouteParams`
             // returned from the `SelectRoute` impl.
             .push_on_service(route_layer(metrics.clone()))
+            .check_new_new_service::<Params<T>, RouteParams<T>, http::Request<http::BoxBody>>()
             .push(svc::NewOneshotRoute::<Params<T>, _, _>::layer_cached())
+            .check_new::<Params<T>>()
+            .check_new_service::<Params<T>, http::Request<http::BoxBody>>()
             .push(svc::ArcNewService::layer())
             .into_inner()
     })
