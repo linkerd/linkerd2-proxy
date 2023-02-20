@@ -286,6 +286,18 @@ where
             .expect("distribution must be valid"),
         };
 
+        let mk_policy = |policy::RoutePolicy::<F> {
+                             meta,
+                             filters,
+                             distribution,
+                         }| RouteParams {
+            addr: addr.clone(),
+            parent: parent.clone(),
+            meta,
+            filters,
+            distribution: mk_distribution(&distribution),
+        };
+
         let routes = routes
             .iter()
             .map(|route| route::Route {
@@ -293,15 +305,10 @@ where
                 rules: route
                     .rules
                     .iter()
+                    .cloned()
                     .map(|route::Rule { matches, policy }| route::Rule {
-                        matches: matches.clone(),
-                        policy: RouteParams {
-                            addr: addr.clone(),
-                            parent: parent.clone(),
-                            meta: policy.meta.clone(),
-                            filters: policy.filters.clone(),
-                            distribution: mk_distribution(&policy.distribution),
-                        },
+                        matches,
+                        policy: mk_policy(policy),
                     })
                     .collect(),
             })
