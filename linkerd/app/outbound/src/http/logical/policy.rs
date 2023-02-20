@@ -10,6 +10,9 @@ use linkerd_http_route as route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
+#[cfg(test)]
+mod tests;
+
 pub use linkerd_proxy_client_policy::ClientPolicy;
 
 /// HTTP or gRPC policy routes.
