@@ -22,8 +22,10 @@ pub struct LogicalAddr(pub Addr);
 /// Configures the flavor of HTTP routing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Routes {
+    /// Service profile routes.
     Profile(profile::Routes),
 
+    /// Fallback endpoint forwarding.
     // TODO(ver) Remove this variant when policy routes are fully wired up.
     Endpoint(Remote<ServerAddr>, Metadata),
 }
@@ -148,7 +150,8 @@ where
     S::Future: Send,
 {
     svc::layer::mk(move |concrete: N| {
-        svc::stack(concrete.clone())
+        let profile = svc::stack(concrete.clone()).push(profile::layer(metrics.clone()));
+        svc::stack(concrete)
             .push_switch(
                 |prms: RouterParams<T>| {
                     Ok::<_, Infallible>(match prms {
@@ -160,9 +163,7 @@ where
                         RouterParams::Profile(ps) => svc::Either::B(ps),
                     })
                 },
-                svc::stack(concrete)
-                    .push(profile::layer(metrics.clone()))
-                    .into_inner(),
+                profile.into_inner(),
             )
             .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
             .push_on_service(svc::MapErr::layer_boxed())
