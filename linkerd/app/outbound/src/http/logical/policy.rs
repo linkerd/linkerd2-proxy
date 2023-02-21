@@ -108,8 +108,8 @@ where
             http.push_switch(
                 |pp: Params<T>| {
                     Ok::<_, Infallible>(match pp {
-                        Params::Http(http) => svc::Either::A(http),
-                        Params::Grpc(grpc) => svc::Either::B(grpc),
+                        Self::Http(http) => svc::Either::A(http),
+                        Self::Grpc(grpc) => svc::Either::B(grpc),
                     })
                 },
                 grpc.into_inner(),
@@ -197,7 +197,7 @@ where
                 // Lazily cache a service for each `RouteParams` returned from the
                 // `SelectRoute` impl.
                 .push_on_service(RouteParams::layer())
-                .push(svc::NewOneshotRoute::<RouterParams<T, M, F>, (), _>::layer_cached())
+                .push(svc::NewOneshotRoute::<Self, (), _>::layer_cached())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
         })

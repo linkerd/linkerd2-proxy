@@ -118,7 +118,7 @@ impl<N> Outbound<N> {
             let watch = concrete
                 // Share the concrete stack with each router stack.
                 .lift_new()
-                .push_on_service(router_layer(rt.metrics.proxy.clone()))
+                .push_on_service(RouterParams::layer(rt.metrics.proxy.clone()))
                 // Rebuild the inner router stack every time the watch changes.
                 .push(svc::NewSpawnWatch::<Routes, _>::layer_into::<RouterParams<T>>());
 
@@ -129,61 +129,69 @@ impl<N> Outbound<N> {
     }
 }
 
-fn router_layer<T, N, S>(
-    metrics: metrics::Proxy,
-) -> impl svc::Layer<
-    N,
-    Service = svc::ArcNewService<
-        RouterParams<T>,
-        impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-                Future = impl Send,
-            > + Clone,
-    >,
-> + Clone
+// === impl RouterParams ===
+
+impl<T> RouterParams<T>
 where
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
-    N: svc::NewService<Concrete<T>, Service = S>,
-    N: Clone + Send + Sync + 'static,
-    S: svc::Service<
-        http::Request<http::BoxBody>,
-        Response = http::Response<http::BoxBody>,
-        Error = Error,
-    >,
-    S: Clone + Send + Sync + 'static,
-    S::Future: Send,
 {
-    svc::layer::mk(move |concrete: N| {
-        let profile = svc::stack(concrete.clone()).push(profile::layer(metrics.clone()));
-        let policy = svc::stack(concrete.clone()).push(policy::Params::layer());
-        svc::stack(concrete)
-            .push_switch(
-                |prms: RouterParams<T>| {
-                    Ok::<_, Infallible>(match prms {
-                        RouterParams::Endpoint(remote, meta, parent) => svc::Either::A(Concrete {
-                            target: concrete::Dispatch::Forward(remote, meta),
-                            authority: None,
-                            parent,
-                        }),
-                        RouterParams::Profile(profile) => svc::Either::B(svc::Either::A(profile)),
-                        RouterParams::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
-                    })
-                },
-                // Switch profile and policy routing.
-                profile
-                    .push_switch(Ok::<_, Infallible>, policy.into_inner())
-                    .into_inner(),
-            )
-            .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
-            .push_on_service(svc::MapErr::layer_boxed())
-            .push(svc::ArcNewService::layer())
-            .into_inner()
-    })
+    fn layer<N, S>(
+        metrics: metrics::Proxy,
+    ) -> impl svc::Layer<
+        N,
+        Service = svc::ArcNewService<
+            RouterParams<T>,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    > + Clone
+    where
+        N: svc::NewService<Concrete<T>, Service = S>,
+        N: Clone + Send + Sync + 'static,
+        S: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        S: Clone + Send + Sync + 'static,
+        S::Future: Send,
+    {
+        svc::layer::mk(move |concrete: N| {
+            let profile = svc::stack(concrete.clone()).push(profile::layer(metrics.clone()));
+            let policy = svc::stack(concrete.clone()).push(policy::Params::layer());
+            svc::stack(concrete)
+                .push_switch(
+                    |prms: RouterParams<T>| {
+                        Ok::<_, Infallible>(match prms {
+                            RouterParams::Endpoint(remote, meta, parent) => {
+                                svc::Either::A(Concrete {
+                                    target: concrete::Dispatch::Forward(remote, meta),
+                                    authority: None,
+                                    parent,
+                                })
+                            }
+                            RouterParams::Profile(profile) => {
+                                svc::Either::B(svc::Either::A(profile))
+                            }
+                            RouterParams::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
+                        })
+                    },
+                    // Switch profile and policy routing.
+                    profile
+                        .push_switch(Ok::<_, Infallible>, policy.into_inner())
+                        .into_inner(),
+                )
+                .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
+                .push_on_service(svc::MapErr::layer_boxed())
+                .push(svc::ArcNewService::layer())
+                .into_inner()
+        })
+    }
 }
-
-// === impl RouterParams ===
 
 impl<T> From<(Routes, T)> for RouterParams<T>
 where
