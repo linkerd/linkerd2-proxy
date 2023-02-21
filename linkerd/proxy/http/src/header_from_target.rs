@@ -1,13 +1,14 @@
 use crate::HeaderPair;
 use http::header::{HeaderName, HeaderValue};
-use linkerd_stack::{layer, NewService, Param};
+use linkerd_stack::{layer, ExtractParam, NewService};
 use std::task::{Context, Poll};
 
 /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into
 /// each request's headers.
 #[derive(Clone, Debug)]
-pub struct NewHeaderFromTarget<H, N> {
+pub struct NewHeaderFromTarget<H, X, N> {
     inner: N,
+    extract: X,
     _marker: std::marker::PhantomData<fn() -> H>,
 }
 
@@ -20,25 +21,32 @@ pub struct HeaderFromTarget<S> {
 
 // === impl NewHeaderFromTarget ===
 
-impl<H, N> NewHeaderFromTarget<H, N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+impl<H, X: Clone, N> NewHeaderFromTarget<H, X, N> {
+    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
+            extract: extract.clone(),
             _marker: std::marker::PhantomData,
         })
     }
 }
 
-impl<H, T, N> NewService<T> for NewHeaderFromTarget<H, N>
+impl<H, N> NewHeaderFromTarget<H, (), N> {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via(())
+    }
+}
+
+impl<H, T, X, N> NewService<T> for NewHeaderFromTarget<H, X, N>
 where
     H: Into<HeaderPair>,
-    T: Param<H>,
+    X: ExtractParam<H, T>,
     N: NewService<T>,
 {
     type Service = HeaderFromTarget<N::Service>;
 
     fn new_service(&self, t: T) -> Self::Service {
-        let HeaderPair(name, value) = t.param().into();
+        let HeaderPair(name, value) = self.extract.extract_param(&t).into();
         let inner = self.inner.new_service(t);
         HeaderFromTarget { name, value, inner }
     }
