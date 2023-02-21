@@ -40,13 +40,13 @@ pub(super) struct RouteParams<T> {
 
 // === impl Params ===
 
-// Wraps a `NewService`--instantiated once per logical target--that caches a set
-// of concrete services so that, as the watch provides new `Params`, we can
-// reuse inner services.
 impl<T> Params<T>
 where
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
 {
+    /// Wraps a `NewService`--instantiated once per logical target--that caches
+    /// a set of concrete services so that, as the watch provides new `Params`,
+    /// we can reuse inner services.
     pub(super) fn layer<N, S>(
         metrics: metrics::Proxy,
     ) -> impl svc::Layer<
