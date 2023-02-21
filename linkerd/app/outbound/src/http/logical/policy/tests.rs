@@ -23,7 +23,7 @@ async fn header_based_route() {
     let default_addr = ([127, 0, 0, 1], 8081).into();
     let special_addr = ([127, 0, 0, 1], 8082).into();
 
-    let http = {
+    let routes = {
         let default = mk_backend("default", default_addr);
         let special = mk_backend("special", special_addr);
         let route = policy::http::Route {
@@ -85,9 +85,9 @@ async fn header_based_route() {
         panic!("unexpected target: {:?}", concrete.target);
     };
 
-    let router = layer()
+    let router = Params::layer()
         .layer(inner)
-        .new_service(Params::from((Routes::Http(http), ())));
+        .new_service(Params::from((Routes::Http(routes), ())));
     default.allow(2);
     special.allow(2);
 

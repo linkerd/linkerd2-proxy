@@ -58,145 +58,7 @@ pub(super) struct RouteParams<T, F> {
     distribution: Distribution<T>,
 }
 
-/// HTTP or gRPC policy routing.
-pub(super) fn layer<T, N, S>() -> impl svc::Layer<
-    N,
-    Service = svc::ArcNewService<
-        Params<T>,
-        impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-                Future = impl Send,
-            > + Clone,
-    >,
-> + Clone
-where
-    // Parent target type.
-    T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
-    // Inner stack.
-    N: svc::NewService<Concrete<T>, Service = S>,
-    N: Clone + Send + Sync + 'static,
-    S: svc::Service<
-        http::Request<http::BoxBody>,
-        Response = http::Response<http::BoxBody>,
-        Error = Error,
-    >,
-    S: Clone + Send + Sync + 'static,
-    S::Future: Send,
-{
-    svc::layer::mk(|inner: N| {
-        let http = svc::stack(inner.clone()).push(routes_layer());
-        let grpc = svc::stack(inner).push(routes_layer());
-
-        http.push_switch(
-            |pp: Params<T>| {
-                Ok::<_, Infallible>(match pp {
-                    Params::Http(http) => svc::Either::A(http),
-                    Params::Grpc(grpc) => svc::Either::B(grpc),
-                })
-            },
-            grpc.into_inner(),
-        )
-        .push(svc::ArcNewService::layer())
-        .into_inner()
-    })
-}
-
-// Wraps a `NewService`--instantiated once per logical target--that caches a set
-// of concrete services so that, as the watch provides new `Params`, we can
-// reuse inner services.
-fn routes_layer<T, M, F, N, S>() -> impl svc::Layer<
-    N,
-    Service = svc::ArcNewService<
-        RouterParams<T, M, F>,
-        impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-                Future = impl Send,
-            > + Clone,
-    >,
-> + Clone
-where
-    // Parent target type.
-    T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
-    // Request matcher.
-    M: Clone + Send + Sync + 'static,
-    // Request filter.
-    F: Eq + Hash,
-    F: Clone + Send + Sync + 'static,
-    // Assert that we can route the provided `Params`.
-    RouterParams<T, M, F>: svc::router::SelectRoute<
-        http::Request<http::BoxBody>,
-        Key = RouteParams<T, F>,
-        Error = NoRoute,
-    >,
-    // Inner stack.
-    N: svc::NewService<Concrete<T>, Service = S>,
-    N: Clone + Send + Sync + 'static,
-    S: svc::Service<
-        http::Request<http::BoxBody>,
-        Response = http::Response<http::BoxBody>,
-        Error = Error,
-    >,
-    S: Clone + Send + Sync + 'static,
-    S::Future: Send,
-{
-    svc::layer::mk(|inner| {
-        svc::stack(inner)
-            // Each `RouteParams` provides a `Distribution` that is used to
-            // choose a concrete service for a given route.
-            .push(BackendCache::layer())
-            // Lazily cache a service for each `RouteParams` returned from the
-            // `SelectRoute` impl.
-            .push_on_service(route_layer())
-            .push(svc::NewOneshotRoute::<RouterParams<T, M, F>, (), _>::layer_cached())
-            .push(svc::ArcNewService::layer())
-            .into_inner()
-    })
-}
-
-fn route_layer<T, F, N, S>() -> impl svc::Layer<
-    N,
-    Service = svc::ArcNewService<
-        RouteParams<T, F>,
-        impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-                Future = impl Send,
-            > + Clone,
-    >,
-> + Clone
-where
-    // Parent target.
-    T: Send + Sync + 'static,
-    // Request filter.
-    F: Clone + Send + Sync + 'static,
-    // Inner stack.
-    N: svc::NewService<RouteParams<T, F>, Service = S>,
-    N: Clone + Send + Sync + 'static,
-    S: svc::Service<
-        http::Request<http::BoxBody>,
-        Response = http::Response<http::BoxBody>,
-        Error = Error,
-    >,
-    S: Clone + Send + Sync + 'static,
-    S::Future: Send,
-{
-    svc::layer::mk(|inner| {
-        svc::stack(inner)
-            // The router does not take the backend's availability into
-            // consideration, so we must eagerly fail requests to prevent
-            // leaking tasks onto the runtime.
-            .push_on_service(svc::LoadShed::layer())
-            .push(svc::ArcNewService::layer())
-            .into_inner()
-    })
-}
-
-// === impl PolicyRoutes ===
+// === impl Routes ===
 
 impl Routes {
     pub fn addr(&self) -> &Addr {
@@ -207,7 +69,56 @@ impl Routes {
     }
 }
 
-// === impl PolicyParams ===
+// === impl Params ===
+
+impl<T> Params<T>
+where
+    // Parent target type.
+    T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+{
+    /// HTTP or gRPC policy routing.
+    pub(super) fn layer<N, S>() -> impl svc::Layer<
+        N,
+        Service = svc::ArcNewService<
+            Self,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    > + Clone
+    where
+        // Inner stack.
+        N: svc::NewService<Concrete<T>, Service = S>,
+        N: Clone + Send + Sync + 'static,
+        S: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        S: Clone + Send + Sync + 'static,
+        S::Future: Send,
+    {
+        svc::layer::mk(|inner: N| {
+            let http = svc::stack(inner.clone()).push(RouterParams::layer());
+            let grpc = svc::stack(inner).push(RouterParams::layer());
+
+            http.push_switch(
+                |pp: Params<T>| {
+                    Ok::<_, Infallible>(match pp {
+                        Params::Http(http) => svc::Either::A(http),
+                        Params::Grpc(grpc) => svc::Either::B(grpc),
+                    })
+                },
+                grpc.into_inner(),
+            )
+            .push(svc::ArcNewService::layer())
+            .into_inner()
+        })
+    }
+}
 
 impl<T> From<(Routes, T)> for Params<T>
 where
@@ -233,7 +144,65 @@ where
     }
 }
 
-// === impl Params ===
+// === impl RouterParams ===
+
+impl<T, M, F> RouterParams<T, M, F>
+where
+    // Parent target type.
+    T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+    // Request matcher.
+    M: Clone + Send + Sync + 'static,
+    // Request filter.
+    F: Eq + Hash,
+    F: Clone + Send + Sync + 'static,
+{
+    // Wraps a `NewService`--instantiated once per logical target--that caches a set
+    // of concrete services so that, as the watch provides new `Params`, we can
+    // reuse inner services.
+    fn layer<N, S>() -> impl svc::Layer<
+        N,
+        Service = svc::ArcNewService<
+            Self,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    > + Clone
+    where
+        // Assert that we can route the provided `Params`.
+        RouterParams<T, M, F>: svc::router::SelectRoute<
+            http::Request<http::BoxBody>,
+            Key = RouteParams<T, F>,
+            Error = NoRoute,
+        >,
+        // Inner stack.
+        N: svc::NewService<Concrete<T>, Service = S>,
+        N: Clone + Send + Sync + 'static,
+        S: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        S: Clone + Send + Sync + 'static,
+        S::Future: Send,
+    {
+        svc::layer::mk(|inner| {
+            svc::stack(inner)
+                // Each `RouteParams` provides a `Distribution` that is used to
+                // choose a concrete service for a given route.
+                .push(BackendCache::layer())
+                // Lazily cache a service for each `RouteParams` returned from the
+                // `SelectRoute` impl.
+                .push_on_service(RouteParams::layer())
+                .push(svc::NewOneshotRoute::<RouterParams<T, M, F>, (), _>::layer_cached())
+                .push(svc::ArcNewService::layer())
+                .into_inner()
+        })
+    }
+}
 
 impl<T, M, F> From<(RouterRoutes<M, F>, T)> for RouterParams<T, M, F>
 where
@@ -375,6 +344,49 @@ where
 }
 
 // === impl RouteParams ===
+
+impl<T, F> RouteParams<T, F>
+where
+    // Parent target.
+    T: Send + Sync + 'static,
+    // Request filter.
+    F: Clone + Send + Sync + 'static,
+{
+    fn layer<N, S>() -> impl svc::Layer<
+        N,
+        Service = svc::ArcNewService<
+            Self,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    > + Clone
+    where
+        // Inner stack.
+        N: svc::NewService<RouteParams<T, F>, Service = S>,
+        N: Clone + Send + Sync + 'static,
+        S: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        S: Clone + Send + Sync + 'static,
+        S::Future: Send,
+    {
+        svc::layer::mk(|inner| {
+            svc::stack(inner)
+                // The router does not take the backend's availability into
+                // consideration, so we must eagerly fail requests to prevent
+                // leaking tasks onto the runtime.
+                .push_on_service(svc::LoadShed::layer())
+                .push(svc::ArcNewService::layer())
+                .into_inner()
+        })
+    }
+}
 
 impl<T: Clone, F> svc::Param<Distribution<T>> for RouteParams<T, F> {
     fn param(&self) -> Distribution<T> {

@@ -157,7 +157,7 @@ where
 {
     svc::layer::mk(move |concrete: N| {
         let profile = svc::stack(concrete.clone()).push(profile::layer(metrics.clone()));
-        let policy = svc::stack(concrete.clone()).push(policy::layer());
+        let policy = svc::stack(concrete.clone()).push(policy::Params::layer());
         svc::stack(concrete)
             .push_switch(
                 |prms: RouterParams<T>| {
