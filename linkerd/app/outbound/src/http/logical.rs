@@ -155,7 +155,8 @@ where
         S::Future: Send,
     {
         svc::layer::mk(move |concrete: N| {
-            let profile = svc::stack(concrete.clone()).push(profile::layer(metrics.clone()));
+            let profile =
+                svc::stack(concrete.clone()).push(profile::Params::layer(metrics.clone()));
             svc::stack(concrete)
                 .push_switch(
                     |prms: RouterParams<T>| {
