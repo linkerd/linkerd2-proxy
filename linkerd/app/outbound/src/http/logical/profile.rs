@@ -38,115 +38,53 @@ pub(super) struct RouteParams<T> {
     distribution: Distribution<T>,
 }
 
+// === impl Params ===
+
 // Wraps a `NewService`--instantiated once per logical target--that caches a set
 // of concrete services so that, as the watch provides new `Params`, we can
 // reuse inner services.
-pub(super) fn layer<T, N, S>(
-    metrics: metrics::Proxy,
-) -> impl svc::Layer<
-    N,
-    Service = svc::ArcNewService<
-        Params<T>,
-        impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-                Future = impl Send,
-            > + Clone,
-    >,
-> + Clone
+impl<T> Params<T>
 where
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
-    N: svc::NewService<Concrete<T>, Service = S> + Clone + Send + Sync + 'static,
-    S: svc::Service<
-        http::Request<http::BoxBody>,
-        Response = http::Response<http::BoxBody>,
-        Error = Error,
-    >,
-    S: Clone + Send + Sync + 'static,
-    S::Future: Send,
 {
-    svc::layer::mk(move |inner| {
-        svc::stack(inner)
-            // Each `RouteParams` provides a `Distribution` that is used to
-            // choose a concrete service for a given route.
-            .push(BackendCache::layer())
-            // Lazily cache a service for each `RouteParams`
-            // returned from the `SelectRoute` impl.
-            .push_on_service(route_layer(metrics.clone()))
-            .push(svc::NewOneshotRoute::<Params<T>, _, _>::layer_cached())
-            .push(svc::ArcNewService::layer())
-            .into_inner()
-    })
+    pub(super) fn layer<N, S>(
+        metrics: metrics::Proxy,
+    ) -> impl svc::Layer<
+        N,
+        Service = svc::ArcNewService<
+            Self,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    > + Clone
+    where
+        N: svc::NewService<Concrete<T>, Service = S> + Clone + Send + Sync + 'static,
+        S: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        S: Clone + Send + Sync + 'static,
+        S::Future: Send,
+    {
+        svc::layer::mk(move |inner| {
+            svc::stack(inner)
+                // Each `RouteParams` provides a `Distribution` that is used to
+                // choose a concrete service for a given route.
+                .push(BackendCache::layer())
+                // Lazily cache a service for each `RouteParams`
+                // returned from the `SelectRoute` impl.
+                .push_on_service(RouteParams::layer(metrics.clone()))
+                .push(svc::NewOneshotRoute::<Params<T>, _, _>::layer_cached())
+                .push(svc::ArcNewService::layer())
+                .into_inner()
+        })
+    }
 }
-
-fn route_layer<T, N, S>(
-    metrics: metrics::Proxy,
-) -> impl svc::Layer<
-    N,
-    Service = svc::ArcNewService<
-        RouteParams<T>,
-        impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-                Future = impl Send,
-            > + Clone,
-    >,
-> + Clone
-where
-    T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
-    N: svc::NewService<RouteParams<T>, Service = S> + Clone + Send + Sync + 'static,
-    S: svc::Service<
-        http::Request<http::BoxBody>,
-        Response = http::Response<http::BoxBody>,
-        Error = Error,
-    >,
-    S: Clone + Send + Sync + 'static,
-    S::Future: Send,
-{
-    svc::layer::mk(move |inner| {
-        svc::stack(inner)
-            .check_new_service::<RouteParams<T>, http::Request<http::BoxBody>>()
-            .push_on_service(
-                svc::layers()
-                    .push(http::BoxRequest::layer())
-                    // The router does not take the backend's availability into
-                    // consideration, so we must eagerly fail requests to prevent
-                    // leaking tasks onto the runtime.
-                    .push(svc::LoadShed::layer()),
-            )
-            .push(http::insert::NewInsert::<Route, _>::layer())
-            .push(
-                metrics
-                    .http_profile_route_actual
-                    .to_layer::<classify::Response, _, RouteParams<T>>(),
-            )
-            // Depending on whether or not the request can be
-            // retried, it may have one of two `Body` types. This
-            // layer unifies any `Body` type into `BoxBody`.
-            .push_on_service(http::BoxRequest::erased())
-            // Sets an optional retry policy.
-            .push(retry::layer(metrics.http_profile_route_retry.clone()))
-            // Sets an optional request timeout.
-            .push(http::NewTimeout::layer())
-            // Records per-route metrics.
-            .push(
-                metrics
-                    .http_profile_route
-                    .to_layer::<classify::Response, _, RouteParams<T>>(),
-            )
-            // Sets the per-route response classifier as a request
-            // extension.
-            .push(classify::NewClassify::layer())
-            // TODO(ver) .push(svc::NewMapErr::layer_from_target::<RouteError, _>())
-            .push_on_service(http::BoxResponse::layer())
-            .push(svc::ArcNewService::layer())
-            .into_inner()
-    })
-}
-
-// === impl Params ===
 
 impl<T> From<(Routes, T)> for Params<T>
 where
@@ -264,6 +202,74 @@ where
 }
 
 // === impl RouteParams ===
+
+impl<T> RouteParams<T> {
+    fn layer<N, S>(
+        metrics: metrics::Proxy,
+    ) -> impl svc::Layer<
+        N,
+        Service = svc::ArcNewService<
+            Self,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    > + Clone
+    where
+        T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+        N: svc::NewService<RouteParams<T>, Service = S> + Clone + Send + Sync + 'static,
+        S: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        S: Clone + Send + Sync + 'static,
+        S::Future: Send,
+    {
+        svc::layer::mk(move |inner| {
+            svc::stack(inner)
+                .check_new_service::<RouteParams<T>, http::Request<http::BoxBody>>()
+                .push_on_service(
+                    svc::layers()
+                        .push(http::BoxRequest::layer())
+                        // The router does not take the backend's availability into
+                        // consideration, so we must eagerly fail requests to prevent
+                        // leaking tasks onto the runtime.
+                        .push(svc::LoadShed::layer()),
+                )
+                .push(http::insert::NewInsert::<Route, _>::layer())
+                .push(
+                    metrics
+                        .http_profile_route_actual
+                        .to_layer::<classify::Response, _, RouteParams<T>>(),
+                )
+                // Depending on whether or not the request can be
+                // retried, it may have one of two `Body` types. This
+                // layer unifies any `Body` type into `BoxBody`.
+                .push_on_service(http::BoxRequest::erased())
+                // Sets an optional retry policy.
+                .push(retry::layer(metrics.http_profile_route_retry.clone()))
+                // Sets an optional request timeout.
+                .push(http::NewTimeout::layer())
+                // Records per-route metrics.
+                .push(
+                    metrics
+                        .http_profile_route
+                        .to_layer::<classify::Response, _, RouteParams<T>>(),
+                )
+                // Sets the per-route response classifier as a request
+                // extension.
+                .push(classify::NewClassify::layer())
+                // TODO(ver) .push(svc::NewMapErr::layer_from_target::<RouteError, _>())
+                .push_on_service(http::BoxResponse::layer())
+                .push(svc::ArcNewService::layer())
+                .into_inner()
+        })
+    }
+}
 
 impl<T> svc::Param<LogicalAddr> for RouteParams<T> {
     fn param(&self) -> LogicalAddr {
