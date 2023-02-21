@@ -176,7 +176,7 @@ impl<N> Outbound<N> {
                 // set this on meshed connections.
                 //
                 // TODO(ver) do we need to strip headers here?
-                .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
+                .push(http::NewHeaderFromTarget::<CanonicalDstHeader, (), _>::layer())
                 .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                 .push_switch(
                     |parent: T| -> Result<_, Infallible> {
