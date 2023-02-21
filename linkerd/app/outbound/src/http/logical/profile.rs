@@ -263,7 +263,6 @@ impl<T> RouteParams<T> {
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
-                // TODO(ver) .push(svc::NewMapErr::layer_from_target::<RouteError, _>())
                 .push_on_service(http::BoxResponse::layer())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
