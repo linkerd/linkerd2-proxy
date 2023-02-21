@@ -367,8 +367,6 @@ fn mk_route(
     None
 }
 
-mod foo {}
-
 // === impl Logical ===
 
 impl std::cmp::PartialEq for Logical {
