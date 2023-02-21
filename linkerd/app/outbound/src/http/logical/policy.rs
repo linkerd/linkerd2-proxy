@@ -315,7 +315,8 @@ where
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
-        let (_match, params) = policy::http::find(&*self.routes, req).ok_or(NoRoute)?;
+        let (mtch, params) = policy::http::find(&*self.routes, req).ok_or(NoRoute)?;
+        tracing::debug!(r#match = ?mtch, ?params, uri = ?req.uri(), headers = ?req.headers(), "Selecting route");
         Ok(params.clone())
     }
 }

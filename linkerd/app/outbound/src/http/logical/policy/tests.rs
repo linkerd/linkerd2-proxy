@@ -4,7 +4,7 @@ use linkerd_app_core::{
     svc::{Layer, ServiceExt},
     trace,
 };
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::time;
 
 #[tokio::test(flavor = "current_thread")]
@@ -26,16 +26,18 @@ async fn header_based_route() {
     // Stack that produces mock services.
     let (inner_default, mut default) = tower_test::mock::pair();
     let (inner_special, mut special) = tower_test::mock::pair();
-    let inner = move |concrete: Concrete<()>| {
-        if let concrete::Dispatch::Forward(Remote(ServerAddr(addr)), ..) = concrete.target {
-            if addr == default_addr {
-                return inner_default.clone();
+    let inner = {
+        move |concrete: Concrete<()>| {
+            if let concrete::Dispatch::Forward(Remote(ServerAddr(addr)), ..) = concrete.target {
+                if addr == default_addr {
+                    return inner_default.clone();
+                }
+                if addr == special_addr {
+                    return inner_special.clone();
+                }
             }
-            if addr == special_addr {
-                return inner_special.clone();
-            }
+            panic!("unexpected target: {:?}", concrete.target);
         }
-        panic!("unexpected target: {:?}", concrete.target);
     };
 
     // Routes that configure a special header-based route and a default route.
@@ -76,24 +78,30 @@ async fn header_based_route() {
     let req = http::Request::builder()
         .body(http::BoxBody::default())
         .unwrap();
-    tokio::select! {
+    let _ = tokio::select! {
+        biased;
         _ = router.clone().oneshot(req) => panic!("unexpected response"),
-        _ = default.next_request() => {}
-        _ = special.next_request() => panic!("unexpected request"),
+        reqrsp = default.next_request() => reqrsp.expect("request"),
+        _ = special.next_request() => panic!("unexpected request to special service"),
         _ = time::sleep(time::Duration::from_secs(1)) => panic!("timed out"),
-    }
+    };
 
     default.allow(1);
+    special.allow(1);
     let req = http::Request::builder()
         .header("x-special", "true")
         .body(http::BoxBody::default())
         .unwrap();
-    tokio::select! {
-        _ = router.oneshot(req) => panic!("unexpected response"),
-        _ = default.next_request() => panic!("unexpected request"),
-        _ = special.next_request() => {}
+    let _ = tokio::select! {
+        biased;
+        _ = router.clone().oneshot(req) => panic!("unexpected response"),
+        _ = default.next_request() => panic!("unexpected request to default service"),
+        reqrsp = special.next_request() => reqrsp.expect("request"),
         _ = time::sleep(time::Duration::from_secs(1)) => panic!("timed out"),
-    }
+    };
+
+    // Hold the router to prevent inner services from being dropped.
+    drop(router);
 }
 
 fn mk_policy<F>(name: &'static str, backend: policy::Backend) -> policy::RoutePolicy<F> {
