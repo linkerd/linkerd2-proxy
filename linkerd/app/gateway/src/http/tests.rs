@@ -94,6 +94,12 @@ async fn upgraded_request_remains_relative_form() {
         }
     }
 
+    impl svc::Param<Option<watch::Receiver<profiles::Profile>>> for Target {
+        fn param(&self) -> Option<watch::Receiver<profiles::Profile>> {
+            svc::Param::<Option<profiles::Receiver>>::param(self).map(Into::into)
+        }
+    }
+
     impl svc::Param<http::Version> for Target {
         fn param(&self) -> http::Version {
             http::Version::H2

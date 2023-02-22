@@ -124,20 +124,19 @@ impl<T> svc::Param<http::Version> for Http<T> {
     }
 }
 
-impl<T> svc::Param<http::Logical> for Http<T>
-where
-    T: svc::Param<http::Logical>,
-{
-    fn param(&self) -> http::Logical {
-        self.parent.param()
-    }
-}
-
 impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Http<T>
 where
     T: svc::Param<http::normalize_uri::DefaultAuthority>,
 {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
         self.parent.param()
+    }
+}
+
+impl<T> std::ops::Deref for Http<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.parent
     }
 }

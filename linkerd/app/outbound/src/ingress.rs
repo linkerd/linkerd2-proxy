@@ -8,10 +8,11 @@ use linkerd_app_core::{
     },
     svc::{self, stack::Param},
     transport::addrs::*,
-    Error, Infallible, NameAddr, Result,
+    Addr, Error, Infallible, NameAddr, Result,
 };
 use std::fmt::Debug;
 use thiserror::Error;
+use tokio::sync::watch;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Http<T> {
@@ -29,6 +30,12 @@ struct SelectTarget<T>(Http<T>);
 enum RequestTarget {
     Named(NameAddr),
     Orig(OrigDstAddr),
+}
+
+#[derive(Clone, Debug)]
+struct Logical {
+    addr: Addr,
+    routes: watch::Receiver<http::Routes>,
 }
 
 #[derive(Debug, Error)]
@@ -79,7 +86,7 @@ impl Outbound<()> {
             .push_http_cached(resolve)
             .push_http_server()
             .map_stack(|_, _, stk| {
-                stk.check_new_service::<Http<http::Logical>, _>()
+                stk.check_new_service::<Http<Logical>, _>()
                     .push_filter(Http::try_from)
             })
             .push_discover(profiles);
@@ -252,66 +259,118 @@ impl Param<profiles::LookupAddr> for Http<RequestTarget> {
     }
 }
 
-impl svc::Param<http::Logical> for Http<http::Logical> {
-    fn param(&self) -> http::Logical {
-        self.parent.clone()
+impl svc::Param<http::LogicalAddr> for Http<Logical> {
+    fn param(&self) -> http::LogicalAddr {
+        http::LogicalAddr(self.parent.addr.clone())
     }
 }
 
-impl svc::Param<http::normalize_uri::DefaultAuthority> for Http<http::Logical> {
+impl svc::Param<http::normalize_uri::DefaultAuthority> for Http<Logical> {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(match &self.parent {
-            http::Logical::Route(addr, _) => Some(addr.as_http_authority()),
-            http::Logical::Forward(..) => None,
-        })
+        http::normalize_uri::DefaultAuthority(Some(self.parent.addr.to_http_authority()))
     }
 }
 
-impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<http::Logical> {
+impl svc::Param<watch::Receiver<http::Routes>> for Http<Logical> {
+    fn param(&self) -> watch::Receiver<http::Routes> {
+        self.parent.routes.clone()
+    }
+}
+
+impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
     type Error = ProfileRequired;
 
     fn try_from(
         parent: discover::Discovery<Http<RequestTarget>>,
     ) -> std::result::Result<Self, Self::Error> {
         match (
-            &**parent,
-            svc::Param::<Option<profiles::Receiver>>::param(&parent),
+            (**parent).clone(),
+            svc::Param::<Option<profiles::Receiver>>::param(&parent).map(watch::Receiver::from),
         ) {
-            (RequestTarget::Named(addr), Some(profile)) => {
-                if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                    return Ok(Http {
-                        version: (*parent).param(),
-                        parent: http::Logical::Route(addr, profile),
-                    });
-                }
+            (RequestTarget::Named(addr), profile) => {
+                let routes = {
+                    let mut profile = profile.ok_or_else(|| ProfileRequired(addr.clone()))?;
+                    let init = mk_routes(&*profile.borrow_and_update())
+                        .ok_or_else(|| ProfileRequired(addr.clone()))?;
+                    http::spawn_routes(profile, init, mk_routes)
+                };
 
-                let (addr, metadata) = profile
-                    .endpoint()
-                    .ok_or_else(|| ProfileRequired(addr.clone()))?;
                 Ok(Http {
                     version: (*parent).param(),
-                    parent: http::Logical::Forward(Remote(ServerAddr(addr)), metadata),
+                    parent: Logical {
+                        addr: addr.into(),
+                        routes,
+                    },
                 })
             }
 
-            (RequestTarget::Named(addr), None) => Err(ProfileRequired(addr.clone())),
-
-            (RequestTarget::Orig(OrigDstAddr(addr)), profile) => {
-                if let Some(profile) = profile {
-                    if let Some((addr, metadata)) = profile.endpoint() {
-                        return Ok(Http {
-                            version: (*parent).param(),
-                            parent: http::Logical::Forward(Remote(ServerAddr(addr)), metadata),
-                        });
-                    }
-                }
-
+            (RequestTarget::Orig(OrigDstAddr(addr)), Some(mut profile)) => {
+                let route = mk_routes(&*profile.borrow_and_update());
+                let routes = if let Some(route) = route {
+                    http::spawn_routes(profile, route, mk_routes)
+                } else {
+                    http::spawn_routes_default(Remote(ServerAddr(addr)))
+                };
                 Ok(Http {
                     version: (*parent).param(),
-                    parent: http::Logical::Forward(Remote(ServerAddr(*addr)), Default::default()),
+                    parent: Logical {
+                        addr: addr.into(),
+                        routes,
+                    },
+                })
+            }
+
+            (RequestTarget::Orig(OrigDstAddr(addr)), None) => {
+                let routes = http::spawn_routes_default(Remote(ServerAddr(addr)));
+                Ok(Http {
+                    version: (*parent).param(),
+                    parent: Logical {
+                        addr: addr.into(),
+                        routes,
+                    },
                 })
             }
         }
+    }
+}
+
+fn mk_routes(
+    profiles::Profile {
+        addr,
+        endpoint,
+        http_routes,
+        targets,
+        ..
+    }: &profiles::Profile,
+) -> Option<http::Routes> {
+    if let Some(addr) = addr.clone() {
+        return Some(http::Routes::Profile(http::profile::Routes {
+            addr,
+            routes: http_routes.clone(),
+            targets: targets.clone(),
+        }));
+    }
+
+    if let Some((addr, metadata)) = endpoint.clone() {
+        return Some(http::Routes::Endpoint(Remote(ServerAddr(addr)), metadata));
+    }
+
+    None
+}
+
+// === impl Logical ===
+
+impl std::cmp::PartialEq for Logical {
+    fn eq(&self, other: &Self) -> bool {
+        self.addr == other.addr
+    }
+}
+
+impl std::cmp::Eq for Logical {}
+
+impl std::hash::Hash for Logical {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.addr.hash(state);
     }
 }
 

@@ -18,8 +18,8 @@ use linkerd_app_outbound as outbound;
 use std::{
     cmp::{Eq, PartialEq},
     fmt::Debug,
-    hash::Hash,
 };
+use tokio::sync::watch;
 
 mod gateway;
 #[cfg(test)]
@@ -28,10 +28,10 @@ mod tests;
 pub(crate) use self::gateway::NewHttpGateway;
 
 /// Target for outbound HTTP gateway stacks.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct Target<T = ()> {
     addr: GatewayAddr,
-    target: outbound::http::Logical,
+    routes: watch::Receiver<outbound::http::Routes>,
     version: http::Version,
     parent: T,
 }
@@ -73,7 +73,7 @@ impl Gateway {
         T: svc::Param<tls::ConditionalServerTls>,
         T: svc::Param<tls::ClientId>,
         T: svc::Param<inbound::policy::AllowPolicy>,
-        T: svc::Param<Option<profiles::Receiver>>,
+        T: svc::Param<Option<watch::Receiver<profiles::Profile>>>,
         T: svc::Param<http::Version>,
         T: svc::Param<http::normalize_uri::DefaultAuthority>,
         T: Clone + Send + Sync + Unpin + 'static,
@@ -82,7 +82,7 @@ impl Gateway {
         // HTTP outbound stack.
         N: svc::NewService<
             outbound::http::concrete::Endpoint<
-                outbound::http::logical::Concrete<outbound::http::Http>,
+                outbound::http::logical::Concrete<outbound::http::Http<Target>>,
             >,
             Service = NSvc,
         >,
@@ -117,21 +117,17 @@ impl Gateway {
             // Only permit gateway traffic to endpoints for which we have
             // discovery information.
             .push_filter(|(_, parent): (_, T)| -> Result<_, GatewayDomainInvalid> {
-                let target = {
-                    let profile = svc::Param::<Option<profiles::Receiver>>::param(&parent)
-                        .ok_or(GatewayDomainInvalid)?;
-
-                    if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                        outbound::http::Logical::Route(addr, profile)
-                    } else if let Some((addr, metadata)) = profile.endpoint() {
-                        outbound::http::Logical::Forward(Remote(ServerAddr(addr)), metadata)
-                    } else {
-                        return Err(GatewayDomainInvalid);
-                    }
+                let routes = {
+                    let mut profile =
+                        svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&parent)
+                            .ok_or(GatewayDomainInvalid)?;
+                    let init =
+                        mk_routes(&*profile.borrow_and_update()).ok_or(GatewayDomainInvalid)?;
+                    outbound::http::spawn_routes(profile, init, mk_routes)
                 };
 
                 Ok(Target {
-                    target,
+                    routes,
                     addr: parent.param(),
                     version: parent.param(),
                     parent,
@@ -150,6 +146,27 @@ impl Gateway {
             .push_http_server()
             .into_stack()
     }
+}
+
+fn mk_routes(profile: &profiles::Profile) -> Option<outbound::http::Routes> {
+    if let Some(addr) = profile.addr.clone() {
+        return Some(outbound::http::Routes::Profile(
+            outbound::http::profile::Routes {
+                addr,
+                routes: profile.http_routes.clone(),
+                targets: profile.targets.clone(),
+            },
+        ));
+    }
+
+    if let Some((addr, metadata)) = profile.endpoint.clone() {
+        return Some(outbound::http::Routes::Endpoint(
+            Remote(ServerAddr(addr)),
+            metadata,
+        ));
+    }
+
+    None
 }
 
 // === impl ByRequestVersion ===
@@ -171,7 +188,7 @@ impl<T> Target<T> {
     fn discard_parent(self) -> Target {
         Target {
             addr: self.addr,
-            target: self.target,
+            routes: self.routes,
             version: self.version,
             parent: (),
         }
@@ -199,8 +216,24 @@ where
     }
 }
 
-impl<T> svc::Param<outbound::http::Logical> for Target<T> {
-    fn param(&self) -> outbound::http::Logical {
-        self.target.clone()
+impl<T> svc::Param<watch::Receiver<outbound::http::Routes>> for Target<T> {
+    fn param(&self) -> watch::Receiver<outbound::http::Routes> {
+        self.routes.clone()
+    }
+}
+
+impl<T> PartialEq for Target<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.addr == other.addr && self.version == other.version
+    }
+}
+
+impl<T> Eq for Target<T> {}
+
+impl<T: std::hash::Hash> std::hash::Hash for Target<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.addr.hash(state);
+        self.version.hash(state);
+        self.parent.hash(state);
     }
 }
