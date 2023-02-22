@@ -586,6 +586,12 @@ impl svc::Param<OrigDstAddr> for Target {
     }
 }
 
+impl svc::Param<policy::LookupAddr> for Target {
+    fn param(&self) -> policy::LookupAddr {
+        policy::LookupAddr(([192, 0, 2, 2], 80).into())
+    }
+}
+
 impl svc::Param<Remote<ServerAddr>> for Target {
     fn param(&self) -> Remote<ServerAddr> {
         Remote(ServerAddr(Self::addr()))

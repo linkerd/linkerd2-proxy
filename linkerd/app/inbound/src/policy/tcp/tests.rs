@@ -246,8 +246,8 @@ fn client_addr() -> Remote<ClientAddr> {
     Remote(ClientAddr(([192, 0, 2, 3], 54321).into()))
 }
 
-fn orig_dst_addr() -> OrigDstAddr {
-    OrigDstAddr(([192, 0, 2, 2], 1000).into())
+fn orig_dst_addr() -> LookupAddr {
+    LookupAddr(([192, 0, 2, 2], 1000).into())
 }
 
 impl tonic::client::GrpcService<tonic::body::BoxBody> for MockSvc {

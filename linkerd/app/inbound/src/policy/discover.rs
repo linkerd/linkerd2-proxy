@@ -1,6 +1,6 @@
-use super::{AllowPolicy, GetPolicy};
+use super::{AllowPolicy, GetPolicy, LookupAddr};
 use futures::ready;
-use linkerd_app_core::{svc, transport::OrigDstAddr, Error};
+use linkerd_app_core::{svc, Error};
 use std::{
     future::Future,
     pin::Pin,
@@ -8,7 +8,8 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
-pub struct Discover<G, N> {
+pub struct Discover<X, G, N> {
+    extract_addr: X,
     get_policy: G,
     new_svc: N,
 }
@@ -21,20 +22,30 @@ pub struct DiscoverFuture<T, F, N> {
     new_svc: N,
 }
 
-impl<G: GetPolicy + Clone, N> Discover<G, N> {
+impl<G: GetPolicy + Clone, N> Discover<(), G, N> {
     pub fn layer(get_policy: G) -> impl svc::layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via(get_policy, ())
+    }
+}
+
+impl<X: Clone, G: GetPolicy + Clone, N> Discover<X, G, N> {
+    pub fn layer_via(
+        get_policy: G,
+        extract_addr: X,
+    ) -> impl svc::layer::Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |new_svc| Self {
             get_policy: get_policy.clone(),
             new_svc,
+            extract_addr: extract_addr.clone(),
         })
     }
 }
 
-impl<G: GetPolicy, N, T> svc::Service<T> for Discover<G, N>
+impl<X, G: GetPolicy, N, T> svc::Service<T> for Discover<X, G, N>
 where
     G: GetPolicy,
     N: svc::NewService<(AllowPolicy, T)> + Clone,
-    T: svc::Param<OrigDstAddr>,
+    X: svc::ExtractParam<LookupAddr, T>,
 {
     type Error = Error;
     type Response = N::Service;
@@ -45,7 +56,7 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let dst = target.param();
+        let dst = self.extract_addr.extract_param(&target);
         DiscoverFuture {
             target: Some(target),
             inner: self.get_policy.get_policy(dst),

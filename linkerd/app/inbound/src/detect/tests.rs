@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_util;
+use crate::{policy, test_util};
 use futures::future;
 use linkerd_app_core::{
     io::AsyncWriteExt,
@@ -27,7 +27,7 @@ fn authzs() -> Arc<[Authorization]> {
 
 fn allow(protocol: Protocol) -> AllowPolicy {
     let (allow, _tx) = AllowPolicy::for_test(
-        orig_dst_addr(),
+        lookup_addr(),
         ServerPolicy {
             protocol,
             meta: Arc::new(Meta::Resource {
@@ -205,7 +205,15 @@ fn client_addr() -> Remote<ClientAddr> {
 }
 
 fn orig_dst_addr() -> OrigDstAddr {
-    OrigDstAddr(([192, 0, 2, 2], 1000).into())
+    OrigDstAddr(dst_addr())
+}
+
+fn lookup_addr() -> policy::LookupAddr {
+    policy::LookupAddr(dst_addr())
+}
+
+fn dst_addr() -> std::net::SocketAddr {
+    ([192, 0, 2, 2], 1000).into()
 }
 
 fn inbound() -> Inbound<()> {
@@ -232,6 +240,12 @@ impl svc::Param<AllowPolicy> for Target {
 impl svc::Param<OrigDstAddr> for Target {
     fn param(&self) -> OrigDstAddr {
         orig_dst_addr()
+    }
+}
+
+impl svc::Param<policy::LookupAddr> for Target {
+    fn param(&self) -> policy::LookupAddr {
+        lookup_addr()
     }
 }
 

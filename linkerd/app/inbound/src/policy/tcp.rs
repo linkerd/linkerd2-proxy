@@ -1,11 +1,11 @@
 use crate::{
     metrics::authz::TcpAuthzMetrics,
-    policy::{AllowPolicy, ServerPermit, ServerUnauthorized},
+    policy::{AllowPolicy, LookupAddr, ServerPermit, ServerUnauthorized},
 };
 use futures::future;
 use linkerd_app_core::{
     svc, tls,
-    transport::{ClientAddr, OrigDstAddr, Remote},
+    transport::{ClientAddr, Remote},
     Error, Result,
 };
 use linkerd_proxy_server_policy::{Protocol, ServerPolicy};
@@ -181,7 +181,7 @@ where
 /// accept connections given the provided TLS state.
 fn check_authorized(
     server: &ServerPolicy,
-    dst: OrigDstAddr,
+    dst: LookupAddr,
     client_addr: Remote<ClientAddr>,
     tls: &tls::ConditionalServerTls,
 ) -> Result<ServerPermit, ServerUnauthorized> {
