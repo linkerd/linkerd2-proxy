@@ -206,7 +206,7 @@ impl Outbound<()> {
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, server, shutdown).await;
         } else {
-            let proxy = self.mk_sidecar(profiles, resolve);
+            let proxy = self.mk_sidecar(profiles, todo!(), resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, proxy, shutdown).await;
         }

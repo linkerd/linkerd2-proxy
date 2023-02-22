@@ -56,7 +56,6 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
     {
         self.map_stack(|config, _, stk| {
-            let allow = config.allow_discovery.clone();
             stk.lift_new_with_target()
                 .push_new_cached_discover(discover, config.discovery_idle_timeout)
                 .check_new_service::<T, _>()
@@ -67,6 +66,19 @@ impl<N> Outbound<N> {
 }
 
 // === impl Discovery ===
+
+impl<T> From<((Option<profiles::Receiver>, Option<policy::Receiver>), T)> for Discovery<T> {
+    fn from(
+        // whew!
+        ((profile, policy), parent): ((Option<profiles::Receiver>, Option<policy::Receiver>), T),
+    ) -> Self {
+        Self {
+            parent,
+            profile,
+            policy,
+        }
+    }
+}
 
 impl<T> From<(Option<profiles::Receiver>, T)> for Discovery<T> {
     fn from((profile, parent): (Option<profiles::Receiver>, T)) -> Self {

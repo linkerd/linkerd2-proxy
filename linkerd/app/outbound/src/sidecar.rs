@@ -1,8 +1,9 @@
 use crate::{
-    discover, http, opaq,
+    discover, http, opaq, policy,
     protocol::{self, Protocol},
     Outbound,
 };
+use futures::FutureExt;
 use linkerd_app_core::{
     io, profiles,
     proxy::{
@@ -34,7 +35,12 @@ struct HttpSidecar {
 // === impl Outbound ===
 
 impl Outbound<()> {
-    pub fn mk_sidecar<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
+    pub fn mk_sidecar<T, I, R>(
+        &self,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policy: impl policy::GetPolicy,
+        resolve: R,
+    ) -> svc::ArcNewTcp<T, I>
     where
         // Target describing an outbound connection.
         T: svc::Param<OrigDstAddr>,
@@ -42,11 +48,27 @@ impl Outbound<()> {
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        // Route discovery.
-        P: profiles::GetProfile<Error = Error>,
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
+        let discover = svc::mk(move |addr: profiles::LookupAddr| {
+            let profile = profiles.get_profile(addr.clone()).map(|result| {
+                // TODO(eliza): we already recover on errors elsewhere in the
+                // stack...this is kinda unfortunate...
+                result.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "Failed to resolve profile");
+                    None
+                })
+            });
+            let policy = policy.get_policy(addr).map(|result| {
+                result.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "Failed to resolve client policy");
+                    None
+                })
+            });
+            Box::pin(async move { Ok(tokio::join!(profile, policy)) })
+        });
+
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
 
         let http = self
@@ -96,7 +118,7 @@ impl Outbound<()> {
             // outbound sidecar stack configuration.
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
             // Access cached discovery information.
-            .push_discover(profiles.into_service())
+            .push_discover(discover)
             // Instrument server-side connections for telemetry.
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
