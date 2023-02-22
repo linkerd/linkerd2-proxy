@@ -421,12 +421,14 @@ impl<T: Clone, M, F> svc::Param<Distribution<T>> for MatchedRouteParams<T, M, F>
 }
 
 impl<T> filters::Apply for HttpMatchedRouteParams<T> {
+    #[inline]
     fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
         filters::apply_http(&self.r#match, &self.params.filters, req)
     }
 }
 
 impl<T> filters::Apply for GrpcMatchedRouteParams<T> {
+    #[inline]
     fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
         filters::apply_grpc(&self.r#match, &self.params.filters, req)
     }
