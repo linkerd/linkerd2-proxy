@@ -59,25 +59,27 @@ impl Outbound<()> {
             .push_map_target(|parent: protocol::Http<Sidecar>| {
                 let version = svc::Param::<http::Version>::param(&parent);
                 let orig_dst = (*parent).orig_dst;
+                let mk_routes = move |profile: &profiles::Profile| {
+                    if let Some(addr) = profile.addr.clone() {
+                        return http::Routes::Profile(http::profile::Routes {
+                            addr,
+                            routes: profile.http_routes.clone(),
+                            targets: profile.targets.clone(),
+                        });
+                    }
+
+                    if let Some((addr, metadata)) = profile.endpoint.clone() {
+                        return http::Routes::Endpoint(Remote(ServerAddr(addr)), metadata);
+                    }
+
+                    http::Routes::Endpoint(Remote(ServerAddr(*orig_dst)), Default::default())
+                };
                 let routes = match (*parent).profile.clone() {
                     Some(profile) => {
-                        http::spawn_routes(profile.into(), move |profile: &profiles::Profile| {
-                            if let Some(addr) = profile.addr.clone() {
-                                return http::Routes::Profile(http::profile::Routes {
-                                    addr,
-                                    routes: profile.http_routes.clone(),
-                                    targets: profile.targets.clone(),
-                                });
-                            }
-
-                            if let Some((addr, metadata)) = profile.endpoint.clone() {
-                                return http::Routes::Endpoint(Remote(ServerAddr(addr)), metadata);
-                            }
-
-                            http::Routes::Endpoint(
-                                Remote(ServerAddr(*orig_dst)),
-                                Default::default(),
-                            )
+                        let mut rx = watch::Receiver::from(profile);
+                        let init = mk_routes(&*rx.borrow_and_update());
+                        http::spawn_routes(rx, init, move |profile: &profiles::Profile| {
+                            Some(mk_routes(profile))
                         })
                     }
                     None => http::spawn_routes_default(Remote(ServerAddr(*orig_dst))),

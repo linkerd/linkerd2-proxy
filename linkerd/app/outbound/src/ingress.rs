@@ -288,15 +288,12 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
             svc::Param::<Option<profiles::Receiver>>::param(&parent).map(watch::Receiver::from),
         ) {
             (RequestTarget::Named(addr), profile) => {
-                let profile = profile.ok_or_else(|| ProfileRequired(addr.clone()))?;
-                let mut route =
-                    mk_route(&*profile.borrow()).ok_or_else(|| ProfileRequired(addr.clone()))?;
-                let routes = http::spawn_routes(profile, move |p: &profiles::Profile| {
-                    if let Some(r) = mk_route(p) {
-                        route = r;
-                    }
-                    route.clone()
-                });
+                let routes = {
+                    let mut profile = profile.ok_or_else(|| ProfileRequired(addr.clone()))?;
+                    let init = mk_routes(&*profile.borrow_and_update())
+                        .ok_or_else(|| ProfileRequired(addr.clone()))?;
+                    http::spawn_routes(profile, init, mk_routes)
+                };
 
                 Ok(Http {
                     version: (*parent).param(),
@@ -307,16 +304,10 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
                 })
             }
 
-            (RequestTarget::Orig(OrigDstAddr(addr)), Some(profile)) => {
-                let route = mk_route(&*profile.borrow());
+            (RequestTarget::Orig(OrigDstAddr(addr)), Some(mut profile)) => {
+                let route = mk_routes(&*profile.borrow_and_update());
                 let routes = if let Some(route) = route {
-                    let mut route = route;
-                    http::spawn_routes(profile, move |p: &profiles::Profile| {
-                        if let Some(r) = mk_route(p) {
-                            route = r;
-                        }
-                        route.clone()
-                    })
+                    http::spawn_routes(profile, route, mk_routes)
                 } else {
                     http::spawn_routes_default(Remote(ServerAddr(addr)))
                 };
@@ -343,7 +334,7 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
     }
 }
 
-fn mk_route(
+fn mk_routes(
     profiles::Profile {
         addr,
         endpoint,
@@ -366,8 +357,6 @@ fn mk_route(
 
     None
 }
-
-mod foo {}
 
 // === impl Logical ===
 

@@ -40,13 +40,13 @@ pub(super) struct RouteParams<T> {
 
 // === impl Params ===
 
-// Wraps a `NewService`--instantiated once per logical target--that caches a set
-// of concrete services so that, as the watch provides new `Params`, we can
-// reuse inner services.
 impl<T> Params<T>
 where
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
 {
+    /// Wraps a `NewService`--instantiated once per logical target--that caches
+    /// a set of concrete services so that, as the watch provides new `Params`,
+    /// we can reuse inner services.
     pub(super) fn layer<N, S>(
         metrics: metrics::Proxy,
     ) -> impl svc::Layer<
@@ -263,7 +263,6 @@ impl<T> RouteParams<T> {
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
-                // TODO(ver) .push(svc::NewMapErr::layer_from_target::<RouteError, _>())
                 .push_on_service(http::BoxResponse::layer())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
