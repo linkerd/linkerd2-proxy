@@ -10,6 +10,7 @@ use linkerd_http_route as route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
+pub mod filters;
 #[cfg(test)]
 mod tests;
 
@@ -47,6 +48,12 @@ pub(super) struct RouterParams<T: Clone + Debug + Eq + Hash, M, F> {
     addr: Addr,
     routes: Arc<[route::Route<M, RouteParams<T, F>>]>,
     backends: distribute::Backends<Concrete<T>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(super) struct MatchedRouteParams<T, M, F> {
+    r#match: route::RouteMatch<M>,
+    params: RouteParams<T, F>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -102,8 +109,8 @@ where
         S::Future: Send,
     {
         svc::layer::mk(|inner: N| {
-            let http = svc::stack(inner.clone()).push(RouterParams::layer());
-            let grpc = svc::stack(inner).push(RouterParams::layer());
+            let http = svc::stack(inner.clone()).push(HttpParams::layer());
+            let grpc = svc::stack(inner).push(GrpcParams::layer());
 
             http.push_switch(
                 |pp: Params<T>| {
@@ -151,10 +158,19 @@ where
     // Parent target type.
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
     // Request matcher.
+    M: route::Match,
     M: Clone + Send + Sync + 'static,
+    M::Summary: Clone + Debug + Eq + Hash + Send + Sync + 'static,
     // Request filter.
     F: Eq + Hash,
     F: Clone + Send + Sync + 'static,
+    // Assert that we can route for the given match and filter types.
+    Self: svc::router::SelectRoute<
+        http::Request<http::BoxBody>,
+        Key = MatchedRouteParams<T, M::Summary, F>,
+        Error = NoRoute,
+    >,
+    filters::Filters<M::Summary, F>: filters::Apply,
 {
     // Wraps a `NewService`--instantiated once per logical target--that caches a set
     // of concrete services so that, as the watch provides new `Params`, we can
@@ -172,12 +188,6 @@ where
         >,
     > + Clone
     where
-        // Assert that we can route the provided `Params`.
-        RouterParams<T, M, F>: svc::router::SelectRoute<
-            http::Request<http::BoxBody>,
-            Key = RouteParams<T, F>,
-            Error = NoRoute,
-        >,
         // Inner stack.
         N: svc::NewService<Concrete<T>, Service = S>,
         N: Clone + Send + Sync + 'static,
@@ -196,7 +206,7 @@ where
                 .push(BackendCache::layer())
                 // Lazily cache a service for each `RouteParams` returned from the
                 // `SelectRoute` impl.
-                .push_on_service(RouteParams::layer())
+                .push_on_service(MatchedRouteParams::layer())
                 .push(svc::NewOneshotRoute::<Self, (), _>::layer_cached())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
@@ -297,27 +307,21 @@ where
     }
 }
 
-impl<T, M, F> svc::Param<distribute::Backends<Concrete<T>>> for RouterParams<T, M, F>
-where
-    T: Eq + Hash + Clone + Debug,
-{
-    fn param(&self) -> distribute::Backends<Concrete<T>> {
-        self.backends.clone()
-    }
-}
-
 impl<B, T> svc::router::SelectRoute<http::Request<B>>
     for RouterParams<T, route::http::MatchRequest, policy::http::Filter>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    type Key = RouteParams<T, policy::http::Filter>;
+    type Key = MatchedRouteParams<T, route::http::r#match::RequestMatch, policy::http::Filter>;
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
-        let (mtch, params) = policy::http::find(&*self.routes, req).ok_or(NoRoute)?;
-        tracing::debug!(r#match = ?mtch, ?params, uri = ?req.uri(), headers = ?req.headers(), "Selecting route");
-        Ok(params.clone())
+        let (r#match, params) = policy::http::find(&*self.routes, req).ok_or(NoRoute)?;
+        tracing::debug!(?r#match, ?params, uri = ?req.uri(), headers = ?req.headers(), "Selecting route");
+        Ok(MatchedRouteParams {
+            r#match,
+            params: params.clone(),
+        })
     }
 }
 
@@ -326,12 +330,15 @@ impl<T, B> svc::router::SelectRoute<http::Request<B>>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    type Key = RouteParams<T, policy::grpc::Filter>;
+    type Key = MatchedRouteParams<T, route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
-        let (_match, params) = policy::grpc::find(&*self.routes, req).ok_or(NoRoute)?;
-        Ok(params.clone())
+        let (r#match, params) = policy::grpc::find(&*self.routes, req).ok_or(NoRoute)?;
+        Ok(MatchedRouteParams {
+            r#match,
+            params: params.clone(),
+        })
     }
 }
 
@@ -344,14 +351,26 @@ where
     }
 }
 
-// === impl RouteParams ===
+impl<T, M, F> svc::Param<distribute::Backends<Concrete<T>>> for RouterParams<T, M, F>
+where
+    T: Eq + Hash + Clone + Debug,
+{
+    fn param(&self) -> distribute::Backends<Concrete<T>> {
+        self.backends.clone()
+    }
+}
 
-impl<T, F> RouteParams<T, F>
+// === impl MatchedRouteParams ===
+
+impl<T, M, F> MatchedRouteParams<T, M, F>
 where
     // Parent target.
-    T: Send + Sync + 'static,
+    T: Clone + Send + Sync + 'static,
+    // Match summary
+    M: Clone + Send + Sync + 'static,
     // Request filter.
     F: Clone + Send + Sync + 'static,
+    filters::Filters<M, F>: filters::Apply,
 {
     fn layer<N, S>() -> impl svc::Layer<
         N,
@@ -367,7 +386,7 @@ where
     > + Clone
     where
         // Inner stack.
-        N: svc::NewService<RouteParams<T, F>, Service = S>,
+        N: svc::NewService<Self, Service = S>,
         N: Clone + Send + Sync + 'static,
         S: svc::Service<
             http::Request<http::BoxBody>,
@@ -383,14 +402,15 @@ where
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
+                .push(filters::NewApplyFilters::layer())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
         })
     }
 }
 
-impl<T: Clone, F> svc::Param<Distribution<T>> for RouteParams<T, F> {
+impl<T: Clone, M, F> svc::Param<Distribution<T>> for MatchedRouteParams<T, M, F> {
     fn param(&self) -> Distribution<T> {
-        self.distribution.clone()
+        self.params.distribution.clone()
     }
 }
