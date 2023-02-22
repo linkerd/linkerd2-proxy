@@ -35,6 +35,7 @@ pub mod http;
 mod ingress;
 mod metrics;
 pub mod opaq;
+pub mod policy;
 mod protocol;
 mod sidecar;
 pub mod tcp;
@@ -195,6 +196,10 @@ impl Outbound<()> {
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
+        let profiles = discover::WithAllowlist::new(
+            profiles.into_service(),
+            self.config.allow_discovery.clone(),
+        );
         if self.config.ingress_mode {
             tracing::info!("Outbound routing in ingress-mode");
             let server = self.mk_ingress(profiles, resolve);
