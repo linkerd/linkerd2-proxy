@@ -25,7 +25,7 @@ use linkerd_app_core::{
     Error,
 };
 use linkerd_idle_cache::Cached;
-pub use linkerd_server_policy::{
+pub use linkerd_proxy_server_policy::{
     authz::Suffix,
     grpc::Route as GrpcRoute,
     http::{filter::Redirection, Route as HttpRoute},
@@ -103,11 +103,8 @@ impl From<DefaultPolicy> for ServerPolicy {
 // === impl AllowPolicy ===
 
 impl AllowPolicy {
-    #[cfg(any(test, fuzzing))]
-    pub(crate) fn for_test(
-        dst: OrigDstAddr,
-        server: ServerPolicy,
-    ) -> (Self, watch::Sender<ServerPolicy>) {
+    #[cfg(any(test, fuzzing, feature = "test-util"))]
+    pub fn for_test(dst: OrigDstAddr, server: ServerPolicy) -> (Self, watch::Sender<ServerPolicy>) {
         let (tx, server) = watch::channel(server);
         let server = Cached::uncached(server);
         let p = Self { dst, server };

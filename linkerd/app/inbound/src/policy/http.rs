@@ -11,7 +11,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
-use linkerd_server_policy::{grpc, http, route::RouteMatch};
+use linkerd_proxy_server_policy::{grpc, http, route::RouteMatch};
 use std::{sync::Arc, task};
 
 #[cfg(test)]
@@ -96,9 +96,9 @@ impl<N> NewHttpPolicy<N> {
 
 impl<T, N> svc::NewService<T> for NewHttpPolicy<N>
 where
-    T: svc::Param<AllowPolicy>
-        + svc::Param<Remote<ClientAddr>>
-        + svc::Param<tls::ConditionalServerTls>,
+    T: svc::Param<AllowPolicy>,
+    T: svc::Param<Remote<ClientAddr>>,
+    T: svc::Param<tls::ConditionalServerTls>,
     N: Clone,
 {
     type Service = HttpPolicyService<T, N>;
@@ -215,6 +215,19 @@ impl<T, N> HttpPolicyService<T, N> {
                     client.ip = %self.connection.client.ip(),
                     "Request denied",
                 );
+                if tracing::event_enabled!(tracing::Level::DEBUG) {
+                    if route.authorizations.is_empty() {
+                        tracing::debug!("No authorizations defined",);
+                    }
+                    for authz in &*route.authorizations {
+                        tracing::debug!(
+                            authz.group = %authz.meta.group(),
+                            authz.kind = %authz.meta.kind(),
+                            authz.name = %authz.meta.name(),
+                            "Authorization did not apply",
+                        );
+                    }
+                }
                 self.metrics
                     .deny(labels, self.connection.dst, self.connection.tls.clone());
                 return Err(HttpRouteUnauthorized(()).into());

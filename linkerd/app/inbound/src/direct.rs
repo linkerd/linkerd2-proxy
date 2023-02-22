@@ -1,6 +1,6 @@
 use crate::{
     policy::{self, AllowPolicy},
-    Inbound,
+    GatewayAddr, Inbound,
 };
 use linkerd_app_core::{
     identity, io, profiles,
@@ -96,9 +96,9 @@ impl<N> Inbound<N> {
     /// 2. TLS is required;
     /// 3. A transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
-    pub(crate) fn push_direct<T, I, NSvc, P, G, GSvc, H, HSvc>(
+    pub(crate) fn push_direct<T, I, NSvc, G, GSvc, H, HSvc>(
         self,
-        policies: P,
+        policies: impl policy::GetPolicy,
         gateway: G,
         http: H,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
@@ -121,7 +121,6 @@ impl<N> Inbound<N> {
         HSvc: svc::Service<io::PrefixedIo<TlsIo<I>>, Response = ()> + Send + 'static,
         HSvc::Error: Into<Error>,
         HSvc::Future: Send,
-        P: policy::GetPolicy,
     {
         self.map_stack(|config, rt, inner| {
             let detect_timeout = config.proxy.detect_protocol_timeout;
@@ -146,7 +145,7 @@ impl<N> Inbound<N> {
                 })
                 .check_new_service::<(policy::ServerPermit, LocalTcp), _>()
                 .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()))
-                .instrument(|_: &_| debug_span!("opaque"))
+                .instrument(|_: &_| debug_span!("opaq"))
                 .check_new_service::<LocalTcp, _>()
                 // When the transport header is present, it may be used for either local TCP
                 // forwarding, or we may be processing an HTTP gateway connection. HTTP gateway
@@ -154,7 +153,7 @@ impl<N> Inbound<N> {
                 // the header.
                 .push_switch(Ok::<Local, Infallible>, http)
                 .push_switch(
-                    |(policy, target): (AllowPolicy, Discover)| -> Result<_> {
+                    |(policy, target): (AllowPolicy, Discover)| -> Result<_, Infallible> {
                         let Discover {
                             header:
                                 TransportHeader {
@@ -179,7 +178,7 @@ impl<N> Inbound<N> {
                         // The transport header targets an alternate port (but does
                         // not identify an alternate target name).
                         let addr = (client.local_addr.ip(), port).into();
-                        let local = match protocol {
+                        Ok(svc::Either::A(match protocol {
                             None => svc::Either::A(LocalTcp {
                                 server_addr: Remote(ServerAddr(addr)),
                                 client_addr: client.client_addr,
@@ -197,12 +196,11 @@ impl<N> Inbound<N> {
                                     client,
                                 })
                             }
-                        };
-                        Ok(svc::Either::A(local))
+                        }))
                     },
                     // HTTP detection is not necessary in this case, since the transport
                     // header indicates the connection's HTTP version.
-                    svc::stack(gateway.clone())
+                    svc::stack(gateway)
                         .push(transport::metrics::NewServer::layer(
                             rt.metrics.proxy.transport.clone(),
                         ))
@@ -391,6 +389,12 @@ impl svc::Param<tls::ConditionalServerTls> for LocalHttp {
 
 // === impl GatewayTransportHeader ===
 
+impl Param<GatewayAddr> for GatewayTransportHeader {
+    fn param(&self) -> GatewayAddr {
+        GatewayAddr(self.target.clone())
+    }
+}
+
 impl Param<transport::labels::Key> for GatewayTransportHeader {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
@@ -425,6 +429,18 @@ impl Param<tls::ConditionalServerTls> for GatewayTransportHeader {
             client_id: Some(self.client.client_id.clone()),
             negotiated_protocol: self.client.alpn.clone(),
         })
+    }
+}
+
+impl Param<tls::ClientId> for GatewayTransportHeader {
+    fn param(&self) -> tls::ClientId {
+        self.client.client_id.clone()
+    }
+}
+
+impl Param<Option<SessionProtocol>> for GatewayTransportHeader {
+    fn param(&self) -> Option<SessionProtocol> {
+        self.protocol.clone()
     }
 }
 

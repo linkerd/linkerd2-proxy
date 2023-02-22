@@ -1,7 +1,7 @@
 use crate::{Distribute, Distribution};
 use ahash::AHashMap;
 use linkerd_stack::{NewService, Param};
-use std::{hash::Hash, sync::Arc};
+use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 /// Builds `Distribute` services for a specific `Distribution`.
 #[derive(Clone, Debug)]
@@ -33,7 +33,7 @@ impl<K: Hash + Eq, S> FromIterator<(K, S)> for NewDistribute<K, S> {
 impl<T, K, S> NewService<T> for NewDistribute<K, S>
 where
     T: Param<Distribution<K>>,
-    K: Hash + Eq + Clone,
+    K: Debug + Hash + Eq + Clone,
     S: Clone,
 {
     type Service = Distribute<K, S>;
@@ -52,6 +52,7 @@ where
         //
         // If the distribution references a key that is not present in the
         // set of backends, we panic.
+        tracing::debug!(backends = ?dist.keys(), all = ?self.all_backends.keys(), "New distribution");
         let backends = dist
             .keys()
             .iter()

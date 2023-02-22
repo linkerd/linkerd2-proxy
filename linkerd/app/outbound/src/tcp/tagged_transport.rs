@@ -20,15 +20,15 @@ use tracing::{debug, trace, warn};
 pub struct PortOverride(pub u16);
 
 #[derive(Clone, Debug)]
-pub struct OpaqueTransport<S> {
+pub struct TaggedTransport<S> {
     inner: S,
 }
 
-// === impl OpaqueTransport ===
+// === impl TaggedTransport ===
 
-impl<S> OpaqueTransport<S> {
+impl<S> TaggedTransport<S> {
     pub fn layer() -> impl svc::Layer<S, Service = Self> + Copy {
-        svc::layer::mk(|inner| OpaqueTransport { inner })
+        svc::layer::mk(|inner| TaggedTransport { inner })
     }
 
     /// Determines whether the connection has negotiated support for the
@@ -43,7 +43,7 @@ impl<S> OpaqueTransport<S> {
     }
 }
 
-impl<T, S> svc::Service<T> for OpaqueTransport<S>
+impl<T, S> svc::Service<T> for TaggedTransport<S>
 where
     T: svc::Param<tls::ConditionalClientTls>
         + svc::Param<Remote<ServerAddr>>
@@ -140,33 +140,72 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::endpoint::Endpoint;
     use futures::future;
     use linkerd_app_core::{
         identity,
         io::{self, AsyncWriteExt},
-        proxy::api_resolve::{Metadata, ProtocolHint},
         tls,
         transport::{ClientAddr, Local},
-        transport_header::TransportHeader,
+        transport_header::{self, TransportHeader},
     };
     use tower::util::{service_fn, ServiceExt};
 
-    fn ep(metadata: Metadata) -> Endpoint<()> {
-        Endpoint::from_metadata(
-            ([127, 0, 0, 2], 4321),
-            metadata,
-            tls::NoClientTls::NotProvidedByServiceDiscovery,
-            false,
-            &Default::default(),
-        )
+    #[derive(Clone, Debug, Default)]
+    struct Endpoint {
+        port_override: Option<u16>,
+        authority: Option<http::uri::Authority>,
+        server_id: Option<tls::ServerId>,
+    }
+
+    impl svc::Param<tls::ConditionalClientTls> for Endpoint {
+        fn param(&self) -> tls::ConditionalClientTls {
+            self.server_id
+                .clone()
+                .map(|server_id| {
+                    tls::ConditionalClientTls::Some(tls::ClientTls {
+                        server_id,
+                        alpn: Some(tls::client::AlpnProtocols(vec![
+                            transport_header::PROTOCOL.into()
+                        ])),
+                    })
+                })
+                .unwrap_or(tls::ConditionalClientTls::None(
+                    tls::NoClientTls::NotProvidedByServiceDiscovery,
+                ))
+        }
+    }
+
+    impl svc::Param<Remote<ServerAddr>> for Endpoint {
+        fn param(&self) -> Remote<ServerAddr> {
+            Remote(ServerAddr(([127, 0, 0, 1], 4321).into()))
+        }
+    }
+
+    impl svc::Param<Option<PortOverride>> for Endpoint {
+        fn param(&self) -> Option<PortOverride> {
+            self.port_override.map(PortOverride)
+        }
+    }
+
+    impl svc::Param<Option<http::AuthorityOverride>> for Endpoint {
+        fn param(&self) -> Option<http::AuthorityOverride> {
+            self.authority
+                .as_ref()
+                .map(|a| http::AuthorityOverride(a.clone()))
+        }
+    }
+
+    impl svc::Param<Option<SessionProtocol>> for Endpoint {
+        fn param(&self) -> Option<SessionProtocol> {
+            None
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn plain() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(|ep: Connect| {
                 let Remote(ServerAddr(sa)) = ep.addr;
                 assert_eq!(sa.port(), 4321);
@@ -180,7 +219,7 @@ mod test {
             }),
         };
         let (mut io, _meta) = svc
-            .oneshot(ep(Metadata::default()))
+            .oneshot(Endpoint::default())
             .await
             .expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
@@ -190,7 +229,7 @@ mod test {
     async fn opaque_no_name() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(|ep: Connect| {
                 let Remote(ServerAddr(sa)) = ep.addr;
                 assert_eq!(sa.port(), 4143);
@@ -213,15 +252,13 @@ mod test {
             }),
         };
 
-        let e = ep(Metadata::new(
-            None,
-            ProtocolHint::Unknown,
-            Some(4143),
-            Some(tls::ServerId(
+        let e = Endpoint {
+            port_override: Some(4143),
+            server_id: Some(tls::ServerId(
                 identity::Name::from_str("server.id").unwrap(),
             )),
-            None,
-        ));
+            authority: None,
+        };
         let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
@@ -230,7 +267,7 @@ mod test {
     async fn opaque_named_with_port() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(|ep: Connect| {
                 let Remote(ServerAddr(sa)) = ep.addr;
                 assert_eq!(sa.port(), 4143);
@@ -253,15 +290,13 @@ mod test {
             }),
         };
 
-        let e = ep(Metadata::new(
-            None,
-            ProtocolHint::Unknown,
-            Some(4143),
-            Some(tls::ServerId(
+        let e = Endpoint {
+            port_override: Some(4143),
+            server_id: Some(tls::ServerId(
                 identity::Name::from_str("server.id").unwrap(),
             )),
-            Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
-        ));
+            authority: Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
+        };
         let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }
@@ -270,7 +305,7 @@ mod test {
     async fn opaque_named_no_port() {
         let _trace = linkerd_tracing::test::trace_init();
 
-        let svc = OpaqueTransport {
+        let svc = TaggedTransport {
             inner: service_fn(|ep: Connect| {
                 let Remote(ServerAddr(sa)) = ep.addr;
                 assert_eq!(sa.port(), 4143);
@@ -293,15 +328,13 @@ mod test {
             }),
         };
 
-        let e = ep(Metadata::new(
-            None,
-            ProtocolHint::Unknown,
-            Some(4143),
-            Some(tls::ServerId(
+        let e = Endpoint {
+            port_override: Some(4143),
+            server_id: Some(tls::ServerId(
                 identity::Name::from_str("server.id").unwrap(),
             )),
-            None,
-        ));
+            authority: None,
+        };
         let (mut io, _meta) = svc.oneshot(e).await.expect("Connect must not fail");
         io.write_all(b"hello").await.expect("Write must succeed");
     }

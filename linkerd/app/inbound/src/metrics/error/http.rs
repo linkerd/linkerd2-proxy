@@ -33,7 +33,8 @@ impl HttpErrorMetrics {
 
 impl<T> svc::stack::MonitorNewService<T> for HttpErrorMetrics
 where
-    T: svc::Param<OrigDstAddr> + svc::Param<ServerLabel>,
+    T: svc::Param<OrigDstAddr>,
+    T: svc::Param<ServerLabel>,
 {
     type MonitorService = MonitorHttpErrorMetrics;
 

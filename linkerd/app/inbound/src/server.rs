@@ -68,6 +68,7 @@ impl Inbound<()> {
                 .into_tcp_connect(addr.port())
                 .push_http_router(profiles.clone())
                 .push_http_server()
+                .push_http_tcp_server()
                 .into_inner();
 
             self.clone()
@@ -89,6 +90,7 @@ impl Inbound<()> {
         // Determines how to handle an inbound connection, dispatching it to the appropriate
         // stack.
         let server = http
+            .push_http_tcp_server()
             .push_detect(forward)
             .push_accept(addr.port(), policies, direct)
             .into_inner();

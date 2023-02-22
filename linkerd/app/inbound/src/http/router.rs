@@ -351,10 +351,8 @@ impl Param<metrics::ProfileRouteLabels> for ProfileRoute {
     }
 }
 
-impl classify::CanClassify for ProfileRoute {
-    type Classify = classify::Request;
-
-    fn classify(&self) -> classify::Request {
+impl Param<classify::Request> for ProfileRoute {
+    fn param(&self) -> classify::Request {
         self.route.response_classes().clone().into()
     }
 }
@@ -416,10 +414,8 @@ impl Param<metrics::EndpointLabels> for Logical {
     }
 }
 
-impl classify::CanClassify for Logical {
-    type Classify = classify::Request;
-
-    fn classify(&self) -> classify::Request {
+impl Param<classify::Request> for Logical {
+    fn param(&self) -> classify::Request {
         classify::Request::default()
     }
 }

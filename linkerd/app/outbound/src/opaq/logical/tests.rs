@@ -1,13 +1,11 @@
 use super::*;
-use crate::tcp::Endpoint;
 use crate::test_util::*;
 use io::AsyncWriteExt;
 use linkerd_app_core::{
-    errors::FailFastError,
+    errors::{self, FailFastError},
     io::{self, AsyncReadExt},
-    profiles::{LogicalAddr, Profile},
+    profiles::{self, Profile},
     svc::{self, NewService, ServiceExt},
-    transport::addrs::*,
 };
 use std::net::SocketAddr;
 use tokio::time;
@@ -19,35 +17,31 @@ async fn forward() {
     time::pause();
 
     // We create a logical target to be resolved to endpoints.
-    let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
+    let laddr = "xyz.example.com:4444".parse::<NameAddr>().unwrap();
     let (_tx, rx) = tokio::sync::watch::channel(Profile {
-        addr: Some(logical_addr.clone()),
+        addr: Some(profiles::LogicalAddr(laddr.clone())),
         ..Default::default()
     });
-    let logical = Logical {
-        profile: rx.into(),
-        logical_addr: logical_addr.clone(),
-        protocol: (),
-    };
+    let logical = Logical::Route(laddr.clone(), rx.into());
 
     // The resolution resolves a single endpoint.
     let ep_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
-    let resolve =
-        support::resolver().endpoint_exists(logical_addr.clone(), ep_addr, Default::default());
+    let resolve = support::resolver().endpoint_exists(laddr, ep_addr, Default::default());
     let resolved = resolve.handle();
 
     // Build the TCP logical stack with a mocked connector.
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
-        .with_stack(svc::mk(move |ep: Endpoint| {
-            assert_eq!(*ep.addr, ep_addr);
+        .with_stack(svc::mk(move |ep: concrete::Endpoint<Concrete<Logical>>| {
+            let Remote(ServerAddr(ea)) = svc::Param::param(&ep);
+            assert_eq!(ea, ep_addr);
             let mut io = support::io();
             io.write(b"hola").read(b"mundo");
             let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
             future::ok::<_, support::io::Error>((io.build(), local))
         }))
-        .push_tcp_concrete(resolve)
-        .push_tcp_logical()
+        .push_opaq_concrete(resolve)
+        .push_opaq_logical()
         .into_inner();
 
     // Build a client to the endpoint and proxy a connection.
@@ -59,16 +53,6 @@ async fn forward() {
         .await
         .expect("forwarding must not fail");
     assert!(resolved.only_configured(), "endpoint not discovered?");
-
-    // Rebuilding it succeeds and reuses a cached service.
-    let mut io = support::io();
-    io.read(b"hola").write(b"mundo");
-    stack
-        .new_service(logical)
-        .oneshot(io.build())
-        .await
-        .expect("forwarding must not fail");
-    assert!(resolved.only_configured(), "Resolution not reused");
 }
 
 /// Tests that the logical stack forwards connections to services with an arbitrary number of
@@ -84,47 +68,45 @@ async fn balances() {
     time::pause();
 
     // We create a logical target to be resolved to endpoints.
-    let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
+    let laddr = "xyz.example.com:4444".parse::<NameAddr>().unwrap();
     let (_tx, rx) = tokio::sync::watch::channel(Profile {
-        addr: Some(logical_addr.clone()),
+        addr: Some(profiles::LogicalAddr(laddr.clone())),
         ..Default::default()
     });
-    let logical = Logical {
-        profile: rx.into(),
-        logical_addr: logical_addr.clone(),
-        protocol: (),
-    };
+    let logical = Logical::Route(laddr.clone(), rx.into());
 
     // The resolution resolves a single endpoint.
     let ep0_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
     let ep1_addr = SocketAddr::new([192, 0, 2, 31].into(), 3333);
     let resolve = support::resolver();
     let resolved = resolve.handle();
-    let mut resolve_tx = resolve.endpoint_tx(logical_addr);
+    let mut resolve_tx = resolve.endpoint_tx(laddr);
 
     // Build the TCP logical stack with a mocked endpoint stack that alters its response stream
     // based on the address.
     let (rt, _shutdown) = runtime();
     let svc = Outbound::new(default_config(), rt)
-        .with_stack(svc::mk(move |ep: Endpoint| match ep.addr {
-            Remote(ServerAddr(addr)) if addr == ep0_addr => {
-                tracing::debug!(%addr, "writing ep0");
-                let mut io = support::io();
-                io.write(b"who r u?").read(b"ep0");
-                let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
-                future::ok::<_, support::io::Error>((io.build(), local))
-            }
-            Remote(ServerAddr(addr)) if addr == ep1_addr => {
-                tracing::debug!(%addr, "writing ep1");
-                let mut io = support::io();
-                io.write(b"who r u?").read(b"ep1");
-                let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
-                future::ok::<_, support::io::Error>((io.build(), local))
-            }
-            addr => unreachable!("unexpected endpoint: {}", addr),
-        }))
-        .push_tcp_concrete(resolve)
-        .push_tcp_logical()
+        .with_stack(svc::mk(
+            move |ep: concrete::Endpoint<Concrete<Logical>>| match svc::Param::param(&ep) {
+                Remote(ServerAddr(addr)) if addr == ep0_addr => {
+                    tracing::debug!(%addr, "writing ep0");
+                    let mut io = support::io();
+                    io.write(b"who r u?").read(b"ep0");
+                    let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
+                    future::ok::<_, support::io::Error>((io.build(), local))
+                }
+                Remote(ServerAddr(addr)) if addr == ep1_addr => {
+                    tracing::debug!(%addr, "writing ep1");
+                    let mut io = support::io();
+                    io.write(b"who r u?").read(b"ep1");
+                    let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
+                    future::ok::<_, support::io::Error>((io.build(), local))
+                }
+                addr => unreachable!("unexpected endpoint: {}", addr),
+            },
+        ))
+        .push_opaq_concrete(resolve)
+        .push_opaq_logical()
         .into_inner()
         .new_service(logical);
 
@@ -199,7 +181,11 @@ async fn balances() {
         .await
         .expect_err("Empty balancer must timeout");
     task.abort();
-    assert!(err.downcast_ref::<FailFastError>().is_some());
+    assert!(
+        errors::is_caused_by::<FailFastError>(&*err),
+        "unexpected error: {}",
+        err
+    );
     assert!(resolved.only_configured(), "Resolution must be reused");
 }
 

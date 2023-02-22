@@ -1,5 +1,22 @@
-mod concrete;
-pub mod detect;
+use self::{
+    proxy_connection_close::ProxyConnectionClose, require_id_header::NewRequireIdentity,
+    strip_proxy_error::NewStripProxyError,
+};
+use crate::Outbound;
+use linkerd_app_core::{
+    profiles,
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+    },
+    svc,
+    transport::addrs::*,
+    Error,
+};
+use std::{fmt::Debug, hash::Hash};
+use tokio::sync::watch;
+
+pub mod concrete;
 mod endpoint;
 pub mod logical;
 mod proxy_connection_close;
@@ -8,158 +25,119 @@ mod retry;
 mod server;
 mod strip_proxy_error;
 
-use self::{
-    proxy_connection_close::ProxyConnectionClose, require_id_header::NewRequireIdentity,
-    strip_proxy_error::NewStripProxyError,
-};
-pub(crate) use self::{require_id_header::IdentityRequired, server::ServerRescue};
-use crate::tcp;
-pub use linkerd_app_core::proxy::http::*;
-use linkerd_app_core::{
-    profiles::{self, LogicalAddr},
-    proxy::{api_resolve::ProtocolHint, tap},
-    svc::Param,
-    tls, Addr, Conditional, CANONICAL_DST_HEADER,
-};
-use std::{net::SocketAddr, str::FromStr};
+pub use self::logical::{policy, profile, LogicalAddr, Routes};
+pub(crate) use self::require_id_header::IdentityRequired;
+pub use linkerd_app_core::proxy::http::{self as http, *};
 
-pub type Logical = crate::logical::Logical<Version>;
-pub type Concrete = crate::logical::Concrete<Version>;
-pub type Endpoint = crate::endpoint::Endpoint<Version>;
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Http<T>(T);
 
-pub type Connect = self::endpoint::Connect<Endpoint>;
+pub fn spawn_routes(
+    mut profile_rx: watch::Receiver<profiles::Profile>,
+    init: Routes,
+    mut mk: impl FnMut(&profiles::Profile) -> Option<Routes> + Send + Sync + 'static,
+) -> watch::Receiver<Routes> {
+    let (tx, rx) = watch::channel(init);
 
-#[derive(Clone, Debug)]
-pub struct CanonicalDstHeader(pub Addr);
+    tokio::spawn(async move {
+        loop {
+            let res = tokio::select! {
+                biased;
+                _ = tx.closed() => return,
+                res = profile_rx.changed() => res,
+            };
 
-// === impl CanonicalDstHeader ===
+            if res.is_err() {
+                // Drop the `tx` sender when the profile sender is
+                // dropped.
+                return;
+            }
 
-impl From<CanonicalDstHeader> for HeaderPair {
-    fn from(CanonicalDstHeader(dst): CanonicalDstHeader) -> HeaderPair {
-        HeaderPair(
-            HeaderName::from_static(CANONICAL_DST_HEADER),
-            HeaderValue::from_str(&dst.to_string()).expect("addr must be a valid header"),
-        )
-    }
-}
-
-// === impl Logical ===
-
-impl From<(Version, tcp::Logical)> for Logical {
-    fn from((protocol, logical): (Version, tcp::Logical)) -> Self {
-        Self {
-            protocol,
-            profile: logical.profile,
-            logical_addr: logical.logical_addr,
+            if let Some(routes) = (mk)(&*profile_rx.borrow_and_update()) {
+                if tx.send(routes).is_err() {
+                    // Drop the `tx` sender when all of its receivers are dropped.
+                    return;
+                }
+            }
         }
+    });
+
+    rx
+}
+
+pub fn spawn_routes_default(addr: Remote<ServerAddr>) -> watch::Receiver<Routes> {
+    let (tx, rx) = watch::channel(Routes::Endpoint(addr, Default::default()));
+    tokio::spawn(async move {
+        tx.closed().await;
+    });
+    rx
+}
+
+// === impl Outbound ===
+
+impl<N> Outbound<N> {
+    /// Builds a stack that routes HTTP requests to endpoint stacks.
+    ///
+    /// Buffered concrete services are cached in and evicted when idle.
+    pub fn push_http_cached<T, R, NSvc>(
+        self,
+        resolve: R,
+    ) -> Outbound<
+        svc::ArcNewService<
+            T,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    >
+    where
+        // Logical HTTP target.
+        T: svc::Param<http::Version>,
+        T: svc::Param<watch::Receiver<Routes>>,
+        T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
+        // Endpoint resolution.
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        // HTTP client stack
+        N: svc::NewService<concrete::Endpoint<logical::Concrete<Http<T>>>, Service = NSvc>,
+        N: Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        NSvc: Send + 'static,
+        NSvc::Future: Send + Unpin + 'static,
+    {
+        self.push_http_endpoint()
+            .push_http_concrete(resolve)
+            .push_http_logical()
+            .map_stack(move |config, _, stk| {
+                stk.push_new_idle_cached(config.discovery_idle_timeout)
+                    .push_map_target(Http)
+                    .push(svc::ArcNewService::layer())
+            })
     }
 }
 
-impl Param<CanonicalDstHeader> for Logical {
-    fn param(&self) -> CanonicalDstHeader {
-        CanonicalDstHeader(self.addr())
+// === impl Http ===
+
+impl<T> svc::Param<http::Version> for Http<T>
+where
+    T: svc::Param<http::Version>,
+{
+    fn param(&self) -> http::Version {
+        self.0.param()
     }
 }
 
-impl Param<Version> for Logical {
-    fn param(&self) -> Version {
-        self.protocol
-    }
-}
-
-impl Param<Option<Version>> for Logical {
-    fn param(&self) -> Option<Version> {
-        Some(self.protocol)
-    }
-}
-
-impl Param<normalize_uri::DefaultAuthority> for Logical {
-    fn param(&self) -> normalize_uri::DefaultAuthority {
-        normalize_uri::DefaultAuthority(Some(
-            uri::Authority::from_str(&self.logical_addr.to_string())
-                .expect("Address must be a valid authority"),
-        ))
-    }
-}
-
-// === impl Endpoint ===
-
-impl From<(Version, tcp::Endpoint)> for Endpoint {
-    fn from((protocol, ep): (Version, tcp::Endpoint)) -> Self {
-        Self {
-            protocol,
-            addr: ep.addr,
-            tls: ep.tls,
-            metadata: ep.metadata,
-            logical_addr: ep.logical_addr,
-            // If we know an HTTP version, the protocol must not be opaque.
-            opaque_protocol: false,
-        }
-    }
-}
-
-impl Param<normalize_uri::DefaultAuthority> for Endpoint {
-    fn param(&self) -> normalize_uri::DefaultAuthority {
-        if let Some(LogicalAddr(ref a)) = self.logical_addr {
-            normalize_uri::DefaultAuthority(Some(
-                uri::Authority::from_str(&a.to_string())
-                    .expect("Address must be a valid authority"),
-            ))
-        } else {
-            normalize_uri::DefaultAuthority(Some(
-                uri::Authority::from_str(&self.addr.to_string())
-                    .expect("Address must be a valid authority"),
-            ))
-        }
-    }
-}
-
-impl Param<Version> for Endpoint {
-    fn param(&self) -> Version {
-        self.protocol
-    }
-}
-
-impl Param<client::Settings> for Endpoint {
-    fn param(&self) -> client::Settings {
-        match self.protocol {
-            Version::H2 => client::Settings::H2,
-            Version::Http1 => match self.metadata.protocol_hint() {
-                ProtocolHint::Unknown => client::Settings::Http1,
-                ProtocolHint::Http2 => client::Settings::OrigProtoUpgrade,
-            },
-        }
-    }
-}
-
-impl tap::Inspect for Endpoint {
-    fn src_addr<B>(&self, req: &Request<B>) -> Option<SocketAddr> {
-        req.extensions().get::<ClientHandle>().map(|c| c.addr)
-    }
-
-    fn src_tls<B>(&self, _: &Request<B>) -> tls::ConditionalServerTls {
-        Conditional::None(tls::NoServerTls::Loopback)
-    }
-
-    fn dst_addr<B>(&self, _: &Request<B>) -> Option<SocketAddr> {
-        Some(self.addr.into())
-    }
-
-    fn dst_labels<B>(&self, _: &Request<B>) -> Option<tap::Labels> {
-        Some(self.metadata.labels())
-    }
-
-    fn dst_tls<B>(&self, _: &Request<B>) -> tls::ConditionalClientTls {
-        self.tls.clone()
-    }
-
-    fn route_labels<B>(&self, req: &Request<B>) -> Option<tap::Labels> {
-        req.extensions()
-            .get::<profiles::http::Route>()
-            .map(|r| r.labels().clone())
-    }
-
-    fn is_outbound<B>(&self, _: &Request<B>) -> bool {
-        true
+impl<T> svc::Param<watch::Receiver<Routes>> for Http<T>
+where
+    T: svc::Param<watch::Receiver<Routes>>,
+{
+    fn param(&self) -> watch::Receiver<Routes> {
+        self.0.param()
     }
 }

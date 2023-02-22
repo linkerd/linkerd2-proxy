@@ -84,7 +84,6 @@ mod cross_version {
             .await;
 
         let client = (test.mk_client)(&proxy, HOST);
-
         assert_eq!(client.get("/").await, "hello");
         drop(client);
 

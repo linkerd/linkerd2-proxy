@@ -13,8 +13,9 @@ mod http;
 mod metrics;
 pub mod policy;
 mod server;
-#[cfg(any(test, fuzzing))]
-pub(crate) mod test_util;
+
+#[cfg(any(test, feature = "test-util", fuzzing))]
+pub mod test_util;
 
 pub use self::{metrics::Metrics, policy::DefaultPolicy};
 use linkerd_app_core::{
@@ -25,7 +26,7 @@ use linkerd_app_core::{
     proxy::{tap, tcp},
     svc,
     transport::{self, Remote, ServerAddr},
-    Error, NameMatch, ProxyRuntime,
+    Error, NameAddr, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, time::Duration};
 use thiserror::Error;
@@ -68,6 +69,9 @@ struct Runtime {
     span_sink: OpenCensusSink,
     drain: drain::Watch,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct GatewayAddr(pub NameAddr);
 
 // The inbound HTTP server handles gateway traffic; so gateway error types are defined here (so that
 // error metrics can be recorded properly).
@@ -156,6 +160,13 @@ impl Inbound<()> {
             runtime,
             stack: svc::stack(()),
         }
+    }
+
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn for_test() -> (Self, drain::Signal) {
+        let (rt, drain) = test_util::runtime();
+        let this = Self::new(test_util::default_config(), rt);
+        (this, drain)
     }
 
     pub fn metrics(&self) -> Metrics {

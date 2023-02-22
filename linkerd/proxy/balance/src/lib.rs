@@ -1,18 +1,18 @@
-mod discover;
-
 use linkerd_error::Error;
 use linkerd_proxy_core::Resolve;
 use linkerd_stack::{layer, NewService, Param, Service};
 use rand::thread_rng;
-use std::{fmt::Debug, marker::PhantomData, net::SocketAddr, time::Duration};
+use std::{fmt::Debug, hash::Hash, marker::PhantomData, net::SocketAddr, time::Duration};
 use tower::{
     balance::p2c,
     load::{self, PeakEwma},
 };
 
+mod discover;
+
 pub use tower::load::peak_ewma::Handle;
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct EwmaConfig {
     pub default_rtt: Duration,
     pub decay: Duration,
@@ -84,9 +84,6 @@ impl<C, T, Req, R, M, N, S> NewService<T> for NewBalancePeakEwma<C, Req, R, M>
 where
     T: Param<EwmaConfig> + Clone + Send,
     R: Resolve<T>,
-    R::Endpoint: Clone + Debug + Eq + Send + 'static,
-    R::Resolution: Send,
-    R::Future: Send + 'static,
     M: NewService<T, Service = N> + Clone,
     N: NewService<(SocketAddr, R::Endpoint), Service = S> + Send + 'static,
     S: Service<Req> + Send,

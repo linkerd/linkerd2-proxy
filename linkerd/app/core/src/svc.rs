@@ -1,13 +1,8 @@
 // Possibly unused, but useful during development.
 
-pub use crate::proxy::http;
-use crate::{disco_cache::NewCachedDiscover, idle_cache, Error};
+use crate::{disco_cache::NewCachedDiscover, Error};
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
-pub use linkerd_reconnect::NewReconnect;
-pub use linkerd_router::{self as router, NewOneshotRoute};
-pub use linkerd_stack::{self as stack, *};
-pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 use std::{
     fmt,
     hash::Hash,
@@ -22,6 +17,13 @@ pub use tower::{
     layer::Layer, limit::GlobalConcurrencyLimitLayer as ConcurrencyLimitLayer, service_fn as mk,
     spawn_ready::SpawnReady, Service, ServiceExt,
 };
+
+pub use crate::proxy::http;
+pub use linkerd_idle_cache as idle_cache;
+pub use linkerd_reconnect::NewReconnect;
+pub use linkerd_router::{self as router, NewOneshotRoute};
+pub use linkerd_stack::{self as stack, *};
+pub use linkerd_stack_tracing::{GetSpan, NewInstrument, NewInstrumentLayer};
 
 #[derive(Copy, Clone, Debug)]
 pub struct AlwaysReconnect(ExponentialBackoff);
@@ -86,6 +88,19 @@ impl<L> Layers<L> {
         self,
     ) -> Layers<Pair<L, impl Layer<N, Service = NewCloneService<N>> + Clone>> {
         self.push(layer::mk(NewCloneService::from))
+    }
+
+    // Wraps the inner `N`-typed [`NewService`] with a layer that applies the
+    // given target to all inner stacks to produce its service.
+    pub fn push_flatten_new<T, N>(
+        self,
+        target: T,
+    ) -> Layers<Pair<L, impl Layer<N, Service = N::Service> + Clone>>
+    where
+        T: Clone,
+        N: NewService<T>,
+    {
+        self.push(layer::mk(move |inner: N| inner.new_service(target.clone())))
     }
 
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, NewInstrumentLayer<G>>> {

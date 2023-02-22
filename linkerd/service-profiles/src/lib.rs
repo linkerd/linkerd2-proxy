@@ -48,10 +48,10 @@ pub struct Profile {
 pub struct LookupAddr(pub Addr);
 
 /// A bound logical service address
-#[derive(Clone, Hash, Eq, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct LogicalAddr(pub NameAddr);
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Target {
     pub addr: NameAddr,
     pub weight: u32,
@@ -251,6 +251,14 @@ impl From<NameAddr> for LogicalAddr {
 impl From<LogicalAddr> for NameAddr {
     fn from(LogicalAddr(na): LogicalAddr) -> NameAddr {
         na
+    }
+}
+
+impl std::ops::Deref for LogicalAddr {
+    type Target = NameAddr;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

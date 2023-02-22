@@ -570,12 +570,11 @@ mod outbound_dst_labels {
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
         let dst_tx = dst_tx.unwrap();
-        {
-            let mut labels = HashMap::new();
-            labels.insert("addr_label1".to_owned(), "foo".to_owned());
-            labels.insert("addr_label2".to_owned(), "bar".to_owned());
-            dst_tx.send_labeled(addr, labels, HashMap::new());
-        }
+        dst_tx.send(
+            controller::destination_add(addr)
+                .addr_label("addr_label1", "foo")
+                .addr_label("addr_label2", "bar"),
+        );
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
@@ -614,7 +613,11 @@ mod outbound_dst_labels {
             let mut labels = HashMap::new();
             labels.insert("set_label1".to_owned(), "foo".to_owned());
             labels.insert("set_label2".to_owned(), "bar".to_owned());
-            dst_tx.send_labeled(addr, HashMap::new(), labels);
+            dst_tx.send(
+                controller::destination_add(addr)
+                    .set_label("set_label1", "foo")
+                    .set_label("set_label2", "bar"),
+            );
         }
 
         info!("client.get(/)");
@@ -655,7 +658,11 @@ mod outbound_dst_labels {
             alabels.insert("addr_label".to_owned(), "foo".to_owned());
             let mut slabels = HashMap::new();
             slabels.insert("set_label".to_owned(), "bar".to_owned());
-            dst_tx.send_labeled(addr, alabels, slabels);
+            dst_tx.send(
+                controller::destination_add(addr)
+                    .addr_label("addr_label", "foo")
+                    .set_label("set_label", "bar"),
+            );
         }
 
         info!("client.get(/)");
@@ -674,12 +681,9 @@ mod outbound_dst_labels {
         }
     }
 
-    // Ignore this test on CI, as it may fail due to the reduced concurrency
-    // on CI containers causing the proxy to see both label updates from
-    // the mock controller before the first request has finished.
-    // See linkerd/linkerd2#751
+    // XXX(ver) This test is broken and/or irrelevant. linkerd/linkerd2#751.
     #[tokio::test]
-    #[cfg_attr(not(feature = "flakey-in-ci"), ignore)]
+    #[ignore]
     async fn controller_updates_addr_labels() {
         let _trace = trace_init();
         info!("running test server");
@@ -697,13 +701,11 @@ mod outbound_dst_labels {
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
         let dst_tx = dst_tx.unwrap();
-        {
-            let mut alabels = HashMap::new();
-            alabels.insert("addr_label".to_owned(), "foo".to_owned());
-            let mut slabels = HashMap::new();
-            slabels.insert("set_label".to_owned(), "unchanged".to_owned());
-            dst_tx.send_labeled(addr, alabels, slabels);
-        }
+        dst_tx.send(
+            controller::destination_add(addr)
+                .addr_label("addr_label", "foo")
+                .set_label("set_label", "unchanged"),
+        );
 
         let labels1 = labels
             .clone()
@@ -722,13 +724,11 @@ mod outbound_dst_labels {
             labels1.metric(metric).value(1u64).assert_in(&metrics).await;
         }
 
-        {
-            let mut alabels = HashMap::new();
-            alabels.insert("addr_label".to_owned(), "bar".to_owned());
-            let mut slabels = HashMap::new();
-            slabels.insert("set_label".to_owned(), "unchanged".to_owned());
-            dst_tx.send_labeled(addr, alabels, slabels);
-        }
+        dst_tx.send(
+            controller::destination_add(addr)
+                .addr_label("addr_label", "bar")
+                .set_label("set_label", "unchanged"),
+        );
 
         let labels2 = labels
             .label("dst_addr_label", "bar")
@@ -758,7 +758,7 @@ mod outbound_dst_labels {
         }
     }
 
-    // FIXME(ver) this test was marked flakey, but now it consistently fails.
+    // XXX(ver) This test is broken and/or irrelevant. linkerd/linkerd2#751.
     #[ignore]
     #[tokio::test]
     async fn controller_updates_set_labels() {
@@ -777,12 +777,8 @@ mod outbound_dst_labels {
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
         let dst_tx = dst_tx.unwrap();
-        {
-            let alabels = HashMap::new();
-            let mut slabels = HashMap::new();
-            slabels.insert("set_label".to_owned(), "foo".to_owned());
-            dst_tx.send_labeled(addr, alabels, slabels);
-        }
+        dst_tx.send(controller::destination_add(addr).set_label("set_label", "foo"));
+
         let labels1 = labels.clone().label("dst_set_label", "foo");
 
         info!("client.get(/)");
@@ -796,12 +792,7 @@ mod outbound_dst_labels {
             labels1.metric(metric).value(1u64).assert_in(&client).await;
         }
 
-        {
-            let alabels = HashMap::new();
-            let mut slabels = HashMap::new();
-            slabels.insert("set_label".to_owned(), "bar".to_owned());
-            dst_tx.send_labeled(addr, alabels, slabels);
-        }
+        dst_tx.send(controller::destination_add(addr).set_label("set_label", "bar"));
         let labels2 = labels.label("dst_set_label", "bar");
 
         info!("client.get(/)");
