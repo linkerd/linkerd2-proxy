@@ -163,6 +163,7 @@ impl Config {
                 identity,
             }))
             .into_inner();
+
         let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
         Ok(Task {
             listen_addr,
