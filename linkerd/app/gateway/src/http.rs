@@ -118,17 +118,12 @@ impl Gateway {
             // discovery information.
             .push_filter(|(_, parent): (_, T)| -> Result<_, GatewayDomainInvalid> {
                 let routes = {
-                    let profile =
+                    let mut profile =
                         svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&parent)
                             .ok_or(GatewayDomainInvalid)?;
-
-                    let mut route = mk_route(&*profile.borrow()).ok_or(GatewayDomainInvalid)?;
-                    outbound::http::spawn_routes(profile, move |p: &profiles::Profile| {
-                        if let Some(r) = mk_route(p) {
-                            route = r;
-                        }
-                        route.clone()
-                    })
+                    let init =
+                        mk_routes(&*profile.borrow_and_update()).ok_or(GatewayDomainInvalid)?;
+                    outbound::http::spawn_routes(profile, init, mk_routes)
                 };
 
                 Ok(Target {
@@ -153,7 +148,7 @@ impl Gateway {
     }
 }
 
-fn mk_route(profile: &profiles::Profile) -> Option<outbound::http::Routes> {
+fn mk_routes(profile: &profiles::Profile) -> Option<outbound::http::Routes> {
     if let Some(addr) = profile.addr.clone() {
         return Some(outbound::http::Routes::Profile(
             outbound::http::profile::Routes {

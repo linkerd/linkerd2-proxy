@@ -34,30 +34,29 @@ pub struct Http<T>(T);
 
 pub fn spawn_routes(
     mut profile_rx: watch::Receiver<profiles::Profile>,
-    mut mk: impl FnMut(&profiles::Profile) -> Routes + Send + Sync + 'static,
+    init: Routes,
+    mut mk: impl FnMut(&profiles::Profile) -> Option<Routes> + Send + Sync + 'static,
 ) -> watch::Receiver<Routes> {
-    let (tx, rx) = {
-        let routes = (mk)(&*profile_rx.borrow());
-        watch::channel(routes)
-    };
+    let (tx, rx) = watch::channel(init);
 
     tokio::spawn(async move {
         loop {
-            tokio::select! {
+            let res = tokio::select! {
                 biased;
                 _ = tx.closed() => return,
-                res = profile_rx.changed() => {
-                    if res.is_err() {
-                        // Drop the `tx` sender when the profile sender is
-                        // dropped.
-                        return;
-                    }
+                res = profile_rx.changed() => res,
+            };
 
-                    let routes = (mk)(&*profile_rx.borrow());
-                    if tx.send(routes).is_err() {
-                        // Drop the `tx` sender when all of its receivers are dropped.
-                        return;
-                    }
+            if res.is_err() {
+                // Drop the `tx` sender when the profile sender is
+                // dropped.
+                return;
+            }
+
+            if let Some(routes) = (mk)(&*profile_rx.borrow_and_update()) {
+                if tx.send(routes).is_err() {
+                    // Drop the `tx` sender when all of its receivers are dropped.
+                    return;
                 }
             }
         }
