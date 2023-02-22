@@ -121,8 +121,7 @@ impl<N> Inbound<N> {
         HSvc: svc::Service<io::PrefixedIo<TlsIo<I>>, Response = ()> + Send + 'static,
         HSvc::Error: Into<Error>,
         HSvc::Future: Send,
-        P: policy::GetPolicy + Clone + Send + Sync + 'static,
-        P::Future: Send + Unpin,
+        P: policy::GetPolicy,
     {
         self.map_stack(|config, rt, inner| {
             let detect_timeout = config.proxy.detect_protocol_timeout;

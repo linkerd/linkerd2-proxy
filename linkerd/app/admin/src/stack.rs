@@ -89,8 +89,7 @@ impl Config {
         R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
         B: Bind<ServerConfig>,
         B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
-        P: inbound::policy::GetPolicy + Send + Sync + 'static,
-        P::Future: Send,
+        P: inbound::policy::GetPolicy,
     {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
