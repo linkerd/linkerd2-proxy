@@ -94,10 +94,10 @@ impl Config {
     {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
-        let (ready, latch) = crate::server::Readiness::new();
         // Get the policy for the admin server.
         let policy = policy.get_policy(OrigDstAddr(listen_addr.into())).await?;
 
+        let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
