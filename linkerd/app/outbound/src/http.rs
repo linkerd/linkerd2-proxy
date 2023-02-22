@@ -46,9 +46,16 @@ pub fn spawn_routes(
             tokio::select! {
                 biased;
                 _ = tx.closed() => return,
-                _ = profile_rx.changed() => {
+                res = profile_rx.changed() => {
+                    if res.is_err() {
+                        // Drop the `tx` sender when the profile sender is
+                        // dropped.
+                        return;
+                    }
+
                     let routes = (mk)(&*profile_rx.borrow());
                     if tx.send(routes).is_err() {
+                        // Drop the `tx` sender when all of its receivers are dropped.
                         return;
                     }
                 }
