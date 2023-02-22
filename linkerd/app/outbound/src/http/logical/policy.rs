@@ -82,7 +82,7 @@ where
     // Parent target type.
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
 {
-    /// HTTP or gRPC policy routing.
+    /// Wraps an HTTP `NewService` with HTTP or gRPC policy routing layers.
     pub(super) fn layer<N, S>() -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
@@ -170,9 +170,9 @@ where
         Error = NoRoute,
     >,
 {
-    // Wraps a `NewService`--instantiated once per logical target--that caches a set
-    // of concrete services so that, as the watch provides new `Params`, we can
-    // reuse inner services.
+    /// Wraps a `NewService`--instantiated once per logical target--that caches a set
+    /// of concrete services so that, as the watch provides new `Params`, we can
+    /// reuse inner services.
     fn layer<N, S>() -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
