@@ -13,6 +13,7 @@ use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
+pub mod policy;
 pub mod profile;
 
 /// Indicates the address used for logical routing.
@@ -22,6 +23,9 @@ pub struct LogicalAddr(pub Addr);
 /// Configures the flavor of HTTP routing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Routes {
+    /// Policy routes.
+    Policy(policy::Routes),
+
     /// Service profile routes.
     Profile(profile::Routes),
 
@@ -51,6 +55,8 @@ pub struct LogicalError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum RouterParams<T: Clone + Debug + Eq + Hash> {
+    Policy(policy::Params<T>),
+
     Profile(profile::Params<T>),
 
     // TODO(ver) Remove this variant when policy routes are fully wired up.
@@ -155,6 +161,7 @@ where
         S::Future: Send,
     {
         svc::layer::mk(move |concrete: N| {
+            let policy = svc::stack(concrete.clone()).push(policy::Params::layer());
             let profile =
                 svc::stack(concrete.clone()).push(profile::Params::layer(metrics.clone()));
             svc::stack(concrete)
@@ -168,10 +175,16 @@ where
                                     parent,
                                 })
                             }
-                            RouterParams::Profile(profile) => svc::Either::B(profile),
+                            RouterParams::Profile(profile) => {
+                                svc::Either::B(svc::Either::A(profile))
+                            }
+                            RouterParams::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
                         })
                     },
-                    profile.into_inner(),
+                    // Switch profile and policy routing.
+                    profile
+                        .push_switch(Ok::<_, Infallible>, policy.into_inner())
+                        .into_inner(),
                 )
                 .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                 .push_on_service(svc::MapErr::layer_boxed())
@@ -187,6 +200,7 @@ where
 {
     fn from((routes, parent): (Routes, T)) -> Self {
         match routes {
+            Routes::Policy(routes) => Self::Policy((routes, parent).into()),
             Routes::Profile(routes) => Self::Profile((routes, parent).into()),
             Routes::Endpoint(addr, metadata) => Self::Endpoint(addr, metadata, parent),
         }
@@ -199,6 +213,7 @@ where
 {
     fn param(&self) -> LogicalAddr {
         match self {
+            Self::Policy(ref p) => p.param(),
             Self::Profile(ref p) => {
                 let profile::LogicalAddr(addr) = p.param();
                 LogicalAddr(addr.into())
