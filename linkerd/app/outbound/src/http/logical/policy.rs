@@ -3,7 +3,7 @@ use linkerd_app_core::{
     proxy::http::{self, balance},
     svc,
     transport::addrs::*,
-    Addr, Error, Infallible,
+    Addr, Error, Infallible, Result,
 };
 use linkerd_distribute as distribute;
 use linkerd_http_route as route;
@@ -170,7 +170,7 @@ where
         Key = MatchedRouteParams<T, M::Summary, F>,
         Error = NoRoute,
     >,
-    filters::Filters<M::Summary, F>: filters::Apply,
+    MatchedRouteParams<T, M::Summary, F>: filters::Apply,
 {
     /// Wraps a `NewService`--instantiated once per logical target--that caches a set
     /// of concrete services so that, as the watch provides new `Params`, we can
@@ -370,7 +370,7 @@ where
     M: Clone + Send + Sync + 'static,
     // Request filter.
     F: Clone + Send + Sync + 'static,
-    filters::Filters<M, F>: filters::Apply,
+    Self: filters::Apply,
 {
     fn layer<N, S>() -> impl svc::Layer<
         N,
@@ -402,7 +402,7 @@ where
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
-                .push(filters::NewApplyFilters::layer())
+                .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
         })
@@ -412,5 +412,21 @@ where
 impl<T: Clone, M, F> svc::Param<Distribution<T>> for MatchedRouteParams<T, M, F> {
     fn param(&self) -> Distribution<T> {
         self.params.distribution.clone()
+    }
+}
+
+impl<T> filters::Apply
+    for MatchedRouteParams<T, route::http::r#match::RequestMatch, policy::http::Filter>
+{
+    fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
+        filters::apply_http(&self.r#match, &self.params.filters, req)
+    }
+}
+
+impl<T> filters::Apply
+    for MatchedRouteParams<T, route::grpc::r#match::RouteMatch, policy::grpc::Filter>
+{
+    fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
+        filters::apply_grpc(&self.r#match, &self.params.filters, req)
     }
 }
