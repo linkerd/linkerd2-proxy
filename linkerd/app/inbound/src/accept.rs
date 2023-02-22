@@ -23,10 +23,10 @@ impl<N> Inbound<N> {
     /// Builds a stack that accepts connections. Connections to the proxy port are diverted to the
     /// 'direct' stack; otherwise connections are associated with a policy and passed to the inner
     /// stack.
-    pub(crate) fn push_accept<T, I, P, NSvc, D, DSvc>(
+    pub(crate) fn push_accept<T, I, NSvc, D, DSvc>(
         self,
         proxy_port: u16,
-        policies: P,
+        policies: impl GetPolicy,
         direct: D,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
@@ -34,7 +34,6 @@ impl<N> Inbound<N> {
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        P: GetPolicy,
         N: svc::NewService<Accept, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<I, Response = ()>,
         NSvc: Send + Unpin + 'static,

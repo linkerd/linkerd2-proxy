@@ -27,11 +27,11 @@ impl Inbound<()> {
             .build(dns, control_metrics, self.runtime.identity.new_client())
     }
 
-    pub async fn serve<A, I, G, GSvc, P, O>(
+    pub async fn serve<A, I, G, GSvc, P>(
         self,
         addr: Local<ServerAddr>,
         listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
-        policies: O,
+        policies: impl policy::GetPolicy,
         profiles: P,
         gateway: G,
     ) where
@@ -44,7 +44,6 @@ impl Inbound<()> {
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
         P: profiles::GetProfile<Error = Error>,
-        O: policy::GetPolicy,
     {
         let shutdown = self.runtime.drain.clone().signaled();
 

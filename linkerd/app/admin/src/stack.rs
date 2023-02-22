@@ -74,10 +74,10 @@ impl Config {
     /// This method is asynchronous, as it must discover a `ServerPolicy` for
     /// the admin port.
     #[allow(clippy::too_many_arguments)]
-    pub async fn build<B, R, P>(
+    pub async fn build<B, R>(
         self,
         bind: B,
-        policy: &P,
+        policy: &impl inbound::policy::GetPolicy,
         identity: identity::Server,
         report: R,
         metrics: inbound::Metrics,
@@ -89,7 +89,6 @@ impl Config {
         R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
         B: Bind<ServerConfig>,
         B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
-        P: inbound::policy::GetPolicy,
     {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
