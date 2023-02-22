@@ -26,18 +26,16 @@ async fn header_based_route() {
     // Stack that produces mock services.
     let (inner_default, mut default) = tower_test::mock::pair();
     let (inner_special, mut special) = tower_test::mock::pair();
-    let inner = {
-        move |concrete: Concrete<()>| {
-            if let concrete::Dispatch::Forward(Remote(ServerAddr(addr)), ..) = concrete.target {
-                if addr == default_addr {
-                    return inner_default.clone();
-                }
-                if addr == special_addr {
-                    return inner_special.clone();
-                }
+    let inner = move |concrete: Concrete<()>| {
+        if let concrete::Dispatch::Forward(Remote(ServerAddr(addr)), ..) = concrete.target {
+            if addr == default_addr {
+                return inner_default.clone();
             }
-            panic!("unexpected target: {:?}", concrete.target);
+            if addr == special_addr {
+                return inner_special.clone();
+            }
         }
+        panic!("unexpected target: {:?}", concrete.target);
     };
 
     // Routes that configure a special header-based route and a default route.
@@ -81,9 +79,9 @@ async fn header_based_route() {
     let _ = tokio::select! {
         biased;
         _ = router.clone().oneshot(req) => panic!("unexpected response"),
-        reqrsp = default.next_request() => reqrsp.expect("request"),
         _ = special.next_request() => panic!("unexpected request to special service"),
         _ = time::sleep(time::Duration::from_secs(1)) => panic!("timed out"),
+        reqrsp = default.next_request() => reqrsp.expect("request"),
     };
 
     default.allow(1);
@@ -96,8 +94,8 @@ async fn header_based_route() {
         biased;
         _ = router.clone().oneshot(req) => panic!("unexpected response"),
         _ = default.next_request() => panic!("unexpected request to default service"),
-        reqrsp = special.next_request() => reqrsp.expect("request"),
         _ = time::sleep(time::Duration::from_secs(1)) => panic!("timed out"),
+        reqrsp = special.next_request() => reqrsp.expect("request"),
     };
 
     // Hold the router to prevent inner services from being dropped.
