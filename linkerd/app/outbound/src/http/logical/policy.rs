@@ -307,12 +307,17 @@ where
     }
 }
 
+type HttpMatchedRouteParams<T> =
+    MatchedRouteParams<T, route::http::r#match::RequestMatch, policy::http::Filter>;
+type GrpcMatchedRouteParams<T> =
+    MatchedRouteParams<T, route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
+
 impl<B, T> svc::router::SelectRoute<http::Request<B>>
     for RouterParams<T, route::http::MatchRequest, policy::http::Filter>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    type Key = MatchedRouteParams<T, route::http::r#match::RequestMatch, policy::http::Filter>;
+    type Key = HttpMatchedRouteParams<T>;
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
@@ -330,7 +335,7 @@ impl<T, B> svc::router::SelectRoute<http::Request<B>>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    type Key = MatchedRouteParams<T, route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
+    type Key = GrpcMatchedRouteParams<T>;
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
@@ -415,17 +420,13 @@ impl<T: Clone, M, F> svc::Param<Distribution<T>> for MatchedRouteParams<T, M, F>
     }
 }
 
-impl<T> filters::Apply
-    for MatchedRouteParams<T, route::http::r#match::RequestMatch, policy::http::Filter>
-{
+impl<T> filters::Apply for HttpMatchedRouteParams<T> {
     fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
         filters::apply_http(&self.r#match, &self.params.filters, req)
     }
 }
 
-impl<T> filters::Apply
-    for MatchedRouteParams<T, route::grpc::r#match::RouteMatch, policy::grpc::Filter>
-{
+impl<T> filters::Apply for GrpcMatchedRouteParams<T> {
     fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
         filters::apply_grpc(&self.r#match, &self.params.filters, req)
     }
