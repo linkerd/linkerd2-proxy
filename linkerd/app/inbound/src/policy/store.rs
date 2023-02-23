@@ -1,6 +1,6 @@
-use super::{api, AllowPolicy};
+use super::AllowPolicy;
 use futures::future;
-use linkerd_app_core::{proxy::http, svc, transport::OrigDstAddr, Error};
+use linkerd_app_core::{svc, transport::OrigDstAddr, Error};
 use linkerd_idle_cache::IdleCache;
 pub use linkerd_proxy_server_policy::{
     authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
@@ -11,12 +11,13 @@ use std::{
     task,
 };
 use tokio::{sync::watch, time::Duration};
+use tower::ServiceExt;
 use tracing::{info_span, Instrument};
 
 #[derive(Clone)]
-pub struct Store<S> {
+pub struct Store<D> {
     cache: IdleCache<u16, Rx, BuildHasherDefault<PortHasher>>,
-    discover: api::Watch<S>,
+    discover: D,
 }
 
 type Rx = watch::Receiver<ServerPolicy>;
@@ -30,19 +31,21 @@ struct PortHasher(u16);
 
 // === impl Store ===
 
-impl<S> Store<S>
+impl<D> Store<D>
 where
-    S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
-    S: Clone + Send + Sync + 'static,
-    S::Future: Send,
-    S::ResponseBody:
-        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
+    D: svc::Service<
+        u16,
+        Response = tonic::Response<watch::Receiver<ServerPolicy>>,
+        Error = tonic::Status,
+    >,
+    D: Clone + Send + Sync + 'static,
+    D::Future: Send,
 {
     #[cfg(test)]
     pub(super) fn spawn_fixed(
         idle_timeout: Duration,
         ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
-        discover: api::Watch<S>,
+        discover: D,
     ) -> Self {
         let cache = {
             let rxs = ports.into_iter().map(|(p, s)| {
@@ -62,11 +65,7 @@ where
     ///
     /// A discovery watch is spawned for each of the described `ports` and the
     /// result is cached for as long as the `Store` is held. The `Store` may be used to
-    pub(super) fn spawn_discover(
-        idle_timeout: Duration,
-        discover: api::Watch<S>,
-        ports: HashSet<u16>,
-    ) -> Self {
+    pub(super) fn spawn_discover(idle_timeout: Duration, discover: D, ports: HashSet<u16>) -> Self {
         // The initial set of policies never expire from the cache.
         //
         // Policies that are dynamically discovered at runtime will expire after
@@ -78,7 +77,7 @@ where
             let discover = discover.clone();
             tokio::spawn(
                 async move {
-                    match discover.spawn_watch(port).await {
+                    match discover.oneshot(port).await {
                         Err(error) => {
                             // we'll try again when a connection actually targets this port...
                             tracing::error!(port, %error, "Failed to start ServerPolicy default port watch!")
@@ -97,13 +96,15 @@ where
     }
 }
 
-impl<S> svc::Service<OrigDstAddr> for Store<S>
+impl<D> svc::Service<OrigDstAddr> for Store<D>
 where
-    S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
-    S: Clone + Send + Sync + 'static,
-    S::Future: Send,
-    S::ResponseBody:
-        http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
+    D: svc::Service<
+        u16,
+        Response = tonic::Response<watch::Receiver<ServerPolicy>>,
+        Error = tonic::Status,
+    >,
+    D: Clone + Send + Sync + 'static,
+    D::Future: Send,
 {
     type Response = AllowPolicy;
     type Error = Error;
@@ -130,7 +131,7 @@ where
         future::Either::Right(Box::pin(
             async move {
                 tracing::trace!(%port, "spawning policy discovery");
-                let server = disco.spawn_watch(port).await?.into_inner();
+                let server = disco.oneshot(port).await?.into_inner();
                 let server = cache.get_or_insert(port, server);
                 Ok(AllowPolicy { dst, server })
             }
