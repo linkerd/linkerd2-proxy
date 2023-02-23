@@ -141,7 +141,7 @@ where
                 // these results separately, this case isn't expected to be
                 // used outside of testing.
                 tracing::trace!(%port, "using the default policy");
-                let server = self.cache.insert(port, self.default_rx.clone());
+                let server = self.cache.get_or_insert(port, self.default_rx.clone());
                 future::Either::Left(future::ready(Ok(AllowPolicy { dst, server })))
             }
             Some(ref disco) => {
@@ -151,7 +151,7 @@ where
                     async move {
                         tracing::trace!(%port, "spawning policy discovery");
                         let server = disco.spawn_watch(port).await?.into_inner();
-                        let server = cache.insert(port, server);
+                        let server = cache.get_or_insert(port, server);
                         Ok(AllowPolicy { dst, server })
                     }
                     .instrument(info_span!("watch", port)),
