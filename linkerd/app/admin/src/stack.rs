@@ -93,9 +93,7 @@ impl Config {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
         // Get the policy for the admin server.
-        let policy = policy
-            .get_policy(inbound::policy::LookupAddr(listen_addr.into()))
-            .await?;
+        let policy = policy.get_policy(OrigDstAddr(listen_addr.into())).await?;
 
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);

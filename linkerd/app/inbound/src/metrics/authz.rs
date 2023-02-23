@@ -1,10 +1,11 @@
-use crate::policy::{AllowPolicy, HttpRoutePermit, LookupAddr, ServerPermit};
+use crate::policy::{AllowPolicy, HttpRoutePermit, ServerPermit};
 use linkerd_app_core::{
     metrics::{
         metrics, Counter, FmtLabels, FmtMetrics, RouteAuthzLabels, RouteLabels, ServerAuthzLabels,
         ServerLabel, TargetAddr, TlsAccept,
     },
     tls,
+    transport::OrigDstAddr,
 };
 use parking_lot::Mutex;
 use std::{collections::HashMap, sync::Arc};
@@ -78,7 +79,7 @@ impl HttpAuthzMetrics {
     pub fn route_not_found(
         &self,
         labels: ServerLabel,
-        dst: LookupAddr,
+        dst: OrigDstAddr,
         tls: tls::ConditionalServerTls,
     ) {
         self.0
@@ -89,7 +90,7 @@ impl HttpAuthzMetrics {
             .incr();
     }
 
-    pub fn deny(&self, labels: RouteLabels, dst: LookupAddr, tls: tls::ConditionalServerTls) {
+    pub fn deny(&self, labels: RouteLabels, dst: OrigDstAddr, tls: tls::ConditionalServerTls) {
         self.0
             .deny
             .lock()
@@ -204,7 +205,7 @@ impl FmtMetrics for TcpAuthzMetrics {
 // === impl Key ===
 
 impl<L> Key<L> {
-    fn new(labels: L, dst: LookupAddr, tls: tls::ConditionalServerTls) -> Self {
+    fn new(labels: L, dst: OrigDstAddr, tls: tls::ConditionalServerTls) -> Self {
         Self {
             tls,
             target: TargetAddr(dst.into()),

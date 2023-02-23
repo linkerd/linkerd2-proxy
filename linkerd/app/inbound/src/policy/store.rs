@@ -1,6 +1,6 @@
-use super::{api, AllowPolicy, DefaultPolicy, GetPolicy, LookupAddr};
+use super::{api, AllowPolicy, DefaultPolicy, GetPolicy};
 use futures::future;
-use linkerd_app_core::{proxy::http, Error};
+use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error};
 use linkerd_idle_cache::IdleCache;
 pub use linkerd_proxy_server_policy::{
     authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
@@ -118,11 +118,11 @@ where
         future::BoxFuture<'static, Result<AllowPolicy, Error>>,
     >;
 
-    fn get_policy(&self, dst: LookupAddr) -> Self::Future {
+    fn get_policy(&self, dst: OrigDstAddr) -> Self::Future {
         // Lookup the polcify for the target port in the cache. If it doesn't
         // already exist, we spawn a watch on the API (if it is configured). If
         // no discovery API is configured we use the default policy.
-        let port = dst.0.port();
+        let port = dst.port();
         if let Some(server) = self.cache.get(&port) {
             return future::Either::Left(future::ready(Ok(AllowPolicy { dst, server })));
         }

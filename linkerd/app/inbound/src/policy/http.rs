@@ -1,4 +1,4 @@
-use super::{LookupAddr, RoutePolicy, Routes};
+use super::{RoutePolicy, Routes};
 use crate::{
     metrics::authz::HttpAuthzMetrics,
     policy::{AllowPolicy, HttpRoutePermit},
@@ -8,7 +8,7 @@ use linkerd_app_core::{
     metrics::{RouteAuthzLabels, RouteLabels},
     svc::{self, ServiceExt},
     tls,
-    transport::{ClientAddr, Remote},
+    transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
 use linkerd_proxy_server_policy::{grpc, http, route::RouteMatch};
@@ -41,7 +41,7 @@ pub struct HttpPolicyService<T, N> {
 
 #[derive(Clone, Debug)]
 struct ConnectionMeta {
-    dst: LookupAddr,
+    dst: OrigDstAddr,
     client: Remote<ClientAddr>,
     tls: tls::ConditionalServerTls,
 }

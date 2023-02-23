@@ -488,24 +488,18 @@ impl<T> InsertParam<tls::ConditionalServerTls, T> for TlsParams {
 
 // === impl Discover ===
 
-impl svc::Param<policy::LookupAddr> for Discover {
-    fn param(&self) -> policy::LookupAddr {
+impl svc::Param<OrigDstAddr> for Discover {
+    fn param(&self) -> OrigDstAddr {
         if self.header.name.is_none() {
             // When the transport header targets an alternate port (but does
             // not identify an alternate target name), we check the new
             // target's policy (rather than the inbound proxy's address).
-            return policy::LookupAddr((self.client.local_addr.ip(), self.header.port).into());
+            return OrigDstAddr((self.client.local_addr.ip(), self.header.port).into());
         }
 
         // When the transport header provides an alternate target, the
         // connection is a gateway connection. We check the _gateway
         // address's_ policy (rather than the target address).
-        policy::LookupAddr(self.client.local_addr.into())
-    }
-}
-
-impl svc::Param<OrigDstAddr> for Discover {
-    fn param(&self) -> OrigDstAddr {
         self.client.local_addr
     }
 }

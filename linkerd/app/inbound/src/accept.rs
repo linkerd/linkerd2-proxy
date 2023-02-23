@@ -55,10 +55,7 @@ impl<N> Inbound<N> {
                         policy,
                     }
                 })
-                .push(policy::Discover::layer_via(policies, |t: &T| {
-                    let OrigDstAddr(addr) = t.param();
-                    policy::LookupAddr(addr)
-                }))
+                .push(policy::Discover::layer(policies))
                 .into_new_service()
                 .check_new_service::<T, I>()
                 .push_switch(
@@ -100,12 +97,6 @@ impl svc::Param<u16> for Accept {
 impl svc::Param<OrigDstAddr> for Accept {
     fn param(&self) -> OrigDstAddr {
         self.orig_dst_addr
-    }
-}
-
-impl svc::Param<policy::LookupAddr> for Accept {
-    fn param(&self) -> policy::LookupAddr {
-        policy::LookupAddr(self.orig_dst_addr.into())
     }
 }
 
@@ -213,12 +204,6 @@ mod tests {
 
     #[derive(Clone, Debug)]
     struct Target(u16);
-
-    impl svc::Param<policy::LookupAddr> for Target {
-        fn param(&self) -> policy::LookupAddr {
-            policy::LookupAddr(([192, 0, 2, 2], self.0).into())
-        }
-    }
 
     impl svc::Param<OrigDstAddr> for Target {
         fn param(&self) -> OrigDstAddr {
