@@ -84,12 +84,8 @@ pub enum Routes {
 
 impl<S> GetPolicy for S
 where
-    S: tower::Service<OrigDstAddr, Response = AllowPolicy, Error = Error>
-        + Clone
-        + Send
-        + Sync
-        + Unpin
-        + 'static,
+    S: tower::Service<OrigDstAddr, Response = AllowPolicy, Error = Error>,
+    S: Clone + Send + Sync + Unpin + 'static,
     S::Future: Send + Unpin,
 {
     type Future = tower::util::Oneshot<S, OrigDstAddr>;
