@@ -56,7 +56,6 @@ impl<N> Inbound<N> {
                     }
                 })
                 .lift_new_with_target()
-                .check_new_new::<T, AllowPolicy>()
                 .push(policy::Discover::layer(policies))
                 .into_new_service()
                 .check_new_service::<T, I>()
