@@ -2,7 +2,10 @@ use crate::{policy, Outbound};
 use futures::future;
 use linkerd_app_core::{
     profiles,
-    svc::{self, stack::Param},
+    svc::{
+        self,
+        stack::{self, Param},
+    },
     Addr, AddrMatch, Error,
 };
 use std::{
@@ -33,18 +36,23 @@ pub struct WithAllowlist<S> {
 
 impl<N> Outbound<N> {
     /// Discovers routing configuration.
-    pub fn push_discover<T, Req, NSvc, D>(
+    pub fn push_discover<T, K, X, Req, NSvc, D>(
         self,
         discover: D,
+        extract_key: X,
     ) -> Outbound<svc::ArcNewService<T, svc::BoxService<Req, NSvc::Response, Error>>>
     where
+        // Discovery cache key
+        K: Clone + std::fmt::Debug + Eq + Hash + Send + Sync + 'static,
+        // Extracts `K`-typed keys from `T`-typed targets
+        X: svc::ExtractParam<K, T>,
+        X: Clone + Send + Sync + 'static,
         // Discoverable target.
-        T: Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + 'static,
         // Request type.
         Req: Send + 'static,
         // Discovery client.
-        D: svc::Service<profiles::LookupAddr, Error = Error> + Clone + Send + Sync + 'static,
+        D: svc::Service<K, Error = Error> + Clone + Send + Sync + 'static,
         D::Future: Send + Unpin + 'static,
         D::Error: Send + Sync + 'static,
         D::Response: Clone + Send + Sync + 'static,
@@ -57,7 +65,11 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, _, stk| {
             stk.lift_new_with_target()
-                .push_new_cached_discover(discover, config.discovery_idle_timeout)
+                .push(svc::NewCachedDiscover::layer_via(
+                    discover,
+                    config.discovery_idle_timeout,
+                    extract_key,
+                ))
                 .check_new_service::<T, _>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())

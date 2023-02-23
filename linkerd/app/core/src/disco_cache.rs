@@ -5,15 +5,15 @@ use futures::TryFutureExt;
 use linkerd_error::Error;
 use linkerd_idle_cache::{Cached, NewIdleCached};
 use linkerd_stack::{
-    layer, queue, CloneParam, FutureService, MapErrBoxed, NewQueueWithoutTimeout, NewService,
-    Oneshot, Param, QueueWithoutTimeout, Service, ServiceExt, ThunkClone,
+    layer, queue, CloneParam, ExtractParam, FutureService, MapErrBoxed, NewQueueWithoutTimeout,
+    NewService, Oneshot, QueueWithoutTimeout, Service, ServiceExt, ThunkClone,
 };
 use std::{fmt, hash::Hash, task, time};
 
 /// A [`NewService`] that extracts a `K`-typed key from each target to build a
 /// [`Cached`]<[`DiscoverThunk`]>.
 #[derive(Clone)]
-pub struct NewCachedDiscover<K, D, N>
+pub struct NewCachedDiscover<K, X, D, N>
 where
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
     D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
@@ -25,6 +25,9 @@ where
 
     // NewService<D::Response>
     inner: N,
+
+    /// Extracts `K`-typed keys.
+    extract_key: X,
 }
 
 /// The future that drives discovery to build an new inner service wrapped
@@ -73,7 +76,7 @@ const QUEUE_CAPACITY: queue::Capacity = queue::Capacity(10);
 
 // === impl NewCachedDiscover ===
 
-impl<K, D, N> NewCachedDiscover<K, D, N>
+impl<K, D, N> NewCachedDiscover<K, (), D, N>
 where
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
     D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
@@ -81,6 +84,22 @@ where
     D::Future: Send + Unpin,
 {
     pub fn new(inner: N, discover: D, timeout: time::Duration) -> Self {
+        Self::new_via(inner, discover, timeout, ())
+    }
+
+    pub fn layer(disco: D, idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via(disco, idle, ())
+    }
+}
+
+impl<K, X, D, N> NewCachedDiscover<K, X, D, N>
+where
+    K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
+    D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
+    D::Response: Clone + Send + Sync,
+    D::Future: Send + Unpin,
+{
+    pub fn new_via(inner: N, discover: D, timeout: time::Duration, extract_key: X) -> Self {
         let queue = NewQueueThunk::new(
             NewDiscoverThunk { discover },
             CloneParam::from(QUEUE_CAPACITY),
@@ -88,17 +107,26 @@ where
         Self {
             inner,
             cache: NewIdleCached::new(queue, timeout),
+            extract_key,
         }
     }
 
-    pub fn layer(disco: D, idle: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |inner| Self::new(inner, disco.clone(), idle))
+    pub fn layer_via(
+        disco: D,
+        idle: time::Duration,
+        extract_key: X,
+    ) -> impl layer::Layer<N, Service = Self> + Clone
+    where
+        X: Clone,
+    {
+        layer::mk(move |inner| Self::new_via(inner, disco.clone(), idle, extract_key.clone()))
     }
 }
 
-impl<T, K, D, M, N> NewService<T> for NewCachedDiscover<K, D, M>
+impl<T, K, X, D, M, N> NewService<T> for NewCachedDiscover<K, X, D, M>
 where
-    T: Param<K> + Clone,
+    X: ExtractParam<K, T>,
+    T: Clone,
     K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
     D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
     D::Response: Clone + Send + Sync + 'static,
@@ -109,7 +137,7 @@ where
     type Service = CachedDiscover<D::Response, N, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let key = target.param();
+        let key = self.extract_key.extract_param(&target);
         let cached = self.cache.new_service(key);
         let inner = self.inner.new_service(target);
         let future = cached.clone().oneshot(());

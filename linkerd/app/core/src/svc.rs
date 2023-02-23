@@ -1,6 +1,6 @@
 // Possibly unused, but useful during development.
 
-use crate::{disco_cache::NewCachedDiscover, Error};
+use crate::Error;
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 use std::{
@@ -18,7 +18,7 @@ pub use tower::{
     spawn_ready::SpawnReady, Service, ServiceExt,
 };
 
-pub use crate::proxy::http;
+pub use crate::{disco_cache::NewCachedDiscover, proxy::http};
 pub use linkerd_idle_cache as idle_cache;
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_router::{self as router, NewOneshotRoute};
@@ -266,7 +266,7 @@ impl<S> Stack<S> {
         self,
         discover: D,
         idle: Duration,
-    ) -> Stack<NewCachedDiscover<K, D, S>>
+    ) -> Stack<NewCachedDiscover<K, (), D, S>>
     where
         K: Clone + fmt::Debug + Eq + Hash + Send + Sync + 'static,
         D: Service<K, Error = Error> + Clone + Send + Sync + 'static,
