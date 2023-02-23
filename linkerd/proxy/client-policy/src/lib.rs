@@ -169,3 +169,95 @@ impl std::hash::Hash for Meta {
         self.name().hash(state);
     }
 }
+
+#[cfg(feature = "proto")]
+pub mod proto {
+    use super::*;
+    use linkerd2_proxy_api::{destination, meta, net, outbound as api};
+    use linkerd_proxy_api_resolve::pb as resolve;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidPolicy {
+        #[error("invalid HTTP route: {0}")]
+        Route(#[from] http::proto::InvalidHttpRoute),
+        // #[error("invalid backend: {0}")]
+        // Backend(#[from] InvalidBackend),
+        #[error("invalid ProxyProtocol: {0}")]
+        Protocol(&'static str),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("invalid metadata: {0}")]
+    pub struct InvalidMeta(pub(crate) &'static str);
+
+    impl TryFrom<api::OutboundPolicy> for ClientPolicy {
+        type Error = InvalidPolicy;
+
+        fn try_from(policy: api::OutboundPolicy) -> Result<Self, Self::Error> {
+            let protocol = policy
+                .protocol
+                .ok_or(InvalidPolicy::Protocol("missing protocol"))?
+                .kind
+                .ok_or(InvalidPolicy::Protocol("missing kind"))?;
+            // let mut backends = Vec::new();
+            let protocol = match protocol {
+                api::proxy_protocol::Kind::Detect(api::proxy_protocol::Detect {
+                    http1,
+                    http2,
+                    timeout,
+                }) => {
+                    todo!("eliza")
+                }
+                api::proxy_protocol::Kind::Opaque(api::proxy_protocol::Opaque {}) => {
+                    todo!("eliza: opaque")
+                }
+            };
+
+            todo!("eliza: finishme lol")
+        }
+    }
+
+    impl TryFrom<meta::Metadata> for Meta {
+        type Error = InvalidMeta;
+        fn try_from(proto: meta::Metadata) -> Result<Self, Self::Error> {
+            let kind = proto.kind.ok_or(InvalidMeta("missing kind"))?;
+            match kind {
+                meta::metadata::Kind::Default(name) => Ok(Meta::Default {
+                    name: Cow::Owned(name),
+                }),
+                meta::metadata::Kind::Resource(meta::Resource {
+                    group,
+                    kind,
+                    name,
+                    namespace,
+                    section,
+                }) => {
+                    macro_rules! ensure_nonempty{
+                        ($($name:ident),+) => {
+                            $(
+                                if $name.is_empty() {
+                                    return Err(InvalidMeta(concat!(stringify!($name, "must not be empty"))));
+                                }
+                            )+
+                        }
+                    }
+                    ensure_nonempty! { group, kind, name, namespace };
+
+                    let section = if section.is_empty() {
+                        None
+                    } else {
+                        Some(section)
+                    };
+
+                    Ok(Meta::Resource {
+                        group,
+                        kind,
+                        name,
+                        namespace,
+                        section,
+                    })
+                }
+            }
+        }
+    }
+}
