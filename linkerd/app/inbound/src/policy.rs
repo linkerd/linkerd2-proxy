@@ -80,6 +80,28 @@ pub enum Routes {
     Grpc(Arc<[GrpcRoute]>),
 }
 
+// === impl GetPolicy ===
+
+impl<S> GetPolicy for S
+where
+    S: tower::Service<OrigDstAddr, Response = AllowPolicy, Error = Error>
+        + Clone
+        + Send
+        + Sync
+        + Unpin
+        + 'static,
+    S::Future: Send + Unpin,
+{
+    type Future = tower::util::Oneshot<S, OrigDstAddr>;
+
+    #[inline]
+    fn get_policy(&self, target: OrigDstAddr) -> Self::Future {
+        use tower::util::ServiceExt;
+
+        self.clone().oneshot(target)
+    }
+}
+
 // === impl DefaultPolicy ===
 
 impl From<ServerPolicy> for DefaultPolicy {
