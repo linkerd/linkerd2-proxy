@@ -130,7 +130,7 @@ where
         match self.discover {
             None => {
                 // If no discovery API is configured, then we use the
-                // default policy. Whlie it's a little wasteful to cache
+                // default policy. While it's a little wasteful to cache
                 // these results separately, this case isn't expected to be
                 // used outside of testing.
                 tracing::trace!(%port, "using the default policy");
