@@ -1,6 +1,6 @@
-use super::{AllowPolicy, GetPolicy};
+use super::{AllowPolicy, GetPolicy, LookupAddr};
 use futures::ready;
-use linkerd_app_core::{svc, transport::OrigDstAddr, Error};
+use linkerd_app_core::{svc, Error};
 use std::{
     future::Future,
     pin::Pin,
@@ -50,7 +50,7 @@ where
 impl<X, G, N, NSvc, T> svc::Service<T> for Discover<X, G, N>
 where
     G: GetPolicy,
-    X: svc::ExtractParam<OrigDstAddr, T>,
+    X: svc::ExtractParam<LookupAddr, T>,
     N: svc::NewService<T, Service = NSvc> + Clone,
     NSvc: svc::NewService<AllowPolicy>,
 {

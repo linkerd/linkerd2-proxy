@@ -1,6 +1,6 @@
-use super::{api, AllowPolicy, DefaultPolicy};
+use super::{api, AllowPolicy, DefaultPolicy, LookupAddr};
 use futures::future;
-use linkerd_app_core::{proxy::http, svc, transport::OrigDstAddr, Error};
+use linkerd_app_core::{proxy::http, svc, transport::ServerAddr, Error};
 use linkerd_idle_cache::IdleCache;
 pub use linkerd_proxy_server_policy::{
     authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
@@ -106,7 +106,7 @@ impl<S> Store<S> {
     }
 }
 
-impl<S> svc::Service<OrigDstAddr> for Store<S>
+impl<S> svc::Service<LookupAddr> for Store<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
     S: Clone + Send + Sync + 'static,
@@ -125,11 +125,12 @@ where
         task::Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, dst: OrigDstAddr) -> Self::Future {
-        // Lookup the polcify for the target port in the cache. If it doesn't
+    fn call(&mut self, LookupAddr(addr): LookupAddr) -> Self::Future {
+        // Lookup the policy for the target port in the cache. If it doesn't
         // already exist, we spawn a watch on the API (if it is configured). If
         // no discovery API is configured we use the default policy.
-        let port = dst.port();
+        let port = addr.port();
+        let dst = ServerAddr(addr);
         if let Some(server) = self.cache.get(&port) {
             return future::Either::Left(future::ready(Ok(AllowPolicy { dst, server })));
         }

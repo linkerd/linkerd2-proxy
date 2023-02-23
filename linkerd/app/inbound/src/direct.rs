@@ -209,13 +209,13 @@ impl<N> Inbound<N> {
                     |(header, client): &(TransportHeader, ClientInfo)| {
                         if header.name.is_some() {
                             // When the transport header provides an alternate target, the
-                            // connection is a gateway connection. . We use the `OrigDstAddr`--the
+                            // connection is a gateway connection. We use the `OrigDstAddr`--the
                             // inbound proxy server's address--to lookup policies.
-                            return client.local_addr;
+                            return policy::LookupAddr(client.local_addr.into());
                         }
 
                         // Otherwise, use the port override from the transport header.
-                        OrigDstAddr((client.local_addr.ip(), header.port).into())
+                        policy::LookupAddr((client.local_addr.ip(), header.port).into())
                     },
                 ))
                 .into_new_service()
