@@ -47,14 +47,12 @@ impl<N> Inbound<N> {
         self.map_stack(|cfg, rt, accept| {
             accept
                 .push_on_service(svc::MapErr::layer_boxed())
-                .push_map_target(|(policy, t): (AllowPolicy, T)| {
-                    tracing::debug!(policy = ?&*policy.borrow(), "Accepted");
-                    Accept {
-                        client_addr: t.param(),
-                        orig_dst_addr: t.param(),
-                        policy,
-                    }
+                .push_map_target(|accept: Accept| {
+                    tracing::debug!(policy = ?&*accept.policy.borrow(), "Accepted");
+                    accept
                 })
+                .lift_new_with_target()
+                .check_new_new::<T, AllowPolicy>()
                 .push(policy::Discover::layer(policies))
                 .into_new_service()
                 .check_new_service::<T, I>()
@@ -109,6 +107,19 @@ impl svc::Param<Remote<ClientAddr>> for Accept {
 impl svc::Param<AllowPolicy> for Accept {
     fn param(&self) -> AllowPolicy {
         self.policy.clone()
+    }
+}
+
+impl<T> From<(AllowPolicy, T)> for Accept
+where
+    T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
+{
+    fn from((policy, t): (AllowPolicy, T)) -> Self {
+        Accept {
+            client_addr: t.param(),
+            orig_dst_addr: t.param(),
+            policy,
+        }
     }
 }
 

@@ -14,8 +14,7 @@ pub struct Discover<G, N> {
 }
 
 #[pin_project::pin_project]
-pub struct DiscoverFuture<T, F, N> {
-    target: Option<T>,
+pub struct DiscoverFuture<F, N> {
     #[pin]
     inner: F,
     new_svc: N,
@@ -30,15 +29,16 @@ impl<G: GetPolicy + Clone, N> Discover<G, N> {
     }
 }
 
-impl<G: GetPolicy, N, T> svc::Service<T> for Discover<G, N>
+impl<G: GetPolicy, N, NSvc, T> svc::Service<T> for Discover<G, N>
 where
     G: GetPolicy,
-    N: svc::NewService<(AllowPolicy, T)> + Clone,
+    N: svc::NewService<T, Service = NSvc> + Clone,
+    NSvc: svc::NewService<AllowPolicy>,
     T: svc::Param<OrigDstAddr>,
 {
     type Error = Error;
-    type Response = N::Service;
-    type Future = DiscoverFuture<T, G::Future, N>;
+    type Response = NSvc::Service;
+    type Future = DiscoverFuture<G::Future, NSvc>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -47,27 +47,24 @@ where
     fn call(&mut self, target: T) -> Self::Future {
         let dst = target.param();
         DiscoverFuture {
-            target: Some(target),
             inner: self.get_policy.get_policy(dst),
-            new_svc: self.new_svc.clone(),
+            new_svc: self.new_svc.new_service(target),
         }
     }
 }
 
 // === impl DiscoverFuture ===
 
-impl<T, F, N, E> Future for DiscoverFuture<T, F, N>
+impl<F, N, E> Future for DiscoverFuture<F, N>
 where
     F: Future<Output = Result<AllowPolicy, E>>,
-    N: svc::NewService<(AllowPolicy, T)>,
+    N: svc::NewService<AllowPolicy>,
 {
     type Output = Result<N::Service, E>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let policy = ready!(this.inner.poll(cx))?;
-        let svc = this
-            .new_svc
-            .new_service((policy, this.target.take().expect("polled after ready")));
+        let svc = this.new_svc.new_service(policy);
         Poll::Ready(Ok(svc))
     }
 }

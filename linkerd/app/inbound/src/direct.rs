@@ -209,6 +209,7 @@ impl<N> Inbound<N> {
                         )
                         .into_inner(),
                 )
+                .lift_new_with_target()
                 .push(policy::Discover::layer(policies))
                 .into_new_service()
                 .push_map_target(|(header, client)| Discover { header, client })
