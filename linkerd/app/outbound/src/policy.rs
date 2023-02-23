@@ -1,5 +1,5 @@
 use crate::discover;
-use linkerd_app_core::{profiles, Error};
+use linkerd_app_core::Error;
 pub use linkerd_proxy_client_policy::*;
 
 use std::future::Future;

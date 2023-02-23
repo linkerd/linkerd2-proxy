@@ -122,7 +122,10 @@ impl Outbound<()> {
             // Access cached discovery information.
             .push_discover(discover)
             // Instrument server-side connections for telemetry.
-            .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
+            .push_tcp_instrument(|t: &T| {
+                let addr: OrigDstAddr = t.param();
+                info_span!("proxy", %addr)
+            })
             .into_inner()
     }
 }

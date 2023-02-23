@@ -1359,8 +1359,11 @@ dependencies = [
  "linkerd-http-route",
  "linkerd-proxy-api-resolve",
  "linkerd-proxy-core",
+ "linkerd2-proxy-api",
  "maplit",
+ "prost-types",
  "quickcheck",
+ "thiserror",
 ]
 
 [[package]]

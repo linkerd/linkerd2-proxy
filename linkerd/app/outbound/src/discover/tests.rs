@@ -1,5 +1,5 @@
 use super::*;
-use crate::{tcp, test_util::*};
+use crate::{discover, tcp, test_util::*};
 use linkerd_app_core::{
     io, profiles,
     svc::{NewService, Service, ServiceExt},
@@ -96,7 +96,7 @@ async fn caches_profiles_until_idle() {
     let profiles = {
         let profile = support::profile::resolver().profile(addr, profiles::Profile::default());
         let lookups = profile_lookups.clone();
-        svc::mk(move |a: profiles::LookupAddr| {
+        svc::mk(move |a: discover::TargetAddr| {
             lookups.fetch_add(1, Ordering::SeqCst);
             profile.clone().oneshot(a)
         })

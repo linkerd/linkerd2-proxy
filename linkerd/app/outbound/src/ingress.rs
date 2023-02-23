@@ -69,6 +69,8 @@ impl Outbound<()> {
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
+        let profiles = svc::stack(profiles.into_service())
+            .push_map_target(|discover::TargetAddr(addr)| profiles::LookupAddr(addr));
         // The fallback stack is the same thing as the normal proxy stack, but
         // it doesn't include TCP metrics, since they are already instrumented
         // on this ingress stack.
@@ -76,7 +78,7 @@ impl Outbound<()> {
             .to_tcp_connect()
             .push_opaq_cached(resolve.clone())
             .map_stack(|_, _, stk| stk.push_map_target(Opaq))
-            .push_discover(profiles.clone().into_service())
+            .push_discover(profiles.clone())
             .into_inner();
 
         let http = self
@@ -89,7 +91,7 @@ impl Outbound<()> {
                 stk.check_new_service::<Http<Logical>, _>()
                     .push_filter(Http::try_from)
             })
-            .push_discover(profiles.into_service());
+            .push_discover(profiles);
 
         http.push_ingress(opaque)
             .push_tcp_instrument(|t: &T| tracing::info_span!("ingress", addr = %t.param()))
@@ -250,9 +252,9 @@ impl<T> std::ops::Deref for Http<T> {
     }
 }
 
-impl Param<profiles::LookupAddr> for Http<RequestTarget> {
-    fn param(&self) -> profiles::LookupAddr {
-        profiles::LookupAddr(match self.parent.clone() {
+impl Param<discover::TargetAddr> for Http<RequestTarget> {
+    fn param(&self) -> discover::TargetAddr {
+        discover::TargetAddr(match self.parent.clone() {
             RequestTarget::Named(addr) => addr.into(),
             RequestTarget::Orig(OrigDstAddr(addr)) => addr.into(),
         })
