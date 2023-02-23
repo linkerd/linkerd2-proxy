@@ -56,12 +56,8 @@ where
 // === impl FromMakeService ===
 
 impl<S> FromMakeService<S> {
-    pub fn new(make_service: S) -> Self {
-        Self { make_service }
-    }
-
     pub fn layer() -> impl super::layer::Layer<S, Service = Self> {
-        super::layer::mk(Self::new)
+        super::layer::mk(|make_service| Self { make_service })
     }
 }
 
