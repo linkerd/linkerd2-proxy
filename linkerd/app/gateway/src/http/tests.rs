@@ -8,7 +8,7 @@ use linkerd_app_core::{
 };
 use linkerd_app_inbound::GatewayLoop;
 use linkerd_proxy_server_policy as policy;
-use std::{net::SocketAddr, str::FromStr, sync::Arc, time};
+use std::{str::FromStr, sync::Arc, time};
 use tower_test::mock;
 
 #[tokio::test]
@@ -52,13 +52,7 @@ async fn upgraded_request_remains_relative_form() {
 
     impl svc::Param<OrigDstAddr> for Target {
         fn param(&self) -> OrigDstAddr {
-            OrigDstAddr(dst_addr())
-        }
-    }
-
-    impl svc::Param<linkerd_app_inbound::policy::LookupAddr> for Target {
-        fn param(&self) -> linkerd_app_inbound::policy::LookupAddr {
-            linkerd_app_inbound::policy::LookupAddr(dst_addr())
+            OrigDstAddr(([10, 10, 10, 10], 4143).into())
         }
     }
 
@@ -144,10 +138,6 @@ async fn upgraded_request_remains_relative_form() {
             });
             policy
         }
-    }
-
-    fn dst_addr() -> SocketAddr {
-        ([10, 10, 10, 10], 4143).into()
     }
 
     let (inner, mut handle) =
