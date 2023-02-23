@@ -91,7 +91,7 @@ impl<N> Inbound<N> {
     ///    gateways may need to accept HTTP requests from older proxy versions
     pub(crate) fn push_direct<T, I, NSvc, G, GSvc, H, HSvc>(
         self,
-        policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
+        policies: impl policy::GetPolicy,
         gateway: G,
         http: H,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
@@ -146,58 +146,50 @@ impl<N> Inbound<N> {
                 // the header.
                 .push_switch(Ok::<Local, Infallible>, http)
                 .push_switch(
-                    {
-                        let policies = policies.clone();
-                        move |(h, client): (TransportHeader, ClientInfo)| -> Result<_, Infallible> {
-                            match h {
-                                TransportHeader {
-                                    port,
-                                    name: None,
-                                    protocol,
-                                } => Ok(svc::Either::A({
-                                    // When the transport header targets an alternate port (but does
-                                    // not identify an alternate target name), we check the new
-                                    // target's policy (rather than the inbound proxy's address).
-                                    let addr = (client.local_addr.ip(), port).into();
-                                    let policy = policies.get_policy(OrigDstAddr(addr));
-                                    match protocol {
-                                        None => svc::Either::A(LocalTcp {
-                                            server_addr: Remote(ServerAddr(addr)),
-                                            client_addr: client.client_addr,
-                                            client_id: client.client_id,
-                                            policy,
-                                        }),
-                                        Some(protocol) => {
-                                            // When TransportHeader includes the protocol, but does not
-                                            // include an alternate name we go through the Inbound HTTP
-                                            // stack.
-                                            svc::Either::B(LocalHttp {
-                                                addr: Remote(ServerAddr(addr)),
-                                                policy,
-                                                protocol,
-                                                client,
-                                            })
-                                        }
-                                    }
-                                })),
-
-                                TransportHeader {
-                                    port,
-                                    name: Some(name),
-                                    protocol,
-                                } => Ok(svc::Either::B({
-                                    // When the transport header provides an alternate target, the
-                                    // connection is a gateway connection. We check the _gateway
-                                    // address's_ policy (rather than the target address).
-                                    let policy = policies.get_policy(client.local_addr);
-                                    GatewayTransportHeader {
-                                        target: NameAddr::from((name, port)),
-                                        protocol,
-                                        client,
+                    |(policy, (h, client)): (AllowPolicy, (TransportHeader, ClientInfo))| -> Result<_, Infallible> {
+                        match h {
+                            TransportHeader {
+                                port,
+                                name: None,
+                                protocol,
+                             } => {
+                                // The transport header targets an alternate port (but does
+                                // not identify an alternate target name).
+                                let addr = (client.local_addr.ip(), port).into();
+                                Ok(svc::Either::A(match protocol {
+                                    None => svc::Either::A(LocalTcp {
+                                        server_addr: Remote(ServerAddr(addr)),
+                                        client_addr: client.client_addr,
+                                        client_id: client.client_id,
                                         policy,
+                                    }),
+                                    Some(protocol) => {
+                                        // When TransportHeader includes the protocol, but does not
+                                        // include an alternate name we go through the Inbound HTTP
+                                        // stack.
+                                        svc::Either::B(LocalHttp {
+                                            addr: Remote(ServerAddr(addr)),
+                                            policy,
+                                            protocol,
+                                            client,
+                                        })
                                     }
-                                })),
-                            }
+                                }))
+                            },
+                            TransportHeader {
+                                port,
+                                name: Some(name),
+                                protocol,
+                            } => Ok(svc::Either::B(
+                                // When the transport header provides an alternate target, the
+                                // connection is a gateway connection.
+                                GatewayTransportHeader {
+                                    target: NameAddr::from((name, port)),
+                                    protocol,
+                                    client,
+                                    policy,
+                                }
+                            ))
                         }
                     },
                     // HTTP detection is not necessary in this case, since the transport
@@ -211,6 +203,22 @@ impl<N> Inbound<N> {
                         )
                         .into_inner(),
                 )
+                .lift_new_with_target()
+                .push(policy::Discover::layer_via(
+                    policies,
+                    |(header, client): &(TransportHeader, ClientInfo)| {
+                        if header.name.is_some() {
+                            // When the transport header provides an alternate target, the
+                            // connection is a gateway connection. . We use the `OrigDstAddr`--the
+                            // inbound proxy server's address--to lookup policies.
+                            return client.local_addr;
+                        }
+
+                        // Otherwise, use the port override from the transport header.
+                        OrigDstAddr((client.local_addr.ip(), header.port).into())
+                    },
+                ))
+                .into_new_service()
                 .check_new_service::<(TransportHeader, ClientInfo), _>()
                 // Use ALPN to determine whether a transport header should be read.
                 .push(NewTransportHeaderServer::layer(detect_timeout))

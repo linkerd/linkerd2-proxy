@@ -1,6 +1,7 @@
 mod api;
 mod config;
 pub mod defaults;
+mod discover;
 mod http;
 mod store;
 mod tcp;
@@ -8,6 +9,7 @@ mod tcp;
 pub(crate) use self::store::Store;
 pub use self::{
     config::Config,
+    discover::Discover,
     http::{
         HttpInvalidPolicy, HttpRouteInvalidRedirect, HttpRouteNotFound, HttpRouteRedirect,
         HttpRouteUnauthorized, NewHttpPolicy,
@@ -20,6 +22,7 @@ use linkerd_app_core::{
     metrics::{RouteAuthzLabels, ServerAuthzLabels},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
+    Error,
 };
 use linkerd_idle_cache::Cached;
 pub use linkerd_proxy_server_policy::{
@@ -28,7 +31,7 @@ pub use linkerd_proxy_server_policy::{
     http::{filter::Redirection, Route as HttpRoute},
     route, Authentication, Authorization, Meta, Protocol, RoutePolicy, ServerPolicy,
 };
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 use thiserror::Error;
 use tokio::sync::watch;
 
@@ -38,9 +41,11 @@ pub struct ServerUnauthorized {
     server: Arc<Meta>,
 }
 
-pub trait GetPolicy {
-    // Returns the traffic policy configured for the destination address.
-    fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy;
+/// Returns the traffic policy configured for the destination address.
+pub trait GetPolicy: Clone + Send + Sync + 'static {
+    type Future: Future<Output = Result<AllowPolicy, Error>> + Unpin + Send;
+
+    fn get_policy(&self, target: OrigDstAddr) -> Self::Future;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,6 +78,24 @@ pub struct HttpRoutePermit {
 pub enum Routes {
     Http(Arc<[HttpRoute]>),
     Grpc(Arc<[GrpcRoute]>),
+}
+
+// === impl GetPolicy ===
+
+impl<S> GetPolicy for S
+where
+    S: tower::Service<OrigDstAddr, Response = AllowPolicy, Error = Error>,
+    S: Clone + Send + Sync + Unpin + 'static,
+    S::Future: Send + Unpin,
+{
+    type Future = tower::util::Oneshot<S, OrigDstAddr>;
+
+    #[inline]
+    fn get_policy(&self, target: OrigDstAddr) -> Self::Future {
+        use tower::util::ServiceExt;
+
+        self.clone().oneshot(target)
+    }
 }
 
 // === impl DefaultPolicy ===

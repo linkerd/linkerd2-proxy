@@ -1,5 +1,5 @@
 use crate::{
-    policy::{AllowPolicy, GetPolicy},
+    policy::{self, AllowPolicy, GetPolicy},
     Inbound,
 };
 use linkerd_app_core::{
@@ -26,7 +26,7 @@ impl<N> Inbound<N> {
     pub(crate) fn push_accept<T, I, NSvc, D, DSvc>(
         self,
         proxy_port: u16,
-        policies: impl GetPolicy + Clone + Send + Sync + 'static,
+        policies: impl GetPolicy,
         direct: D,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
@@ -46,6 +46,19 @@ impl<N> Inbound<N> {
     {
         self.map_stack(|cfg, rt, accept| {
             accept
+                .push_on_service(svc::MapErr::layer_boxed())
+                .push_map_target(|(policy, t): (AllowPolicy, T)| {
+                    tracing::debug!(policy = ?&*policy.borrow(), "Accepted");
+                    Accept {
+                        client_addr: t.param(),
+                        orig_dst_addr: t.param(),
+                        policy,
+                    }
+                })
+                .lift_new_with_target()
+                .push(policy::Discover::layer(policies))
+                .into_new_service()
+                .check_new_service::<T, I>()
                 .push_switch(
                     // Switch to the `direct` stack when a connection's original destination is the
                     // proxy's inbound port. Otherwise, check that connections are allowed on the
@@ -56,13 +69,7 @@ impl<N> Inbound<N> {
                             return Ok(svc::Either::B(t));
                         }
 
-                        let policy = policies.get_policy(addr);
-                        tracing::debug!(policy = ?&*policy.borrow(), "Accepted");
-                        Ok(svc::Either::A(Accept {
-                            client_addr: t.param(),
-                            orig_dst_addr: addr,
-                            policy,
-                        }))
+                        Ok(svc::Either::A(t))
                     },
                     direct,
                 )
