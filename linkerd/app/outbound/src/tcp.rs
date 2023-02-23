@@ -1,4 +1,4 @@
-use crate::Outbound;
+use crate::{discover, Outbound};
 use linkerd_app_core::{
     io, profiles, svc,
     transport::{self, addrs::*, metrics},
@@ -31,9 +31,9 @@ impl svc::Param<OrigDstAddr> for Accept {
     }
 }
 
-impl svc::Param<profiles::LookupAddr> for Accept {
-    fn param(&self) -> profiles::LookupAddr {
-        profiles::LookupAddr((*self.orig_dst).into())
+impl svc::Param<discover::TargetAddr> for Accept {
+    fn param(&self) -> discover::TargetAddr {
+        discover::TargetAddr((*self.orig_dst).into())
     }
 }
 

@@ -43,7 +43,7 @@ impl Outbound<()> {
     ) -> svc::ArcNewTcp<T, I>
     where
         // Target describing an outbound connection.
-        T: svc::Param<OrigDstAddr>,
+        T: svc::Param<OrigDstAddr> + svc::Param<discover::TargetAddr>,
         T: Clone + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
@@ -51,15 +51,17 @@ impl Outbound<()> {
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        let discover = svc::mk(move |addr: profiles::LookupAddr| {
-            let profile = profiles.get_profile(addr.clone()).map(|result| {
-                // TODO(eliza): we already recover on errors elsewhere in the
-                // stack...this is kinda unfortunate...
-                result.unwrap_or_else(|error| {
-                    tracing::warn!(%error, "Failed to resolve profile");
-                    None
-                })
-            });
+        let discover = svc::mk(move |addr: discover::TargetAddr| {
+            let profile = profiles
+                .get_profile(profiles::LookupAddr(addr.clone().0))
+                .map(|result| {
+                    // TODO(eliza): we already recover on errors elsewhere in the
+                    // stack...this is kinda unfortunate...
+                    result.unwrap_or_else(|error| {
+                        tracing::warn!(%error, "Failed to resolve profile");
+                        None
+                    })
+                });
             let policy = policy.get_policy(addr).map(|result| {
                 result.unwrap_or_else(|error| {
                     tracing::warn!(%error, "Failed to resolve client policy");

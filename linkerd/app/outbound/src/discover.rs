@@ -16,6 +16,10 @@ use tracing::debug;
 #[cfg(test)]
 mod tests;
 
+/// A target address for outbound policy discovery.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TargetAddr(pub Addr);
+
 /// Target with a discovery result.
 #[derive(Clone, Debug)]
 pub struct Discovery<T> {
@@ -39,12 +43,12 @@ impl<N> Outbound<N> {
     ) -> Outbound<svc::ArcNewService<T, svc::BoxService<Req, NSvc::Response, Error>>>
     where
         // Discoverable target.
-        T: Param<profiles::LookupAddr>,
+        T: Param<TargetAddr>,
         T: Clone + Send + Sync + 'static,
         // Request type.
         Req: Send + 'static,
         // Discovery client.
-        D: svc::Service<profiles::LookupAddr, Error = Error> + Clone + Send + Sync + 'static,
+        D: svc::Service<TargetAddr, Error = Error> + Clone + Send + Sync + 'static,
         D::Future: Send + Unpin + 'static,
         D::Error: Send + Sync + 'static,
         D::Response: Clone + Send + Sync + 'static,
