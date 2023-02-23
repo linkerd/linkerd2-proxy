@@ -51,19 +51,16 @@ impl Outbound<()> {
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        let discover = svc::mk(move |(_, _)| {
-            let OrigDstAddr(addr) = target.param();
-            let profile = profiles
-                .get_profile(profiles::LookupAddr(addr.into()))
-                .map(|result| {
-                    // TODO(eliza): we already recover on errors elsewhere in the
-                    // stack...this is kinda unfortunate...
-                    result.unwrap_or_else(|error| {
-                        tracing::warn!(%error, "Failed to resolve profile");
-                        None
-                    })
-                });
-            let policy = policy.get_policy(policy::LookupAddr(addr)).map(|result| {
+        let discover = svc::mk(move |addr: profiles::LookupAddr| {
+            let profile = profiles.get_profile(addr.clone()).map(|result| {
+                // TODO(eliza): we already recover on errors elsewhere in the
+                // stack...this is kinda unfortunate...
+                result.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "Failed to resolve profile");
+                    None
+                })
+            });
+            let policy = policy.get_policy(addr).map(|result| {
                 result.unwrap_or_else(|error| {
                     tracing::warn!(%error, "Failed to resolve client policy");
                     None
