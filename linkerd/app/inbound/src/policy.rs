@@ -4,7 +4,9 @@ pub mod defaults;
 mod discover;
 mod http;
 mod store;
-mod tcp;
+pub(crate) mod tcp;
+#[cfg(test)]
+pub mod test_util;
 
 pub(crate) use self::store::Store;
 pub use self::{

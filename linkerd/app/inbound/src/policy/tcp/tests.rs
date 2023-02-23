@@ -1,6 +1,5 @@
 use super::*;
 use crate::policy::*;
-use linkerd_app_core::{exp_backoff::ExponentialBackoff, proxy::http, Error};
 use linkerd_proxy_server_policy::{
     authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
 };
@@ -248,32 +247,4 @@ fn client_addr() -> Remote<ClientAddr> {
 
 fn orig_dst_addr() -> OrigDstAddr {
     OrigDstAddr(([192, 0, 2, 2], 1000).into())
-}
-
-impl tonic::client::GrpcService<tonic::body::BoxBody> for MockSvc {
-    type ResponseBody = linkerd_app_core::control::RspBody;
-    type Error = Error;
-    type Future = futures::future::Pending<Result<http::Response<Self::ResponseBody>, Self::Error>>;
-
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Error>> {
-        unreachable!()
-    }
-
-    fn call(&mut self, _req: http::Request<tonic::body::BoxBody>) -> Self::Future {
-        unreachable!()
-    }
-}
-
-impl Store<MockSvc> {
-    pub(crate) fn for_test(ports: impl IntoIterator<Item = (u16, ServerPolicy)>) -> Self {
-        Self::spawn_fixed(
-            std::time::Duration::MAX,
-            ports,
-            api::Api::new("test".into(), std::time::Duration::MAX, MockSvc)
-                .into_watch(ExponentialBackoff::default()),
-        )
-    }
 }
