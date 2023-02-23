@@ -1,6 +1,6 @@
-use super::{api, AllowPolicy, DefaultPolicy, GetPolicy};
+use super::{api, AllowPolicy, DefaultPolicy};
 use futures::future;
-use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error};
+use linkerd_app_core::{proxy::http, svc, transport::OrigDstAddr, Error};
 use linkerd_idle_cache::IdleCache;
 pub use linkerd_proxy_server_policy::{
     authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
@@ -8,6 +8,7 @@ pub use linkerd_proxy_server_policy::{
 use std::{
     collections::HashSet,
     hash::{BuildHasherDefault, Hasher},
+    task,
 };
 use tokio::{sync::watch, time::Duration};
 use tracing::{info_span, Instrument};
@@ -105,7 +106,7 @@ impl<S> Store<S> {
     }
 }
 
-impl<S> GetPolicy for Store<S>
+impl<S> svc::Service<OrigDstAddr> for Store<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
     S: Clone + Send + Sync + 'static,
@@ -113,12 +114,18 @@ where
     S::ResponseBody:
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
+    type Response = AllowPolicy;
+    type Error = Error;
     type Future = future::Either<
         future::Ready<Result<AllowPolicy, Error>>,
         future::BoxFuture<'static, Result<AllowPolicy, Error>>,
     >;
 
-    fn get_policy(&self, dst: OrigDstAddr) -> Self::Future {
+    fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), Self::Error>> {
+        task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, dst: OrigDstAddr) -> Self::Future {
         // Lookup the polcify for the target port in the cache. If it doesn't
         // already exist, we spawn a watch on the API (if it is configured). If
         // no discovery API is configured we use the default policy.
