@@ -1356,6 +1356,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "ipnet",
+ "linkerd-error",
  "linkerd-http-route",
  "linkerd-proxy-api-resolve",
  "linkerd-proxy-core",
@@ -1778,7 +1779,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.8.0"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=alex/outbound#a0666e59e89a2cecedb7fad82276ed201ade2e7c"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/outbound#d92b5d09bb96db187260a977acc571b5dbae973e"
 dependencies = [
  "h2",
  "http",
