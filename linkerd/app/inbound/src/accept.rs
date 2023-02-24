@@ -124,33 +124,14 @@ mod tests {
     };
     use linkerd_proxy_server_policy::{Authentication, Authorization, Meta, ServerPolicy};
     use std::sync::Arc;
+    use tokio::{sync::watch, time};
 
     const PROXY_PORT: u16 = 999;
 
     #[tokio::test(flavor = "current_thread")]
-    async fn policy() {
+    async fn fixed_policy() {
         let (io, _) = io::duplex(1);
-        let policies = Store::fixed_for_test(std::iter::once((
-            1000,
-            ServerPolicy {
-                protocol: linkerd_proxy_server_policy::Protocol::Opaque(Arc::new([
-                    Authorization {
-                        authentication: Authentication::Unauthenticated,
-                        networks: vec![Default::default()],
-                        meta: Arc::new(Meta::Resource {
-                            group: "policy.linkerd.io".into(),
-                            kind: "serverauthorization".into(),
-                            name: "testsaz".into(),
-                        }),
-                    },
-                ])),
-                meta: Arc::new(Meta::Resource {
-                    group: "policy.linkerd.io".into(),
-                    kind: "server".into(),
-                    name: "testsrv".into(),
-                }),
-            },
-        )));
+        let policies = Store::fixed_for_test(std::iter::once((1000, allow_policy())));
 
         inbound()
             .with_stack(new_ok())
@@ -167,7 +148,59 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn direct() {
+    async fn discovers() {
+        let (policies, mut disco) = Store::for_test(std::iter::empty());
+
+        let (svc, mut svc_handle) = tower_test::mock::pair::<io::DuplexStream, ()>();
+        let stack = inbound()
+            .with_stack(move |Accept { orig_dst_addr, .. }| {
+                let port = orig_dst_addr.port();
+                if port == 1000 {
+                    return svc.clone();
+                }
+                unreachable!("unexpected port: {port}")
+            })
+            .push_accept(
+                PROXY_PORT,
+                policies,
+                new_panic("direct stack must not be built"),
+            )
+            .into_inner();
+
+        // Start processing a connection.
+        let (io, _) = io::duplex(1);
+        let mut fut = stack.new_service(Target(1000)).oneshot(io);
+
+        // Ensure that a discovery fires for the port.
+        tokio::select! {
+            biased;
+            _ = &mut fut => panic!("unexpected response"),
+            _ = time::sleep(time::Duration::from_millis(100)) => panic!("timed out"),
+            reqrsp = disco.next_request() => {
+                let (port, respond) = reqrsp.expect("should receive request");
+                assert_eq!(port, 1000);
+                // Satisfy the policy.
+                let (tx, rx) = watch::channel(allow_policy());
+                tokio::spawn(async move { tx.closed().await; });
+                respond.send_response(tonic::Response::new(rx));
+            }
+        };
+
+        // Ensure that the connection is routed to the inner service.
+        tokio::select! {
+            biased;
+            _ = &mut fut => panic!("unexpected response"),
+            _ = time::sleep(time::Duration::from_millis(100)) => panic!("timed out"),
+             reqrsp = svc_handle.next_request() => {
+                let (_io, respond) = reqrsp.expect("should receive request");
+                respond.send_response(());
+                fut.await.expect("should succeed");
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn skips_discovery_for_direct() {
         let (io, _) = io::duplex(1);
         let policies = Store::fixed_for_test(std::iter::empty());
         inbound()
@@ -178,6 +211,25 @@ mod tests {
             .oneshot(io)
             .await
             .expect("should succeed");
+    }
+
+    fn allow_policy() -> ServerPolicy {
+        ServerPolicy {
+            protocol: linkerd_proxy_server_policy::Protocol::Opaque(Arc::new([Authorization {
+                authentication: Authentication::Unauthenticated,
+                networks: vec![Default::default()],
+                meta: Arc::new(Meta::Resource {
+                    group: "policy.linkerd.io".into(),
+                    kind: "serverauthorization".into(),
+                    name: "testsaz".into(),
+                }),
+            }])),
+            meta: Arc::new(Meta::Resource {
+                group: "policy.linkerd.io".into(),
+                kind: "server".into(),
+                name: "testallow".into(),
+            }),
+        }
     }
 
     fn inbound() -> Inbound<()> {

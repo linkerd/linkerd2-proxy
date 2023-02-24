@@ -897,6 +897,7 @@ dependencies = [
  "tokio-test",
  "tonic",
  "tower",
+ "tower-test",
  "tracing",
 ]
 

@@ -2,27 +2,37 @@ use super::Store;
 use crate::policy::*;
 use linkerd_app_core::svc;
 use linkerd_proxy_server_policy::ServerPolicy;
+use tower_test::mock;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Unreachable(());
 
 // === impl Store ===
 
-impl<D> Store<D>
-where
-    D: svc::Service<
-        u16,
-        Response = tonic::Response<watch::Receiver<ServerPolicy>>,
-        Error = tonic::Status,
-    >,
-    D: Clone + Send + Sync + 'static,
-    D::Future: Send,
+impl
+    Store<
+        svc::MapErr<
+            fn(Error) -> tonic::Status,
+            mock::Mock<u16, tonic::Response<watch::Receiver<ServerPolicy>>>,
+        >,
+    >
 {
     /// Returns a new `Store` that always returns the given `ServerPolicy` for each port.
     ///
     /// Calls to the API panic.
-    pub fn for_test(ports: impl IntoIterator<Item = (u16, ServerPolicy)>, api: D) -> Self {
-        Self::spawn_fixed(std::time::Duration::MAX, ports, api)
+    pub fn for_test(
+        ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
+    ) -> (
+        Self,
+        mock::Handle<u16, tonic::Response<watch::Receiver<ServerPolicy>>>,
+    ) {
+        let (disco, handle) = mock::pair();
+        let disco = svc::MapErr::new(
+            disco,
+            (|_: Error| tonic::Status::internal("invalid")) as fn(_) -> _,
+        );
+        let store = Self::spawn_fixed(std::time::Duration::MAX, ports, disco);
+        (store, handle)
     }
 }
 
@@ -31,7 +41,7 @@ impl Store<Unreachable> {
     ///
     /// Calls to the API panic.
     pub fn fixed_for_test(ports: impl IntoIterator<Item = (u16, ServerPolicy)>) -> Self {
-        Self::for_test(ports, Unreachable(()))
+        Self::spawn_fixed(std::time::Duration::MAX, ports, Unreachable(()))
     }
 }
 
