@@ -1,5 +1,5 @@
 use crate::{
-    policy::{AllowPolicy, GetPolicy},
+    policy::{self, AllowPolicy, GetPolicy},
     Inbound,
 };
 use linkerd_app_core::{
@@ -9,6 +9,9 @@ use linkerd_app_core::{
 };
 use std::fmt::Debug;
 use tracing::info_span;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Accept {
@@ -26,7 +29,7 @@ impl<N> Inbound<N> {
     pub(crate) fn push_accept<T, I, NSvc, D, DSvc>(
         self,
         proxy_port: u16,
-        policies: impl GetPolicy + Clone + Send + Sync + 'static,
+        policies: impl GetPolicy,
         direct: D,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
@@ -46,6 +49,24 @@ impl<N> Inbound<N> {
     {
         self.map_stack(|cfg, rt, accept| {
             accept
+                .push_on_service(svc::MapErr::layer_boxed())
+                .push_map_target(|(policy, t): (AllowPolicy, T)| {
+                    tracing::debug!(policy = ?&*policy.borrow(), "Accepted");
+                    Accept {
+                        client_addr: t.param(),
+                        orig_dst_addr: t.param(),
+                        policy,
+                    }
+                })
+                .lift_new_with_target()
+                .push(policy::Discover::layer_via(policies, |t: &T| {
+                    // For non-direct inbound connections, policies are always
+                    // looked up for the original destination address.
+                    let OrigDstAddr(addr) = t.param();
+                    policy::LookupAddr(addr)
+                }))
+                .into_new_service()
+                .check_new_service::<T, I>()
                 .push_switch(
                     // Switch to the `direct` stack when a connection's original destination is the
                     // proxy's inbound port. Otherwise, check that connections are allowed on the
@@ -56,13 +77,7 @@ impl<N> Inbound<N> {
                             return Ok(svc::Either::B(t));
                         }
 
-                        let policy = policies.get_policy(addr);
-                        tracing::debug!(policy = ?&*policy.borrow(), "Accepted");
-                        Ok(svc::Either::A(Accept {
-                            client_addr: t.param(),
-                            orig_dst_addr: addr,
-                            policy,
-                        }))
+                        Ok(svc::Either::A(t))
                     },
                     direct,
                 )
@@ -103,111 +118,5 @@ impl svc::Param<Remote<ClientAddr>> for Accept {
 impl svc::Param<AllowPolicy> for Accept {
     fn param(&self) -> AllowPolicy {
         self.policy.clone()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        policy::{DefaultPolicy, Store},
-        test_util,
-    };
-    use futures::future;
-    use linkerd_app_core::{
-        svc::{NewService, ServiceExt},
-        Error,
-    };
-    use linkerd_proxy_server_policy::{Authentication, Authorization, Meta, ServerPolicy};
-    use std::sync::Arc;
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn default_allow() {
-        let (io, _) = io::duplex(1);
-        let policies = Store::for_test(
-            ServerPolicy {
-                protocol: linkerd_proxy_server_policy::Protocol::Opaque(Arc::new([
-                    Authorization {
-                        authentication: Authentication::Unauthenticated,
-                        networks: vec![Default::default()],
-                        meta: Arc::new(Meta::Resource {
-                            group: "policy.linkerd.io".into(),
-                            kind: "serverauthorization".into(),
-                            name: "testsaz".into(),
-                        }),
-                    },
-                ])),
-                meta: Arc::new(Meta::Resource {
-                    group: "policy.linkerd.io".into(),
-                    kind: "server".into(),
-                    name: "testsrv".into(),
-                }),
-            },
-            None,
-        );
-        inbound()
-            .with_stack(new_ok())
-            .push_accept(999, policies, new_panic("direct stack must not be built"))
-            .into_inner()
-            .new_service(Target(1000))
-            .oneshot(io)
-            .await
-            .expect("should succeed");
-    }
-
-    /// Default-deny authorizations are checked by an internal stack.
-    #[tokio::test(flavor = "current_thread")]
-    async fn default_deny() {
-        let policies = Store::for_test(DefaultPolicy::Deny, None);
-        let (io, _) = io::duplex(1);
-        inbound()
-            .with_stack(new_ok())
-            .push_accept(999, policies, new_panic("direct stack must not be built"))
-            .into_inner()
-            .new_service(Target(1000))
-            .oneshot(io)
-            .await
-            .expect("should succeed");
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn direct() {
-        let policies = Store::for_test(DefaultPolicy::Deny, None);
-        let (io, _) = io::duplex(1);
-        inbound()
-            .with_stack(new_panic("detect stack must not be built"))
-            .push_accept(999, policies, new_ok())
-            .into_inner()
-            .new_service(Target(999))
-            .oneshot(io)
-            .await
-            .expect("should succeed");
-    }
-
-    fn inbound() -> Inbound<()> {
-        Inbound::new(test_util::default_config(), test_util::runtime().0)
-    }
-
-    fn new_panic<T>(msg: &'static str) -> svc::ArcNewTcp<T, io::DuplexStream> {
-        svc::ArcNewService::new(move |_| panic!("{msg}"))
-    }
-
-    fn new_ok<T>() -> svc::ArcNewTcp<T, io::DuplexStream> {
-        svc::ArcNewService::new(|_| svc::BoxService::new(svc::mk(|_| future::ok::<(), Error>(()))))
-    }
-
-    #[derive(Clone, Debug)]
-    struct Target(u16);
-
-    impl svc::Param<OrigDstAddr> for Target {
-        fn param(&self) -> OrigDstAddr {
-            OrigDstAddr(([192, 0, 2, 2], self.0).into())
-        }
-    }
-
-    impl svc::Param<Remote<ClientAddr>> for Target {
-        fn param(&self) -> Remote<ClientAddr> {
-            Remote(ClientAddr(([192, 0, 2, 3], 54321).into()))
-        }
     }
 }

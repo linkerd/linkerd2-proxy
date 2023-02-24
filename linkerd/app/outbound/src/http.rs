@@ -2,44 +2,84 @@ use self::{
     proxy_connection_close::ProxyConnectionClose, require_id_header::NewRequireIdentity,
     strip_proxy_error::NewStripProxyError,
 };
-use crate::{tcp, Outbound};
+use crate::Outbound;
 use linkerd_app_core::{
-    io, profiles,
+    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
     },
     svc,
     transport::addrs::*,
-    Addr, Error,
+    Error,
 };
 use std::{fmt::Debug, hash::Hash};
+use tokio::sync::watch;
 
-mod concrete;
+pub mod concrete;
 mod endpoint;
-mod logical;
+pub mod logical;
 mod proxy_connection_close;
 mod require_id_header;
 mod retry;
 mod server;
 mod strip_proxy_error;
 
-pub use self::logical::Logical;
+pub use self::logical::{policy, profile, LogicalAddr, Routes};
 pub(crate) use self::require_id_header::IdentityRequired;
 pub use linkerd_app_core::proxy::http::{self as http, *};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Http {
-    target: Logical,
-    version: http::Version,
+pub struct Http<T>(T);
+
+pub fn spawn_routes(
+    mut profile_rx: watch::Receiver<profiles::Profile>,
+    init: Routes,
+    mut mk: impl FnMut(&profiles::Profile) -> Option<Routes> + Send + Sync + 'static,
+) -> watch::Receiver<Routes> {
+    let (tx, rx) = watch::channel(init);
+
+    tokio::spawn(async move {
+        loop {
+            let res = tokio::select! {
+                biased;
+                _ = tx.closed() => return,
+                res = profile_rx.changed() => res,
+            };
+
+            if res.is_err() {
+                // Drop the `tx` sender when the profile sender is
+                // dropped.
+                return;
+            }
+
+            if let Some(routes) = (mk)(&*profile_rx.borrow_and_update()) {
+                if tx.send(routes).is_err() {
+                    // Drop the `tx` sender when all of its receivers are dropped.
+                    return;
+                }
+            }
+        }
+    });
+
+    rx
+}
+
+pub fn spawn_routes_default(addr: Remote<ServerAddr>) -> watch::Receiver<Routes> {
+    let (tx, rx) = watch::channel(Routes::Endpoint(addr, Default::default()));
+    tokio::spawn(async move {
+        tx.closed().await;
+    });
+    rx
 }
 
 // === impl Outbound ===
 
-impl<C> Outbound<C> {
-    /// Builds a stack that handles protocol detection, routing, and
-    /// load balancing for a single logical destination.
-    pub fn push_http_cached<T, R>(
+impl<N> Outbound<N> {
+    /// Builds a stack that routes HTTP requests to endpoint stacks.
+    ///
+    /// Buffered concrete services are cached in and evicted when idle.
+    pub fn push_http_cached<T, R, NSvc>(
         self,
         resolve: R,
     ) -> Outbound<
@@ -56,28 +96,27 @@ impl<C> Outbound<C> {
     where
         // Logical HTTP target.
         T: svc::Param<http::Version>,
-        T: svc::Param<Logical>,
-        T: Clone + Send + Sync + 'static,
+        T: svc::Param<watch::Receiver<Routes>>,
+        T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        // TCP connector stack.
-        C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
-        C: Clone + Send + Sync + Unpin + 'static,
-        C::Connection: Send + Unpin,
-        C::Future: Send,
+        // HTTP client stack
+        N: svc::NewService<concrete::Endpoint<logical::Concrete<Http<T>>>, Service = NSvc>,
+        N: Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        NSvc: Send + 'static,
+        NSvc::Future: Send + Unpin + 'static,
     {
-        self.push_tcp_endpoint()
-            .push_http_endpoint()
+        self.push_http_endpoint()
             .push_http_concrete(resolve)
             .push_http_logical()
-            .push_http_server()
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
-                    // Use a dedicated target type to configure parameters for the
-                    // HTTP stack. It also helps narrow the cache key to just the
-                    // logical target and HTTP version, discarding any other target
-                    // information.
-                    .push_map_target(Http::new)
+                    .push_map_target(Http)
                     .push(svc::ArcNewService::layer())
             })
     }
@@ -85,56 +124,20 @@ impl<C> Outbound<C> {
 
 // === impl Http ===
 
-impl Http {
-    pub fn new<T>(parent: T) -> Self
-    where
-        T: svc::Param<Logical>,
-        T: svc::Param<http::Version>,
-    {
-        Self {
-            target: parent.param(),
-            version: parent.param(),
-        }
-    }
-}
-
-impl svc::Param<http::Version> for Http {
+impl<T> svc::Param<http::Version> for Http<T>
+where
+    T: svc::Param<http::Version>,
+{
     fn param(&self) -> http::Version {
-        self.version
+        self.0.param()
     }
 }
 
-impl svc::Param<Logical> for Http {
-    fn param(&self) -> Logical {
-        self.target.clone()
-    }
-}
-
-impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        let addr = match self.target.param() {
-            Logical::Route(addr, _) => Addr::from(addr),
-            Logical::Forward(Remote(ServerAddr(addr)), _) => Addr::from(addr),
-        };
-
-        http::normalize_uri::DefaultAuthority(Some(addr.to_http_authority()))
-    }
-}
-
-impl svc::Param<Option<profiles::LogicalAddr>> for Http {
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        match self.target {
-            Logical::Route(ref addr, _) => Some(profiles::LogicalAddr(addr.clone())),
-            Logical::Forward(_, _) => None,
-        }
-    }
-}
-
-impl svc::Param<Option<profiles::Receiver>> for Http {
-    fn param(&self) -> Option<profiles::Receiver> {
-        match self.target {
-            Logical::Route(_, ref rx) => Some(rx.clone()),
-            Logical::Forward(_, _) => None,
-        }
+impl<T> svc::Param<watch::Receiver<Routes>> for Http<T>
+where
+    T: svc::Param<watch::Receiver<Routes>>,
+{
+    fn param(&self) -> watch::Receiver<Routes> {
+        self.0.param()
     }
 }

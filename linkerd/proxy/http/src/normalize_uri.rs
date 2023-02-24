@@ -18,13 +18,14 @@ use super::h1;
 use futures::{future, TryFutureExt};
 use http::uri::Authority;
 use linkerd_error::Error;
-use linkerd_stack::{layer, NewService, Param};
+use linkerd_stack::{layer, ExtractParam, NewService};
 use std::task::{Context, Poll};
 use thiserror::Error;
 use tracing::trace;
 
 #[derive(Clone, Debug)]
-pub struct NewNormalizeUri<N> {
+pub struct NewNormalizeUri<X, N> {
+    extract: X,
     inner: N,
 }
 
@@ -51,25 +52,34 @@ pub struct MarkAbsoluteForm<S> {
 
 // === impl NewNormalizeUri ===
 
-impl<N> NewNormalizeUri<N> {
+impl<N> NewNormalizeUri<(), N> {
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy + Clone {
-        layer::mk(Self::new)
-    }
-
-    fn new(inner: N) -> Self {
-        Self { inner }
+        layer::mk(|inner| Self::new((), inner))
     }
 }
 
-impl<T, N> NewService<T> for NewNormalizeUri<N>
+impl<X, N> NewNormalizeUri<X, N> {
+    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone
+    where
+        X: Clone,
+    {
+        layer::mk(move |inner| Self::new(extract.clone(), inner))
+    }
+
+    fn new(extract: X, inner: N) -> Self {
+        Self { inner, extract }
+    }
+}
+
+impl<T, X, N> NewService<T> for NewNormalizeUri<X, N>
 where
-    T: Param<DefaultAuthority>,
+    X: ExtractParam<DefaultAuthority, T>,
     N: NewService<T>,
 {
     type Service = NormalizeUri<N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let DefaultAuthority(default) = target.param();
+        let DefaultAuthority(default) = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
         NormalizeUri::new(inner, default)
     }

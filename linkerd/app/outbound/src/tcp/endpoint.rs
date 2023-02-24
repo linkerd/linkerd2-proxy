@@ -15,7 +15,7 @@ impl<C> Outbound<C> {
     ) -> Outbound<
         impl svc::MakeConnection<
                 T,
-                Connection = impl Send + Unpin,
+                Connection = impl io::AsyncRead + io::AsyncWrite + Send + Unpin,
                 Metadata = ConnectMeta,
                 Error = Error,
                 Future = impl Send,

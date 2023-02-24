@@ -35,16 +35,22 @@ struct ClientRescue {
 }
 
 impl<C> Outbound<C> {
-    pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
+    pub fn push_http_tcp_client<T, B>(
+        self,
+    ) -> Outbound<
+        svc::ArcNewService<
+            T,
+            impl svc::Service<
+                http::Request<B>,
+                Response = http::Response<http::BoxBody>,
+                Error = Error,
+                Future = impl Send,
+            >,
+        >,
+    >
     where
         // Http endpoint target.
         T: svc::Param<http::client::Settings>,
-        T: svc::Param<Remote<ServerAddr>>,
-        T: svc::Param<Option<http::AuthorityOverride>>,
-        T: svc::Param<metrics::EndpointLabels>,
-        T: svc::Param<tls::ConditionalClientTls>,
-        T: svc::Param<ProtocolHint>,
-        T: tap::Inspect,
         T: Clone + Send + Sync + 'static,
         // Http endpoint body.
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
@@ -55,11 +61,10 @@ impl<C> Outbound<C> {
         C::Metadata: Send + Unpin,
         C::Future: Send + Unpin + 'static,
     {
-        self.map_stack(|config, rt, inner| {
+        self.map_stack(|config, _, inner| {
             let config::ConnectConfig {
                 h1_settings,
                 h2_settings,
-                backoff,
                 ..
             } = config.proxy.connect;
 
@@ -73,6 +78,43 @@ impl<C> Outbound<C> {
                 .push_on_service(svc::MapErr::layer_boxed())
                 .check_service::<T>()
                 .into_new_service()
+                .push(svc::ArcNewService::layer())
+        })
+    }
+}
+
+impl<N> Outbound<N> {
+    pub fn push_http_endpoint<T, B, NSvc>(self) -> Outbound<svc::ArcNewHttp<T, B>>
+    where
+        // Http endpoint target.
+        T: svc::Param<http::client::Settings>,
+        T: svc::Param<Remote<ServerAddr>>,
+        T: svc::Param<Option<http::AuthorityOverride>>,
+        T: svc::Param<metrics::EndpointLabels>,
+        T: svc::Param<tls::ConditionalClientTls>,
+        T: tap::Inspect,
+        T: Clone + Send + Sync + 'static,
+        // Http endpoint body.
+        B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
+        B::Data: Send + 'static,
+        // HTTP client stack
+        N: svc::NewService<T, Service = NSvc>,
+        N: Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        NSvc: Send + 'static,
+        NSvc::Future: Send + Unpin + 'static,
+    {
+        self.map_stack(|config, rt, inner| {
+            let config::ConnectConfig { backoff, .. } = config.proxy.connect;
+
+            // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
+            // is typically used (i.e. when communicating with other proxies); though
+            // HTTP/1.x fallback is supported as needed.
+            inner
                 // Drive the connection to completion regardless of whether the reconnect is being
                 // actively polled.
                 .push_on_service(svc::layer::mk(svc::SpawnReady::new))
@@ -93,6 +135,7 @@ impl<C> Outbound<C> {
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
                 // track proxy errors that occur higher in the stack.
                 .push(ClientRescue::layer(config.emit_headers))
+                .push_on_service(http::BoxRequest::layer())
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics

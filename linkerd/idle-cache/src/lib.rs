@@ -169,6 +169,13 @@ where
         }
     }
 
+    pub fn get_or_insert(&self, key: K, value: V) -> Cached<V>
+    where
+        V: Clone,
+    {
+        self.get_or_insert_with(key, move |_| value)
+    }
+
     /// Adds or overwrites a value in the cache that will never be evicted from
     /// the cache.
     pub fn insert_permanent(&self, key: K, val: V) -> Option<V> {

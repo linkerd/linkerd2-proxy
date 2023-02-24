@@ -27,6 +27,6 @@ jobs:
     continue-on-error: true
     steps:
       - run: rustup toolchain install --profile=minimal nightly
-      - uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
       - run: just toolchain=nightly fetch
       - run: just toolchain=nightly profile=release build

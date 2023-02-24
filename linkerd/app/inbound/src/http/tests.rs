@@ -38,6 +38,7 @@ where
         })
         .push_http_router(profiles)
         .push_http_server()
+        .push_http_tcp_server()
         .into_inner()
 }
 
@@ -577,11 +578,15 @@ impl Target {
     fn addr() -> SocketAddr {
         ([127, 0, 0, 1], 80).into()
     }
+
+    fn dst_addr() -> SocketAddr {
+        ([192, 0, 2, 2], 80).into()
+    }
 }
 
 impl svc::Param<OrigDstAddr> for Target {
     fn param(&self) -> OrigDstAddr {
-        OrigDstAddr(([192, 0, 2, 2], 80).into())
+        OrigDstAddr(Self::dst_addr())
     }
 }
 
@@ -621,7 +626,7 @@ impl svc::Param<policy::AllowPolicy> for Target {
             }),
         }]);
         let (policy, _) = policy::AllowPolicy::for_test(
-            self.param(),
+            ServerAddr(Self::dst_addr()),
             policy::ServerPolicy {
                 protocol: policy::Protocol::Http1(Arc::new([
                     linkerd_proxy_server_policy::http::default(authorizations),

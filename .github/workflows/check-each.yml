@@ -28,8 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     container: docker://ghcr.io/linkerd/dev:v38-rust
     steps:
-      - uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
-      - uses: tj-actions/changed-files@210cc839c24f532fe4fbf510b7b3314ca9a2b90b
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
+      - uses: tj-actions/changed-files@23e3c4300cb904a9d9c36fc2df4111a2fa9b9ff1
         id: changed-files
         with:
           files: |
@@ -51,7 +51,7 @@ jobs:
       matrix:
         crate: ${{ fromJson(needs.list-changed-crates.outputs.crates) }}
     steps:
-      - uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
       - run: just fetch
       - run: just check-crate ${{ matrix.crate }}
 

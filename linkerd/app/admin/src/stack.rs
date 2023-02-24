@@ -69,11 +69,15 @@ struct Rescue;
 // === impl Config ===
 
 impl Config {
+    /// Builds the admin endpoint server.
+    ///
+    /// This method is asynchronous, as it must discover a `ServerPolicy` for
+    /// the admin port.
     #[allow(clippy::too_many_arguments)]
-    pub fn build<B, R>(
+    pub async fn build<B, R>(
         self,
         bind: B,
-        policy: impl inbound::policy::GetPolicy,
+        policy: &impl inbound::policy::GetPolicy,
         identity: identity::Server,
         report: R,
         metrics: inbound::Metrics,
@@ -89,7 +93,9 @@ impl Config {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
         // Get the policy for the admin server.
-        let policy = policy.get_policy(OrigDstAddr(listen_addr.into()));
+        let policy = policy
+            .get_policy(inbound::policy::LookupAddr(listen_addr.into()))
+            .await?;
 
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);

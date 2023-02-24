@@ -5,11 +5,12 @@ use crate::{
 use futures::future;
 use linkerd_app_core::{
     svc, tls,
-    transport::{ClientAddr, OrigDstAddr, Remote},
+    transport::{ClientAddr, Remote, ServerAddr},
     Error, Result,
 };
 use linkerd_proxy_server_policy::{Protocol, ServerPolicy};
 use std::{future::Future, pin::Pin, task};
+
 #[cfg(test)]
 mod tests;
 
@@ -181,7 +182,7 @@ where
 /// accept connections given the provided TLS state.
 fn check_authorized(
     server: &ServerPolicy,
-    dst: OrigDstAddr,
+    dst: ServerAddr,
     client_addr: Remote<ClientAddr>,
     tls: &tls::ConditionalServerTls,
 ) -> Result<ServerPermit, ServerUnauthorized> {

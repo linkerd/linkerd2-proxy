@@ -1,7 +1,7 @@
 //! A stack that (optionally) resolves a service to a set of endpoint replicas
 //! and distributes HTTP requests among them.
 
-use super::{balance, client, normalize_uri};
+use super::{balance, client};
 use crate::{http, stack_labels, Outbound};
 use linkerd_app_core::{
     metrics, profiles,
@@ -222,7 +222,7 @@ impl<T> svc::Param<Option<http::AuthorityOverride>> for Endpoint<T> {
 
 impl<T> svc::Param<transport::labels::Key> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Option<http::uri::Authority>>,
 {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::OutboundClient(self.param())
@@ -231,16 +231,11 @@ where
 
 impl<T> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Option<http::uri::Authority>>,
 {
     fn param(&self) -> metrics::OutboundEndpointLabels {
-        let authority = self
-            .parent
-            .param()
-            .as_ref()
-            .map(|profiles::LogicalAddr(a)| a.as_http_authority());
         metrics::OutboundEndpointLabels {
-            authority,
+            authority: self.parent.param(),
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.param(),
             target_addr: self.addr.into(),
@@ -250,10 +245,10 @@ where
 
 impl<T> svc::Param<metrics::EndpointLabels> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<Option<http::uri::Authority>>,
 {
     fn param(&self) -> metrics::EndpointLabels {
-        metrics::EndpointLabels::from(svc::Param::<metrics::OutboundEndpointLabels>::param(self))
+        metrics::EndpointLabels::Outbound(self.param())
     }
 }
 
@@ -285,28 +280,6 @@ impl<T> svc::Param<tls::ConditionalClientTls> for Endpoint<T> {
             .unwrap_or(tls::ConditionalClientTls::None(
                 tls::NoClientTls::NotProvidedByServiceDiscovery,
             ))
-    }
-}
-
-impl<T> svc::Param<normalize_uri::DefaultAuthority> for Endpoint<T>
-where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
-{
-    fn param(&self) -> normalize_uri::DefaultAuthority {
-        if let Some(profiles::LogicalAddr(ref a)) = self.parent.param() {
-            return normalize_uri::DefaultAuthority(Some(
-                a.to_string()
-                    .parse()
-                    .expect("Address must be a valid authority"),
-            ));
-        }
-
-        normalize_uri::DefaultAuthority(Some(
-            self.addr
-                .to_string()
-                .parse()
-                .expect("Address must be a valid authority"),
-        ))
     }
 }
 
@@ -366,6 +339,7 @@ impl<T> tap::Inspect for Endpoint<T> {
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<tap::Labels> {
+        // FIXME(ver) create a dedicated extension type for route labels.
         req.extensions()
             .get::<profiles::http::Route>()
             .map(|r| r.labels().clone())

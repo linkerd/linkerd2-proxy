@@ -20,7 +20,7 @@ impl Inbound<()> {
         &self,
         dns: dns::Resolver,
         control_metrics: metrics::ControlHttp,
-    ) -> impl policy::GetPolicy + Clone + Send + Sync + 'static {
+    ) -> impl policy::GetPolicy {
         self.config
             .policy
             .clone()
@@ -31,7 +31,7 @@ impl Inbound<()> {
         self,
         addr: Local<ServerAddr>,
         listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
-        policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
+        policies: impl policy::GetPolicy,
         profiles: P,
         gateway: G,
     ) where
@@ -67,6 +67,7 @@ impl Inbound<()> {
                 .into_tcp_connect(addr.port())
                 .push_http_router(profiles.clone())
                 .push_http_server()
+                .push_http_tcp_server()
                 .into_inner();
 
             self.clone()
@@ -88,6 +89,7 @@ impl Inbound<()> {
         // Determines how to handle an inbound connection, dispatching it to the appropriate
         // stack.
         let server = http
+            .push_http_tcp_server()
             .push_detect(forward)
             .push_accept(addr.port(), policies, direct)
             .into_inner();

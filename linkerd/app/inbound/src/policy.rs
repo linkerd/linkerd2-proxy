@@ -1,13 +1,17 @@
 mod api;
 mod config;
 pub mod defaults;
+mod discover;
 mod http;
 mod store;
-mod tcp;
+pub(crate) mod tcp;
+#[cfg(test)]
+pub mod test_util;
 
 pub(crate) use self::store::Store;
 pub use self::{
     config::Config,
+    discover::Discover,
     http::{
         HttpInvalidPolicy, HttpRouteInvalidRedirect, HttpRouteNotFound, HttpRouteRedirect,
         HttpRouteUnauthorized, NewHttpPolicy,
@@ -19,7 +23,8 @@ pub use linkerd_app_core::metrics::ServerLabel;
 use linkerd_app_core::{
     metrics::{RouteAuthzLabels, ServerAuthzLabels},
     tls,
-    transport::{ClientAddr, OrigDstAddr, Remote},
+    transport::{ClientAddr, Remote, ServerAddr},
+    Error,
 };
 use linkerd_idle_cache::Cached;
 pub use linkerd_proxy_server_policy::{
@@ -28,7 +33,7 @@ pub use linkerd_proxy_server_policy::{
     http::{filter::Redirection, Route as HttpRoute},
     route, Authentication, Authorization, Meta, Protocol, RoutePolicy, ServerPolicy,
 };
-use std::sync::Arc;
+use std::{future::Future, net::SocketAddr, sync::Arc};
 use thiserror::Error;
 use tokio::sync::watch;
 
@@ -38,27 +43,26 @@ pub struct ServerUnauthorized {
     server: Arc<Meta>,
 }
 
-pub trait GetPolicy {
-    // Returns the traffic policy configured for the destination address.
-    fn get_policy(&self, dst: OrigDstAddr) -> AllowPolicy;
+/// Returns the traffic policy configured for the destination address.
+pub trait GetPolicy: Clone + Send + Sync + 'static {
+    type Future: Future<Output = Result<AllowPolicy, Error>> + Unpin + Send;
+
+    fn get_policy(&self, addr: LookupAddr) -> Self::Future;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum DefaultPolicy {
-    Allow(ServerPolicy),
-    Deny,
-}
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub struct LookupAddr(pub SocketAddr);
 
 #[derive(Clone, Debug)]
 pub struct AllowPolicy {
-    dst: OrigDstAddr,
+    dst: ServerAddr,
     server: Cached<watch::Receiver<ServerPolicy>>,
 }
 
 // Describes an authorized non-HTTP connection.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ServerPermit {
-    pub dst: OrigDstAddr,
+    pub dst: ServerAddr,
     pub protocol: Protocol,
     pub labels: ServerAuthzLabels,
 }
@@ -66,7 +70,7 @@ pub struct ServerPermit {
 // Describes an authorized HTTP request.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HttpRoutePermit {
-    pub dst: OrigDstAddr,
+    pub dst: ServerAddr,
     pub labels: RouteAuthzLabels,
 }
 
@@ -75,34 +79,29 @@ pub enum Routes {
     Grpc(Arc<[GrpcRoute]>),
 }
 
-// === impl DefaultPolicy ===
+// === impl GetPolicy ===
 
-impl From<ServerPolicy> for DefaultPolicy {
-    fn from(p: ServerPolicy) -> Self {
-        DefaultPolicy::Allow(p)
-    }
-}
+impl<S> GetPolicy for S
+where
+    S: tower::Service<LookupAddr, Response = AllowPolicy, Error = Error>,
+    S: Clone + Send + Sync + Unpin + 'static,
+    S::Future: Send + Unpin,
+{
+    type Future = tower::util::Oneshot<S, LookupAddr>;
 
-impl From<DefaultPolicy> for ServerPolicy {
-    fn from(d: DefaultPolicy) -> Self {
-        match d {
-            DefaultPolicy::Allow(p) => p,
-            DefaultPolicy::Deny => ServerPolicy {
-                protocol: Protocol::Opaque(Arc::new([])),
-                meta: Meta::new_default("deny"),
-            },
-        }
+    #[inline]
+    fn get_policy(&self, addr: LookupAddr) -> Self::Future {
+        use tower::util::ServiceExt;
+
+        self.clone().oneshot(addr)
     }
 }
 
 // === impl AllowPolicy ===
 
 impl AllowPolicy {
-    #[cfg(any(test, fuzzing))]
-    pub(crate) fn for_test(
-        dst: OrigDstAddr,
-        server: ServerPolicy,
-    ) -> (Self, watch::Sender<ServerPolicy>) {
+    #[cfg(any(test, fuzzing, feature = "test-util"))]
+    pub fn for_test(dst: ServerAddr, server: ServerPolicy) -> (Self, watch::Sender<ServerPolicy>) {
         let (tx, server) = watch::channel(server);
         let server = Cached::uncached(server);
         let p = Self { dst, server };
@@ -120,7 +119,7 @@ impl AllowPolicy {
     }
 
     #[inline]
-    pub fn dst_addr(&self) -> OrigDstAddr {
+    pub fn dst_addr(&self) -> ServerAddr {
         self.dst
     }
 
@@ -190,7 +189,7 @@ fn is_authorized(
 // === impl Permit ===
 
 impl ServerPermit {
-    fn new(dst: OrigDstAddr, server: &ServerPolicy, authz: &Authorization) -> Self {
+    fn new(dst: ServerAddr, server: &ServerPolicy, authz: &Authorization) -> Self {
         Self {
             dst,
             protocol: server.protocol.clone(),

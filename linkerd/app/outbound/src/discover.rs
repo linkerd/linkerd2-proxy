@@ -8,6 +8,7 @@ use std::{
     hash::{Hash, Hasher},
     ops::Deref,
 };
+use tokio::sync::watch;
 use tracing::debug;
 
 #[cfg(test)]
@@ -84,6 +85,12 @@ impl<T> From<(Option<profiles::Receiver>, T)> for Discovery<T> {
 impl<T> svc::Param<Option<profiles::Receiver>> for Discovery<T> {
     fn param(&self) -> Option<profiles::Receiver> {
         self.profile.clone()
+    }
+}
+
+impl<T> svc::Param<Option<watch::Receiver<profiles::Profile>>> for Discovery<T> {
+    fn param(&self) -> Option<watch::Receiver<profiles::Profile>> {
+        self.profile.clone().map(Into::into)
     }
 }
 
