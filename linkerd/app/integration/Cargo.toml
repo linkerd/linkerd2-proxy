@@ -30,6 +30,7 @@ hyper = { version = "0.14", features = [
     "client",
     "server",
 ] }
+ipnet = "2"
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
@@ -39,6 +40,7 @@ linkerd2-proxy-api = { version = "0.8", features = [
 ] }
 linkerd-app-test = { path = "../test" }
 linkerd-tracing = { path = "../../tracing" }
+maplit = "1"
 parking_lot = "0.12"
 regex = "1"
 socket2 = "0.4"

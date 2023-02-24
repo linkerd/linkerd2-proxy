@@ -60,3 +60,4 @@ linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["full", "macros"] }
 tokio-test = "0.4"
+tower-test = "0.4"
