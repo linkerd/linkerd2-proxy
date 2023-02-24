@@ -1,8 +1,7 @@
 use crate::{policy, Config};
 pub use futures::prelude::*;
 use linkerd_app_core::{
-    config::{self, QueueConfig},
-    control,
+    config::{self},
     dns::Suffix,
     drain, exp_backoff,
     identity::rustls,
@@ -11,7 +10,6 @@ use linkerd_app_core::{
         http::{h1, h2},
         tap,
     },
-    tls,
     transport::{Keepalive, ListenAddr},
     ProxyRuntime,
 };
@@ -39,26 +37,7 @@ pub fn default_config() -> Config {
     };
 
     let policy = policy::Config {
-        control: control::Config {
-            addr: control::ControlAddr {
-                addr: "policy.linkerd.svc.cluster.local:8090"
-                    .parse()
-                    .expect("control addr must be valid"),
-                identity: tls::ConditionalClientTls::Some(tls::ClientTls {
-                    server_id: "policy.linkerd.serviceaccount.identity.linkerd.cluster.local"
-                        .parse()
-                        .expect("control identity name must be valid"),
-                    alpn: None,
-                }),
-            },
-            connect: connect.clone(),
-            buffer: QueueConfig {
-                capacity: 10_000,
-                failfast_timeout: Duration::from_secs(10),
-            },
-        },
         cache_max_idle_age: Duration::from_secs(20),
-        workload: "test".into(),
         ports: Default::default(),
     };
 

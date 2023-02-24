@@ -65,14 +65,18 @@ where
     ///
     /// A discovery watch is spawned for each of the described `ports` and the
     /// result is cached for as long as the `Store` is held. The `Store` may be used to
-    pub(super) fn spawn_discover(idle_timeout: Duration, discover: D, ports: HashSet<u16>) -> Self {
+    pub(super) fn spawn_discover(
+        idle_timeout: Duration,
+        discover: D,
+        ports: &HashSet<u16>,
+    ) -> Self {
         // The initial set of policies never expire from the cache.
         //
         // Policies that are dynamically discovered at runtime will expire after
         // `idle_timeout` to prevent holding policy watches indefinitely for
         // ports that are generally unused.
         let cache = IdleCache::with_capacity(idle_timeout, ports.len());
-        for port in ports.into_iter() {
+        for &port in ports.into_iter() {
             let cache = cache.clone();
             let discover = discover.clone();
             tokio::spawn(

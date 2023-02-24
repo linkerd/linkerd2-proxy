@@ -1,7 +1,7 @@
 use crate::{direct, policy, Inbound};
 use futures::Stream;
 use linkerd_app_core::{
-    dns, io, metrics, profiles, serve, svc,
+    io, profiles, serve, svc,
     transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, Result,
 };
@@ -16,17 +16,6 @@ struct TcpEndpoint {
 // === impl Inbound ===
 
 impl Inbound<()> {
-    pub fn build_policies(
-        &self,
-        dns: dns::Resolver,
-        control_metrics: metrics::ControlHttp,
-    ) -> impl policy::GetPolicy {
-        self.config
-            .policy
-            .clone()
-            .build(dns, control_metrics, self.runtime.identity.new_client())
-    }
-
     pub async fn serve<A, I, G, GSvc, P>(
         self,
         addr: Local<ServerAddr>,

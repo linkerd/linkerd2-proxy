@@ -1,10 +1,10 @@
 use crate::discover;
 use linkerd_app_core::Error;
 pub use linkerd_proxy_client_policy::*;
-mod api;
-
 use std::future::Future;
 use tokio::sync::watch;
+
+mod api;
 
 pub type Receiver = watch::Receiver<ClientPolicy>;
 

@@ -7,6 +7,7 @@ pub mod dst;
 pub mod env;
 pub mod identity;
 pub mod oc_collector;
+pub mod policy;
 pub mod tap;
 
 pub use self::metrics::Metrics;
@@ -54,6 +55,7 @@ pub struct Config {
     pub dns: dns::Config,
     pub identity: identity::Config,
     pub dst: dst::Config,
+    pub policy: policy::Config,
     pub admin: admin::Config,
     pub tap: tap::Config,
     pub oc_collector: oc_collector::Config,
@@ -109,6 +111,7 @@ impl Config {
             admin,
             dns,
             dst,
+            policy,
             identity,
             inbound,
             oc_collector,
@@ -142,6 +145,13 @@ impl Config {
             info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.receiver().new_client()))
         }?;
 
+        let policies = {
+            let dns = dns.resolver;
+            let metrics = metrics.control;
+            info_span!("policy")
+                .in_scope(|| policy.build(dns, metrics, identity.receiver().new_client()))
+        }?;
+
         let oc_collector = {
             let identity = identity.receiver().new_client();
             let dns = dns.resolver.clone();
@@ -158,14 +168,13 @@ impl Config {
             span_sink: oc_collector.span_sink(),
             drain: drain_rx.clone(),
         };
+        let inbound_policies = inbound.policy.build(
+            policies.workload.clone(),
+            policies.client.clone(),
+            policies.backoff.clone(),
+        );
         let inbound = Inbound::new(inbound, runtime.clone());
         let outbound = Outbound::new(outbound, runtime);
-
-        let inbound_policies = {
-            let dns = dns.resolver;
-            let metrics = metrics.control;
-            info_span!("policy").in_scope(|| inbound.build_policies(dns, metrics))
-        };
 
         let admin = {
             let identity = identity.receiver().server();

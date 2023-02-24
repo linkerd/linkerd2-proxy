@@ -429,6 +429,37 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         std::sync::Arc::new(ips)
     };
 
+    let policy = {
+        let addr =
+            parse_control_addr(strings, ENV_POLICY_SVC_BASE)?.ok_or(EnvError::NoPolicyAddress)?;
+        // The workload, which is opaque from the proxy's point-of-view, is sent to the
+        // policy controller to support policy discovery.
+        let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
+            error!(
+                "{} must be set with {}_ADDR",
+                ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
+            );
+            EnvError::InvalidEnvVar
+        })?;
+
+        let control = {
+            let connect = if addr.addr.is_loopback() {
+                connect.clone()
+            } else {
+                outbound.proxy.connect.clone()
+            };
+            ControlConfig {
+                addr,
+                connect,
+                buffer: QueueConfig {
+                    capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
+                    failfast_timeout: DEFAULT_CONTROL_FAILFAST_TIMEOUT,
+                },
+            }
+        };
+        policy::Config { control, workload }
+    };
+
     let outbound = {
         let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
 
@@ -599,9 +630,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 );
             }
 
-            let addr = parse_control_addr(strings, ENV_POLICY_SVC_BASE)?
-                .ok_or(EnvError::NoPolicyAddress)?;
-
             // Load the set of all known inbound ports to be discovered
             // during initialization.
             let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
@@ -622,36 +650,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             // Ensure that the admin server port is included in policy discovery.
             ports.insert(admin_listener_addr.port());
 
-            // The workload, which is opaque from the proxy's point-of-view, is sent to the
-            // policy controller to support policy discovery.
-            let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
-                error!(
-                    "{} must be set with {}_ADDR",
-                    ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
-                );
-                EnvError::InvalidEnvVar
-            })?;
-
-            let control = {
-                let connect = if addr.addr.is_loopback() {
-                    connect.clone()
-                } else {
-                    outbound.proxy.connect.clone()
-                };
-                ControlConfig {
-                    addr,
-                    connect,
-                    buffer: QueueConfig {
-                        capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
-                        failfast_timeout: DEFAULT_CONTROL_FAILFAST_TIMEOUT,
-                    },
-                }
-            };
-
             inbound::policy::Config {
                 ports,
-                workload,
-                control,
                 cache_max_idle_age: discovery_idle_timeout,
             }
         };
@@ -801,6 +801,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         dst,
         tap,
         oc_collector,
+        policy,
         identity,
         outbound,
         gateway,
