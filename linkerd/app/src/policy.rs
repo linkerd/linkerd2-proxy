@@ -1,12 +1,13 @@
 use linkerd_app_core::{
     control, dns,
-    exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
+    exp_backoff::ExponentialBackoff,
     identity, metrics,
-    profiles::{self, DiscoveryRejected},
-    proxy::{api_resolve as api, http, resolve::recover},
-    svc::{self, BoxCloneService, NewService, ServiceExt},
-    Error, Recover,
+    proxy::http,
+    svc::{self, NewService, ServiceExt},
+    Error,
 };
+
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -24,6 +25,8 @@ pub struct Policy<S> {
 
     /// Workload identifier
     pub workload: Arc<str>,
+
+    pub backoff: ExponentialBackoff,
 }
 
 // === impl Config ===
@@ -47,6 +50,7 @@ impl Config {
     > {
         let addr = self.control.addr.clone();
         let workload = self.workload.into();
+        let backoff = self.control.connect.backoff.clone();
         let client = self
             .control
             .build(dns, metrics, identity)
@@ -57,6 +61,7 @@ impl Config {
             addr,
             client,
             workload,
+            backoff,
         })
     }
 }

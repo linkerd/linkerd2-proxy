@@ -25,7 +25,7 @@ impl Gateway {
     /// inner stack to use.
     pub fn server<T, I, P, O, H, OSvc, HSvc>(
         self,
-        profiles: P,
+        mut profiles: P,
         opaq: O,
         http: H,
     ) -> svc::Stack<svc::ArcNewTcp<T, I>>
@@ -38,7 +38,7 @@ impl Gateway {
         T: svc::Param<tls::ClientId>,
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: svc::Param<Option<SessionProtocol>>,
-        T: svc::Param<profiles::LookupAddr>,
+        T: svc::Param<outbound::discover::TargetAddr>,
         T: Clone + Send + Sync + Unpin + 'static,
         // Server-side socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -81,7 +81,9 @@ impl Gateway {
             let mut out = self.outbound.clone();
             out.config_mut().allow_discovery = self.config.allow_discovery.into();
             out.with_stack(protocol)
-                .push_discover(profiles)
+                .push_discover(svc::mk(move |outbound::discover::TargetAddr(addr)| {
+                    profiles.get_profile(profiles::LookupAddr(addr))
+                }))
                 .into_stack()
         };
 

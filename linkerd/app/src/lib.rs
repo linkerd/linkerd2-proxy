@@ -168,13 +168,14 @@ impl Config {
             span_sink: oc_collector.span_sink(),
             drain: drain_rx.clone(),
         };
-        let inbound_policies = inbound.policy.build(
+        let inbound = Inbound::new(inbound, runtime.clone());
+        let outbound = Outbound::new(outbound, runtime);
+
+        let inbound_policies = inbound.build_policies(
             policies.workload.clone(),
             policies.client.clone(),
             policies.backoff.clone(),
         );
-        let inbound = Inbound::new(inbound, runtime.clone());
-        let outbound = Outbound::new(outbound, runtime);
 
         let admin = {
             let identity = identity.receiver().server();
@@ -220,12 +221,23 @@ impl Config {
             let profiles = dst.profiles;
             let resolve = dst.resolve;
 
+            let outbound_policies = outbound.build_policies(
+                policies.workload.clone(),
+                policies.client.clone(),
+                policies.backoff.clone(),
+            );
+
             Box::pin(async move {
                 Self::await_identity(identity_ready).await;
 
                 tokio::spawn(
                     outbound
-                        .serve(outbound_listen, profiles.clone(), resolve)
+                        .serve(
+                            outbound_listen,
+                            profiles.clone(),
+                            outbound_policies,
+                            resolve,
+                        )
                         .instrument(info_span!("outbound").or_current()),
                 );
 

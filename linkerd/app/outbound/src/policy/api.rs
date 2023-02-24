@@ -11,19 +11,18 @@ use linkerd_app_core::{
 };
 use linkerd_proxy_client_policy::ClientPolicy;
 use linkerd_tonic_watch::StreamWatch;
-use std::time;
+use std::{sync::Arc, time};
 
 #[derive(Clone, Debug)]
-pub(super) struct Api<S> {
-    workload: String,
+pub(crate) struct Api<S> {
+    workload: Arc<str>,
     detect_timeout: time::Duration,
     client: Client<S>,
 }
 
 #[derive(Clone)]
-pub(super) struct GrpcRecover(ExponentialBackoff);
-
-pub(super) type Watch<S> = StreamWatch<GrpcRecover, Api<S>>;
+pub(crate) struct GrpcRecover(ExponentialBackoff);
+pub(crate) type Watch<S> = StreamWatch<GrpcRecover, Api<S>>;
 
 /// If an invalid policy is encountered, then this will be updated to hold a
 /// default, invalid policy.
@@ -35,7 +34,7 @@ where
     S::ResponseBody:
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
-    pub(super) fn new(workload: String, detect_timeout: time::Duration, client: S) -> Self {
+    pub(crate) fn new(workload: Arc<str>, detect_timeout: time::Duration, client: S) -> Self {
         Self {
             workload,
             detect_timeout,
@@ -43,7 +42,7 @@ where
         }
     }
 
-    pub(super) fn into_watch(self, backoff: ExponentialBackoff) -> Watch<S> {
+    pub(crate) fn into_watch(self, backoff: ExponentialBackoff) -> Watch<S> {
         StreamWatch::new(GrpcRecover(backoff), self)
     }
 }
@@ -70,6 +69,7 @@ where
 
     fn call(&mut self, discover::TargetAddr(addr): discover::TargetAddr) -> Self::Future {
         let req = {
+            let port = addr.port() as u32;
             let target = match addr {
                 Addr::Name(name) => {
                     api::target_spec::Target::Authority(name.name().as_str().to_owned())
@@ -77,8 +77,8 @@ where
                 Addr::Socket(sock) => api::target_spec::Target::Address(sock.ip().into()),
             };
             api::TargetSpec {
-                port: addr.port() as u32,
-                workload: self.workload.clone(),
+                port,
+                workload: self.workload.as_ref().to_string(),
                 target: Some(target),
             }
         };

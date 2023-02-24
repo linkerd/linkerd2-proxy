@@ -7,7 +7,7 @@ use crate::core::{
     transport::{Keepalive, ListenAddr},
     Addr, AddrMatch, Conditional, IpNet,
 };
-use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
+use crate::{dns, gateway, identity, inbound, oc_collector, outbound, policy};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -429,37 +429,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         std::sync::Arc::new(ips)
     };
 
-    let policy = {
-        let addr =
-            parse_control_addr(strings, ENV_POLICY_SVC_BASE)?.ok_or(EnvError::NoPolicyAddress)?;
-        // The workload, which is opaque from the proxy's point-of-view, is sent to the
-        // policy controller to support policy discovery.
-        let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
-            error!(
-                "{} must be set with {}_ADDR",
-                ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
-            );
-            EnvError::InvalidEnvVar
-        })?;
-
-        let control = {
-            let connect = if addr.addr.is_loopback() {
-                connect.clone()
-            } else {
-                outbound.proxy.connect.clone()
-            };
-            ControlConfig {
-                addr,
-                connect,
-                buffer: QueueConfig {
-                    capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
-                    failfast_timeout: DEFAULT_CONTROL_FAILFAST_TIMEOUT,
-                },
-            }
-        };
-        policy::Config { control, workload }
-    };
-
     let outbound = {
         let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
 
@@ -703,6 +672,37 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 },
             },
         }
+    };
+
+    let policy = {
+        let addr =
+            parse_control_addr(strings, ENV_POLICY_SVC_BASE)?.ok_or(EnvError::NoPolicyAddress)?;
+        // The workload, which is opaque from the proxy's point-of-view, is sent to the
+        // policy controller to support policy discovery.
+        let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
+            error!(
+                "{} must be set with {}_ADDR",
+                ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
+            );
+            EnvError::InvalidEnvVar
+        })?;
+
+        let control = {
+            let connect = if addr.addr.is_loopback() {
+                inbound.proxy.connect.clone()
+            } else {
+                outbound.proxy.connect.clone()
+            };
+            ControlConfig {
+                addr,
+                connect,
+                buffer: QueueConfig {
+                    capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
+                    failfast_timeout: DEFAULT_CONTROL_FAILFAST_TIMEOUT,
+                },
+            }
+        };
+        policy::Config { control, workload }
     };
 
     let admin = super::admin::Config {

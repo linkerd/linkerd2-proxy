@@ -38,7 +38,7 @@ impl Outbound<()> {
     pub fn mk_sidecar<T, I, R>(
         &self,
         profiles: impl profiles::GetProfile<Error = Error>,
-        policy: impl policy::GetPolicy,
+        policies: impl policy::GetPolicy,
         resolve: R,
     ) -> svc::ArcNewTcp<T, I>
     where
@@ -53,22 +53,23 @@ impl Outbound<()> {
     {
         let discover = svc::mk(move |addr: discover::TargetAddr| {
             let profile = profiles
-                .get_profile(profiles::LookupAddr(addr.clone().0))
-                .map(|result| {
-                    // TODO(eliza): we already recover on errors elsewhere in the
-                    // stack...this is kinda unfortunate...
-                    result.unwrap_or_else(|error| {
-                        tracing::warn!(%error, "Failed to resolve profile");
-                        None
-                    })
+                .clone()
+                .get_profile(profiles::LookupAddr(addr.clone().0));
+            let policy = policies.get_policy(addr);
+            Box::pin(async move {
+                let (profile, policy) = tokio::join!(profile, policy);
+                // TODO(eliza): we already recover on errors elsewhere in the
+                // stack...this is kinda unfortunate...
+                let profile = profile.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "Failed to resolve profile");
+                    None
                 });
-            let policy = policy.get_policy(addr).map(|result| {
-                result.unwrap_or_else(|error| {
+                let policy = policy.map(Some).unwrap_or_else(|error| {
                     tracing::warn!(%error, "Failed to resolve client policy");
                     None
-                })
-            });
-            Box::pin(async move { Ok(tokio::join!(profile, policy)) })
+                });
+                Ok((profile, policy))
+            })
         });
 
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());

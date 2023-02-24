@@ -16,7 +16,7 @@ pub struct Config {
 // === impl Config ===
 
 impl Config {
-    pub fn build<C>(
+    pub(crate) fn build<C>(
         &self,
         workload: Arc<str>,
         client: C,

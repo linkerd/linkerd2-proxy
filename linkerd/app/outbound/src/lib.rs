@@ -9,9 +9,11 @@ use futures::Stream;
 use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
     drain,
+    exp_backoff::ExponentialBackoff,
     http_tracing::OpenCensusSink,
     identity, io, profiles,
     proxy::{
+        self,
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
         tap,
@@ -30,7 +32,7 @@ use std::{
     time::Duration,
 };
 
-mod discover;
+pub mod discover;
 pub mod http;
 mod ingress;
 mod metrics;
@@ -113,6 +115,26 @@ impl Outbound<()> {
         }
     }
 
+    pub fn build_policies<C>(
+        &self,
+        workload: Arc<str>,
+        client: C,
+        backoff: ExponentialBackoff,
+    ) -> impl policy::GetPolicy
+    where
+        C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+        C: Clone + Unpin + Send + Sync + 'static,
+        C::ResponseBody: proxy::http::HttpBody<Data = tonic::codegen::Bytes, Error = Error>,
+        C::ResponseBody: Default + Send + 'static,
+        C::Future: Send,
+    {
+        use tower::ServiceExt;
+        policy::Api::new(workload, Duration::from_secs(10), client)
+            .into_watch(backoff)
+            .map_response(tonic::Response::into_inner)
+            .map_err(Into::into)
+    }
+
     #[cfg(any(test, feature = "test-util"))]
     pub fn for_test() -> (Self, drain::Signal) {
         let (rt, drain) = test_util::runtime();
@@ -181,7 +203,8 @@ impl Outbound<()> {
     pub async fn serve<T, I, P, R>(
         self,
         listen: impl Stream<Item = Result<(T, I)>> + Send + Sync + 'static,
-        profiles: P,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policies: impl policy::GetPolicy,
         resolve: R,
     ) where
         // Target describing a server-side connection.
@@ -192,8 +215,6 @@ impl Outbound<()> {
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        // Configuration discovery.
-        P: profiles::GetProfile<Error = Error>,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
@@ -207,7 +228,7 @@ impl Outbound<()> {
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, server, shutdown).await;
         } else {
-            let proxy = self.mk_sidecar(profiles, todo!(), resolve);
+            let proxy = self.mk_sidecar(profiles, policies, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, proxy, shutdown).await;
         }
