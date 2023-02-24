@@ -111,15 +111,22 @@ fn main() {
             }
         }
 
-        let drain = app.spawn();
-        tokio::select! {
-            _ = signal::shutdown() => {
-                info!("Received shutdown signal");
-            }
-            _ = shutdown_rx.recv() => {
-                info!("Received shutdown via admin interface");
-            }
-        }
+        let (readiness, drain) = app.spawn();
+
+        // When a shutdown signal is received, set the readiness to false so
+        // that probes can discover that the proxy should not receive more traffic.
+        // Then, we do NOTHING. We expect a SIGKILL to come along and finish off
+        // the process.
+        tokio::spawn(async move {
+            let signal = signal::shutdown().await;
+            readiness.set(false);
+            info!("Received {signal}. Waiting to be terminated forcefully.");
+        });
+
+        // If the admin's shutdown channel is used, we gracefully drain open
+        // connections or terminate after a timeout.
+        shutdown_rx.recv().await;
+        info!("Received shutdown via admin interface");
         match time::timeout(shutdown_grace_period, drain.drain()).await {
             Ok(()) => debug!("Shutdown completed gracefully"),
             Err(_) => warn!(

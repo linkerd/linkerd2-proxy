@@ -442,7 +442,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             Poll::Ready(())
                         });
 
-                        let drain = main.spawn();
+                        let (_, drain) = main.spawn();
 
                         tokio::select! {
                             _ = on_shutdown => {

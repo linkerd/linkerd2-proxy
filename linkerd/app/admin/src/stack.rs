@@ -1,3 +1,4 @@
+use crate::Readiness;
 use linkerd_app_core::{
     classify,
     config::ServerConfig,
@@ -24,7 +25,7 @@ pub struct Config {
 
 pub struct Task {
     pub listen_addr: Local<ServerAddr>,
-    pub latch: crate::Latch,
+    pub ready: Readiness,
     pub serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
 }
 
@@ -97,8 +98,8 @@ impl Config {
             .get_policy(inbound::policy::LookupAddr(listen_addr.into()))
             .await?;
 
-        let (ready, latch) = crate::server::Readiness::new();
-        let admin = crate::server::Admin::new(report, ready, shutdown, trace);
+        let ready = crate::server::Readiness::new(false);
+        let admin = crate::server::Admin::new(report, ready.clone(), shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
             .push_map_target(|(permit, http)| Permitted { permit, http })
@@ -169,7 +170,7 @@ impl Config {
         let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
         Ok(Task {
             listen_addr,
-            latch,
+            ready,
             serve,
         })
     }
