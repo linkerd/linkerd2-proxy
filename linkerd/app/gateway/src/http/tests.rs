@@ -4,7 +4,6 @@ use linkerd_app_core::{
     svc::{NewService, ServiceExt},
     tls,
     trace::test::trace_init,
-    transport::ServerAddr,
     Error, NameAddr,
 };
 use linkerd_app_inbound::GatewayLoop;
@@ -53,7 +52,7 @@ async fn upgraded_request_remains_relative_form() {
 
     impl svc::Param<OrigDstAddr> for Target {
         fn param(&self) -> OrigDstAddr {
-            OrigDstAddr(Self::dst_addr())
+            OrigDstAddr(([10, 10, 10, 10], 4143).into())
         }
     }
 
@@ -133,18 +132,11 @@ async fn upgraded_request_remains_relative_form() {
                     }]))]),
                 },
             };
-            let (policy, tx) =
-                inbound::policy::AllowPolicy::for_test(ServerAddr(Self::dst_addr()), policy);
+            let (policy, tx) = inbound::policy::AllowPolicy::for_test(self.param(), policy);
             tokio::spawn(async move {
                 tx.closed().await;
             });
             policy
-        }
-    }
-
-    impl Target {
-        fn dst_addr() -> std::net::SocketAddr {
-            ([10, 10, 10, 10], 4143).into()
         }
     }
 

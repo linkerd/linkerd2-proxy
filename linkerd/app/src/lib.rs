@@ -170,15 +170,15 @@ impl Config {
         let admin = {
             let identity = identity.receiver().server();
             let metrics = inbound.metrics();
+            let policy = inbound_policies.clone();
             let report = inbound
                 .metrics()
                 .and_report(outbound.metrics())
                 .and_report(report);
-
-            admin
-                .build(
+            info_span!("admin").in_scope(move || {
+                admin.build(
                     bind_admin,
-                    &inbound_policies,
+                    policy,
                     identity,
                     report,
                     metrics,
@@ -186,8 +186,7 @@ impl Config {
                     drain_rx,
                     shutdown_tx,
                 )
-                .instrument(info_span!("admin"))
-                .await?
+            })?
         };
 
         let dst_addr = dst.addr.clone();
