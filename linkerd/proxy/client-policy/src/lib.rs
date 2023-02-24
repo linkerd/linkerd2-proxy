@@ -111,6 +111,16 @@ pub struct PeakEwma {
     pub default_rtt: time::Duration,
 }
 
+/// Default values used when converting protobufs.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Defaults {
+    /// Default EWMA parameters.
+    pub ewma: PeakEwma,
+
+    /// Default queue parameters.
+    pub queue: Queue,
+}
+
 // === impl Meta ===
 
 impl Meta {
@@ -190,10 +200,11 @@ pub mod proto {
     #[error("invalid metadata: {0}")]
     pub struct InvalidMeta(pub(crate) &'static str);
 
-    impl TryFrom<api::OutboundPolicy> for ClientPolicy {
-        type Error = InvalidPolicy;
-
-        fn try_from(policy: api::OutboundPolicy) -> Result<Self, Self::Error> {
+    impl ClientPolicy {
+        pub fn try_from_proto(
+            defaults: &Defaults,
+            policy: api::OutboundPolicy,
+        ) -> Result<Self, InvalidPolicy> {
             let protocol = policy
                 .protocol
                 .ok_or(InvalidPolicy::Protocol("missing protocol"))?
@@ -257,6 +268,26 @@ pub mod proto {
                         section,
                     })
                 }
+            }
+        }
+    }
+
+    impl Backend {
+        pub(crate) fn from_proto(
+            defaults: &Defaults,
+            meta: &Arc<Meta>,
+            backend: &api::backend::Backend,
+        ) -> Self {
+            let dispatcher = match backend {
+                api::backend::Backend::Balancer(destination::WeightedDst { authority, weight }) => {
+                    todo!("eliza")
+                }
+                api::backend::Backend::Forward(addr) => todo!("eliza"),
+            };
+            Backend {
+                meta: meta.clone(),
+                dispatcher,
+                queue: defaults.queue.clone(),
             }
         }
     }
