@@ -1,6 +1,6 @@
-use super::AllowPolicy;
+use super::{AllowPolicy, LookupAddr};
 use futures::future;
-use linkerd_app_core::{svc, transport::OrigDstAddr, Error};
+use linkerd_app_core::{svc, transport::ServerAddr, Error};
 use linkerd_idle_cache::IdleCache;
 pub use linkerd_proxy_server_policy::{
     authz::Suffix, Authentication, Authorization, Protocol, ServerPolicy,
@@ -96,7 +96,7 @@ where
     }
 }
 
-impl<D> svc::Service<OrigDstAddr> for Store<D>
+impl<D> svc::Service<LookupAddr> for Store<D>
 where
     D: svc::Service<
         u16,
@@ -117,11 +117,12 @@ where
         task::Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, dst: OrigDstAddr) -> Self::Future {
-        // Lookup the polcify for the target port in the cache. If it doesn't
+    fn call(&mut self, LookupAddr(addr): LookupAddr) -> Self::Future {
+        // Lookup the policy for the target port in the cache. If it doesn't
         // already exist, we spawn a watch on the API (if it is configured). If
         // no discovery API is configured we use the default policy.
-        let port = dst.port();
+        let port = addr.port();
+        let dst = ServerAddr(addr);
         if let Some(server) = self.cache.get(&port) {
             return future::Either::Left(future::ready(Ok(AllowPolicy { dst, server })));
         }

@@ -31,12 +31,12 @@ async fn unauthenticated_allowed() {
     };
 
     let tls = tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello);
-    let permitted = check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
+    let permitted = check_authorized(&policy, server_addr(), client_addr(), &tls)
         .expect("unauthenticated connection must be permitted");
     assert_eq!(
         permitted,
         ServerPermit {
-            dst: orig_dst_addr(),
+            dst: server_addr(),
             protocol: policy.protocol,
             labels: ServerAuthzLabels {
                 authz: Arc::new(Meta::Resource {
@@ -83,12 +83,12 @@ async fn authenticated_identity() {
         client_id: Some(client_id()),
         negotiated_protocol: None,
     });
-    let permitted = check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
+    let permitted = check_authorized(&policy, server_addr(), client_addr(), &tls)
         .expect("unauthenticated connection must be permitted");
     assert_eq!(
         permitted,
         ServerPermit {
-            dst: orig_dst_addr(),
+            dst: server_addr(),
             protocol: policy.protocol.clone(),
             labels: ServerAuthzLabels {
                 authz: Arc::new(Meta::Resource {
@@ -113,7 +113,7 @@ async fn authenticated_identity() {
         )),
         negotiated_protocol: None,
     });
-    check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
+    check_authorized(&policy, server_addr(), client_addr(), &tls)
         .expect_err("policy must require a client identity");
 }
 
@@ -147,10 +147,10 @@ async fn authenticated_suffix() {
         negotiated_protocol: None,
     });
     assert_eq!(
-        check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
+        check_authorized(&policy, server_addr(), client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
         ServerPermit {
-            dst: orig_dst_addr(),
+            dst: server_addr(),
             protocol: policy.protocol.clone(),
             labels: ServerAuthzLabels {
                 authz: Arc::new(Meta::Resource {
@@ -175,7 +175,7 @@ async fn authenticated_suffix() {
         ),
         negotiated_protocol: None,
     });
-    check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
+    check_authorized(&policy, server_addr(), client_addr(), &tls)
         .expect_err("policy must require a client identity");
 }
 
@@ -206,10 +206,10 @@ async fn tls_unauthenticated() {
         negotiated_protocol: None,
     });
     assert_eq!(
-        check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
+        check_authorized(&policy, server_addr(), client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
         ServerPermit {
-            dst: orig_dst_addr(),
+            dst: server_addr(),
             protocol: policy.protocol.clone(),
             labels: ServerAuthzLabels {
                 authz: Arc::new(Meta::Resource {
@@ -231,7 +231,7 @@ async fn tls_unauthenticated() {
             .parse()
             .unwrap(),
     });
-    check_authorized(&policy, orig_dst_addr(), client_addr(), &tls)
+    check_authorized(&policy, server_addr(), client_addr(), &tls)
         .expect_err("policy must require a TLS termination identity");
 }
 
@@ -245,6 +245,6 @@ fn client_addr() -> Remote<ClientAddr> {
     Remote(ClientAddr(([192, 0, 2, 3], 54321).into()))
 }
 
-fn orig_dst_addr() -> OrigDstAddr {
-    OrigDstAddr(([192, 0, 2, 2], 1000).into())
+fn server_addr() -> ServerAddr {
+    ServerAddr(([192, 0, 2, 2], 1000).into())
 }

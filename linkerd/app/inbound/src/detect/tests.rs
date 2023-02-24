@@ -27,7 +27,7 @@ fn authzs() -> Arc<[Authorization]> {
 
 fn allow(protocol: Protocol) -> AllowPolicy {
     let (allow, _tx) = AllowPolicy::for_test(
-        orig_dst_addr(),
+        ServerAddr(orig_dst_addr().into()),
         ServerPolicy {
             protocol,
             meta: Arc::new(Meta::Resource {

@@ -59,7 +59,12 @@ impl<N> Inbound<N> {
                     }
                 })
                 .lift_new_with_target()
-                .push(policy::Discover::layer(policies))
+                .push(policy::Discover::layer_via(policies, |t: &T| {
+                    // For non-direct inbound connections, policies are always
+                    // looked up for the original destination address.
+                    let OrigDstAddr(addr) = t.param();
+                    policy::LookupAddr(addr)
+                }))
                 .into_new_service()
                 .check_new_service::<T, I>()
                 .push_switch(
