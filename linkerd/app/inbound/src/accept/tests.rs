@@ -37,11 +37,8 @@ async fn discovers() {
     let (svc, mut svc_handle) = tower_test::mock::pair::<io::DuplexStream, ()>();
     let stack = inbound()
         .with_stack(move |Accept { orig_dst_addr, .. }| {
-            let port = orig_dst_addr.port();
-            if port == 1000 {
-                return svc.clone();
-            }
-            unreachable!("unexpected port: {port}")
+            assert_eq!(orig_dst_addr.port(), 1000);
+            svc.clone()
         })
         .push_accept(
             PROXY_PORT,
