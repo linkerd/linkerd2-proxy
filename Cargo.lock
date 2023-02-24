@@ -897,6 +897,7 @@ dependencies = [
  "tokio-test",
  "tonic",
  "tower",
+ "tower-test",
  "tracing",
 ]
 
@@ -911,6 +912,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
+ "ipnet",
  "linkerd-app",
  "linkerd-app-admin",
  "linkerd-app-core",
@@ -919,6 +921,7 @@ dependencies = [
  "linkerd-metrics",
  "linkerd-tracing",
  "linkerd2-proxy-api",
+ "maplit",
  "parking_lot",
  "regex",
  "rustls-pemfile",

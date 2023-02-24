@@ -4,7 +4,9 @@ pub mod defaults;
 mod discover;
 mod http;
 mod store;
-mod tcp;
+pub(crate) mod tcp;
+#[cfg(test)]
+pub mod test_util;
 
 pub(crate) use self::store::Store;
 pub use self::{
@@ -48,12 +50,6 @@ pub trait GetPolicy: Clone + Send + Sync + 'static {
     fn get_policy(&self, target: OrigDstAddr) -> Self::Future;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum DefaultPolicy {
-    Allow(ServerPolicy),
-    Deny,
-}
-
 #[derive(Clone, Debug)]
 pub struct AllowPolicy {
     dst: OrigDstAddr,
@@ -95,26 +91,6 @@ where
         use tower::util::ServiceExt;
 
         self.clone().oneshot(target)
-    }
-}
-
-// === impl DefaultPolicy ===
-
-impl From<ServerPolicy> for DefaultPolicy {
-    fn from(p: ServerPolicy) -> Self {
-        DefaultPolicy::Allow(p)
-    }
-}
-
-impl From<DefaultPolicy> for ServerPolicy {
-    fn from(d: DefaultPolicy) -> Self {
-        match d {
-            DefaultPolicy::Allow(p) => p,
-            DefaultPolicy::Deny => ServerPolicy {
-                protocol: Protocol::Opaque(Arc::new([])),
-                meta: Meta::new_default("deny"),
-            },
-        }
     }
 }
 
