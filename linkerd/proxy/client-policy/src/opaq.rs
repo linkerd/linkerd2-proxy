@@ -1,6 +1,4 @@
-use crate::{Meta, RoutePolicy};
-use once_cell::sync::Lazy;
-use std::{borrow::Cow, sync::Arc};
+use crate::RoutePolicy;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Opaque {
@@ -12,13 +10,12 @@ pub type Policy = RoutePolicy<Filter>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Filter {}
 
-impl Opaque {
-    pub(crate) fn default_policy() -> Self {
-        static META: Lazy<Arc<crate::Meta>> = Lazy::new(|| {
-            Arc::new(Meta::Default {
-                name: Cow::Borrowed("opaque"),
-            })
-        });
-        todo!("eliza")
-    }
+#[cfg(feature = "proto")]
+pub(crate) mod proto {
+    use super::*;
+
+    use once_cell::sync::Lazy;
+    use std::sync::Arc;
+
+    pub(crate) static NO_FILTERS: Lazy<Arc<[Filter]>> = Lazy::new(|| Arc::new([]));
 }

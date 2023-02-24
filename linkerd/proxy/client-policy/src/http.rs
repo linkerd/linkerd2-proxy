@@ -60,12 +60,23 @@ impl Default for Http2 {
 #[cfg(feature = "proto")]
 pub mod proto {
 
+    pub(crate) fn route_backends(rts: &[Route]) -> impl Iterator<Item = &crate::Backend> {
+        rts.iter().flat_map(|Route { ref rules, .. }| {
+            rules
+                .iter()
+                .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
+        })
+    }
+
     use super::*;
-    use crate::{InvalidMeta, Meta};
-    // use crate::{proto::InvalidBackend, Backend, Backends};
-    use linkerd2_proxy_api::{self as api, outbound};
-    use linkerd_http_route::http::r#match::{
-        host::proto::InvalidHostMatch, proto::InvalidRouteMatch,
+    use crate::{
+        proto::{InvalidDistribution, InvalidMeta},
+        Meta, RouteDistribution,
+    };
+    use linkerd2_proxy_api::outbound;
+    use linkerd_http_route::http::{
+        filter::inject_failure::proto::InvalidFailureResponse,
+        r#match::{host::proto::InvalidHostMatch, proto::InvalidRouteMatch},
     };
 
     #[derive(Debug, thiserror::Error)]
@@ -75,15 +86,44 @@ pub mod proto {
 
         #[error("invalid route match: {0}")]
         RouteMatch(#[from] InvalidRouteMatch),
+
         #[error("invalid route metadata: {0}")]
         Meta(#[from] InvalidMeta),
-        // #[error("invalid backend: {0}")]
-        // Backend(#[from] InvalidBackend),
+
+        #[error("invalid distribution: {0}")]
+        Distribution(#[from] InvalidDistribution),
+
+        #[error("invalid filter: {0}")]
+        Filter(#[from] InvalidFilter),
+
+        #[error("missing {0}")]
+        Missing(&'static str),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidFilter {
+        #[error("missing filter kind")]
+        Missing,
+
+        #[error("invalid HTTP failure injector: {0}")]
+        FailureInjector(#[from] InvalidFailureResponse),
     }
 
     impl TryFrom<outbound::proxy_protocol::Http1> for Http1 {
         type Error = InvalidHttpRoute;
         fn try_from(proto: outbound::proxy_protocol::Http1) -> Result<Self, Self::Error> {
+            let routes = proto
+                .http_routes
+                .into_iter()
+                .map(try_route)
+                .collect::<Result<Arc<[_]>, _>>()?;
+            Ok(Self { routes })
+        }
+    }
+
+    impl TryFrom<outbound::proxy_protocol::Http2> for Http2 {
+        type Error = InvalidHttpRoute;
+        fn try_from(proto: outbound::proxy_protocol::Http2) -> Result<Self, Self::Error> {
             let routes = proto
                 .http_routes
                 .into_iter()
@@ -107,12 +147,12 @@ pub mod proto {
         let hosts = hosts
             .into_iter()
             .map(r#match::MatchHost::try_from)
-            .collect()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         let rules = rules
             .into_iter()
             .map(|rule| try_rule(&meta, rule))
-            .collect()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Route { hosts, rules })
     }
@@ -126,13 +166,21 @@ pub mod proto {
             backends,
             filters,
         } = proto;
+
         let matches = matches
             .into_iter()
             .map(r#match::MatchRequest::try_from)
             .collect::<Result<Vec<_>, InvalidRouteMatch>>()?;
 
-        let filters = todo!("eliza");
-        let distribution = todo!("eliza");
+        let filters = filters
+            .into_iter()
+            .map(Filter::try_from)
+            .collect::<Result<Arc<[_]>, _>>()?;
+
+        let distribution = {
+            let backends = backends.ok_or(InvalidHttpRoute::Missing("distribution"))?;
+            RouteDistribution::try_from_proto(meta, backends)?
+        };
 
         Ok(Rule {
             matches,
@@ -142,5 +190,17 @@ pub mod proto {
                 distribution,
             },
         })
+    }
+
+    impl TryFrom<outbound::Filter> for Filter {
+        type Error = InvalidFilter;
+
+        fn try_from(filter: outbound::Filter) -> Result<Self, Self::Error> {
+            use outbound::filter::Kind;
+
+            match filter.kind.ok_or(InvalidFilter::Missing)? {
+                Kind::FailureInjector(filter) => Ok(Filter::InjectFailure(filter.try_into()?)),
+            }
+        }
     }
 }

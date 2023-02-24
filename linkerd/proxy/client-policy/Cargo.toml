@@ -18,9 +18,10 @@ proto = [
 ipnet = "2"
 http = "0.2"
 linkerd2-proxy-api = { version = "0.8", optional = true, features = ["outbound"] }
+linkerd-error = { path = "../../error" }
+linkerd-http-route = { path = "../../http-route" }
 linkerd-proxy-api-resolve = { path = "../api-resolve" }
 linkerd-proxy-core = { path = "../core" }
-linkerd-http-route = { path = "../../http-route" }
 prost-types = { version = "0.11", optional = true }
 thiserror ={ version = "1", optional = true }
 once_cell = "1"
