@@ -31,16 +31,7 @@ jobs:
           echo "tag=$(linkerd version --client --short)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
-      - uses: actions/cache@9b0c1fce7a93df8e3bb8926b0d6e9d89e92f20a7
-        with:
-          path: ${{ runner.temp }}/buildx
-          key: buildx-${{ runner.os }}-${{ steps.linkerd.outputs.tag }}-${{ github.sha }}
-          restore-keys: buildx-${{ runner.os }}-${{ steps.linkerd.outputs.tag }}-
-
       - run: just docker
-        env:
-          DOCKER_BUILDX_CACHE_DIR: '${{ runner.temp }}/buildx'
-
       - run: just-k3d create
       - run: just 'linkerd-tag=${{ steps.linkerd.outputs.tag }}' linkerd-load
       - run: just 'linkerd-tag=${{ steps.linkerd.outputs.tag }}' linkerd-install
