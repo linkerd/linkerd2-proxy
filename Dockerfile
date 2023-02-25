@@ -27,6 +27,11 @@ ARG RUNTIME_IMAGE=ghcr.io/linkerd/proxy:edge-22.12.1
 # See: https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/experimental.md#run---mounttypecache
 FROM --platform=$BUILDPLATFORM $RUST_IMAGE as build
 
+ENV CARGO_INCREMENTAL=0
+ENV CARGO_NET_RETRY=10
+ENV RUSTFLAGS="-D warnings -A deprecated"
+ENV RUSTUP_MAX_RETRIES=10
+
 ARG PROXY_FEATURES=""
 RUN apt-get update && \
     apt-get install -y time && \
