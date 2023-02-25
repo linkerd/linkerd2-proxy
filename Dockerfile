@@ -16,7 +16,7 @@
 #
 #     :; docker buildx build . --load
 
-ARG RUST_IMAGE=ghcr.io/linkerd/dev:v38-rust
+ARG RUST_IMAGE=ghcr.io/linkerd/dev:v39-rust
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
