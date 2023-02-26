@@ -198,7 +198,7 @@ action-dev-check:
 ## Linkerd
 ##
 
-linkerd-tag := ''
+linkerd-tag := env_var_or_default('LINKERD_TAG', '')
 _controller-image := 'ghcr.io/linkerd/controller'
 _policy-image := 'ghcr.io/linkerd/policy-controller'
 _init-image := 'ghcr.io/linkerd/proxy-init'
@@ -223,7 +223,7 @@ linkerd-crds-install: _k3d-ready
         --timeout=1m
 
 # Install linkerd on the test cluster using test images.
-linkerd-install *args='': _tag-set linkerd-load linkerd-crds-install && _linkerd-ready
+linkerd-install *args='': _tag-set k3d-load-linkerd linkerd-crds-install && _linkerd-ready
     linkerd install \
             --set='imagePullPolicy=Never' \
             --set='controllerImage={{ _controller-image }}' \
@@ -243,7 +243,7 @@ linkerd-uninstall:
     linkerd uninstall \
         | just-k3d kubectl delete -f -
 
-linkerd-load: _tag-set _k3d-ready
+k3d-load-linkerd: _tag-set _k3d-ready
     for i in \
         '{{ _controller-image }}:{{ linkerd-tag }}' \
         '{{ _policy-image }}:{{ linkerd-tag }}' \
@@ -256,6 +256,22 @@ linkerd-load: _tag-set _k3d-ready
         '{{ _controller-image }}:{{ linkerd-tag }}' \
         '{{ _policy-image }}:{{ linkerd-tag }}' \
         '{{ _init-image }}:{{ _init-tag }}'
+
+linkerd-check-contol-plane-proxy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    check=$(mktemp --tmpdir check-XXXX.json)
+    linkerd check -o json > "$check"
+    result=$(jq -r \
+        '.categories[] | select(.categoryName == "linkerd-control-plane-proxy") | .checks[] | select(.description == "control plane proxies are healthy") | .result' \
+        "$check")
+    if [ "$result" != "success" ]; then
+        jq '.categories[] | .checks[] | select(.result != "success") | select(.hint | contains("-version") | not)' \
+            "$check" >&2
+        just-k3d kubectl describe po -n linkerd >&2
+        exit 1
+    fi
+    rm "$check"
 
 _linkerd-ready:
     just-k3d kubectl wait pod --for=condition=ready \

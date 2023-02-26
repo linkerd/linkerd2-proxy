@@ -13,37 +13,31 @@ on:
       - justfile
       - .github/workflows/k8s.yml
 
-# Run only the app-level tests. These may take longer to compile (usually due to very large stack
-# types) and have the potential to be flakey as they depend on opening sockets and may have timing
-# sensitivity.
 jobs:
-  linkerd-install:
-    runs-on: ubuntu-latest
+  k3d-linkerd-install:
     timeout-minutes: 20
+    runs-on: ubuntu-latest
+    env:
+      TMPDIR: ${{ runner.temp }}
+
     steps:
       - uses: linkerd/dev/actions/setup-tools@v39
+
       - name: Install linkerd CLI (edge)
         id: linkerd
         run: |
           scurl https://run.linkerd.io/install-edge | sh
           echo "PATH=$PATH:$HOME/.linkerd2/bin" >> "$GITHUB_ENV"
           export PATH="$PATH:$HOME/.linkerd2/bin"
-          echo "tag=$(linkerd version --client --short)" >> "$GITHUB_OUTPUT"
+          tag=$(linkerd version --client --short)
+          echo "linkerd $tag"
+          echo "LINKERD_TAG=$tag" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
       - run: just docker
+
       - run: just-k3d create
-      - run: just 'linkerd-tag=${{ steps.linkerd.outputs.tag }}' linkerd-load
-      - run: just 'linkerd-tag=${{ steps.linkerd.outputs.tag }}' linkerd-install
-      - name: Run linkerd check
-        run: |
-          linkerd check -o json > '${{ runner.temp }}/check.json'
-          result=$(jq -r \
-            '.categories[] | select(.categoryName == "linkerd-control-plane-proxy") | .checks[] | select(.description == "control plane proxies are healthy") | .result' \
-            '${{ runner.temp }}/check.json')
-          if [ "$result" != "success" ]; then
-            jq '.categories[] | .checks[] | select(.result != "success") | select(.hint | contains("-version") | not)' \
-                '${{ runner.temp }}/check.json' >&2
-            just-k3d kubectl describe po -n linkerd >&2
-            exit 1
-          fi
+      - run: just k3d-load-linkerd
+
+      - run: just linkerd-install
+      - run: just linkerd-check-contol-plane-proxy
