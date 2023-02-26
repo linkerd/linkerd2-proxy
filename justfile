@@ -204,6 +204,8 @@ _policy-image := 'ghcr.io/linkerd/policy-controller'
 _init-image := 'ghcr.io/linkerd/proxy-init'
 _init-tag := 'v2.2.0'
 
+_kubectl := 'just-k3d kubectl'
+
 _tag-set:
     #!/usr/bin/env bash
     if [ -z '{{ linkerd-tag }}' ]; then
@@ -213,35 +215,6 @@ _tag-set:
 
 _k3d-ready:
     @just-k3d ready
-
-# Install crds on the test cluster.
-linkerd-crds-install: _k3d-ready
-    linkerd install --crds \
-        | just-k3d kubectl apply -f -
-    just-k3d kubectl wait crd --for condition=established \
-        --selector='linkerd.io/control-plane-ns' \
-        --timeout=1m
-
-# Install linkerd on the test cluster using test images.
-linkerd-install *args='': _tag-set k3d-load-linkerd linkerd-crds-install && _linkerd-ready
-    linkerd install \
-            --set='imagePullPolicy=Never' \
-            --set='controllerImage={{ _controller-image }}' \
-            --set='linkerdVersion={{ linkerd-tag }}' \
-            --set='policyController.image.name={{ _policy-image }}' \
-            --set='policyController.image.version={{ linkerd-tag }}' \
-            --set='proxy.image.name={{ docker-repo }}' \
-            --set='proxy.image.version={{ docker-tag }}' \
-            --set='proxy.logLevel=linkerd=debug\,info' \
-            --set='proxyInit.image.name={{ _init-image }}' \
-            --set='proxyInit.image.version={{ _init-tag }}' \
-            {{ args }} \
-        | just-k3d kubectl apply -f -
-
-# Wait for all test namespaces to be removed before uninstalling linkerd from the cluster.
-linkerd-uninstall:
-    linkerd uninstall \
-        | just-k3d kubectl delete -f -
 
 k3d-load-linkerd: _tag-set _k3d-ready
     for i in \
@@ -257,6 +230,35 @@ k3d-load-linkerd: _tag-set _k3d-ready
         '{{ _policy-image }}:{{ linkerd-tag }}' \
         '{{ _init-image }}:{{ _init-tag }}'
 
+# Install crds on the test cluster.
+_linkerd-crds-install: _k3d-ready
+    linkerd install --crds \
+        | {{ _kubectl }} apply -f -
+    {{ _kubectl }} wait crd --for condition=established \
+        --selector='linkerd.io/control-plane-ns' \
+        --timeout=1m
+
+# Install linkerd on the test cluster using test images.
+linkerd-install *args='': _tag-set k3d-load-linkerd _linkerd-crds-install && _linkerd-ready
+    linkerd install \
+            --set='imagePullPolicy=Never' \
+            --set='controllerImage={{ _controller-image }}' \
+            --set='linkerdVersion={{ linkerd-tag }}' \
+            --set='policyController.image.name={{ _policy-image }}' \
+            --set='policyController.image.version={{ linkerd-tag }}' \
+            --set='proxy.image.name={{ docker-repo }}' \
+            --set='proxy.image.version={{ docker-tag }}' \
+            --set='proxy.logLevel=linkerd=debug\,info' \
+            --set='proxyInit.image.name={{ _init-image }}' \
+            --set='proxyInit.image.version={{ _init-tag }}' \
+            {{ args }} \
+        | {{ _kubectl }} apply -f -
+
+# Wait for all test namespaces to be removed before uninstalling linkerd from the cluster.
+linkerd-uninstall:
+    linkerd uninstall \
+        | {{ _kubectl }} delete -f -
+
 linkerd-check-contol-plane-proxy:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -268,29 +270,12 @@ linkerd-check-contol-plane-proxy:
     if [ "$result" != "success" ]; then
         jq '.categories[] | .checks[] | select(.result != "success") | select(.hint | contains("-version") | not)' \
             "$check" >&2
-        just-k3d kubectl describe po -n linkerd >&2
+        {{ _kubectl }} describe po -n linkerd >&2
         exit 1
     fi
     rm "$check"
 
 _linkerd-ready:
-    just-k3d kubectl wait pod --for=condition=ready \
+    {{ _kubectl }} wait pod --for=condition=ready \
         --namespace=linkerd --selector='linkerd.io/control-plane-component' \
         --timeout=1m
-
-# Ensure that a linkerd control plane is installed
-_linkerd-init: && _linkerd-ready
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if ! just-k3d kubectl get ns linkerd >/dev/null 2>&1 ; then
-        {{ just_executable() }} \
-            docker-repo='{{ docker-repo }}' \
-            docker-tag='{{ docker-tag }}' \
-            docker-image='{{ docker-image }}' \
-            linkerd-tag='{{ linkerd-tag }}' \
-            _controller-image='{{ _controller-image }}' \
-            _policy-image='{{ _policy-image }}' \
-            _init-image='{{ _init-image }}' \
-            _init-tag='{{ _init-tag }}' \
-            linkerd-install
-    fi
