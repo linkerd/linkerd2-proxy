@@ -17,8 +17,6 @@ jobs:
   k3d-linkerd-install:
     timeout-minutes: 20
     runs-on: ubuntu-latest
-    env:
-      TMPDIR: ${{ runner.temp }}
 
     steps:
       - uses: linkerd/dev/actions/setup-tools@v39
@@ -41,3 +39,5 @@ jobs:
 
       - run: just linkerd-install
       - run: just linkerd-check-contol-plane-proxy
+        env:
+          TMPDIR: ${{ runner.temp }}
