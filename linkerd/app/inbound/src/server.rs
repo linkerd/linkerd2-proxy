@@ -24,7 +24,7 @@ impl Inbound<()> {
         workload: Arc<str>,
         client: C,
         backoff: ExponentialBackoff,
-    ) -> impl policy::GetPolicy
+    ) -> impl policy::GetPolicy + Clone + Send + Sync + 'static
     where
         C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
         C: Clone + Unpin + Send + Sync + 'static,
@@ -32,14 +32,14 @@ impl Inbound<()> {
         C::ResponseBody: Default + Send + 'static,
         C::Future: Send,
     {
-        self.config.policy.build(workload, client, backoff)
+        self.config.policy.clone().build(workload, client, backoff)
     }
 
     pub async fn serve<A, I, G, GSvc, P>(
         self,
         addr: Local<ServerAddr>,
         listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
-        policies: impl policy::GetPolicy,
+        policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
         profiles: P,
         gateway: G,
     ) where

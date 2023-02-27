@@ -561,46 +561,34 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let detect_protocol_timeout =
             inbound_detect_timeout?.unwrap_or(DEFAULT_INBOUND_DETECT_TIMEOUT);
 
-        // Parse inbound ServerPolicy discovery configuration.
+        // Ensure that connections that directly target the inbound port are secured (unless
+        // identity is disabled).
         let policy = {
             let inbound_port = server.addr.port();
 
-            // Check for presence of environment variables that the proxy no
-            // longer honors.
-            if let Some(val) = strings.get(ENV_INBOUND_PORTS_REQUIRE_IDENTITY)? {
-                warn!(
-                    "The {ENV_INBOUND_PORTS_REQUIRE_IDENTITY}={val:?} \
-                    configuration is no longer supported and will be ignored. \
-                    Use a MeshTlsAuthentication resource instead."
-                );
-            }
+            let cluster_nets = parse(strings, ENV_POLICY_CLUSTER_NETWORKS, parse_networks)?
+                .unwrap_or_else(|| {
+                    info!(
+                        "{} not set; cluster-scoped modes are unsupported",
+                        ENV_POLICY_CLUSTER_NETWORKS
+                    );
+                    Default::default()
+                });
 
-            if let Some(val) = strings.get(ENV_INBOUND_PORTS_REQUIRE_TLS)? {
+            // We always configure a default policy. This policy applies when no other policy is
+            // configured, especially when the port is not documented in via `ENV_INBOUND_PORTS`.
+            let default = parse(strings, ENV_INBOUND_DEFAULT_POLICY, |s| {
+                parse_default_policy(s, cluster_nets, detect_protocol_timeout)
+            })?
+            .unwrap_or_else(|| {
                 warn!(
-                    "The {ENV_INBOUND_PORTS_REQUIRE_TLS}={val:?} configuration \
-                    is no longer supported and will be ignored. Use a \
-                    MeshTlsAuthentication resource instead."
+                    "{} was not set; using `all-unauthenticated`",
+                    ENV_INBOUND_DEFAULT_POLICY
                 );
-            }
-
-            if let Some(val) = strings.get(ENV_INBOUND_DEFAULT_POLICY)? {
-                warn!(
-                    "The {ENV_INBOUND_DEFAULT_POLICY}={val:?} configuration \
-                    is no longer supported and will be ignored. Use the \
-                    `config.linkerd.io/default-inbound-policy` annotation \
-                    instead."
-                );
-            }
-
-            if let Some(val) = strings.get(ENV_POLICY_CLUSTER_NETWORKS)? {
-                warn!(
-                    "The {ENV_POLICY_CLUSTER_NETWORKS}={val:?} configuration \
-                    is no longer needed by the proxy, and will be ignored."
-                );
-            }
-
-            // Load the set of all known inbound ports to be discovered
-            // during initialization.
+                inbound::policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
+            });
+            // If the inbound is proxy is configured to discover policies, then load the set
+            // of all known inbound ports to be discovered during initialization.
             let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
                 Some(ports) => ports,
                 None => {
@@ -619,7 +607,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             // Ensure that the admin server port is included in policy discovery.
             ports.insert(admin_listener_addr.port());
 
-            inbound::policy::Config {
+            inbound::policy::Config::Discover {
+                default,
                 ports,
                 cache_max_idle_age: discovery_idle_timeout,
             }
@@ -1035,6 +1024,36 @@ fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
     Ok(nets)
 }
 
+fn parse_default_policy(
+    s: &str,
+    cluster_nets: HashSet<IpNet>,
+    detect_timeout: Duration,
+) -> Result<inbound::policy::DefaultPolicy, ParseError> {
+    match s {
+        "deny" => Ok(inbound::policy::DefaultPolicy::Deny),
+        "all-authenticated" => {
+            Ok(inbound::policy::defaults::all_authenticated(detect_timeout).into())
+        }
+        "all-unauthenticated" => {
+            Ok(inbound::policy::defaults::all_unauthenticated(detect_timeout).into())
+        }
+
+        // If cluster networks are configured, support cluster-scoped default policies.
+        name if cluster_nets.is_empty() => Err(ParseError::InvalidPortPolicy(name.to_string())),
+        "cluster-authenticated" => Ok(inbound::policy::defaults::cluster_authenticated(
+            cluster_nets,
+            detect_timeout,
+        )
+        .into()),
+        "cluster-unauthenticated" => Ok(inbound::policy::defaults::cluster_unauthenticated(
+            cluster_nets,
+            detect_timeout,
+        )
+        .into()),
+
+        name => Err(ParseError::InvalidPortPolicy(name.to_string())),
+    }
+}
 pub fn parse_backoff<S: Strings>(
     strings: &S,
     base: &str,

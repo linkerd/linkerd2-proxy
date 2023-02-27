@@ -17,7 +17,6 @@ pub fn new() -> Proxy {
 pub struct Proxy {
     controller: Option<controller::Listening>,
     identity: Option<controller::Listening>,
-    policy: Option<controller::Listening>,
 
     /// Inbound/outbound addresses helpful for mocking connections that do not
     /// implement `server::Listener`.
@@ -28,6 +27,8 @@ pub struct Proxy {
     /// `server::Listener`.
     inbound_server: Option<server::Listening>,
     outbound_server: Option<server::Listening>,
+
+    inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
 
     shutdown_signal: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
@@ -43,7 +44,6 @@ pub struct Listening {
 
     controller: controller::Listening,
     identity: controller::Listening,
-    policy: controller::Listening,
 
     shutdown: Shutdown,
     terminated: oneshot::Receiver<()>,
@@ -122,15 +122,6 @@ impl Proxy {
         self
     }
 
-    /// Pass a customized support policy controller for this proxy to use.
-    ///
-    /// If not called, this proxy will be configured with a default policy
-    /// controller.
-    pub fn policy(mut self, p: controller::Listening) -> Self {
-        self.policy = Some(p);
-        self
-    }
-
     pub fn disable_identity(mut self) -> Self {
         self.identity = None;
         self
@@ -165,6 +156,11 @@ impl Proxy {
 
     pub fn outbound_ip(mut self, s: SocketAddr) -> Self {
         self.outbound = MockOrigDst::Addr(s);
+        self
+    }
+
+    pub fn disable_inbound_ports_protocol_detection(mut self, ports: Vec<u16>) -> Self {
+        self.inbound_disable_ports_protocol_detection = Some(ports);
         self
     }
 
@@ -227,7 +223,6 @@ impl Listening {
             thread,
             shutdown,
             terminated,
-            policy,
             ..
         } = self;
 
@@ -254,14 +249,9 @@ impl Listening {
         }
         .instrument(tracing::info_span!("inbound"));
 
-        let policy_controller = policy
-            .join()
-            .instrument(tracing::info_span!("policy_controller"));
-
         tokio::join! {
             inbound,
             outbound,
-            policy_controller,
             identity.join(),
             controller.join(),
         };
@@ -275,16 +265,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         controller
     } else {
         controller::new().run().await
-    };
-
-    let policy = match proxy.policy {
-        Some(policy) => policy,
-        None => {
-            controller::policy()
-                .with_inbound_default(policy::all_unauthenticated())
-                .run()
-                .await
-        }
     };
 
     let identity = if let Some(identity) = proxy.identity {
@@ -315,13 +295,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         "LINKERD2_PROXY_DESTINATION_SVC_ADDR",
         controller.addr.to_string(),
     );
-
-    env.put("LINKERD2_PROXY_POLICY_SVC_ADDR", policy.addr.to_string());
-    env.put(
-        "LINKERD2_PROXY_POLICY_SVC_NAME",
-        "policy.linkerd.serviceaccount.identity.linkerd.cluster.local".to_string(),
-    );
-
     if random_ports {
         env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
     }
@@ -349,6 +322,18 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     env.put(IDENTITY_SVC_NAME, "test-identity".to_owned());
     env.put(IDENTITY_SVC_ADDR, identity.addr.to_string());
 
+    if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
+        let ports = ports
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        env.put(
+            app::env::ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+            ports,
+        );
+    }
+
     if !env.contains_key(app::env::ENV_DESTINATION_PROFILE_NETWORKS) {
         // If the test has not already overridden the destination search
         // networks, make sure that localhost works.
@@ -359,10 +344,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
             app::env::ENV_DESTINATION_PROFILE_NETWORKS,
             "127.0.0.0/24".to_owned(),
         );
-    }
-
-    if !env.contains_key(app::env::ENV_POLICY_WORKLOAD) {
-        env.put(app::env::ENV_POLICY_WORKLOAD, "test:test".into());
     }
 
     let config = app::env::parse_config(&env).unwrap();
@@ -485,7 +466,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
 
         controller,
         identity,
-        policy,
 
         shutdown: tx,
         terminated: term_rx,

@@ -1,6 +1,6 @@
 use crate::{discover, Outbound};
 use linkerd_app_core::{
-    io, profiles, svc,
+    io, svc,
     transport::{self, addrs::*, metrics},
     Error,
 };
