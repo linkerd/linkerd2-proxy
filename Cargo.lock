@@ -885,6 +885,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-meshtls",
  "linkerd-meshtls-rustls",
+ "linkerd-proxy-client-policy",
  "linkerd-proxy-server-policy",
  "linkerd-tonic-watch",
  "linkerd-tracing",
@@ -1360,6 +1361,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "ipnet",
+ "linkerd-addr",
  "linkerd-error",
  "linkerd-http-route",
  "linkerd-proxy-api-resolve",

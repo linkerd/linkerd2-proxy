@@ -10,6 +10,10 @@ pub mod opaq;
 pub use linkerd_http_route as route;
 pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
+/// A target address for outbound policy discovery.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TargetAddr(pub linkerd_addr::Addr);
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
     pub protocol: Protocol,

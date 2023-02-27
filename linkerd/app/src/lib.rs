@@ -146,8 +146,8 @@ impl Config {
         }?;
 
         let policies = {
-            let dns = dns.resolver;
-            let metrics = metrics.control;
+            let dns = dns.resolver.clone();
+            let metrics = metrics.control.clone();
             info_span!("policy")
                 .in_scope(|| policy.build(dns, metrics, identity.receiver().new_client()))
         }?;

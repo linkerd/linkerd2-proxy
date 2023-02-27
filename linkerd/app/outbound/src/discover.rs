@@ -5,6 +5,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     Addr, AddrMatch, Error,
 };
+pub use policy::TargetAddr;
 use std::{
     hash::{Hash, Hasher},
     ops::Deref,
@@ -15,10 +16,6 @@ use tracing::debug;
 
 #[cfg(test)]
 mod tests;
-
-/// A target address for outbound policy discovery.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TargetAddr(pub Addr);
 
 /// Target with a discovery result.
 #[derive(Clone, Debug)]

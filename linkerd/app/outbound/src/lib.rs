@@ -200,7 +200,7 @@ impl<S> Outbound<S> {
 }
 
 impl Outbound<()> {
-    pub async fn serve<T, I, P, R>(
+    pub async fn serve<T, I, R>(
         self,
         listen: impl Stream<Item = Result<(T, I)>> + Send + Sync + 'static,
         profiles: impl profiles::GetProfile<Error = Error>,
@@ -210,7 +210,6 @@ impl Outbound<()> {
         // Target describing a server-side connection.
         T: Param<Remote<ClientAddr>>,
         T: Param<OrigDstAddr>,
-        T: Param<discover::TargetAddr>,
         T: Clone + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,

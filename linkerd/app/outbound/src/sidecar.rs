@@ -3,7 +3,6 @@ use crate::{
     protocol::{self, Protocol},
     Outbound,
 };
-use futures::FutureExt;
 use linkerd_app_core::{
     io, profiles,
     proxy::{
@@ -32,6 +31,9 @@ struct HttpSidecar {
     routes: watch::Receiver<http::Routes>,
 }
 
+#[derive(Clone, Debug)]
+struct Target<T>(T);
+
 // === impl Outbound ===
 
 impl Outbound<()> {
@@ -43,7 +45,7 @@ impl Outbound<()> {
     ) -> svc::ArcNewTcp<T, I>
     where
         // Target describing an outbound connection.
-        T: svc::Param<OrigDstAddr> + svc::Param<discover::TargetAddr>,
+        T: svc::Param<OrigDstAddr>,
         T: Clone + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
@@ -122,6 +124,8 @@ impl Outbound<()> {
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
             // Access cached discovery information.
             .push_discover(discover)
+            // This target type adds a `Param<discover::TargetAddr>` impl.
+            .map_stack(move |_, _, stk| stk.push_map_target(Target))
             // Instrument server-side connections for telemetry.
             .push_tcp_instrument(|t: &T| {
                 let addr: OrigDstAddr = t.param();
@@ -260,5 +264,26 @@ impl std::hash::Hash for HttpSidecar {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.orig_dst.hash(state);
         self.version.hash(state);
+    }
+}
+
+// === impl Target ===
+
+impl<T> svc::Param<OrigDstAddr> for Target<T>
+where
+    T: svc::Param<OrigDstAddr>,
+{
+    fn param(&self) -> OrigDstAddr {
+        self.0.param()
+    }
+}
+
+impl<T> svc::Param<discover::TargetAddr> for Target<T>
+where
+    T: svc::Param<OrigDstAddr>,
+{
+    fn param(&self) -> discover::TargetAddr {
+        let OrigDstAddr(addr) = self.0.param();
+        discover::TargetAddr(addr.into())
     }
 }
