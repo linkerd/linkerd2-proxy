@@ -257,7 +257,6 @@ linkerd-install *args='': _tag-set k3d-load-linkerd _linkerd-crds-install && _li
             {{ args }} \
         | {{ _kubectl }} apply -f -
 
-# Wait for all test namespaces to be removed before uninstalling linkerd from the cluster.
 linkerd-uninstall:
     linkerd uninstall \
         | {{ _kubectl }} delete -f -
