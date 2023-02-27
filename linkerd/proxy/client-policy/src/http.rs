@@ -59,15 +59,6 @@ impl Default for Http2 {
 
 #[cfg(feature = "proto")]
 pub mod proto {
-
-    pub(crate) fn route_backends(rts: &[Route]) -> impl Iterator<Item = &crate::Backend> {
-        rts.iter().flat_map(|Route { ref rules, .. }| {
-            rules
-                .iter()
-                .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
-        })
-    }
-
     use super::*;
     use crate::{
         proto::{InvalidDistribution, InvalidMeta},
@@ -107,6 +98,14 @@ pub mod proto {
 
         #[error("invalid HTTP failure injector: {0}")]
         FailureInjector(#[from] InvalidFailureResponse),
+    }
+
+    pub(crate) fn route_backends(rts: &[Route]) -> impl Iterator<Item = &crate::Backend> {
+        rts.iter().flat_map(|Route { ref rules, .. }| {
+            rules
+                .iter()
+                .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
+        })
     }
 
     impl TryFrom<outbound::proxy_protocol::Http1> for Http1 {
