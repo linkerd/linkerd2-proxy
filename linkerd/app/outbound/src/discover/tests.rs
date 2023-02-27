@@ -36,13 +36,19 @@ async fn errors_propagate() {
         })
     };
 
-    let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+    let discover = {
+        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        svc::mk(move |super::TargetAddr(addr)| {
+            // TODO(eliza): policy!
+            profiles.clone().oneshot(profiles::LookupAddr(addr))
+        })
+    };
 
     // Create a profile stack that uses the tracked inner stack.
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(stack)
-        .push_discover(profiles)
+        .push_discover(discover)
         .into_inner();
 
     assert_eq!(
@@ -96,9 +102,9 @@ async fn caches_profiles_until_idle() {
     let profiles = {
         let profile = support::profile::resolver().profile(addr, profiles::Profile::default());
         let lookups = profile_lookups.clone();
-        svc::mk(move |a: discover::TargetAddr| {
+        svc::mk(move |discover::TargetAddr(a): discover::TargetAddr| {
             lookups.fetch_add(1, Ordering::SeqCst);
-            profile.clone().oneshot(a)
+            profile.clone().oneshot(profiles::LookupAddr(a))
         })
     };
 
@@ -176,11 +182,16 @@ async fn no_profiles_when_outside_search_nets() {
     let _trace = linkerd_tracing::test::trace_init();
 
     let addr = SocketAddr::new([192, 0, 2, 22].into(), 2222);
-
-    // XXX we should assert that the resolver isn't even invoked, but the mocked resolver
-    // doesn't support that right now. So, instead, we return a profile for resolutions to
-    // and assert (below) that no profile is provided.
-    let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+    let discover = {
+        // XXX we should assert that the resolver isn't even invoked, but the mocked resolver
+        // doesn't support that right now. So, instead, we return a profile for resolutions to
+        // and assert (below) that no profile is provided.
+        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        svc::mk(move |super::TargetAddr(addr)| {
+            // TODO(eliza): policy!
+            profiles.clone().oneshot(profiles::LookupAddr(addr))
+        })
+    };
 
     // Mock an inner stack with a service that asserts that no profile is built.
     let stack = |d: Discovery<_>| {
@@ -201,7 +212,7 @@ async fn no_profiles_when_outside_search_nets() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(cfg, rt)
         .with_stack(stack)
-        .push_discover(profiles)
+        .push_discover(discover)
         .into_inner();
 
     // Instantiate a service from the stack so that it instantiates the tracked inner service.
