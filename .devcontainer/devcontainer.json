@@ -30,6 +30,9 @@
 	],
 	"overrideCommand": false,
 	"remoteUser": "code",
+	"containerEnv": {
+		"CXX": "clang++-14",
+	},
 	"mounts": [
 		{
 			"source": "/var/run/docker.sock",
