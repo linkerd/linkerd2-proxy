@@ -49,7 +49,7 @@ impl<X: Clone, Req, N> NewQueue<X, Req, N> {
         }
     }
 
-    /// Returns a [`Layer`] that constructs new [`failfast::Gate`]d [`Buffer`]s
+    /// Returns a [`Layer`] that constructs new [`gate::Gate`]d [`Buffer`]s
     /// using an `X`-typed [`ExtractParam`] implementation to extract
     /// [`Capacity`] and [`Timeout`] from a `T`-typed target.
     #[inline]
