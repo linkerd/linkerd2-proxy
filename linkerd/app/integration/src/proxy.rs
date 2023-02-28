@@ -17,6 +17,7 @@ pub fn new() -> Proxy {
 pub struct Proxy {
     controller: Option<controller::Listening>,
     identity: Option<controller::Listening>,
+    policy: Option<controller::Listening>,
 
     /// Inbound/outbound addresses helpful for mocking connections that do not
     /// implement `server::Listener`.
@@ -44,6 +45,7 @@ pub struct Listening {
 
     controller: controller::Listening,
     identity: controller::Listening,
+    policy: controller::Listening,
 
     shutdown: Shutdown,
     terminated: oneshot::Receiver<()>,
@@ -119,6 +121,15 @@ impl Proxy {
 
     pub fn identity(mut self, i: controller::Listening) -> Self {
         self.identity = Some(i);
+        self
+    }
+
+    /// Pass a customized support policy controller for this proxy to use.
+    ///
+    /// If not called, this proxy will be configured with a default policy
+    /// controller.
+    pub fn policy(mut self, p: controller::Listening) -> Self {
+        self.policy = Some(p);
         self
     }
 
@@ -220,6 +231,7 @@ impl Listening {
             outbound_server,
             controller,
             identity,
+            policy,
             thread,
             shutdown,
             terminated,
@@ -254,6 +266,7 @@ impl Listening {
             outbound,
             identity.join(),
             controller.join(),
+            policy.join(),
         };
     }
 }
@@ -286,6 +299,16 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
             .certify(move |_| certify_rsp)
             .run()
             .await
+    };
+
+    let policy = match proxy.policy {
+        Some(policy) => policy,
+        None => {
+            controller::policy()
+                .with_inbound_default(policy::all_unauthenticated())
+                .run()
+                .await
+        }
     };
 
     let inbound = proxy.inbound;
@@ -322,6 +345,12 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     env.put(IDENTITY_SVC_NAME, "test-identity".to_owned());
     env.put(IDENTITY_SVC_ADDR, identity.addr.to_string());
 
+    env.put("LINKERD2_PROXY_POLICY_SVC_ADDR", policy.addr.to_string());
+    env.put(
+        "LINKERD2_PROXY_POLICY_SVC_NAME",
+        "policy.linkerd.serviceaccount.identity.linkerd.cluster.local".to_string(),
+    );
+
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
         let ports = ports
             .into_iter()
@@ -344,6 +373,10 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
             app::env::ENV_DESTINATION_PROFILE_NETWORKS,
             "127.0.0.0/24".to_owned(),
         );
+    }
+
+    if !env.contains_key(app::env::ENV_POLICY_WORKLOAD) {
+        env.put(app::env::ENV_POLICY_WORKLOAD, "test:test".into());
     }
 
     let config = app::env::parse_config(&env).unwrap();
@@ -466,6 +499,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
 
         controller,
         identity,
+        policy,
 
         shutdown: tx,
         terminated: term_rx,
