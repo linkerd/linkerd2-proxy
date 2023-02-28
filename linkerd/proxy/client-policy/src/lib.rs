@@ -152,6 +152,26 @@ impl ClientPolicy {
             backends: Arc::new([]),
         }
     }
+
+    pub fn is_default(&self) -> bool {
+        match self.protocol {
+            Protocol::Detect {
+                ref http1,
+                ref http2,
+                ..
+            } => {
+                // TODO(eliza): when opaque has real policy we'll have to handle
+                // that here too
+                http::is_default(&http1.routes) && http::is_default(&http2.routes)
+            }
+            Protocol::Http1(ref http) => http::is_default(&http.routes),
+            Protocol::Http2(ref http) => http::is_default(&http.routes),
+            Protocol::Grpc(ref grpc) => grpc::is_default(&grpc.routes),
+
+            // XXX(eliza): this isn't quite right...
+            _ => true,
+        }
+    }
 }
 
 // === impl Meta ===
@@ -194,6 +214,10 @@ impl Meta {
             Self::Default { .. } => "",
             Self::Resource { section, .. } => section.as_deref().unwrap_or(""),
         }
+    }
+
+    pub fn is_default(&self) -> bool {
+        matches!(self, Self::Default { .. })
     }
 }
 

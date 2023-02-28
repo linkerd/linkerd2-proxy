@@ -41,6 +41,12 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     }
 }
 
+pub(crate) fn is_default(routes: &[Route]) -> bool {
+    routes
+        .iter()
+        .all(|route| route.rules.iter().all(|rule| rule.policy.meta.is_default()))
+}
+
 impl Default for Http1 {
     fn default() -> Self {
         Self {

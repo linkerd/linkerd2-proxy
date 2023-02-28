@@ -22,6 +22,7 @@ use tracing::info_span;
 struct Sidecar {
     orig_dst: OrigDstAddr,
     profile: Option<profiles::Receiver>,
+    policy: Option<policy::Receiver>,
 }
 
 #[derive(Clone, Debug)]
@@ -86,7 +87,7 @@ impl Outbound<()> {
             .push_map_target(|parent: protocol::Http<Sidecar>| {
                 let version = svc::Param::<http::Version>::param(&parent);
                 let orig_dst = (*parent).orig_dst;
-                let mk_routes = move |profile: &profiles::Profile| {
+                let mk_profile_routes = move |profile: &profiles::Profile| {
                     if let Some(addr) = profile.addr.clone() {
                         return http::Routes::Profile(http::profile::Routes {
                             addr,
@@ -101,15 +102,44 @@ impl Outbound<()> {
 
                     http::Routes::Endpoint(Remote(ServerAddr(*orig_dst)), Default::default())
                 };
-                let routes = match (*parent).profile.clone() {
-                    Some(profile) => {
-                        let mut rx = watch::Receiver::from(profile);
-                        let init = mk_routes(&*rx.borrow_and_update());
+
+                let mk_policy_routes = move |policy: &policy::ClientPolicy| {
+                    // match policy.protocol {
+                    //     policy::ProxyProtocol::Detect { http1, http2, } => todo!("")
+
+                    // }
+                    // http::Routes::Policy(http::policy::Routes {
+                    //     addr: todo!("eliza"),
+                    // })
+                    todo!("eliza")
+                };
+                let routes = match ((*parent).profile.clone(), (*parent).policy.clone()) {
+                    (Some(profile), policy)
+                        if policy
+                            .as_ref()
+                            .map(|policy| policy.borrow().is_default())
+                            .unwrap_or(true) =>
+                    {
+                        let mut rx = watch::Receiver::from(profile.clone());
+                        let init = mk_profile_routes(&*rx.borrow_and_update());
                         http::spawn_routes(rx, init, move |profile: &profiles::Profile| {
-                            Some(mk_routes(profile))
+                            Some(mk_profile_routes(profile))
                         })
                     }
-                    None => http::spawn_routes_default(Remote(ServerAddr(*orig_dst))),
+                    (Some(profile), None) => {
+                        let mut rx = watch::Receiver::from(profile.clone());
+                        let init = mk_profile_routes(&*rx.borrow_and_update());
+                        http::spawn_routes(rx, init, move |profile: &profiles::Profile| {
+                            Some(mk_profile_routes(profile))
+                        })
+                    }
+                    (_, Some(mut policy)) => {
+                        let init = mk_policy_routes(&*policy.borrow_and_update());
+                        http::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
+                            Some(mk_policy_routes(policy))
+                        })
+                    }
+                    (None, None) => http::spawn_routes_default(Remote(ServerAddr(*orig_dst))),
                 };
                 HttpSidecar {
                     orig_dst,
@@ -144,6 +174,7 @@ where
     fn from(parent: discover::Discovery<T>) -> Self {
         use svc::Param;
         Self {
+            policy: parent.param(),
             profile: parent.param(),
             orig_dst: (*parent).param(),
         }
