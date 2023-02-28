@@ -166,6 +166,20 @@ mod tests {
         let (mut gate, mut handle) =
             tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(inner, rx.clone()));
 
+        handle.allow(1);
+        tx.shut();
+        assert!(gate.poll_ready().is_pending());
+
+        tx.open();
+        assert!(gate.poll_ready().is_ready());
+    }
+
+    #[tokio::test]
+    async fn gate_polls_inner() {
+        let (tx, rx) = channel();
+        let (mut gate, mut handle) =
+            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(inner, rx.clone()));
+
         handle.allow(0);
         assert!(gate.poll_ready().is_pending());
 
