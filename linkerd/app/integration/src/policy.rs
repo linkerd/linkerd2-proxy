@@ -1,16 +1,13 @@
 use super::*;
+pub use api::{inbound, outbound};
+use api::{inbound::inbound_server_policies_server, outbound::outbound_policies_server};
 use futures::stream;
+use linkerd2_proxy_api as api;
 use parking_lot::Mutex;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic as grpc;
-
-pub use linkerd2_proxy_api::{
-    self as api,
-    inbound::{self, inbound_server_policies_server},
-    outbound::{self, outbound_policies_server},
-};
 
 #[derive(Debug, Default)]
 pub struct Controller {
@@ -109,17 +106,44 @@ pub fn opaque_unauthenticated() -> inbound::Server {
 }
 
 pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
+    use outbound::proxy_protocol;
+
     outbound::OutboundPolicy {
         protocol: Some(outbound::ProxyProtocol {
-            kind: Some(outbound::proxy_protocol::Kind::Detect(
-                outbound::proxy_protocol::Detect {
-                    timeout: Some(Duration::from_secs(10).try_into().unwrap()),
-                    http1: None,
-                    http2: None,
-                },
-            )),
+            kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
+                timeout: Some(Duration::from_secs(10).try_into().unwrap()),
+                http1: Some(proxy_protocol::Http1 {
+                    http_routes: vec![outbound_default_route()],
+                }),
+                http2: Some(proxy_protocol::Http2 {
+                    http_routes: vec![outbound_default_route()],
+                }),
+            })),
         }),
         backend: Some(backend(dst, 1)),
+    }
+}
+
+pub fn outbound_default_route() -> outbound::HttpRoute {
+    use api::http_route;
+
+    outbound::HttpRoute {
+        metadata: Some(api::meta::Metadata {
+            kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
+        }),
+        hosts: Vec::new(),
+        rules: vec![outbound::http_route::Rule {
+            matches: vec![http_route::HttpRouteMatch {
+                path: Some(http_route::PathMatch {
+                    kind: Some(http_route::path_match::Kind::Prefix("/".to_string())),
+                }),
+                headers: Vec::new(),
+                query_params: Vec::new(),
+                method: None,
+            }],
+            filters: Vec::new(),
+            backends: None,
+        }],
     }
 }
 
