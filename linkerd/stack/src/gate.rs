@@ -13,7 +13,7 @@ pub struct Gate<S> {
     inner: S,
     rx: Rx,
     is_waiting: bool,
-    waiting: ReusableBoxFuture<'static, bool>,
+    waiting: ReusableBoxFuture<'static, ()>,
 }
 
 /// Observes gate state changes.
@@ -59,6 +59,15 @@ impl Rx {
     pub async fn changed(&self) -> bool {
         self.0.notify.notified().await;
         self.is_open()
+    }
+
+    /// Waits for the gate state to change to be open.
+    pub async fn opened(&self) {
+        if self.is_open() {
+            return;
+        }
+
+        while !self.changed().await {}
     }
 }
 
@@ -109,20 +118,11 @@ impl<S> Gate<S> {
     }
 
     pub fn new(inner: S, rx: Rx) -> Self {
-        let (waiting, is_waiting) = if rx.is_open() {
-            let waiting = ReusableBoxFuture::new(async { true });
-            (waiting, false)
-        } else {
-            let rx = rx.clone();
-            let waiting = ReusableBoxFuture::new(async move { rx.changed().await });
-            (waiting, true)
-        };
-
         Self {
             inner,
             rx,
-            is_waiting,
-            waiting,
+            is_waiting: false,
+            waiting: ReusableBoxFuture::new(futures::future::pending()),
         }
     }
 }
@@ -151,7 +151,7 @@ where
             trace!(gate.open = false);
             if !self.is_waiting {
                 let rx = self.rx.clone();
-                self.waiting.set(async move { rx.changed().await });
+                self.waiting.set(async move { rx.opened().await });
                 self.is_waiting = true;
             }
             ready!(self.waiting.poll_unpin(cx));
