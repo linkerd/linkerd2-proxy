@@ -131,8 +131,15 @@ impl Outbound<()> {
         use tower::ServiceExt;
         policy::Api::new(workload, Duration::from_secs(10), client)
             .into_watch(backoff)
-            .map_response(tonic::Response::into_inner)
-            .map_err(Into::into)
+            .map_result(|response| {
+                match response {
+                    // `NotFound` indicates that no policy exists for this
+                    // destination, ignore it and use `ServiceProfile`s.
+                    Err(e) if e.code() == tonic::Code::NotFound => Ok(None),
+                    Err(e) => Err(e.into()),
+                    Ok(rsp) => Ok(Some(rsp.into_inner())),
+                }
+            })
     }
 
     #[cfg(any(test, feature = "test-util"))]

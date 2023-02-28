@@ -66,7 +66,7 @@ impl Outbound<()> {
                     tracing::warn!(%error, "Failed to resolve profile");
                     None
                 });
-                let policy = policy.map(Some).unwrap_or_else(|error| {
+                let policy = policy.unwrap_or_else(|error| {
                     tracing::warn!(%error, "Failed to resolve client policy");
                     None
                 });

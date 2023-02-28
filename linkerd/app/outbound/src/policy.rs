@@ -11,7 +11,7 @@ pub(crate) use self::api::Api;
 pub type Receiver = watch::Receiver<ClientPolicy>;
 
 pub trait GetPolicy: Clone + Send + Sync + 'static {
-    type Future: Future<Output = Result<Receiver, Error>> + Unpin + Send;
+    type Future: Future<Output = Result<Option<Receiver>, Error>> + Unpin + Send;
 
     /// Returns the traffic policy configured for the destination address.
     fn get_policy(&self, target: discover::TargetAddr) -> Self::Future;
@@ -21,7 +21,7 @@ pub trait GetPolicy: Clone + Send + Sync + 'static {
 
 impl<S> GetPolicy for S
 where
-    S: tower::Service<discover::TargetAddr, Response = Receiver, Error = Error>,
+    S: tower::Service<discover::TargetAddr, Response = Option<Receiver>, Error = Error>,
     S: Clone + Send + Sync + Unpin + 'static,
     S::Future: Send + Unpin,
 {
