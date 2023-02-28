@@ -205,7 +205,7 @@ mod tests {
         tx.open();
         tokio::select! {
             biased;
-            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {}
+            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => panic!("timed out"),
             _ = ready => println!("notified"),
         }
     }
