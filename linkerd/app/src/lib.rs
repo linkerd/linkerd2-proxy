@@ -154,7 +154,7 @@ impl Config {
 
         let oc_collector = {
             let identity = identity.receiver().new_client();
-            let dns = dns.resolver.clone();
+            let dns = dns.resolver;
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
             info_span!("opencensus")
@@ -163,7 +163,7 @@ impl Config {
 
         let runtime = ProxyRuntime {
             identity: identity.receiver(),
-            metrics: metrics.proxy.clone(),
+            metrics: metrics.proxy,
             tap: tap.registry(),
             span_sink: oc_collector.span_sink(),
             drain: drain_rx.clone(),
@@ -174,7 +174,7 @@ impl Config {
         let inbound_policies = inbound.build_policies(
             policies.workload.clone(),
             policies.client.clone(),
-            policies.backoff.clone(),
+            policies.backoff,
         );
 
         let admin = {
@@ -223,7 +223,7 @@ impl Config {
             let outbound_policies = outbound.build_policies(
                 policies.workload.clone(),
                 policies.client.clone(),
-                policies.backoff.clone(),
+                policies.backoff,
             );
 
             Box::pin(async move {

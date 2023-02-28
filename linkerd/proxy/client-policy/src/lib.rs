@@ -292,6 +292,11 @@ pub mod proto {
                 .ok_or(InvalidPolicy::Protocol("missing kind"))?;
 
             // A hashset is used here to de-duplicate the set of backends.
+            // Not sure why Clippy's mutable key type lint triggers here --
+            // AFAICT `Backend` doesn't contain anything that's interior
+            // mutable? in any case, though, this is fine, because nothing will
+            // mutate the backends while they are in this hashset...
+            #[allow(clippy::mutable_key_type)]
             let mut backends = HashSet::new();
 
             // top-level backend
@@ -484,12 +489,12 @@ pub mod proto {
             // `chain`ing with empty iterators allows us to return the same type in
             // every match arm.
             match self {
-                Self::Empty => (&[]).iter().chain((&[]).iter().map(discard_weight)),
+                Self::Empty => [].iter().chain([].iter().map(discard_weight)),
                 Self::FirstAvailable(backends) => {
-                    backends.iter().chain((&[]).iter().map(discard_weight))
+                    backends.iter().chain([].iter().map(discard_weight))
                 }
                 Self::RandomAvailable(backends) => {
-                    (&[]).iter().chain(backends.iter().map(discard_weight))
+                    [].iter().chain(backends.iter().map(discard_weight))
                 }
             }
             .map(|backend| &backend.backend)

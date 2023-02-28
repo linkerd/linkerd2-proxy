@@ -50,7 +50,7 @@ impl Config {
     > {
         let addr = self.control.addr.clone();
         let workload = self.workload.into();
-        let backoff = self.control.connect.backoff.clone();
+        let backoff = self.control.connect.backoff;
         let client = self
             .control
             .build(dns, metrics, identity)
