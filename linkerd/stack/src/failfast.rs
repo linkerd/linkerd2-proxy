@@ -1,13 +1,10 @@
 //! A middleware that limits the amount of time the service may be not ready
 //! before requests are failed.
 
-mod gate;
 #[cfg(test)]
 mod test;
 
-pub use self::gate::Gate;
-
-use crate::layer;
+use crate::{gate, layer};
 use futures::{FutureExt, TryFuture};
 use linkerd_error::Error;
 use pin_project::pin_project;
@@ -15,15 +12,10 @@ use std::{
     future::Future,
     mem,
     pin::Pin,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
     task::{Context, Poll},
 };
 use thiserror::Error;
 use tokio::{
-    sync::Notify,
     task,
     time::{self, Duration, Instant, Sleep},
 };
@@ -48,7 +40,7 @@ pub struct FailFast<S> {
     timeout: Duration,
     wait: Pin<Box<Sleep>>,
     state: State<S>,
-    shared: Arc<Shared>,
+    gate: Option<gate::Tx>,
 }
 
 /// An error representing that an operation timed out.
@@ -65,12 +57,6 @@ enum State<S> {
     Invalid,
 }
 
-#[derive(Debug)]
-struct Shared {
-    notify: Notify,
-    in_failfast: AtomicBool,
-}
-
 #[pin_project(project = ResponseFutureProj)]
 pub enum ResponseFuture<F> {
     Inner(#[pin] F),
@@ -80,18 +66,9 @@ pub enum ResponseFuture<F> {
 // === impl FailFast ===
 
 impl<S> FailFast<S> {
-    /// Returns a layer for producing a `FailFast` without a paired [`Gate`].
+    /// Returns a layer for producing a `FailFast` without a paired [`gate::Gate`].
     pub fn layer(timeout: Duration) -> impl layer::Layer<S, Service = Self> + Clone {
-        layer::mk(move |inner| {
-            Self::new(
-                timeout,
-                Arc::new(Shared {
-                    notify: Notify::new(),
-                    in_failfast: AtomicBool::new(false),
-                }),
-                inner,
-            )
-        })
+        layer::mk(move |inner| Self::new(timeout, None, inner))
     }
 
     /// Returns a layer for producing a `FailFast` pair wrapping an inner
@@ -104,22 +81,18 @@ impl<S> FailFast<S> {
     pub fn layer_gated<L>(
         timeout: Duration,
         inner_layer: L,
-    ) -> impl layer::Layer<S, Service = Gate<L::Service>> + Clone
+    ) -> impl layer::Layer<S, Service = gate::Gate<L::Service>> + Clone
     where
         L: layer::Layer<Self> + Clone,
     {
         layer::mk(move |inner| {
-            let shared = Arc::new(Shared {
-                notify: Notify::new(),
-                in_failfast: AtomicBool::new(false),
-            });
-            let inner = Self::new(timeout, shared.clone(), inner);
-            let inner = inner_layer.layer(inner);
-            Gate::new(inner, shared)
+            let (tx, rx) = gate::channel();
+            let inner = inner_layer.layer(Self::new(timeout, Some(tx), inner));
+            gate::Gate::new(inner, rx)
         })
     }
 
-    fn new(timeout: Duration, shared: Arc<Shared>, inner: S) -> Self {
+    fn new(timeout: Duration, gate: Option<gate::Tx>, inner: S) -> Self {
         Self {
             timeout,
             // The sleep is reset whenever the service becomes unavailable; this
@@ -127,7 +100,7 @@ impl<S> FailFast<S> {
             // now.
             wait: Box::pin(time::sleep(Duration::default())),
             state: State::Open(inner),
-            shared,
+            gate,
         }
     }
 }
@@ -195,15 +168,19 @@ where
                         }
 
                         warn!("Service entering failfast after {:?}", self.timeout);
-                        self.shared.in_failfast.store(true, Ordering::Release);
+                        if let Some(gate) = self.gate.as_ref() {
+                            gate.shut();
+                        }
 
-                        let shared = self.shared.clone();
+                        let gate = self.gate.clone();
                         self.state = State::FailFast(task::spawn(async move {
                             let res = inner.ready().await;
                             // Notify the paired `Gate` instances to begin
                             // advertising readiness so that the failfast
                             // service can advance.
-                            shared.exit_failfast();
+                            if let Some(gate) = gate {
+                                gate.open();
+                            }
                             match res {
                                 Ok(_) => {
                                     info!("Service has recovered");
@@ -282,18 +259,6 @@ where
         match self.project() {
             ResponseFutureProj::Inner(f) => f.try_poll(cx).map_err(Into::into),
             ResponseFutureProj::FailFast => Poll::Ready(Err(FailFastError(()).into())),
-        }
-    }
-}
-
-// === impl Shared ===
-
-impl Shared {
-    fn exit_failfast(&self) {
-        // The load part of this operation can be `Relaxed` because this task
-        // is the only place where the the value is ever set.
-        if self.in_failfast.swap(false, Ordering::Release) {
-            self.notify.notify_waiters();
         }
     }
 }

@@ -1,5 +1,6 @@
 use crate::{
-    failfast::{self, FailFast},
+    failfast::FailFast,
+    gate,
     layer::{self, Layer},
     BoxService, ExtractParam, NewService, Service,
 };
@@ -33,7 +34,7 @@ pub struct NewQueueWithoutTimeout<X, Req, N> {
     _req: PhantomData<fn(Req)>,
 }
 
-pub type Queue<Req, Rsp, E = Error> = failfast::Gate<Buffer<BoxService<Req, Rsp, E>, Req>>;
+pub type Queue<Req, Rsp, E = Error> = gate::Gate<Buffer<BoxService<Req, Rsp, E>, Req>>;
 
 pub type QueueWithoutTimeout<Req, Rsp, E = Error> = Buffer<BoxService<Req, Rsp, E>, Req>;
 
