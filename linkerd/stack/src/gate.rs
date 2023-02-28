@@ -6,7 +6,7 @@ use std::{
 };
 use tokio::sync::Notify;
 use tokio_util::sync::ReusableBoxFuture;
-use tracing::debug;
+use tracing::{debug, trace};
 
 /// A middleware that alters its readiness state according to a gate channel.
 pub struct Gate<S> {
@@ -133,7 +133,8 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // If the gate is shut, wait for it to open by storing a future that
         // will complete when it opens. This ensures that waiters are notified.
-        if self.rx.is_shut() {
+        while self.rx.is_shut() {
+            trace!(gate.open = false);
             if !self.is_waiting {
                 let rx = self.rx.clone();
                 self.waiting.set(async move {
@@ -146,6 +147,7 @@ where
 
         debug_assert!(self.rx.is_open());
         self.is_waiting = false;
+        trace!(gate.open = true);
 
         // When the gate is open, poll the inner service.
         self.inner.poll_ready(cx)
