@@ -1,5 +1,5 @@
 use futures::{Future, TryFuture};
-use linkerd_stack::{layer, NewService, Param, Proxy};
+use linkerd_stack::{layer, ExtractParam, NewService, Proxy};
 use std::{
     marker::PhantomData,
     pin::Pin,
@@ -13,16 +13,18 @@ pub trait Lazy<V>: Clone {
 /// Wraps an HTTP `Service` so that a `P`-typed `Param` is cloned into each
 /// request's extensions.
 #[derive(Debug)]
-pub struct NewInsert<P, N> {
+pub struct NewInsert<P, X, N> {
     inner: N,
+    extract: X,
     _marker: PhantomData<fn() -> P>,
 }
 
 /// Wraps an HTTP `Service` so that a `P`-typed `Param` is cloned into each
 /// response's extensions.
 #[derive(Debug)]
-pub struct NewResponseInsert<P, N> {
+pub struct NewResponseInsert<P, X, N> {
     inner: N,
+    extract: X,
     _marker: PhantomData<fn() -> P>,
 }
 
@@ -55,34 +57,46 @@ pub struct ResponseInsertFuture<F, L, V, B> {
 
 // === impl NewInsert ===
 
-impl<P, N> NewInsert<P, N> {
-    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Copy {
-        layer::mk(|inner| Self {
+impl<P, X: Clone, N> NewInsert<P, X, N> {
+    pub fn new(inner: N, extract: X) -> Self {
+        Self {
             inner,
+            extract,
             _marker: PhantomData,
-        })
+        }
+    }
+
+    pub fn layer_via(extract: X) -> impl tower::layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(inner, extract.clone()))
     }
 }
 
-impl<T, P, N> NewService<T> for NewInsert<P, N>
+impl<P, N> NewInsert<P, (), N> {
+    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via(())
+    }
+}
+
+impl<T, P, X, N> NewService<T> for NewInsert<P, X, N>
 where
-    T: Param<P>,
     P: Clone + Send + Sync + 'static,
+    X: ExtractParam<P, T>,
     N: NewService<T>,
 {
     type Service = Insert<N::Service, ValLazy<P>, P>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let param = target.param();
+        let param = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
         Insert::new(inner, ValLazy(param))
     }
 }
 
-impl<N: Clone, P> Clone for NewInsert<P, N> {
+impl<N: Clone, X: Clone, P> Clone for NewInsert<P, X, N> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            extract: self.extract.clone(),
             _marker: self._marker,
         }
     }
@@ -90,35 +104,47 @@ impl<N: Clone, P> Clone for NewInsert<P, N> {
 
 // === impl NewResponseInsert ===
 
-impl<P, N> NewResponseInsert<P, N> {
-    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Copy {
-        layer::mk(|inner| Self {
+impl<P, X: Clone, N> NewResponseInsert<P, X, N> {
+    pub fn new(inner: N, extract: X) -> Self {
+        Self {
             inner,
+            extract,
             _marker: PhantomData,
-        })
+        }
+    }
+
+    pub fn layer_via(extract: X) -> impl tower::layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(inner, extract.clone()))
     }
 }
 
-impl<T, P, N> NewService<T> for NewResponseInsert<P, N>
+impl<P, N> NewResponseInsert<P, (), N> {
+    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via(())
+    }
+}
+
+impl<T, P, X, N> NewService<T> for NewResponseInsert<P, X, N>
 where
-    T: Param<P>,
     P: Clone + Send + Sync + 'static,
+    X: ExtractParam<P, T>,
     N: NewService<T>,
 {
     type Service = ResponseInsert<N::Service, ValLazy<P>, P>;
 
     #[inline]
     fn new_service(&self, target: T) -> Self::Service {
-        let param = target.param();
+        let param = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
         ResponseInsert::new(inner, ValLazy(param))
     }
 }
 
-impl<N: Clone, P> Clone for NewResponseInsert<P, N> {
+impl<N: Clone, X: Clone, P> Clone for NewResponseInsert<P, X, N> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            extract: self.extract.clone(),
             _marker: self._marker,
         }
     }

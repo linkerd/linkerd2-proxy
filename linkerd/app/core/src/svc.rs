@@ -217,13 +217,13 @@ impl<S> Stack<S> {
             }))
     }
 
-    pub fn push_http_insert_target<P>(self) -> Stack<http::insert::NewInsert<P, S>> {
+    pub fn push_http_insert_target<P>(self) -> Stack<http::insert::NewInsert<P, (), S>> {
         self.push(http::insert::NewInsert::layer())
     }
 
     pub fn push_http_response_insert_target<P>(
         self,
-    ) -> Stack<http::insert::NewResponseInsert<P, S>> {
+    ) -> Stack<http::insert::NewResponseInsert<P, (), S>> {
         self.push(http::insert::NewResponseInsert::layer())
     }
 

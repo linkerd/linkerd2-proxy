@@ -240,7 +240,7 @@ impl<T> RouteParams<T> {
                         // leaking tasks onto the runtime.
                         .push(svc::LoadShed::layer()),
                 )
-                .push(http::insert::NewInsert::<Route, _>::layer())
+                .push_http_insert_target::<Route>()
                 .push(
                     metrics
                         .http_profile_route_actual
