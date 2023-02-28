@@ -18,7 +18,7 @@ pub struct Gate<S> {
 
 /// Observes gate state changes.
 #[derive(Clone, Debug)]
-pub struct Rx(Arc<Shared>);
+pub struct Rx(Arc<Shared>, Arc<()>);
 
 /// Changes the gate state.
 #[derive(Clone, Debug)]
@@ -28,6 +28,7 @@ pub struct Tx(Arc<Shared>);
 struct Shared {
     open: AtomicBool,
     notify: Notify,
+    closed: Notify,
 }
 
 /// Creates a new gate channel.
@@ -35,8 +36,9 @@ pub fn channel() -> (Tx, Rx) {
     let shared = Arc::new(Shared {
         open: AtomicBool::new(true),
         notify: Notify::new(),
+        closed: Notify::new(),
     });
-    (Tx(shared.clone()), Rx(shared))
+    (Tx(shared.clone()), Rx(shared, Arc::new(())))
 }
 
 // === impl Rx ===
@@ -60,9 +62,23 @@ impl Rx {
     }
 }
 
+impl Drop for Rx {
+    fn drop(&mut self) {
+        let Rx(_, handle) = self;
+        if Arc::strong_count(handle) == 1 {
+            self.0.closed.notify_waiters();
+        }
+    }
+}
+
 // === impl Tx ===
 
 impl Tx {
+    /// Returns when all associated `Rx` clones are dropped.
+    pub async fn closed(&self) {
+        self.0.closed.notified().await;
+    }
+
     /// Opens the gate.
     pub fn open(&self) {
         if !self.0.open.swap(true, std::sync::atomic::Ordering::Release) {
@@ -158,7 +174,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ServiceExt;
 
     #[tokio::test]
     async fn gate() {
@@ -196,27 +211,51 @@ mod tests {
     #[tokio::test]
     async fn notifies_on_open() {
         let (tx, rx) = channel();
-        let (inner, mut handle) = tower_test::mock::pair::<(), ()>();
-        let mut gate = Gate::new(inner, rx);
+        let (mut gate, mut handle) =
+            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(inner, rx.clone()));
 
         // Start with a shut gate on an available inner service.
         handle.allow(1);
         tx.shut();
 
         // Wait for the gated service to become ready.
-        let mut ready = gate.ready();
-        tokio::select! {
-            biased;
-            _ = &mut ready => panic!("unexpected ready"),
-            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {}
-        }
+        assert!(gate.poll_ready().is_pending());
 
         // Open the gate and verify that the readiness future fires.
         tx.open();
-        tokio::select! {
-            biased;
-            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => panic!("timed out"),
-            _ = ready => println!("notified"),
-        }
+        assert!(gate.poll_ready().is_ready());
+    }
+
+    #[tokio::test]
+    async fn channel_closes() {
+        let (tx, rx) = channel();
+        let mut closed = tokio_test::task::spawn(tx.closed());
+        assert!(closed.poll().is_pending());
+        drop(rx);
+        assert!(closed.poll().is_ready());
+    }
+
+    #[tokio::test]
+    async fn channel_closes_after_clones() {
+        let (tx, rx0) = channel();
+        let mut closed = tokio_test::task::spawn(tx.closed());
+        let rx1 = rx0.clone();
+        assert!(closed.poll().is_pending());
+        drop(rx0);
+        assert!(closed.poll().is_pending());
+        drop(rx1);
+        assert!(closed.poll().is_ready());
+    }
+
+    #[tokio::test]
+    async fn channel_closes_after_clones_reordered() {
+        let (tx, rx0) = channel();
+        let mut closed = tokio_test::task::spawn(tx.closed());
+        let rx1 = rx0.clone();
+        assert!(closed.poll().is_pending());
+        drop(rx1);
+        assert!(closed.poll().is_pending());
+        drop(rx0);
+        assert!(closed.poll().is_ready());
     }
 }
