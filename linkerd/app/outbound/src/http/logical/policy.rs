@@ -76,6 +76,8 @@ pub(super) struct RouteBackendParams<T, F> {
     concrete: Concrete<T>,
 }
 
+type MatchedRouteBackendParams<T, M, F> = Matched<M, RouteBackendParams<T, F>>;
+
 type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
 
 // === impl Routes ===
@@ -425,8 +427,8 @@ where
     {
         svc::layer::mk(|inner| {
             svc::stack(inner)
-                .lift_new()
-                .push_on_service(RouteBackendParams::layer())
+                .push(MatchedRouteBackendParams::layer())
+                .lift_new_with_target()
                 .push(NewDistribute::layer())
                 // The router does not take the backend's availability into
                 // consideration, so we must eagerly fail requests to prevent
@@ -459,9 +461,20 @@ impl<T> filters::Apply for GrpcMatchedRouteParams<T> {
     }
 }
 
-// === impl Clone for RouteBackendParams ===
+// === impl RouteBackendParams ===
 
-impl<T, F> RouteBackendParams<T, F> {
+impl<M, T, F> From<(RouteBackendParams<T, F>, MatchedRouteParams<T, M, F>)>
+    for MatchedRouteBackendParams<T, M, F>
+{
+    fn from((params, route): (RouteBackendParams<T, F>, MatchedRouteParams<T, M, F>)) -> Self {
+        Matched {
+            r#match: route.r#match,
+            params,
+        }
+    }
+}
+
+impl<T, M, F> MatchedRouteBackendParams<T, M, F> {
     fn layer<N, S>() -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
@@ -476,6 +489,7 @@ impl<T, F> RouteBackendParams<T, F> {
     > + Clone
     where
         T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+        M: Clone + Send + Sync + 'static,
         F: Clone + Send + Sync + 'static,
         // Inner stack.
         N: svc::NewService<Concrete<T>, Service = S>,
@@ -490,7 +504,12 @@ impl<T, F> RouteBackendParams<T, F> {
     {
         svc::layer::mk(|inner| {
             svc::stack(inner)
-                .push_map_target(|RouteBackendParams { concrete, .. }| concrete)
+                .push_map_target(
+                    |Matched {
+                         params: RouteBackendParams { concrete, .. },
+                         ..
+                     }| concrete,
+                )
                 .push(svc::ArcNewService::layer())
                 .into_inner()
         })
