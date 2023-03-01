@@ -1,6 +1,6 @@
 use super::{
     super::{concrete, retry},
-    BackendCache, Concrete, Distribution, NoRoute,
+    Concrete, NoRoute,
 };
 use linkerd_app_core::{
     classify, metrics,
@@ -37,6 +37,9 @@ pub(super) struct RouteParams<T> {
     profile: Route,
     distribution: Distribution<T>,
 }
+
+type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
+type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
 // === impl Params ===
 
@@ -75,6 +78,7 @@ where
             svc::stack(inner)
                 // Each `RouteParams` provides a `Distribution` that is used to
                 // choose a concrete service for a given route.
+                .lift_new()
                 .push(BackendCache::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.

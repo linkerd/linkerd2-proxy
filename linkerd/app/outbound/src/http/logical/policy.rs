@@ -1,4 +1,4 @@
-use super::{super::concrete, BackendCache, Concrete, Distribution, NoRoute};
+use super::{super::concrete, Concrete, NoRoute};
 use linkerd_app_core::{
     proxy::http::{self, balance},
     svc,
@@ -64,6 +64,9 @@ pub(super) struct RouteParams<T, F> {
     filters: Arc<[F]>,
     distribution: Distribution<T>,
 }
+
+type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
+type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
 // === impl Routes ===
 
@@ -203,6 +206,7 @@ where
             svc::stack(inner)
                 // Each `RouteParams` provides a `Distribution` that is used to
                 // choose a concrete service for a given route.
+                .lift_new()
                 .push(BackendCache::layer())
                 // Lazily cache a service for each `RouteParams` returned from the
                 // `SelectRoute` impl.

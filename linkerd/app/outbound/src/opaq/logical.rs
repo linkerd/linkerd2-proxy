@@ -106,6 +106,7 @@ impl<N> Outbound<N> {
             let router = svc::layers()
                 // Each `RouteParams` provides a `Distribution` that is used to
                 // choose a concrete service for a given route.
+                .lift_new()
                 .push(BackendCache::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.

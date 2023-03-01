@@ -10,22 +10,19 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 /// [`params::Backends`] from the target to determine which
 /// services should be added/removed from the cache.
 #[derive(Debug)]
-pub struct BackendCache<K, N, S>(Arc<Inner<K, N, S>>);
-
-#[derive(Debug)]
-struct Inner<K, N, S> {
-    new_backend: N,
-    backends: Mutex<ahash::AHashMap<K, S>>,
+pub struct BackendCache<K, N, S> {
+    inner: N,
+    backends: Arc<Mutex<ahash::AHashMap<K, S>>>,
 }
 
 // === impl BackendCache ===
 
 impl<K, N, S> BackendCache<K, N, S> {
-    pub fn new(new_backend: N) -> Self {
-        Self(Arc::new(Inner {
-            new_backend,
+    pub fn new(inner: N) -> Self {
+        Self {
+            inner,
             backends: Default::default(),
-        }))
+        }
     }
 
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
@@ -33,19 +30,21 @@ impl<K, N, S> BackendCache<K, N, S> {
     }
 }
 
-impl<T, K, N> NewService<T> for BackendCache<K, N, N::Service>
+impl<T, K, N, NewBk, S> NewService<T> for BackendCache<K, N, S>
 where
     T: Param<params::Backends<K>>,
     K: Eq + Hash + Clone + Debug,
-    N: NewService<K>,
-    N::Service: Clone,
+    N: NewService<T, Service = NewBk>,
+    NewBk: NewService<K, Service = S>,
+    S: Clone,
 {
-    type Service = NewDistribute<K, N::Service>;
+    type Service = NewDistribute<K, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let params::Backends(backends) = target.param();
 
-        let mut cache = self.0.backends.lock();
+        let new_backend = self.inner.new_service(target);
+        let mut cache = self.backends.lock();
 
         // Remove all backends that aren't in the updated set of addrs.
         cache.retain(|backend, _| {
@@ -69,10 +68,7 @@ where
                 }
 
                 tracing::debug!(?backend, "Adding");
-                cache.insert(
-                    backend.clone(),
-                    self.0.new_backend.new_service(backend.clone()),
-                );
+                cache.insert(backend.clone(), new_backend.new_service(backend.clone()));
             }
         }
 
@@ -80,8 +76,11 @@ where
     }
 }
 
-impl<K, N, S> Clone for BackendCache<K, N, S> {
+impl<K, N: Clone, S> Clone for BackendCache<K, N, S> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            inner: self.inner.clone(),
+            backends: self.backends.clone(),
+        }
     }
 }

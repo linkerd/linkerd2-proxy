@@ -9,7 +9,6 @@ use linkerd_app_core::{
     transport::addrs::*,
     Addr, Error, Infallible, NameAddr, CANONICAL_DST_HEADER,
 };
-use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
@@ -62,9 +61,6 @@ enum RouterParams<T: Clone + Debug + Eq + Hash> {
     // TODO(ver) Remove this variant when policy routes are fully wired up.
     Endpoint(Remote<ServerAddr>, Metadata, T),
 }
-
-type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
-type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
 // Only applies to requests with profiles.
 //
