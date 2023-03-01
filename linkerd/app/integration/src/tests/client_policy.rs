@@ -9,13 +9,14 @@ async fn default_http1_route() {
 
     let srv = server::http1().route("/", "hello h1").run().await;
     let ctrl = controller::new();
-    let dest = ctrl.destination_tx(format!("{AUTHORITY}:{}", srv.addr.port()));
-    dest.send_addr(srv.addr);
-    let _profile = ctrl.profile_tx_default(srv.addr, AUTHORITY);
+    let dst = format!("{AUTHORITY}:{}", srv.addr.port());
+    let dest_tx = ctrl.destination_tx(&dst);
+    dest_tx.send_addr(srv.addr);
+    let _profile_tx = ctrl.profile_tx_default(srv.addr, AUTHORITY);
     let policy = controller::policy()
         // stop the admin server from entering an infinite retry loop
         .with_inbound_default(policy::all_unauthenticated())
-        .outbound_default(srv.addr, AUTHORITY);
+        .outbound_default(srv.addr, &dst);
 
     let proxy = proxy::new()
         .controller(ctrl.run().await)
@@ -38,9 +39,11 @@ async fn empty_http1_route() {
 
     let srv = server::http1().route("/", "hello h1").run().await;
     let ctrl = controller::new();
-    let dest = ctrl.destination_tx(format!("{AUTHORITY}:{}", srv.addr.port()));
-    dest.send_addr(srv.addr);
-    let _profile = ctrl.profile_tx_default(srv.addr, AUTHORITY);
+
+    let dst = format!("{AUTHORITY}:{}", srv.addr.port());
+    let dst_tx = ctrl.destination_tx(&dst);
+    dst_tx.send_addr(srv.addr);
+    let _profile_tx = ctrl.profile_tx_default(srv.addr, AUTHORITY);
     let policy = controller::policy()
         // stop the admin server from entering an infinite retry loop
         .with_inbound_default(policy::all_unauthenticated())
@@ -58,7 +61,7 @@ async fn empty_http1_route() {
                         }),
                     })),
                 }),
-                ..policy::outbound_default(AUTHORITY)
+                ..policy::outbound_default(dst)
             },
         );
 
