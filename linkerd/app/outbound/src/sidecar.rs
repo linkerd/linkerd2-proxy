@@ -103,19 +103,23 @@ impl Outbound<()> {
                     http::Routes::Endpoint(Remote(ServerAddr(*orig_dst)), Default::default())
                 };
 
-                let mk_policy_routes = move |policy: &policy::ClientPolicy| {
-                    match policy.protocol {
-                        // TODO(eliza): don't throw out h2 routes lol -- will
-                        // have to change the `Routes::Http` type to have both...
-                        policy::Protocol::Detect { ref http1, .. } => http::Routes::Policy(
-                            http::policy::Routes::Http(http::policy::HttpRoutes {
-                                addr: policy.addr.clone(),
-                                backends: policy.backends.clone(),
-                                routes: http1.routes.clone(),
-                            }),
-                        ),
-                        _ => todo!("eliza: other protocols"),
+                let mk_policy_routes = move |policy: &policy::ClientPolicy| match policy.protocol {
+                    policy::Protocol::Detect {
+                        ref http1,
+                        ref http2,
+                        ..
+                    } => {
+                        let routes = match version {
+                            http::Version::Http1 => http1.routes.clone(),
+                            http::Version::H2 => http2.routes.clone(),
+                        };
+                        http::Routes::Policy(http::policy::Routes::Http(http::policy::HttpRoutes {
+                            addr: policy.addr.clone(),
+                            backends: policy.backends.clone(),
+                            routes,
+                        }))
                     }
+                    _ => todo!("eliza: other protocols"),
                 };
                 let routes = match ((*parent).profile.clone(), (*parent).policy.clone()) {
                     (Some(profile), policy)
