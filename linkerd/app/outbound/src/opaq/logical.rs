@@ -52,7 +52,8 @@ struct RouteParams<T> {
     distribution: Distribution<T>,
 }
 
-type BackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, N, S>;
+type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
+type NewDistribute<T, N> = distribute::NewDistribute<Concrete<T>, (), N>;
 type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
 #[derive(Clone, Debug)]
@@ -95,6 +96,8 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|_, _, concrete| {
             let route = svc::layers()
+                .lift_new()
+                .push(NewDistribute::layer())
                 // The router does not take the backend's availability into
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
@@ -107,7 +110,7 @@ impl<N> Outbound<N> {
                 // Each `RouteParams` provides a `Distribution` that is used to
                 // choose a concrete service for a given route.
                 .lift_new()
-                .push(BackendCache::layer())
+                .push(NewBackendCache::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(route)

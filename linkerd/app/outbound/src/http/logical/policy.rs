@@ -67,6 +67,7 @@ pub(super) struct RouteParams<T, F> {
     distribution: RouteBackendDistribution<T, F>,
 }
 
+type NewDistribute<T, F, N> = distribute::NewDistribute<RouteBackendParams<T, F>, (), N>;
 type RouteBackendDistribution<T, F> = distribute::Distribution<RouteBackendParams<T, F>>;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -75,7 +76,7 @@ pub(super) struct RouteBackendParams<T, F> {
     concrete: Concrete<T>,
 }
 
-type BackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, N, S>;
+type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
 
 // === impl Routes ===
 
@@ -174,7 +175,7 @@ where
     M: Clone + Send + Sync + 'static,
     M::Summary: Clone + Debug + Eq + Hash + Send + Sync + 'static,
     // Request filter.
-    F: Eq + Hash,
+    F: Debug + Eq + Hash,
     F: Clone + Send + Sync + 'static,
     // Assert that we can route for the given match and filter types.
     Self: svc::router::SelectRoute<
@@ -216,7 +217,7 @@ where
                 // Each `RouteParams` provides a `Distribution` that is used to
                 // choose a concrete service for a given route.
                 .lift_new()
-                .push(BackendCache::layer())
+                .push(NewBackendCache::layer())
                 // Lazily cache a service for each `RouteParams` returned from the
                 // `SelectRoute` impl.
                 .push_on_service(MatchedRouteParams::layer())
@@ -409,8 +410,10 @@ where
         >,
     > + Clone
     where
+        T: Debug + Eq + Hash,
+        F: Debug + Eq + Hash,
         // Inner stack.
-        N: svc::NewService<Self, Service = S>,
+        N: svc::NewService<Concrete<T>, Service = S>,
         N: Clone + Send + Sync + 'static,
         S: svc::Service<
             http::Request<http::BoxBody>,
@@ -422,6 +425,9 @@ where
     {
         svc::layer::mk(|inner| {
             svc::stack(inner)
+                .lift_new()
+                .push_on_service(RouteBackendParams::layer())
+                .push(NewDistribute::layer())
                 // The router does not take the backend's availability into
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
@@ -454,6 +460,42 @@ impl<T> filters::Apply for GrpcMatchedRouteParams<T> {
 }
 
 // === impl Clone for RouteBackendParams ===
+
+impl<T, F> RouteBackendParams<T, F> {
+    fn layer<N, S>() -> impl svc::Layer<
+        N,
+        Service = svc::ArcNewService<
+            Self,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    > + Clone
+    where
+        T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+        F: Clone + Send + Sync + 'static,
+        // Inner stack.
+        N: svc::NewService<Concrete<T>, Service = S>,
+        N: Clone + Send + Sync + 'static,
+        S: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        S: Clone + Send + Sync + 'static,
+        S::Future: Send,
+    {
+        svc::layer::mk(|inner| {
+            svc::stack(inner)
+                .push_map_target(|RouteBackendParams { concrete, .. }| concrete)
+                .push(svc::ArcNewService::layer())
+                .into_inner()
+        })
+    }
+}
 
 impl<T: Clone, F> Clone for RouteBackendParams<T, F> {
     fn clone(&self) -> Self {

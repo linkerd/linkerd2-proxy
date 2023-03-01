@@ -1,54 +1,62 @@
 use super::params;
-use linkerd_stack::{layer, NewService, Param};
+use linkerd_stack::{layer, ExtractParam, NewService};
 use parking_lot::Mutex;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-/// A [`NewService`] that produces [`NewDistribute`]s using a shared cache of
+/// A [`NewService`] that produces [`BackendCache`]s using a shared cache of
 /// backends.
 ///
 /// On each call to [`NewService::new_service`], the cache extracts a new set of
 /// [`params::Backends`] from the target to determine which
 /// services should be added/removed from the cache.
 #[derive(Debug)]
-pub struct NewBackendCache<K, N, S> {
+pub struct NewBackendCache<K, X, N, S> {
+    extract: X,
     inner: N,
     backends: Arc<Mutex<ahash::AHashMap<K, S>>>,
 }
 
 #[derive(Debug)]
 pub struct BackendCache<K, S> {
-    backends: Arc<Mutex<ahash::AHashMap<K, S>>>,
+    backends: Arc<ahash::AHashMap<K, S>>,
 }
 
 // === impl BackendCache ===
 
-impl<K, N, S> NewBackendCache<K, N, S> {
-    pub fn new(inner: N) -> Self {
+impl<K, X: Clone, N, S> NewBackendCache<K, X, N, S> {
+    pub fn new(inner: N, extract: X) -> Self {
         Self {
+            extract,
             inner,
             backends: Default::default(),
         }
     }
 
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(Self::new)
+    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(inner, extract.clone()))
     }
 }
 
-impl<T, K, N, KNew, S> NewService<T> for NewBackendCache<K, N, S>
+impl<K, N, S> NewBackendCache<K, (), N, S> {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(|inner| Self::new(inner, ()))
+    }
+}
+
+impl<T, K, X, N, KNew, S> NewService<T> for NewBackendCache<K, X, N, S>
 where
-    T: Param<params::Backends<K>>,
-    K: Eq + Hash + Clone + Debug,
+    X: ExtractParam<params::Backends<K>, T>,
     N: NewService<T, Service = KNew>,
+    K: Eq + Hash + Clone + Debug,
     KNew: NewService<K, Service = S>,
     S: Clone,
 {
     type Service = BackendCache<K, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let params::Backends(backends) = target.param();
+        let params::Backends(backends) = self.extract.extract_param(&target);
+        let newk = self.inner.new_service(target);
 
-        let new_backend = self.inner.new_service(target);
         let mut cache = self.backends.lock();
 
         // Remove all backends that aren't in the updated set of addrs.
@@ -73,19 +81,20 @@ where
                 }
 
                 tracing::debug!(?backend, "Adding");
-                cache.insert(backend.clone(), new_backend.new_service(backend.clone()));
+                cache.insert(backend.clone(), newk.new_service(backend.clone()));
             }
         }
 
         BackendCache {
-            backends: self.backends.clone(),
+            backends: Arc::new((*cache).clone()),
         }
     }
 }
 
-impl<K, N: Clone, S> Clone for NewBackendCache<K, N, S> {
+impl<K, X: Clone, N: Clone, S> Clone for NewBackendCache<K, X, N, S> {
     fn clone(&self) -> Self {
         Self {
+            extract: self.extract.clone(),
             inner: self.inner.clone(),
             backends: self.backends.clone(),
         }
@@ -103,7 +112,6 @@ where
 
     fn new_service(&self, target: K) -> Self::Service {
         self.backends
-            .lock()
             .get(&target)
             .expect("target must be in cache")
             .clone()

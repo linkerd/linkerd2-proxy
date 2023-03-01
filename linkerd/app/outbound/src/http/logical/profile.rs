@@ -38,7 +38,7 @@ pub(super) struct RouteParams<T> {
     distribution: Distribution<T>,
 }
 
-type BackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, N, S>;
+type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
 type NewDistribute<T, N> = distribute::NewDistribute<Concrete<T>, (), N>;
 type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
@@ -80,8 +80,7 @@ where
                 // Each `RouteParams` provides a `Distribution` that is used to
                 // choose a concrete service for a given route.
                 .lift_new()
-                .push(BackendCache::layer())
-                .push_on_service(NewDistribute::layer())
+                .push(NewBackendCache::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(RouteParams::layer(metrics.clone()))
@@ -226,7 +225,7 @@ impl<T> RouteParams<T> {
     > + Clone
     where
         T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
-        N: svc::NewService<RouteParams<T>, Service = S> + Clone + Send + Sync + 'static,
+        N: svc::NewService<Concrete<T>, Service = S> + Clone + Send + Sync + 'static,
         S: svc::Service<
             http::Request<http::BoxBody>,
             Response = http::Response<http::BoxBody>,
@@ -237,6 +236,8 @@ impl<T> RouteParams<T> {
     {
         svc::layer::mk(move |inner| {
             svc::stack(inner)
+                .lift_new()
+                .push(NewDistribute::layer())
                 .check_new_service::<RouteParams<T>, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers()
