@@ -52,7 +52,7 @@ struct RouteParams<T> {
     distribution: Distribution<T>,
 }
 
-type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
+type BackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, N, S>;
 type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
 #[derive(Clone, Debug)]

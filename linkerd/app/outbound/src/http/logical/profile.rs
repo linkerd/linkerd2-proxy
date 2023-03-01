@@ -38,7 +38,8 @@ pub(super) struct RouteParams<T> {
     distribution: Distribution<T>,
 }
 
-type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
+type BackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, N, S>;
+type NewDistribute<T, N> = distribute::NewDistribute<Concrete<T>, (), N>;
 type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
 // === impl Params ===
@@ -80,6 +81,7 @@ where
                 // choose a concrete service for a given route.
                 .lift_new()
                 .push(BackendCache::layer())
+                .push_on_service(NewDistribute::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(RouteParams::layer(metrics.clone()))

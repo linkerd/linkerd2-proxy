@@ -75,7 +75,7 @@ pub(super) struct RouteBackendParams<T, F> {
     concrete: Concrete<T>,
 }
 
-type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
+type BackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, N, S>;
 
 // === impl Routes ===
 
