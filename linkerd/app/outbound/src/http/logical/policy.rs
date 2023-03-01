@@ -51,10 +51,12 @@ pub(super) struct RouterParams<T: Clone + Debug + Eq + Hash, M, F> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(super) struct MatchedRouteParams<T, M, F> {
+pub(super) struct Matched<M, P> {
     r#match: route::RouteMatch<M>,
-    params: RouteParams<T, F>,
+    params: P,
 }
+
+type MatchedRouteParams<T, M, F> = Matched<M, RouteParams<T, F>>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) struct RouteParams<T, F> {
@@ -62,11 +64,18 @@ pub(super) struct RouteParams<T, F> {
     addr: Addr,
     meta: Arc<policy::Meta>,
     filters: Arc<[F]>,
-    distribution: Distribution<T>,
+    distribution: RouteBackendDistribution<T, F>,
+}
+
+type RouteBackendDistribution<T, F> = distribute::Distribution<RouteBackendParams<T, F>>;
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub(super) struct RouteBackendParams<T, F> {
+    filters: Arc<[F]>,
+    concrete: Concrete<T>,
 }
 
 type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
-type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
 // === impl Routes ===
 
@@ -254,19 +263,25 @@ where
             ),
         };
 
+        let mk_route_backend = |rb: &policy::RouteBackend<F>| {
+            let filters = rb.filters.clone();
+            let concrete = mk_dispatch(&rb.backend.dispatcher);
+            RouteBackendParams { filters, concrete }
+        };
+
         let mk_distribution = |d: &policy::RouteDistribution<F>| match d {
-            policy::RouteDistribution::Empty => Distribution::Empty,
-            policy::RouteDistribution::FirstAvailable(backends) => Distribution::first_available(
-                backends
-                    .iter()
-                    .map(|rb| mk_dispatch(&rb.backend.dispatcher)),
-            ),
-            policy::RouteDistribution::RandomAvailable(backends) => Distribution::random_available(
-                backends
-                    .iter()
-                    .map(|(rb, weight)| (mk_dispatch(&rb.backend.dispatcher), *weight)),
-            )
-            .expect("distribution must be valid"),
+            policy::RouteDistribution::Empty => RouteBackendDistribution::Empty,
+            policy::RouteDistribution::FirstAvailable(backends) => {
+                RouteBackendDistribution::first_available(backends.iter().map(mk_route_backend))
+            }
+            policy::RouteDistribution::RandomAvailable(backends) => {
+                RouteBackendDistribution::random_available(
+                    backends
+                        .iter()
+                        .map(|(rb, weight)| (mk_route_backend(rb), *weight)),
+                )
+                .expect("distribution must be valid")
+            }
         };
 
         let mk_policy = |policy::RoutePolicy::<F> {
@@ -327,7 +342,7 @@ where
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         let (r#match, params) = policy::http::find(&*self.routes, req).ok_or(NoRoute)?;
         tracing::debug!(?r#match, ?params, uri = ?req.uri(), headers = ?req.headers(), "Selecting route");
-        Ok(MatchedRouteParams {
+        Ok(Matched {
             r#match,
             params: params.clone(),
         })
@@ -344,7 +359,7 @@ where
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         let (r#match, params) = policy::grpc::find(&*self.routes, req).ok_or(NoRoute)?;
-        Ok(MatchedRouteParams {
+        Ok(Matched {
             r#match,
             params: params.clone(),
         })
@@ -418,8 +433,8 @@ where
     }
 }
 
-impl<T: Clone, M, F> svc::Param<Distribution<T>> for MatchedRouteParams<T, M, F> {
-    fn param(&self) -> Distribution<T> {
+impl<T: Clone, M, F> svc::Param<RouteBackendDistribution<T, F>> for MatchedRouteParams<T, M, F> {
+    fn param(&self) -> RouteBackendDistribution<T, F> {
         self.params.distribution.clone()
     }
 }
@@ -435,5 +450,16 @@ impl<T> filters::Apply for GrpcMatchedRouteParams<T> {
     #[inline]
     fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
         filters::apply_grpc(&self.r#match, &self.params.filters, req)
+    }
+}
+
+// === impl Clone for RouteBackendParams ===
+
+impl<T: Clone, F> Clone for RouteBackendParams<T, F> {
+    fn clone(&self) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            concrete: self.concrete.clone(),
+        }
     }
 }
