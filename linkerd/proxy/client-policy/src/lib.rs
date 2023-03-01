@@ -1,6 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
+use linkerd_addr::Addr;
 use std::{borrow::Cow, hash::Hash, net::SocketAddr, sync::Arc, time};
 
 pub mod grpc;
@@ -12,10 +13,11 @@ pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
 /// A target address for outbound policy discovery.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TargetAddr(pub linkerd_addr::Addr);
+pub struct TargetAddr(pub Addr);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
+    pub addr: Addr,
     pub protocol: Protocol,
     pub backends: Arc<[Backend]>,
 }
@@ -118,7 +120,7 @@ pub struct PeakEwma {
 // === impl ClientPolicy ===
 
 impl ClientPolicy {
-    pub fn invalid(timeout: time::Duration) -> Self {
+    pub fn invalid(addr: impl Into<Addr>, timeout: time::Duration) -> Self {
         let meta = Arc::new(Meta::Default {
             name: "invalid".into(),
         });
@@ -137,6 +139,8 @@ impl ClientPolicy {
             }],
         }]);
         Self {
+            addr: addr.into(),
+            // XXX(eliza): don't love this...
             protocol: Protocol::Detect {
                 timeout,
                 http1: http::Http1 {
@@ -265,6 +269,9 @@ pub mod proto {
 
         #[error("missing top-level backend")]
         MissingBackend,
+
+        #[error("invalid backend addr: {0}")]
+        InvalidAddr(#[from] linkerd_addr::Error),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -324,10 +331,17 @@ pub mod proto {
             let mut backends = HashSet::new();
 
             // top-level backend
-            let backend = {
+            let (backend, addr) = {
                 let backend = policy.backend.ok_or(InvalidPolicy::MissingBackend)?;
                 let (backend, _) = Backend::try_from_proto(&DEFAULT_META, backend)?;
-                backend
+                let addr = match backend.dispatcher {
+                    BackendDispatcher::BalanceP2c(
+                        _,
+                        EndpointDiscovery::DestinationGet { ref path },
+                    ) => path.parse()?,
+                    BackendDispatcher::Forward(sock, _) => sock.into(),
+                };
+                (backend, addr)
             };
 
             let protocol = match protocol {
@@ -403,6 +417,7 @@ pub mod proto {
             backends.insert(backend);
 
             Ok(ClientPolicy {
+                addr,
                 protocol,
                 backends: backends.drain().collect(),
             })

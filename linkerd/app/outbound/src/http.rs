@@ -4,7 +4,6 @@ use self::{
 };
 use crate::Outbound;
 use linkerd_app_core::{
-    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -32,11 +31,14 @@ pub use linkerd_app_core::proxy::http::{self as http, *};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http<T>(T);
 
-pub fn spawn_routes<T: Send + Sync>(
+pub fn spawn_routes<T>(
     mut route_rx: watch::Receiver<T>,
     init: Routes,
     mut mk: impl FnMut(&T) -> Option<Routes> + Send + Sync + 'static,
-) -> watch::Receiver<Routes> {
+) -> watch::Receiver<Routes>
+where
+    T: Send + Sync + 'static,
+{
     let (tx, rx) = watch::channel(init);
 
     tokio::spawn(async move {

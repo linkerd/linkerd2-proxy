@@ -71,7 +71,7 @@ where
         let req = {
             let port = addr.port() as u32;
             let target = match addr {
-                Addr::Name(name) => {
+                Addr::Name(ref name) => {
                     api::target_spec::Target::Authority(name.name().as_str().to_owned())
                 }
                 Addr::Socket(sock) => api::target_spec::Target::Address(sock.ip().into()),
@@ -95,7 +95,7 @@ where
                         let policy = ClientPolicy::try_from(up).unwrap_or_else(|error| {
                             tracing::warn!(%error, "Client policy misconfigured");
                             INVALID_POLICY
-                                .get_or_init(|| ClientPolicy::invalid(detect_timeout))
+                                .get_or_init(|| ClientPolicy::invalid(addr.clone(), detect_timeout))
                                 .clone()
                         });
                         tracing::debug!(?policy);
