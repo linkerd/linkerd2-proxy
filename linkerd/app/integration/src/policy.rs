@@ -144,8 +144,8 @@ pub fn outbound_default_route(dst: impl ToString) -> outbound::HttpRoute {
             }],
             filters: Vec::new(),
             backends: Some(outbound::Distribution {
-                distribution: Some(distribution::Distribution::RandomAvailable(
-                    distribution::RandomAvailable {
+                distribution: Some(distribution::Distribution::FirstAvailable(
+                    distribution::FirstAvailable {
                         backends: vec![backend(dst, 1)],
                     },
                 )),
