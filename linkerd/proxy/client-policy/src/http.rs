@@ -24,6 +24,7 @@ pub enum Filter {
     InjectFailure(filter::InjectFailure),
     Redirect(filter::RedirectRequest),
     RequestHeaders(filter::ModifyHeader),
+    Classify(filter::Classify),
     InternalError(&'static str),
 }
 

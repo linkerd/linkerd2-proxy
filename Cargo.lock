@@ -1175,6 +1175,7 @@ dependencies = [
  "rand",
  "regex",
  "thiserror",
+ "tonic",
  "tracing",
  "url",
 ]

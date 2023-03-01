@@ -13,6 +13,7 @@ http = "0.2"
 regex = "1"
 rand = "0.8"
 thiserror = "1"
+tonic = { version = "0.8", default-features = false }
 tracing = "0.1"
 url = "2"
 

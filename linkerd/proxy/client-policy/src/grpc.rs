@@ -17,6 +17,7 @@ pub struct Grpc {
 pub enum Filter {
     InjectFailure(filter::InjectFailure),
     RequestHeaders(http::filter::ModifyHeader),
+    Classify(filter::Classify),
     InternalError(&'static str),
 }
 
