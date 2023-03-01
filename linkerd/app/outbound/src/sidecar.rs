@@ -149,12 +149,10 @@ impl Outbound<()> {
                     _ => todo!("eliza: error for non-http protocols"),
                 };
                 let routes = match ((*parent).profile.clone(), (*parent).policy.clone()) {
-                    (Some(profile), policy)
-                        if policy
-                            .as_ref()
-                            .map(|policy| policy.borrow().is_default())
-                            .unwrap_or(true) =>
+                    (Some(profile), Some(policy))
+                        if policy.borrow().is_default() =>
                     {
+                        tracing::debug!("OutboundPolicy is default; using ServiceProfile routes");
                         let mut rx = watch::Receiver::from(profile.clone());
                         let init = mk_profile_routes(&*rx.borrow_and_update());
                         http::spawn_routes(rx, init, move |profile: &profiles::Profile| {
@@ -162,6 +160,7 @@ impl Outbound<()> {
                         })
                     }
                     (Some(profile), None) => {
+                        tracing::debug!("No OutboundPolicy resolved; using ServiceProfile routes");
                         let mut rx = watch::Receiver::from(profile.clone());
                         let init = mk_profile_routes(&*rx.borrow_and_update());
                         http::spawn_routes(rx, init, move |profile: &profiles::Profile| {
@@ -169,12 +168,16 @@ impl Outbound<()> {
                         })
                     }
                     (_, Some(mut policy)) => {
+                        tracing::debug!("Using ClientPolicy routes");
                         let init = mk_policy_routes(&*policy.borrow_and_update());
                         http::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
                             Some(mk_policy_routes(policy))
                         })
                     }
-                    (None, None) => http::spawn_routes_default(Remote(ServerAddr(*orig_dst))),
+                    (None, None) => {
+                        tracing::debug!("No OutboundPolicy or ServiceProfile, using default routes");
+                        http::spawn_routes_default(Remote(ServerAddr(*orig_dst)))
+                    }
                 };
                 HttpSidecar {
                     orig_dst,
