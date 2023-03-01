@@ -42,9 +42,17 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
 }
 
 pub(crate) fn is_default(routes: &[Route]) -> bool {
-    routes
-        .iter()
-        .all(|route| route.rules.iter().all(|rule| rule.policy.meta.is_default()))
+    routes.iter().all(|route| {
+        // `Iterator::all` will return `true` on an empty slice, which means
+        // that a route with an empty set of rules will be considered
+        // "default". Return `false` here if the slice is empty so that a
+        // route with no rules is not treated as a default.
+        if route.rules.is_empty() {
+            return false;
+        };
+
+        route.rules.iter().all(|rule| rule.policy.meta.is_default())
+    })
 }
 
 impl Default for Http1 {

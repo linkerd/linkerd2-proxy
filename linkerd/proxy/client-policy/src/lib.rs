@@ -168,12 +168,14 @@ impl ClientPolicy {
                 // that here too
                 http::is_default(&http1.routes) && http::is_default(&http2.routes)
             }
-            Protocol::Http1(ref http) => http::is_default(&http.routes),
-            Protocol::Http2(ref http) => http::is_default(&http.routes),
+            Protocol::Http1(http::Http1 { ref routes })
+            | Protocol::Http2(http::Http2 { ref routes }) => http::is_default(routes),
             Protocol::Grpc(ref grpc) => grpc::is_default(&grpc.routes),
 
-            // XXX(eliza): this isn't quite right...
-            _ => true,
+            // TODO(eliza): opaque doesn't currently have metadata, so we don't
+            // know if it's a default or not...but if it's explicitly opaque,
+            // assume it's not a default.
+            _ => false,
         }
     }
 }
