@@ -1,30 +1,15 @@
-# syntax=docker/dockerfile:experimental
+# syntax=docker/dockerfile:1.4
 
-# Proxy build and runtime
-#
 # This is intended **DEVELOPMENT ONLY**, i.e. so that proxy developers can
 # easily test the proxy in the context of the larger `linkerd2` project.
-#
-# This Dockerfile requires expirmental features to be enabled in both the
-# Docker client and daemon. You MUST use buildkit to build this image. The
-# simplest way to do this is to set the `DOCKER_BUILDKIT` environment variable:
-#
-#     :; DOCKER_BUILDKIT=1 docker build .
-#
-# Alternatively, you can use `buildx`, which supports more complicated build
-# configurations:
-#
-#     :; docker buildx build . --load
 
-ARG RUST_IMAGE=ghcr.io/linkerd/dev:v38-rust
+ARG RUST_IMAGE=ghcr.io/linkerd/dev:v39-rust
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
 ARG RUNTIME_IMAGE=ghcr.io/linkerd/proxy:edge-22.12.1
 
-# Build the proxy, leveraging (new, experimental) cache mounting.
-#
-# See: https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/experimental.md#run---mounttypecache
+# Build the proxy.
 FROM --platform=$BUILDPLATFORM $RUST_IMAGE as build
 
 ARG PROXY_FEATURES=""
@@ -35,6 +20,11 @@ RUN apt-get update && \
     fi && \
     rm -rf /var/lib/apt/lists/*
 
+ENV CARGO_INCREMENTAL=0
+ENV CARGO_NET_RETRY=10
+ENV RUSTFLAGS="-D warnings -A deprecated"
+ENV RUSTUP_MAX_RETRIES=10
+
 WORKDIR /usr/src/linkerd2-proxy
 COPY . .
 RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
@@ -43,9 +33,9 @@ ARG TARGETARCH="amd64"
 ARG PROFILE="release"
 RUN --mount=type=cache,id=target,target=target \
     --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
-    just arch=$TARGETARCH features=$PROXY_FEATURES profile=$PROFILE build && \
-    bin=$(just --evaluate profile="$PROFILE" _target_bin) ; \
-    mkdir -p /out && mv $bin /out/linkerd2-proxy
+    just arch="$TARGETARCH" features="$PROXY_FEATURES" profile="$PROFILE" build && \
+    mkdir -p /out && \
+    mv $(just --evaluate profile="$PROFILE" _target_bin) /out/linkerd2-proxy
 
 ## Install the proxy binary into the base runtime image.
 FROM $RUNTIME_IMAGE as runtime

@@ -59,7 +59,7 @@ jobs:
     continue-on-error: ${{ !needs.meta.outputs.publish }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    container: docker://ghcr.io/linkerd/dev:v38-rust-musl
+    container: docker://ghcr.io/linkerd/dev:v39-rust-musl
     steps:
       - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
       - run: just fetch

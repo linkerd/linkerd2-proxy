@@ -1,6 +1,6 @@
 {
 	"name": "linkerd2-proxy",
-	"image": "ghcr.io/linkerd/dev:v38",
+	"image": "ghcr.io/linkerd/dev:v39",
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -30,6 +30,9 @@
 	],
 	"overrideCommand": false,
 	"remoteUser": "code",
+	"containerEnv": {
+		"CXX": "clang++-14",
+	},
 	"mounts": [
 		{
 			"source": "/var/run/docker.sock",
