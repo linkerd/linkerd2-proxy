@@ -1,5 +1,6 @@
 use crate::*;
-use policy::outbound::{self, proxy_protocol};
+use linkerd2_proxy_api::{self as api};
+use policy::outbound::{self, distribution, proxy_protocol};
 
 #[tokio::test]
 async fn default_http1_route() {
@@ -54,10 +55,24 @@ async fn empty_http1_route() {
                     kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                         http1: Some(proxy_protocol::Http1 {
-                            http_routes: vec![Default::default()],
+                            http_routes: vec![outbound::HttpRoute {
+                                metadata: Some(api::meta::Metadata {
+                                    kind: Some(api::meta::metadata::Kind::Resource(
+                                        api::meta::Resource {
+                                            group: "gateway.networking.k8s.io".to_string(),
+                                            kind: "HTTPRoute".to_string(),
+                                            name: "empty".to_string(),
+                                            namespace: "test".to_string(),
+                                            section: "".to_string(),
+                                        },
+                                    )),
+                                }),
+                                hosts: Vec::new(),
+                                rules: Vec::new(),
+                            }],
                         }),
                         http2: Some(proxy_protocol::Http2 {
-                            http_routes: vec![policy::outbound_default_route()],
+                            http_routes: vec![policy::outbound_default_route(&dst)],
                         }),
                     })),
                 }),

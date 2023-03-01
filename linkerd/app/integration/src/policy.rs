@@ -107,16 +107,17 @@ pub fn opaque_unauthenticated() -> inbound::Server {
 
 pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
     use outbound::proxy_protocol;
-
+    let dst = dst.to_string();
+    let route = outbound_default_route(dst.clone());
     outbound::OutboundPolicy {
         protocol: Some(outbound::ProxyProtocol {
             kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                 timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                 http1: Some(proxy_protocol::Http1 {
-                    http_routes: vec![outbound_default_route()],
+                    http_routes: vec![route.clone()],
                 }),
                 http2: Some(proxy_protocol::Http2 {
-                    http_routes: vec![outbound_default_route()],
+                    http_routes: vec![route],
                 }),
             })),
         }),
@@ -124,9 +125,9 @@ pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
     }
 }
 
-pub fn outbound_default_route() -> outbound::HttpRoute {
+pub fn outbound_default_route(dst: impl ToString) -> outbound::HttpRoute {
     use api::http_route;
-
+    use outbound::distribution;
     outbound::HttpRoute {
         metadata: Some(api::meta::Metadata {
             kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
@@ -142,7 +143,13 @@ pub fn outbound_default_route() -> outbound::HttpRoute {
                 method: None,
             }],
             filters: Vec::new(),
-            backends: None,
+            backends: Some(outbound::Distribution {
+                distribution: Some(distribution::Distribution::RandomAvailable(
+                    distribution::RandomAvailable {
+                        backends: vec![backend(dst, 1)],
+                    },
+                )),
+            }),
         }],
     }
 }
