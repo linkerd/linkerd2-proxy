@@ -149,11 +149,9 @@ impl Outbound<()> {
                     _ => todo!("eliza: error for non-http protocols"),
                 };
                 let routes = match ((*parent).profile.clone(), (*parent).policy.clone()) {
-                    (Some(profile), Some(policy))
-                        if policy.borrow().is_default() =>
-                    {
+                    (Some(profile), Some(policy)) if policy.borrow().is_default() => {
                         tracing::debug!("OutboundPolicy is default; using ServiceProfile routes");
-                        let mut rx = watch::Receiver::from(profile.clone());
+                        let mut rx = watch::Receiver::from(profile);
                         let init = mk_profile_routes(&*rx.borrow_and_update());
                         http::spawn_routes(rx, init, move |profile: &profiles::Profile| {
                             Some(mk_profile_routes(profile))
@@ -161,7 +159,7 @@ impl Outbound<()> {
                     }
                     (Some(profile), None) => {
                         tracing::debug!("No OutboundPolicy resolved; using ServiceProfile routes");
-                        let mut rx = watch::Receiver::from(profile.clone());
+                        let mut rx = watch::Receiver::from(profile);
                         let init = mk_profile_routes(&*rx.borrow_and_update());
                         http::spawn_routes(rx, init, move |profile: &profiles::Profile| {
                             Some(mk_profile_routes(profile))
@@ -175,7 +173,9 @@ impl Outbound<()> {
                         })
                     }
                     (None, None) => {
-                        tracing::debug!("No OutboundPolicy or ServiceProfile, using default routes");
+                        tracing::debug!(
+                            "No OutboundPolicy or ServiceProfile, using default routes"
+                        );
                         http::spawn_routes_default(Remote(ServerAddr(*orig_dst)))
                     }
                 };
