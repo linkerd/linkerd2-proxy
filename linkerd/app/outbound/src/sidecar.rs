@@ -119,7 +119,34 @@ impl Outbound<()> {
                             routes,
                         }))
                     }
-                    _ => todo!("eliza: other protocols"),
+                    // TODO(eliza): what do we do here if the configured
+                    // protocol doesn't match the actual protocol for the
+                    // target? probably should make an error route instead?
+                    policy::Protocol::Http1(ref http1) => {
+                        http::Routes::Policy(http::policy::Routes::Http(http::policy::HttpRoutes {
+                            addr: policy.addr.clone(),
+                            backends: policy.backends.clone(),
+                            routes: http1.routes.clone(),
+                        }))
+                    }
+                    policy::Protocol::Http2(ref http2) => {
+                        http::Routes::Policy(http::policy::Routes::Http(http::policy::HttpRoutes {
+                            addr: policy.addr.clone(),
+                            backends: policy.backends.clone(),
+                            routes: http2.routes.clone(),
+                        }))
+                    }
+                    policy::Protocol::Grpc(ref grpc) => {
+                        http::Routes::Policy(http::policy::Routes::Grpc(http::policy::GrpcRoutes {
+                            addr: policy.addr.clone(),
+                            backends: policy.backends.clone(),
+                            routes: grpc.routes.clone(),
+                        }))
+                    }
+                    // TODO(eliza): if the policy's protocol is opaque, but we
+                    // are handling traffic as HTTP...that's obviously wrong.
+                    // should we panic or just fail traffic here?
+                    _ => todo!("eliza: error for non-http protocols"),
                 };
                 let routes = match ((*parent).profile.clone(), (*parent).policy.clone()) {
                     (Some(profile), policy)
