@@ -4,6 +4,8 @@ use linkerd_app_core::{
     svc::{Layer, ServiceExt},
     trace,
 };
+use linkerd_http_route as route;
+use linkerd_proxy_client_policy as policy;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::time;
 
