@@ -216,6 +216,25 @@ async fn header_based_routing() {
 
     let _profile_tx = ctrl.profile_tx_default(srv.addr, AUTHORITY_WORLD);
 
+    let mk_header_rule =
+        |dst: &str, header: api::http_route::header_match::Value| outbound::http_route::Rule {
+            matches: vec![api::http_route::HttpRouteMatch {
+                headers: vec![api::http_route::HeaderMatch {
+                    name: HEADER.to_string(),
+                    value: Some(header),
+                }],
+                ..Default::default()
+            }],
+            filters: Vec::new(),
+            backends: Some(outbound::Distribution {
+                distribution: Some(distribution::Distribution::FirstAvailable(
+                    distribution::FirstAvailable {
+                        backends: vec![policy::backend(&dst, 1)],
+                    },
+                )),
+            }),
+        };
+
     let route = outbound::HttpRoute {
         metadata: Some(api::meta::Metadata {
             kind: Some(api::meta::metadata::Kind::Resource(api::meta::Resource {
@@ -241,47 +260,15 @@ async fn header_based_routing() {
                 }),
             },
             // x-hello-city: sf | x-hello-city: san francisco
-            outbound::http_route::Rule {
-                matches: vec![api::http_route::HttpRouteMatch {
-                    headers: vec![api::http_route::HeaderMatch {
-                        name: HEADER.to_string(),
-                        value: Some(api::http_route::header_match::Value::Regex(
-                            "sf|san francisco".to_string(),
-                        )),
-                        ..Default::default()
-                    }],
-                    ..Default::default()
-                }],
-                filters: Vec::new(),
-                backends: Some(outbound::Distribution {
-                    distribution: Some(distribution::Distribution::FirstAvailable(
-                        distribution::FirstAvailable {
-                            backends: vec![policy::backend(&dst_sf, 1)],
-                        },
-                    )),
-                }),
-            },
+            mk_header_rule(
+                &dst_sf,
+                api::http_route::header_match::Value::Regex("sf|san francisco".to_string()),
+            ),
             // x-hello-city: austin
-            outbound::http_route::Rule {
-                matches: vec![api::http_route::HttpRouteMatch {
-                    headers: vec![api::http_route::HeaderMatch {
-                        name: HEADER.to_string(),
-                        value: Some(api::http_route::header_match::Value::Exact(
-                            "austin".to_string().into_bytes(),
-                        )),
-                        ..Default::default()
-                    }],
-                    ..Default::default()
-                }],
-                filters: Vec::new(),
-                backends: Some(outbound::Distribution {
-                    distribution: Some(distribution::Distribution::FirstAvailable(
-                        distribution::FirstAvailable {
-                            backends: vec![policy::backend(&dst_austin, 1)],
-                        },
-                    )),
-                }),
-            },
+            mk_header_rule(
+                &dst_austin,
+                api::http_route::header_match::Value::Exact("austin".to_string().into_bytes()),
+            ),
         ],
     };
 
