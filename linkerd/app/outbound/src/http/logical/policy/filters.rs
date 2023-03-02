@@ -4,7 +4,7 @@ use linkerd_app_core::{
     Error, Result,
 };
 use linkerd_proxy_client_policy::{self as policy, grpc, http};
-use std::{marker::PhantomData, sync::Arc, task};
+use std::{marker::PhantomData, task};
 
 // #[cfg(test)]
 // mod tests;
@@ -29,34 +29,39 @@ pub struct ApplyFilters<A, S> {
     inner: S,
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("invalid redirect: {0}")]
-pub struct HttpRouteInvalidRedirect(#[from] pub policy::http::filter::InvalidRedirect);
+pub mod errors {
+    use super::*;
+    use std::sync::Arc;
 
-#[derive(Debug, thiserror::Error)]
-#[error("request redirected to {location}")]
-pub struct HttpRouteRedirect {
-    pub status: ::http::StatusCode,
-    pub location: ::http::Uri,
+    #[derive(Debug, thiserror::Error)]
+    #[error("invalid redirect: {0}")]
+    pub struct HttpRouteInvalidRedirect(#[from] pub policy::http::filter::InvalidRedirect);
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("request redirected to {location}")]
+    pub struct HttpRouteRedirect {
+        pub status: ::http::StatusCode,
+        pub location: ::http::Uri,
+    }
+
+    #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+    #[error("HTTP request configured to fail with {status}: {message}")]
+    pub struct HttpRouteInjectedFailure {
+        pub status: ::http::StatusCode,
+        pub message: Arc<str>,
+    }
+
+    #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+    #[error("gRPC request configured to fail with {code}: {message}")]
+    pub struct GrpcRouteInjectedFailure {
+        pub code: u16,
+        pub message: Arc<str>,
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("invalid server policy: {0}")]
+    pub struct HttpInvalidPolicy(pub &'static str);
 }
-
-#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
-#[error("HTTP request configured to fail with {status}: {message}")]
-pub struct HttpRouteInjectedFailure {
-    pub status: ::http::StatusCode,
-    pub message: Arc<str>,
-}
-
-#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
-#[error("gRPC request configured to fail with {code}: {message}")]
-pub struct GrpcRouteInjectedFailure {
-    pub code: u16,
-    pub message: Arc<str>,
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("invalid server policy: {0}")]
-pub struct HttpInvalidPolicy(&'static str);
 
 pub(crate) trait Apply {
     fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()>;
@@ -74,17 +79,17 @@ pub fn apply_http<B>(
                 if let Some(policy::http::filter::FailureResponse { status, message }) =
                     fail.apply()
                 {
-                    return Err(HttpRouteInjectedFailure { status, message }.into());
+                    return Err(errors::HttpRouteInjectedFailure { status, message }.into());
                 }
             }
 
             policy::http::Filter::Redirect(redir) => match redir.apply(req.uri(), r#match) {
                 Ok(Some(policy::http::filter::Redirection { status, location })) => {
-                    return Err(HttpRouteRedirect { status, location }.into());
+                    return Err(errors::HttpRouteRedirect { status, location }.into());
                 }
 
                 Err(invalid) => {
-                    return Err(HttpRouteInvalidRedirect(invalid).into());
+                    return Err(errors::HttpRouteInvalidRedirect(invalid).into());
                 }
 
                 Ok(None) => {
@@ -97,7 +102,7 @@ pub fn apply_http<B>(
             }
 
             policy::http::Filter::InternalError(msg) => {
-                return Err(HttpInvalidPolicy(msg).into());
+                return Err(errors::HttpInvalidPolicy(msg).into());
             }
         }
     }
@@ -115,7 +120,7 @@ pub fn apply_grpc<B>(
             policy::grpc::Filter::InjectFailure(fail) => {
                 if let Some(policy::grpc::filter::FailureResponse { code, message }) = fail.apply()
                 {
-                    return Err(GrpcRouteInjectedFailure { code, message }.into());
+                    return Err(errors::GrpcRouteInjectedFailure { code, message }.into());
                 }
             }
 
@@ -124,7 +129,7 @@ pub fn apply_grpc<B>(
             }
 
             policy::grpc::Filter::InternalError(msg) => {
-                return Err(HttpInvalidPolicy(msg).into());
+                return Err(errors::HttpInvalidPolicy(msg).into());
             }
         }
     }

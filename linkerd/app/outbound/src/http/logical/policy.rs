@@ -14,6 +14,7 @@ pub mod filters;
 #[cfg(test)]
 mod tests;
 
+pub use self::filters::errors;
 pub use linkerd_proxy_client_policy::ClientPolicy;
 
 /// HTTP or gRPC policy routes.

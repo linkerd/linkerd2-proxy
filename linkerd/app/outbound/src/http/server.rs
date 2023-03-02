@@ -140,12 +140,15 @@ impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
 
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        use super::logical::policy::errors as policy;
+
         if errors::is_caused_by::<http::ResponseTimeoutError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
         }
         if errors::is_caused_by::<IdentityRequired>(&*error) {
             return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
+
         if errors::is_caused_by::<errors::FailFastError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
         }
@@ -155,6 +158,36 @@ impl errors::HttpRescue<Error> for ServerRescue {
 
         if errors::is_caused_by::<super::logical::NoRoute>(&*error) {
             return Ok(errors::SyntheticHttpResponse::not_found(error));
+        }
+
+        if errors::is_caused_by::<policy::HttpInvalidPolicy>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::internal_error(
+                error.to_string(),
+            ));
+        }
+        if errors::is_caused_by::<policy::HttpRouteInvalidRedirect>(&*error) {
+            tracing::warn!(%error);
+            return Ok(errors::SyntheticHttpResponse::unexpected_error());
+        }
+
+        if let Some(policy::HttpRouteRedirect { status, location }) = errors::cause_ref(&*error) {
+            return Ok(errors::SyntheticHttpResponse::redirect(*status, location));
+        }
+
+        if let Some(policy::HttpRouteInjectedFailure { status, message }) =
+            errors::cause_ref(&*error)
+        {
+            return Ok(errors::SyntheticHttpResponse::response(
+                *status,
+                message.to_string(),
+            ));
+        }
+        if let Some(policy::GrpcRouteInjectedFailure { code, message }) = errors::cause_ref(&*error)
+        {
+            return Ok(errors::SyntheticHttpResponse::grpc(
+                (*code as i32).into(),
+                message.to_string(),
+            ));
         }
 
         if errors::is_caused_by::<errors::H2Error>(&*error) {
