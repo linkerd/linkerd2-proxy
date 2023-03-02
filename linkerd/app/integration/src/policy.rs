@@ -26,6 +26,7 @@ struct Inner<Req, Rsp> {
     // hold onto senders for policies that won't be updated so that their
     // streams don't close.
     send_once_txs: Vec<Tx<Rsp>>,
+    calls_tx: Option<mpsc::UnboundedSender<Req>>,
 }
 
 #[derive(Debug, Clone)]
@@ -207,6 +208,12 @@ impl Controller {
         self
     }
 
+    pub fn inbound_calls(&mut self) -> mpsc::UnboundedReceiver<u16> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.inbound.calls_tx = Some(tx);
+        rx
+    }
+
     /// Returns an [`OutboundSender`] for outbound policies for `addr`.
     pub fn outbound_tx(&self, addr: impl Into<Addr>) -> OutboundSender {
         let addr = addr.into();
@@ -310,7 +317,11 @@ impl inbound_server_policies_server::InboundServerPolicies for Server<u16, inbou
         )
         .entered();
         tracing::debug!(?req, "received request");
-        self.watch_inner(&req.workload, |&spec| req.port as u16 == spec)
+        let ret = self.watch_inner(&req.workload, |&spec| req.port as u16 == spec);
+        if let Some(ref calls_tx) = self.0.calls_tx {
+            let _ = calls_tx.send(req.port as u16);
+        }
+        ret
     }
 }
 
@@ -352,14 +363,18 @@ impl outbound_policies_server::OutboundPolicies
         .entered();
         tracing::debug!(?req, "received request");
 
-        let target = req.target.ok_or_else(|| {
+        let target = req.target.clone().ok_or_else(|| {
             const ERR: &str = "target is required";
             tracing::warn!(message = %ERR);
             tonic::Status::invalid_argument(ERR)
         })?;
-        self.watch_inner(&req.workload, |spec| {
+        let ret = self.watch_inner(&req.workload, |spec| {
             spec.target.as_ref() == Some(&target) && spec.port == req.port
-        })
+        });
+        if let Some(ref calls_tx) = self.0.calls_tx {
+            let _ = calls_tx.send(req);
+        }
+        ret
     }
 }
 
@@ -428,6 +443,7 @@ impl<Req, Rsp> Default for Inner<Req, Rsp> {
             expected_workload: None,
             default: None,
             send_once_txs: Vec::new(),
+            calls_tx: None,
         }
     }
 }
