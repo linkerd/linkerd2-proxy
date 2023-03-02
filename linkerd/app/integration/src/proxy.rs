@@ -75,6 +75,7 @@ where
         let (bound, incoming) = listen::BindTcp::default().bind(params)?;
         let incoming = Box::pin(incoming.map(move |res| {
             let (inner, tcp) = res?;
+            tracing::info!(?inner, ?self, "mocking SO_ORIG_DST");
             let orig_dst = match self {
                 Self::Addr(addr) => OrigDstAddr(addr),
                 Self::Direct => OrigDstAddr(inner.server.into()),
@@ -304,10 +305,16 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     let policy = match proxy.policy {
         Some(policy) => policy,
         None => {
-            controller::policy()
-                .with_inbound_default(policy::all_unauthenticated())
-                .run()
-                .await
+            let mut policy =
+                controller::policy().with_inbound_default(policy::all_unauthenticated());
+
+            if let Some(opaque_ports) = proxy.inbound_disable_ports_protocol_detection.as_ref() {
+                tracing::info!(?opaque_ports, "disabling protocol detection");
+                for &opaque_port in opaque_ports.iter() {
+                    policy = policy.inbound(opaque_port, policy::opaque_unauthenticated());
+                }
+            }
+            policy.run().await
         }
     };
 
@@ -359,8 +366,12 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
             .join(",");
         env.put(
             app::env::ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-            ports,
+            ports.clone(),
         );
+        // Ensure that the proxy eagerly discovers policies for ports that
+        // disable protocol detection, so that they won't temporarily get the
+        // default policy before a watch has started.
+        env.put(app::env::ENV_INBOUND_PORTS, ports);
     }
 
     if !env.contains_key(app::env::ENV_DESTINATION_PROFILE_NETWORKS) {
