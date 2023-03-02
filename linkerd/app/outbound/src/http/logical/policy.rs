@@ -10,13 +10,14 @@ mod tests;
 pub use self::route::errors;
 pub use linkerd_proxy_client_policy::ClientPolicy;
 
-/// HTTP or gRPC policy routes.
+/// HTTP or gRPC policy route parameters.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Params {
     Http(router::HttpParams),
     Grpc(router::GrpcParams),
 }
 
+/// A stack module configured by `Params` and some `T`-typed parent target.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Policy<T: Clone + Debug + Eq + Hash> {
     Http(router::Http<T>),
@@ -39,7 +40,8 @@ impl Params {
 impl<T> Policy<T>
 where
     // Parent target type.
-    T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+    T: Debug + Eq + Hash,
+    T: Clone + Send + Sync + 'static,
 {
     /// Wraps an HTTP `NewService` with HTTP or gRPC policy routing layers.
     pub(super) fn layer<N, S>() -> impl svc::Layer<
