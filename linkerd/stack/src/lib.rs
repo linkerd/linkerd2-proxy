@@ -12,6 +12,7 @@ mod fail;
 mod fail_on_error;
 pub mod failfast;
 mod filter;
+pub mod gate;
 pub mod layer;
 mod lazy;
 mod loadshed;
@@ -37,8 +38,9 @@ pub use self::{
     either::{Either, NewEither},
     fail::Fail,
     fail_on_error::FailOnError,
-    failfast::{FailFast, FailFastError, Gate},
+    failfast::{FailFast, FailFastError},
     filter::{Filter, FilterLayer, Predicate},
+    gate::Gate,
     lazy::{Lazy, NewLazy},
     loadshed::{LoadShed, LoadShedError},
     map_err::{MapErr, MapErrBoxed, NewMapErr, WrapErr},

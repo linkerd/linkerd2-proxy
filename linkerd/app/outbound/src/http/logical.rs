@@ -63,7 +63,8 @@ enum RouterParams<T: Clone + Debug + Eq + Hash> {
     Endpoint(Remote<ServerAddr>, Metadata, T),
 }
 
-type BackendCache<T, N, S> = distribute::BackendCache<Concrete<T>, N, S>;
+type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
+type NewDistribute<T, N> = distribute::NewDistribute<Concrete<T>, (), N>;
 type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
 // Only applies to requests with profiles.
