@@ -316,8 +316,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     let (policy, inbound_policy_calls) = match proxy.policy {
         Some(policy) => (policy, None),
         None => {
-            let mut policy =
-                controller::policy().with_inbound_default(policy::all_unauthenticated());
+            let mut policy = controller::policy();
 
             if let Some(opaque_ports) = proxy.inbound_disable_ports_protocol_detection.as_ref() {
                 tracing::info!(?opaque_ports, "disabling protocol detection");
