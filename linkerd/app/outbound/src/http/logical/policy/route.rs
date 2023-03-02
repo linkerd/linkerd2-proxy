@@ -40,12 +40,16 @@ pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>
 impl<T, M, F> MatchedRoute<T, M, F>
 where
     // Parent target.
+    T: Debug + Eq + Hash,
     T: Clone + Send + Sync + 'static,
     // Match summary
     M: Clone + Send + Sync + 'static,
     // Request filter.
+    F: Debug + Eq + Hash,
     F: Clone + Send + Sync + 'static,
+    // Assert that filters can be applied.
     Self: filters::Apply,
+    backend::Matched<T, M, F>: filters::Apply,
 {
     pub(crate) fn layer<N, S>() -> impl svc::Layer<
         N,
@@ -60,8 +64,6 @@ where
         >,
     > + Clone
     where
-        T: Debug + Eq + Hash,
-        F: Debug + Eq + Hash,
         // Inner stack.
         N: svc::NewService<Concrete<T>, Service = S>,
         N: Clone + Send + Sync + 'static,
@@ -72,7 +74,6 @@ where
         >,
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
-        backend::Matched<T, M, F>: filters::Apply,
     {
         svc::layer::mk(|inner| {
             svc::stack(inner)

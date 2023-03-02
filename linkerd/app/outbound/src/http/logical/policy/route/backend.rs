@@ -36,7 +36,18 @@ impl<M, T, F> From<(Backend<T, F>, super::MatchedRoute<T, M, F>)> for Matched<T,
     }
 }
 
-impl<T, M, F> Matched<T, M, F> {
+impl<T, M, F> Matched<T, M, F>
+where
+    // Parent target.
+    T: Debug + Eq + Hash,
+    T: Clone + Send + Sync + 'static,
+    // Request match summary
+    M: Clone + Send + Sync + 'static,
+    // Request filter.
+    F: Clone + Send + Sync + 'static,
+    // Assert that filters can be applied.
+    Self: filters::Apply,
+{
     pub(crate) fn layer<N, S>() -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
@@ -50,9 +61,6 @@ impl<T, M, F> Matched<T, M, F> {
         >,
     > + Clone
     where
-        T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
-        M: Clone + Send + Sync + 'static,
-        F: Clone + Send + Sync + 'static,
         // Inner stack.
         N: svc::NewService<Concrete<T>, Service = S>,
         N: Clone + Send + Sync + 'static,
@@ -63,7 +71,6 @@ impl<T, M, F> Matched<T, M, F> {
         >,
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
-        Self: filters::Apply,
     {
         svc::layer::mk(|inner| {
             svc::stack(inner)
