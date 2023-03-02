@@ -1,0 +1,95 @@
+use super::{super::Concrete, filters};
+use linkerd_app_core::{proxy::http, svc, Error, Result};
+use linkerd_http_route as http_route;
+use linkerd_proxy_client_policy as policy;
+use std::{fmt::Debug, hash::Hash, sync::Arc};
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub(crate) struct Backend<T, F> {
+    pub(crate) concrete: Concrete<T>,
+    pub(crate) filters: Arc<[F]>,
+}
+
+pub(crate) type Matched<T, M, F> = super::Matched<M, Backend<T, F>>;
+pub(crate) type Http<T> = Matched<T, http_route::http::r#match::RequestMatch, policy::http::Filter>;
+pub(crate) type Grpc<T> = Matched<T, http_route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
+
+// === impl Backend ===
+
+impl<T: Clone, F> Clone for Backend<T, F> {
+    fn clone(&self) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            concrete: self.concrete.clone(),
+        }
+    }
+}
+
+// === impl Matched ===
+
+impl<M, T, F> From<(Backend<T, F>, super::MatchedRoute<T, M, F>)> for Matched<T, M, F> {
+    fn from((params, route): (Backend<T, F>, super::MatchedRoute<T, M, F>)) -> Self {
+        Matched {
+            r#match: route.r#match,
+            params,
+        }
+    }
+}
+
+impl<T, M, F> Matched<T, M, F> {
+    pub(crate) fn layer<N, S>() -> impl svc::Layer<
+        N,
+        Service = svc::ArcNewService<
+            Self,
+            impl svc::Service<
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+    > + Clone
+    where
+        T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
+        M: Clone + Send + Sync + 'static,
+        F: Clone + Send + Sync + 'static,
+        // Inner stack.
+        N: svc::NewService<Concrete<T>, Service = S>,
+        N: Clone + Send + Sync + 'static,
+        S: svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        >,
+        S: Clone + Send + Sync + 'static,
+        S::Future: Send,
+        Self: filters::Apply,
+    {
+        svc::layer::mk(|inner| {
+            svc::stack(inner)
+                .push_map_target(
+                    |Matched {
+                         params: Backend { concrete, .. },
+                         ..
+                     }| concrete,
+                )
+                .push(filters::NewApplyFilters::<Self, _, _>::layer())
+                .push(svc::ArcNewService::layer())
+                .into_inner()
+        })
+    }
+}
+
+impl<T> filters::Apply for Http<T> {
+    #[inline]
+    fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
+        filters::apply_http(&self.r#match, &self.params.filters, req)
+    }
+}
+
+impl<T> filters::Apply for Grpc<T> {
+    #[inline]
+    fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
+        filters::apply_grpc(&self.r#match, &self.params.filters, req)
+    }
+}

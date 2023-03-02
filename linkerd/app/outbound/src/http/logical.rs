@@ -23,7 +23,7 @@ pub struct LogicalAddr(pub Addr);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Routes {
     /// Policy routes.
-    Policy(policy::Routes),
+    Policy(policy::Params),
 
     /// Service profile routes.
     Profile(profile::Routes),
@@ -54,7 +54,7 @@ pub struct LogicalError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum RouterParams<T: Clone + Debug + Eq + Hash> {
-    Policy(policy::Params<T>),
+    Policy(policy::Policy<T>),
 
     Profile(profile::Params<T>),
 
@@ -157,7 +157,7 @@ where
         S::Future: Send,
     {
         svc::layer::mk(move |concrete: N| {
-            let policy = svc::stack(concrete.clone()).push(policy::Params::layer());
+            let policy = svc::stack(concrete.clone()).push(policy::Policy::layer());
             let profile =
                 svc::stack(concrete.clone()).push(profile::Params::layer(metrics.clone()));
             svc::stack(concrete)

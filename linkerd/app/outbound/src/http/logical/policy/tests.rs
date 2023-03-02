@@ -1,8 +1,9 @@
-use super::*;
+use super::{super::concrete, *};
 use linkerd_app_core::{
     svc::NewService,
     svc::{Layer, ServiceExt},
     trace,
+    transport::addrs::*,
 };
 use linkerd_http_route as route;
 use linkerd_proxy_client_policy as policy;
@@ -41,10 +42,10 @@ async fn header_based_route() {
     };
 
     // Routes that configure a special header-based route and a default route.
-    let routes = Routes::Http({
+    let routes = Params::Http({
         let default = mk_backend("default", default_addr);
         let special = mk_backend("special", special_addr);
-        HttpRoutes {
+        router::HttpParams {
             addr: Addr::Socket(([127, 0, 0, 1], 8080).into()),
             routes: Arc::new([policy::http::Route {
                 hosts: Default::default(),
@@ -69,9 +70,9 @@ async fn header_based_route() {
         }
     });
 
-    let router = Params::layer()
+    let router = Policy::layer()
         .layer(inner)
-        .new_service(Params::from((routes, ())));
+        .new_service(Policy::from((routes, ())));
 
     default.allow(1);
     special.allow(1);
