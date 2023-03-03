@@ -1384,11 +1384,17 @@ version = "0.1.0"
 dependencies = [
  "http",
  "ipnet",
+ "linkerd-addr",
+ "linkerd-error",
  "linkerd-http-route",
  "linkerd-proxy-api-resolve",
  "linkerd-proxy-core",
+ "linkerd2-proxy-api",
  "maplit",
+ "once_cell",
+ "prost-types",
  "quickcheck",
+ "thiserror",
 ]
 
 [[package]]
@@ -1802,8 +1808,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bcbd793b73b504f16514e3aa376b41d00884e12e62ba92505eab3c4258671a0"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=alex/outbound#409453b124b254e96a87462800e9dd28573b0cc9"
 dependencies = [
  "h2",
  "http",
