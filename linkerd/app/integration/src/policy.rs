@@ -108,7 +108,7 @@ impl Controller {
     }
 
     pub fn expect_workload(mut self, workload: String) -> Self {
-        self.inbound.expected_workload = Some(workload.clone());
+        self.inbound.expected_workload = Some(workload);
         self
     }
 
