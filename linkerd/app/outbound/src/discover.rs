@@ -1,12 +1,14 @@
 use crate::Outbound;
+use futures::future;
 use linkerd_app_core::{
     profiles,
     svc::{self, stack::Param},
-    Error, Infallible,
+    Addr, AddrMatch, Error,
 };
 use std::{
     hash::{Hash, Hasher},
     ops::Deref,
+    task::{Context, Poll},
 };
 use tokio::sync::watch;
 use tracing::debug;
@@ -21,11 +23,18 @@ pub struct Discovery<T> {
     profile: Option<profiles::Receiver>,
 }
 
+/// Wraps a discovery service with an allowlist of addresses.
+#[derive(Clone, Debug)]
+pub struct WithAllowlist<S> {
+    allow_discovery: AddrMatch,
+    inner: S,
+}
+
 impl<N> Outbound<N> {
     /// Discovers routing configuration.
-    pub fn push_discover<T, Req, NSvc, P>(
+    pub fn push_discover<T, Req, NSvc, D>(
         self,
-        profiles: P,
+        discover: D,
     ) -> Outbound<svc::ArcNewService<T, svc::BoxService<Req, NSvc::Response, Error>>>
     where
         // Discoverable target.
@@ -34,7 +43,11 @@ impl<N> Outbound<N> {
         // Request type.
         Req: Send + 'static,
         // Discovery client.
-        P: profiles::GetProfile<Error = Error>,
+        D: svc::Service<profiles::LookupAddr, Error = Error> + Clone + Send + Sync + 'static,
+        D::Future: Send + Unpin + 'static,
+        D::Error: Send + Sync + 'static,
+        D::Response: Clone + Send + Sync + 'static,
+        Discovery<T>: From<(D::Response, T)>,
         // Inner stack.
         N: svc::NewService<Discovery<T>, Service = NSvc>,
         N: Clone + Send + Sync + 'static,
@@ -42,32 +55,9 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
     {
         self.map_stack(|config, _, stk| {
-            let allow = config.allow_discovery.clone();
-            stk.clone()
-                .lift_new_with_target()
-                .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
-                .push_switch(
-                    move |parent: T| -> Result<_, Infallible> {
-                        // TODO(ver) Should this allowance be parameterized by
-                        // the target type?
-                        let profiles::LookupAddr(addr) = parent.param();
-                        if allow.matches(&addr) {
-                            debug!(%addr, "Discovery allowed");
-                            return Ok(svc::Either::A(parent));
-                        }
-                        debug!(
-                            %addr,
-                            domains = %allow.names(),
-                            networks = %allow.nets(),
-                            "Discovery skipped",
-                        );
-                        Ok(svc::Either::B(Discovery {
-                            parent,
-                            profile: None,
-                        }))
-                    },
-                    stk.into_inner(),
-                )
+            stk.lift_new_with_target()
+                .push_new_cached_discover(discover, config.discovery_idle_timeout)
+                .check_new_service::<T, _>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
@@ -119,5 +109,50 @@ impl<T: Eq> Eq for Discovery<T> {}
 impl<T: Hash> Hash for Discovery<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.parent.hash(state);
+    }
+}
+
+// === impl WithAllowlist ===
+
+impl<S> WithAllowlist<S> {
+    pub fn new(inner: S, allow_discovery: AddrMatch) -> Self {
+        Self {
+            inner,
+            allow_discovery,
+        }
+    }
+}
+
+impl<S, D, T> svc::Service<T> for WithAllowlist<S>
+where
+    S: svc::Service<T, Response = Option<D>>,
+    T: AsRef<Addr>,
+{
+    type Response = Option<D>;
+    type Future = futures::future::Either<
+        futures::future::Ready<Result<Self::Response, Self::Error>>,
+        S::Future,
+    >;
+    type Error = S::Error;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let addr = target.as_ref();
+        // TODO(ver) Should this allowance be parameterized by
+        // the target type?
+        if self.allow_discovery.matches(addr) {
+            debug!(%addr, "Discovery allowed");
+            return future::Either::Right(self.inner.call(target));
+        }
+        debug!(
+            %addr,
+            domains = %self.allow_discovery.names(),
+            networks = %self.allow_discovery.nets(),
+            "Discovery skipped",
+        );
+        future::Either::Left(future::ok(None))
     }
 }
