@@ -81,7 +81,6 @@ impl Gateway {
             let profiles =
                 outbound::discover::WithAllowlist::new(profiles.into_service(), allowlist);
             self.outbound
-                .clone()
                 .with_stack(protocol)
                 .push_discover(profiles)
                 .into_stack()
