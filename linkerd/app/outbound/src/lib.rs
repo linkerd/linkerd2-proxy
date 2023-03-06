@@ -30,7 +30,7 @@ use std::{
     time::Duration,
 };
 
-mod discover;
+pub mod discover;
 pub mod http;
 mod ingress;
 mod metrics;

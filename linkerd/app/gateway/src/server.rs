@@ -75,12 +75,14 @@ impl Gateway {
             )
             .into_inner();
 
-        // Override the outbound stack's discovery allow list to match the
-        // gateway allow list.
         let discover = {
-            let mut out = self.outbound.clone();
-            out.config_mut().allow_discovery = self.config.allow_discovery.into();
-            out.with_stack(protocol)
+            // Apply the gateway's allowlist to the profile discovery service.
+            let allowlist = self.config.allow_discovery.clone().into();
+            let profiles =
+                outbound::discover::WithAllowlist::new(profiles.into_service(), allowlist);
+            self.outbound
+                .clone()
+                .with_stack(protocol)
                 .push_discover(profiles)
                 .into_stack()
         };
