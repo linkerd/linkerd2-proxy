@@ -32,6 +32,13 @@ The Linkerd project is hosted by the Cloud Native Computing Foundation
 
 ## Building the project
 
+We use [`just-cargo`](https://github.com/linkerd/dev/tree/main/bin/just-cargo) which provide
+a thin wrapper around `just` and `cargo`.
+
+We recommend that use Devcontainer to develop, or you need to setup develop environment by hand.
+
+### Just
+
 A [`justfile`](./justfile) is provided to automate most build tasks. It provides
 the following recipes:
 
