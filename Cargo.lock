@@ -1382,6 +1382,7 @@ dependencies = [
 name = "linkerd-proxy-client-policy"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "http",
  "ipnet",
  "linkerd-error",

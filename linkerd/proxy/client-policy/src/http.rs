@@ -65,7 +65,7 @@ impl Default for Http2 {
 pub mod proto {
     use super::*;
     use crate::{
-        proto::{InvalidBackend, InvalidDistribution, InvalidMeta},
+        proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
         Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, http_route};
@@ -113,12 +113,12 @@ pub mod proto {
         Redirect(#[from] InvalidRequestRedirect),
     }
 
-    pub(crate) fn route_backends(rts: &[Route]) -> impl Iterator<Item = &crate::Backend> {
-        rts.iter().flat_map(|Route { ref rules, .. }| {
-            rules
-                .iter()
-                .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
-        })
+    pub(crate) fn fill_route_backends(rts: &[Route], set: &mut BackendSet) {
+        for Route { ref rules, .. } in rts {
+            for Rule { ref policy, .. } in rules {
+                policy.distribution.fill_backends(set);
+            }
+        }
     }
 
     impl TryFrom<outbound::proxy_protocol::Http1> for Http1 {
