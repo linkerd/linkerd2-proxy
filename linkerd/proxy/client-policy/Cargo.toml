@@ -23,9 +23,9 @@ linkerd-error = { path = "../../error" }
 linkerd-http-route = { path = "../../http-route" }
 linkerd-proxy-api-resolve = { path = "../api-resolve" }
 linkerd-proxy-core = { path = "../core" }
+once_cell = { version = "1", optional = true }
 prost-types = { version = "0.11", optional = true }
 thiserror ={ version = "1", optional = true }
-once_cell = { version = "1", optional = true }
 
 [dev-dependencies]
 maplit = "1"
