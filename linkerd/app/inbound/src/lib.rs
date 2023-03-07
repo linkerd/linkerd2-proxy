@@ -19,6 +19,7 @@ pub mod test_util;
 
 pub use self::{metrics::Metrics, policy::DefaultPolicy};
 use linkerd_app_core::{
+    addr::NameMatch,
     config::{ConnectConfig, ProxyConfig, QueueConfig},
     drain,
     http_tracing::OpenCensusSink,
@@ -26,7 +27,7 @@ use linkerd_app_core::{
     proxy::{tap, tcp},
     svc,
     transport::{self, Remote, ServerAddr},
-    Error, NameAddr, NameMatch, ProxyRuntime,
+    Error, NameAddr, ProxyRuntime,
 };
 use std::{fmt::Debug, time::Duration};
 use thiserror::Error;

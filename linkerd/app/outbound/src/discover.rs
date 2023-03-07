@@ -1,9 +1,10 @@
 use crate::Outbound;
 use futures::future;
 use linkerd_app_core::{
+    addr::{Addr, AddrMatch},
     profiles,
     svc::{self, stack::Param},
-    Addr, AddrMatch, Error,
+    Error,
 };
 use std::{
     hash::{Hash, Hasher},

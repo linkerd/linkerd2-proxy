@@ -12,7 +12,6 @@
 
 use thiserror::Error;
 
-mod addr_match;
 pub mod classify;
 pub mod config;
 pub mod control;
@@ -27,7 +26,6 @@ pub mod svc;
 pub mod telemetry;
 pub mod transport;
 
-pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
 pub use drain;
 pub use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 pub use linkerd_addr::{self as addr, Addr, NameAddr};

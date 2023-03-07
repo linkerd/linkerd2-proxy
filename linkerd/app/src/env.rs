@@ -1,11 +1,11 @@
 use crate::core::{
-    addr,
+    addr::{self, Addr, AddrMatch},
     config::*,
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
     tls,
     transport::{Keepalive, ListenAddr},
-    Addr, AddrMatch, Conditional, IpNet,
+    Conditional, IpNet,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use inbound::policy;
