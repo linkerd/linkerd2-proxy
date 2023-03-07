@@ -32,11 +32,11 @@ The Linkerd project is hosted by the Cloud Native Computing Foundation
 
 ## Building the project
 
-We use [`just-cargo`](https://github.com/linkerd/dev/tree/main/bin/just-cargo) which provide
-a thin wrapper around `just` and `cargo`.
+We use [`just-cargo`][just-cargo] which provide a thin wrapper around `just` and
+`cargo`.
 
-We recommend that you use the included [`Dev Container`](https://containers.dev/) to avoid
-setting up the complex development environment by hand.
+We recommend that you use the included [`Dev Container`][devc] to avoid setting
+up the complex development environment by hand.
 
 ### Just
 
@@ -108,6 +108,8 @@ specific language governing permissions and limitations under the License.
 [cargo]: https://github.com/rust-lang/cargo/
 [cncf]: https://cncf.io/
 [coc]: https://github.com/linkerd/linkerd/wiki/Linkerd-code-of-conduct
+[devc]: https://containers.dev/
+[just-cargo]: https://github.com/linkerd/dev/tree/main/bin/just-cargo
 [k8s]: https://kubernetes.io/
 [linkerd1]: <https://github.com/linkerd/linkerd>
 [linkerd2]: <https://github.com/linkerd/linkerd2>
