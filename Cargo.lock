@@ -1384,7 +1384,6 @@ version = "0.1.0"
 dependencies = [
  "http",
  "ipnet",
- "linkerd-addr",
  "linkerd-error",
  "linkerd-http-route",
  "linkerd-proxy-api-resolve",
