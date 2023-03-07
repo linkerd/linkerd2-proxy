@@ -41,6 +41,8 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     }
 }
 
+// === impl Http1 ===
+
 impl Default for Http1 {
     fn default() -> Self {
         Self {
@@ -48,6 +50,14 @@ impl Default for Http1 {
         }
     }
 }
+
+impl Http1 {
+    pub(crate) fn backends(&self) -> impl Iterator<Item = &crate::Backend> {
+        route_backends(&self.routes)
+    }
+}
+
+// === impl Http2 ===
 
 impl Default for Http2 {
     fn default() -> Self {
@@ -57,16 +67,32 @@ impl Default for Http2 {
     }
 }
 
+impl Http2 {
+    pub(crate) fn backends(&self) -> impl Iterator<Item = &crate::Backend> {
+        route_backends(&self.routes)
+    }
+}
+
+fn route_backends(rts: &[Route]) -> impl Iterator<Item = &crate::Backend> {
+    rts.iter().flat_map(|Route { ref rules, .. }| {
+        rules
+            .iter()
+            .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
+    })
+}
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
     use crate::{
-        proto::{InvalidDistribution, InvalidMeta},
-        Meta, RouteDistribution,
+        proto::{InvalidBackend, InvalidDistribution, InvalidMeta},
+        Meta, RouteBackend, RouteDistribution,
     };
-    use linkerd2_proxy_api::outbound;
+    use linkerd2_proxy_api::outbound::{self, http_route};
     use linkerd_http_route::http::{
-        filter::inject_failure::proto::InvalidFailureResponse,
+        filter::{
+            inject_failure::proto::InvalidFailureResponse,
+            modify_header::proto::InvalidModifyHeader, redirect::proto::InvalidRequestRedirect,
+        },
         r#match::{host::proto::InvalidHostMatch, proto::InvalidRouteMatch},
     };
 
@@ -98,21 +124,19 @@ pub mod proto {
 
         #[error("invalid HTTP failure injector: {0}")]
         FailureInjector(#[from] InvalidFailureResponse),
-    }
 
-    pub(crate) fn route_backends(rts: &[Route]) -> impl Iterator<Item = &crate::Backend> {
-        rts.iter().flat_map(|Route { ref rules, .. }| {
-            rules
-                .iter()
-                .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
-        })
+        #[error("invalid HTTP header modifier: {0}")]
+        ModifyHeader(#[from] InvalidModifyHeader),
+
+        #[error("invalid HTTP redirect: {0}")]
+        Redirect(#[from] InvalidRequestRedirect),
     }
 
     impl TryFrom<outbound::proxy_protocol::Http1> for Http1 {
         type Error = InvalidHttpRoute;
         fn try_from(proto: outbound::proxy_protocol::Http1) -> Result<Self, Self::Error> {
             let routes = proto
-                .http_routes
+                .routes
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
@@ -124,7 +148,7 @@ pub mod proto {
         type Error = InvalidHttpRoute;
         fn try_from(proto: outbound::proxy_protocol::Http2) -> Result<Self, Self::Error> {
             let routes = proto
-                .http_routes
+                .routes
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
@@ -178,7 +202,7 @@ pub mod proto {
 
         let distribution = {
             let backends = backends.ok_or(InvalidHttpRoute::Missing("distribution"))?;
-            RouteDistribution::try_from_proto(meta, backends)?
+            try_distribution(meta, backends)?
         };
 
         Ok(Rule {
@@ -191,14 +215,62 @@ pub mod proto {
         })
     }
 
-    impl TryFrom<outbound::Filter> for Filter {
+    fn try_distribution(
+        meta: &Arc<Meta>,
+        distribution: http_route::Distribution,
+    ) -> Result<RouteDistribution<Filter>, InvalidDistribution> {
+        use http_route::{distribution, WeightedRouteBackend};
+
+        Ok(
+            match distribution.kind.ok_or(InvalidDistribution::Missing)? {
+                distribution::Kind::Empty(_) => RouteDistribution::Empty,
+                distribution::Kind::RandomAvailable(distribution::RandomAvailable { backends }) => {
+                    let backends = backends
+                        .into_iter()
+                        .map(|WeightedRouteBackend { weight, backend }| {
+                            let backend = backend.ok_or(InvalidDistribution::MissingBackend)?;
+                            Ok((try_route_backend(meta, backend)?, weight))
+                        })
+                        .collect::<Result<Arc<[_]>, InvalidDistribution>>()?;
+                    if backends.is_empty() {
+                        return Err(InvalidDistribution::Empty("RandomAvailable"));
+                    }
+                    RouteDistribution::RandomAvailable(backends)
+                }
+                distribution::Kind::FirstAvailable(distribution::FirstAvailable { backends }) => {
+                    let backends = backends
+                        .into_iter()
+                        .map(|backend| try_route_backend(meta, backend))
+                        .collect::<Result<Arc<[_]>, InvalidBackend>>()?;
+                    if backends.is_empty() {
+                        return Err(InvalidDistribution::Empty("FirstAvailable"));
+                    }
+                    RouteDistribution::FirstAvailable(backends)
+                }
+            },
+        )
+    }
+
+    fn try_route_backend(
+        meta: &Arc<Meta>,
+        http_route::RouteBackend { backend, filters }: http_route::RouteBackend,
+    ) -> Result<RouteBackend<Filter>, InvalidBackend> {
+        let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
+        RouteBackend::try_from_proto(meta, backend, filters)
+    }
+
+    impl TryFrom<http_route::Filter> for Filter {
         type Error = InvalidFilter;
 
-        fn try_from(filter: outbound::Filter) -> Result<Self, Self::Error> {
-            use outbound::filter::Kind;
+        fn try_from(filter: http_route::Filter) -> Result<Self, Self::Error> {
+            use http_route::filter::Kind;
 
             match filter.kind.ok_or(InvalidFilter::Missing)? {
                 Kind::FailureInjector(filter) => Ok(Filter::InjectFailure(filter.try_into()?)),
+                Kind::RequestHeaderModifier(filter) => {
+                    Ok(Filter::RequestHeaders(filter.try_into()?))
+                }
+                Kind::Redirect(filter) => Ok(Filter::Redirect(filter.try_into()?)),
             }
         }
     }

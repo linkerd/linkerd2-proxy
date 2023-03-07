@@ -1,7 +1,6 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use linkerd_addr::Addr;
 use std::{borrow::Cow, hash::Hash, net::SocketAddr, sync::Arc, time};
 
 pub mod grpc;
@@ -13,7 +12,6 @@ pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
-    pub addr: Addr,
     pub protocol: Protocol,
     pub backends: Arc<[Backend]>,
 }
@@ -116,7 +114,7 @@ pub struct PeakEwma {
 // === impl ClientPolicy ===
 
 impl ClientPolicy {
-    pub fn invalid(addr: impl Into<Addr>, timeout: time::Duration) -> Self {
+    pub fn invalid(timeout: time::Duration) -> Self {
         let meta = Arc::new(Meta::Default {
             name: "invalid".into(),
         });
@@ -135,8 +133,6 @@ impl ClientPolicy {
             }],
         }]);
         Self {
-            addr: addr.into(),
-            // XXX(eliza): don't love this...
             protocol: Protocol::Detect {
                 timeout,
                 http1: http::Http1 {
@@ -226,13 +222,18 @@ pub mod proto {
     };
     use linkerd_error::Error;
     use linkerd_proxy_api_resolve::pb as resolve;
-    use once_cell::sync::Lazy;
     use std::{collections::HashSet, time::Duration};
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidPolicy {
         #[error("invalid HTTP route: {0}")]
-        Route(#[from] http::proto::InvalidHttpRoute),
+        HttpRoute(#[from] http::proto::InvalidHttpRoute),
+
+        #[error("invalid gRPC route: {0}")]
+        GrpcRoute(#[from] grpc::proto::InvalidGrpcRoute),
+
+        #[error("invalid opaque route: {0}")]
+        OpaqueRoute(#[from] opaq::proto::InvalidOpaqueRoute),
 
         #[error("invalid backend: {0}")]
         Backend(#[from] InvalidBackend),
@@ -273,19 +274,31 @@ pub mod proto {
         // errors...maybe this ought to...
         #[error("invalid forward endpoint")]
         ForwardAddr,
+
+        #[error("invalid endpoint discovery: {0}")]
+        Discovery(#[from] InvalidDiscovery),
     }
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidDistribution {
         #[error("invalid backend: {0}")]
         Backend(#[from] InvalidBackend),
+
         #[error("a {0} distribution may not be empty")]
         Empty(&'static str),
+
         #[error("missing distribution kind")]
         Missing,
+
+        #[error("a weighted backend had no backend")]
+        MissingBackend,
     }
 
-    static DEFAULT_META: Lazy<Arc<Meta>> = Lazy::new(|| Meta::new_default("default"));
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidDiscovery {
+        #[error("missing discovery kind")]
+        Missing,
+    }
 
     impl TryFrom<outbound::OutboundPolicy> for ClientPolicy {
         type Error = InvalidPolicy;
@@ -298,33 +311,12 @@ pub mod proto {
                 .kind
                 .ok_or(InvalidPolicy::Protocol("missing kind"))?;
 
-            // A hashset is used here to de-duplicate the set of backends.
-            // Not sure why Clippy's mutable key type lint triggers here --
-            // AFAICT `Backend` doesn't contain anything that's interior
-            // mutable? in any case, though, this is fine, because nothing will
-            // mutate the backends while they are in this hashset...
-            #[allow(clippy::mutable_key_type)]
-            let mut backends = HashSet::new();
-
-            // top-level backend
-            let (backend, addr) = {
-                let backend = policy.backend.ok_or(InvalidPolicy::MissingBackend)?;
-                let (backend, _) = Backend::try_from_proto(&DEFAULT_META, backend)?;
-                let addr = match backend.dispatcher {
-                    BackendDispatcher::BalanceP2c(
-                        _,
-                        EndpointDiscovery::DestinationGet { ref path },
-                    ) => path.parse()?,
-                    BackendDispatcher::Forward(sock, _) => sock.into(),
-                };
-                (backend, addr)
-            };
-
             let protocol = match protocol {
                 proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                     http1,
                     http2,
                     timeout,
+                    opaque,
                 }) => {
                     let timeout = timeout
                         .ok_or(InvalidPolicy::Protocol(
@@ -341,28 +333,11 @@ pub mod proto {
                             "Detect missing HTTP/2 configuration",
                         ))?
                         .try_into()?;
-
-                    backends.extend(
-                        http::proto::route_backends(&http1.routes)
-                            .chain(http::proto::route_backends(&http2.routes))
-                            .cloned(),
-                    );
-
-                    // TODO(eliza): proxy-api doesn't currently include
-                    // distributions for opaque...add that!
-                    let opaque = opaq::Opaque {
-                        policy: Some(RoutePolicy {
-                            meta: DEFAULT_META.clone(),
-                            filters: opaq::proto::NO_FILTERS.clone(),
-                            distribution: RouteDistribution::FirstAvailable(
-                                std::iter::once(RouteBackend {
-                                    filters: opaq::proto::NO_FILTERS.clone(),
-                                    backend: backend.clone(),
-                                })
-                                .collect(),
-                            ),
-                        }),
-                    };
+                    let opaque: opaq::Opaque = opaque
+                        .ok_or(InvalidPolicy::Protocol(
+                            "Detect missing opaque configuration",
+                        ))?
+                        .try_into()?;
 
                     Protocol::Detect {
                         http1,
@@ -371,31 +346,40 @@ pub mod proto {
                         opaque,
                     }
                 }
-                proxy_protocol::Kind::Opaque(proxy_protocol::Opaque {}) => {
-                    // TODO(eliza): proxy-api doesn't currently include
-                    // distributions for opaque...add that!
-                    Protocol::Opaque(opaq::Opaque {
-                        policy: Some(RoutePolicy {
-                            meta: DEFAULT_META.clone(),
-                            filters: opaq::proto::NO_FILTERS.clone(),
-                            distribution: RouteDistribution::FirstAvailable(
-                                std::iter::once(RouteBackend {
-                                    filters: opaq::proto::NO_FILTERS.clone(),
-                                    backend: backend.clone(),
-                                })
-                                .collect(),
-                            ),
-                        }),
-                    })
-                }
+
+                proxy_protocol::Kind::Http1(http) => Protocol::Http1(http.try_into()?),
+                proxy_protocol::Kind::Http2(http) => Protocol::Http2(http.try_into()?),
+                proxy_protocol::Kind::Opaque(opaque) => Protocol::Opaque(opaque.try_into()?),
+                proxy_protocol::Kind::Grpc(grpc) => Protocol::Grpc(grpc.try_into()?),
             };
 
-            backends.insert(backend);
+            // A hashset is used here to de-duplicate the set of backends.
+            // Not sure why Clippy's mutable key type lint triggers here --
+            // AFAICT `Backend` doesn't contain anything that's interior
+            // mutable? in any case, though, this is fine, because nothing will
+            // mutate the backends while they are in this hashset...
+            #[allow(clippy::mutable_key_type)]
+            let backends: HashSet<Backend> = match protocol {
+                Protocol::Detect {
+                    ref http1,
+                    ref http2,
+                    ref opaque,
+                    ..
+                } => http1
+                    .backends()
+                    .chain(http2.backends())
+                    .chain(opaque.backends())
+                    .cloned()
+                    .collect(),
+                Protocol::Http1(ref p) => p.backends().cloned().collect(),
+                Protocol::Http2(ref p) => p.backends().cloned().collect(),
+                Protocol::Opaque(ref p) | Protocol::Tls(ref p) => p.backends().cloned().collect(),
+                Protocol::Grpc(ref p) => p.backends().cloned().collect(),
+            };
 
             Ok(ClientPolicy {
-                addr,
                 protocol,
-                backends: backends.drain().collect(),
+                backends: backends.into_iter().collect(),
             })
         }
     }
@@ -446,53 +430,6 @@ pub mod proto {
         }
     }
 
-    // === impl RouteDistribution ===
-
-    impl<T> RouteDistribution<T>
-    where
-        T: TryFrom<outbound::Filter>,
-        T::Error: Into<Error>,
-    {
-        pub(crate) fn try_from_proto(
-            meta: &Arc<Meta>,
-            distribution: outbound::Distribution,
-        ) -> Result<Self, InvalidDistribution> {
-            use outbound::distribution::{self, Distribution};
-
-            Ok(
-                match distribution
-                    .distribution
-                    .ok_or(InvalidDistribution::Missing)?
-                {
-                    Distribution::Empty(_) => RouteDistribution::Empty,
-                    Distribution::RandomAvailable(distribution::RandomAvailable { backends }) => {
-                        let backends = backends
-                            .into_iter()
-                            .map(|backend| RouteBackend::try_from_proto(meta, backend))
-                            .collect::<Result<Arc<[_]>, _>>()?;
-                        if backends.is_empty() {
-                            return Err(InvalidDistribution::Empty("RandomAvailable"));
-                        }
-                        RouteDistribution::RandomAvailable(backends)
-                    }
-                    Distribution::FirstAvailable(distribution::FirstAvailable { backends }) => {
-                        let backends = backends
-                            .into_iter()
-                            .map(|backend| {
-                                let (backend, _) = RouteBackend::try_from_proto(meta, backend)?;
-                                Ok(backend)
-                            })
-                            .collect::<Result<Arc<[_]>, InvalidBackend>>()?;
-                        if backends.is_empty() {
-                            return Err(InvalidDistribution::Empty("FirstAvailable"));
-                        }
-                        RouteDistribution::FirstAvailable(backends)
-                    }
-                },
-            )
-        }
-    }
-
     impl<T> RouteDistribution<T> {
         /// Returns an iterator over all the backends of this distribution.
         pub(crate) fn backends(&self) -> impl Iterator<Item = &Backend> {
@@ -518,26 +455,25 @@ pub mod proto {
 
     // === impl RouteBackend ===
 
-    impl<T> RouteBackend<T>
-    where
-        T: TryFrom<outbound::Filter>,
-        T::Error: Into<Error>,
-    {
-        pub(crate) fn try_from_proto(
+    impl<T> RouteBackend<T> {
+        pub(crate) fn try_from_proto<U>(
             meta: &Arc<Meta>,
-            mut backend: outbound::Backend,
-        ) -> Result<(Self, u32), InvalidBackend> {
-            let filters = backend
-                .filters
-                .drain(..)
+            backend: outbound::Backend,
+            filters: impl IntoIterator<Item = U>,
+        ) -> Result<Self, InvalidBackend>
+        where
+            T: TryFrom<U>,
+            T::Error: Into<Error>,
+        {
+            let filters = filters
+                .into_iter()
                 .map(T::try_from)
                 .collect::<Result<Arc<[_]>, _>>()
                 .map_err(|error| InvalidBackend::Filter(error.into()))?;
 
-            let (backend, weight) = Backend::try_from_proto(meta, backend)?;
-            let backend = RouteBackend { filters, backend };
+            let backend = Backend::try_from_proto(meta, backend)?;
 
-            Ok((backend, weight))
+            Ok(RouteBackend { filters, backend })
         }
     }
 
@@ -545,8 +481,8 @@ pub mod proto {
         fn try_from_proto(
             meta: &Arc<Meta>,
             backend: outbound::Backend,
-        ) -> Result<(Self, u32), InvalidBackend> {
-            use outbound::backend::{balance_p2c, Backend as PbDispatcher};
+        ) -> Result<Self, InvalidBackend> {
+            use outbound::backend::{self, balance_p2c};
 
             fn duration(
                 field: &'static str,
@@ -558,13 +494,15 @@ pub mod proto {
                     .map_err(|error| InvalidBackend::Duration { field, error })
             }
 
-            let (dispatcher, weight) = {
+            let dispatcher = {
                 let pb = backend
-                    .backend
-                    .ok_or(InvalidBackend::Missing("backend dispatcher"))?;
+                    .kind
+                    .ok_or(InvalidBackend::Missing("backend kind"))?;
                 match pb {
-                    PbDispatcher::Balancer(BalanceP2c { dst, load }) => {
-                        let dst = dst.ok_or(InvalidBackend::Missing("balancer destination"))?;
+                    backend::Kind::Balancer(BalanceP2c { discovery, load }) => {
+                        let discovery = discovery
+                            .ok_or(InvalidBackend::Missing("balancer discovery"))?
+                            .try_into()?;
                         let load = match load.ok_or(InvalidBackend::Missing("balancer load"))? {
                             balance_p2c::Load::PeakEwma(balance_p2c::PeakEwma {
                                 default_rtt,
@@ -574,20 +512,12 @@ pub mod proto {
                                 decay: duration("peak EWMA decay", decay)?,
                             }),
                         };
-                        let dispatcher = BackendDispatcher::BalanceP2c(
-                            load,
-                            EndpointDiscovery::DestinationGet {
-                                path: dst.authority,
-                            },
-                        );
-                        (dispatcher, dst.weight)
+                        BackendDispatcher::BalanceP2c(load, discovery)
                     }
-                    PbDispatcher::Forward(ep) => {
-                        let weight = ep.weight;
+                    backend::Kind::Forward(ep) => {
                         let (addr, meta) = resolve::to_addr_meta(ep, &Default::default())
                             .ok_or(InvalidBackend::ForwardAddr)?;
-                        let dispatcher = BackendDispatcher::Forward(addr, meta);
-                        (dispatcher, weight)
+                        BackendDispatcher::Forward(addr, meta)
                     }
                 }
             };
@@ -606,7 +536,19 @@ pub mod proto {
                 meta: meta.clone(),
             };
 
-            Ok((backend, weight))
+            Ok(backend)
+        }
+    }
+
+    impl TryFrom<outbound::backend::EndpointDiscovery> for EndpointDiscovery {
+        type Error = InvalidDiscovery;
+        fn try_from(proto: outbound::backend::EndpointDiscovery) -> Result<Self, Self::Error> {
+            use outbound::backend::endpoint_discovery;
+            match proto.kind.ok_or(InvalidDiscovery::Missing)? {
+                endpoint_discovery::Kind::Dst(endpoint_discovery::DestinationGet { path }) => {
+                    Ok(EndpointDiscovery::DestinationGet { path })
+                }
+            }
         }
     }
 }
