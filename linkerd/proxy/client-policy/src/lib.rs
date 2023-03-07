@@ -222,7 +222,9 @@ pub mod proto {
     };
     use linkerd_error::Error;
     use linkerd_proxy_api_resolve::pb as resolve;
-    use std::{collections::HashSet, time::Duration};
+    use std::time::Duration;
+
+    pub(crate) type BackendSet = ahash::AHashSet<Backend>;
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidPolicy {
@@ -350,30 +352,29 @@ pub mod proto {
                 proxy_protocol::Kind::Grpc(grpc) => Protocol::Grpc(grpc.try_into()?),
             };
 
-            // A hashset is used here to de-duplicate the set of backends.
-            // Not sure why Clippy's mutable key type lint triggers here --
-            // AFAICT `Backend` doesn't contain anything that's interior
-            // mutable? in any case, though, this is fine, because nothing will
-            // mutate the backends while they are in this hashset...
-            #[allow(clippy::mutable_key_type)]
-            let backends: HashSet<Backend> = match protocol {
+            let mut backends = BackendSet::default();
+            match protocol {
                 Protocol::Detect {
                     ref http1,
                     ref http2,
                     ref opaque,
                     ..
-                } => http::proto::route_backends(&http1.routes)
-                    .chain(http::proto::route_backends(&http2.routes))
-                    .chain(opaque.backends())
-                    .cloned()
-                    .collect(),
+                } => {
+                    http::proto::fill_route_backends(&http1.routes, &mut backends);
+                    http::proto::fill_route_backends(&http2.routes, &mut backends);
+                    opaque.fill_backends(&mut backends);
+                }
                 Protocol::Http1(http::Http1 { ref routes })
                 | Protocol::Http2(http::Http2 { ref routes }) => {
-                    http::proto::route_backends(routes).cloned().collect()
+                    http::proto::fill_route_backends(routes, &mut backends);
                 }
-                Protocol::Opaque(ref p) | Protocol::Tls(ref p) => p.backends().cloned().collect(),
-                Protocol::Grpc(ref p) => p.backends().cloned().collect(),
-            };
+                Protocol::Opaque(ref p) | Protocol::Tls(ref p) => {
+                    p.fill_backends(&mut backends);
+                }
+                Protocol::Grpc(ref p) => {
+                    p.fill_backends(&mut backends);
+                }
+            }
 
             Ok(ClientPolicy {
                 protocol,
@@ -428,26 +429,18 @@ pub mod proto {
         }
     }
 
-    impl<T> RouteDistribution<T> {
+    impl<T: Clone> RouteDistribution<T> {
         /// Returns an iterator over all the backends of this distribution.
-        pub(crate) fn backends(&self) -> impl Iterator<Item = &Backend> {
-            fn discard_weight<T>(&(ref backend, _): &(RouteBackend<T>, u32)) -> &RouteBackend<T> {
-                backend
-            }
-
-            // The use of `Iterator::chain` here is, admittedly, a bit weird:
-            // `chain`ing with empty iterators allows us to return the same type in
-            // every match arm.
+        pub(crate) fn fill_backends(&self, set: &mut BackendSet) {
             match self {
-                Self::Empty => [].iter().chain([].iter().map(discard_weight)),
+                Self::Empty => Default::default(),
                 Self::FirstAvailable(backends) => {
-                    backends.iter().chain([].iter().map(discard_weight))
+                    set.extend(backends.iter().map(|b| b.backend.clone()));
                 }
                 Self::RandomAvailable(backends) => {
-                    [].iter().chain(backends.iter().map(discard_weight))
+                    set.extend(backends.iter().map(|(b, _)| b.backend.clone()));
                 }
             }
-            .map(|backend| &backend.backend)
         }
     }
 

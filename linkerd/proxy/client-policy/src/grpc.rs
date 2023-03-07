@@ -46,7 +46,7 @@ impl Default for Grpc {
 pub mod proto {
     use super::*;
     use crate::{
-        proto::{InvalidBackend, InvalidDistribution, InvalidMeta},
+        proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
         Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, grpc_route};
@@ -112,12 +112,12 @@ pub mod proto {
     }
 
     impl Grpc {
-        pub(crate) fn backends(&self) -> impl Iterator<Item = &crate::Backend> {
-            self.routes.iter().flat_map(|Route { ref rules, .. }| {
-                rules
-                    .iter()
-                    .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
-            })
+        pub fn fill_backends(&self, set: &mut BackendSet) {
+            for Route { ref rules, .. } in &*self.routes {
+                for Rule { ref policy, .. } in rules {
+                    policy.distribution.fill_backends(set);
+                }
+            }
         }
     }
 

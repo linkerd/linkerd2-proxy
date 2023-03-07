@@ -14,7 +14,7 @@ pub enum Filter {}
 pub(crate) mod proto {
     use super::*;
     use crate::{
-        proto::{InvalidBackend, InvalidDistribution, InvalidMeta},
+        proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
         Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, opaque_route};
@@ -97,8 +97,10 @@ pub(crate) mod proto {
     }
 
     impl Opaque {
-        pub(crate) fn backends(&self) -> impl Iterator<Item = &crate::Backend> {
-            self.policy.iter().flat_map(|p| p.distribution.backends())
+        pub(crate) fn fill_backends(&self, set: &mut BackendSet) {
+            for p in &self.policy {
+                p.distribution.fill_backends(set);
+            }
         }
     }
 
