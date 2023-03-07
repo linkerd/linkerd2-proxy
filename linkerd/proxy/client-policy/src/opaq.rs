@@ -10,12 +10,6 @@ pub type Policy = RoutePolicy<Filter>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Filter {}
 
-impl Opaque {
-    pub(crate) fn backends(&self) -> impl Iterator<Item = &crate::Backend> {
-        self.policy.iter().flat_map(|p| p.distribution.backends())
-    }
-}
-
 #[cfg(feature = "proto")]
 pub(crate) mod proto {
     use super::*;
@@ -99,6 +93,12 @@ pub(crate) mod proto {
             Ok(Self {
                 policy: Some(policy),
             })
+        }
+    }
+
+    impl Opaque {
+        pub(crate) fn backends(&self) -> impl Iterator<Item = &crate::Backend> {
+            self.policy.iter().flat_map(|p| p.distribution.backends())
         }
     }
 

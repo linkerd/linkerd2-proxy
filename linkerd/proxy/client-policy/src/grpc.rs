@@ -42,16 +42,6 @@ impl Default for Grpc {
     }
 }
 
-impl Grpc {
-    pub(crate) fn backends(&self) -> impl Iterator<Item = &crate::Backend> {
-        self.routes.iter().flat_map(|Route { ref rules, .. }| {
-            rules
-                .iter()
-                .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
-        })
-    }
-}
-
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
@@ -118,6 +108,16 @@ pub mod proto {
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self { routes })
+        }
+    }
+
+    impl Grpc {
+        pub(crate) fn backends(&self) -> impl Iterator<Item = &crate::Backend> {
+            self.routes.iter().flat_map(|Route { ref rules, .. }| {
+                rules
+                    .iter()
+                    .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
+            })
         }
     }
 

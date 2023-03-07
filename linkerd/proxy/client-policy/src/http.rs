@@ -51,12 +51,6 @@ impl Default for Http1 {
     }
 }
 
-impl Http1 {
-    pub(crate) fn backends(&self) -> impl Iterator<Item = &crate::Backend> {
-        route_backends(&self.routes)
-    }
-}
-
 // === impl Http2 ===
 
 impl Default for Http2 {
@@ -67,19 +61,6 @@ impl Default for Http2 {
     }
 }
 
-impl Http2 {
-    pub(crate) fn backends(&self) -> impl Iterator<Item = &crate::Backend> {
-        route_backends(&self.routes)
-    }
-}
-
-fn route_backends(rts: &[Route]) -> impl Iterator<Item = &crate::Backend> {
-    rts.iter().flat_map(|Route { ref rules, .. }| {
-        rules
-            .iter()
-            .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
-    })
-}
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
@@ -130,6 +111,14 @@ pub mod proto {
 
         #[error("invalid HTTP redirect: {0}")]
         Redirect(#[from] InvalidRequestRedirect),
+    }
+
+    pub(crate) fn route_backends(rts: &[Route]) -> impl Iterator<Item = &crate::Backend> {
+        rts.iter().flat_map(|Route { ref rules, .. }| {
+            rules
+                .iter()
+                .flat_map(|Rule { ref policy, .. }| policy.distribution.backends())
+        })
     }
 
     impl TryFrom<outbound::proxy_protocol::Http1> for Http1 {

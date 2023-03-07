@@ -213,25 +213,6 @@ impl std::hash::Hash for Meta {
     }
 }
 
-impl<T> RouteDistribution<T> {
-    /// Returns an iterator over all the backends of this distribution.
-    pub fn backends(&self) -> impl Iterator<Item = &Backend> {
-        fn discard_weight<T>(&(ref backend, _): &(RouteBackend<T>, u32)) -> &RouteBackend<T> {
-            backend
-        }
-
-        // The use of `Iterator::chain` here is, admittedly, a bit weird:
-        // `chain`ing with empty iterators allows us to return the same type in
-        // every match arm.
-        match self {
-            Self::Empty => [].iter().chain([].iter().map(discard_weight)),
-            Self::FirstAvailable(backends) => backends.iter().chain([].iter().map(discard_weight)),
-            Self::RandomAvailable(backends) => [].iter().chain(backends.iter().map(discard_weight)),
-        }
-        .map(|backend| &backend.backend)
-    }
-}
-
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
@@ -381,14 +362,15 @@ pub mod proto {
                     ref http2,
                     ref opaque,
                     ..
-                } => http1
-                    .backends()
-                    .chain(http2.backends())
+                } => http::proto::route_backends(&http1.routes)
+                    .chain(http::proto::route_backends(&http2.routes))
                     .chain(opaque.backends())
                     .cloned()
                     .collect(),
-                Protocol::Http1(ref p) => p.backends().cloned().collect(),
-                Protocol::Http2(ref p) => p.backends().cloned().collect(),
+                Protocol::Http1(http::Http1 { ref routes })
+                | Protocol::Http2(http::Http2 { ref routes }) => {
+                    http::proto::route_backends(routes).cloned().collect()
+                }
                 Protocol::Opaque(ref p) | Protocol::Tls(ref p) => p.backends().cloned().collect(),
                 Protocol::Grpc(ref p) => p.backends().cloned().collect(),
             };
@@ -443,6 +425,29 @@ pub mod proto {
                     })
                 }
             }
+        }
+    }
+
+    impl<T> RouteDistribution<T> {
+        /// Returns an iterator over all the backends of this distribution.
+        pub(crate) fn backends(&self) -> impl Iterator<Item = &Backend> {
+            fn discard_weight<T>(&(ref backend, _): &(RouteBackend<T>, u32)) -> &RouteBackend<T> {
+                backend
+            }
+
+            // The use of `Iterator::chain` here is, admittedly, a bit weird:
+            // `chain`ing with empty iterators allows us to return the same type in
+            // every match arm.
+            match self {
+                Self::Empty => [].iter().chain([].iter().map(discard_weight)),
+                Self::FirstAvailable(backends) => {
+                    backends.iter().chain([].iter().map(discard_weight))
+                }
+                Self::RandomAvailable(backends) => {
+                    [].iter().chain(backends.iter().map(discard_weight))
+                }
+            }
+            .map(|backend| &backend.backend)
         }
     }
 
