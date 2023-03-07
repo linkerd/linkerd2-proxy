@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 use linkerd_app_core::{
+    addr::NameMatch,
     io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
@@ -10,7 +11,7 @@ use linkerd_app_core::{
     svc, tls,
     transport::addrs::*,
     transport_header::SessionProtocol,
-    Error, NameMatch,
+    Error,
 };
 use linkerd_app_inbound::{self as inbound, GatewayAddr, Inbound};
 use linkerd_app_outbound::Outbound;

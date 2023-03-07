@@ -76,13 +76,14 @@ impl Gateway {
             .into_inner();
 
         let discover = {
+            use profiles::GetProfile;
+
             // Apply the gateway's allowlist to the profile discovery service.
             let allowlist = self.config.allow_discovery.clone().into();
-            let profiles =
-                outbound::discover::WithAllowlist::new(profiles.into_service(), allowlist);
+            let profiles = profiles::WithAllowlist::new(profiles, allowlist);
             self.outbound
                 .with_stack(protocol)
-                .push_discover(profiles)
+                .push_discover(profiles.into_service())
                 .into_stack()
         };
 
