@@ -357,10 +357,10 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
                                 .ok_or_else(|| ProfileRequired(addr.clone()))?;
                             http::spawn_routes(profile, route, mk_profile_routes)
                         } else {
-                            return Err(ProfileRequired(addr.clone()));
+                            return Err(ProfileRequired(addr));
                         }
                     }
-                    (None, None) => return Err(ProfileRequired(addr.clone())),
+                    (None, None) => return Err(ProfileRequired(addr)),
                 };
 
                 Ok(Http {
