@@ -227,7 +227,7 @@ impl Outbound<()> {
         let profiles = profiles::WithAllowlist::new(profiles, self.config.allow_discovery.clone());
         if self.config.ingress_mode {
             tracing::info!("Outbound routing in ingress-mode");
-            let server = self.mk_ingress(profiles, resolve);
+            let server = self.mk_ingress(profiles, policies, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, server, shutdown).await;
         } else {
