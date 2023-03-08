@@ -130,7 +130,6 @@ pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
 
 pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
     use api::http_route;
-    use outbound::distribution;
     outbound::HttpRoute {
         metadata: Some(api::meta::Metadata {
             kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
@@ -146,28 +145,24 @@ pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
                 method: None,
             }],
             filters: Vec::new(),
-            backends: Some(outbound::Distribution {
-                distribution: Some(distribution::Distribution::FirstAvailable(
-                    distribution::FirstAvailable {
-                        backends: vec![backend(dst)],
-                    },
-                )),
-            }),
+            backends: Some(http_first_available(std::iter::once(backend(dst)))),
         }],
     }
 }
 
-pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
-    use outbound::distribution;
+pub fn outbound_default_opaque_route(dst: impl ToString) -> outbound::OpaqueRoute {
+    use outbound::opaque_route::{self, distribution};
     outbound::OpaqueRoute {
         metadata: Some(api::meta::Metadata {
             kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
         }),
         rules: vec![outbound::opaque_route::Rule {
-            backends: Some(outbound::Distribution {
-                distribution: Some(distribution::Distribution::FirstAvailable(
+            backends: Some(opaque_route::Distribution {
+                kind: Some(distribution::Kind::FirstAvailable(
                     distribution::FirstAvailable {
-                        backends: vec![backend(dst)],
+                        backends: vec![opaque_route::RouteBackend {
+                            backend: Some(backend(dst)),
+                        }],
                     },
                 )),
             }),
@@ -182,11 +177,11 @@ pub fn backend(dst: impl ToString) -> outbound::Backend {
         metadata: Some(api::meta::Metadata {
             kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
         }),
-        queue: Some(backend::Queue {
+        queue: Some(outbound::Queue {
             capacity: 100,
             failfast_timeout: Some(Duration::from_secs(3).try_into().unwrap()),
         }),
-        kind: Some(backend::Kind::BalanceWeightedDstr(backend::BalanceP2c {
+        kind: Some(backend::Kind::Balancer(backend::BalanceP2c {
             discovery: Some(EndpointDiscovery {
                 kind: Some(endpoint_discovery::Kind::Dst(
                     endpoint_discovery::DestinationGet {
@@ -199,6 +194,25 @@ pub fn backend(dst: impl ToString) -> outbound::Backend {
                 decay: Some(Duration::from_secs(10).try_into().unwrap()),
             })),
         })),
+    }
+}
+
+pub fn http_first_available(
+    backends: impl IntoIterator<Item = outbound::Backend>,
+) -> outbound::http_route::Distribution {
+    use outbound::http_route::{self, distribution};
+    http_route::Distribution {
+        kind: Some(distribution::Kind::FirstAvailable(
+            distribution::FirstAvailable {
+                backends: backends
+                    .into_iter()
+                    .map(|backend| http_route::RouteBackend {
+                        backend: Some(backend),
+                        filters: Vec::new(),
+                    })
+                    .collect(),
+            },
+        )),
     }
 }
 
@@ -244,7 +258,7 @@ impl Controller {
         let addr = addr.into();
         let port = addr.port() as u32;
         let target = match addr {
-            Addr::Socket(socket) => outbound::traffic_spec::Target::Address(socket.into()),
+            Addr::Socket(socket) => outbound::traffic_spec::Target::Addr(socket.into()),
             Addr::Name(name) => outbound::traffic_spec::Target::Authority(name.to_string()),
         };
         let spec = outbound::TrafficSpec {

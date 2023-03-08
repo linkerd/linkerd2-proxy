@@ -1,6 +1,6 @@
 use crate::*;
 use linkerd2_proxy_api::{self as api};
-use policy::outbound::{self, distribution, proxy_protocol};
+use policy::outbound::{self, proxy_protocol};
 
 #[tokio::test]
 async fn default_http1_route() {
@@ -55,24 +55,17 @@ async fn empty_http1_route() {
                     kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                         http1: Some(proxy_protocol::Http1 {
-                            http_routes: vec![outbound::HttpRoute {
-                                metadata: Some(api::meta::Metadata {
-                                    kind: Some(api::meta::metadata::Kind::Resource(
-                                        api::meta::Resource {
-                                            group: "gateway.networking.k8s.io".to_string(),
-                                            kind: "HTTPRoute".to_string(),
-                                            name: "empty".to_string(),
-                                            namespace: "test".to_string(),
-                                            section: "".to_string(),
-                                        },
-                                    )),
-                                }),
+                            routes: vec![outbound::HttpRoute {
+                                metadata: Some(httproute_meta("empty")),
                                 hosts: Vec::new(),
                                 rules: Vec::new(),
                             }],
                         }),
                         http2: Some(proxy_protocol::Http2 {
-                            http_routes: vec![policy::outbound_default_route(&dst)],
+                            routes: vec![policy::outbound_default_http_route(&dst)],
+                        }),
+                        opaque: Some(proxy_protocol::Opaque {
+                            routes: vec![policy::outbound_default_opaque_route(&dst)],
                         }),
                     })),
                 }),
@@ -147,24 +140,17 @@ async fn empty_http2_route() {
                     kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                         http1: Some(proxy_protocol::Http1 {
-                            http_routes: vec![policy::outbound_default_route(&dst)],
+                            routes: vec![policy::outbound_default_http_route(&dst)],
                         }),
                         http2: Some(proxy_protocol::Http2 {
-                            http_routes: vec![outbound::HttpRoute {
-                                metadata: Some(api::meta::Metadata {
-                                    kind: Some(api::meta::metadata::Kind::Resource(
-                                        api::meta::Resource {
-                                            group: "gateway.networking.k8s.io".to_string(),
-                                            kind: "HTTPRoute".to_string(),
-                                            name: "empty".to_string(),
-                                            namespace: "test".to_string(),
-                                            section: "".to_string(),
-                                        },
-                                    )),
-                                }),
+                            routes: vec![outbound::HttpRoute {
+                                metadata: Some(httproute_meta("empty")),
                                 hosts: Vec::new(),
                                 rules: Vec::new(),
                             }],
+                        }),
+                        opaque: Some(proxy_protocol::Opaque {
+                            routes: vec![policy::outbound_default_opaque_route(&dst)],
                         }),
                     })),
                 }),
@@ -226,38 +212,22 @@ async fn header_based_routing() {
                 ..Default::default()
             }],
             filters: Vec::new(),
-            backends: Some(outbound::Distribution {
-                distribution: Some(distribution::Distribution::FirstAvailable(
-                    distribution::FirstAvailable {
-                        backends: vec![policy::backend(&dst, 1)],
-                    },
-                )),
-            }),
+            backends: Some(policy::http_first_available(std::iter::once(
+                policy::backend(dst),
+            ))),
         };
 
     let route = outbound::HttpRoute {
-        metadata: Some(api::meta::Metadata {
-            kind: Some(api::meta::metadata::Kind::Resource(api::meta::Resource {
-                group: "gateway.networking.k8s.io".to_string(),
-                kind: "HTTPRoute".to_string(),
-                name: "hello".to_string(),
-                namespace: "test".to_string(),
-                section: "".to_string(),
-            })),
-        }),
+        metadata: Some(httproute_meta("header-based-routing")),
         hosts: Vec::new(),
         rules: vec![
             // generic hello world
             outbound::http_route::Rule {
                 matches: Vec::new(),
                 filters: Vec::new(),
-                backends: Some(outbound::Distribution {
-                    distribution: Some(distribution::Distribution::FirstAvailable(
-                        distribution::FirstAvailable {
-                            backends: vec![policy::backend(&dst_world, 1)],
-                        },
-                    )),
-                }),
+                backends: Some(policy::http_first_available(std::iter::once(
+                    policy::backend(&dst_world),
+                ))),
             },
             // x-hello-city: sf | x-hello-city: san francisco
             mk_header_rule(
@@ -282,10 +252,13 @@ async fn header_based_routing() {
                     kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                         http1: Some(proxy_protocol::Http1 {
-                            http_routes: vec![route.clone()],
+                            routes: vec![route.clone()],
                         }),
                         http2: Some(proxy_protocol::Http2 {
-                            http_routes: vec![route],
+                            routes: vec![route],
+                        }),
+                        opaque: Some(proxy_protocol::Opaque {
+                            routes: vec![policy::outbound_default_opaque_route(&dst_world)],
                         }),
                     })),
                 }),
@@ -340,4 +313,16 @@ async fn header_based_routing() {
 
     // ensure panics from the server are propagated
     proxy.join_servers().await;
+}
+
+fn httproute_meta(name: impl ToString) -> api::meta::Metadata {
+    api::meta::Metadata {
+        kind: Some(api::meta::metadata::Kind::Resource(api::meta::Resource {
+            group: "gateway.networking.k8s.io".to_string(),
+            kind: "HTTPRoute".to_string(),
+            name: name.to_string(),
+            namespace: "test".to_string(),
+            section: "".to_string(),
+        })),
+    }
 }
