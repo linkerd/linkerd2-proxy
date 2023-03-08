@@ -11,7 +11,7 @@ use tonic as grpc;
 
 #[derive(Debug, Default)]
 pub struct Controller {
-    outbound: Inner<outbound::TargetSpec, outbound::OutboundPolicy>,
+    outbound: Inner<outbound::TrafficSpec, outbound::OutboundPolicy>,
     inbound: Inner<u16, inbound::Server>,
 }
 
@@ -244,12 +244,11 @@ impl Controller {
         let addr = addr.into();
         let port = addr.port() as u32;
         let target = match addr {
-            Addr::Socket(socket) => outbound::target_spec::Target::Address(socket.ip().into()),
-            Addr::Name(name) => outbound::target_spec::Target::Authority(name.name().to_string()),
+            Addr::Socket(socket) => outbound::traffic_spec::Target::Address(socket.into()),
+            Addr::Name(name) => outbound::traffic_spec::Target::Authority(name.to_string()),
         };
-        let spec = outbound::TargetSpec {
-            workload: String::new(),
-            port,
+        let spec = outbound::TrafficSpec {
+            source_workload: String::new(),
             target: Some(target),
         };
         OutboundSender(self.outbound.add_call(spec))
@@ -352,7 +351,7 @@ impl inbound_server_policies_server::InboundServerPolicies for Server<u16, inbou
 
 #[tonic::async_trait]
 impl outbound_policies_server::OutboundPolicies
-    for Server<outbound::TargetSpec, outbound::OutboundPolicy>
+    for Server<outbound::TrafficSpec, outbound::OutboundPolicy>
 {
     type WatchStream = Pin<
         Box<
@@ -365,7 +364,7 @@ impl outbound_policies_server::OutboundPolicies
 
     async fn get(
         &self,
-        _req: grpc::Request<outbound::TargetSpec>,
+        _req: grpc::Request<outbound::TrafficSpec>,
     ) -> Result<grpc::Response<outbound::OutboundPolicy>, grpc::Status> {
         Err(grpc::Status::new(
             grpc::Code::Unimplemented,
@@ -376,14 +375,13 @@ impl outbound_policies_server::OutboundPolicies
     }
     async fn watch(
         &self,
-        req: grpc::Request<outbound::TargetSpec>,
+        req: grpc::Request<outbound::TrafficSpec>,
     ) -> Result<grpc::Response<Self::WatchStream>, grpc::Status> {
         let req = req.into_inner();
         let _span = tracing::info_span!(
             "OutboundPolicies::watch",
             ?req.target,
-            req.port,
-            %req.workload,
+            %req.source_workload,
         )
         .entered();
         tracing::debug!(?req, "received request");
@@ -393,8 +391,8 @@ impl outbound_policies_server::OutboundPolicies
             tracing::warn!(message = %ERR);
             tonic::Status::invalid_argument(ERR)
         })?;
-        let ret = self.watch_inner(&req.workload, |spec| {
-            spec.target.as_ref() == Some(&target) && spec.port == req.port
+        let ret = self.watch_inner(&req.source_workload, |spec| {
+            spec.target.as_ref() == Some(&target)
         });
         if let Some(ref calls_tx) = self.0.calls_tx {
             let _ = calls_tx.send(req);

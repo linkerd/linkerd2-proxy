@@ -69,16 +69,12 @@ where
 
     fn call(&mut self, discover::TargetAddr(addr): discover::TargetAddr) -> Self::Future {
         let req = {
-            let port = addr.port() as u32;
             let target = match addr {
-                Addr::Name(ref name) => {
-                    api::target_spec::Target::Authority(name.name().as_str().to_owned())
-                }
-                Addr::Socket(sock) => api::target_spec::Target::Address(sock.ip().into()),
+                Addr::Name(ref name) => api::traffic_spec::Target::Authority(name.to_string()),
+                Addr::Socket(sock) => api::traffic_spec::Target::Addr(sock.into()),
             };
-            api::TargetSpec {
-                port,
-                workload: self.workload.as_ref().to_string(),
+            api::TrafficSpec {
+                source_workload: self.workload.as_ref().to_string(),
                 target: Some(target),
             }
         };
@@ -95,7 +91,7 @@ where
                         let policy = ClientPolicy::try_from(up).unwrap_or_else(|error| {
                             tracing::warn!(%error, "Client policy misconfigured");
                             INVALID_POLICY
-                                .get_or_init(|| ClientPolicy::invalid(addr.clone(), detect_timeout))
+                                .get_or_init(|| ClientPolicy::invalid(detect_timeout))
                                 .clone()
                         });
                         tracing::debug!(?policy);

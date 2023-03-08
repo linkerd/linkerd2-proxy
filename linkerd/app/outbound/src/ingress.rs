@@ -78,7 +78,7 @@ impl Outbound<()> {
             .to_tcp_connect()
             .push_opaq_cached(resolve.clone())
             .map_stack(|_, _, stk| stk.push_map_target(Opaq))
-            .push_discover(profiles.clone().into_service())
+            .push_discover(profiles.clone())
             .into_inner();
 
         let http = self
@@ -91,7 +91,7 @@ impl Outbound<()> {
                 stk.check_new_service::<Http<Logical>, _>()
                     .push_filter(Http::try_from)
             })
-            .push_discover(profiles.into_service());
+            .push_discover(profiles);
 
         http.push_ingress(opaque)
             .push_tcp_instrument(|t: &T| tracing::info_span!("ingress", addr = %t.param()))
