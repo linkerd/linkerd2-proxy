@@ -587,8 +587,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 );
                 inbound::policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
             });
-            // If the inbound is proxy is configured to discover policies, then load the set
-            // of all known inbound ports to be discovered during initialization.
+
+            // Load the the set of all known inbound ports to be discovered
+            // eagerly during initialization.
             let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
                 Some(ports) => ports,
                 None => {
