@@ -44,7 +44,6 @@ pub struct Profile {
     pub opaque_protocol: bool,
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
-
 /// A profile lookup target.
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LookupAddr(pub Addr);
@@ -207,12 +206,6 @@ impl FromStr for LookupAddr {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Addr::from_str(s).map(LookupAddr)
-    }
-}
-
-impl AsRef<Addr> for LookupAddr {
-    fn as_ref(&self) -> &Addr {
-        &self.0
     }
 }
 
