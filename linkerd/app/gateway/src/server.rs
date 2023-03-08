@@ -80,7 +80,7 @@ impl Gateway {
 
             // Apply the gateway's allowlist to the profile discovery service.
             let allowlist = self.config.allow_discovery.clone().into();
-            let profiles = profiles::WithAllowlist::new(profiles, allowlist);
+            let mut profiles = profiles::WithAllowlist::new(profiles, allowlist);
             self.outbound
                 .with_stack(protocol)
                 .push_discover(svc::mk(move |outbound::discover::TargetAddr(addr)| {

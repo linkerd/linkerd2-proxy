@@ -1,5 +1,4 @@
 use crate::{policy, Outbound};
-use futures::future;
 use linkerd_app_core::{
     profiles,
     svc::{self, stack::Param},
@@ -9,7 +8,6 @@ pub use policy::TargetAddr;
 use std::{
     hash::{Hash, Hasher},
     ops::Deref,
-    task::{Context, Poll},
 };
 use tokio::sync::watch;
 #[cfg(test)]
