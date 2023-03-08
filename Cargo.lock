@@ -1457,6 +1457,7 @@ dependencies = [
  "ahash",
  "http",
  "ipnet",
+ "linkerd-addr",
  "linkerd-error",
  "linkerd-http-route",
  "linkerd-proxy-api-resolve",

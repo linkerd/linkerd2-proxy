@@ -103,50 +103,61 @@ impl Outbound<()> {
                     http::Routes::Endpoint(Remote(ServerAddr(*orig_dst)), Default::default())
                 };
 
-                let mk_policy_routes = move |policy: &policy::ClientPolicy| match policy.protocol {
-                    policy::Protocol::Detect {
-                        ref http1,
-                        ref http2,
-                        ..
-                    } => {
-                        let routes = match version {
-                            http::Version::Http1 => http1.routes.clone(),
-                            http::Version::H2 => http2.routes.clone(),
-                        };
-                        http::Routes::Policy(http::policy::Routes::Http(http::policy::HttpRoutes {
-                            addr: policy.addr.clone(),
-                            backends: policy.backends.clone(),
-                            routes,
-                        }))
+                let mk_policy_routes = move |policy: &policy::ClientPolicy| {
+                    // A `ClientPolicy` does not have a single known logical
+                    // address, as it may consist of multiple distinct backends.
+                    // Therefore, just use the original destination address for now.
+                    // TODO(eliza): eventually, remove the logical addr field on
+                    // the policy route types when we use metadata for those
+                    // labels instead.
+                    let addr = orig_dst.0.into();
+                    match policy.protocol {
+                        policy::Protocol::Detect {
+                            ref http1,
+                            ref http2,
+                            ..
+                        } => {
+                            let routes = match version {
+                                http::Version::Http1 => http1.routes.clone(),
+                                http::Version::H2 => http2.routes.clone(),
+                            };
+                            http::Routes::Policy(http::policy::Routes::Http(
+                                http::policy::HttpRoutes {
+                                    addr,
+                                    backends: policy.backends.clone(),
+                                    routes,
+                                },
+                            ))
+                        }
+                        // TODO(eliza): what do we do here if the configured
+                        // protocol doesn't match the actual protocol for the
+                        // target? probably should make an error route instead?
+                        policy::Protocol::Http1(ref http1) => http::Routes::Policy(
+                            http::policy::Routes::Http(http::policy::HttpRoutes {
+                                addr,
+                                backends: policy.backends.clone(),
+                                routes: http1.routes.clone(),
+                            }),
+                        ),
+                        policy::Protocol::Http2(ref http2) => http::Routes::Policy(
+                            http::policy::Routes::Http(http::policy::HttpRoutes {
+                                addr,
+                                backends: policy.backends.clone(),
+                                routes: http2.routes.clone(),
+                            }),
+                        ),
+                        policy::Protocol::Grpc(ref grpc) => http::Routes::Policy(
+                            http::policy::Routes::Grpc(http::policy::GrpcRoutes {
+                                addr,
+                                backends: policy.backends.clone(),
+                                routes: grpc.routes.clone(),
+                            }),
+                        ),
+                        // TODO(eliza): if the policy's protocol is opaque, but we
+                        // are handling traffic as HTTP...that's obviously wrong.
+                        // should we panic or just fail traffic here?
+                        _ => unreachable!("tried to handle an opaque route as HTTP"),
                     }
-                    // TODO(eliza): what do we do here if the configured
-                    // protocol doesn't match the actual protocol for the
-                    // target? probably should make an error route instead?
-                    policy::Protocol::Http1(ref http1) => {
-                        http::Routes::Policy(http::policy::Routes::Http(http::policy::HttpRoutes {
-                            addr: policy.addr.clone(),
-                            backends: policy.backends.clone(),
-                            routes: http1.routes.clone(),
-                        }))
-                    }
-                    policy::Protocol::Http2(ref http2) => {
-                        http::Routes::Policy(http::policy::Routes::Http(http::policy::HttpRoutes {
-                            addr: policy.addr.clone(),
-                            backends: policy.backends.clone(),
-                            routes: http2.routes.clone(),
-                        }))
-                    }
-                    policy::Protocol::Grpc(ref grpc) => {
-                        http::Routes::Policy(http::policy::Routes::Grpc(http::policy::GrpcRoutes {
-                            addr: policy.addr.clone(),
-                            backends: policy.backends.clone(),
-                            routes: grpc.routes.clone(),
-                        }))
-                    }
-                    // TODO(eliza): if the policy's protocol is opaque, but we
-                    // are handling traffic as HTTP...that's obviously wrong.
-                    // should we panic or just fail traffic here?
-                    _ => todo!("eliza: error for non-http protocols"),
                 };
                 let routes = match ((*parent).profile.clone(), (*parent).policy.clone()) {
                     (Some(profile), Some(policy)) if policy.borrow().is_default() => {
