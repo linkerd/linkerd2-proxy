@@ -255,9 +255,7 @@ impl Controller {
 
     /// Returns an [`OutboundSender`] for outbound policies for `addr`.
     pub fn outbound_tx(&self, addr: impl Into<Addr>) -> OutboundSender {
-        let addr = addr.into();
-        let port = addr.port() as u32;
-        let target = match addr {
+        let target = match addr.into() {
             Addr::Socket(socket) => outbound::traffic_spec::Target::Addr(socket.into()),
             Addr::Name(name) => outbound::traffic_spec::Target::Authority(name.to_string()),
         };
