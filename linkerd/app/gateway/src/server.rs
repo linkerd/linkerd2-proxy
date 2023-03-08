@@ -25,7 +25,7 @@ impl Gateway {
     /// inner stack to use.
     pub fn server<T, I, P, O, H, OSvc, HSvc>(
         self,
-        mut profiles: P,
+        profiles: P,
         opaq: O,
         http: H,
     ) -> svc::Stack<svc::ArcNewTcp<T, I>>
