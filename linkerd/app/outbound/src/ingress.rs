@@ -388,11 +388,9 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
                         let route = mk_profile_routes(&*profile.borrow_and_update());
                         if let Some(route) = route {
                             http::spawn_routes(profile, route, mk_profile_routes)
-                        } else if let Some(route) = policy_routes(
-                            addr.clone().into(),
-                            version,
-                            &*policy.borrow_and_update(),
-                        ) {
+                        } else if let Some(route) =
+                            policy_routes(addr.into(), version, &*policy.borrow_and_update())
+                        {
                             http::spawn_routes(profile, route, mk_profile_routes)
                         } else {
                             http::spawn_routes_default(Remote(ServerAddr(addr)))
@@ -402,14 +400,11 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
                     // If there's both a non-default client policy and a service
                     // profile, try the client policy first.
                     (Some(mut profile), Some(mut policy)) => {
-                        let route = policy_routes(
-                            addr.clone().into(),
-                            version,
-                            &*policy.borrow_and_update(),
-                        );
+                        let route =
+                            policy_routes(addr.into(), version, &*policy.borrow_and_update());
                         if let Some(route) = route {
                             http::spawn_routes(policy, route, move |policy| {
-                                policy_routes(addr.clone().into(), version, policy)
+                                policy_routes(addr.into(), version, policy)
                             })
                         } else if let Some(route) = {
                             let route = mk_profile_routes(&*profile.borrow_and_update());
@@ -422,15 +417,11 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
                     }
 
                     (None, Some(mut policy)) => {
-                        let route = policy_routes(
-                            addr.clone().into(),
-                            version,
-                            &*policy.borrow_and_update(),
-                        );
+                        let route =
+                            policy_routes(addr.into(), version, &*policy.borrow_and_update());
                         if let Some(route) = route {
-                            http::spawn_routes(policy, route, {
-                                let addr = addr.clone();
-                                move |policy| policy_routes(addr.clone().into(), version, policy)
+                            http::spawn_routes(policy, route, move |policy| {
+                                policy_routes(addr.into(), version, policy)
                             })
                         } else {
                             http::spawn_routes_default(Remote(ServerAddr(addr)))
