@@ -29,8 +29,6 @@ where
     type Error = G::Error;
 
     fn get_profile(&mut self, addr: LookupAddr) -> Self::Future {
-        // TODO(ver) Should this allowance be parameterized by
-        // the target type?
         if self.allow_discovery.matches(&addr.0) {
             tracing::debug!(%addr, "Discovery allowed");
             return future::Either::Right(self.inner.get_profile(addr));
