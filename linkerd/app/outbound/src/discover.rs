@@ -2,15 +2,13 @@ use crate::Outbound;
 use linkerd_app_core::{
     profiles,
     svc::{self, stack::Param},
-    Error, Infallible,
+    Error,
 };
 use std::{
     hash::{Hash, Hasher},
     ops::Deref,
 };
 use tokio::sync::watch;
-use tracing::debug;
-
 #[cfg(test)]
 mod tests;
 
@@ -23,9 +21,9 @@ pub struct Discovery<T> {
 
 impl<N> Outbound<N> {
     /// Discovers routing configuration.
-    pub fn push_discover<T, Req, NSvc, P>(
+    pub fn push_discover<T, Req, NSvc, D>(
         self,
-        profiles: P,
+        discover: D,
     ) -> Outbound<svc::ArcNewService<T, svc::BoxService<Req, NSvc::Response, Error>>>
     where
         // Discoverable target.
@@ -34,7 +32,11 @@ impl<N> Outbound<N> {
         // Request type.
         Req: Send + 'static,
         // Discovery client.
-        P: profiles::GetProfile<Error = Error>,
+        D: svc::Service<profiles::LookupAddr, Error = Error> + Clone + Send + Sync + 'static,
+        D::Future: Send + Unpin + 'static,
+        D::Error: Send + Sync + 'static,
+        D::Response: Clone + Send + Sync + 'static,
+        Discovery<T>: From<(D::Response, T)>,
         // Inner stack.
         N: svc::NewService<Discovery<T>, Service = NSvc>,
         N: Clone + Send + Sync + 'static,
@@ -42,32 +44,9 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
     {
         self.map_stack(|config, _, stk| {
-            let allow = config.allow_discovery.clone();
-            stk.clone()
-                .lift_new_with_target()
-                .push_new_cached_discover(profiles.into_service(), config.discovery_idle_timeout)
-                .push_switch(
-                    move |parent: T| -> Result<_, Infallible> {
-                        // TODO(ver) Should this allowance be parameterized by
-                        // the target type?
-                        let profiles::LookupAddr(addr) = parent.param();
-                        if allow.matches(&addr) {
-                            debug!(%addr, "Discovery allowed");
-                            return Ok(svc::Either::A(parent));
-                        }
-                        debug!(
-                            %addr,
-                            domains = %allow.names(),
-                            networks = %allow.nets(),
-                            "Discovery skipped",
-                        );
-                        Ok(svc::Either::B(Discovery {
-                            parent,
-                            profile: None,
-                        }))
-                    },
-                    stk.into_inner(),
-                )
+            stk.lift_new_with_target()
+                .push_new_cached_discover(discover, config.discovery_idle_timeout)
+                .check_new_service::<T, _>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })

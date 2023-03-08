@@ -839,6 +839,7 @@ name = "linkerd-addr"
 version = "0.1.0"
 dependencies = [
  "http",
+ "ipnet",
  "linkerd-dns-name",
  "thiserror",
 ]
