@@ -1,7 +1,6 @@
 use crate::Config;
 pub use futures::prelude::*;
 use linkerd_app_core::{
-    addr::IpMatch,
     config::{self, QueueConfig},
     drain, exp_backoff, metrics,
     proxy::{
@@ -9,7 +8,7 @@ use linkerd_app_core::{
         tap,
     },
     transport::{Keepalive, ListenAddr},
-    IpNet, ProxyRuntime,
+    IpMatch, IpNet, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
 use std::{str::FromStr, time::Duration};
