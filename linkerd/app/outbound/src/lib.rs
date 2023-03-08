@@ -224,10 +224,7 @@ impl Outbound<()> {
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        let profiles = discover::WithAllowlist::new(
-            profiles.into_service(),
-            self.config.allow_discovery.clone(),
-        );
+        let profiles = profiles::WithAllowlist::new(profiles, self.config.allow_discovery.clone());
         if self.config.ingress_mode {
             tracing::info!("Outbound routing in ingress-mode");
             let server = self.mk_ingress(profiles, resolve);

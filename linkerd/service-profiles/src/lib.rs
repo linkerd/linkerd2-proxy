@@ -18,12 +18,13 @@ use thiserror::Error;
 use tokio::sync::watch;
 use tower::util::{Oneshot, ServiceExt};
 
+mod allowlist;
 mod client;
 mod default;
 pub mod http;
 mod proto;
 
-pub use self::{client::Client, default::RecoverDefault};
+pub use self::{allowlist::WithAllowlist, client::Client, default::RecoverDefault};
 
 #[derive(Clone, Debug)]
 pub struct Receiver {

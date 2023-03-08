@@ -11,21 +11,24 @@ proto = [
     "linkerd-http-route/proto",
     "linkerd2-proxy-api",
     "prost-types",
-    "thiserror"
+    "thiserror",
+    "once_cell",
 ]
 
 [dependencies]
+ahash = "0.8"
 ipnet = "2"
 http = "0.2"
-linkerd2-proxy-api = { version = "0.8", optional = true, features = ["outbound"] }
-linkerd-addr = { path = "../../addr" }
+linkerd2-proxy-api = { version = "0.8", optional = true, features = [
+    "outbound",
+] }
 linkerd-error = { path = "../../error" }
 linkerd-http-route = { path = "../../http-route" }
 linkerd-proxy-api-resolve = { path = "../api-resolve" }
 linkerd-proxy-core = { path = "../core" }
+once_cell = { version = "1", optional = true }
 prost-types = { version = "0.11", optional = true }
-thiserror ={ version = "1", optional = true }
-once_cell = "1"
+thiserror = { version = "1", optional = true }
 
 [dev-dependencies]
 maplit = "1"

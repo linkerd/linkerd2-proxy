@@ -3,7 +3,7 @@ use futures::future;
 use linkerd_app_core::{
     profiles,
     svc::{self, stack::Param},
-    Addr, AddrMatch, Error,
+    Error,
 };
 pub use policy::TargetAddr;
 use std::{
@@ -12,8 +12,6 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::sync::watch;
-use tracing::debug;
-
 #[cfg(test)]
 mod tests;
 
