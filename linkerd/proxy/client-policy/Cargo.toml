@@ -7,21 +7,28 @@ edition = "2021"
 publish = false
 
 [features]
-# proto = [
-#     "linkerd-http-route/proto",
-#     "linkerd-proxy-core/proto",
-#     "linkerd2-proxy-api",
-#     "prost-types",
-# ]
+proto = [
+    "linkerd-http-route/proto",
+    "linkerd2-proxy-api",
+    "prost-types",
+    "thiserror",
+    "once_cell",
+]
 
 [dependencies]
+ahash = "0.8"
 ipnet = "2"
 http = "0.2"
+linkerd2-proxy-api = { version = "0.8", optional = true, features = [
+    "outbound",
+] }
+linkerd-error = { path = "../../error" }
+linkerd-http-route = { path = "../../http-route" }
 linkerd-proxy-api-resolve = { path = "../api-resolve" }
 linkerd-proxy-core = { path = "../core" }
-linkerd-http-route = { path = "../../http-route" }
-# prost-types = { version = "0.11", optional = true }
-# thiserror = "1"
+once_cell = { version = "1", optional = true }
+prost-types = { version = "0.11", optional = true }
+thiserror = { version = "1", optional = true }
 
 [dev-dependencies]
 maplit = "1"
