@@ -109,24 +109,26 @@ pub fn opaque_unauthenticated() -> inbound::Server {
 pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
     use outbound::proxy_protocol;
     let dst = dst.to_string();
-    let route = outbound_default_route(dst.clone());
+    let route = outbound_default_http_route(dst.clone());
     outbound::OutboundPolicy {
         protocol: Some(outbound::ProxyProtocol {
             kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                 timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                 http1: Some(proxy_protocol::Http1 {
-                    http_routes: vec![route.clone()],
+                    routes: vec![route.clone()],
                 }),
                 http2: Some(proxy_protocol::Http2 {
-                    http_routes: vec![route],
+                    routes: vec![route],
+                }),
+                opaque: Some(proxy_protocol::Opaque {
+                    routes: vec![outbound_default_opaque_route(dst)],
                 }),
             })),
         }),
-        backend: Some(backend(dst, 1)),
     }
 }
 
-pub fn outbound_default_route(dst: impl ToString) -> outbound::HttpRoute {
+pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
     use api::http_route;
     use outbound::distribution;
     outbound::HttpRoute {
@@ -147,7 +149,7 @@ pub fn outbound_default_route(dst: impl ToString) -> outbound::HttpRoute {
             backends: Some(outbound::Distribution {
                 distribution: Some(distribution::Distribution::FirstAvailable(
                     distribution::FirstAvailable {
-                        backends: vec![backend(dst, 1)],
+                        backends: vec![backend(dst)],
                     },
                 )),
             }),
@@ -155,19 +157,42 @@ pub fn outbound_default_route(dst: impl ToString) -> outbound::HttpRoute {
     }
 }
 
-pub fn backend(dst: impl ToString, weight: u32) -> outbound::Backend {
-    use outbound::backend::{self, balance_p2c, Backend};
+pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
+    use outbound::distribution;
+    outbound::OpaqueRoute {
+        metadata: Some(api::meta::Metadata {
+            kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
+        }),
+        rules: vec![outbound::opaque_route::Rule {
+            backends: Some(outbound::Distribution {
+                distribution: Some(distribution::Distribution::FirstAvailable(
+                    distribution::FirstAvailable {
+                        backends: vec![backend(dst)],
+                    },
+                )),
+            }),
+        }],
+    }
+}
+
+pub fn backend(dst: impl ToString) -> outbound::Backend {
+    use outbound::backend::{self, balance_p2c, endpoint_discovery, EndpointDiscovery};
 
     outbound::Backend {
-        filters: Vec::new(),
+        metadata: Some(api::meta::Metadata {
+            kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
+        }),
         queue: Some(backend::Queue {
             capacity: 100,
             failfast_timeout: Some(Duration::from_secs(3).try_into().unwrap()),
         }),
-        backend: Some(Backend::Balancer(backend::BalanceP2c {
-            dst: Some(api::destination::WeightedDst {
-                authority: dst.to_string(),
-                weight,
+        kind: Some(backend::Kind::BalanceWeightedDstr(backend::BalanceP2c {
+            discovery: Some(EndpointDiscovery {
+                kind: Some(endpoint_discovery::Kind::Dst(
+                    endpoint_discovery::DestinationGet {
+                        path: dst.to_string(),
+                    },
+                )),
             }),
             load: Some(balance_p2c::Load::PeakEwma(balance_p2c::PeakEwma {
                 default_rtt: Some(Duration::from_millis(30).try_into().unwrap()),

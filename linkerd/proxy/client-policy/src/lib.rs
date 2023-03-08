@@ -17,7 +17,6 @@ pub struct TargetAddr(pub Addr);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
-    pub addr: Addr,
     pub protocol: Protocol,
     pub backends: Arc<[Backend]>,
 }
@@ -160,16 +159,16 @@ impl ClientPolicy {
             Protocol::Detect {
                 ref http1,
                 ref http2,
-                ref opaque
+                ref opaque,
                 ..
             } => {
-                // TODO(eliza): when opaque has real policy we'll have to handle
-                // that here too
-                http::is_default(&http1.routes) && http::is_default(&http2.routes) && opaque.is_default()
+                http::is_default(&http1.routes)
+                    && http::is_default(&http2.routes)
+                    && opaque.is_default()
             }
             Protocol::Http1(http::Http1 { ref routes })
             | Protocol::Http2(http::Http2 { ref routes }) => http::is_default(routes),
-            Protocol::Grpc(ref grpc) => grpc::is_default(&grpc.routes),
+            Protocol::Grpc(ref grpc) => grpc.is_default(),
             Protocol::Opaque(ref opaq) | Protocol::Tls(ref opaq) => opaq.is_default(),
         }
     }
