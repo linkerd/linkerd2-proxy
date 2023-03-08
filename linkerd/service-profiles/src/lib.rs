@@ -201,12 +201,6 @@ impl fmt::Debug for LookupAddr {
     }
 }
 
-impl AsRef<Addr> for LookupAddr {
-    fn as_ref(&self) -> &Addr {
-        &self.0
-    }
-}
-
 impl FromStr for LookupAddr {
     type Err = <Addr as FromStr>::Err;
 

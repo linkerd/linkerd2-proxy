@@ -7,7 +7,6 @@
 
 use futures::Stream;
 use linkerd_app_core::{
-    addr::AddrMatch,
     config::{ProxyConfig, QueueConfig},
     drain,
     http_tracing::OpenCensusSink,
@@ -21,7 +20,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::addrs::*,
-    Error, ProxyRuntime, Result,
+    AddrMatch, Error, ProxyRuntime, Result,
 };
 use std::{
     collections::{HashMap, HashSet},
