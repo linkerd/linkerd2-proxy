@@ -9,6 +9,9 @@ use std::{
 };
 use thiserror::Error;
 
+mod addr_match;
+pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Addr {
     Name(NameAddr),

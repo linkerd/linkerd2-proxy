@@ -1,4 +1,4 @@
-use super::{super::concrete, BackendCache, Concrete, Distribution, NoRoute};
+use super::{super::concrete, Concrete, Distribution, NewBackendCache, NewDistribute, NoRoute};
 use linkerd_app_core::{
     proxy::http::{self, balance},
     svc,
@@ -201,7 +201,8 @@ where
             svc::stack(inner)
                 // Each `RouteParams` provides a `Distribution` that is used to
                 // choose a concrete service for a given route.
-                .push(BackendCache::layer())
+                .lift_new()
+                .push(NewBackendCache::layer())
                 // Lazily cache a service for each `RouteParams` returned from the
                 // `SelectRoute` impl.
                 .push_on_service(MatchedRouteParams::layer())
@@ -382,8 +383,9 @@ where
         >,
     > + Clone
     where
+        T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
         // Inner stack.
-        N: svc::NewService<Self, Service = S>,
+        N: svc::NewService<Concrete<T>, Service = S>,
         N: Clone + Send + Sync + 'static,
         S: svc::Service<
             http::Request<http::BoxBody>,
@@ -395,6 +397,8 @@ where
     {
         svc::layer::mk(|inner| {
             svc::stack(inner)
+                .lift_new()
+                .push(NewDistribute::layer())
                 // The router does not take the backend's availability into
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.

@@ -1,51 +1,63 @@
-use super::{params, NewDistribute};
-use linkerd_stack::{layer, NewService, Param};
+use super::params;
+use linkerd_stack::{layer, ExtractParam, NewService};
 use parking_lot::Mutex;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-/// A [`NewService`] that produces [`NewDistribute`]s using a shared cache of
+/// A [`NewService`] that produces [`BackendCache`]s using a shared cache of
 /// backends.
 ///
 /// On each call to [`NewService::new_service`], the cache extracts a new set of
 /// [`params::Backends`] from the target to determine which
 /// services should be added/removed from the cache.
 #[derive(Debug)]
-pub struct BackendCache<K, N, S>(Arc<Inner<K, N, S>>);
+pub struct NewBackendCache<K, X, N, S> {
+    extract: X,
+    inner: N,
+    backends: Arc<Mutex<ahash::AHashMap<K, S>>>,
+}
 
 #[derive(Debug)]
-struct Inner<K, N, S> {
-    new_backend: N,
-    backends: Mutex<ahash::AHashMap<K, S>>,
+pub struct BackendCache<K, S> {
+    backends: Arc<ahash::AHashMap<K, S>>,
 }
 
 // === impl BackendCache ===
 
-impl<K, N, S> BackendCache<K, N, S> {
-    pub fn new(new_backend: N) -> Self {
-        Self(Arc::new(Inner {
-            new_backend,
+impl<K, X: Clone, N, S> NewBackendCache<K, X, N, S> {
+    pub fn new(inner: N, extract: X) -> Self {
+        Self {
+            extract,
+            inner,
             backends: Default::default(),
-        }))
+        }
     }
 
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(Self::new)
+    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(inner, extract.clone()))
     }
 }
 
-impl<T, K, N> NewService<T> for BackendCache<K, N, N::Service>
+impl<K, N, S> NewBackendCache<K, (), N, S> {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(|inner| Self::new(inner, ()))
+    }
+}
+
+impl<T, K, X, N, KNew, S> NewService<T> for NewBackendCache<K, X, N, S>
 where
-    T: Param<params::Backends<K>>,
+    X: ExtractParam<params::Backends<K>, T>,
+    N: NewService<T, Service = KNew>,
     K: Eq + Hash + Clone + Debug,
-    N: NewService<K>,
-    N::Service: Clone,
+    KNew: NewService<K, Service = S>,
+    S: Clone,
 {
-    type Service = NewDistribute<K, N::Service>;
+    type Service = BackendCache<K, S>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let params::Backends(backends) = target.param();
+        let params::Backends(backends) = self.extract.extract_param(&target);
+        let newk = self.inner.new_service(target);
 
-        let mut cache = self.0.backends.lock();
+        let mut cache = self.backends.lock();
 
         // Remove all backends that aren't in the updated set of addrs.
         cache.retain(|backend, _| {
@@ -69,19 +81,47 @@ where
                 }
 
                 tracing::debug!(?backend, "Adding");
-                cache.insert(
-                    backend.clone(),
-                    self.0.new_backend.new_service(backend.clone()),
-                );
+                cache.insert(backend.clone(), newk.new_service(backend.clone()));
             }
         }
 
-        NewDistribute::from(cache.clone())
+        BackendCache {
+            backends: Arc::new((*cache).clone()),
+        }
     }
 }
 
-impl<K, N, S> Clone for BackendCache<K, N, S> {
+impl<K, X: Clone, N: Clone, S> Clone for NewBackendCache<K, X, N, S> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            extract: self.extract.clone(),
+            inner: self.inner.clone(),
+            backends: self.backends.clone(),
+        }
+    }
+}
+
+// === impl BackendCache ===
+
+impl<K, S> NewService<K> for BackendCache<K, S>
+where
+    K: Eq + Hash + Clone + Debug,
+    S: Clone,
+{
+    type Service = S;
+
+    fn new_service(&self, target: K) -> Self::Service {
+        self.backends
+            .get(&target)
+            .expect("target must be in cache")
+            .clone()
+    }
+}
+
+impl<K, S> Clone for BackendCache<K, S> {
+    fn clone(&self) -> Self {
+        Self {
+            backends: self.backends.clone(),
+        }
     }
 }

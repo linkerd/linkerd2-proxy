@@ -1,6 +1,6 @@
 use super::{
     super::{concrete, retry},
-    BackendCache, Concrete, Distribution, NoRoute,
+    Concrete, Distribution, NewBackendCache, NewDistribute, NoRoute,
 };
 use linkerd_app_core::{
     classify, metrics,
@@ -75,7 +75,8 @@ where
             svc::stack(inner)
                 // Each `RouteParams` provides a `Distribution` that is used to
                 // choose a concrete service for a given route.
-                .push(BackendCache::layer())
+                .lift_new()
+                .push(NewBackendCache::layer())
                 // Lazily cache a service for each `RouteParams`
                 // returned from the `SelectRoute` impl.
                 .push_on_service(RouteParams::layer(metrics.clone()))
@@ -220,7 +221,7 @@ impl<T> RouteParams<T> {
     > + Clone
     where
         T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
-        N: svc::NewService<RouteParams<T>, Service = S> + Clone + Send + Sync + 'static,
+        N: svc::NewService<Concrete<T>, Service = S> + Clone + Send + Sync + 'static,
         S: svc::Service<
             http::Request<http::BoxBody>,
             Response = http::Response<http::BoxBody>,
@@ -231,6 +232,8 @@ impl<T> RouteParams<T> {
     {
         svc::layer::mk(move |inner| {
             svc::stack(inner)
+                .lift_new()
+                .push(NewDistribute::layer())
                 .check_new_service::<RouteParams<T>, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers()

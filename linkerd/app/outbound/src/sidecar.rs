@@ -96,7 +96,7 @@ impl Outbound<()> {
             // outbound sidecar stack configuration.
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
             // Access cached discovery information.
-            .push_discover(profiles)
+            .push_discover(profiles.into_service())
             // Instrument server-side connections for telemetry.
             .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
             .into_inner()
