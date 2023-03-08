@@ -69,7 +69,6 @@ async fn empty_http1_route() {
                         }),
                     })),
                 }),
-                ..policy::outbound_default(dst)
             },
         );
 
@@ -154,7 +153,6 @@ async fn empty_http2_route() {
                         }),
                     })),
                 }),
-                ..policy::outbound_default(dst)
             },
         );
 
@@ -262,7 +260,6 @@ async fn header_based_routing() {
                         }),
                     })),
                 }),
-                ..policy::outbound_default(dst_world)
             },
         );
 
