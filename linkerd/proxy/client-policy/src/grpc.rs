@@ -34,14 +34,6 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     }
 }
 
-impl Grpc {
-    pub(crate) fn is_default(&self) -> bool {
-        self.routes
-            .iter()
-            .all(|route| route.rules.iter().all(|rule| rule.policy.meta.is_default()))
-    }
-}
-
 impl Default for Grpc {
     fn default() -> Self {
         Self {

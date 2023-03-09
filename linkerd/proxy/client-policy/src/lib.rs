@@ -153,25 +153,6 @@ impl ClientPolicy {
             backends: Arc::new([]),
         }
     }
-
-    pub fn is_default(&self) -> bool {
-        match self.protocol {
-            Protocol::Detect {
-                ref http1,
-                ref http2,
-                ref opaque,
-                ..
-            } => {
-                http::is_default(&http1.routes)
-                    && http::is_default(&http2.routes)
-                    && opaque.is_default()
-            }
-            Protocol::Http1(http::Http1 { ref routes })
-            | Protocol::Http2(http::Http2 { ref routes }) => http::is_default(routes),
-            Protocol::Grpc(ref grpc) => grpc.is_default(),
-            Protocol::Opaque(ref opaq) | Protocol::Tls(ref opaq) => opaq.is_default(),
-        }
-    }
 }
 
 // === impl Meta ===

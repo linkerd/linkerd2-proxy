@@ -321,7 +321,7 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
                     }
 
                     // If the client policy is default, try the service profile first
-                    (Some(mut profile), Some(mut policy)) if policy.borrow().is_default() => {
+                    (Some(mut profile), Some(mut policy)) if profile.borrow().is_interesting() => {
                         let route = mk_profile_routes(&*profile.borrow_and_update());
                         if let Some(route) = route {
                             http::spawn_routes(profile, route, mk_profile_routes)
@@ -384,7 +384,7 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
                     }
 
                     // If the client policy is default, try the service profile first
-                    (Some(mut profile), Some(mut policy)) if policy.borrow().is_default() => {
+                    (Some(mut profile), Some(mut policy)) if profile.borrow().is_interesting() => {
                         let route = mk_profile_routes(&*profile.borrow_and_update());
                         if let Some(route) = route {
                             http::spawn_routes(profile, route, mk_profile_routes)

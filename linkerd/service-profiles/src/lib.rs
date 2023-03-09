@@ -187,6 +187,14 @@ impl Default for Profile {
     }
 }
 
+impl Profile {
+    /// Returns `true` if this profile provides configuration that should
+    /// override a client policy configuration.
+    pub fn is_interesting(&self) -> bool {
+        !self.http_routes.is_empty() || !self.targets.is_empty()
+    }
+}
+
 // === impl LookupAddr ===
 
 impl fmt::Display for LookupAddr {

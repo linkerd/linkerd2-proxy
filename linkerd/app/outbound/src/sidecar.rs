@@ -159,20 +159,19 @@ impl Outbound<()> {
                         _ => unreachable!("tried to handle an opaque route as HTTP"),
                     }
                 };
-                let routes = match ((*parent).profile.clone(), (*parent).policy.clone()) {
-                    (Some(profile), Some(policy)) if policy.borrow().is_default() => {
-                        tracing::debug!("OutboundPolicy is default; using ServiceProfile routes");
-                        let mut rx = watch::Receiver::from(profile);
-                        let init = mk_profile_routes(&*rx.borrow_and_update());
-                        http::spawn_routes(rx, init, move |profile: &profiles::Profile| {
+                let profile = (*parent).profile.clone().map(watch::Receiver::from);
+                let routes = match (profile, (*parent).policy.clone()) {
+                    (Some(mut profile), Some(_)) if profile.borrow().is_interesting() => {
+                        tracing::debug!("ServiceProfile has routes, overriding OutboundPolicy.");
+                        let init = mk_profile_routes(&*profile.borrow_and_update());
+                        http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
                             Some(mk_profile_routes(profile))
                         })
                     }
-                    (Some(profile), None) => {
+                    (Some(mut profile), None) => {
                         tracing::debug!("No OutboundPolicy resolved; using ServiceProfile routes");
-                        let mut rx = watch::Receiver::from(profile);
-                        let init = mk_profile_routes(&*rx.borrow_and_update());
-                        http::spawn_routes(rx, init, move |profile: &profiles::Profile| {
+                        let init = mk_profile_routes(&*profile.borrow_and_update());
+                        http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
                             Some(mk_profile_routes(profile))
                         })
                     }

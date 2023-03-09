@@ -10,15 +10,6 @@ pub type Policy = RoutePolicy<Filter>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Filter {}
 
-impl Opaque {
-    pub(crate) fn is_default(&self) -> bool {
-        self.policy
-            .as_ref()
-            .map(|policy| policy.meta.is_default())
-            .unwrap_or(false)
-    }
-}
-
 #[cfg(feature = "proto")]
 pub(crate) mod proto {
     use super::*;
