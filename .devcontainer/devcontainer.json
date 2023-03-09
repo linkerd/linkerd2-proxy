@@ -1,6 +1,6 @@
 {
-	"name": "linkerd2-proxy",
-	"image": "ghcr.io/linkerd/dev:v39",
+	"name": "linkerd2-proxy dev",
+       "dockerFile": "Dockerfile",
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -15,7 +15,6 @@
 			"settings": {}
 		}
 	},
-	"onCreateCommand": ".devcontainer/on-create.sh",
 	// Support docker + debugger
 	"runArgs": [
 		"--init",
