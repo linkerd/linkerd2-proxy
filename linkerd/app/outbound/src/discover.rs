@@ -57,15 +57,15 @@ impl<N> Outbound<N> {
 
 // === impl Discovery ===
 
-impl<T> From<((Option<profiles::Receiver>, Option<policy::Receiver>), T)> for Discovery<T> {
+impl<T> From<((Option<profiles::Receiver>, policy::Receiver), T)> for Discovery<T> {
     fn from(
         // whew!
-        ((profile, policy), parent): ((Option<profiles::Receiver>, Option<policy::Receiver>), T),
+        ((profile, policy), parent): ((Option<profiles::Receiver>, policy::Receiver), T),
     ) -> Self {
         Self {
             parent,
             profile,
-            policy,
+            policy: Some(policy),
         }
     }
 }
