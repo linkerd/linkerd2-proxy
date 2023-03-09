@@ -272,16 +272,17 @@ async fn header_based_routing() {
 
     let client = client::http1(proxy.outbound, AUTHORITY_WORLD);
 
-    let req = move |header: Option<&str>| {
+    let req = move |headers: &[&str]| {
         let mut builder = client.request_builder("/");
-        if let Some(header) = header {
-            tracing::info!("GET / {HEADER}: {header}");
-            builder = builder.header(HEADER, header);
-        } else {
-            tracing::info!("GET / (no header)");
+
+        let span = tracing::info_span!("GET /", "{HEADER}: {headers:?}");
+        for &value in headers {
+            builder = builder.header(HEADER, value);
         }
+
         let fut = client.request(builder);
         async move {
+            tracing::info!("sending request...");
             let res = fut.await.expect("request");
             tracing::info!(?res);
             assert!(
@@ -292,21 +293,34 @@ async fn header_based_routing() {
             let stream = res.into_parts().1;
             http_util::body_to_string(stream).await.unwrap()
         }
+        .instrument(span)
     };
 
-    assert_eq!(req(None).await, "hello world!");
+    // no header, matches default route
+    assert_eq!(req(&[]).await, "hello world!");
 
     // matches SF route
-    assert_eq!(req(Some("sf")).await, "hello san francisco!");
+    assert_eq!(req(&["sf"]).await, "hello san francisco!");
 
     // unknown header value matches default route
-    assert_eq!(req(Some("paris")).await, "hello world!");
+    assert_eq!(req(&["paris"]).await, "hello world!");
 
     // matches austin route
-    assert_eq!(req(Some("austin")).await, "hello austin!");
+    assert_eq!(req(&["austin"]).await, "hello austin!");
 
     // also matches sf route regex
-    assert_eq!(req(Some("san francisco")).await, "hello san francisco!");
+    assert_eq!(req(&["san francisco"]).await, "hello san francisco!");
+
+    // multiple headers (matching and non matching)
+    assert_eq!(req(&["sf", "paris"]).await, "hello san francisco!");
+
+    // if both rules match, ties are resolved based on ordering.
+    // (see: https://gateway-api.sigs.k8s.io/references/spec/#gateway.networking.k8s.io%2fv1beta1.HTTPRouteRule)
+    assert_eq!(req(&["sf", "austin"]).await, "hello san francisco!");
+    assert_eq!(
+        req(&["san francisco", "austin"]).await,
+        "hello san francisco!"
+    );
 
     // ensure panics from the server are propagated
     proxy.join_servers().await;
