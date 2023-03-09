@@ -13,7 +13,7 @@ use linkerd_app_core::{
     Error, NameMatch,
 };
 use linkerd_app_inbound::{self as inbound, GatewayAddr, Inbound};
-use linkerd_app_outbound::{self as outbound, Outbound};
+use linkerd_app_outbound::Outbound;
 use std::fmt::Debug;
 
 mod http;
@@ -54,7 +54,6 @@ impl Gateway {
         T: svc::Param<tls::ClientId>,
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: svc::Param<Option<SessionProtocol>>,
-        T: svc::Param<outbound::discover::TargetAddr>,
         T: Clone + Send + Sync + Unpin + 'static,
         // Server-side socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,

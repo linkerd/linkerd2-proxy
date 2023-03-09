@@ -1,11 +1,7 @@
 use crate::{policy, Outbound};
-use linkerd_app_core::{
-    profiles,
-    svc::{self, stack::Param},
-    Error,
-};
-pub use policy::TargetAddr;
+use linkerd_app_core::{profiles, svc, Error};
 use std::{
+    fmt::Debug,
     hash::{Hash, Hasher},
     ops::Deref,
 };
@@ -23,18 +19,19 @@ pub struct Discovery<T> {
 
 impl<N> Outbound<N> {
     /// Discovers routing configuration.
-    pub fn push_discover<T, Req, NSvc, D>(
+    pub fn push_discover<T, K, Req, NSvc, D>(
         self,
         discover: D,
     ) -> Outbound<svc::ArcNewService<T, svc::BoxService<Req, NSvc::Response, Error>>>
     where
         // Discoverable target.
-        T: Param<TargetAddr>,
+        T: svc::Param<K>,
         T: Clone + Send + Sync + 'static,
+        K: Clone + Debug + Eq + Hash + Send + Sync + 'static,
         // Request type.
         Req: Send + 'static,
         // Discovery client.
-        D: svc::Service<TargetAddr, Error = Error> + Clone + Send + Sync + 'static,
+        D: svc::Service<K, Error = Error> + Clone + Send + Sync + 'static,
         D::Future: Send + Unpin + 'static,
         D::Error: Send + Sync + 'static,
         D::Response: Clone + Send + Sync + 'static,

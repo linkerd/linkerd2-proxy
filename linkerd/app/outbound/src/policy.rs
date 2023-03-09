@@ -1,5 +1,7 @@
-use crate::discover;
-use linkerd_app_core::Error;
+use linkerd_app_core::{
+    svc::{self, ServiceExt},
+    Addr, Error,
+};
 pub use linkerd_proxy_client_policy::*;
 use std::future::Future;
 use tokio::sync::watch;
@@ -14,23 +16,21 @@ pub trait GetPolicy: Clone + Send + Sync + 'static {
     type Future: Future<Output = Result<Receiver, Error>> + Unpin + Send;
 
     /// Returns the traffic policy configured for the destination address.
-    fn get_policy(&self, target: discover::TargetAddr) -> Self::Future;
+    fn get_policy(&self, target: Addr) -> Self::Future;
 }
 
 // === impl GetPolicy ===
 
 impl<S> GetPolicy for S
 where
-    S: tower::Service<discover::TargetAddr, Response = Receiver, Error = Error>,
+    S: svc::Service<Addr, Response = Receiver, Error = Error>,
     S: Clone + Send + Sync + Unpin + 'static,
     S::Future: Send + Unpin,
 {
-    type Future = tower::util::Oneshot<S, discover::TargetAddr>;
+    type Future = tower::util::Oneshot<S, Addr>;
 
     #[inline]
-    fn get_policy(&self, addr: discover::TargetAddr) -> Self::Future {
-        use tower::util::ServiceExt;
-
+    fn get_policy(&self, addr: Addr) -> Self::Future {
         self.clone().oneshot(addr)
     }
 }

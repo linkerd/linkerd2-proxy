@@ -1,4 +1,4 @@
-use crate::{discover, http, opaq, policy, Config, Outbound};
+use crate::{http, opaq, policy, Config, Discovery, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, io, profiles,
@@ -6,11 +6,11 @@ use linkerd_app_core::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
     },
-    svc::{self, stack::Param},
+    svc::{self, ServiceExt},
     transport::addrs::*,
     Addr, Error, Infallible, NameAddr, Result,
 };
-use std::fmt::Debug;
+use std::{fmt::Debug, hash::Hash};
 use thiserror::Error;
 use tokio::sync::watch;
 
@@ -21,7 +21,7 @@ struct Http<T> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Opaq<T>(discover::Discovery<T>);
+struct Opaq<T>(Discovery<T>);
 
 #[derive(Clone, Debug)]
 struct SelectTarget<T>(Http<T>);
@@ -31,6 +31,9 @@ enum RequestTarget {
     Named(NameAddr),
     Orig(OrigDstAddr),
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct DiscoverAddr(Addr);
 
 #[derive(Clone, Debug)]
 struct Logical {
@@ -64,7 +67,7 @@ impl Outbound<()> {
     ) -> svc::ArcNewTcp<T, I>
     where
         // Target type for outbund ingress-mode connections.
-        T: Param<OrigDstAddr>,
+        T: svc::Param<OrigDstAddr>,
         T: Clone + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
@@ -72,10 +75,10 @@ impl Outbound<()> {
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        let discover = svc::mk(move |addr: discover::TargetAddr| {
+        let discover = svc::mk(move |DiscoverAddr(addr)| {
             let profile = profiles
                 .clone()
-                .get_profile(profiles::LookupAddr(addr.clone().0));
+                .get_profile(profiles::LookupAddr(addr.clone()));
             let policy = policies.get_policy(addr);
             Box::pin(async move {
                 let (profile, policy) = tokio::join!(profile, policy);
@@ -91,12 +94,16 @@ impl Outbound<()> {
         // The fallback stack is the same thing as the normal proxy stack, but
         // it doesn't include TCP metrics, since they are already instrumented
         // on this ingress stack.
-        let opaque = self
-            .to_tcp_connect()
-            .push_opaq_cached(resolve.clone())
-            .map_stack(|_, _, stk| stk.push_map_target(Opaq))
-            .push_discover(discover.clone())
-            .into_inner();
+        let opaque = {
+            let discover = discover.clone();
+            self.to_tcp_connect()
+                .push_opaq_cached(resolve.clone())
+                .map_stack(|_, _, stk| stk.push_map_target(Opaq))
+                .push_discover(svc::mk(move |OrigDstAddr(addr)| {
+                    discover.clone().oneshot(DiscoverAddr(addr.into()))
+                }))
+                .into_inner()
+        };
 
         let http = self
             .to_tcp_connect()
@@ -128,7 +135,7 @@ impl<N> Outbound<N> {
     fn push_ingress<T, I, F, FSvc, NSvc>(self, fallback: F) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type describing an outbound connection.
-        T: Param<OrigDstAddr>,
+        T: svc::Param<OrigDstAddr>,
         T: Clone + Send + Sync + Unpin + 'static,
         // A server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -246,13 +253,13 @@ where
 
 // === impl Http ===
 
-impl<T> Param<http::Version> for Http<T> {
+impl<T> svc::Param<http::Version> for Http<T> {
     fn param(&self) -> http::Version {
         self.version
     }
 }
 
-impl<T> Param<OrigDstAddr> for Http<T>
+impl<T> svc::Param<OrigDstAddr> for Http<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
@@ -269,12 +276,9 @@ impl<T> std::ops::Deref for Http<T> {
     }
 }
 
-impl Param<discover::TargetAddr> for Http<RequestTarget> {
-    fn param(&self) -> discover::TargetAddr {
-        discover::TargetAddr(match self.parent.clone() {
-            RequestTarget::Named(addr) => addr.into(),
-            RequestTarget::Orig(OrigDstAddr(addr)) => addr.into(),
-        })
+impl svc::Param<DiscoverAddr> for Http<RequestTarget> {
+    fn param(&self) -> DiscoverAddr {
+        DiscoverAddr(self.parent.clone().into())
     }
 }
 
@@ -296,12 +300,10 @@ impl svc::Param<watch::Receiver<http::Routes>> for Http<Logical> {
     }
 }
 
-impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
+impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
     type Error = ProfileRequired;
 
-    fn try_from(
-        parent: discover::Discovery<Http<RequestTarget>>,
-    ) -> std::result::Result<Self, Self::Error> {
+    fn try_from(parent: Discovery<Http<RequestTarget>>) -> std::result::Result<Self, Self::Error> {
         let profile =
             svc::Param::<Option<profiles::Receiver>>::param(&parent).map(watch::Receiver::from);
         let policy = svc::Param::<Option<policy::Receiver>>::param(&parent);
@@ -360,7 +362,7 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
                 };
 
                 Ok(Http {
-                    version: (*parent).param(),
+                    version: svc::Param::param(&*parent),
                     parent: Logical {
                         addr: addr.into(),
                         routes,
@@ -426,7 +428,7 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
                     (None, None) => http::spawn_routes_default(Remote(ServerAddr(addr))),
                 };
                 Ok(Http {
-                    version: (*parent).param(),
+                    version: svc::Param::param(&*parent),
                     parent: Logical {
                         addr: addr.into(),
                         routes,
@@ -538,7 +540,7 @@ impl<T> std::ops::Deref for Opaq<T> {
     }
 }
 
-impl<T> Param<Remote<ServerAddr>> for Opaq<T>
+impl<T> svc::Param<Remote<ServerAddr>> for Opaq<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
@@ -548,7 +550,7 @@ where
     }
 }
 
-impl<T> Param<opaq::Logical> for Opaq<T>
+impl<T> svc::Param<opaq::Logical> for Opaq<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
@@ -564,6 +566,17 @@ where
         }
 
         opaq::Logical::Forward(self.param(), Default::default())
+    }
+}
+
+// === impl RequestTarget ===
+
+impl From<RequestTarget> for Addr {
+    fn from(tgt: RequestTarget) -> Self {
+        match tgt {
+            RequestTarget::Named(n) => n.into(),
+            RequestTarget::Orig(OrigDstAddr(a)) => a.into(),
+        }
     }
 }
 
