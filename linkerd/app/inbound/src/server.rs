@@ -1,11 +1,14 @@
 use crate::{direct, policy, Inbound};
 use futures::Stream;
 use linkerd_app_core::{
-    dns, io, metrics, profiles, serve, svc,
+    exp_backoff::ExponentialBackoff,
+    io, profiles,
+    proxy::http,
+    serve, svc,
     transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, Result,
 };
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 use tracing::debug_span;
 
 #[derive(Copy, Clone, Debug)]
@@ -16,15 +19,20 @@ struct TcpEndpoint {
 // === impl Inbound ===
 
 impl Inbound<()> {
-    pub fn build_policies(
+    pub fn build_policies<C>(
         &self,
-        dns: dns::Resolver,
-        control_metrics: metrics::ControlHttp,
-    ) -> impl policy::GetPolicy + Clone + Send + Sync + 'static {
-        self.config
-            .policy
-            .clone()
-            .build(dns, control_metrics, self.runtime.identity.new_client())
+        workload: Arc<str>,
+        client: C,
+        backoff: ExponentialBackoff,
+    ) -> impl policy::GetPolicy + Clone + Send + Sync + 'static
+    where
+        C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+        C: Clone + Unpin + Send + Sync + 'static,
+        C::ResponseBody: http::HttpBody<Data = tonic::codegen::Bytes, Error = Error>,
+        C::ResponseBody: Default + Send + 'static,
+        C::Future: Send,
+    {
+        self.config.policy.clone().build(workload, client, backoff)
     }
 
     pub async fn serve<A, I, G, GSvc, P>(
