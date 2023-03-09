@@ -114,12 +114,6 @@ impl Recover<tonic::Status> for GrpcRecover {
             tonic::Code::InvalidArgument | tonic::Code::FailedPrecondition => Err(status),
             // Indicates no policy for this target
             tonic::Code::NotFound => Err(status),
-            // We are talking to an older policy-controller version that doesn't
-            // implement the outbound API.
-            tonic::Code::Unimplemented => {
-                tracing::warn!("Policy controller does not implement outbound API");
-                Err(status)
-            }
             _ => {
                 tracing::trace!(%status, "Recovering");
                 Ok(self.0.stream())
