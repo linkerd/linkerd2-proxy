@@ -1,10 +1,9 @@
 use super::{api::Api, DefaultPolicy, GetPolicy, Protocol, ServerPolicy, Store};
-use linkerd_app_core::{
-    control, dns, identity, metrics,
-    svc::{NewService, ServiceExt},
-    Error,
+use linkerd_app_core::{exp_backoff::ExponentialBackoff, proxy::http, Error};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
 };
-use std::collections::{HashMap, HashSet};
 use tokio::time::Duration;
 
 /// Configures inbound policies.
@@ -15,8 +14,6 @@ use tokio::time::Duration;
 #[allow(clippy::large_enum_variant)]
 pub enum Config {
     Discover {
-        control: control::Config,
-        workload: String,
         default: DefaultPolicy,
         cache_max_idle_age: Duration,
         ports: HashSet<u16>,
@@ -31,12 +28,19 @@ pub enum Config {
 // === impl Config ===
 
 impl Config {
-    pub(crate) fn build(
+    pub(crate) fn build<C>(
         self,
-        dns: dns::Resolver,
-        metrics: metrics::ControlHttp,
-        identity: identity::NewClient,
-    ) -> impl GetPolicy + Clone + Send + Sync + 'static {
+        workload: Arc<str>,
+        client: C,
+        backoff: ExponentialBackoff,
+    ) -> impl GetPolicy + Clone + Send + Sync + 'static
+    where
+        C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+        C: Clone + Unpin + Send + Sync + 'static,
+        C::ResponseBody: http::HttpBody<Data = tonic::codegen::Bytes, Error = Error>,
+        C::ResponseBody: Default + Send + 'static,
+        C::Future: Send,
+    {
         match self {
             Self::Fixed {
                 default,
@@ -45,18 +49,11 @@ impl Config {
             } => Store::spawn_fixed(default, cache_max_idle_age, ports),
 
             Self::Discover {
-                control,
-                ports,
-                workload,
                 default,
+                ports,
                 cache_max_idle_age,
             } => {
                 let watch = {
-                    let backoff = control.connect.backoff;
-                    let client = control
-                        .build(dns, metrics, identity)
-                        .new_service(())
-                        .map_err(Error::from);
                     let detect_timeout = match default {
                         DefaultPolicy::Allow(ServerPolicy {
                             protocol: Protocol::Detect { timeout, .. },
