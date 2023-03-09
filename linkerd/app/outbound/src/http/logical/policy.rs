@@ -22,13 +22,15 @@ pub enum Routes {
     Grpc(GrpcRoutes),
 }
 
-pub type HttpRoutes = RouterRoutes<route::http::MatchRequest, policy::http::Filter>;
-pub type GrpcRoutes = RouterRoutes<route::grpc::MatchRoute, policy::grpc::Filter>;
+pub type HttpRoutes =
+    RouterRoutes<route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>;
+pub type GrpcRoutes =
+    RouterRoutes<route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RouterRoutes<M, F> {
+pub struct RouterRoutes<M, F, E> {
     pub addr: Addr,
-    pub routes: Arc<[route::Route<M, policy::RoutePolicy<F>>]>,
+    pub routes: Arc<[route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
 }
 
@@ -38,30 +40,36 @@ pub(super) enum Params<T: Clone + Debug + Eq + Hash> {
     Grpc(GrpcParams<T>),
 }
 
-pub(super) type HttpParams<T> = RouterParams<T, route::http::MatchRequest, policy::http::Filter>;
-pub(super) type GrpcParams<T> = RouterParams<T, route::grpc::MatchRoute, policy::grpc::Filter>;
+pub(super) type HttpParams<T> =
+    RouterParams<T, route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>;
+pub(super) type GrpcParams<T> =
+    RouterParams<T, route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct RouterParams<T: Clone + Debug + Eq + Hash, M, F> {
+pub(super) struct RouterParams<T, M, F, E>
+where
+    T: Clone + Debug + Eq + Hash,
+{
     parent: T,
     addr: Addr,
-    routes: Arc<[route::Route<M, RouteParams<T, F>>]>,
+    routes: Arc<[route::Route<M, RouteParams<T, F, E>>]>,
     backends: distribute::Backends<Concrete<T>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(super) struct MatchedRouteParams<T, M, F> {
+pub(super) struct MatchedRouteParams<T, M, F, E> {
     r#match: route::RouteMatch<M>,
-    params: RouteParams<T, F>,
+    params: RouteParams<T, F, E>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(super) struct RouteParams<T, F> {
+pub(super) struct RouteParams<T, F, E> {
     parent: T,
     addr: Addr,
     meta: Arc<policy::Meta>,
     filters: Arc<[F]>,
     distribution: Distribution<T>,
+    failure_sensor: E,
 }
 
 // === impl Routes ===
@@ -152,7 +160,7 @@ where
 
 // === impl RouterParams ===
 
-impl<T, M, F> RouterParams<T, M, F>
+impl<T, M, F, E> RouterParams<T, M, F, E>
 where
     // Parent target type.
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
@@ -163,10 +171,12 @@ where
     // Request filter.
     F: Eq + Hash,
     F: Clone + Send + Sync + 'static,
+    // Failure sensor.
+    E: Clone + Debug + Eq + Hash + Send + Sync + 'static,
     // Assert that we can route for the given match and filter types.
     Self: svc::router::SelectRoute<
         http::Request<http::BoxBody>,
-        Key = MatchedRouteParams<T, M::Summary, F>,
+        Key = MatchedRouteParams<T, M::Summary, F, E>,
         Error = NoRoute,
     >,
 {
@@ -213,13 +223,14 @@ where
     }
 }
 
-impl<T, M, F> From<(RouterRoutes<M, F>, T)> for RouterParams<T, M, F>
+impl<T, M, F, E> From<(RouterRoutes<M, F, E>, T)> for RouterParams<T, M, F, E>
 where
     T: Eq + Hash + Clone + Debug,
     M: Clone,
     F: Clone,
+    E: Clone + Default,
 {
-    fn from((rts, parent): (RouterRoutes<M, F>, T)) -> Self {
+    fn from((rts, parent): (RouterRoutes<M, F, E>, T)) -> Self {
         let RouterRoutes {
             addr,
             routes,
@@ -264,16 +275,18 @@ where
             .expect("distribution must be valid"),
         };
 
-        let mk_policy = |policy::RoutePolicy::<F> {
+        let mk_policy = |policy::RoutePolicy::<F, E> {
                              meta,
                              filters,
                              distribution,
+                             failure_sensor,
                          }| RouteParams {
             addr: addr.clone(),
             parent: parent.clone(),
             meta,
             filters,
             distribution: mk_distribution(&distribution),
+            failure_sensor,
         };
 
         let routes = routes
@@ -307,11 +320,16 @@ where
 }
 
 impl<B, T> svc::router::SelectRoute<http::Request<B>>
-    for RouterParams<T, route::http::MatchRequest, policy::http::Filter>
+    for RouterParams<T, route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    type Key = MatchedRouteParams<T, route::http::r#match::RequestMatch, policy::http::Filter>;
+    type Key = MatchedRouteParams<
+        T,
+        route::http::r#match::RequestMatch,
+        policy::http::Filter,
+        policy::http::StatusRanges,
+    >;
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
@@ -325,11 +343,16 @@ where
 }
 
 impl<T, B> svc::router::SelectRoute<http::Request<B>>
-    for RouterParams<T, route::grpc::MatchRoute, policy::grpc::Filter>
+    for RouterParams<T, route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    type Key = MatchedRouteParams<T, route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
+    type Key = MatchedRouteParams<
+        T,
+        route::grpc::r#match::RouteMatch,
+        policy::grpc::Filter,
+        policy::grpc::Codes,
+    >;
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
@@ -341,7 +364,7 @@ where
     }
 }
 
-impl<T, M, F> svc::Param<super::LogicalAddr> for RouterParams<T, M, F>
+impl<T, M, F, E> svc::Param<super::LogicalAddr> for RouterParams<T, M, F, E>
 where
     T: Eq + Hash + Clone + Debug,
 {
@@ -350,7 +373,7 @@ where
     }
 }
 
-impl<T, M, F> svc::Param<distribute::Backends<Concrete<T>>> for RouterParams<T, M, F>
+impl<T, M, F, E> svc::Param<distribute::Backends<Concrete<T>>> for RouterParams<T, M, F, E>
 where
     T: Eq + Hash + Clone + Debug,
 {
@@ -361,7 +384,7 @@ where
 
 // === impl MatchedRouteParams ===
 
-impl<T, M, F> MatchedRouteParams<T, M, F>
+impl<T, M, F, E> MatchedRouteParams<T, M, F, E>
 where
     // Parent target.
     T: Clone + Send + Sync + 'static,
@@ -369,6 +392,8 @@ where
     M: Clone + Send + Sync + 'static,
     // Request filter.
     F: Clone + Send + Sync + 'static,
+    // Failure sensor.
+    E: Clone + Send + Sync + 'static,
 {
     fn layer<N, S>() -> impl svc::Layer<
         N,
@@ -409,7 +434,7 @@ where
     }
 }
 
-impl<T: Clone, M, F> svc::Param<Distribution<T>> for MatchedRouteParams<T, M, F> {
+impl<T: Clone, M, F, E> svc::Param<Distribution<T>> for MatchedRouteParams<T, M, F, E> {
     fn param(&self) -> Distribution<T> {
         self.params.distribution.clone()
     }

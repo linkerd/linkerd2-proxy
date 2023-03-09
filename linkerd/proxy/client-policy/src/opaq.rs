@@ -5,10 +5,20 @@ pub struct Opaque {
     pub policy: Option<Policy>,
 }
 
-pub type Policy = RoutePolicy<Filter>;
+pub type Policy = RoutePolicy<Filter, Errors>;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Errors;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Filter {}
+
+impl Errors {
+    pub fn contains(&self, e: &(dyn std::error::Error + 'static)) -> bool {
+        // Naively assume that all non-I/O errors are failures.
+        !linkerd_error::is_caused_by::<std::io::Error>(e)
+    }
+}
 
 #[cfg(feature = "proto")]
 pub(crate) mod proto {

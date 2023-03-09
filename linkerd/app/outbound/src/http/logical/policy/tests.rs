@@ -55,11 +55,19 @@ async fn header_based_route() {
                             )],
                             ..Default::default()
                         }],
-                        policy: mk_policy("special", special.clone()),
+                        policy: mk_policy(
+                            "special",
+                            special.clone(),
+                            policy::http::StatusRanges::default(),
+                        ),
                     },
                     policy::http::Rule {
                         matches: vec![route::http::MatchRequest::default()],
-                        policy: mk_policy("default", default.clone()),
+                        policy: mk_policy(
+                            "default",
+                            default.clone(),
+                            policy::http::StatusRanges::default(),
+                        ),
                     },
                 ],
             }]),
@@ -102,9 +110,14 @@ async fn header_based_route() {
     drop(router);
 }
 
-fn mk_policy<F>(name: &'static str, backend: policy::Backend) -> policy::RoutePolicy<F> {
+fn mk_policy<F, E>(
+    name: &'static str,
+    backend: policy::Backend,
+    failure_sensor: E,
+) -> policy::RoutePolicy<F, E> {
     policy::RoutePolicy {
         meta: policy::Meta::new_default(name),
+        failure_sensor,
         filters: Arc::new([]),
         distribution: policy::RouteDistribution::FirstAvailable(Arc::new([policy::RouteBackend {
             filters: Arc::new([]),
