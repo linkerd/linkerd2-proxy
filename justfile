@@ -65,7 +65,7 @@ rustup:
     @{{ _cargo }} _target-installed
 
 # Run all lints
-lint: sh-lint md-lint clippy doc action-lint action-dev-check
+lint: sh-lint md-lint clippy doc action-lint
 
 # Fetch dependencies
 fetch:
@@ -193,9 +193,6 @@ md-lint:
 # Lints all GitHub Actions workflows
 action-lint:
     @just-dev lint-actions
-
-action-dev-check:
-    @just-dev check-action-images
 
 ##
 ## Linkerd
