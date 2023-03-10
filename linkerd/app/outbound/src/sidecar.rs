@@ -1,5 +1,5 @@
 use crate::{
-    http, opaq, policy,
+    discover, http, opaq, policy,
     protocol::{self, Protocol},
     Discovery, Outbound,
 };
@@ -51,22 +51,11 @@ impl Outbound<()> {
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        let discover = svc::mk(move |OrigDstAddr(addr)| {
-            let profile = profiles
-                .clone()
-                .get_profile(profiles::LookupAddr(addr.into()));
-            let policy = policies.get_policy(addr.into());
-            Box::pin(async move {
-                let (profile, policy) = tokio::join!(profile, policy);
-                // TODO(eliza): we already recover on errors elsewhere in the
-                // stack...this is kinda unfortunate...
-                let profile = profile.unwrap_or_else(|error| {
-                    tracing::warn!(%error, "Failed to resolve profile");
-                    None
-                });
-                Ok((profile, policy?))
-            })
-        });
+        let discover = {
+            let detect_timeout = self.config.proxy.detect_protocol_timeout;
+            svc::stack(discover::resolver(profiles, policies, detect_timeout))
+                .push_map_target(|OrigDstAddr(addr): OrigDstAddr| addr.into())
+        };
 
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
 

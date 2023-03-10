@@ -12,7 +12,6 @@ proto = [
     "linkerd2-proxy-api",
     "prost-types",
     "thiserror",
-    "once_cell",
 ]
 
 [dependencies]
@@ -27,7 +26,7 @@ linkerd-error = { path = "../../error" }
 linkerd-http-route = { path = "../../http-route" }
 linkerd-proxy-api-resolve = { path = "../api-resolve" }
 linkerd-proxy-core = { path = "../core" }
-once_cell = { version = "1", optional = true }
+once_cell = { version = "1" }
 prost-types = { version = "0.11", optional = true }
 thiserror = { version = "1", optional = true }
 

@@ -1,11 +1,13 @@
 use crate::{policy, Outbound};
-use linkerd_app_core::{profiles, svc, Error};
+use linkerd_app_core::{profiles, svc, Addr, Error};
 use std::{
     fmt::Debug,
     hash::{Hash, Hasher},
     ops::Deref,
+    time::Duration,
 };
 use tokio::sync::watch;
+
 #[cfg(test)]
 mod tests;
 
@@ -50,6 +52,93 @@ impl<N> Outbound<N> {
                 .push(svc::ArcNewService::layer())
         })
     }
+}
+
+pub(crate) fn resolver(
+    profiles: impl profiles::GetProfile<Error = Error>,
+    policies: impl policy::GetPolicy,
+    detect_timeout: Duration,
+) -> impl svc::Service<
+    Addr,
+    Error = Error,
+    Response = (Option<profiles::Receiver>, policy::Receiver),
+    Future = impl Send,
+> + Clone
+       + Send
+       + Sync
+       + 'static {
+    svc::mk(move |addr: Addr| {
+        let profile = profiles
+            .clone()
+            .get_profile(profiles::LookupAddr(addr.clone()));
+        let policy = policies.get_policy(addr);
+        Box::pin(async move {
+            let (profile, policy) = tokio::join!(profile, policy);
+            let profile = profile.unwrap_or_else(|error| {
+                tracing::warn!(%error, "Error resolving ServiceProfile");
+                None
+            });
+
+            let policy_error = match policy {
+                Ok(policy) => return Ok((profile, policy)),
+                Err(error) => error,
+            };
+
+            // Was the policy resolution error a gRPC `NotFound` response?
+            let policy_not_found = policy_error
+                .downcast_ref::<tonic::Status>()
+                .map(|status| status.code() == tonic::Code::NotFound)
+                .unwrap_or(false);
+            if policy_not_found {
+                if let Some(profile) = profile {
+                    // If the profile is a simple endpoint forward, synthesize a
+                    // client policy based on the profile.
+                    if let Some((addr, meta)) = profile.endpoint() {
+                        tracing::debug!("Policy not found; synthesizing policy from profile...");
+                        // TODO(eliza): take the configured default detect
+                        // timeout here...
+                        let policy = policy::ClientPolicy::forward(detect_timeout, addr, meta);
+                        let (tx, policy_rx) = watch::channel(policy);
+                        let mut profile_rx = watch::Receiver::from(profile);
+                        tokio::spawn(async move {
+                            loop {
+                                if profile_rx.changed().await.is_err() {
+                                    tracing::debug!("Profile watch closed, terminating");
+                                    return;
+                                }
+
+                                if let Some((addr, meta)) =
+                                    profile_rx.borrow_and_update().endpoint.clone()
+                                {
+                                    tracing::debug!(
+                                        "Profile updated; synthesizing policy from profile..."
+                                    );
+                                    let policy =
+                                        policy::ClientPolicy::forward(detect_timeout, addr, meta);
+                                    if tx.send(policy).is_err() {
+                                        tracing::debug!("Policy receiver dropped, terminating");
+                                        return;
+                                    }
+                                } else {
+                                    // The profile is no longer an endpoint
+                                    // forward. Should we still try to
+                                    // synthesize a policy from it?
+                                    tracing::debug!(
+                                        "Profile is no longer an endpoint forward, giving up..."
+                                    );
+                                    return;
+                                }
+                            }
+                        });
+                        return Ok((None, policy_rx));
+                    }
+                }
+            }
+
+            // Otherwise, errors resolving the policy are considered fatal.
+            Err(policy_error)
+        })
+    })
 }
 
 // === impl Discovery ===
