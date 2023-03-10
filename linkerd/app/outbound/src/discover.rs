@@ -106,7 +106,7 @@ pub(crate) fn resolver(
                             policy::BackendDispatcher::Forward(addr, meta)
                         } else if let Some(profiles::LogicalAddr(ref addr)) = profile.addr {
                             policy::BackendDispatcher::BalanceP2c(
-                                ewma.clone(),
+                                ewma,
                                 policy::EndpointDiscovery::DestinationGet {
                                     path: addr.to_string(),
                                 },
