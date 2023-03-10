@@ -398,7 +398,7 @@ mod http2 {
             .route("/bye", "bye")
             .run()
             .await;
-        let srv1_auth = default_dst_name(&srv1);
+        let srv1_addr = srv1.addr;
 
         let ctrl = controller::new();
 
@@ -424,7 +424,7 @@ mod http2 {
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("authority", srv1_auth)
+            .label("target_addr", srv1_addr.to_string())
             .value(1u64)
             .assert_in(&metrics)
             .await;

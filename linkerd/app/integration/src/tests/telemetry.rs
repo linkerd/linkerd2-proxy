@@ -91,7 +91,7 @@ impl Fixture {
         let tcp_labels = metrics::labels()
             .label("direction", "outbound")
             .label("target_addr", orig_dst);
-        let labels = tcp_labels.clone().label("authority", authority);
+        let labels = tcp_labels.clone();
         let tcp_src_labels = tcp_labels.clone().label("peer", "src");
         let tcp_dst_labels = tcp_labels.label("peer", "dst");
         Fixture {
@@ -539,7 +539,7 @@ mod outbound_dst_labels {
         let tcp_labels = metrics::labels()
             .label("direction", "outbound")
             .label("target_addr", addr);
-        let labels = tcp_labels.clone().label("authority", dest_and_port);
+        let labels = tcp_labels.clone();
         let f = Fixture {
             client,
             metrics,
