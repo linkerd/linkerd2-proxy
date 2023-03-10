@@ -60,13 +60,7 @@ impl Outbound<()> {
                 capacity: queue.capacity,
                 failfast_timeout: queue.failfast_timeout,
             };
-            svc::stack(discover::resolver(
-                profiles,
-                policies,
-                default_queue,
-                detect_timeout,
-            ))
-            .push_map_target(|OrigDstAddr(addr): OrigDstAddr| addr.into())
+            discover::resolver(profiles, policies, default_queue, detect_timeout)
         };
 
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());

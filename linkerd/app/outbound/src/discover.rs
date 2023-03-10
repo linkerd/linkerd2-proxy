@@ -1,5 +1,5 @@
 use crate::{policy, Outbound};
-use linkerd_app_core::{profiles, svc, Addr, Error};
+use linkerd_app_core::{profiles, svc, transport::OrigDstAddr, Error};
 use std::{
     fmt::Debug,
     hash::{Hash, Hasher},
@@ -60,7 +60,7 @@ pub(crate) fn resolver(
     default_queue: policy::Queue,
     detect_timeout: Duration,
 ) -> impl svc::Service<
-    Addr,
+    OrigDstAddr,
     Error = Error,
     Response = (Option<profiles::Receiver>, policy::Receiver),
     Future = impl Send,
@@ -68,11 +68,11 @@ pub(crate) fn resolver(
        + Send
        + Sync
        + 'static {
-    svc::mk(move |addr: Addr| {
+    svc::mk(move |addr: OrigDstAddr| {
         let profile = profiles
             .clone()
-            .get_profile(profiles::LookupAddr(addr.clone()));
-        let policy = policies.get_policy(addr);
+            .get_profile(profiles::LookupAddr(addr.0.into()));
+        let policy = policies.get_policy(addr.0.into());
         Box::pin(async move {
             let (profile, policy) = tokio::join!(profile, policy);
             let profile = profile.unwrap_or_else(|error| {
@@ -92,13 +92,15 @@ pub(crate) fn resolver(
                 .unwrap_or(false);
             if policy_not_found {
                 if let Some(profile) = profile {
-                    tracing::debug!("Policy not found; synthesizing policy from profile...");
                     let mut profile_rx = watch::Receiver::from(profile.clone());
                     let policy = policy::from_profile(
                         detect_timeout,
                         default_queue,
                         &*profile_rx.borrow_and_update(),
+                        addr,
                     );
+
+                    tracing::debug!("Policy not found; synthesizing policy from profile...");
                     let (tx, policy_rx) = watch::channel(policy);
                     tokio::spawn(async move {
                         loop {
@@ -109,8 +111,12 @@ pub(crate) fn resolver(
 
                             let profile = profile_rx.borrow_and_update();
                             tracing::debug!("Profile updated; synthesizing policy from profile...");
-                            let policy =
-                                policy::from_profile(detect_timeout, default_queue, &*profile);
+                            let policy = policy::from_profile(
+                                detect_timeout,
+                                default_queue,
+                                &*profile,
+                                addr,
+                            );
                             if tx.send(policy).is_err() {
                                 tracing::debug!("Policy watch closed, terminating");
                                 return;

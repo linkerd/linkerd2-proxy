@@ -1,6 +1,7 @@
 use linkerd_app_core::{
     profiles,
     svc::{self, ServiceExt},
+    transport::OrigDstAddr,
     Addr, Error,
 };
 pub use linkerd_proxy_client_policy::*;
@@ -40,17 +41,11 @@ pub(crate) fn from_profile(
     detect_timeout: std::time::Duration,
     queue: Queue,
     profile: &profiles::Profile,
+    orig_dst: OrigDstAddr,
 ) -> ClientPolicy {
     let dispatcher = if let Some((addr, meta)) = profile.endpoint.clone() {
         BackendDispatcher::Forward(addr, meta)
-    } else {
-        // hahaha ew
-        let addr = profile
-            .addr
-            .clone()
-            .expect("if a profile has no endpoint, it should have a logicaladdr")
-            .0;
-        // XXX(eliza): what do if its not a nameaddr...
+    } else if let Some(profiles::LogicalAddr(ref addr)) = profile.addr {
         let ewma = Load::PeakEwma(PeakEwma {
             default_rtt: crate::http::logical::profile::DEFAULT_EWMA.default_rtt,
             decay: crate::http::logical::profile::DEFAULT_EWMA.decay,
@@ -61,6 +56,8 @@ pub(crate) fn from_profile(
                 path: addr.to_string(),
             },
         )
+    } else {
+        BackendDispatcher::Forward(orig_dst.0, Default::default())
     };
     ClientPolicy::from_backend(detect_timeout, queue, dispatcher)
 }
