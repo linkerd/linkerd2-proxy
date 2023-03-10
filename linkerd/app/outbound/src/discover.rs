@@ -57,6 +57,7 @@ impl<N> Outbound<N> {
 pub(crate) fn resolver(
     profiles: impl profiles::GetProfile<Error = Error>,
     policies: impl policy::GetPolicy,
+    default_queue: policy::Queue,
     detect_timeout: Duration,
 ) -> impl svc::Service<
     Addr,
@@ -91,47 +92,32 @@ pub(crate) fn resolver(
                 .unwrap_or(false);
             if policy_not_found {
                 if let Some(profile) = profile {
-                    // If the profile is a simple endpoint forward, synthesize a
-                    // client policy based on the profile.
-                    if let Some((addr, meta)) = profile.endpoint() {
-                        tracing::debug!("Policy not found; synthesizing policy from profile...");
-                        // TODO(eliza): take the configured default detect
-                        // timeout here...
-                        let policy = policy::ClientPolicy::forward(detect_timeout, addr, meta);
-                        let (tx, policy_rx) = watch::channel(policy);
-                        let mut profile_rx = watch::Receiver::from(profile);
-                        tokio::spawn(async move {
-                            loop {
-                                if profile_rx.changed().await.is_err() {
-                                    tracing::debug!("Profile watch closed, terminating");
-                                    return;
-                                }
-
-                                if let Some((addr, meta)) =
-                                    profile_rx.borrow_and_update().endpoint.clone()
-                                {
-                                    tracing::debug!(
-                                        "Profile updated; synthesizing policy from profile..."
-                                    );
-                                    let policy =
-                                        policy::ClientPolicy::forward(detect_timeout, addr, meta);
-                                    if tx.send(policy).is_err() {
-                                        tracing::debug!("Policy receiver dropped, terminating");
-                                        return;
-                                    }
-                                } else {
-                                    // The profile is no longer an endpoint
-                                    // forward. Should we still try to
-                                    // synthesize a policy from it?
-                                    tracing::debug!(
-                                        "Profile is no longer an endpoint forward, giving up..."
-                                    );
-                                    return;
-                                }
+                    tracing::debug!("Policy not found; synthesizing policy from profile...");
+                    let mut profile_rx = watch::Receiver::from(profile.clone());
+                    let policy = policy::from_profile(
+                        detect_timeout,
+                        default_queue,
+                        &*profile_rx.borrow_and_update(),
+                    );
+                    let (tx, policy_rx) = watch::channel(policy);
+                    tokio::spawn(async move {
+                        loop {
+                            if profile_rx.changed().await.is_err() {
+                                tracing::debug!("Profile watch closed, terminating");
+                                return;
                             }
-                        });
-                        return Ok((None, policy_rx));
-                    }
+
+                            let profile = profile_rx.borrow_and_update();
+                            tracing::debug!("Profile updated; synthesizing policy from profile...");
+                            let policy =
+                                policy::from_profile(detect_timeout, default_queue, &*profile);
+                            if tx.send(policy).is_err() {
+                                tracing::debug!("Policy watch closed, terminating");
+                                return;
+                            }
+                        }
+                    });
+                    return Ok((Some(profile), policy_rx));
                 }
             }
 

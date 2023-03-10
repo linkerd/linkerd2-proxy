@@ -163,26 +163,22 @@ impl ClientPolicy {
         }
     }
 
-    pub fn forward(
-        timeout: time::Duration,
-        addr: SocketAddr,
-        endpoint_meta: EndpointMetadata,
+    pub fn from_backend(
+        timeout: std::time::Duration,
+        queue: Queue,
+        dispatcher: BackendDispatcher,
     ) -> Self {
         static META: Lazy<Arc<Meta>> = Lazy::new(|| {
             Arc::new(Meta::Default {
-                name: "forward".into(),
+                name: "synthesized".into(),
             })
         });
         static NO_HTTP_FILTERS: Lazy<Arc<[http::Filter]>> = Lazy::new(|| Arc::new([]));
         static NO_OPAQ_FILTERS: Lazy<Arc<[opaq::Filter]>> = Lazy::new(|| Arc::new([]));
-
         let backend = Backend {
             meta: META.clone(),
-            queue: Queue {
-                capacity: 100,
-                failfast_timeout: time::Duration::from_secs(1),
-            },
-            dispatcher: BackendDispatcher::Forward(addr, endpoint_meta),
+            queue,
+            dispatcher,
         };
         let routes = Arc::new([http::Route {
             hosts: vec![],

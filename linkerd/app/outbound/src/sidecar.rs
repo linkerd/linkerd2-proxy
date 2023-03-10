@@ -53,8 +53,20 @@ impl Outbound<()> {
     {
         let discover = {
             let detect_timeout = self.config.proxy.detect_protocol_timeout;
-            svc::stack(discover::resolver(profiles, policies, detect_timeout))
-                .push_map_target(|OrigDstAddr(addr): OrigDstAddr| addr.into())
+
+            // TODO(eliza): opaque should have a different queue config...
+            let queue = self.config.http_request_queue;
+            let default_queue = policy::Queue {
+                capacity: queue.capacity,
+                failfast_timeout: queue.failfast_timeout,
+            };
+            svc::stack(discover::resolver(
+                profiles,
+                policies,
+                default_queue,
+                detect_timeout,
+            ))
+            .push_map_target(|OrigDstAddr(addr): OrigDstAddr| addr.into())
         };
 
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
