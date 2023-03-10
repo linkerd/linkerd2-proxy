@@ -1,7 +1,7 @@
 use crate::{
-    discover, http, opaq, policy,
+    http, opaq, policy,
     protocol::{self, Protocol},
-    Outbound,
+    Discovery, Outbound,
 };
 use linkerd_app_core::{
     io, profiles,
@@ -32,9 +32,6 @@ struct HttpSidecar {
     routes: watch::Receiver<http::Routes>,
 }
 
-#[derive(Clone, Debug)]
-struct Target<T>(T);
-
 // === impl Outbound ===
 
 impl Outbound<()> {
@@ -54,11 +51,11 @@ impl Outbound<()> {
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        let discover = svc::mk(move |addr: discover::TargetAddr| {
+        let discover = svc::mk(move |OrigDstAddr(addr)| {
             let profile = profiles
                 .clone()
-                .get_profile(profiles::LookupAddr(addr.clone().0));
-            let policy = policies.get_policy(addr);
+                .get_profile(profiles::LookupAddr(addr.into()));
+            let policy = policies.get_policy(addr.into());
             Box::pin(async move {
                 let (profile, policy) = tokio::join!(profile, policy);
                 // TODO(eliza): we already recover on errors elsewhere in the
@@ -198,8 +195,6 @@ impl Outbound<()> {
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
             // Access cached discovery information.
             .push_discover(discover)
-            // This target type adds a `Param<discover::TargetAddr>` impl.
-            .map_stack(move |_, _, stk| stk.push_map_target(Target))
             // Instrument server-side connections for telemetry.
             .push_tcp_instrument(|t: &T| {
                 let addr: OrigDstAddr = t.param();
@@ -211,11 +206,11 @@ impl Outbound<()> {
 
 // === impl Sidecar ===
 
-impl<T> From<discover::Discovery<T>> for Sidecar
+impl<T> From<Discovery<T>> for Sidecar
 where
     T: svc::Param<OrigDstAddr>,
 {
-    fn from(parent: discover::Discovery<T>) -> Self {
+    fn from(parent: Discovery<T>) -> Self {
         use svc::Param;
         Self {
             policy: parent.param(),
@@ -339,26 +334,5 @@ impl std::hash::Hash for HttpSidecar {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.orig_dst.hash(state);
         self.version.hash(state);
-    }
-}
-
-// === impl Target ===
-
-impl<T> svc::Param<OrigDstAddr> for Target<T>
-where
-    T: svc::Param<OrigDstAddr>,
-{
-    fn param(&self) -> OrigDstAddr {
-        self.0.param()
-    }
-}
-
-impl<T> svc::Param<discover::TargetAddr> for Target<T>
-where
-    T: svc::Param<OrigDstAddr>,
-{
-    fn param(&self) -> discover::TargetAddr {
-        let OrigDstAddr(addr) = self.0.param();
-        discover::TargetAddr(addr.into())
     }
 }

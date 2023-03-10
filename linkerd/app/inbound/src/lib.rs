@@ -70,6 +70,7 @@ struct Runtime {
     drain: drain::Watch,
 }
 
+/// Indicates the name to be used to route gateway connections.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GatewayAddr(pub NameAddr);
 

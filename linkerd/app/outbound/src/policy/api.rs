@@ -1,4 +1,3 @@
-use crate::discover;
 use futures::prelude::*;
 use linkerd2_proxy_api::outbound::{
     self as api, outbound_policies_client::OutboundPoliciesClient as Client,
@@ -47,7 +46,7 @@ where
     }
 }
 
-impl<S> Service<discover::TargetAddr> for Api<S>
+impl<S> Service<Addr> for Api<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
     S: Clone + Send + Sync + 'static,
@@ -67,7 +66,7 @@ where
         std::task::Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, discover::TargetAddr(addr): discover::TargetAddr) -> Self::Future {
+    fn call(&mut self, addr: Addr) -> Self::Future {
         let req = {
             let target = match addr {
                 Addr::Name(ref name) => api::traffic_spec::Target::Authority(name.to_string()),

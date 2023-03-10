@@ -19,7 +19,7 @@ use linkerd_app_core::{
         tap,
     },
     serve,
-    svc::{self, stack::Param},
+    svc::{self, ServiceExt},
     tls,
     transport::addrs::*,
     AddrMatch, Error, ProxyRuntime, Result,
@@ -32,7 +32,7 @@ use std::{
     time::Duration,
 };
 
-pub mod discover;
+mod discover;
 pub mod http;
 mod ingress;
 mod metrics;
@@ -128,7 +128,6 @@ impl Outbound<()> {
         C::ResponseBody: Default + Send + 'static,
         C::Future: Send,
     {
-        use tower::ServiceExt;
         policy::Api::new(workload, Duration::from_secs(10), client)
             .into_watch(backoff)
             .map_result(|response| match response {
@@ -210,8 +209,8 @@ impl Outbound<()> {
         resolve: R,
     ) where
         // Target describing a server-side connection.
-        T: Param<Remote<ClientAddr>>,
-        T: Param<OrigDstAddr>,
+        T: svc::Param<Remote<ClientAddr>>,
+        T: svc::Param<OrigDstAddr>,
         T: Clone + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
