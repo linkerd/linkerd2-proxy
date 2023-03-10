@@ -15,6 +15,12 @@
 			"settings": {}
 		}
 	},
+	"build": {
+		"args": {
+			"http_proxy": "${localEnv:http_proxy}",
+			"https_proxy": "${localEnv:https_proxy}"
+		}
+	},
 	// Support docker + debugger
 	"runArgs": [
 		"--init",
