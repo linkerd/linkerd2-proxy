@@ -1,7 +1,6 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use linkerd_addr::Addr;
 use once_cell::sync::Lazy;
 use std::{borrow::Cow, hash::Hash, net::SocketAddr, sync::Arc, time};
 
@@ -11,10 +10,6 @@ pub mod opaq;
 
 pub use linkerd_http_route as route;
 pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
-
-/// A target address for outbound policy discovery.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TargetAddr(pub Addr);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {

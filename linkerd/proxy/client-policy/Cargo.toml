@@ -21,7 +21,6 @@ http = "0.2"
 linkerd2-proxy-api = { version = "0.8", optional = true, features = [
     "outbound",
 ] }
-linkerd-addr = { path = "../../addr" }
 linkerd-error = { path = "../../error" }
 linkerd-http-route = { path = "../../http-route" }
 linkerd-proxy-api-resolve = { path = "../api-resolve" }

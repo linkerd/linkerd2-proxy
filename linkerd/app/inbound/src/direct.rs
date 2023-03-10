@@ -449,12 +449,6 @@ impl Param<profiles::LookupAddr> for GatewayTransportHeader {
     }
 }
 
-impl Param<linkerd_proxy_client_policy::TargetAddr> for GatewayTransportHeader {
-    fn param(&self) -> linkerd_proxy_client_policy::TargetAddr {
-        linkerd_proxy_client_policy::TargetAddr(self.target.clone().into())
-    }
-}
-
 // === impl RefusedNoHeader ===
 
 impl From<RefusedNoHeader> for Error {
