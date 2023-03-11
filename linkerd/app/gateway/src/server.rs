@@ -1,7 +1,7 @@
 use crate::Gateway;
 use linkerd_app_core::{
-    io, profiles, proxy::http, svc, tls, transport::addrs::*, transport_header::SessionProtocol,
-    Addr, Error,
+    errors, io, profiles, proxy::http, svc, tls, transport::addrs::*,
+    transport_header::SessionProtocol, Addr, Error,
 };
 use linkerd_app_inbound::{self as inbound, GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_outbound::{self as outbound};
@@ -82,7 +82,23 @@ impl Gateway {
             svc::mk(move |GatewayAddr(addr)| {
                 let profile = profiles.get_profile(profiles::LookupAddr(addr.into()));
                 let policy = policies.get_policy(addr.into());
-                Box::pin(async move { tokio::join!(profile, policy) })
+                Box::pin(async move {
+                    let (profile, policy) = tokio::join!(profile, policy);
+                    let policy = match policy {
+                        Ok(policy) => policy,
+                        // If the policy controller returned `NotFound`,
+                        // indicating that it doesn't have a policy for this
+                        // addr, then we can't gateway this address.
+                        Err(e) if is_not_found(&e) => return Err(GatewayDomainInvalid.into()),
+                        Err(e) => return Err(e),
+                    };
+                    let profile = profile.unwrap_or_else(|error| {
+                        tracing::warn!(%error, "Error resolving ServiceProfile");
+                        None
+                    });
+
+                    Ok((profile, policy))
+                })
             })
         };
 
@@ -265,4 +281,11 @@ where
     fn param(&self) -> inbound::policy::ServerLabel {
         (***self).param().server_label()
     }
+}
+
+#[inline]
+fn is_not_found(e: &Error) -> bool {
+    errors::cause_ref::<tonic::Status>(e.as_ref())
+        .map(|s| s.code() == tonic::Code::NotFound)
+        .unwrap_or(false)
 }
