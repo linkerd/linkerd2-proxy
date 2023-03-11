@@ -193,19 +193,17 @@ impl From<protocol::Http<Sidecar>> for HttpSidecar {
                 }
             };
             if let Some(addr) = addr {
-                if profile.borrow().has_routes_or_targets() {
-                    tracing::debug!("Using ServiceProfile");
-                    let init = Self::mk_profile_routes(addr.clone(), &*profile.borrow_and_update());
-                    let routes =
-                        http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
-                            Some(Self::mk_profile_routes(addr.clone(), profile))
-                        });
-                    return HttpSidecar {
-                        orig_dst,
-                        version,
-                        routes,
-                    };
-                }
+                tracing::debug!("Using ServiceProfile");
+                let init = Self::mk_profile_routes(addr.clone(), &*profile.borrow_and_update());
+                let routes =
+                    http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
+                        Some(Self::mk_profile_routes(addr.clone(), profile))
+                    });
+                return HttpSidecar {
+                    orig_dst,
+                    version,
+                    routes,
+                };
             }
         }
 
