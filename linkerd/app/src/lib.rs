@@ -177,6 +177,12 @@ impl Config {
             policies.backoff,
         );
 
+        let outbound_policies = outbound.build_policies(
+            policies.workload.clone(),
+            policies.client.clone(),
+            policies.backoff,
+        );
+
         let admin = {
             let identity = identity.receiver().server();
             let metrics = inbound.metrics();
@@ -200,8 +206,11 @@ impl Config {
         };
 
         let dst_addr = dst.addr.clone();
-        let gateway = gateway::Gateway::new(gateway, inbound.clone(), outbound.clone())
-            .stack(dst.resolve.clone(), dst.profiles.clone());
+        let gateway = gateway::Gateway::new(gateway, inbound.clone(), outbound.clone()).stack(
+            dst.resolve.clone(),
+            dst.profiles.clone(),
+            outbound_policies.clone(),
+        );
 
         // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
         // stacks until the proxy starts running.
@@ -219,13 +228,6 @@ impl Config {
             let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
             let resolve = dst.resolve;
-
-            let outbound_policies = outbound.build_policies(
-                policies.workload.clone(),
-                policies.client.clone(),
-                policies.backoff,
-            );
-
             Box::pin(async move {
                 Self::await_identity(identity_ready).await;
 

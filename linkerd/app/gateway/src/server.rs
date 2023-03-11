@@ -80,7 +80,9 @@ impl Gateway {
             let allowlist = self.config.allow_discovery.clone().into();
             let mut profiles = profiles::WithAllowlist::new(profiles, allowlist);
             svc::mk(move |GatewayAddr(addr)| {
-                let profile = profiles.get_profile(profiles::LookupAddr(addr.into()));
+                let profile = profiles.get_profile(profiles::LookupAddr(addr.clone().into()));
+                // TODO(eliza): we should probably also add the allowlist to
+                // policy resolution...
                 let policy = policies.get_policy(addr.into());
                 Box::pin(async move {
                     let (profile, policy) = tokio::join!(profile, policy);
@@ -97,7 +99,7 @@ impl Gateway {
                         None
                     });
 
-                    Ok((profile, policy))
+                    Ok::<_, Box<dyn std::error::Error + Send + Sync + 'static>>((profile, policy))
                 })
             })
         };
