@@ -142,8 +142,7 @@ fn spawn_synthesized_profile_policy(
             .endpoint
             .clone()
             .unwrap_or_else(|| (orig_dst, Default::default()));
-        let forward = policy::BackendDispatcher::Forward(addr, meta);
-        synthesize_forward_policy(detect_timeout, queue, forward)
+        synthesize_forward_policy(detect_timeout, queue, addr, meta)
     };
 
     let policy = mk(&*profile.borrow_and_update());
@@ -172,8 +171,7 @@ fn spawn_synthesized_origdst_policy(
     queue: policy::Queue,
     detect_timeout: Duration,
 ) -> watch::Receiver<policy::ClientPolicy> {
-    let forward = policy::BackendDispatcher::Forward(orig_dst, Default::default());
-    let policy = synthesize_forward_policy(detect_timeout, queue, forward);
+    let policy = synthesize_forward_policy(detect_timeout, queue, orig_dst, Default::default());
     tracing::debug!(?policy, "Synthesizing policy");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(async move {
@@ -185,7 +183,8 @@ fn spawn_synthesized_origdst_policy(
 fn synthesize_forward_policy(
     timeout: Duration,
     queue: policy::Queue,
-    dispatcher: policy::BackendDispatcher,
+    addr: SocketAddr,
+    metadata: policy::EndpointMetadata,
 ) -> ClientPolicy {
     use once_cell::sync::Lazy;
     static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
@@ -199,7 +198,7 @@ fn synthesize_forward_policy(
     let backend = policy::Backend {
         meta: META.clone(),
         queue,
-        dispatcher,
+        dispatcher: policy::BackendDispatcher::Forward(addr, metadata),
     };
 
     let opaque = policy::opaq::Opaque {
