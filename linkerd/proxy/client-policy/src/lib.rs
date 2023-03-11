@@ -200,10 +200,6 @@ impl Meta {
             Self::Resource { section, .. } => section.as_deref().unwrap_or(""),
         }
     }
-
-    pub fn is_default(&self) -> bool {
-        matches!(self, Self::Default { .. })
-    }
 }
 
 impl std::cmp::PartialEq for Meta {
