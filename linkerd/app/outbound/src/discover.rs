@@ -155,21 +155,24 @@ fn spawn_synthesized_profile_policy(
     let policy = mk(&*profile.borrow_and_update());
     tracing::debug!(?policy, profile = ?*profile.borrow(), "Synthesizing policy from profile");
     let (tx, rx) = watch::channel(policy);
-    tokio::spawn(async move {
-        let mut profile = profile;
-        loop {
-            if profile.changed().await.is_err() {
-                tracing::debug!("Profile watch closed, terminating");
-                return;
-            };
-            let policy = mk(&*profile.borrow());
-            tracing::debug!(?policy, "Profile updated; synthesizing policy");
-            if tx.send(policy).is_err() {
-                tracing::debug!("Policy watch closed, terminating");
-                return;
+    tokio::spawn(
+        async move {
+            let mut profile = profile;
+            loop {
+                if profile.changed().await.is_err() {
+                    tracing::debug!("Profile watch closed, terminating");
+                    return;
+                };
+                let policy = mk(&*profile.borrow());
+                tracing::debug!(?policy, "Profile updated; synthesizing policy");
+                if tx.send(policy).is_err() {
+                    tracing::debug!("Policy watch closed, terminating");
+                    return;
+                }
             }
         }
-    });
+        .in_current_span(),
+    );
     rx
 }
 
