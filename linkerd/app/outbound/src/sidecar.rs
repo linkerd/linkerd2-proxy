@@ -91,18 +91,9 @@ impl Outbound<()> {
                 };
 
                 let mk_policy_routes = move |policy: &policy::ClientPolicy| {
-                    // The `HttpRoutes` types are currently constructed with an
-                    // `Addr`, which is used to implement `Param<LogicalAddr>`,
-                    // required by the rest of the stack for metrics labels,
-                    // tap, et cetera.
-                    //
-                    // Unlike ServiceProfiles, OutboundPolicies do not contain a
-                    // single authority which can be used as a logical address.
-                    // Instead, the target of the policy is identified by
-                    // structured `policy::Meta` metadata. Since we don't have
-                    // an authority here, we use the original dest address as
-                    // the logical address for the time being.
-                    //
+                    // Since the logical authority for an outbound policy
+                    // depends on the backend, just use the lookup target
+                    // address as the `LogicalAddr` for now.
                     // TODO(eliza): eventually, metrics and tap labels should be
                     // generated from the policy's structured metadata, rather
                     // than an address.
