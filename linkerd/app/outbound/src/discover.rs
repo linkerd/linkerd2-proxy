@@ -1,6 +1,7 @@
 use crate::{policy, Outbound};
 use linkerd_app_core::{profiles, svc, transport::OrigDstAddr, Error};
 use linkerd_proxy_client_policy::ClientPolicy;
+use once_cell::sync::Lazy;
 use std::{
     fmt::Debug,
     hash::{Hash, Hasher},
@@ -135,6 +136,12 @@ fn spawn_synthesized_profile_policy(
     queue: policy::Queue,
     detect_timeout: Duration,
 ) -> watch::Receiver<policy::ClientPolicy> {
+    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+        Arc::new(policy::Meta::Default {
+            name: "endpoint".into(),
+        })
+    });
+
     let mk = move |profile: &profiles::Profile| {
         let (addr, meta) = profile
             .endpoint
@@ -142,7 +149,7 @@ fn spawn_synthesized_profile_policy(
             .unwrap_or_else(|| (orig_dst, Default::default()));
         // TODO(ver) We should be able to figure out resource coordinates for
         // the endpoint?
-        synthesize_forward_policy("endpoint", detect_timeout, queue, addr, meta)
+        synthesize_forward_policy(&META, detect_timeout, queue, addr, meta)
     };
 
     let policy = mk(&*profile.borrow_and_update());
@@ -171,13 +178,14 @@ fn spawn_synthesized_origdst_policy(
     queue: policy::Queue,
     detect_timeout: Duration,
 ) -> watch::Receiver<policy::ClientPolicy> {
-    let policy = synthesize_forward_policy(
-        "fallback",
-        detect_timeout,
-        queue,
-        orig_dst,
-        Default::default(),
-    );
+    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+        Arc::new(policy::Meta::Default {
+            name: "fallback".into(),
+        })
+    });
+
+    let policy =
+        synthesize_forward_policy(&META, detect_timeout, queue, orig_dst, Default::default());
     tracing::debug!(?policy, "Synthesizing policy");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(async move {
@@ -187,19 +195,14 @@ fn spawn_synthesized_origdst_policy(
 }
 
 fn synthesize_forward_policy(
-    name: impl ToString,
+    meta: &Arc<policy::Meta>,
     timeout: Duration,
     queue: policy::Queue,
     addr: SocketAddr,
     metadata: policy::EndpointMetadata,
 ) -> ClientPolicy {
-    use once_cell::sync::Lazy;
     static NO_HTTP_FILTERS: Lazy<Arc<[policy::http::Filter]>> = Lazy::new(|| Arc::new([]));
     static NO_OPAQ_FILTERS: Lazy<Arc<[policy::opaq::Filter]>> = Lazy::new(|| Arc::new([]));
-
-    let meta = Arc::new(policy::Meta::Default {
-        name: name.to_string().into(),
-    });
 
     let backend = policy::Backend {
         meta: meta.clone(),
