@@ -140,7 +140,7 @@ fn spawn_synthesized_profile_policy(
             .endpoint
             .clone()
             .unwrap_or_else(|| (orig_dst, Default::default()));
-        // TODO(ver) We should be able to figure outc resource coordinates for
+        // TODO(ver) We should be able to figure out resource coordinates for
         // the endpoint?
         synthesize_forward_policy("endpoint", detect_timeout, queue, addr, meta)
     };
