@@ -38,7 +38,6 @@ impl Gateway {
         T: svc::Param<tls::ClientId>,
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: svc::Param<Option<SessionProtocol>>,
-        T: svc::Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + Unpin + 'static,
         // Server-side socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -80,10 +79,12 @@ impl Gateway {
 
             // Apply the gateway's allowlist to the profile discovery service.
             let allowlist = self.config.allow_discovery.clone().into();
-            let profiles = profiles::WithAllowlist::new(profiles, allowlist);
+            let mut profiles = profiles::WithAllowlist::new(profiles, allowlist);
             self.outbound
                 .with_stack(protocol)
-                .push_discover(profiles.into_service())
+                .push_discover(svc::mk(move |GatewayAddr(addr)| {
+                    profiles.get_profile(profiles::LookupAddr(addr.into()))
+                }))
                 .into_stack()
         };
 

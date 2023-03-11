@@ -1,4 +1,4 @@
-use crate::{discover, http, opaq, Config, Outbound};
+use crate::{http, opaq, policy, Config, Discovery, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, io, profiles,
@@ -6,11 +6,11 @@ use linkerd_app_core::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
     },
-    svc::{self, stack::Param},
+    svc::{self, ServiceExt},
     transport::addrs::*,
     Addr, Error, Infallible, NameAddr, Result,
 };
-use std::fmt::Debug;
+use std::{fmt::Debug, hash::Hash};
 use thiserror::Error;
 use tokio::sync::watch;
 
@@ -21,7 +21,7 @@ struct Http<T> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Opaq<T>(discover::Discovery<T>);
+struct Opaq<T>(Discovery<T>);
 
 #[derive(Clone, Debug)]
 struct SelectTarget<T>(Http<T>);
@@ -32,6 +32,9 @@ enum RequestTarget {
     Orig(OrigDstAddr),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct DiscoverAddr(Addr);
+
 #[derive(Clone, Debug)]
 struct Logical {
     addr: Addr,
@@ -39,8 +42,12 @@ struct Logical {
 }
 
 #[derive(Debug, Error)]
-#[error("ingress-mode routing requires a service profile: {0}")]
-struct ProfileRequired(NameAddr);
+#[error("ingress-mode routing requires discovery: {0}")]
+struct DiscoveryRequired(NameAddr);
+
+#[derive(Debug, Error)]
+#[error("ingress-mode fallback routing requires an HTTP policy for {0}")]
+struct PolicyRequired(OrigDstAddr);
 
 #[derive(Debug, Default, Error)]
 #[error("l5d-dst-override is not a valid host:port")]
@@ -56,28 +63,50 @@ impl Outbound<()> {
     /// Ingress-mode proxies route based on request headers instead of using the
     /// original destination. Protocol detection is **always** performed. If it
     /// fails, we revert to using the normal IP-based discovery
-    pub fn mk_ingress<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
+    pub fn mk_ingress<T, I, R>(
+        &self,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policies: impl policy::GetPolicy,
+        resolve: R,
+    ) -> svc::ArcNewTcp<T, I>
     where
         // Target type for outbund ingress-mode connections.
-        T: Param<OrigDstAddr>,
+        T: svc::Param<OrigDstAddr>,
         T: Clone + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        // Route discovery.
-        P: profiles::GetProfile<Error = Error>,
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
+        let discover = svc::mk(move |DiscoverAddr(addr)| {
+            let profile = profiles
+                .clone()
+                .get_profile(profiles::LookupAddr(addr.clone()));
+            let policy = policies.get_policy(addr);
+            Box::pin(async move {
+                let (profile, policy) = tokio::join!(profile, policy);
+                let profile = profile.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "Failed to resolve profile");
+                    None
+                });
+                Ok((profile, policy?))
+            })
+        });
+
         // The fallback stack is the same thing as the normal proxy stack, but
         // it doesn't include TCP metrics, since they are already instrumented
         // on this ingress stack.
-        let opaque = self
-            .to_tcp_connect()
-            .push_opaq_cached(resolve.clone())
-            .map_stack(|_, _, stk| stk.push_map_target(Opaq))
-            .push_discover(profiles.clone().into_service())
-            .into_inner();
+        let opaque = {
+            let discover = discover.clone();
+            self.to_tcp_connect()
+                .push_opaq_cached(resolve.clone())
+                .map_stack(|_, _, stk| stk.push_map_target(Opaq))
+                .push_discover(svc::mk(move |OrigDstAddr(addr)| {
+                    discover.clone().oneshot(DiscoverAddr(addr.into()))
+                }))
+                .into_inner()
+        };
 
         let http = self
             .to_tcp_connect()
@@ -89,7 +118,7 @@ impl Outbound<()> {
                 stk.check_new_service::<Http<Logical>, _>()
                     .push_filter(Http::try_from)
             })
-            .push_discover(profiles.into_service());
+            .push_discover(discover);
 
         http.push_ingress(opaque)
             .push_tcp_instrument(|t: &T| tracing::info_span!("ingress", addr = %t.param()))
@@ -109,7 +138,7 @@ impl<N> Outbound<N> {
     fn push_ingress<T, I, F, FSvc, NSvc>(self, fallback: F) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type describing an outbound connection.
-        T: Param<OrigDstAddr>,
+        T: svc::Param<OrigDstAddr>,
         T: Clone + Send + Sync + Unpin + 'static,
         // A server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -227,13 +256,13 @@ where
 
 // === impl Http ===
 
-impl<T> Param<http::Version> for Http<T> {
+impl<T> svc::Param<http::Version> for Http<T> {
     fn param(&self) -> http::Version {
         self.version
     }
 }
 
-impl<T> Param<OrigDstAddr> for Http<T>
+impl<T> svc::Param<OrigDstAddr> for Http<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
@@ -250,12 +279,9 @@ impl<T> std::ops::Deref for Http<T> {
     }
 }
 
-impl Param<profiles::LookupAddr> for Http<RequestTarget> {
-    fn param(&self) -> profiles::LookupAddr {
-        profiles::LookupAddr(match self.parent.clone() {
-            RequestTarget::Named(addr) => addr.into(),
-            RequestTarget::Orig(OrigDstAddr(addr)) => addr.into(),
-        })
+impl svc::Param<DiscoverAddr> for Http<RequestTarget> {
+    fn param(&self) -> DiscoverAddr {
+        DiscoverAddr(self.parent.clone().into())
     }
 }
 
@@ -277,56 +303,92 @@ impl svc::Param<watch::Receiver<http::Routes>> for Http<Logical> {
     }
 }
 
-impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
-    type Error = ProfileRequired;
+impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
+    type Error = Error;
 
-    fn try_from(
-        parent: discover::Discovery<Http<RequestTarget>>,
-    ) -> std::result::Result<Self, Self::Error> {
-        match (
-            (**parent).clone(),
-            svc::Param::<Option<profiles::Receiver>>::param(&parent).map(watch::Receiver::from),
-        ) {
-            (RequestTarget::Named(addr), profile) => {
-                let routes = {
-                    let mut profile = profile.ok_or_else(|| ProfileRequired(addr.clone()))?;
-                    let init = mk_routes(&*profile.borrow_and_update())
-                        .ok_or_else(|| ProfileRequired(addr.clone()))?;
-                    http::spawn_routes(profile, init, mk_routes)
-                };
+    fn try_from(parent: Discovery<Http<RequestTarget>>) -> std::result::Result<Self, Self::Error> {
+        let version = parent.version;
+        let profile =
+            svc::Param::<Option<profiles::Receiver>>::param(&parent).map(watch::Receiver::from);
+        let mut policy =
+            svc::Param::<Option<policy::Receiver>>::param(&parent).expect("policies are required");
 
+        match (**parent).clone() {
+            RequestTarget::Named(addr) => {
+                // Only use service profiles if there are novel routes/target
+                // overrides.
+                if let Some(mut profile) = profile {
+                    if let Some(laddr) = http::profile::should_override_policy(&profile) {
+                        tracing::debug!(%addr, "Using ServiceProfile");
+                        let routes = {
+                            let route =
+                                mk_profile_routes(laddr.clone(), &*profile.borrow_and_update())
+                                    .ok_or_else(|| DiscoveryRequired(addr.clone()))?;
+                            http::spawn_routes(profile, route, {
+                                let laddr = laddr.clone();
+                                move |profile| mk_profile_routes(laddr.clone(), profile)
+                            })
+                        };
+                        return Ok(Http {
+                            version,
+                            parent: Logical {
+                                addr: (*laddr).clone().into(),
+                                routes,
+                            },
+                        });
+                    }
+                }
+
+                // Otherwise, use a client policy if it provides an HTTP policy.
+                let route =
+                    policy_routes(addr.clone().into(), version, &*policy.borrow_and_update())
+                        .ok_or_else(|| DiscoveryRequired(addr.clone()))?;
+                tracing::debug!("Policy");
                 Ok(Http {
-                    version: (*parent).param(),
+                    version: svc::Param::param(&*parent),
                     parent: Logical {
-                        addr: addr.into(),
-                        routes,
+                        addr: addr.clone().into(),
+                        routes: http::spawn_routes(policy, route, move |policy| {
+                            policy_routes(addr.clone().into(), version, policy)
+                        }),
                     },
                 })
             }
 
-            (RequestTarget::Orig(OrigDstAddr(addr)), Some(mut profile)) => {
-                let route = mk_routes(&*profile.borrow_and_update());
-                let routes = if let Some(route) = route {
-                    http::spawn_routes(profile, route, mk_routes)
-                } else {
-                    http::spawn_routes_default(Remote(ServerAddr(addr)))
-                };
-                Ok(Http {
-                    version: (*parent).param(),
-                    parent: Logical {
-                        addr: addr.into(),
-                        routes,
-                    },
-                })
-            }
+            RequestTarget::Orig(OrigDstAddr(addr)) => {
+                // Only use service profiles if there are novel routes/target
+                // overrides.
+                if let Some(mut profile) = profile {
+                    if let Some(laddr) = http::profile::should_override_policy(&profile) {
+                        let route = mk_profile_routes(laddr.clone(), &*profile.borrow_and_update());
+                        if let Some(route) = route {
+                            tracing::debug!(%addr, "Using ServiceProfile");
+                            let routes = http::spawn_routes(profile.clone(), route, {
+                                let laddr = laddr.clone();
+                                move |profile| mk_profile_routes(laddr.clone(), profile)
+                            });
+                            return Ok(Http {
+                                version,
+                                parent: Logical {
+                                    addr: (*laddr).clone().into(),
+                                    routes,
+                                },
+                            });
+                        }
+                    }
+                }
 
-            (RequestTarget::Orig(OrigDstAddr(addr)), None) => {
-                let routes = http::spawn_routes_default(Remote(ServerAddr(addr)));
+                // Otherwise, use a client policy if it provides an HTTP policy.
+                let route = policy_routes(addr.into(), version, &*policy.borrow_and_update())
+                    .ok_or(PolicyRequired(OrigDstAddr(addr)))?;
+                tracing::debug!("Using Policy");
                 Ok(Http {
-                    version: (*parent).param(),
+                    version: svc::Param::param(&*parent),
                     parent: Logical {
                         addr: addr.into(),
-                        routes,
+                        routes: http::spawn_routes(policy, route, move |policy| {
+                            policy_routes(addr.into(), version, policy)
+                        }),
                     },
                 })
             }
@@ -334,31 +396,69 @@ impl TryFrom<discover::Discovery<Http<RequestTarget>>> for Http<Logical> {
     }
 }
 
-fn mk_routes(
-    profiles::Profile {
-        addr,
-        endpoint,
-        http_routes,
-        targets,
-        ..
-    }: &profiles::Profile,
+fn mk_profile_routes(
+    addr: http::profile::LogicalAddr,
+    profile: &profiles::Profile,
 ) -> Option<http::Routes> {
-    if let Some(addr) = addr.clone() {
-        return Some(http::Routes::Profile(http::profile::Routes {
-            addr,
-            routes: http_routes.clone(),
-            targets: targets.clone(),
-        }));
-    }
-
-    if let Some((addr, metadata)) = endpoint.clone() {
-        return Some(http::Routes::Endpoint(Remote(ServerAddr(addr)), metadata));
-    }
-
-    None
+    Some(http::Routes::Profile(http::profile::Routes {
+        addr,
+        routes: profile.http_routes.clone(),
+        targets: profile.targets.clone(),
+    }))
 }
 
-// === impl Logical ===
+fn policy_routes(
+    addr: Addr,
+    version: http::Version,
+    policy: &policy::ClientPolicy,
+) -> Option<http::Routes> {
+    match policy.protocol {
+        policy::Protocol::Detect {
+            ref http1,
+            ref http2,
+            ..
+        } => {
+            let routes = match version {
+                http::Version::Http1 => http1.routes.clone(),
+                http::Version::H2 => http2.routes.clone(),
+            };
+            Some(http::Routes::Policy(http::policy::Routes::Http(
+                http::policy::HttpRoutes {
+                    addr,
+                    backends: policy.backends.clone(),
+                    routes,
+                },
+            )))
+        }
+        // TODO(eliza): what do we do here if the configured
+        // protocol doesn't match the actual protocol for the
+        // target? probably should make an error route instead?
+        policy::Protocol::Http1(ref http1) => Some(http::Routes::Policy(
+            http::policy::Routes::Http(http::policy::HttpRoutes {
+                addr,
+                backends: policy.backends.clone(),
+                routes: http1.routes.clone(),
+            }),
+        )),
+        policy::Protocol::Http2(ref http2) => Some(http::Routes::Policy(
+            http::policy::Routes::Http(http::policy::HttpRoutes {
+                addr,
+                backends: policy.backends.clone(),
+                routes: http2.routes.clone(),
+            }),
+        )),
+        policy::Protocol::Grpc(ref grpc) => Some(http::Routes::Policy(http::policy::Routes::Grpc(
+            http::policy::GrpcRoutes {
+                addr,
+                backends: policy.backends.clone(),
+                routes: grpc.routes.clone(),
+            },
+        ))),
+        _ => None,
+    }
+}
+
+// === impl Logical ===profiles
 
 impl std::cmp::PartialEq for Logical {
     fn eq(&self, other: &Self) -> bool {
@@ -384,7 +484,7 @@ impl<T> std::ops::Deref for Opaq<T> {
     }
 }
 
-impl<T> Param<Remote<ServerAddr>> for Opaq<T>
+impl<T> svc::Param<Remote<ServerAddr>> for Opaq<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
@@ -394,7 +494,7 @@ where
     }
 }
 
-impl<T> Param<opaq::Logical> for Opaq<T>
+impl<T> svc::Param<opaq::Logical> for Opaq<T>
 where
     T: svc::Param<OrigDstAddr>,
 {
@@ -410,6 +510,17 @@ where
         }
 
         opaq::Logical::Forward(self.param(), Default::default())
+    }
+}
+
+// === impl RequestTarget ===
+
+impl From<RequestTarget> for Addr {
+    fn from(tgt: RequestTarget) -> Self {
+        match tgt {
+            RequestTarget::Named(n) => n.into(),
+            RequestTarget::Orig(OrigDstAddr(a)) => a.into(),
+        }
     }
 }
 

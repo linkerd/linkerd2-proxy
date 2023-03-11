@@ -181,32 +181,39 @@ fn grpc_unexpected_request() -> grpc::Status {
 }
 
 impl DstSender {
+    #[track_caller]
     pub fn send(&self, up: impl Into<pb::Update>) {
         self.0.send(Ok(up.into())).expect("send dst update")
     }
 
+    #[track_caller]
     pub fn send_err(&self, e: grpc::Status) {
         self.0.send(Err(e)).expect("send dst err")
     }
 
+    #[track_caller]
     pub fn send_addr(&self, addr: SocketAddr) {
         self.send(destination_add(addr))
     }
 
+    #[track_caller]
     pub fn send_h2_hinted(&self, addr: SocketAddr) {
         self.send(destination_add(addr).hint(Hint::H2));
     }
 
+    #[track_caller]
     pub fn send_no_endpoints(&self) {
         self.send(destination_exists_with_no_endpoints())
     }
 }
 
 impl ProfileSender {
+    #[track_caller]
     pub fn send(&self, up: pb::DestinationProfile) {
         self.0.send(Ok(up)).expect("send profile update")
     }
 
+    #[track_caller]
     pub fn send_err(&self, err: grpc::Status) {
         self.0.send(Err(err)).expect("send profile update")
     }

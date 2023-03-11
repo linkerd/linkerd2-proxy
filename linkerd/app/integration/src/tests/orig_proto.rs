@@ -16,13 +16,18 @@ async fn outbound_http1() {
         .run()
         .await;
 
-    let ctrl = controller::new();
-    ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
-    let dst = ctrl.destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
+    let dstctl = controller::new();
+    let polctl = controller::policy().outbound_default(
+        srv.addr,
+        format!("disco.test.svc.cluster.local:{}", srv.addr.port()),
+    );
+    dstctl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+    let dst = dstctl.destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
     dst.send_h2_hinted(srv.addr);
 
     let proxy = proxy::new()
-        .controller(ctrl.run().await)
+        .controller(dstctl.run().await)
+        .policy(polctl.run().await)
         .outbound(srv)
         .run()
         .await;
@@ -60,11 +65,11 @@ async fn inbound_http1() {
         .run()
         .await;
 
-    let ctrl = controller::new();
-    ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+    let dstctl = controller::new();
+    dstctl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
 
     let proxy = proxy::new()
-        .controller(ctrl.run().await)
+        .controller(dstctl.run().await)
         .inbound(srv)
         .run()
         .await;

@@ -54,7 +54,6 @@ impl Gateway {
         T: svc::Param<tls::ClientId>,
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: svc::Param<Option<SessionProtocol>>,
-        T: svc::Param<profiles::LookupAddr>,
         T: Clone + Send + Sync + Unpin + 'static,
         // Server-side socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,

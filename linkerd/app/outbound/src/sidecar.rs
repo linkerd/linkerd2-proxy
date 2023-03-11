@@ -1,7 +1,7 @@
 use crate::{
-    discover, http, opaq,
+    discover, http, opaq, policy,
     protocol::{self, Protocol},
-    Outbound,
+    Discovery, Outbound,
 };
 use linkerd_app_core::{
     io, profiles,
@@ -22,6 +22,8 @@ use tracing::info_span;
 struct Sidecar {
     orig_dst: OrigDstAddr,
     profile: Option<profiles::Receiver>,
+    // TODO(ver) Policies should not be optional.
+    policy: Option<policy::Receiver>,
 }
 
 #[derive(Clone, Debug)]
@@ -34,7 +36,12 @@ struct HttpSidecar {
 // === impl Outbound ===
 
 impl Outbound<()> {
-    pub fn mk_sidecar<T, I, P, R>(&self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
+    pub fn mk_sidecar<T, I, R>(
+        &self,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policies: impl policy::GetPolicy,
+        resolve: R,
+    ) -> svc::ArcNewTcp<T, I>
     where
         // Target describing an outbound connection.
         T: svc::Param<OrigDstAddr>,
@@ -42,11 +49,20 @@ impl Outbound<()> {
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        // Route discovery.
-        P: profiles::GetProfile<Error = Error>,
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
+        let discover = {
+            let detect_timeout = self.config.proxy.detect_protocol_timeout;
+
+            let queue = self.config.tcp_connection_queue;
+            let default_queue = policy::Queue {
+                capacity: queue.capacity,
+                failfast_timeout: queue.failfast_timeout,
+            };
+            discover::resolver(profiles, policies, default_queue, detect_timeout)
+        };
+
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
 
         let http = self
@@ -56,62 +72,33 @@ impl Outbound<()> {
             .push_http_cached(resolve)
             .push_http_server()
             .into_stack()
-            .push_map_target(|parent: protocol::Http<Sidecar>| {
-                let version = svc::Param::<http::Version>::param(&parent);
-                let orig_dst = (*parent).orig_dst;
-                let mk_routes = move |profile: &profiles::Profile| {
-                    if let Some(addr) = profile.addr.clone() {
-                        return http::Routes::Profile(http::profile::Routes {
-                            addr,
-                            routes: profile.http_routes.clone(),
-                            targets: profile.targets.clone(),
-                        });
-                    }
-
-                    if let Some((addr, metadata)) = profile.endpoint.clone() {
-                        return http::Routes::Endpoint(Remote(ServerAddr(addr)), metadata);
-                    }
-
-                    http::Routes::Endpoint(Remote(ServerAddr(*orig_dst)), Default::default())
-                };
-                let routes = match (*parent).profile.clone() {
-                    Some(profile) => {
-                        let mut rx = watch::Receiver::from(profile);
-                        let init = mk_routes(&*rx.borrow_and_update());
-                        http::spawn_routes(rx, init, move |profile: &profiles::Profile| {
-                            Some(mk_routes(profile))
-                        })
-                    }
-                    None => http::spawn_routes_default(Remote(ServerAddr(*orig_dst))),
-                };
-                HttpSidecar {
-                    orig_dst,
-                    version,
-                    routes,
-                }
-            });
+            .push_map_target(HttpSidecar::from);
 
         opaq.push_protocol(http.into_inner())
             // Use a dedicated target type to bind discovery results to the
             // outbound sidecar stack configuration.
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
             // Access cached discovery information.
-            .push_discover(profiles.into_service())
+            .push_discover(discover)
             // Instrument server-side connections for telemetry.
-            .push_tcp_instrument(|t: &T| info_span!("proxy", addr = %t.param()))
+            .push_tcp_instrument(|t: &T| {
+                let addr: OrigDstAddr = t.param();
+                info_span!("proxy", %addr)
+            })
             .into_inner()
     }
 }
 
 // === impl Sidecar ===
 
-impl<T> From<discover::Discovery<T>> for Sidecar
+impl<T> From<Discovery<T>> for Sidecar
 where
     T: svc::Param<OrigDstAddr>,
 {
-    fn from(parent: discover::Discovery<T>) -> Self {
+    fn from(parent: Discovery<T>) -> Self {
         use svc::Param;
         Self {
+            policy: parent.param(),
             profile: parent.param(),
             orig_dst: (*parent).param(),
         }
@@ -188,12 +175,111 @@ impl std::hash::Hash for Sidecar {
 
 // === impl HttpSidecar ===
 
+impl From<protocol::Http<Sidecar>> for HttpSidecar {
+    fn from(parent: protocol::Http<Sidecar>) -> Self {
+        let orig_dst = (*parent).orig_dst;
+        let version = svc::Param::<http::Version>::param(&parent);
+        let mut policy = (*parent).policy.clone().expect("policies are required");
+
+        if let Some(mut profile) = (*parent).profile.clone().map(watch::Receiver::from) {
+            // Only use service profiles if there are novel routes/target
+            // overrides.
+            if let Some(addr) = http::profile::should_override_policy(&profile) {
+                tracing::debug!("Using ServiceProfile");
+                let init = Self::mk_profile_routes(addr.clone(), &*profile.borrow_and_update());
+                let routes =
+                    http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
+                        Some(Self::mk_profile_routes(addr.clone(), profile))
+                    });
+                return HttpSidecar {
+                    orig_dst,
+                    version,
+                    routes,
+                };
+            }
+        }
+
+        tracing::debug!("Using ClientPolicy routes");
+        let init = Self::mk_policy_routes(orig_dst, version, &*policy.borrow_and_update())
+            .expect("initial policy must not be opaque");
+        let routes = http::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
+            Self::mk_policy_routes(orig_dst, version, policy)
+        });
+        HttpSidecar {
+            orig_dst,
+            version,
+            routes,
+        }
+    }
+}
+
+impl HttpSidecar {
+    fn mk_policy_routes(
+        OrigDstAddr(orig_dst): OrigDstAddr,
+        version: http::Version,
+        policy: &policy::ClientPolicy,
+    ) -> Option<http::Routes> {
+        // If we're doing HTTP policy routing, we've previously had a
+        // protocol hint that made us think that was a good idea. If the
+        // protocol changes but remains HTTP-ish, we propagate those
+        // changes. If the protocol flips to an opaque protocol, we ignore
+        // the protocol update.
+        let routes = match policy.protocol {
+            policy::Protocol::Detect {
+                ref http1,
+                ref http2,
+                ..
+            } => match version {
+                http::Version::Http1 => http1.routes.clone(),
+                http::Version::H2 => http2.routes.clone(),
+            },
+            policy::Protocol::Http1(ref http1) => http1.routes.clone(),
+            policy::Protocol::Http2(ref http2) => http2.routes.clone(),
+            policy::Protocol::Grpc(ref grpc) => {
+                return Some(http::Routes::Policy(http::policy::Routes::Grpc(
+                    http::policy::GrpcRoutes {
+                        addr: orig_dst.into(),
+                        backends: policy.backends.clone(),
+                        routes: grpc.routes.clone(),
+                    },
+                )))
+            }
+            policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => {
+                tracing::info!(
+                    "Ignoring a discovery update that changed a route from HTTP to opaque"
+                );
+                return None;
+            }
+        };
+
+        Some(http::Routes::Policy(http::policy::Routes::Http(
+            http::policy::HttpRoutes {
+                addr: orig_dst.into(),
+                routes,
+                backends: policy.backends.clone(),
+            },
+        )))
+    }
+
+    fn mk_profile_routes(addr: profiles::LogicalAddr, profile: &profiles::Profile) -> http::Routes {
+        http::Routes::Profile(http::profile::Routes {
+            addr,
+            routes: profile.http_routes.clone(),
+            targets: profile.targets.clone(),
+        })
+    }
+}
+
 impl svc::Param<http::Version> for HttpSidecar {
     fn param(&self) -> http::Version {
         self.version
     }
 }
 
+// XXX Policy routes report their `OrigDstAddr` as a `LogicalAddr`, since the
+// API responses don't provide an DNS-style name in the response. Instead, they
+// include resource coordinates. Telemetry will eventually have to be updated to
+// support report this richer metadata.
 impl svc::Param<http::LogicalAddr> for HttpSidecar {
     fn param(&self) -> http::LogicalAddr {
         http::LogicalAddr(match *self.routes.borrow() {

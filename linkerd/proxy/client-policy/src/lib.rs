@@ -1,6 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
+use once_cell::sync::Lazy;
 use std::{borrow::Cow, hash::Hash, net::SocketAddr, sync::Arc, time};
 
 pub mod grpc;
@@ -115,37 +116,45 @@ pub struct PeakEwma {
 
 impl ClientPolicy {
     pub fn invalid(timeout: time::Duration) -> Self {
-        let meta = Arc::new(Meta::Default {
-            name: "invalid".into(),
+        static META: Lazy<Arc<Meta>> = Lazy::new(|| {
+            Arc::new(Meta::Default {
+                name: "invalid".into(),
+            })
         });
-        let routes = Arc::new([http::Route {
-            hosts: vec![],
-            rules: vec![http::Rule {
-                matches: vec![http::r#match::MatchRequest::default()],
-                policy: http::Policy {
-                    meta,
-                    filters: std::iter::once(http::Filter::InternalError(
-                        "invalid client policy configuration",
-                    ))
-                    .collect(),
-                    distribution: RouteDistribution::Empty,
-                },
-            }],
-        }]);
+        static HTTP_ROUTES: Lazy<Arc<[http::Route]>> = Lazy::new(|| {
+            Arc::new([http::Route {
+                hosts: vec![],
+                rules: vec![http::Rule {
+                    matches: vec![http::r#match::MatchRequest::default()],
+                    policy: http::Policy {
+                        meta: META.clone(),
+                        filters: std::iter::once(http::Filter::InternalError(
+                            "invalid client policy configuration",
+                        ))
+                        .collect(),
+                        distribution: RouteDistribution::Empty,
+                    },
+                }],
+            }])
+        });
+        static BACKENDS: Lazy<Arc<[Backend]>> = Lazy::new(|| Arc::new([]));
+
         Self {
             protocol: Protocol::Detect {
                 timeout,
                 http1: http::Http1 {
-                    routes: routes.clone(),
+                    routes: HTTP_ROUTES.clone(),
                 },
-                http2: http::Http2 { routes },
+                http2: http::Http2 {
+                    routes: HTTP_ROUTES.clone(),
+                },
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
                     // policy to fail conns?
                     policy: None,
                 },
             },
-            backends: Arc::new([]),
+            backends: BACKENDS.clone(),
         }
     }
 }

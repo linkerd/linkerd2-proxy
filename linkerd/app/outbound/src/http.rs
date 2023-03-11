@@ -4,7 +4,6 @@ use self::{
 };
 use crate::Outbound;
 use linkerd_app_core::{
-    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -32,11 +31,14 @@ pub use linkerd_app_core::proxy::http::{self as http, *};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http<T>(T);
 
-pub fn spawn_routes(
-    mut profile_rx: watch::Receiver<profiles::Profile>,
+pub fn spawn_routes<T>(
+    mut route_rx: watch::Receiver<T>,
     init: Routes,
-    mut mk: impl FnMut(&profiles::Profile) -> Option<Routes> + Send + Sync + 'static,
-) -> watch::Receiver<Routes> {
+    mut mk: impl FnMut(&T) -> Option<Routes> + Send + Sync + 'static,
+) -> watch::Receiver<Routes>
+where
+    T: Send + Sync + 'static,
+{
     let (tx, rx) = watch::channel(init);
 
     tokio::spawn(async move {
@@ -44,7 +46,7 @@ pub fn spawn_routes(
             let res = tokio::select! {
                 biased;
                 _ = tx.closed() => return,
-                res = profile_rx.changed() => res,
+                res = route_rx.changed() => res,
             };
 
             if res.is_err() {
@@ -53,7 +55,7 @@ pub fn spawn_routes(
                 return;
             }
 
-            if let Some(routes) = (mk)(&*profile_rx.borrow_and_update()) {
+            if let Some(routes) = (mk)(&*route_rx.borrow_and_update()) {
                 if tx.send(routes).is_err() {
                     // Drop the `tx` sender when all of its receivers are dropped.
                     return;

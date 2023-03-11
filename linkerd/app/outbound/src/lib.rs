@@ -9,15 +9,17 @@ use futures::Stream;
 use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
     drain,
+    exp_backoff::ExponentialBackoff,
     http_tracing::OpenCensusSink,
     identity, io, profiles,
     proxy::{
+        self,
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
         tap,
     },
     serve,
-    svc::{self, stack::Param},
+    svc::{self, ServiceExt},
     tls,
     transport::addrs::*,
     AddrMatch, Error, ProxyRuntime, Result,
@@ -35,6 +37,7 @@ pub mod http;
 mod ingress;
 mod metrics;
 pub mod opaq;
+pub mod policy;
 mod protocol;
 mod sidecar;
 pub mod tcp;
@@ -112,6 +115,27 @@ impl Outbound<()> {
         }
     }
 
+    pub fn build_policies<C>(
+        &self,
+        workload: Arc<str>,
+        client: C,
+        backoff: ExponentialBackoff,
+    ) -> impl policy::GetPolicy
+    where
+        C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+        C: Clone + Unpin + Send + Sync + 'static,
+        C::ResponseBody: proxy::http::HttpBody<Data = tonic::codegen::Bytes, Error = Error>,
+        C::ResponseBody: Default + Send + 'static,
+        C::Future: Send,
+    {
+        policy::Api::new(workload, Duration::from_secs(10), client)
+            .into_watch(backoff)
+            .map_result(|response| match response {
+                Err(e) => Err(e.into()),
+                Ok(rsp) => Ok(rsp.into_inner()),
+            })
+    }
+
     #[cfg(any(test, feature = "test-util"))]
     pub fn for_test() -> (Self, drain::Signal) {
         let (rt, drain) = test_util::runtime();
@@ -177,32 +201,31 @@ impl<S> Outbound<S> {
 }
 
 impl Outbound<()> {
-    pub async fn serve<T, I, P, R>(
+    pub async fn serve<T, I, R>(
         self,
         listen: impl Stream<Item = Result<(T, I)>> + Send + Sync + 'static,
-        profiles: P,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policies: impl policy::GetPolicy,
         resolve: R,
     ) where
         // Target describing a server-side connection.
-        T: Param<Remote<ClientAddr>>,
-        T: Param<OrigDstAddr>,
+        T: svc::Param<Remote<ClientAddr>>,
+        T: svc::Param<OrigDstAddr>,
         T: Clone + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        // Configuration discovery.
-        P: profiles::GetProfile<Error = Error>,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
         let profiles = profiles::WithAllowlist::new(profiles, self.config.allow_discovery.clone());
         if self.config.ingress_mode {
             tracing::info!("Outbound routing in ingress-mode");
-            let server = self.mk_ingress(profiles, resolve);
+            let server = self.mk_ingress(profiles, policies, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, server, shutdown).await;
         } else {
-            let proxy = self.mk_sidecar(profiles, resolve);
+            let proxy = self.mk_sidecar(profiles, policies, resolve);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, proxy, shutdown).await;
         }

@@ -220,12 +220,23 @@ impl Config {
             let profiles = dst.profiles;
             let resolve = dst.resolve;
 
+            let outbound_policies = outbound.build_policies(
+                policies.workload.clone(),
+                policies.client.clone(),
+                policies.backoff,
+            );
+
             Box::pin(async move {
                 Self::await_identity(identity_ready).await;
 
                 tokio::spawn(
                     outbound
-                        .serve(outbound_listen, profiles.clone(), resolve)
+                        .serve(
+                            outbound_listen,
+                            profiles.clone(),
+                            outbound_policies,
+                            resolve,
+                        )
                         .instrument(info_span!("outbound").or_current()),
                 );
 

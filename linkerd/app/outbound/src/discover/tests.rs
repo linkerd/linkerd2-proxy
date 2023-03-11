@@ -1,5 +1,5 @@
 use super::*;
-use crate::{tcp, test_util::*};
+use crate::test_util::*;
 use linkerd_app_core::{
     io, profiles,
     svc::{NewService, Service, ServiceExt},
@@ -35,13 +35,19 @@ async fn errors_propagate() {
         })
     };
 
-    let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+    let discover = {
+        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        svc::mk(move |OrigDstAddr(addr)| {
+            // TODO(eliza): policy!
+            profiles.clone().oneshot(profiles::LookupAddr(addr.into()))
+        })
+    };
 
     // Create a profile stack that uses the tracked inner stack.
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(stack)
-        .push_discover(profiles)
+        .push_discover(discover)
         .into_inner();
 
     assert_eq!(
@@ -60,7 +66,7 @@ async fn errors_propagate() {
     // The discover stack's buffer does not drive profile resolution (or the inner service)
     // until the service is called?! So we drive this all on a background ask that gets canceled
     // to drop the service reference.
-    let svc = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
+    let svc = stack.new_service(OrigDstAddr(addr));
     let task = spawn_conn(svc);
     // We have to let some time pass for the buffer to drive the profile to readiness.
     time::advance(time::Duration::from_millis(100)).await;
@@ -95,9 +101,9 @@ async fn caches_profiles_until_idle() {
     let profiles = {
         let profile = support::profile::resolver().profile(addr, profiles::Profile::default());
         let lookups = profile_lookups.clone();
-        svc::mk(move |a: profiles::LookupAddr| {
+        svc::mk(move |OrigDstAddr(a)| {
             lookups.fetch_add(1, Ordering::SeqCst);
-            profile.clone().oneshot(a)
+            profile.clone().oneshot(profiles::LookupAddr(a.into()))
         })
     };
 
@@ -125,7 +131,7 @@ async fn caches_profiles_until_idle() {
     // The discover stack's buffer does not drive profile resolution (or the inner service)
     // until the service is called?! So we drive this all on a background ask that gets canceled
     // to drop the service reference.
-    let svc0 = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
+    let svc0 = stack.new_service(OrigDstAddr(addr));
     let task0 = spawn_conn(svc0);
     // We have to let some time pass for the buffer to drive the profile to readiness.
     time::advance(time::Duration::from_millis(100)).await;
@@ -138,7 +144,7 @@ async fn caches_profiles_until_idle() {
     // Abort the pending task (simulating a disconnect from a client) and obtain the cached
     // service from the stack.
     task0.abort();
-    let svc1 = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
+    let svc1 = stack.new_service(OrigDstAddr(addr));
     let task1 = spawn_conn(svc1);
     // Let some time pass and ensure the service hasn't been dropped from the stack (because the
     // task is still running).
@@ -155,7 +161,7 @@ async fn caches_profiles_until_idle() {
 
     // When another stack is built for the same target, we create a new service (because the
     // prior service has been idled out).
-    let svc2 = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
+    let svc2 = stack.new_service(OrigDstAddr(addr));
     let task2 = spawn_conn(svc2);
     // We have to let some time pass for the buffer to drive the profile to readiness.
     time::advance(time::Duration::from_millis(100)).await;

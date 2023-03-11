@@ -1,6 +1,6 @@
 use super::*;
-pub use api::inbound;
-use api::inbound::inbound_server_policies_server;
+pub use api::{inbound, outbound};
+use api::{inbound::inbound_server_policies_server, outbound::outbound_policies_server};
 use futures::stream;
 use linkerd2_proxy_api as api;
 use parking_lot::Mutex;
@@ -11,6 +11,7 @@ use tonic as grpc;
 
 #[derive(Debug, Default)]
 pub struct Controller {
+    outbound: Inner<outbound::TrafficSpec, outbound::OutboundPolicy>,
     inbound: Inner<u16, inbound::Server>,
 }
 
@@ -30,6 +31,9 @@ struct Inner<Req, Rsp> {
 
 #[derive(Debug, Clone)]
 pub struct InboundSender(Tx<inbound::Server>);
+
+#[derive(Debug, Clone)]
+pub struct OutboundSender(Tx<outbound::OutboundPolicy>);
 
 type Tx<T> = mpsc::UnboundedSender<Result<T, grpc::Status>>;
 type Rx<T> = UnboundedReceiverStream<Result<T, grpc::Status>>;
@@ -102,13 +106,124 @@ pub fn opaque_unauthenticated() -> inbound::Server {
     }
 }
 
+pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
+    use outbound::proxy_protocol;
+    let dst = dst.to_string();
+    let route = outbound_default_http_route(dst.clone());
+    outbound::OutboundPolicy {
+        protocol: Some(outbound::ProxyProtocol {
+            kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
+                timeout: Some(Duration::from_secs(10).try_into().unwrap()),
+                http1: Some(proxy_protocol::Http1 {
+                    routes: vec![route.clone()],
+                }),
+                http2: Some(proxy_protocol::Http2 {
+                    routes: vec![route],
+                }),
+                opaque: Some(proxy_protocol::Opaque {
+                    routes: vec![outbound_default_opaque_route(dst)],
+                }),
+            })),
+        }),
+    }
+}
+
+pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
+    use api::http_route;
+    outbound::HttpRoute {
+        metadata: Some(api::meta::Metadata {
+            kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
+        }),
+        hosts: Vec::new(),
+        rules: vec![outbound::http_route::Rule {
+            matches: vec![http_route::HttpRouteMatch {
+                path: Some(http_route::PathMatch {
+                    kind: Some(http_route::path_match::Kind::Prefix("/".to_string())),
+                }),
+                headers: Vec::new(),
+                query_params: Vec::new(),
+                method: None,
+            }],
+            filters: Vec::new(),
+            backends: Some(http_first_available(std::iter::once(backend(dst)))),
+        }],
+    }
+}
+
+pub fn outbound_default_opaque_route(dst: impl ToString) -> outbound::OpaqueRoute {
+    use outbound::opaque_route::{self, distribution};
+    outbound::OpaqueRoute {
+        metadata: Some(api::meta::Metadata {
+            kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
+        }),
+        rules: vec![outbound::opaque_route::Rule {
+            backends: Some(opaque_route::Distribution {
+                kind: Some(distribution::Kind::FirstAvailable(
+                    distribution::FirstAvailable {
+                        backends: vec![opaque_route::RouteBackend {
+                            backend: Some(backend(dst)),
+                        }],
+                    },
+                )),
+            }),
+        }],
+    }
+}
+
+pub fn backend(dst: impl ToString) -> outbound::Backend {
+    use outbound::backend::{self, balance_p2c, endpoint_discovery, EndpointDiscovery};
+
+    outbound::Backend {
+        metadata: Some(api::meta::Metadata {
+            kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
+        }),
+        queue: Some(outbound::Queue {
+            capacity: 100,
+            failfast_timeout: Some(Duration::from_secs(3).try_into().unwrap()),
+        }),
+        kind: Some(backend::Kind::Balancer(backend::BalanceP2c {
+            discovery: Some(EndpointDiscovery {
+                kind: Some(endpoint_discovery::Kind::Dst(
+                    endpoint_discovery::DestinationGet {
+                        path: dst.to_string(),
+                    },
+                )),
+            }),
+            load: Some(balance_p2c::Load::PeakEwma(balance_p2c::PeakEwma {
+                default_rtt: Some(Duration::from_millis(30).try_into().unwrap()),
+                decay: Some(Duration::from_secs(10).try_into().unwrap()),
+            })),
+        })),
+    }
+}
+
+pub fn http_first_available(
+    backends: impl IntoIterator<Item = outbound::Backend>,
+) -> outbound::http_route::Distribution {
+    use outbound::http_route::{self, distribution};
+    http_route::Distribution {
+        kind: Some(distribution::Kind::FirstAvailable(
+            distribution::FirstAvailable {
+                backends: backends
+                    .into_iter()
+                    .map(|backend| http_route::RouteBackend {
+                        backend: Some(backend),
+                        filters: Vec::new(),
+                    })
+                    .collect(),
+            },
+        )),
+    }
+}
+
 impl Controller {
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn expect_workload(mut self, workload: String) -> Self {
-        self.inbound.expected_workload = Some(workload);
+        self.inbound.expected_workload = Some(workload.clone());
+        self.outbound.expected_workload = Some(workload);
         self
     }
 
@@ -138,6 +253,41 @@ impl Controller {
         rx
     }
 
+    /// Returns an [`OutboundSender`] for outbound policies for `addr`.
+    pub fn outbound_tx(&self, addr: impl Into<Addr>) -> OutboundSender {
+        let target = match addr.into() {
+            Addr::Socket(socket) => outbound::traffic_spec::Target::Addr(socket.into()),
+            Addr::Name(name) => outbound::traffic_spec::Target::Authority(name.to_string()),
+        };
+        let spec = outbound::TrafficSpec {
+            source_workload: String::new(),
+            target: Some(target),
+        };
+        OutboundSender(self.outbound.add_call(spec))
+    }
+
+    pub fn outbound_tx_default(&self, addr: impl Into<Addr>, dst: impl ToString) -> OutboundSender {
+        let tx = self.outbound_tx(addr);
+        tx.send(outbound_default(dst));
+        tx
+    }
+
+    /// Sets an outbound policy for `addr`` that sends a single update and then
+    /// remains open.
+    pub fn outbound(mut self, addr: impl Into<Addr>, policy: outbound::OutboundPolicy) -> Self {
+        let tx = self.outbound_tx(addr);
+        tx.send(policy);
+        self.outbound.send_once_txs.push(tx.0);
+        self
+    }
+
+    /// Sets a default outbound policy for `addr` with destination `dst`, which
+    /// sends a single update and then remains open.
+    pub fn outbound_default(self, addr: impl Into<Addr>, dst: impl ToString) -> Self {
+        let _tx = self.outbound_tx_default(addr, dst);
+        self
+    }
+
     pub async fn run(self) -> controller::Listening {
         let svc = grpc::transport::Server::builder()
             .add_service(
@@ -145,6 +295,9 @@ impl Controller {
                     self.inbound,
                 ))),
             )
+            .add_service(outbound_policies_server::OutboundPoliciesServer::new(
+                Server(Arc::new(self.outbound)),
+            ))
             .into_service();
         controller::run(svc, "support policy controller", None).await
     }
@@ -159,6 +312,20 @@ impl InboundSender {
 
     pub fn send_err(&self, err: grpc::Status) {
         self.0.send(Err(err)).expect("send inbound error")
+    }
+}
+
+// === impl OutboundSender ===
+
+impl OutboundSender {
+    pub fn send(&self, up: outbound::OutboundPolicy) {
+        self.0
+            .send(Ok(up))
+            .expect("send outbound OutboundPolicy update")
+    }
+
+    pub fn send_err(&self, err: grpc::Status) {
+        self.0.send(Err(err)).expect("send outbound error")
     }
 }
 
@@ -196,6 +363,59 @@ impl inbound_server_policies_server::InboundServerPolicies for Server<u16, inbou
         let ret = self.watch_inner(&req.workload, |&spec| req.port as u16 == spec);
         if let Some(ref calls_tx) = self.0.calls_tx {
             let _ = calls_tx.send(req.port as u16);
+        }
+        ret
+    }
+}
+
+#[tonic::async_trait]
+impl outbound_policies_server::OutboundPolicies
+    for Server<outbound::TrafficSpec, outbound::OutboundPolicy>
+{
+    type WatchStream = Pin<
+        Box<
+            dyn Stream<Item = Result<outbound::OutboundPolicy, grpc::Status>>
+                + Send
+                + Sync
+                + 'static,
+        >,
+    >;
+
+    async fn get(
+        &self,
+        _req: grpc::Request<outbound::TrafficSpec>,
+    ) -> Result<grpc::Response<outbound::OutboundPolicy>, grpc::Status> {
+        Err(grpc::Status::new(
+            grpc::Code::Unimplemented,
+            "the proxy should only make `OutboundPolicies.Watch` RPCs to the \
+            outbound policy service, so `GetPort` is not implemented by the \
+            test controller",
+        ))
+    }
+
+    async fn watch(
+        &self,
+        req: grpc::Request<outbound::TrafficSpec>,
+    ) -> Result<grpc::Response<Self::WatchStream>, grpc::Status> {
+        let req = req.into_inner();
+        let _span = tracing::info_span!(
+            "OutboundPolicies::watch",
+            ?req.target,
+            %req.source_workload,
+        )
+        .entered();
+        tracing::debug!(?req, "received request");
+
+        let target = req.target.clone().ok_or_else(|| {
+            const ERR: &str = "target is required";
+            tracing::warn!(message = %ERR);
+            tonic::Status::invalid_argument(ERR)
+        })?;
+        let ret = self.watch_inner(&req.source_workload, |spec| {
+            spec.target.as_ref() == Some(&target)
+        });
+        if let Some(ref calls_tx) = self.0.calls_tx {
+            let _ = calls_tx.send(req);
         }
         ret
     }
