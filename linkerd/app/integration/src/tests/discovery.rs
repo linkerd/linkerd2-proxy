@@ -55,7 +55,7 @@ mod cross_version {
 
         let proxy = proxy::new()
             .controller(dstctl.run().await)
-            .controller(polctl.run().await)
+            .policy(polctl.run().await)
             .outbound(srv)
             .run()
             .await;
@@ -82,7 +82,7 @@ mod cross_version {
 
         let proxy = proxy::new()
             .controller(dstctl.run().await)
-            .controller(polctl.run().await)
+            .policy(polctl.run().await)
             .outbound(srv)
             .run()
             .await;
@@ -155,7 +155,7 @@ mod cross_version {
 
         let proxy = proxy::new()
             .controller(dstctl.run().await)
-            .controller(polctl.run().await)
+            .policy(polctl.run().await)
             .outbound(srv)
             .run()
             .await;
@@ -199,7 +199,7 @@ mod cross_version {
         dstctl.no_more_destinations();
         let proxy = proxy::new()
             .controller(dstctl.run().await)
-            .controller(polctl.run().await)
+            .policy(polctl.run().await)
             .outbound(srv)
             .run_with_test_env(env)
             .await;
@@ -230,7 +230,7 @@ mod cross_version {
 
         let proxy = proxy::new()
             .controller(dstctl.run().await)
-            .controller(polctl.run().await)
+            .policy(polctl.run().await)
             .outbound(srv)
             .run()
             .await;
@@ -260,9 +260,14 @@ mod cross_version {
         let _trace = trace_init();
 
         let srv = test.srv.route("/", "hello").run().await;
+
         let dstctl = controller::new();
-        let polctl = controller::policy();
         let _profile = dstctl.profile_tx_default(srv.addr, "initially-exists.ns.svc.cluster.local");
+
+        let polctl = controller::policy().outbound_default(
+            srv.addr,
+            format!("initially-exists.ns.svc.cluster.local:{}", srv.addr.port()),
+        );
 
         let dst_tx0 = dstctl.destination_tx(format!(
             "initially-exists.ns.svc.cluster.local:{}",
@@ -277,7 +282,7 @@ mod cross_version {
 
         let proxy = proxy::new()
             .controller(dstctl.run().await)
-            .controller(polctl.run().await)
+            .policy(polctl.run().await)
             .outbound(srv)
             .run()
             .await;
@@ -391,7 +396,7 @@ fn send_default_dst(
     tracing::info!("Configuring resolution for {addr} {name}");
 
     let policy = polctl.outbound_tx_default(addr, name.clone());
-    let profile = dstctl.profile_tx_default(addr, &name);
+    let profile = dstctl.profile_tx_default(addr, HOST);
 
     let dst = dstctl.destination_tx(name);
     dst.send_addr(addr);

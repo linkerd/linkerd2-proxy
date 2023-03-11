@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::watch;
+use tracing::Instrument;
 
 #[cfg(test)]
 mod tests;
@@ -72,12 +73,19 @@ pub(crate) fn resolver(
        + Sync
        + 'static {
     svc::mk(move |OrigDstAddr(orig_dst)| {
+        tracing::debug!(addr = %orig_dst, "Discover");
+
         let profile = profiles
             .clone()
-            .get_profile(profiles::LookupAddr(orig_dst.into()));
-        let policy = policies.get_policy(orig_dst.into());
+            .get_profile(profiles::LookupAddr(orig_dst.into()))
+            .instrument(tracing::debug_span!("profiles"));
+        let policy = policies
+            .get_policy(orig_dst.into())
+            .instrument(tracing::debug_span!("policy"));
+
         Box::pin(async move {
             let (profile, policy) = tokio::join!(profile, policy);
+            tracing::debug!("Discovered");
 
             let profile = profile.unwrap_or_else(|error| {
                 tracing::warn!(%error, "Error resolving ServiceProfile");
