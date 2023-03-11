@@ -157,59 +157,6 @@ impl ClientPolicy {
             backends: BACKENDS.clone(),
         }
     }
-
-    pub fn from_backend(
-        timeout: std::time::Duration,
-        queue: Queue,
-        dispatcher: BackendDispatcher,
-    ) -> Self {
-        static META: Lazy<Arc<Meta>> = Lazy::new(|| {
-            Arc::new(Meta::Default {
-                name: "synthesized".into(),
-            })
-        });
-        static NO_HTTP_FILTERS: Lazy<Arc<[http::Filter]>> = Lazy::new(|| Arc::new([]));
-        static NO_OPAQ_FILTERS: Lazy<Arc<[opaq::Filter]>> = Lazy::new(|| Arc::new([]));
-        let backend = Backend {
-            meta: META.clone(),
-            queue,
-            dispatcher,
-        };
-        let routes = Arc::new([http::Route {
-            hosts: vec![],
-            rules: vec![http::Rule {
-                matches: vec![http::r#match::MatchRequest::default()],
-                policy: http::Policy {
-                    meta: META.clone(),
-                    filters: NO_HTTP_FILTERS.clone(),
-                    distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
-                        filters: NO_HTTP_FILTERS.clone(),
-                        backend: backend.clone(),
-                    }])),
-                },
-            }],
-        }]);
-        Self {
-            protocol: Protocol::Detect {
-                timeout,
-                http1: http::Http1 {
-                    routes: routes.clone(),
-                },
-                http2: http::Http2 { routes },
-                opaque: opaq::Opaque {
-                    policy: Some(opaq::Policy {
-                        meta: META.clone(),
-                        filters: NO_OPAQ_FILTERS.clone(),
-                        distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
-                            filters: NO_OPAQ_FILTERS.clone(),
-                            backend: backend.clone(),
-                        }])),
-                    }),
-                },
-            },
-            backends: Arc::new([backend]),
-        }
-    }
 }
 
 // === impl Meta ===

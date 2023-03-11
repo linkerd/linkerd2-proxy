@@ -1,10 +1,12 @@
 use crate::{policy, Outbound};
 use linkerd_app_core::{profiles, svc, transport::OrigDstAddr, Error};
+use linkerd_proxy_client_policy::ClientPolicy;
 use std::{
     fmt::Debug,
     hash::{Hash, Hasher},
     net::SocketAddr,
     ops::Deref,
+    sync::Arc,
     time::Duration,
 };
 use tokio::sync::watch;
@@ -86,15 +88,8 @@ pub(crate) fn resolver(
             // the stack can determine how to switch on them.
             match policy {
                 Ok(policy) => return Ok((profile, policy)),
-                Err(error) => {
-                    if error
-                        .downcast_ref::<tonic::Status>()
-                        .map(|s| s.code() != tonic::Code::NotFound)
-                        .unwrap_or(true)
-                    {
-                        return Err(error);
-                    }
-                }
+                Err(error) if is_not_found(&error) => {}
+                Err(error) => return Err(error),
             }
 
             // XXX(ver) The policy controller may (for the time being) reject
@@ -121,23 +116,30 @@ pub(crate) fn resolver(
     })
 }
 
+#[inline]
+fn is_not_found(e: &Error) -> bool {
+    e.downcast_ref::<tonic::Status>()
+        .map(|s| s.code() == tonic::Code::NotFound)
+        .unwrap_or(false)
+}
+
 fn spawn_synthesized_profile_policy(
     orig_dst: SocketAddr,
     mut profile: watch::Receiver<profiles::Profile>,
     queue: policy::Queue,
     detect_timeout: Duration,
 ) -> watch::Receiver<policy::ClientPolicy> {
-    let mk_policy = move |profile: &profiles::Profile| {
+    let mk = move |profile: &profiles::Profile| {
         let (addr, meta) = profile
             .endpoint
             .clone()
             .unwrap_or_else(|| (orig_dst, Default::default()));
         let forward = policy::BackendDispatcher::Forward(addr, meta);
-        policy::ClientPolicy::from_backend(detect_timeout, queue, forward)
+        synthesize_forward_policy(detect_timeout, queue, forward)
     };
 
-    let policy = mk_policy(&*profile.borrow_and_update());
-    tracing::debug!(?policy, "Synthesizing policy from profile");
+    let policy = mk(&*profile.borrow_and_update());
+    tracing::debug!(?policy, profile = ?*profile.borrow(), "Synthesizing policy from profile");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(async move {
         let mut profile = profile;
@@ -146,7 +148,7 @@ fn spawn_synthesized_profile_policy(
                 tracing::debug!("Profile watch closed, terminating");
                 return;
             };
-            let policy = mk_policy(&*profile.borrow());
+            let policy = mk(&*profile.borrow());
             tracing::debug!(?policy, "Profile updated; synthesizing policy");
             if tx.send(policy).is_err() {
                 tracing::debug!("Policy watch closed, terminating");
@@ -163,13 +165,78 @@ fn spawn_synthesized_origdst_policy(
     detect_timeout: Duration,
 ) -> watch::Receiver<policy::ClientPolicy> {
     let forward = policy::BackendDispatcher::Forward(orig_dst, Default::default());
-    let policy = policy::ClientPolicy::from_backend(detect_timeout, queue, forward);
+    let policy = synthesize_forward_policy(detect_timeout, queue, forward);
     tracing::debug!(?policy, "Synthesizing policy");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(async move {
         tx.closed().await;
     });
     rx
+}
+
+fn synthesize_forward_policy(
+    timeout: Duration,
+    queue: policy::Queue,
+    dispatcher: policy::BackendDispatcher,
+) -> ClientPolicy {
+    use once_cell::sync::Lazy;
+    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+        Arc::new(policy::Meta::Default {
+            name: "synthesized".into(),
+        })
+    });
+    static NO_HTTP_FILTERS: Lazy<Arc<[policy::http::Filter]>> = Lazy::new(|| Arc::new([]));
+    static NO_OPAQ_FILTERS: Lazy<Arc<[policy::opaq::Filter]>> = Lazy::new(|| Arc::new([]));
+
+    let backend = policy::Backend {
+        meta: META.clone(),
+        queue,
+        dispatcher,
+    };
+
+    let opaque = policy::opaq::Opaque {
+        policy: Some(policy::opaq::Policy {
+            meta: META.clone(),
+            filters: NO_OPAQ_FILTERS.clone(),
+            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                policy::RouteBackend {
+                    filters: NO_OPAQ_FILTERS.clone(),
+                    backend: backend.clone(),
+                },
+            ])),
+        }),
+    };
+
+    let routes = Arc::new([policy::http::Route {
+        hosts: vec![],
+        rules: vec![policy::http::Rule {
+            matches: vec![policy::http::r#match::MatchRequest::default()],
+            policy: policy::http::Policy {
+                meta: META.clone(),
+                filters: NO_HTTP_FILTERS.clone(),
+                distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                    policy::RouteBackend {
+                        filters: NO_HTTP_FILTERS.clone(),
+                        backend: backend.clone(),
+                    },
+                ])),
+            },
+        }],
+    }]);
+
+    let detect = policy::Protocol::Detect {
+        timeout,
+        http1: policy::http::Http1 {
+            routes: routes.clone(),
+        },
+        http2: policy::http::Http2 { routes },
+        opaque,
+    };
+
+    ClientPolicy {
+        protocol: detect,
+        backends: Arc::new([backend]),
+    }
 }
 
 // === impl Discovery ===

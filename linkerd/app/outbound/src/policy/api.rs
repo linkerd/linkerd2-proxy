@@ -114,7 +114,7 @@ impl Recover<tonic::Status> for GrpcRecover {
             // Indicates no policy for this target
             tonic::Code::NotFound => Err(status),
             _ => {
-                tracing::trace!(%status, "Recovering");
+                tracing::debug!(%status, "Recovering");
                 Ok(self.0.stream())
             }
         }

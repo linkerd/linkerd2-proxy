@@ -266,6 +266,12 @@ impl Controller {
         OutboundSender(self.outbound.add_call(spec))
     }
 
+    pub fn outbound_tx_default(&self, addr: impl Into<Addr>, dst: impl ToString) -> OutboundSender {
+        let tx = self.outbound_tx(addr);
+        tx.send(outbound_default(dst));
+        tx
+    }
+
     /// Sets an outbound policy for `addr`` that sends a single update and then
     /// remains open.
     pub fn outbound(mut self, addr: impl Into<Addr>, policy: outbound::OutboundPolicy) -> Self {
@@ -278,7 +284,8 @@ impl Controller {
     /// Sets a default outbound policy for `addr` with destination `dst`, which
     /// sends a single update and then remains open.
     pub fn outbound_default(self, addr: impl Into<Addr>, dst: impl ToString) -> Self {
-        self.outbound(addr, outbound_default(dst))
+        let _tx = self.outbound_tx_default(addr, dst);
+        self
     }
 
     pub async fn run(self) -> controller::Listening {
@@ -385,6 +392,7 @@ impl outbound_policies_server::OutboundPolicies
             test controller",
         ))
     }
+
     async fn watch(
         &self,
         req: grpc::Request<outbound::TrafficSpec>,
