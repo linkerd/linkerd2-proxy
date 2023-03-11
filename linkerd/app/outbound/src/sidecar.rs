@@ -184,15 +184,7 @@ impl From<protocol::Http<Sidecar>> for HttpSidecar {
         if let Some(mut profile) = (*parent).profile.clone().map(watch::Receiver::from) {
             // Only use service profiles if there are novel routes/target
             // overrides.
-            let addr = {
-                let p = profile.borrow();
-                if p.has_routes_or_targets() {
-                    p.addr.clone()
-                } else {
-                    None
-                }
-            };
-            if let Some(addr) = addr {
+            if let Some(addr) = http::profile::should_override_policy(&profile) {
                 tracing::debug!("Using ServiceProfile");
                 let init = Self::mk_profile_routes(addr.clone(), &*profile.borrow_and_update());
                 let routes =

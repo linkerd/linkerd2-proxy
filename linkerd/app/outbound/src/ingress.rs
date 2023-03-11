@@ -42,8 +42,12 @@ struct Logical {
 }
 
 #[derive(Debug, Error)]
-#[error("ingress-mode routing requires a service profile: {0}")]
-struct ProfileRequired(NameAddr);
+#[error("ingress-mode routing requires discovery: {0}")]
+struct DiscoveryRequired(NameAddr);
+
+#[derive(Debug, Error)]
+#[error("ingress-mode fallback routing requires an HTTP policy for {0}")]
+struct PolicyRequired(OrigDstAddr);
 
 #[derive(Debug, Default, Error)]
 #[error("l5d-dst-override is not a valid host:port")]
@@ -301,141 +305,89 @@ impl svc::Param<watch::Receiver<http::Routes>> for Http<Logical> {
 }
 
 impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
-    type Error = ProfileRequired;
+    type Error = Error;
 
     fn try_from(parent: Discovery<Http<RequestTarget>>) -> std::result::Result<Self, Self::Error> {
+        let version = parent.version;
         let profile =
             svc::Param::<Option<profiles::Receiver>>::param(&parent).map(watch::Receiver::from);
-        let policy = svc::Param::<Option<policy::Receiver>>::param(&parent);
-        let version = parent.version;
-        match ((**parent).clone(), profile, policy) {
-            (RequestTarget::Named(addr), profile, policy) => {
-                let routes = match (profile, policy) {
-                    // If there's no client policy, use the service profile.
-                    (Some(mut profile), None) => {
-                        let route = mk_profile_routes(&*profile.borrow_and_update())
-                            .ok_or_else(|| ProfileRequired(addr.clone()))?;
-                        http::spawn_routes(profile, route, mk_profile_routes)
-                    }
+        let mut policy =
+            svc::Param::<Option<policy::Receiver>>::param(&parent).expect("policies are required");
 
-                    // If the client policy is default, try the service profile first
-                    (Some(mut profile), Some(mut policy))
-                        if profile.borrow().has_routes_or_targets() =>
-                    {
-                        let route = mk_profile_routes(&*profile.borrow_and_update());
-                        if let Some(route) = route {
-                            http::spawn_routes(profile, route, mk_profile_routes)
-                        } else {
-                            let route = policy_routes(
-                                addr.clone().into(),
-                                version,
-                                &*policy.borrow_and_update(),
-                            )
-                            .ok_or_else(|| ProfileRequired(addr.clone()))?;
-
-                            http::spawn_routes(policy, route, {
-                                let addr = addr.clone();
-                                move |policy| policy_routes(addr.clone().into(), version, policy)
+        match (**parent).clone() {
+            RequestTarget::Named(addr) => {
+                // Only use service profiles if there are novel routes/target
+                // overrides.
+                if let Some(mut profile) = profile {
+                    if let Some(laddr) = http::profile::should_override_policy(&profile) {
+                        tracing::debug!(%addr, "Using ServiceProfile");
+                        let routes = {
+                            let route =
+                                mk_profile_routes(laddr.clone(), &*profile.borrow_and_update())
+                                    .ok_or_else(|| DiscoveryRequired(addr.clone()))?;
+                            http::spawn_routes(profile, route, {
+                                let laddr = laddr.clone();
+                                move |profile| mk_profile_routes(laddr.clone(), profile)
                             })
-                        }
-                    }
-
-                    // Otherwise, try the client policy first
-                    (profile, Some(mut policy)) => {
-                        let route = policy_routes(
-                            addr.clone().into(),
+                        };
+                        return Ok(Http {
                             version,
-                            &*policy.borrow_and_update(),
-                        );
-                        if let Some(route) = route {
-                            http::spawn_routes(policy, route, {
-                                let addr = addr.clone();
-                                move |policy| policy_routes(addr.clone().into(), version, policy)
-                            })
-                        } else if let Some(mut profile) = profile {
-                            let route = mk_profile_routes(&*profile.borrow_and_update())
-                                .ok_or_else(|| ProfileRequired(addr.clone()))?;
-                            http::spawn_routes(profile, route, mk_profile_routes)
-                        } else {
-                            return Err(ProfileRequired(addr));
-                        }
+                            parent: Logical {
+                                addr: (*laddr).clone().into(),
+                                routes,
+                            },
+                        });
                     }
-                    (None, None) => return Err(ProfileRequired(addr)),
-                };
+                }
 
+                let route =
+                    policy_routes(addr.clone().into(), version, &*policy.borrow_and_update())
+                        .ok_or_else(|| DiscoveryRequired(addr.clone()))?;
+                tracing::debug!("Policy");
                 Ok(Http {
                     version: svc::Param::param(&*parent),
                     parent: Logical {
-                        addr: addr.into(),
-                        routes,
+                        addr: addr.clone().into(),
+                        routes: http::spawn_routes(policy, route, move |policy| {
+                            policy_routes(addr.clone().into(), version, policy)
+                        }),
                     },
                 })
             }
 
-            (RequestTarget::Orig(OrigDstAddr(addr)), profile, policy) => {
-                let routes = match (profile, policy) {
-                    (Some(mut profile), None) => {
-                        let route = mk_profile_routes(&*profile.borrow_and_update());
+            RequestTarget::Orig(OrigDstAddr(addr)) => {
+                // Only use service profiles if there are novel routes/target
+                // overrides.
+                if let Some(mut profile) = profile {
+                    if let Some(laddr) = http::profile::should_override_policy(&profile) {
+                        let route = mk_profile_routes(laddr.clone(), &*profile.borrow_and_update());
                         if let Some(route) = route {
-                            http::spawn_routes(profile, route, mk_profile_routes)
-                        } else {
-                            http::spawn_routes_default(Remote(ServerAddr(addr)))
+                            tracing::debug!(%addr, "Using ServiceProfile");
+                            let routes = http::spawn_routes(profile.clone(), route, {
+                                let laddr = laddr.clone();
+                                move |profile| mk_profile_routes(laddr.clone(), profile)
+                            });
+                            return Ok(Http {
+                                version,
+                                parent: Logical {
+                                    addr: (*laddr).clone().into(),
+                                    routes,
+                                },
+                            });
                         }
                     }
+                }
 
-                    // If the client policy is default, try the service profile first
-                    (Some(mut profile), Some(mut policy))
-                        if profile.borrow().has_routes_or_targets() =>
-                    {
-                        let route = mk_profile_routes(&*profile.borrow_and_update());
-                        if let Some(route) = route {
-                            http::spawn_routes(profile, route, mk_profile_routes)
-                        } else if let Some(route) =
-                            policy_routes(addr.into(), version, &*policy.borrow_and_update())
-                        {
-                            http::spawn_routes(profile, route, mk_profile_routes)
-                        } else {
-                            http::spawn_routes_default(Remote(ServerAddr(addr)))
-                        }
-                    }
-
-                    // If there's both a non-default client policy and a service
-                    // profile, try the client policy first.
-                    (Some(mut profile), Some(mut policy)) => {
-                        let route =
-                            policy_routes(addr.into(), version, &*policy.borrow_and_update());
-                        if let Some(route) = route {
-                            http::spawn_routes(policy, route, move |policy| {
-                                policy_routes(addr.into(), version, policy)
-                            })
-                        } else if let Some(route) = {
-                            let route = mk_profile_routes(&*profile.borrow_and_update());
-                            route
-                        } {
-                            http::spawn_routes(profile, route, mk_profile_routes)
-                        } else {
-                            http::spawn_routes_default(Remote(ServerAddr(addr)))
-                        }
-                    }
-
-                    (None, Some(mut policy)) => {
-                        let route =
-                            policy_routes(addr.into(), version, &*policy.borrow_and_update());
-                        if let Some(route) = route {
-                            http::spawn_routes(policy, route, move |policy| {
-                                policy_routes(addr.into(), version, policy)
-                            })
-                        } else {
-                            http::spawn_routes_default(Remote(ServerAddr(addr)))
-                        }
-                    }
-                    (None, None) => http::spawn_routes_default(Remote(ServerAddr(addr))),
-                };
+                let route = policy_routes(addr.into(), version, &*policy.borrow_and_update())
+                    .ok_or(PolicyRequired(OrigDstAddr(addr)))?;
+                tracing::debug!("Using Policy");
                 Ok(Http {
                     version: svc::Param::param(&*parent),
                     parent: Logical {
                         addr: addr.into(),
-                        routes,
+                        routes: http::spawn_routes(policy, route, move |policy| {
+                            policy_routes(addr.into(), version, policy)
+                        }),
                     },
                 })
             }
@@ -444,27 +396,14 @@ impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
 }
 
 fn mk_profile_routes(
-    profiles::Profile {
-        addr,
-        endpoint,
-        http_routes,
-        targets,
-        ..
-    }: &profiles::Profile,
+    addr: http::profile::LogicalAddr,
+    profile: &profiles::Profile,
 ) -> Option<http::Routes> {
-    if let Some(addr) = addr.clone() {
-        return Some(http::Routes::Profile(http::profile::Routes {
-            addr,
-            routes: http_routes.clone(),
-            targets: targets.clone(),
-        }));
-    }
-
-    if let Some((addr, metadata)) = endpoint.clone() {
-        return Some(http::Routes::Endpoint(Remote(ServerAddr(addr)), metadata));
-    }
-
-    None
+    Some(http::Routes::Profile(http::profile::Routes {
+        addr,
+        routes: profile.http_routes.clone(),
+        targets: profile.targets.clone(),
+    }))
 }
 
 fn policy_routes(
