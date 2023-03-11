@@ -157,7 +157,6 @@ fn spawn_synthesized_profile_policy(
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(
         async move {
-            let mut profile = profile;
             loop {
                 if profile.changed().await.is_err() {
                     tracing::debug!("Profile watch closed, terminating");
