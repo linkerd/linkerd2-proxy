@@ -54,8 +54,7 @@ impl Outbound<()> {
         let discover = {
             let detect_timeout = self.config.proxy.detect_protocol_timeout;
 
-            // TODO(eliza): opaque should have a different queue config...
-            let queue = self.config.http_request_queue;
+            let queue = self.config.tcp_connection_queue;
             let default_queue = policy::Queue {
                 capacity: queue.capacity,
                 failfast_timeout: queue.failfast_timeout,
