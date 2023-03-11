@@ -190,7 +190,7 @@ impl Default for Profile {
 impl Profile {
     /// Returns `true` if this profile provides configuration that should
     /// override a client policy configuration.
-    pub fn is_interesting(&self) -> bool {
+    pub fn has_routes_or_targets(&self) -> bool {
         !self.http_routes.is_empty() || !self.targets.is_empty()
     }
 }
