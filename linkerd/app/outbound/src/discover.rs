@@ -3,6 +3,7 @@ use linkerd_app_core::{profiles, svc, transport::OrigDstAddr, Error};
 use std::{
     fmt::Debug,
     hash::{Hash, Hasher},
+    net::SocketAddr,
     ops::Deref,
     time::Duration,
 };
@@ -57,7 +58,7 @@ impl<N> Outbound<N> {
 pub(crate) fn resolver(
     profiles: impl profiles::GetProfile<Error = Error>,
     policies: impl policy::GetPolicy,
-    default_queue: policy::Queue,
+    queue: policy::Queue,
     detect_timeout: Duration,
 ) -> impl svc::Service<
     OrigDstAddr,
@@ -68,107 +69,107 @@ pub(crate) fn resolver(
        + Send
        + Sync
        + 'static {
-    svc::mk(move |addr: OrigDstAddr| {
+    svc::mk(move |OrigDstAddr(orig_dst)| {
         let profile = profiles
             .clone()
-            .get_profile(profiles::LookupAddr(addr.0.into()));
-        let policy = policies.get_policy(addr.0.into());
+            .get_profile(profiles::LookupAddr(orig_dst.into()));
+        let policy = policies.get_policy(orig_dst.into());
         Box::pin(async move {
             let (profile, policy) = tokio::join!(profile, policy);
+
             let profile = profile.unwrap_or_else(|error| {
                 tracing::warn!(%error, "Error resolving ServiceProfile");
                 None
             });
 
-            let policy_error = match policy {
+            // If there was a policy resolution, return it with the profile so
+            // the stack can determine how to switch on them.
+            match policy {
                 Ok(policy) => return Ok((profile, policy)),
-                Err(error) => error,
-            };
-
-            // Was the policy resolution error a gRPC `NotFound` response?
-            let policy_not_found = policy_error
-                .downcast_ref::<tonic::Status>()
-                .map(|status| status.code() == tonic::Code::NotFound)
-                .unwrap_or(false);
-
-            // If the policy controller responded with `NotFound`, synthesize a
-            // policy, either from the ServiceProfile if one was resolved, or
-            // for a forward to the original destination address.
-            if policy_not_found {
-                if let Some(profile) = profile {
-                    let mut profile_rx = watch::Receiver::from(profile.clone());
-                    let ewma = policy::Load::PeakEwma(policy::PeakEwma {
-                        default_rtt: crate::http::logical::profile::DEFAULT_EWMA.default_rtt,
-                        decay: crate::http::logical::profile::DEFAULT_EWMA.decay,
-                    });
-                    let policy_from_profile = move |profile: &profiles::Profile| {
-                        let dispatcher = if let Some((addr, meta)) = profile.endpoint.clone() {
-                            policy::BackendDispatcher::Forward(addr, meta)
-                        } else if let Some(profiles::LogicalAddr(ref addr)) = profile.addr {
-                            policy::BackendDispatcher::BalanceP2c(
-                                ewma,
-                                policy::EndpointDiscovery::DestinationGet {
-                                    path: addr.to_string(),
-                                },
-                            )
-                        } else {
-                            policy::BackendDispatcher::Forward(addr.0, Default::default())
-                        };
-                        policy::ClientPolicy::from_backend(
-                            detect_timeout,
-                            default_queue,
-                            dispatcher,
-                        )
-                    };
-
-                    let policy = policy_from_profile(&*profile_rx.borrow_and_update());
-                    tracing::debug!(
-                        ?policy,
-                        "Policy not found; synthesizing policy from profile..."
-                    );
-                    let (tx, policy_rx) = watch::channel(policy);
-                    tokio::spawn(async move {
-                        loop {
-                            if profile_rx.changed().await.is_err() {
-                                tracing::debug!("Profile watch closed, terminating");
-                                return;
-                            }
-
-                            let policy = policy_from_profile(&*profile_rx.borrow_and_update());
-
-                            tracing::debug!(
-                                ?policy,
-                                "Profile updated; synthesizing policy from profile..."
-                            );
-                            if tx.send(policy).is_err() {
-                                tracing::debug!("Policy watch closed, terminating");
-                                return;
-                            }
-                        }
-                    });
-                    return Ok((Some(profile), policy_rx));
+                Err(error) => {
+                    if error
+                        .downcast_ref::<tonic::Status>()
+                        .map(|s| s.code() != tonic::Code::NotFound)
+                        .unwrap_or(true)
+                    {
+                        return Err(error);
+                    }
                 }
-
-                let policy = policy::ClientPolicy::from_backend(
-                    detect_timeout,
-                    default_queue,
-                    policy::BackendDispatcher::Forward(addr.0, Default::default()),
-                );
-                tracing::debug!(
-                    ?policy,
-                    "Policy not found; no profile: synthesizing policy from original destination address"
-                );
-
-                let (tx, policy_rx) = watch::channel(policy);
-                // keep the watch channel alive as long as it's in use.
-                tokio::spawn(async move { tx.closed().await });
-                return Ok((None, policy_rx));
             }
 
-            // Otherwise, errors resolving the policy are considered fatal.
-            Err(policy_error)
+            // XXX(ver) The policy controller may (for the time being) reject
+            // our lookups, since it doesn't yet serve endpoint metadata for
+            // forwarding.
+            tracing::debug!("Policy not found");
+
+            // If there was a profile resolution, try to use it to synthesize a
+            // enpdoint policy.
+            if let Some(profile) = profile {
+                let policy = spawn_synthesized_profile_policy(
+                    orig_dst,
+                    profile.clone().into(),
+                    queue,
+                    detect_timeout,
+                );
+                return Ok((Some(profile), policy));
+            }
+
+            // Otherwise, route the request to the original destination address.
+            let policy = spawn_synthesized_origdst_policy(orig_dst, queue, detect_timeout);
+            Ok((None, policy))
         })
     })
+}
+
+fn spawn_synthesized_profile_policy(
+    orig_dst: SocketAddr,
+    mut profile: watch::Receiver<profiles::Profile>,
+    queue: policy::Queue,
+    detect_timeout: Duration,
+) -> watch::Receiver<policy::ClientPolicy> {
+    let mk_policy = move |profile: &profiles::Profile| {
+        let (addr, meta) = profile
+            .endpoint
+            .clone()
+            .unwrap_or_else(|| (orig_dst, Default::default()));
+        let forward = policy::BackendDispatcher::Forward(addr, meta);
+        policy::ClientPolicy::from_backend(detect_timeout, queue, forward)
+    };
+
+    let policy = mk_policy(&*profile.borrow_and_update());
+    tracing::debug!(?policy, "Synthesizing policy from profile");
+    let (tx, rx) = watch::channel(policy);
+    tokio::spawn(async move {
+        let mut profile = profile;
+        loop {
+            if profile.changed().await.is_err() {
+                tracing::debug!("Profile watch closed, terminating");
+                return;
+            };
+            let policy = mk_policy(&*profile.borrow());
+            tracing::debug!(?policy, "Profile updated; synthesizing policy");
+            if tx.send(policy).is_err() {
+                tracing::debug!("Policy watch closed, terminating");
+                return;
+            }
+        }
+    });
+    rx
+}
+
+fn spawn_synthesized_origdst_policy(
+    orig_dst: SocketAddr,
+    queue: policy::Queue,
+    detect_timeout: Duration,
+) -> watch::Receiver<policy::ClientPolicy> {
+    let forward = policy::BackendDispatcher::Forward(orig_dst, Default::default());
+    let policy = policy::ClientPolicy::from_backend(detect_timeout, queue, forward);
+    tracing::debug!(?policy, "Synthesizing policy");
+    let (tx, rx) = watch::channel(policy);
+    tokio::spawn(async move {
+        tx.closed().await;
+    });
+    rx
 }
 
 // === impl Discovery ===
