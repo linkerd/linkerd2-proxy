@@ -1,5 +1,5 @@
 use crate::{policy, Outbound};
-use linkerd_app_core::{profiles, svc, transport::OrigDstAddr, Error};
+use linkerd_app_core::{errors, profiles, svc, transport::OrigDstAddr, Error};
 use linkerd_proxy_client_policy::ClientPolicy;
 use once_cell::sync::Lazy;
 use std::{
@@ -125,7 +125,7 @@ pub(crate) fn resolver(
 
 #[inline]
 fn is_not_found(e: &Error) -> bool {
-    e.downcast_ref::<tonic::Status>()
+    errors::cause_ref::<tonic::Status>(e.as_ref())
         .map(|s| s.code() == tonic::Code::NotFound)
         .unwrap_or(false)
 }
