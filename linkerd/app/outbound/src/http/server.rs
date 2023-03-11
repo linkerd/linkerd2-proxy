@@ -165,4 +165,3 @@ impl errors::HttpRescue<Error> for ServerRescue {
         Ok(errors::SyntheticHttpResponse::unexpected_error())
     }
 }
- `
