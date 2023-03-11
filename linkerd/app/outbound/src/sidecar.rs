@@ -98,7 +98,7 @@ impl Outbound<()> {
                     // TODO(eliza): eventually, remove the logical addr field on
                     // the policy route types when we use metadata for those
                     // labels instead.
-                    let addr = orig_dst.0.into();
+                    let OrigDstAddr(addr) = orig_dst;
                     match policy.protocol {
                         policy::Protocol::Detect {
                             ref http1,
