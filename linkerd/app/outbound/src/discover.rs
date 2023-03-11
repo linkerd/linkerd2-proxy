@@ -230,7 +230,7 @@ fn synthesize_forward_policy(
         rules: vec![policy::http::Rule {
             matches: vec![policy::http::r#match::MatchRequest::default()],
             policy: policy::http::Policy {
-                meta,
+                meta: meta.clone(),
                 filters: NO_HTTP_FILTERS.clone(),
                 distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
                     policy::RouteBackend {
