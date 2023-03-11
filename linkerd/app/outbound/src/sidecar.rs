@@ -91,12 +91,18 @@ impl Outbound<()> {
                 };
 
                 let mk_policy_routes = move |policy: &policy::ClientPolicy| {
-                    // A `ClientPolicy` does not have a single known logical
-                    // address, as it may consist of multiple distinct backends.
-                    // Therefore, just use the original destination address for now.
-                    // TODO(eliza): eventually, remove the logical addr field on
-                    // the policy route types when we use metadata for those
-                    // labels instead.
+                    // The `HttpRoutes` types are currently constructed with a
+                    // `LogicalAddr` which is used for metrics labels, tap, et
+                    // cetera. Unlike ServiceProfiles, OutboundPolicies do not
+                    // contain a single authority which can be used as a logical
+                    // address. Instead, the target of the policy is identified
+                    // by structured `policy::Meta` metadata. Therefore, we use
+                    // the original dest address as the logical address, rather
+                    // than an authority.
+                    //
+                    // TODO(eliza): eventually, metrics and tap labels should be
+                    // generated from the policy's structured metadata, rather
+                    // than an address.
                     let OrigDstAddr(addr) = orig_dst;
                     match policy.protocol {
                         policy::Protocol::Detect {
