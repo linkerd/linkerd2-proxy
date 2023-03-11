@@ -960,6 +960,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
+ "tonic",
  "tower",
  "tower-test",
  "tracing",

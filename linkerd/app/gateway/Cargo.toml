@@ -14,6 +14,7 @@ linkerd-app-inbound = { path = "../inbound" }
 linkerd-app-outbound = { path = "../outbound" }
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
+tonic = { version = "0.8", default-features = false }
 tower = { version = "0.4", default-features = false }
 tracing = "0.1"
 
