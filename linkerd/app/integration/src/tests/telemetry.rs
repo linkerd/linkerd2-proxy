@@ -16,6 +16,7 @@ struct Fixture {
     proxy: proxy::Listening,
     _profile: controller::ProfileSender,
     dst_tx: Option<controller::DstSender>,
+    pol_out_tx: Option<policy::OutboundSender>,
     labels: metrics::Labels,
     tcp_src_labels: metrics::Labels,
     tcp_dst_labels: metrics::Labels,
@@ -43,11 +44,11 @@ impl Fixture {
     }
 
     async fn inbound_with_server(srv: server::Listening) -> Self {
-        let ctrl = controller::new();
+        let dstctl = controller::new();
         let orig_dst = srv.addr;
-        let _profile = ctrl.profile_tx_default(orig_dst, "tele.test.svc.cluster.local");
+        let _profile = dstctl.profile_tx_default(orig_dst, "tele.test.svc.cluster.local");
         let proxy = proxy::new()
-            .controller(ctrl.run().await)
+            .controller(dstctl.run().await)
             .inbound(srv)
             .run()
             .await;
@@ -67,6 +68,7 @@ impl Fixture {
             proxy,
             _profile,
             dst_tx: None,
+            pol_out_tx: None,
             labels,
             tcp_src_labels,
             tcp_dst_labels,
@@ -74,14 +76,20 @@ impl Fixture {
     }
 
     async fn outbound_with_server(srv: server::Listening) -> Self {
-        let ctrl = controller::new();
         let orig_dst = srv.addr;
-        let _profile = ctrl.profile_tx_default(orig_dst, "tele.test.svc.cluster.local");
         let authority = format!("tele.test.svc.cluster.local:{}", orig_dst.port());
-        let dest = ctrl.destination_tx(authority.clone());
-        dest.send_addr(srv.addr);
+
+        let dstctl = controller::new();
+        let _profile = dstctl.profile_tx_default(orig_dst, "tele.test.svc.cluster.local");
+        let dst_tx = dstctl.destination_tx(&authority);
+        dst_tx.send_addr(srv.addr);
+
+        let polctl = controller::policy();
+        let pol_out_tx = polctl.outbound_tx_default(srv.addr, &authority);
+
         let proxy = proxy::new()
-            .controller(ctrl.run().await)
+            .controller(dstctl.run().await)
+            .policy(polctl.run().await)
             .outbound(srv)
             .run()
             .await;
@@ -99,7 +107,8 @@ impl Fixture {
             metrics,
             proxy,
             _profile,
-            dst_tx: Some(dest),
+            dst_tx: Some(dst_tx),
+            pol_out_tx: Some(pol_out_tx),
             labels,
             tcp_src_labels,
             tcp_dst_labels,
@@ -127,13 +136,13 @@ impl TcpFixture {
 
     async fn inbound() -> Self {
         let srv = TcpFixture::server().await;
-        let ctrl = controller::new();
+        let dstctl = controller::new();
         let orig_dst = srv.addr;
-        let profile = ctrl.profile_tx_default(orig_dst, &orig_dst.to_string());
-        let dst = ctrl.destination_tx(orig_dst.to_string());
+        let profile = dstctl.profile_tx_default(orig_dst, &orig_dst.to_string());
+        let dst = dstctl.destination_tx(orig_dst.to_string());
         dst.send_addr(orig_dst);
         let proxy = proxy::new()
-            .controller(ctrl.run().await)
+            .controller(dstctl.run().await)
             .inbound(srv)
             .run()
             .await;
@@ -166,13 +175,13 @@ impl TcpFixture {
 
     async fn outbound() -> Self {
         let srv = TcpFixture::server().await;
-        let ctrl = controller::new();
+        let dstctl = controller::new();
         let orig_dst = srv.addr;
-        let profile = ctrl.profile_tx_default(orig_dst, &orig_dst.to_string());
-        let dst = ctrl.destination_tx(orig_dst.to_string());
+        let profile = dstctl.profile_tx_default(orig_dst, &orig_dst.to_string());
+        let dst = dstctl.destination_tx(orig_dst.to_string());
         dst.send_addr(orig_dst);
         let proxy = proxy::new()
-            .controller(ctrl.run().await)
+            .controller(dstctl.run().await)
             .outbound(srv)
             .run()
             .await;
@@ -293,6 +302,7 @@ async fn test_http_count(metric: &str, fixture: impl Future<Output = Fixture>) {
         proxy: _proxy,
         _profile,
         dst_tx: _dst_tx,
+        pol_out_tx: _pol_out_tx,
         labels,
         ..
     } = fixture.await;
@@ -362,6 +372,7 @@ mod response_classification {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
+            pol_out_tx: _pol_out_tx,
             labels,
             ..
         } = fixture.await;
@@ -431,6 +442,7 @@ where
         proxy: _proxy,
         _profile,
         dst_tx: _dst_tx,
+        pol_out_tx: _pol_out_tx,
         labels,
         ..
     } = mk_fixture(srv).await;
@@ -517,25 +529,28 @@ mod outbound_dst_labels {
     use crate::*;
     use controller::DstSender;
 
-    async fn fixture(dest: &str) -> (Fixture, SocketAddr) {
+    async fn fixture(host: &str) -> (Fixture, SocketAddr) {
         info!("running test server");
         let srv = server::new().route("/", "hello").run().await;
-
         let addr = srv.addr;
+        let authority = format!("{host}:{}", addr.port());
 
-        let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(addr, dest);
-        let dest_and_port = format!("{}:{}", dest, addr.port());
-        let dst_tx = ctrl.destination_tx(dest_and_port.clone());
+        let dstctl = controller::new();
+        let _profile = dstctl.profile_tx_default(addr, host);
+        let dst_tx = dstctl.destination_tx(&authority);
+
+        let polctl = controller::policy();
+        let pol_out_tx = polctl.outbound_tx_default(addr, &authority);
 
         let proxy = proxy::new()
-            .controller(ctrl.run().await)
+            .controller(dstctl.run().await)
+            .policy(polctl.run().await)
             .outbound(srv)
             .run()
             .await;
         let metrics = client::http1(proxy.admin, "localhost");
 
-        let client = client::new(proxy.outbound, dest);
+        let client = client::new(proxy.outbound, host);
         let tcp_labels = metrics::labels()
             .label("direction", "outbound")
             .label("target_addr", addr);
@@ -549,6 +564,7 @@ mod outbound_dst_labels {
             tcp_src_labels: tcp_labels.clone(),
             tcp_dst_labels: tcp_labels,
             dst_tx: Some(dst_tx),
+            pol_out_tx: Some(pol_out_tx),
         };
 
         (f, addr)
@@ -564,6 +580,7 @@ mod outbound_dst_labels {
                 proxy: _proxy,
                 _profile,
                 dst_tx,
+                pol_out_tx: _pol_out_tx,
                 labels,
                 ..
             },
@@ -825,22 +842,22 @@ async fn metrics_have_no_double_commas() {
     let inbound_srv = server::new().route("/hey", "hello").run().await;
     let outbound_srv = server::new().route("/hey", "hello").run().await;
 
-    let ctrl = controller::new();
+    let dstctl = controller::new();
     let _profile_in =
-        ctrl.profile_tx_default("tele.test.svc.cluster.local", "tele.test.svc.cluster.local");
-    let _profile_out = ctrl.profile_tx_default(outbound_srv.addr, "tele.test.svc.cluster.local");
-    let out_dest = ctrl.destination_tx(format!(
+        dstctl.profile_tx_default("tele.test.svc.cluster.local", "tele.test.svc.cluster.local");
+    let _profile_out = dstctl.profile_tx_default(outbound_srv.addr, "tele.test.svc.cluster.local");
+    let out_dest = dstctl.destination_tx(format!(
         "tele.test.svc.cluster.local:{}",
         outbound_srv.addr.port()
     ));
     out_dest.send_addr(outbound_srv.addr);
-    let in_dest = ctrl.destination_tx(format!(
+    let in_dest = dstctl.destination_tx(format!(
         "tele.test.svc.cluster.local:{}",
         inbound_srv.addr.port()
     ));
     in_dest.send_addr(inbound_srv.addr);
     let proxy = proxy::new()
-        .controller(ctrl.run().await)
+        .controller(dstctl.run().await)
         .inbound(inbound_srv)
         .outbound(outbound_srv)
         .run()
@@ -873,6 +890,7 @@ async fn metrics_has_start_time() {
         proxy: _proxy,
         _profile,
         dst_tx: _dst_tx,
+        pol_out_tx: _pol_out_tx,
         ..
     } = Fixture::inbound().await;
     let uptime_regex = regex::Regex::new(r"process_start_time_seconds \d+")
@@ -895,6 +913,7 @@ mod transport {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
+            pol_out_tx: _pol_out_tx,
             tcp_dst_labels,
             ..
         } = fixture.await;
@@ -923,6 +942,7 @@ mod transport {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
+            pol_out_tx: _pol_out_tx,
             tcp_src_labels,
             ..
         } = fixture.await;
@@ -1107,6 +1127,7 @@ mod transport {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
+            pol_out_tx: _pol_out_tx,
             tcp_src_labels,
             ..
         } = fixture.await;
@@ -1252,6 +1273,7 @@ async fn metrics_compression() {
         proxy: _proxy,
         _profile,
         dst_tx: _dst_tx,
+        pol_out_tx: _pol_out_tx,
         labels,
         ..
     } = Fixture::inbound().await;
