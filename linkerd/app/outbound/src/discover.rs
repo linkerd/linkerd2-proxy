@@ -140,7 +140,9 @@ fn spawn_synthesized_profile_policy(
             .endpoint
             .clone()
             .unwrap_or_else(|| (orig_dst, Default::default()));
-        synthesize_forward_policy(detect_timeout, queue, addr, meta)
+        // TODO(ver) We should be able to figure outc resource coordinates for
+        // the endpoint?
+        synthesize_forward_policy("endpoint", detect_timeout, queue, addr, meta)
     };
 
     let policy = mk(&*profile.borrow_and_update());
@@ -169,7 +171,13 @@ fn spawn_synthesized_origdst_policy(
     queue: policy::Queue,
     detect_timeout: Duration,
 ) -> watch::Receiver<policy::ClientPolicy> {
-    let policy = synthesize_forward_policy(detect_timeout, queue, orig_dst, Default::default());
+    let policy = synthesize_forward_policy(
+        "fallback",
+        detect_timeout,
+        queue,
+        orig_dst,
+        Default::default(),
+    );
     tracing::debug!(?policy, "Synthesizing policy");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(async move {
@@ -179,29 +187,29 @@ fn spawn_synthesized_origdst_policy(
 }
 
 fn synthesize_forward_policy(
+    name: impl ToString,
     timeout: Duration,
     queue: policy::Queue,
     addr: SocketAddr,
     metadata: policy::EndpointMetadata,
 ) -> ClientPolicy {
     use once_cell::sync::Lazy;
-    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
-        Arc::new(policy::Meta::Default {
-            name: "synthesized".into(),
-        })
-    });
     static NO_HTTP_FILTERS: Lazy<Arc<[policy::http::Filter]>> = Lazy::new(|| Arc::new([]));
     static NO_OPAQ_FILTERS: Lazy<Arc<[policy::opaq::Filter]>> = Lazy::new(|| Arc::new([]));
 
+    let meta = Arc::new(policy::Meta::Default {
+        name: name.to_string().into(),
+    });
+
     let backend = policy::Backend {
-        meta: META.clone(),
+        meta: meta.clone(),
         queue,
         dispatcher: policy::BackendDispatcher::Forward(addr, metadata),
     };
 
     let opaque = policy::opaq::Opaque {
         policy: Some(policy::opaq::Policy {
-            meta: META.clone(),
+            meta: meta.clone(),
             filters: NO_OPAQ_FILTERS.clone(),
             distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
                 policy::RouteBackend {
@@ -217,7 +225,7 @@ fn synthesize_forward_policy(
         rules: vec![policy::http::Rule {
             matches: vec![policy::http::r#match::MatchRequest::default()],
             policy: policy::http::Policy {
-                meta: META.clone(),
+                meta,
                 filters: NO_HTTP_FILTERS.clone(),
                 distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
                     policy::RouteBackend {
