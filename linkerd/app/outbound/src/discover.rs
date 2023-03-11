@@ -96,14 +96,12 @@ pub(crate) fn resolver(
             // the stack can determine how to switch on them.
             match policy {
                 Ok(policy) => return Ok((profile, policy)),
-                Err(error) if is_not_found(&error) => {}
+                // XXX(ver) The policy controller may (for the time being) reject
+                // our lookups, since it doesn't yet serve endpoint metadata for
+                // forwarding.
+                Err(error) if is_not_found(&error) => tracing::debug!("Policy not found"),
                 Err(error) => return Err(error),
             }
-
-            // XXX(ver) The policy controller may (for the time being) reject
-            // our lookups, since it doesn't yet serve endpoint metadata for
-            // forwarding.
-            tracing::debug!("Policy not found");
 
             // If there was a profile resolution, try to use it to synthesize a
             // enpdoint policy.
