@@ -268,6 +268,7 @@ impl HttpSidecar {
             },
         )))
     }
+
     fn mk_profile_routes(addr: profiles::LogicalAddr, profile: &profiles::Profile) -> http::Routes {
         http::Routes::Profile(http::profile::Routes {
             addr,
