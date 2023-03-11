@@ -22,6 +22,7 @@ use tracing::info_span;
 struct Sidecar {
     orig_dst: OrigDstAddr,
     profile: Option<profiles::Receiver>,
+    // TODO(ver) Policies should not be optional.
     policy: Option<policy::Receiver>,
 }
 
@@ -71,121 +72,7 @@ impl Outbound<()> {
             .push_http_cached(resolve)
             .push_http_server()
             .into_stack()
-            .push_map_target(|parent: protocol::Http<Sidecar>| {
-                let version = svc::Param::<http::Version>::param(&parent);
-                let orig_dst = (*parent).orig_dst;
-                let mk_profile_routes = move |profile: &profiles::Profile| {
-                    if let Some(addr) = profile.addr.clone() {
-                        return http::Routes::Profile(http::profile::Routes {
-                            addr,
-                            routes: profile.http_routes.clone(),
-                            targets: profile.targets.clone(),
-                        });
-                    }
-
-                    if let Some((addr, metadata)) = profile.endpoint.clone() {
-                        return http::Routes::Endpoint(Remote(ServerAddr(addr)), metadata);
-                    }
-
-                    http::Routes::Endpoint(Remote(ServerAddr(*orig_dst)), Default::default())
-                };
-
-                let mk_policy_routes = move |policy: &policy::ClientPolicy| {
-                    // Since the logical authority for an outbound policy
-                    // depends on the backend, just use the lookup target
-                    // address as the `LogicalAddr` for now.
-                    // TODO(eliza): eventually, metrics and tap labels should be
-                    // generated from the policy's structured metadata, rather
-                    // than an address.
-                    let addr = {
-                        let OrigDstAddr(addr) = orig_dst;
-                        addr.into()
-                    };
-
-                    match policy.protocol {
-                        policy::Protocol::Detect {
-                            ref http1,
-                            ref http2,
-                            ..
-                        } => {
-                            let routes = match version {
-                                http::Version::Http1 => http1.routes.clone(),
-                                http::Version::H2 => http2.routes.clone(),
-                            };
-                            http::Routes::Policy(http::policy::Routes::Http(
-                                http::policy::HttpRoutes {
-                                    addr,
-                                    backends: policy.backends.clone(),
-                                    routes,
-                                },
-                            ))
-                        }
-                        // TODO(eliza): what do we do here if the configured
-                        // protocol doesn't match the actual protocol for the
-                        // target? probably should make an error route instead?
-                        policy::Protocol::Http1(ref http1) => http::Routes::Policy(
-                            http::policy::Routes::Http(http::policy::HttpRoutes {
-                                addr,
-                                backends: policy.backends.clone(),
-                                routes: http1.routes.clone(),
-                            }),
-                        ),
-                        policy::Protocol::Http2(ref http2) => http::Routes::Policy(
-                            http::policy::Routes::Http(http::policy::HttpRoutes {
-                                addr,
-                                backends: policy.backends.clone(),
-                                routes: http2.routes.clone(),
-                            }),
-                        ),
-                        policy::Protocol::Grpc(ref grpc) => http::Routes::Policy(
-                            http::policy::Routes::Grpc(http::policy::GrpcRoutes {
-                                addr,
-                                backends: policy.backends.clone(),
-                                routes: grpc.routes.clone(),
-                            }),
-                        ),
-                        // TODO(eliza): if the policy's protocol is opaque, but we
-                        // are handling traffic as HTTP...that's obviously wrong.
-                        // should we panic or just fail traffic here?
-                        _ => unreachable!("tried to handle an opaque route as HTTP"),
-                    }
-                };
-                let profile = (*parent).profile.clone().map(watch::Receiver::from);
-                let routes = match (profile, (*parent).policy.clone()) {
-                    (Some(mut profile), Some(_)) if profile.borrow().is_interesting() => {
-                        tracing::debug!("ServiceProfile has routes, overriding OutboundPolicy.");
-                        let init = mk_profile_routes(&*profile.borrow_and_update());
-                        http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
-                            Some(mk_profile_routes(profile))
-                        })
-                    }
-                    (Some(mut profile), None) => {
-                        tracing::debug!("No OutboundPolicy resolved; using ServiceProfile routes");
-                        let init = mk_profile_routes(&*profile.borrow_and_update());
-                        http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
-                            Some(mk_profile_routes(profile))
-                        })
-                    }
-                    (_, Some(mut policy)) => {
-                        tracing::debug!("Using ClientPolicy routes");
-                        let init = mk_policy_routes(&*policy.borrow_and_update());
-                        http::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
-                            Some(mk_policy_routes(policy))
-                        })
-                    }
-                    (None, None) => {
-                        tracing::debug!(
-                            "No OutboundPolicy or ServiceProfile, using default routes"
-                        );
-                        http::spawn_routes_default(Remote(ServerAddr(*orig_dst)))
-                    }
-                };
-                HttpSidecar {
-                    orig_dst,
-                    version,
-                    routes,
-                }
-            });
+            .push_map_target(HttpSidecar::from);
 
         opaq.push_protocol(http.into_inner())
             // Use a dedicated target type to bind discovery results to the
@@ -288,12 +175,111 @@ impl std::hash::Hash for Sidecar {
 
 // === impl HttpSidecar ===
 
+impl From<protocol::Http<Sidecar>> for HttpSidecar {
+    fn from(parent: protocol::Http<Sidecar>) -> Self {
+        let orig_dst = (*parent).orig_dst;
+        let version = svc::Param::<http::Version>::param(&parent);
+        let mut policy = (*parent).policy.clone().expect("policies are required");
+
+        if let Some(mut profile) = (*parent).profile.clone().map(watch::Receiver::from) {
+            // Only use service profiles if there are novel routes/target
+            // overrides.
+            if let Some(addr) = http::profile::should_override_policy(&profile) {
+                tracing::debug!("Using ServiceProfile");
+                let init = Self::mk_profile_routes(addr.clone(), &*profile.borrow_and_update());
+                let routes =
+                    http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
+                        Some(Self::mk_profile_routes(addr.clone(), profile))
+                    });
+                return HttpSidecar {
+                    orig_dst,
+                    version,
+                    routes,
+                };
+            }
+        }
+
+        tracing::debug!("Using ClientPolicy routes");
+        let init = Self::mk_policy_routes(orig_dst, version, &*policy.borrow_and_update())
+            .expect("initial policy must not be opaque");
+        let routes = http::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
+            Self::mk_policy_routes(orig_dst, version, policy)
+        });
+        HttpSidecar {
+            orig_dst,
+            version,
+            routes,
+        }
+    }
+}
+
+impl HttpSidecar {
+    fn mk_policy_routes(
+        OrigDstAddr(orig_dst): OrigDstAddr,
+        version: http::Version,
+        policy: &policy::ClientPolicy,
+    ) -> Option<http::Routes> {
+        // If we're doing HTTP policy routing, we've previously had a
+        // protocol hint that made us think that was a good idea. If the
+        // protocol changes but remains HTTP-ish, we propagate those
+        // changes. If the protocol flips to an opaque protocol, we ignore
+        // the protocol update.
+        let routes = match policy.protocol {
+            policy::Protocol::Detect {
+                ref http1,
+                ref http2,
+                ..
+            } => match version {
+                http::Version::Http1 => http1.routes.clone(),
+                http::Version::H2 => http2.routes.clone(),
+            },
+            policy::Protocol::Http1(ref http1) => http1.routes.clone(),
+            policy::Protocol::Http2(ref http2) => http2.routes.clone(),
+            policy::Protocol::Grpc(ref grpc) => {
+                return Some(http::Routes::Policy(http::policy::Routes::Grpc(
+                    http::policy::GrpcRoutes {
+                        addr: orig_dst.into(),
+                        backends: policy.backends.clone(),
+                        routes: grpc.routes.clone(),
+                    },
+                )))
+            }
+            policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => {
+                tracing::info!(
+                    "Ignoring a discovery update that changed a route from HTTP to opaque"
+                );
+                return None;
+            }
+        };
+
+        Some(http::Routes::Policy(http::policy::Routes::Http(
+            http::policy::HttpRoutes {
+                addr: orig_dst.into(),
+                routes,
+                backends: policy.backends.clone(),
+            },
+        )))
+    }
+
+    fn mk_profile_routes(addr: profiles::LogicalAddr, profile: &profiles::Profile) -> http::Routes {
+        http::Routes::Profile(http::profile::Routes {
+            addr,
+            routes: profile.http_routes.clone(),
+            targets: profile.targets.clone(),
+        })
+    }
+}
+
 impl svc::Param<http::Version> for HttpSidecar {
     fn param(&self) -> http::Version {
         self.version
     }
 }
 
+// XXX Policy routes report their `OrigDstAddr` as a `LogicalAddr`, since the
+// API responses don't provide an DNS-style name in the response. Instead, they
+// include resource coordinates. Telemetry will eventually have to be updated to
+// support report this richer metadata.
 impl svc::Param<http::LogicalAddr> for HttpSidecar {
     fn param(&self) -> http::LogicalAddr {
         http::LogicalAddr(match *self.routes.borrow() {

@@ -9,6 +9,7 @@ use linkerd_app_core::{
 };
 use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash, sync::Arc, time};
+use tokio::sync::watch;
 
 pub use linkerd_app_core::profiles::{
     http::{route_for_request, RequestMatch, Route},
@@ -42,6 +43,15 @@ pub(crate) const DEFAULT_EWMA: balance::EwmaConfig = balance::EwmaConfig {
     default_rtt: time::Duration::from_millis(30),
     decay: time::Duration::from_secs(10),
 };
+
+pub(crate) fn should_override_policy(rx: &watch::Receiver<Profile>) -> Option<LogicalAddr> {
+    let p = rx.borrow();
+    if p.has_routes_or_targets() {
+        p.addr.clone()
+    } else {
+        None
+    }
+}
 
 // === impl Params ===
 

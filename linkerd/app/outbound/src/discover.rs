@@ -21,6 +21,7 @@ mod tests;
 pub struct Discovery<T> {
     parent: T,
     profile: Option<profiles::Receiver>,
+    // TODO(ver) Policies should not be optional.
     policy: Option<policy::Receiver>,
 }
 
