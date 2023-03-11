@@ -86,8 +86,6 @@ impl Outbound<()> {
             let policy = policies.get_policy(addr);
             Box::pin(async move {
                 let (profile, policy) = tokio::join!(profile, policy);
-                // TODO(eliza): we already recover on errors elsewhere in the
-                // stack...this is kinda unfortunate...
                 let profile = profile.unwrap_or_else(|error| {
                     tracing::warn!(%error, "Failed to resolve profile");
                     None
@@ -95,6 +93,7 @@ impl Outbound<()> {
                 Ok((profile, policy?))
             })
         });
+
         // The fallback stack is the same thing as the normal proxy stack, but
         // it doesn't include TCP metrics, since they are already instrumented
         // on this ingress stack.
@@ -340,6 +339,7 @@ impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
                     }
                 }
 
+                // Otherwise, use a client policy if it provides an HTTP policy.
                 let route =
                     policy_routes(addr.clone().into(), version, &*policy.borrow_and_update())
                         .ok_or_else(|| DiscoveryRequired(addr.clone()))?;
@@ -378,6 +378,7 @@ impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
                     }
                 }
 
+                // Otherwise, use a client policy if it provides an HTTP policy.
                 let route = policy_routes(addr.into(), version, &*policy.borrow_and_update())
                     .ok_or(PolicyRequired(OrigDstAddr(addr)))?;
                 tracing::debug!("Using Policy");
