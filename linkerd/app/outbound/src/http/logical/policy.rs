@@ -323,8 +323,10 @@ where
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
+        tracing::trace!(uri = ?req.uri(), headers = ?req.headers(), "Selecting route");
         let (r#match, params) = policy::http::find(&*self.routes, req).ok_or(NoRoute)?;
-        tracing::debug!(?r#match, ?params, uri = ?req.uri(), headers = ?req.headers(), "Selecting route");
+        tracing::debug!(meta = ?params.meta, "Selected route");
+        tracing::trace!(?r#match);
         Ok(MatchedRouteParams {
             r#match,
             params: params.clone(),
