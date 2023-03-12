@@ -20,7 +20,7 @@ package_version := `git rev-parse --short HEAD`
 
 # Docker image name & tag.
 docker-repo := "localhost/linkerd/proxy"
-docker-tag := `git rev-parse --abbrev-ref HEAD | sed 's|/|.|'` + "." + `git rev-parse --short HEAD`
+docker-tag := `git rev-parse --abbrev-ref HEAD | sed 's|/|.|g'` + "." + `git rev-parse --short HEAD`
 docker-image := docker-repo + ":" + docker-tag
 
 # The architecture name to use for packages. Either 'amd64', 'arm64', or 'arm'.
