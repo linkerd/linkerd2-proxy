@@ -276,10 +276,6 @@ impl svc::Param<http::Version> for HttpSidecar {
     }
 }
 
-// XXX Policy routes report their `OrigDstAddr` as a `LogicalAddr`, since the
-// API responses don't provide an DNS-style name in the response. Instead, they
-// include resource coordinates. Telemetry will eventually have to be updated to
-// support report this richer metadata.
 impl svc::Param<http::LogicalAddr> for HttpSidecar {
     fn param(&self) -> http::LogicalAddr {
         http::LogicalAddr(match *self.routes.borrow() {
