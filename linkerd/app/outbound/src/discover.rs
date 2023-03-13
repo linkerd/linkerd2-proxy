@@ -159,9 +159,18 @@ fn spawn_synthesized_profile_policy(
     tokio::spawn(
         async move {
             loop {
-                if profile.changed().await.is_err() {
-                    tracing::debug!("Profile watch closed, terminating");
-                    return;
+                tokio::select! {
+                    biased;
+                    _ = tx.closed() => {
+                        tracing::debug!("Policy watch closed; terminating");
+                        return;
+                    }
+                    res = profile.changed() => {
+                        if res.is_err() {
+                            tracing::debug!("Profile watch closed; terminating");
+                            return;
+                        }
+                    }
                 };
                 let policy = mk(&*profile.borrow());
                 tracing::debug!(?policy, "Profile updated; synthesizing policy");
