@@ -1,12 +1,13 @@
 use crate::Gateway;
 use linkerd_app_core::{
     errors, io, profiles, proxy::http, svc, tls, transport::addrs::*,
-    transport_header::SessionProtocol, Addr, Error,
+    transport_header::SessionProtocol, Addr, Error, NameMatch,
 };
 use linkerd_app_inbound::{self as inbound, GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_outbound::{self as outbound};
 use std::fmt::Debug;
 use tokio::sync::watch;
+use tracing::Instrument;
 
 /// Target for HTTP stacks.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -73,36 +74,7 @@ impl Gateway {
             )
             .into_inner();
 
-        let discover = {
-            use profiles::GetProfile;
-
-            // Apply the gateway's allowlist to the profile discovery service.
-            let allowlist = self.config.allow_discovery.clone().into();
-            let mut profiles = profiles::WithAllowlist::new(profiles, allowlist);
-            svc::mk(move |GatewayAddr(addr)| {
-                let profile = profiles.get_profile(profiles::LookupAddr(addr.clone().into()));
-                // TODO(eliza): we should probably also add the allowlist to
-                // policy resolution...
-                let policy = policies.get_policy(addr.into());
-                Box::pin(async move {
-                    let (profile, policy) = tokio::join!(profile, policy);
-                    let policy = match policy {
-                        Ok(policy) => policy,
-                        // If the policy controller returned `NotFound`,
-                        // indicating that it doesn't have a policy for this
-                        // addr, then we can't gateway this address.
-                        Err(e) if is_not_found(&e) => return Err(GatewayDomainInvalid.into()),
-                        Err(e) => return Err(e),
-                    };
-                    let profile = profile.unwrap_or_else(|error| {
-                        tracing::warn!(%error, "Error resolving ServiceProfile");
-                        None
-                    });
-
-                    Ok::<_, Box<dyn std::error::Error + Send + Sync + 'static>>((profile, policy))
-                })
-            })
-        };
+        let discover = resolver(profiles, policies, self.config.allow_discovery.clone());
 
         self.outbound
             .with_stack(protocol)
@@ -113,6 +85,59 @@ impl Gateway {
     }
 }
 
+fn resolver(
+    profiles: impl profiles::GetProfile<Error = Error>,
+    policies: impl outbound::policy::GetPolicy,
+    allow_discovery: NameMatch,
+) -> impl svc::Service<
+    GatewayAddr,
+    Error = Error,
+    Response = (Option<profiles::Receiver>, outbound::policy::Receiver),
+    Future = impl Send,
+> + Clone
+       + Send
+       + Sync
+       + 'static {
+    use profiles::GetProfile;
+
+    // Apply the gateway's allowlist to the profile discovery service.
+    let allowlist = allow_discovery.clone().into();
+    let profiles = profiles::WithAllowlist::new(profiles, allowlist);
+    svc::mk(move |GatewayAddr(addr)| {
+        tracing::debug!(%addr, "Discover");
+
+        let profile = profiles
+            .clone()
+            .get_profile(profiles::LookupAddr(addr.clone().into()))
+            .instrument(tracing::debug_span!("profiles"));
+
+        // TODO(eliza): we should probably also add the allowlist to
+        // policy resolution...
+        let policy = policies
+            .get_policy(addr.into())
+            .instrument(tracing::debug_span!("policy"));
+
+        Box::pin(async move {
+            let (profile, policy) = tokio::join!(profile, policy);
+            tracing::debug!("Discovered");
+            // let policy = match policy {
+            //     Ok(policy) => policy,
+            //     // If the policy controller returned `NotFound`,
+            //     // indicating that it doesn't have a policy for this
+            //     // addr, then we can't gateway this address.
+            //     Err(e) if is_not_found(&e) => return Err(GatewayDomainInvalid.into()),
+            //     Err(e) => return Err(e),
+            // };
+            let policy = policy?;
+            let profile = profile.unwrap_or_else(|error| {
+                tracing::warn!(%error, "Error resolving ServiceProfile");
+                None
+            });
+
+            Ok((profile, policy))
+        })
+    })
+}
 // === impl Opaq ===
 
 impl<T> std::ops::Deref for Opaq<T> {
