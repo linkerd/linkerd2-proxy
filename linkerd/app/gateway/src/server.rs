@@ -75,7 +75,45 @@ impl Gateway {
             )
             .into_inner();
 
-        let discover = resolver(profiles, policies, self.config.allow_discovery.clone());
+        let discover = {
+            use futures::future;
+
+            let allowlist = self.config.allow_discovery.clone();
+            svc::mk(move |GatewayAddr(addr)| {
+                tracing::debug!(%addr, "Discover");
+
+                if !allowlist.matches(addr.name()) {
+                    tracing::debug!(%addr, "Address not in gateway discovery allowlist");
+                    return future::Either::Left(future::err(GatewayDomainInvalid.into()));
+                }
+
+                let profile = profiles
+                    .clone()
+                    .get_profile(profiles::LookupAddr(addr.clone().into()))
+                    .instrument(tracing::debug_span!("profiles"));
+
+                // TODO(eliza): we should probably also add the allowlist to
+                // policy resolution...
+                let policy = policies
+                    .get_policy(addr.into())
+                    .instrument(tracing::debug_span!("policy"));
+
+                let f = future::join(profile, policy).map(|(profile, policy)| {
+                    tracing::debug!("Discovered");
+                    let policy = match policy {
+                        Ok(policy) => policy,
+                        // If the policy controller returned `NotFound`,
+                        // indicating that it doesn't have a policy for this
+                        // addr, then we can't gateway this address.
+                        Err(e) if is_not_found(&e) => return Err(GatewayDomainInvalid.into()),
+                        Err(e) => return Err(e),
+                    };
+
+                    Ok((profile?, policy))
+                });
+                future::Either::Right(f)
+            })
+        };
 
         self.outbound
             .with_stack(protocol)
