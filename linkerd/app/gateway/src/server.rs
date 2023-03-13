@@ -109,7 +109,7 @@ impl Gateway {
                         Err(e) => return Err(e),
                     };
 
-                    Ok((profile?, Some(policy)))
+                    Ok((profile?, policy))
                 });
                 future::Either::Right(f)
             })
