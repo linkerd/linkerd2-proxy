@@ -37,9 +37,12 @@ async fn errors_propagate() {
 
     let discover = {
         let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        let policies = support::client_policies().policy_default(addr);
         svc::mk(move |OrigDstAddr(addr)| {
-            // TODO(eliza): policy!
-            profiles.clone().oneshot(profiles::LookupAddr(addr.into()))
+            let addr: linkerd_app_core::Addr = addr.into();
+            let profile = profiles.clone().oneshot(profiles::LookupAddr(addr.clone()));
+            let policy = policies.clone().oneshot(addr.clone());
+            Box::pin(async move { Ok((profile.await?, policy.await?)) })
         })
     };
 
@@ -99,11 +102,15 @@ async fn caches_profiles_until_idle() {
 
     let profile_lookups = Arc::new(AtomicUsize::new(0));
     let profiles = {
-        let profile = support::profile::resolver().profile(addr, profiles::Profile::default());
         let lookups = profile_lookups.clone();
-        svc::mk(move |OrigDstAddr(a)| {
+        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+        let policies = support::client_policies().policy_default(addr);
+        svc::mk(move |OrigDstAddr(addr)| {
+            let addr: linkerd_app_core::Addr = addr.into();
+            let profile = profiles.clone().oneshot(profiles::LookupAddr(addr.clone()));
+            let policy = policies.clone().oneshot(addr.clone());
             lookups.fetch_add(1, Ordering::SeqCst);
-            profile.clone().oneshot(profiles::LookupAddr(a.into()))
+            Box::pin(async move { Ok((profile.await?, policy.await?)) })
         })
     };
 
