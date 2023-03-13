@@ -1,4 +1,5 @@
 use crate::Gateway;
+use futures::FutureExt;
 use linkerd_app_core::{
     errors, io, profiles, proxy::http, svc, tls, transport::addrs::*,
     transport_header::SessionProtocol, Addr, Error, NameMatch,
@@ -117,18 +118,17 @@ fn resolver(
             .get_policy(addr.into())
             .instrument(tracing::debug_span!("policy"));
 
-        Box::pin(async move {
-            let (profile, policy) = tokio::join!(profile, policy);
+        futures::future::join(profile, policy).map(|(profile, policy)| {
             tracing::debug!("Discovered");
-            // let policy = match policy {
-            //     Ok(policy) => policy,
-            //     // If the policy controller returned `NotFound`,
-            //     // indicating that it doesn't have a policy for this
-            //     // addr, then we can't gateway this address.
-            //     Err(e) if is_not_found(&e) => return Err(GatewayDomainInvalid.into()),
-            //     Err(e) => return Err(e),
-            // };
-            let policy = policy?;
+            let policy = match policy {
+                Ok(policy) => policy,
+                // If the policy controller returned `NotFound`,
+                // indicating that it doesn't have a policy for this
+                // addr, then we can't gateway this address.
+                Err(e) if is_not_found(&e) => return Err(GatewayDomainInvalid.into()),
+                Err(e) => return Err(e),
+            };
+
             let profile = profile.unwrap_or_else(|error| {
                 tracing::warn!(%error, "Error resolving ServiceProfile");
                 None
