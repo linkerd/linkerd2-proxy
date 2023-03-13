@@ -22,8 +22,7 @@ use tracing::info_span;
 struct Sidecar {
     orig_dst: OrigDstAddr,
     profile: Option<profiles::Receiver>,
-    // TODO(ver) Policies should not be optional.
-    policy: Option<policy::Receiver>,
+    policy: policy::Receiver,
 }
 
 #[derive(Clone, Debug)]
@@ -179,7 +178,7 @@ impl From<protocol::Http<Sidecar>> for HttpSidecar {
     fn from(parent: protocol::Http<Sidecar>) -> Self {
         let orig_dst = (*parent).orig_dst;
         let version = svc::Param::<http::Version>::param(&parent);
-        let mut policy = (*parent).policy.clone().expect("policies are required");
+        let mut policy = (*parent).policy.clone();
 
         if let Some(mut profile) = (*parent).profile.clone().map(watch::Receiver::from) {
             // Only use service profiles if there are novel routes/target
