@@ -10,7 +10,7 @@ use std::{
     task::{Context, Poll},
 };
 use tonic::{body::BoxBody, client::GrpcService};
-use tracing::{debug, trace};
+use tracing::debug;
 
 /// Creates watches on service profiles.
 #[derive(Clone, Debug)]
@@ -81,9 +81,8 @@ where
         Box::pin(async move {
             match w.spawn_watch(addr).await {
                 Ok(rsp) => {
-                    debug!("Resolved profile");
                     let rx = rsp.into_inner();
-                    trace!(profile = ?rx.borrow());
+                    debug!(profile = ?*rx.borrow(), "Resolved profile");
                     Ok(Some(rx.into()))
                 }
                 Err(status) => {
