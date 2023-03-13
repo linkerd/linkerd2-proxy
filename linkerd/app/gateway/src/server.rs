@@ -2,7 +2,7 @@ use crate::Gateway;
 use futures::FutureExt;
 use linkerd_app_core::{
     errors, io, profiles, proxy::http, svc, tls, transport::addrs::*,
-    transport_header::SessionProtocol, Addr, Error, NameMatch,
+    transport_header::SessionProtocol, Addr, Error,
 };
 use linkerd_app_inbound::{self as inbound, GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_outbound::{self as outbound};
@@ -109,7 +109,7 @@ impl Gateway {
                         Err(e) => return Err(e),
                     };
 
-                    Ok((profile?, policy))
+                    Ok((profile?, Some(policy)))
                 });
                 future::Either::Right(f)
             })
