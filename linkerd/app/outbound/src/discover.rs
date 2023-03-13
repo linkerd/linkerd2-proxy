@@ -282,12 +282,14 @@ impl<T> From<((Option<profiles::Receiver>, policy::Receiver), T)> for Discovery<
     }
 }
 
-impl<T> From<(Option<profiles::Receiver>, T)> for Discovery<T> {
-    fn from((profile, parent): (Option<profiles::Receiver>, T)) -> Self {
+impl<T> From<((Option<profiles::Receiver>, Option<policy::Receiver>), T)> for Discovery<T> {
+    fn from(
+        ((profile, policy), parent): ((Option<profiles::Receiver>, Option<policy::Receiver>), T),
+    ) -> Self {
         Self {
             parent,
             profile,
-            policy: None,
+            policy,
         }
     }
 }
