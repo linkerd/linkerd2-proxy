@@ -1,6 +1,6 @@
 use crate::Outbound;
 use linkerd_app_core::{
-    io, profiles, svc,
+    io, svc,
     transport::{self, addrs::*, metrics},
     Error,
 };
@@ -28,12 +28,6 @@ impl From<OrigDstAddr> for Accept {
 impl svc::Param<OrigDstAddr> for Accept {
     fn param(&self) -> OrigDstAddr {
         self.orig_dst
-    }
-}
-
-impl svc::Param<profiles::LookupAddr> for Accept {
-    fn param(&self) -> profiles::LookupAddr {
-        profiles::LookupAddr((*self.orig_dst).into())
     }
 }
 

@@ -9,6 +9,7 @@ use linkerd_app_core::{
 };
 use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash, sync::Arc, time};
+use tokio::sync::watch;
 
 pub use linkerd_app_core::profiles::{
     http::{route_for_request, RequestMatch, Route},
@@ -41,6 +42,20 @@ pub(super) struct RouteParams<T> {
 type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
 type NewDistribute<T, N> = distribute::NewDistribute<Concrete<T>, (), N>;
 type Distribution<T> = distribute::Distribution<Concrete<T>>;
+
+pub(crate) const DEFAULT_EWMA: balance::EwmaConfig = balance::EwmaConfig {
+    default_rtt: time::Duration::from_millis(30),
+    decay: time::Duration::from_secs(10),
+};
+
+pub(crate) fn should_override_policy(rx: &watch::Receiver<Profile>) -> Option<LogicalAddr> {
+    let p = rx.borrow();
+    if p.has_routes_or_targets() {
+        p.addr.clone()
+    } else {
+        None
+    }
+}
 
 // === impl Params ===
 
@@ -102,15 +117,10 @@ where
             targets,
         } = routes;
 
-        const EWMA: balance::EwmaConfig = balance::EwmaConfig {
-            default_rtt: time::Duration::from_millis(30),
-            decay: time::Duration::from_secs(10),
-        };
-
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if targets.is_empty() {
             let concrete = Concrete {
-                target: concrete::Dispatch::Balance(addr.clone(), EWMA),
+                target: concrete::Dispatch::Balance(addr.clone(), DEFAULT_EWMA),
                 authority: Some(addr.as_http_authority()),
                 parent: parent.clone(),
             };
@@ -121,7 +131,7 @@ where
             let backends = targets
                 .iter()
                 .map(|t| Concrete {
-                    target: concrete::Dispatch::Balance(t.addr.clone(), EWMA),
+                    target: concrete::Dispatch::Balance(t.addr.clone(), DEFAULT_EWMA),
                     authority: Some(t.addr.as_http_authority()),
                     parent: parent.clone(),
                 })
@@ -130,7 +140,7 @@ where
                 |Target { addr, weight }| {
                     let concrete = Concrete {
                         authority: Some(addr.as_http_authority()),
-                        target: concrete::Dispatch::Balance(addr, EWMA),
+                        target: concrete::Dispatch::Balance(addr, DEFAULT_EWMA),
                         parent: parent.clone(),
                     };
                     (concrete, weight)

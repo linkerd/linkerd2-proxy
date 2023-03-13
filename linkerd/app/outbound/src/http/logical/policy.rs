@@ -7,7 +7,10 @@ mod router;
 #[cfg(test)]
 mod tests;
 
-pub use self::route::errors;
+pub use self::{
+    route::errors,
+    router::{GrpcParams, HttpParams},
+};
 pub use linkerd_proxy_client_policy::ClientPolicy;
 
 /// HTTP or gRPC policy route parameters.

@@ -161,6 +161,7 @@ impl Identity {
         env.put(app::env::ENV_IDENTITY_DIR, id_dir);
         env.put(app::env::ENV_IDENTITY_TOKEN_FILE, token);
         env.put(app::env::ENV_IDENTITY_TRUST_ANCHORS, trust_anchors);
+        env.put(app::env::ENV_POLICY_WORKLOAD, format!("test:{local_name}"));
         env.put(app::env::ENV_IDENTITY_IDENTITY_LOCAL_NAME, local_name);
 
         Self {

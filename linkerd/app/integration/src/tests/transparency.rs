@@ -8,15 +8,15 @@ async fn outbound_http1() {
     let _trace = trace_init();
 
     let srv = server::http1().route("/", "hello h1").run().await;
-    let ctrl = controller::new();
-    let _profile = ctrl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
-    let dest = ctrl.destination_tx(format!(
+    let dstctl = controller::new();
+    let _profile = dstctl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
+    let dest = dstctl.destination_tx(format!(
         "transparency.test.svc.cluster.local:{}",
         srv.addr.port()
     ));
     dest.send_addr(srv.addr);
     let proxy = proxy::new()
-        .controller(ctrl.run().await)
+        .controller(dstctl.run().await)
         .outbound(srv)
         .run()
         .await;
@@ -32,10 +32,10 @@ async fn inbound_http1() {
     let _trace = trace_init();
 
     let srv = server::http1().route("/", "hello h1").run().await;
-    let ctrl = controller::new();
-    let _profile = ctrl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
+    let dstctl = controller::new();
+    let _profile = dstctl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
     let proxy = proxy::new()
-        .controller(ctrl.run().await)
+        .controller(dstctl.run().await)
         .inbound(srv)
         .run()
         .await;
@@ -60,12 +60,12 @@ async fn outbound_tcp() {
         })
         .run()
         .await;
-    let ctrl = controller::new();
-    let _profile = ctrl.profile_tx_default(srv.addr, &srv.addr.to_string());
-    let dest = ctrl.destination_tx(&srv.addr.to_string());
+    let dstctl = controller::new();
+    let _profile = dstctl.profile_tx_default(srv.addr, &srv.addr.to_string());
+    let dest = dstctl.destination_tx(&srv.addr.to_string());
     dest.send_addr(srv.addr);
     let proxy = proxy::new()
-        .controller(ctrl.run().await)
+        .controller(dstctl.run().await)
         .outbound(srv)
         .run()
         .await;
@@ -98,13 +98,13 @@ async fn outbound_tcp_external() {
         })
         .run()
         .await;
-    let ctrl = controller::new();
-    let profile = ctrl.profile_tx(&srv.addr.to_string());
+    let dstctl = controller::new();
+    let profile = dstctl.profile_tx(&srv.addr.to_string());
     profile.send_err(grpc::Status::invalid_argument(
         "we're pretending this is outside of the cluster",
     ));
     let proxy = proxy::new()
-        .controller(ctrl.run().await)
+        .controller(dstctl.run().await)
         .outbound(srv)
         .run()
         .await;
@@ -1196,9 +1196,9 @@ mod one_proxy {
     use crate::*;
 
     http1_tests! { proxy: |srv: server::Listening| async move {
-        let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
-        proxy::new().inbound(srv).controller(ctrl.run().await).run().await
+        let dstctl = controller::new();
+        let _profile = dstctl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
+        proxy::new().inbound(srv).controller(dstctl.run().await).run().await
     }}
 }
 
@@ -1226,28 +1226,29 @@ mod proxy_to_proxy {
         }
 
         async fn mk(srv: server::Listening) -> Self {
-            let ctrl = controller::new();
+            let dstctl = controller::new();
             let srv_addr = srv.addr;
             let dst = format!("transparency.test.svc.cluster.local:{}", srv_addr.port());
-            let _profile_in = ctrl.profile_tx_default(&dst, "transparency.test.svc.cluster.local");
-            let ctrl = ctrl
+            let _profile_in =
+                dstctl.profile_tx_default(&dst, "transparency.test.svc.cluster.local");
+            let dstctl = dstctl
                 .run()
-                .instrument(tracing::info_span!("ctrl", "inbound"))
+                .instrument(tracing::info_span!("dstctl", "inbound"))
                 .await;
-            let inbound = proxy::new().controller(ctrl).inbound(srv).run().await;
+            let inbound = proxy::new().controller(dstctl).inbound(srv).run().await;
 
-            let ctrl = controller::new();
+            let dstctl = controller::new();
             let _profile_out =
-                ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
-            let dst = ctrl.destination_tx(dst);
+                dstctl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
+            let dst = dstctl.destination_tx(dst);
             dst.send_h2_hinted(inbound.inbound);
 
-            let ctrl = ctrl
+            let dstctl = dstctl
                 .run()
-                .instrument(tracing::info_span!("ctrl", "outbound"))
+                .instrument(tracing::info_span!("dstctl", "outbound"))
                 .await;
             let outbound = proxy::new()
-                .controller(ctrl)
+                .controller(dstctl)
                 .outbound_ip(srv_addr)
                 .run()
                 .await;
@@ -1578,13 +1579,19 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
         })
         .run()
         .await;
-    let ctrl = controller::new();
     let host = "transparency.test.svc.cluster.local";
-    let _profile = ctrl.profile_tx_default(srv.addr, host);
-    let dst = ctrl.destination_tx(format!("{}:{}", host, srv.addr.port()));
+    let authority = format!("transparency.test.svc.cluster.local:{}", srv.addr.port());
+
+    let dstctl = controller::new();
+    let _profile = dstctl.profile_tx_default(srv.addr, host);
+    let dst = dstctl.destination_tx(&authority);
     dst.send_h2_hinted(srv.addr);
+
+    let polctl = controller::policy().outbound_default(srv.addr, &authority);
+
     let proxy = proxy::new()
-        .controller(ctrl.run().await)
+        .controller(dstctl.run().await)
+        .policy(polctl.run().await)
         .outbound(srv)
         .run()
         .await;

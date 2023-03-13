@@ -7,8 +7,7 @@ use crate::core::{
     transport::{Keepalive, ListenAddr},
     Addr, AddrMatch, Conditional, IpNet,
 };
-use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
-use inbound::policy;
+use crate::{dns, gateway, identity, inbound, oc_collector, outbound, policy};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -38,6 +37,8 @@ pub enum EnvError {
     InvalidEnvVar,
     #[error("no destination service configured")]
     NoDestinationAddress,
+    #[error("no policy service configured")]
+    NoPolicyAddress,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
@@ -343,12 +344,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let shutdown_grace_period = parse(strings, ENV_SHUTDOWN_GRACE_PERIOD, parse_duration);
 
-    let inbound_disable_ports = parse(
-        strings,
-        ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-        parse_port_set,
-    );
-
     let inbound_discovery_idle_timeout =
         parse(strings, ENV_INBOUND_DISCOVERY_IDLE_TIMEOUT, parse_duration);
     let outbound_discovery_idle_timeout =
@@ -590,153 +585,33 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     "{} was not set; using `all-unauthenticated`",
                     ENV_INBOUND_DEFAULT_POLICY
                 );
-                policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
+                inbound::policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
             });
 
-            match parse_control_addr(strings, ENV_POLICY_SVC_BASE)? {
-                Some(addr) => {
-                    // If the inbound is proxy is configured to discover policies, then load the set
-                    // of all known inbound ports to be discovered during initialization.
-                    let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
-                        Some(ports) => ports,
-                        None => {
-                            error!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
-                            Default::default()
-                        }
-                    };
-                    if !gateway.allow_discovery.is_empty() {
-                        // Add the inbound port to the set of ports to be discovered if the proxy is
-                        // configured as a gateway. If there are no suffixes configured in the
-                        // gateway, it's not worth maintaining the extra policy watch (which will be
-                        // the more common case).
-                        ports.insert(inbound_port);
-                    }
-
-                    // Ensure that the admin server port is included in policy discovery.
-                    ports.insert(admin_listener_addr.port());
-
-                    // The workload, which is opaque from the proxy's point-of-view, is sent to the
-                    // policy controller to support policy discovery.
-                    let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
-                        error!(
-                            "{} must be set with {}_ADDR",
-                            ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
-                        );
-                        EnvError::InvalidEnvVar
-                    })?;
-
-                    let control = {
-                        let connect = if addr.addr.is_loopback() {
-                            connect.clone()
-                        } else {
-                            outbound.proxy.connect.clone()
-                        };
-                        ControlConfig {
-                            addr,
-                            connect,
-                            buffer: QueueConfig {
-                                capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
-                                failfast_timeout: DEFAULT_CONTROL_FAILFAST_TIMEOUT,
-                            },
-                        }
-                    };
-
-                    inbound::policy::Config::Discover {
-                        default,
-                        ports,
-                        workload,
-                        control,
-                        cache_max_idle_age: discovery_idle_timeout,
-                    }
-                }
-
+            // Load the the set of all known inbound ports to be discovered
+            // eagerly during initialization.
+            let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
+                Some(ports) => ports,
                 None => {
-                    let default_allow = match default.clone() {
-                        policy::DefaultPolicy::Allow(a) => a,
-                        policy::DefaultPolicy::Deny => {
-                            warn!("The default policy `deny` may not be used with a static policy configuration");
-                            return Err(EnvError::InvalidEnvVar);
-                        }
-                    };
-
-                    // If the inbound is not configured to discover policies, then load basic policies from the environment:
-                    // - ports that require authentication
-                    // - ports that require some form of proxy-terminated TLS, though not
-                    //   necessarily with a client identity.
-                    // - opaque ports
-                    let require_identity_ports =
-                        parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|p| {
-                                let allow =
-                                    policy::defaults::all_authenticated(detect_protocol_timeout);
-                                (p, allow)
-                            })
-                            .collect::<HashMap<_, _>>();
-
-                    let require_tls_ports = {
-                        let mut ports =
-                            parse(strings, ENV_INBOUND_PORTS_REQUIRE_TLS, parse_port_set)?
-                                .unwrap_or_default()
-                                .into_iter()
-                                .map(|p| {
-                                    let allow = policy::defaults::all_mtls_unauthenticated(
-                                        detect_protocol_timeout,
-                                    );
-                                    (p, allow)
-                                })
-                                .collect::<HashMap<_, _>>();
-                        // `require_identity` is more restrictive than `require_tls`, so prefer it if
-                        // there are duplicates.
-                        for p in require_identity_ports.keys() {
-                            ports.remove(p);
-                        }
-                        ports
-                    };
-
-                    let opaque_ports = {
-                        let ports = inbound_disable_ports?
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|p| {
-                                let mut sp = require_identity_ports
-                                    .get(&p)
-                                    .or_else(|| require_tls_ports.get(&p))
-                                    .cloned()
-                                    .unwrap_or_else(|| default_allow.clone());
-                                sp.protocol = match sp.protocol {
-                                    inbound::policy::Protocol::Detect { tcp_authorizations, .. } => {
-                                        inbound::policy::Protocol::Opaque(tcp_authorizations)
-                                    }
-                                    _ => unreachable!("port must have been configured to detect prior to marking it opaque"),
-                                };
-                                (p, sp)
-                            })
-                            .collect::<HashMap<_, inbound::policy::ServerPolicy>>();
-                        // Ensure that the inbound port does not disable protocol detection, as
-                        if ports.contains_key(&inbound_port) {
-                            error!(
-                                "{} must not contain {} ({})",
-                                ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-                                ENV_INBOUND_LISTEN_ADDR,
-                                inbound_port
-                            );
-                            return Err(EnvError::InvalidEnvVar);
-                        }
-                        ports
-                    };
-
-                    inbound::policy::Config::Fixed {
-                        default,
-                        cache_max_idle_age: discovery_idle_timeout,
-                        ports: require_identity_ports
-                            .into_iter()
-                            .chain(require_tls_ports)
-                            .chain(opaque_ports)
-                            .collect(),
-                    }
+                    error!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
+                    Default::default()
                 }
+            };
+            if !gateway.allow_discovery.is_empty() {
+                // Add the inbound port to the set of ports to be discovered if the proxy is
+                // configured as a gateway. If there are no suffixes configured in the
+                // gateway, it's not worth maintaining the extra policy watch (which will be
+                // the more common case).
+                ports.insert(inbound_port);
+            }
+
+            // Ensure that the admin server port is included in policy discovery.
+            ports.insert(admin_listener_addr.port());
+
+            inbound::policy::Config::Discover {
+                default,
+                ports,
+                cache_max_idle_age: discovery_idle_timeout,
             }
         };
 
@@ -787,6 +662,37 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 },
             },
         }
+    };
+
+    let policy = {
+        let addr =
+            parse_control_addr(strings, ENV_POLICY_SVC_BASE)?.ok_or(EnvError::NoPolicyAddress)?;
+        // The workload, which is opaque from the proxy's point-of-view, is sent to the
+        // policy controller to support policy discovery.
+        let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
+            error!(
+                "{} must be set with {}_ADDR",
+                ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
+            );
+            EnvError::InvalidEnvVar
+        })?;
+
+        let control = {
+            let connect = if addr.addr.is_loopback() {
+                inbound.proxy.connect.clone()
+            } else {
+                outbound.proxy.connect.clone()
+            };
+            ControlConfig {
+                addr,
+                connect,
+                buffer: QueueConfig {
+                    capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
+                    failfast_timeout: DEFAULT_CONTROL_FAILFAST_TIMEOUT,
+                },
+            }
+        };
+        policy::Config { control, workload }
     };
 
     let admin = super::admin::Config {
@@ -885,6 +791,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         dst,
         tap,
         oc_collector,
+        policy,
         identity,
         outbound,
         gateway,
@@ -1122,20 +1029,28 @@ fn parse_default_policy(
     s: &str,
     cluster_nets: HashSet<IpNet>,
     detect_timeout: Duration,
-) -> Result<policy::DefaultPolicy, ParseError> {
+) -> Result<inbound::policy::DefaultPolicy, ParseError> {
     match s {
-        "deny" => Ok(policy::DefaultPolicy::Deny),
-        "all-authenticated" => Ok(policy::defaults::all_authenticated(detect_timeout).into()),
-        "all-unauthenticated" => Ok(policy::defaults::all_unauthenticated(detect_timeout).into()),
+        "deny" => Ok(inbound::policy::DefaultPolicy::Deny),
+        "all-authenticated" => {
+            Ok(inbound::policy::defaults::all_authenticated(detect_timeout).into())
+        }
+        "all-unauthenticated" => {
+            Ok(inbound::policy::defaults::all_unauthenticated(detect_timeout).into())
+        }
 
         // If cluster networks are configured, support cluster-scoped default policies.
         name if cluster_nets.is_empty() => Err(ParseError::InvalidPortPolicy(name.to_string())),
-        "cluster-authenticated" => {
-            Ok(policy::defaults::cluster_authenticated(cluster_nets, detect_timeout).into())
-        }
-        "cluster-unauthenticated" => {
-            Ok(policy::defaults::cluster_unauthenticated(cluster_nets, detect_timeout).into())
-        }
+        "cluster-authenticated" => Ok(inbound::policy::defaults::cluster_authenticated(
+            cluster_nets,
+            detect_timeout,
+        )
+        .into()),
+        "cluster-unauthenticated" => Ok(inbound::policy::defaults::cluster_unauthenticated(
+            cluster_nets,
+            detect_timeout,
+        )
+        .into()),
 
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
     }

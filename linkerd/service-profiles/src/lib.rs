@@ -18,12 +18,13 @@ use thiserror::Error;
 use tokio::sync::watch;
 use tower::util::{Oneshot, ServiceExt};
 
+mod allowlist;
 mod client;
 mod default;
 pub mod http;
 mod proto;
 
-pub use self::{client::Client, default::RecoverDefault};
+pub use self::{allowlist::WithAllowlist, client::Client, default::RecoverDefault};
 
 #[derive(Clone, Debug)]
 pub struct Receiver {
@@ -183,6 +184,14 @@ impl Default for Profile {
             opaque_protocol: false,
             endpoint: None,
         }
+    }
+}
+
+impl Profile {
+    /// Returns `true` if this profile provides configuration that should
+    /// override a client policy configuration.
+    pub fn has_routes_or_targets(&self) -> bool {
+        !self.http_routes.is_empty() || !self.targets.is_empty()
     }
 }
 
