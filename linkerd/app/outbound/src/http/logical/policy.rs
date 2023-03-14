@@ -46,7 +46,9 @@ where
     T: Debug + Eq + Hash,
     T: Clone + Send + Sync + 'static,
 {
-    /// Wraps an HTTP `NewService` with HTTP or gRPC policy routing layers.
+    /// Builds a stack that dynamically updates and applies HTTP or gRPC policy
+    /// routing configurations to route request over cached inner backend
+    /// services.
     pub(super) fn layer<N, S>() -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<

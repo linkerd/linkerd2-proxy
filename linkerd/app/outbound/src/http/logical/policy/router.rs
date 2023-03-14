@@ -53,9 +53,8 @@ where
     route::MatchedRoute<T, M::Summary, F>: route::filters::Apply,
     route::backend::Matched<T, M::Summary, F>: route::filters::Apply,
 {
-    /// Wraps a `NewService`--instantiated once per logical target--that caches a set
-    /// of concrete services so that, as the watch provides new `Params`, we can
-    /// reuse inner services.
+    /// Builds a stack that applies routes to distribute requests over a cached
+    /// set of inner services so that.
     pub(super) fn layer<N, S>() -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
@@ -82,9 +81,9 @@ where
     {
         svc::layer::mk(|inner| {
             svc::stack(inner)
-                // Each `RouteParams` provides a `Distribution` that is used to
-                // choose a concrete service for a given route.
                 .lift_new()
+                // Each route builds over concrete backends. All of these
+                // backends are cached here and shared across routes.
                 .push(NewBackendCache::layer())
                 // Lazily cache a service for each `RouteParams` returned from the
                 // `SelectRoute` impl.

@@ -51,6 +51,9 @@ where
     Self: filters::Apply,
     backend::Matched<T, M, F>: filters::Apply,
 {
+    /// Builds a route stack that applies policy filters to requests and
+    /// distributes requests over each routes backends. These [`Concrete`]
+    /// backends are expected to be cached/shared by the inner stack.
     pub(crate) fn layer<N, S>() -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
@@ -77,6 +80,8 @@ where
     {
         svc::layer::mk(|inner| {
             svc::stack(inner)
+                // Distribute requests across route backends, applying policies
+                // and filters for each of the route-backends.
                 .push(backend::Matched::layer())
                 .lift_new_with_target()
                 .push(NewDistribute::layer())
