@@ -1,6 +1,6 @@
 use super::{
     super::{concrete, retry},
-    Concrete, Distribution, NewBackendCache, NewDistribute, NoRoute,
+    Concrete, NoRoute,
 };
 use linkerd_app_core::{
     classify, metrics,
@@ -38,6 +38,10 @@ pub(super) struct RouteParams<T> {
     profile: Route,
     distribution: Distribution<T>,
 }
+
+type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
+type NewDistribute<T, N> = distribute::NewDistribute<Concrete<T>, (), N>;
+type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
 pub(crate) const DEFAULT_EWMA: balance::EwmaConfig = balance::EwmaConfig {
     default_rtt: time::Duration::from_millis(30),

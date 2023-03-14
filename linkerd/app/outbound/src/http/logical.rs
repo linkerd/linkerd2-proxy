@@ -9,7 +9,6 @@ use linkerd_app_core::{
     transport::addrs::*,
     Addr, Error, Infallible, NameAddr, CANONICAL_DST_HEADER,
 };
-use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
@@ -24,7 +23,7 @@ pub struct LogicalAddr(pub Addr);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Routes {
     /// Policy routes.
-    Policy(policy::Routes),
+    Policy(policy::Params),
 
     /// Service profile routes.
     Profile(profile::Routes),
@@ -55,17 +54,13 @@ pub struct LogicalError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum RouterParams<T: Clone + Debug + Eq + Hash> {
-    Policy(policy::Params<T>),
+    Policy(policy::Policy<T>),
 
     Profile(profile::Params<T>),
 
     // TODO(ver) Remove this variant when policy routes are fully wired up.
     Endpoint(Remote<ServerAddr>, Metadata, T),
 }
-
-type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
-type NewDistribute<T, N> = distribute::NewDistribute<Concrete<T>, (), N>;
-type Distribution<T> = distribute::Distribution<Concrete<T>>;
 
 // Only applies to requests with profiles.
 //
@@ -162,7 +157,7 @@ where
         S::Future: Send,
     {
         svc::layer::mk(move |concrete: N| {
-            let policy = svc::stack(concrete.clone()).push(policy::Params::layer());
+            let policy = svc::stack(concrete.clone()).push(policy::Policy::layer());
             let profile =
                 svc::stack(concrete.clone()).push(profile::Params::layer(metrics.clone()));
             svc::stack(concrete)

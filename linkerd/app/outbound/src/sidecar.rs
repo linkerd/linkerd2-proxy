@@ -235,8 +235,8 @@ impl HttpSidecar {
             policy::Protocol::Http1(ref http1) => http1.routes.clone(),
             policy::Protocol::Http2(ref http2) => http2.routes.clone(),
             policy::Protocol::Grpc(ref grpc) => {
-                return Some(http::Routes::Policy(http::policy::Routes::Grpc(
-                    http::policy::GrpcRoutes {
+                return Some(http::Routes::Policy(http::policy::Params::Grpc(
+                    http::policy::GrpcParams {
                         addr: orig_dst.into(),
                         backends: policy.backends.clone(),
                         routes: grpc.routes.clone(),
@@ -251,8 +251,8 @@ impl HttpSidecar {
             }
         };
 
-        Some(http::Routes::Policy(http::policy::Routes::Http(
-            http::policy::HttpRoutes {
+        Some(http::Routes::Policy(http::policy::Params::Http(
+            http::policy::HttpParams {
                 addr: orig_dst.into(),
                 routes,
                 backends: policy.backends.clone(),
