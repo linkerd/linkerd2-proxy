@@ -10,9 +10,11 @@ pub(crate) struct Backend<T, F> {
     pub(crate) filters: Arc<[F]>,
 }
 
-pub(crate) type Matched<T, M, F> = super::Matched<M, Backend<T, F>>;
-pub(crate) type Http<T> = Matched<T, http_route::http::r#match::RequestMatch, policy::http::Filter>;
-pub(crate) type Grpc<T> = Matched<T, http_route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
+pub(crate) type MatchedBackend<T, M, F> = super::Matched<M, Backend<T, F>>;
+pub(crate) type Http<T> =
+    MatchedBackend<T, http_route::http::r#match::RequestMatch, policy::http::Filter>;
+pub(crate) type Grpc<T> =
+    MatchedBackend<T, http_route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
 
 // === impl Backend ===
 
@@ -27,16 +29,16 @@ impl<T: Clone, F> Clone for Backend<T, F> {
 
 // === impl Matched ===
 
-impl<M, T, F> From<(Backend<T, F>, super::MatchedRoute<T, M, F>)> for Matched<T, M, F> {
+impl<M, T, F> From<(Backend<T, F>, super::MatchedRoute<T, M, F>)> for MatchedBackend<T, M, F> {
     fn from((params, route): (Backend<T, F>, super::MatchedRoute<T, M, F>)) -> Self {
-        Matched {
+        MatchedBackend {
             r#match: route.r#match,
             params,
         }
     }
 }
 
-impl<T, M, F> Matched<T, M, F>
+impl<T, M, F> MatchedBackend<T, M, F>
 where
     // Parent target.
     T: Debug + Eq + Hash,
@@ -48,6 +50,11 @@ where
     // Assert that filters can be applied.
     Self: filters::Apply,
 {
+    /// Builds a stack that applies per-route-backend policy filters over an
+    /// inner [`Concrete`] stack.
+    ///
+    /// This [`MatchedBackend`] must implement [`filters::Apply`] to apply these
+    /// filters.
     pub(crate) fn layer<N, S>() -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
@@ -75,7 +82,7 @@ where
         svc::layer::mk(|inner| {
             svc::stack(inner)
                 .push_map_target(
-                    |Matched {
+                    |MatchedBackend {
                          params: Backend { concrete, .. },
                          ..
                      }| concrete,

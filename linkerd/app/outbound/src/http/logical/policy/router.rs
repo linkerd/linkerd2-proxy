@@ -51,7 +51,7 @@ where
         Error = NoRoute,
     >,
     route::MatchedRoute<T, M::Summary, F>: route::filters::Apply,
-    route::backend::Matched<T, M::Summary, F>: route::filters::Apply,
+    route::backend::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.

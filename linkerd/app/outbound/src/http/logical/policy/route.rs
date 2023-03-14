@@ -8,9 +8,13 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 pub(crate) mod backend;
 pub(crate) mod filters;
 
-pub(crate) use self::backend::Backend;
+pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
 
+/// A target type that includes a summary of exactly how a request was matched.
+/// This match state is required to apply route filters.
+///
+/// See [`MatchedRoute`] and [`MatchedBackend`].
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Matched<M, P> {
     pub(super) r#match: http_route::RouteMatch<M>,
@@ -49,10 +53,10 @@ where
     F: Clone + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
-    backend::Matched<T, M, F>: filters::Apply,
+    MatchedBackend<T, M, F>: filters::Apply,
 {
     /// Builds a route stack that applies policy filters to requests and
-    /// distributes requests over each routes backends. These [`Concrete`]
+    /// distributes requests over each route's backends. These [`Concrete`]
     /// backends are expected to be cached/shared by the inner stack.
     pub(crate) fn layer<N, S>() -> impl svc::Layer<
         N,
@@ -82,7 +86,7 @@ where
             svc::stack(inner)
                 // Distribute requests across route backends, applying policies
                 // and filters for each of the route-backends.
-                .push(backend::Matched::layer())
+                .push(MatchedBackend::layer())
                 .lift_new_with_target()
                 .push(NewDistribute::layer())
                 // The router does not take the backend's availability into
