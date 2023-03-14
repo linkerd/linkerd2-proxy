@@ -224,14 +224,14 @@ impl ClientPolicies {
         // XXX(eliza): is this the best initial value?
         let init = client_policy::ClientPolicy::invalid(std::time::Duration::from_secs(10));
         let (tx, rx) = watch::channel(init);
-        self.state.endpoints.lock().insert(addr.into(), rx.into());
+        self.state.endpoints.lock().insert(addr.into(), rx);
         tx
     }
 
     pub fn policy(self, addr: impl Into<Addr>, policy: client_policy::ClientPolicy) -> Self {
         let (tx, rx) = watch::channel(policy);
         self.state.unused_senders.lock().push(Box::new(tx));
-        self.state.endpoints.lock().insert(addr.into(), rx.into());
+        self.state.endpoints.lock().insert(addr.into(), rx);
         self
     }
 
@@ -287,7 +287,7 @@ impl ClientPolicies {
                 routes: http_routes.clone(),
             },
             http2: client_policy::http::Http2 {
-                routes: http_routes.clone(),
+                routes: http_routes,
             },
             opaque: client_policy::opaq::Opaque {
                 policy: Some(client_policy::opaq::Policy {

@@ -41,7 +41,7 @@ async fn errors_propagate() {
         svc::mk(move |OrigDstAddr(addr)| {
             let addr: linkerd_app_core::Addr = addr.into();
             let profile = profiles.clone().oneshot(profiles::LookupAddr(addr.clone()));
-            let policy = policies.clone().oneshot(addr.clone());
+            let policy = policies.clone().oneshot(addr);
             Box::pin(async move { Ok((profile.await?, policy.await?)) })
         })
     };
@@ -108,7 +108,7 @@ async fn caches_profiles_until_idle() {
         svc::mk(move |OrigDstAddr(addr)| {
             let addr: linkerd_app_core::Addr = addr.into();
             let profile = profiles.clone().oneshot(profiles::LookupAddr(addr.clone()));
-            let policy = policies.clone().oneshot(addr.clone());
+            let policy = policies.clone().oneshot(addr);
             lookups.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Ok((profile.await?, policy.await?)) })
         })
