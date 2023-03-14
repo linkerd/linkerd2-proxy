@@ -154,9 +154,13 @@ impl errors::HttpRescue<Error> for ServerRescue {
         }
 
         // No available backend can be found for a request.
-        if errors::is_caused_by::<errors::FailFastError>(&*error)
-            || errors::is_caused_by::<errors::LoadShedError>(&*error)
-        {
+        if errors::is_caused_by::<errors::FailFastError>(&*error) {
+            // XXX(ver) This should probably be SERVICE_UNAVAILABLE, because
+            // this is basically no different from a LoadShedError, but that
+            // would be a change in behavior.
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
+        }
+        if errors::is_caused_by::<errors::LoadShedError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::unavailable(error));
         }
 
