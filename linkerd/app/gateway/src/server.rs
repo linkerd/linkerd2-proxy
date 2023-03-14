@@ -94,24 +94,21 @@ impl Gateway {
 
                 // TODO(eliza): we should probably also add the allowlist to
                 // policy resolution...
-                let policy = policies
-                    .get_policy(addr.into())
-                    .instrument(tracing::debug_span!("policy"));
+            let policy = policies
+                .get_policy(addr.into())
+                .map_err(|e| {
+                    // If the policy controller returned `NotFound`, indicating
+                    // that it doesn't have a policy for this addr, then we
+                    // can't gateway this address.
+                    if is_not_found(&e) {
+                        GatewayDomainInvalid.into()
+                    } else {
+                        e
+                    }
+                })
+                .instrument(tracing::debug_span!("policy"));
 
-                let f = future::join(profile, policy).map(|(profile, policy)| {
-                    tracing::debug!("Discovered");
-                    let policy = match policy {
-                        Ok(policy) => policy,
-                        // If the policy controller returned `NotFound`,
-                        // indicating that it doesn't have a policy for this
-                        // addr, then we can't gateway this address.
-                        Err(e) if is_not_found(&e) => return Err(GatewayDomainInvalid.into()),
-                        Err(e) => return Err(e),
-                    };
-
-                    Ok((profile?, policy))
-                });
-                future::Either::Right(f)
+            future::Either::Right(future::try_join(profile, policy))
             })
         };
 
