@@ -1,5 +1,5 @@
 use crate::Gateway;
-use futures::FutureExt;
+use futures::TryFutureExt;
 use linkerd_app_core::{
     errors, io, profiles, proxy::http, svc, tls, transport::addrs::*,
     transport_header::SessionProtocol, Addr, Error,
@@ -94,21 +94,21 @@ impl Gateway {
 
                 // TODO(eliza): we should probably also add the allowlist to
                 // policy resolution...
-            let policy = policies
-                .get_policy(addr.into())
-                .map_err(|e| {
-                    // If the policy controller returned `NotFound`, indicating
-                    // that it doesn't have a policy for this addr, then we
-                    // can't gateway this address.
-                    if is_not_found(&e) {
-                        GatewayDomainInvalid.into()
-                    } else {
-                        e
-                    }
-                })
-                .instrument(tracing::debug_span!("policy"));
+                let policy = policies
+                    .get_policy(addr.into())
+                    .map_err(|e| {
+                        // If the policy controller returned `NotFound`, indicating
+                        // that it doesn't have a policy for this addr, then we
+                        // can't gateway this address.
+                        if is_not_found(&e) {
+                            GatewayDomainInvalid.into()
+                        } else {
+                            e
+                        }
+                    })
+                    .instrument(tracing::debug_span!("policy"));
 
-            future::Either::Right(future::try_join(profile, policy))
+                future::Either::Right(future::try_join(profile, policy))
             })
         };
 
