@@ -1,9 +1,12 @@
-use super::*;
+use super::{super::concrete, *};
 use linkerd_app_core::{
     svc::NewService,
     svc::{Layer, ServiceExt},
     trace,
+    transport::addrs::*,
 };
+use linkerd_http_route as route;
+use linkerd_proxy_client_policy as policy;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::time;
 
@@ -19,11 +22,18 @@ async fn header_based_route() {
         },
         dispatcher: policy::BackendDispatcher::Forward(addr, Default::default()),
     };
-
-    let default_addr = ([127, 0, 0, 1], 18080).into();
-    let special_addr = ([127, 0, 0, 1], 28080).into();
+    let mk_policy = |name: &'static str, backend: policy::Backend| policy::RoutePolicy {
+        meta: policy::Meta::new_default(name),
+        filters: Arc::new([]),
+        distribution: policy::RouteDistribution::FirstAvailable(Arc::new([policy::RouteBackend {
+            filters: Arc::new([]),
+            backend,
+        }])),
+    };
 
     // Stack that produces mock services.
+    let default_addr = ([127, 0, 0, 1], 18080).into();
+    let special_addr = ([127, 0, 0, 1], 28080).into();
     let (inner_default, mut default) = tower_test::mock::pair();
     let (inner_special, mut special) = tower_test::mock::pair();
     let inner = move |concrete: Concrete<()>| {
@@ -39,10 +49,10 @@ async fn header_based_route() {
     };
 
     // Routes that configure a special header-based route and a default route.
-    let routes = Routes::Http({
+    let routes = Params::Http({
         let default = mk_backend("default", default_addr);
         let special = mk_backend("special", special_addr);
-        HttpRoutes {
+        router::HttpParams {
             addr: Addr::Socket(([127, 0, 0, 1], 8080).into()),
             routes: Arc::new([policy::http::Route {
                 hosts: Default::default(),
@@ -67,9 +77,9 @@ async fn header_based_route() {
         }
     });
 
-    let router = Params::layer()
+    let router = Policy::layer()
         .layer(inner)
-        .new_service(Params::from((routes, ())));
+        .new_service(Policy::from((routes, ())));
 
     default.allow(1);
     special.allow(1);
@@ -102,13 +112,83 @@ async fn header_based_route() {
     drop(router);
 }
 
-fn mk_policy<F>(name: &'static str, backend: policy::Backend) -> policy::RoutePolicy<F> {
-    policy::RoutePolicy {
-        meta: policy::Meta::new_default(name),
-        filters: Arc::new([]),
-        distribution: policy::RouteDistribution::FirstAvailable(Arc::new([policy::RouteBackend {
-            filters: Arc::new([]),
-            backend,
-        }])),
-    }
+#[tokio::test(flavor = "current_thread")]
+async fn http_filter_request_headers() {
+    let _trace = trace::test::trace_init();
+
+    let addr = ([127, 0, 0, 1], 18080).into();
+    let backend = policy::Backend {
+        meta: policy::Meta::new_default("test"),
+        queue: policy::Queue {
+            capacity: 10,
+            failfast_timeout: time::Duration::from_secs(1),
+        },
+        dispatcher: policy::BackendDispatcher::Forward(addr, Default::default()),
+    };
+
+    // Stack that produces mock services.
+    let (inner, mut handle) = tower_test::mock::pair();
+    let inner = move |_: Concrete<()>| inner.clone();
+
+    // Routes that configure a special header-based route and a default route.
+    static PIZZA: http::HeaderName = http::HeaderName::from_static("pizza");
+    static PARTY: http::HeaderValue = http::HeaderValue::from_static("party");
+    static TUBULAR: http::HeaderValue = http::HeaderValue::from_static("tubular");
+    static COWABUNGA: http::HeaderValue = http::HeaderValue::from_static("cowabunga");
+    let routes = Params::Http({
+        router::HttpParams {
+            addr: Addr::Socket(([127, 0, 0, 1], 8080).into()),
+            routes: Arc::new([policy::http::Route {
+                hosts: Default::default(),
+                rules: vec![policy::http::Rule {
+                    matches: vec![route::http::MatchRequest::default()],
+                    policy: policy::RoutePolicy {
+                        meta: policy::Meta::new_default("turtles"),
+                        filters: Arc::new([policy::http::Filter::RequestHeaders(
+                            policy::http::filter::ModifyHeader {
+                                add: vec![(PIZZA.clone(), TUBULAR.clone())],
+                                ..Default::default()
+                            },
+                        )]),
+                        distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                            policy::RouteBackend {
+                                backend: backend.clone(),
+                                filters: Arc::new([policy::http::Filter::RequestHeaders(
+                                    policy::http::filter::ModifyHeader {
+                                        add: vec![(PIZZA.clone(), COWABUNGA.clone())],
+                                        ..Default::default()
+                                    },
+                                )]),
+                            },
+                        ])),
+                    },
+                }],
+            }]),
+            backends: std::iter::once(backend).collect(),
+        }
+    });
+
+    let router = Policy::layer()
+        .layer(inner)
+        .new_service(Policy::from((routes, ())));
+
+    handle.allow(1);
+    let req = http::Request::builder()
+        .header(&PIZZA, &PARTY)
+        .body(http::BoxBody::default())
+        .unwrap();
+    let (req, _rsp) = tokio::select! {
+        biased;
+        _ = router.clone().oneshot(req) => panic!("unexpected response"),
+        _ = time::sleep(time::Duration::from_secs(1)) => panic!("timed out"),
+        reqrsp = handle.next_request() => reqrsp.expect("request"),
+    };
+
+    assert_eq!(
+        req.headers().get_all(&PIZZA).iter().collect::<Vec<_>>(),
+        vec![&PARTY, &TUBULAR, &COWABUNGA],
+    );
+
+    // Hold the router to prevent inner services from being dropped.
+    drop(router);
 }

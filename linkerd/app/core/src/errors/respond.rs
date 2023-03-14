@@ -199,6 +199,16 @@ impl SyntheticHttpResponse {
         }
     }
 
+    pub fn grpc(grpc_status: tonic::Code, message: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            grpc_status,
+            http_status: http::StatusCode::OK,
+            location: None,
+            close_connection: false,
+            message: message.into(),
+        }
+    }
+
     #[inline]
     fn message(&self) -> HeaderValue {
         match self.message {

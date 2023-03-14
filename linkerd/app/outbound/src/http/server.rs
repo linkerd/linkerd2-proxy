@@ -140,27 +140,63 @@ impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
 
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        use super::logical::policy::errors as policy;
+
+        // A profile configured request timeout was encountered.
         if errors::is_caused_by::<http::ResponseTimeoutError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
         }
+
+        // A request with a `l5d-require-id` header are dispatched to endpoints
+        // with a different identity.
         if errors::is_caused_by::<IdentityRequired>(&*error) {
             return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
+
+        // No available backend can be found for a request.
         if errors::is_caused_by::<errors::FailFastError>(&*error) {
+            // XXX(ver) This should probably be SERVICE_UNAVAILABLE, because
+            // this is basically no different from a LoadShedError, but that
+            // would be a change in behavior.
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
         }
         if errors::is_caused_by::<errors::LoadShedError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::unavailable(error));
         }
 
+        // No routes configured for a request.
         if errors::is_caused_by::<super::logical::NoRoute>(&*error) {
             return Ok(errors::SyntheticHttpResponse::not_found(error));
         }
 
+        // Policy-driven request redirection.
+        if let Some(policy::HttpRouteRedirect { status, location }) = errors::cause_ref(&*error) {
+            return Ok(errors::SyntheticHttpResponse::redirect(*status, location));
+        }
+
+        // Policy-driven request failures.
+        if let Some(policy::HttpRouteInjectedFailure { status, message }) =
+            errors::cause_ref(&*error)
+        {
+            return Ok(errors::SyntheticHttpResponse::response(
+                *status,
+                message.to_string(),
+            ));
+        }
+        if let Some(policy::GrpcRouteInjectedFailure { code, message }) = errors::cause_ref(&*error)
+        {
+            return Ok(errors::SyntheticHttpResponse::grpc(
+                (*code as i32).into(),
+                message.to_string(),
+            ));
+        }
+
+        // HTTP/2 errors.
         if errors::is_caused_by::<errors::H2Error>(&*error) {
             return Err(error);
         }
 
+        // Everything else...
         tracing::warn!(error, "Unexpected error");
         Ok(errors::SyntheticHttpResponse::unexpected_error())
     }

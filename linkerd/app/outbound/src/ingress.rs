@@ -422,8 +422,8 @@ fn policy_routes(
                 http::Version::Http1 => http1.routes.clone(),
                 http::Version::H2 => http2.routes.clone(),
             };
-            Some(http::Routes::Policy(http::policy::Routes::Http(
-                http::policy::HttpRoutes {
+            Some(http::Routes::Policy(http::policy::Params::Http(
+                http::policy::HttpParams {
                     addr,
                     backends: policy.backends.clone(),
                     routes,
@@ -434,21 +434,21 @@ fn policy_routes(
         // protocol doesn't match the actual protocol for the
         // target? probably should make an error route instead?
         policy::Protocol::Http1(ref http1) => Some(http::Routes::Policy(
-            http::policy::Routes::Http(http::policy::HttpRoutes {
+            http::policy::Params::Http(http::policy::HttpParams {
                 addr,
                 backends: policy.backends.clone(),
                 routes: http1.routes.clone(),
             }),
         )),
         policy::Protocol::Http2(ref http2) => Some(http::Routes::Policy(
-            http::policy::Routes::Http(http::policy::HttpRoutes {
+            http::policy::Params::Http(http::policy::HttpParams {
                 addr,
                 backends: policy.backends.clone(),
                 routes: http2.routes.clone(),
             }),
         )),
-        policy::Protocol::Grpc(ref grpc) => Some(http::Routes::Policy(http::policy::Routes::Grpc(
-            http::policy::GrpcRoutes {
+        policy::Protocol::Grpc(ref grpc) => Some(http::Routes::Policy(http::policy::Params::Grpc(
+            http::policy::GrpcParams {
                 addr,
                 backends: policy.backends.clone(),
                 routes: grpc.routes.clone(),
