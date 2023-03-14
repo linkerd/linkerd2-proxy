@@ -3,11 +3,8 @@ use linkerd_app_core::{
     svc::{self, ExtractParam},
     Error, Result,
 };
-use linkerd_proxy_client_policy::{self as policy, grpc, http};
+use linkerd_proxy_client_policy::{grpc, http};
 use std::{marker::PhantomData, task};
-
-// #[cfg(test)]
-// mod tests;
 
 /// A middleware that enforces policy on each HTTP request.
 ///
@@ -35,7 +32,7 @@ pub mod errors {
 
     #[derive(Debug, thiserror::Error)]
     #[error("invalid redirect: {0}")]
-    pub struct HttpRouteInvalidRedirect(#[from] pub policy::http::filter::InvalidRedirect);
+    pub struct HttpRouteInvalidRedirect(#[from] pub http::filter::InvalidRedirect);
 
     #[derive(Debug, thiserror::Error)]
     #[error("request redirected to {location}")]
@@ -59,7 +56,7 @@ pub mod errors {
     }
 
     #[derive(Debug, thiserror::Error)]
-    #[error("invalid server policy: {0}")]
+    #[error("invalid client policy: {0}")]
     pub struct HttpInvalidPolicy(pub &'static str);
 }
 
@@ -75,16 +72,14 @@ pub fn apply_http<B>(
     // TODO Do any metrics apply here?
     for filter in filters {
         match filter {
-            policy::http::Filter::InjectFailure(fail) => {
-                if let Some(policy::http::filter::FailureResponse { status, message }) =
-                    fail.apply()
-                {
+            http::Filter::InjectFailure(fail) => {
+                if let Some(http::filter::FailureResponse { status, message }) = fail.apply() {
                     return Err(errors::HttpRouteInjectedFailure { status, message }.into());
                 }
             }
 
-            policy::http::Filter::Redirect(redir) => match redir.apply(req.uri(), r#match) {
-                Ok(Some(policy::http::filter::Redirection { status, location })) => {
+            http::Filter::Redirect(redir) => match redir.apply(req.uri(), r#match) {
+                Ok(Some(http::filter::Redirection { status, location })) => {
                     return Err(errors::HttpRouteRedirect { status, location }.into());
                 }
 
@@ -97,11 +92,11 @@ pub fn apply_http<B>(
                 }
             },
 
-            policy::http::Filter::RequestHeaders(rh) => {
+            http::Filter::RequestHeaders(rh) => {
                 rh.apply(req.headers_mut());
             }
 
-            policy::http::Filter::InternalError(msg) => {
+            http::Filter::InternalError(msg) => {
                 return Err(errors::HttpInvalidPolicy(msg).into());
             }
         }
@@ -117,18 +112,17 @@ pub fn apply_grpc<B>(
 ) -> Result<()> {
     for filter in filters {
         match filter {
-            policy::grpc::Filter::InjectFailure(fail) => {
-                if let Some(policy::grpc::filter::FailureResponse { code, message }) = fail.apply()
-                {
+            grpc::Filter::InjectFailure(fail) => {
+                if let Some(grpc::filter::FailureResponse { code, message }) = fail.apply() {
                     return Err(errors::GrpcRouteInjectedFailure { code, message }.into());
                 }
             }
 
-            policy::grpc::Filter::RequestHeaders(rh) => {
+            grpc::Filter::RequestHeaders(rh) => {
                 rh.apply(req.headers_mut());
             }
 
-            policy::grpc::Filter::InternalError(msg) => {
+            grpc::Filter::InternalError(msg) => {
                 return Err(errors::HttpInvalidPolicy(msg).into());
             }
         }
