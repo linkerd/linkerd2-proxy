@@ -310,8 +310,7 @@ impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
         let version = parent.version;
         let profile =
             svc::Param::<Option<profiles::Receiver>>::param(&parent).map(watch::Receiver::from);
-        let mut policy =
-            svc::Param::<Option<policy::Receiver>>::param(&parent).expect("policies are required");
+        let mut policy = svc::Param::<policy::Receiver>::param(&parent);
 
         match (**parent).clone() {
             RequestTarget::Named(addr) => {

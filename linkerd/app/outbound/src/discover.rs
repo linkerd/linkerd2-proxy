@@ -21,8 +21,7 @@ mod tests;
 pub struct Discovery<T> {
     parent: T,
     profile: Option<profiles::Receiver>,
-    // TODO(ver) Policies should not be optional.
-    policy: Option<policy::Receiver>,
+    policy: policy::Receiver,
 }
 
 impl<N> Outbound<N> {
@@ -277,17 +276,7 @@ impl<T> From<((Option<profiles::Receiver>, policy::Receiver), T)> for Discovery<
         Self {
             parent,
             profile,
-            policy: Some(policy),
-        }
-    }
-}
-
-impl<T> From<(Option<profiles::Receiver>, T)> for Discovery<T> {
-    fn from((profile, parent): (Option<profiles::Receiver>, T)) -> Self {
-        Self {
-            parent,
-            profile,
-            policy: None,
+            policy,
         }
     }
 }
@@ -310,8 +299,8 @@ impl<T> svc::Param<Option<profiles::LogicalAddr>> for Discovery<T> {
     }
 }
 
-impl<T> svc::Param<Option<policy::Receiver>> for Discovery<T> {
-    fn param(&self) -> Option<policy::Receiver> {
+impl<T> svc::Param<policy::Receiver> for Discovery<T> {
+    fn param(&self) -> policy::Receiver {
         self.policy.clone()
     }
 }

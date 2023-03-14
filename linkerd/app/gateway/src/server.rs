@@ -1,12 +1,14 @@
 use crate::Gateway;
+use futures::TryFutureExt;
 use linkerd_app_core::{
-    io, profiles, proxy::http, svc, tls, transport::addrs::*, transport_header::SessionProtocol,
-    Addr, Error,
+    errors, io, profiles, proxy::http, svc, tls, transport::addrs::*,
+    transport_header::SessionProtocol, Addr, Error,
 };
 use linkerd_app_inbound::{self as inbound, GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_outbound::{self as outbound};
 use std::fmt::Debug;
 use tokio::sync::watch;
+use tracing::Instrument;
 
 /// Target for HTTP stacks.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,9 +25,10 @@ impl Gateway {
     /// Builds a server stack that discovers configuration for the target's
     /// `GatewayAddr`. The target's `SessionProtocol` is used to determine which
     /// inner stack to use.
-    pub fn server<T, I, P, O, H, OSvc, HSvc>(
+    pub fn server<T, I, O, H, OSvc, HSvc>(
         self,
-        profiles: P,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policies: impl outbound::policy::GetPolicy,
         opaq: O,
         http: H,
     ) -> svc::Stack<svc::ArcNewTcp<T, I>>
@@ -42,8 +45,6 @@ impl Gateway {
         // Server-side socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        // Discovery
-        P: profiles::GetProfile<Error = Error>,
         // Opaq outbound stack
         O: svc::NewService<Opaq<T>, Service = OSvc>,
         O: Clone + Send + Sync + Unpin + 'static,
@@ -74,23 +75,68 @@ impl Gateway {
             )
             .into_inner();
 
-        let discover = {
-            use profiles::GetProfile;
+        let discover = self.discover(profiles, policies);
 
-            // Apply the gateway's allowlist to the profile discovery service.
-            let allowlist = self.config.allow_discovery.clone().into();
-            let mut profiles = profiles::WithAllowlist::new(profiles, allowlist);
-            self.outbound
-                .with_stack(protocol)
-                .push_discover(svc::mk(move |GatewayAddr(addr)| {
-                    profiles.get_profile(profiles::LookupAddr(addr.into()))
-                }))
-                .into_stack()
-        };
-
-        discover
+        self.outbound
+            .with_stack(protocol)
+            .push_discover(discover)
+            .into_stack()
             .push_on_service(svc::BoxService::layer())
             .push(svc::ArcNewService::layer())
+    }
+
+    fn discover(
+        &self,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policies: impl outbound::policy::GetPolicy,
+    ) -> impl svc::Service<
+        GatewayAddr,
+        Response = (
+            Option<profiles::Receiver>,
+            watch::Receiver<outbound::policy::ClientPolicy>,
+        ),
+        Error = Error,
+        Future = impl Send + Unpin,
+    > + Clone {
+        #[inline]
+        fn is_not_found(e: &Error) -> bool {
+            errors::cause_ref::<tonic::Status>(e.as_ref())
+                .map(|s| s.code() == tonic::Code::NotFound)
+                .unwrap_or(false)
+        }
+
+        use futures::future;
+
+        let allowlist = self.config.allow_discovery.clone();
+        svc::mk(move |GatewayAddr(addr)| {
+            tracing::debug!(%addr, "Discover");
+
+            if !allowlist.matches(addr.name()) {
+                tracing::debug!(%addr, "Address not in gateway discovery allowlist");
+                return future::Either::Left(future::err(GatewayDomainInvalid.into()));
+            }
+
+            let profile = profiles
+                .clone()
+                .get_profile(profiles::LookupAddr(addr.clone().into()))
+                .instrument(tracing::debug_span!("profiles"));
+
+            let policy = policies
+                .get_policy(addr.into())
+                .map_err(|e| {
+                    // If the policy controller returned `NotFound`, indicating
+                    // that it doesn't have a policy for this addr, then we
+                    // can't gateway this address.
+                    if is_not_found(&e) {
+                        GatewayDomainInvalid.into()
+                    } else {
+                        e
+                    }
+                })
+                .instrument(tracing::debug_span!("policy"));
+
+            future::Either::Right(future::try_join(profile, policy))
+        })
     }
 }
 
