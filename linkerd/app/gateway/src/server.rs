@@ -92,8 +92,6 @@ impl Gateway {
                     .get_profile(profiles::LookupAddr(addr.clone().into()))
                     .instrument(tracing::debug_span!("profiles"));
 
-                // TODO(eliza): we should probably also add the allowlist to
-                // policy resolution...
                 let policy = policies
                     .get_policy(addr.into())
                     .map_err(|e| {
