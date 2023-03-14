@@ -138,6 +138,7 @@ impl<N> Outbound<N> {
                 .push_on_service(http::BoxRequest::layer())
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
+                    // XXX(ver) we need to allow for policy-driven clasification here...
                     rt.metrics
                         .proxy
                         .http_endpoint

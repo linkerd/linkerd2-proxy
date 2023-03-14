@@ -8,7 +8,7 @@
 
 pub use crate::transport::labels::{TargetAddr, TlsAccept};
 use crate::{
-    classify::{Class, SuccessOrFailure},
+    classify::Class,
     control, http_metrics, http_metrics as metrics, opencensus, profiles, stack_metrics,
     svc::Param,
     telemetry, tls,
@@ -408,25 +408,25 @@ impl<'a> FmtLabels for Authority<'a> {
 
 impl FmtLabels for Class {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let class = |res: Result<(), ()>| res.map(|()| "success").unwrap_or("failure");
         match self {
-            Class::Default(result) => write!(f, "classification=\"{}\"", result),
-            Class::Grpc(result, status) => write!(
+            Class::Default(res) => write!(
                 f,
-                "classification=\"{}\",grpc_status=\"{}\"",
-                result, status
+                "classification=\"{}\",grpc_status=\"\",error=\"\"",
+                class(*res)
             ),
-            Class::Stream(result, status) => {
-                write!(f, "classification=\"{}\",error=\"{}\"", result, status)
-            }
-        }
-    }
-}
-
-impl fmt::Display for SuccessOrFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SuccessOrFailure::Success => write!(f, "success"),
-            SuccessOrFailure::Failure => write!(f, "failure"),
+            Class::Grpc(res, status) => write!(
+                f,
+                "classification=\"{}\",grpc_status=\"{}\",error=\"\"",
+                class(*res),
+                status
+            ),
+            Class::Error(res, msg) => write!(
+                f,
+                "classification=\"{}\",grpc_status=\"\",error=\"{}\"",
+                class(*res),
+                msg
+            ),
         }
     }
 }

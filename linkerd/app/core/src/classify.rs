@@ -39,14 +39,10 @@ pub enum GrpcEos {
 pub enum Class {
     Default(SuccessOrFailure),
     Grpc(SuccessOrFailure, u32),
-    Stream(SuccessOrFailure, Cow<'static, str>),
+    Error(SuccessOrFailure, Cow<'static, str>),
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum SuccessOrFailure {
-    Success,
-    Failure,
-}
+pub type SuccessOrFailure = Result<(), ()>;
 
 // === impl Request ===
 
@@ -109,11 +105,7 @@ impl Response {
     ) -> Option<Class> {
         for class in classes {
             if class.is_match(rsp) {
-                let result = if class.is_failure() {
-                    SuccessOrFailure::Failure
-                } else {
-                    SuccessOrFailure::Success
-                };
+                let result = if class.is_failure() { Err(()) } else { Ok(()) };
                 return Some(Class::Default(result));
             }
         }
@@ -151,7 +143,7 @@ impl classify::ClassifyResponse for Response {
             h2_error(err).into()
         };
 
-        Class::Stream(SuccessOrFailure::Failure, msg)
+        Class::Error(Err(()), msg)
     }
 }
 
@@ -162,23 +154,21 @@ impl classify::ClassifyEos for Eos {
 
     fn eos(self, trailers: Option<&http::HeaderMap>) -> Self::Class {
         match self {
-            Eos::Default(status) if status.is_server_error() => {
-                Class::Default(SuccessOrFailure::Failure)
-            }
+            Eos::Default(status) if status.is_server_error() => Class::Default(Err(())),
             Eos::Default(_) => trailers
                 .and_then(grpc_class)
-                .unwrap_or(Class::Default(SuccessOrFailure::Success)),
+                .unwrap_or(Class::Default(Ok(()))),
             Eos::Grpc(GrpcEos::NoBody(class)) => class,
             Eos::Grpc(GrpcEos::Open) => trailers
                 .and_then(grpc_class)
-                .unwrap_or(Class::Grpc(SuccessOrFailure::Success, 0)),
+                .unwrap_or(Class::Grpc(Ok(()), 0)),
             Eos::Profile(class) => class,
-            Eos::Error(msg) => Class::Stream(SuccessOrFailure::Failure, msg.into()),
+            Eos::Error(msg) => Class::Error(Err(()), msg.into()),
         }
     }
 
     fn error(self, err: &Error) -> Self::Class {
-        Class::Stream(SuccessOrFailure::Failure, h2_error(err).into())
+        Class::Error(Err(()), h2_error(err).into())
     }
 }
 
@@ -194,8 +184,8 @@ fn grpc_class(headers: &http::HeaderMap) -> Option<Class> {
                 | grpc::Code::Internal
                 | grpc::Code::Unavailable
                 | grpc::Code::PermissionDenied
-                | grpc::Code::DataLoss => SuccessOrFailure::Failure,
-                _ => SuccessOrFailure::Success,
+                | grpc::Code::DataLoss => Err(()),
+                _ => Ok(()),
             };
             Class::Grpc(ok, grpc_status)
         })
@@ -218,16 +208,14 @@ impl Class {
     pub fn is_failure(&self) -> bool {
         matches!(
             self,
-            Class::Default(SuccessOrFailure::Failure)
-                | Class::Grpc(SuccessOrFailure::Failure, _)
-                | Class::Stream(SuccessOrFailure::Failure, _)
+            Class::Default(Err(())) | Class::Grpc(Err(()), _) | Class::Error(Err(()), _)
         )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Class, SuccessOrFailure};
+    use super::Class;
     use http::{HeaderMap, Response, StatusCode};
     use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
 
@@ -235,7 +223,7 @@ mod tests {
     fn http_response_status_ok() {
         let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
         let class = super::Response::Default.start(&rsp).eos(None);
-        assert_eq!(class, Class::Default(SuccessOrFailure::Success));
+        assert_eq!(class, Class::Default(Ok(())));
     }
 
     #[test]
@@ -245,7 +233,7 @@ mod tests {
             .body(())
             .unwrap();
         let class = super::Response::Default.start(&rsp).eos(None);
-        assert_eq!(class, Class::Default(SuccessOrFailure::Success));
+        assert_eq!(class, Class::Default(Ok(())));
     }
 
     #[test]
@@ -255,7 +243,7 @@ mod tests {
             .body(())
             .unwrap();
         let class = super::Response::Default.start(&rsp).eos(None);
-        assert_eq!(class, Class::Default(SuccessOrFailure::Failure));
+        assert_eq!(class, Class::Default(Err(())));
     }
 
     #[test]
@@ -266,7 +254,7 @@ mod tests {
             .body(())
             .unwrap();
         let class = super::Response::Grpc.start(&rsp).eos(None);
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Success, 0));
+        assert_eq!(class, Class::Grpc(Ok(()), 0));
     }
 
     #[test]
@@ -277,7 +265,7 @@ mod tests {
             .body(())
             .unwrap();
         let class = super::Response::Grpc.start(&rsp).eos(None);
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 2));
+        assert_eq!(class, Class::Grpc(Err(()), 2));
     }
 
     #[test]
@@ -287,7 +275,7 @@ mod tests {
         trailers.insert("grpc-status", 0.into());
 
         let class = super::Response::Grpc.start(&rsp).eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Success, 0));
+        assert_eq!(class, Class::Grpc(Ok(()), 0));
     }
 
     #[test]
@@ -297,7 +285,7 @@ mod tests {
         trailers.insert("grpc-status", 4.into());
 
         let class = super::Response::Grpc.start(&rsp).eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 4));
+        assert_eq!(class, Class::Grpc(Err(()), 4));
     }
 
     #[test]
@@ -305,7 +293,7 @@ mod tests {
         let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
         let trailers = HeaderMap::new();
         let class = super::Response::Grpc.start(&rsp).eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Success, 0));
+        assert_eq!(class, Class::Grpc(Ok(()), 0));
     }
 
     #[test]
@@ -317,6 +305,6 @@ mod tests {
         let class = super::Response::Profile(Default::default())
             .start(&rsp)
             .eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 4));
+        assert_eq!(class, Class::Grpc(Err(()), 4));
     }
 }
