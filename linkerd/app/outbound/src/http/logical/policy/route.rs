@@ -22,26 +22,35 @@ pub(crate) struct Matched<M, P> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct Route<T, F> {
+pub(crate) struct Route<T, F, E> {
     pub(super) parent: T,
     pub(super) addr: Addr,
     pub(super) meta: Arc<policy::Meta>,
     pub(super) filters: Arc<[F]>,
     pub(super) distribution: BackendDistribution<T, F>,
+    pub(super) failure_policy: E,
 }
 
-pub(crate) type MatchedRoute<T, M, F> = Matched<M, Route<T, F>>;
-pub(crate) type Http<T> =
-    MatchedRoute<T, http_route::http::r#match::RequestMatch, policy::http::Filter>;
-pub(crate) type Grpc<T> =
-    MatchedRoute<T, http_route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
+pub(crate) type MatchedRoute<T, M, F, E> = Matched<M, Route<T, F, E>>;
+pub(crate) type Http<T> = MatchedRoute<
+    T,
+    http_route::http::r#match::RequestMatch,
+    policy::http::Filter,
+    policy::http::StatusRanges,
+>;
+pub(crate) type Grpc<T> = MatchedRoute<
+    T,
+    http_route::grpc::r#match::RouteMatch,
+    policy::grpc::Filter,
+    policy::grpc::Codes,
+>;
 
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
 
 // === impl MatchedRoute ===
 
-impl<T, M, F> MatchedRoute<T, M, F>
+impl<T, M, F, E> MatchedRoute<T, M, F, E>
 where
     // Parent target.
     T: Debug + Eq + Hash,
@@ -51,6 +60,8 @@ where
     // Request filter.
     F: Debug + Eq + Hash,
     F: Clone + Send + Sync + 'static,
+    // Failure policy.
+    E: Clone + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
     MatchedBackend<T, M, F>: filters::Apply,
@@ -100,7 +111,7 @@ where
     }
 }
 
-impl<T: Clone, M, F> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T, M, F> {
+impl<T: Clone, M, F, E> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T, M, F, E> {
     fn param(&self) -> BackendDistribution<T, F> {
         self.params.distribution.clone()
     }

@@ -1,9 +1,9 @@
 use linkerd_http_route::http;
-use std::sync::Arc;
+use std::{ops::RangeInclusive, sync::Arc};
 
 pub use linkerd_http_route::http::{filter, find, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter>;
+pub type Policy = crate::RoutePolicy<Filter, StatusRanges>;
 pub type Route = http::Route<Policy>;
 pub type Rule = http::Rule<Policy>;
 
@@ -27,6 +27,9 @@ pub enum Filter {
     InternalError(&'static str),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct StatusRanges(pub Arc<[RangeInclusive<u16>]>);
+
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     Route {
         hosts: vec![],
@@ -36,6 +39,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
+                failure_policy: StatusRanges::default(),
             },
         }],
     }
@@ -58,6 +62,20 @@ impl Default for Http2 {
         Self {
             routes: Arc::new([]),
         }
+    }
+}
+
+// === impl StatusRanges ===
+
+impl StatusRanges {
+    pub fn contains(&self, code: ::http::StatusCode) -> bool {
+        self.0.iter().any(|range| range.contains(&code.as_u16()))
+    }
+}
+
+impl Default for StatusRanges {
+    fn default() -> Self {
+        Self(Arc::new([500..=599]))
     }
 }
 
@@ -200,6 +218,7 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
+                failure_policy: StatusRanges::default(),
             },
         })
     }
