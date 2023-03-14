@@ -1,7 +1,7 @@
 use super::*;
 use crate::test_util::*;
 use linkerd_app_core::{
-    io, profiles,
+    io,
     svc::{NewService, Service, ServiceExt},
     transport::addrs::OrigDstAddr,
 };
@@ -35,16 +35,9 @@ async fn errors_propagate() {
         })
     };
 
-    let discover = {
-        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
-        let policies = support::client_policies().policy_default(addr);
-        svc::mk(move |OrigDstAddr(addr)| {
-            let addr: linkerd_app_core::Addr = addr.into();
-            let profile = profiles.clone().oneshot(profiles::LookupAddr(addr.clone()));
-            let policy = policies.clone().oneshot(addr);
-            Box::pin(async move { Ok((profile.await?, policy.await?)) })
-        })
-    };
+    let discover = support::resolver::OutboundDiscover::default()
+        .with_default(addr)
+        .map_request(|OrigDstAddr(addr)| addr);
 
     // Create a profile stack that uses the tracked inner stack.
     let (rt, _shutdown) = runtime();
@@ -101,16 +94,12 @@ async fn caches_profiles_until_idle() {
     let stack = |_: _| svc::mk(move |_: io::DuplexStream| future::pending::<Result<(), Error>>());
 
     let profile_lookups = Arc::new(AtomicUsize::new(0));
-    let profiles = {
+    let discover = {
+        let discover = support::resolver::OutboundDiscover::default().with_default(addr);
         let lookups = profile_lookups.clone();
-        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
-        let policies = support::client_policies().policy_default(addr);
         svc::mk(move |OrigDstAddr(addr)| {
-            let addr: linkerd_app_core::Addr = addr.into();
-            let profile = profiles.clone().oneshot(profiles::LookupAddr(addr.clone()));
-            let policy = policies.clone().oneshot(addr);
             lookups.fetch_add(1, Ordering::SeqCst);
-            Box::pin(async move { Ok((profile.await?, policy.await?)) })
+            discover.clone().oneshot(addr)
         })
     };
 
@@ -124,7 +113,7 @@ async fn caches_profiles_until_idle() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(cfg, rt)
         .with_stack(stack)
-        .push_discover(profiles)
+        .push_discover(discover)
         .into_inner();
 
     assert_eq!(
