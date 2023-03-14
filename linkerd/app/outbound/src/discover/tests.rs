@@ -1,7 +1,7 @@
 use super::*;
 use crate::test_util::*;
 use linkerd_app_core::{
-    io, profiles,
+    io,
     svc::{NewService, Service, ServiceExt},
     transport::addrs::OrigDstAddr,
 };
@@ -35,13 +35,9 @@ async fn errors_propagate() {
         })
     };
 
-    let discover = {
-        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
-        svc::mk(move |OrigDstAddr(addr)| {
-            // TODO(eliza): policy!
-            profiles.clone().oneshot(profiles::LookupAddr(addr.into()))
-        })
-    };
+    let discover = support::resolver::OutboundDiscover::default()
+        .with_default(addr)
+        .map_request(|OrigDstAddr(addr)| addr);
 
     // Create a profile stack that uses the tracked inner stack.
     let (rt, _shutdown) = runtime();
@@ -98,12 +94,12 @@ async fn caches_profiles_until_idle() {
     let stack = |_: _| svc::mk(move |_: io::DuplexStream| future::pending::<Result<(), Error>>());
 
     let profile_lookups = Arc::new(AtomicUsize::new(0));
-    let profiles = {
-        let profile = support::profile::resolver().profile(addr, profiles::Profile::default());
+    let discover = {
+        let discover = support::resolver::OutboundDiscover::default().with_default(addr);
         let lookups = profile_lookups.clone();
-        svc::mk(move |OrigDstAddr(a)| {
+        svc::mk(move |OrigDstAddr(addr)| {
             lookups.fetch_add(1, Ordering::SeqCst);
-            profile.clone().oneshot(profiles::LookupAddr(a.into()))
+            discover.clone().oneshot(addr)
         })
     };
 
@@ -117,7 +113,7 @@ async fn caches_profiles_until_idle() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(cfg, rt)
         .with_stack(stack)
-        .push_discover(profiles)
+        .push_discover(discover)
         .into_inner();
 
     assert_eq!(

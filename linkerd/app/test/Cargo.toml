@@ -9,6 +9,9 @@ description = """
 Proxy test helpers
 """
 
+[features]
+client-policy = ["linkerd-proxy-client-policy", "tonic", "linkerd-http-route"]
+
 [dependencies]
 futures = { version = "0.3", default-features = false }
 h2 = "0.3"
@@ -16,13 +19,16 @@ http = "0.2"
 http-body = "0.4"
 hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-app-core = { path = "../core" }
+linkerd-http-route = { path = "../../http-route", optional = true }
 linkerd-identity = { path = "../../identity" }
+linkerd-proxy-client-policy = { path = "../../proxy/client-policy", optional = true }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 parking_lot = "0.12"
 regex = "1"
 tokio = { version = "1", features = ["io-util", "net", "rt", "sync"] }
 tokio-test = "0.4"
 tokio-stream = { version = "0.1", features = ["sync"] }
+tonic = { version = "0.8", default-features = false, optional = true }
 tower = { version = "0.4", default-features = false }
 tracing = "0.1"
 thiserror = "1"

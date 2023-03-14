@@ -44,7 +44,7 @@ pin-project = "1"
 
 [dev-dependencies]
 hyper = { version = "0.14", features = ["http1", "http2"] }
-linkerd-app-test = { path = "../test" }
+linkerd-app-test = { path = "../test", features = ["client-policy"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [

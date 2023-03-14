@@ -34,6 +34,11 @@ pub fn profiles() -> resolver::Profiles {
     profile::resolver()
 }
 
+#[cfg(feature = "client-policy")]
+pub fn client_policies() -> resolver::ClientPolicies {
+    resolver::Resolver::default()
+}
+
 pub fn connect<E>() -> connect::Connect<E> {
     connect::Connect::default()
 }
