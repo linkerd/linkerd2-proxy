@@ -21,7 +21,9 @@ use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 #[cfg(feature = "client-policy")]
-use linkerd_proxy_client_policy as client_policy;
+mod client_policy;
+#[cfg(feature = "client-policy")]
+pub use self::client_policy::*;
 
 #[derive(Debug)]
 pub struct Resolver<A, E> {
@@ -31,16 +33,6 @@ pub struct Resolver<A, E> {
 pub type Dst<E> = Resolver<NameAddr, DstReceiver<E>>;
 
 pub type Profiles = Resolver<Addr, Option<profiles::Receiver>>;
-
-#[cfg(feature = "client-policy")]
-pub type ClientPolicies = Resolver<Addr, watch::Receiver<client_policy::ClientPolicy>>;
-
-#[cfg(feature = "client-policy")]
-#[derive(Debug, Clone, Default)]
-pub struct OutboundDiscover {
-    pub profiles: Profiles,
-    pub policies: ClientPolicies,
-}
 
 pub fn no_destinations<E>() -> NoDst<E> {
     NoDst(std::marker::PhantomData)
@@ -221,170 +213,6 @@ impl<T: Param<profiles::LookupAddr>> tower::Service<T> for Profiles {
     fn call(&mut self, t: T) -> Self::Future {
         let profiles::LookupAddr(addr) = t.param();
         future::ok(self.resolve(addr))
-    }
-}
-
-// === client policy resolver ===
-
-#[cfg(feature = "client-policy")]
-impl ClientPolicies {
-    pub fn policy_tx(&self, addr: impl Into<Addr>) -> watch::Sender<client_policy::ClientPolicy> {
-        // XXX(eliza): is this the best initial value?
-        let init = client_policy::ClientPolicy::invalid(std::time::Duration::from_secs(10));
-        let (tx, rx) = watch::channel(init);
-        self.state.endpoints.lock().insert(addr.into(), rx);
-        tx
-    }
-
-    pub fn policy(self, addr: impl Into<Addr>, policy: client_policy::ClientPolicy) -> Self {
-        let (tx, rx) = watch::channel(policy);
-        self.state.unused_senders.lock().push(Box::new(tx));
-        self.state.endpoints.lock().insert(addr.into(), rx);
-        self
-    }
-
-    pub fn policy_default(self, addr: impl Into<Addr>) -> Self {
-        use client_policy::{
-            Backend, BackendDispatcher, EndpointDiscovery, Load, Meta, PeakEwma, Protocol,
-            RouteBackend, RouteDistribution,
-        };
-        use std::time::Duration;
-
-        let addr = addr.into();
-        let backend = {
-            let dispatcher = match addr {
-                Addr::Name(ref addr) => {
-                    let load = Load::PeakEwma(PeakEwma {
-                        default_rtt: Duration::from_millis(30),
-                        decay: Duration::from_secs(10),
-                    });
-                    let disco = EndpointDiscovery::DestinationGet {
-                        path: addr.to_string(),
-                    };
-                    BackendDispatcher::BalanceP2c(load, disco)
-                }
-                Addr::Socket(addr) => BackendDispatcher::Forward(addr, Default::default()),
-            };
-            let queue = client_policy::Queue {
-                capacity: 100,
-                failfast_timeout: Duration::from_secs(10),
-            };
-            Backend {
-                meta: Meta::new_default("test"),
-                queue,
-                dispatcher,
-            }
-        };
-        let http_routes = Arc::new([client_policy::http::Route {
-            hosts: vec![],
-            rules: vec![linkerd_http_route::Rule {
-                matches: vec![],
-                policy: client_policy::http::Policy {
-                    meta: Meta::new_default("default"),
-                    filters: Arc::new([]),
-                    distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
-                        filters: Arc::new([]),
-                        backend: backend.clone(),
-                    }])),
-                },
-            }],
-        }]);
-        let protocol = Protocol::Detect {
-            timeout: Duration::from_secs(10),
-            http1: client_policy::http::Http1 {
-                routes: http_routes.clone(),
-            },
-            http2: client_policy::http::Http2 {
-                routes: http_routes,
-            },
-            opaque: client_policy::opaq::Opaque {
-                policy: Some(client_policy::opaq::Policy {
-                    meta: Meta::new_default("default"),
-                    filters: Arc::new([]),
-                    distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
-                        filters: Arc::new([]),
-                        backend: backend.clone(),
-                    }])),
-                }),
-            },
-        };
-        let policy = client_policy::ClientPolicy {
-            backends: Arc::new([backend]),
-            protocol,
-        };
-        self.policy(addr, policy)
-    }
-
-    fn resolve(&self, addr: Addr) -> Result<watch::Receiver<client_policy::ClientPolicy>, Error> {
-        let span = tracing::trace_span!("mock_policy", %addr);
-        let _e = span.enter();
-
-        self.state
-            .endpoints
-            .lock()
-            .remove(&addr)
-            .map(|x| {
-                tracing::trace!("found policy for addr");
-                x
-            })
-            .ok_or_else(|| {
-                tracing::debug!(?addr, "no policy configured for");
-                tonic::Status::not_found("no policy found for address").into()
-            })
-    }
-}
-
-#[cfg(feature = "client-policy")]
-impl<T: Param<Addr>> tower::Service<T> for ClientPolicies {
-    type Response = watch::Receiver<client_policy::ClientPolicy>;
-    type Error = Error;
-    type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, t: T) -> Self::Future {
-        future::ready(self.resolve(t.param()))
-    }
-}
-
-// === impl OutboundDiscover ===
-
-#[cfg(feature = "client-policy")]
-impl OutboundDiscover {
-    pub fn with_default(self, addr: impl Into<Addr>) -> Self {
-        let addr = addr.into();
-        let policies = self.policies.policy_default(addr.clone());
-        let profiles = self.profiles.profile(addr, Default::default());
-        Self { profiles, policies }
-    }
-}
-
-#[cfg(feature = "client-policy")]
-impl<T> tower::Service<T> for OutboundDiscover
-where
-    T: Into<Addr>,
-{
-    type Response = (
-        Option<profiles::Receiver>,
-        watch::Receiver<client_policy::ClientPolicy>,
-    );
-    type Error = Error;
-    type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, t: T) -> Self::Future {
-        let addr = t.into();
-        let policy = match self.policies.resolve(addr.clone()) {
-            Ok(policy) => policy,
-            Err(error) => return future::err(error),
-        };
-        let profile = self.profiles.resolve(addr);
-        future::ok((profile, policy))
     }
 }
 
