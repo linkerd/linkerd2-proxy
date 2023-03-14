@@ -132,6 +132,7 @@ async fn http_filter_request_headers() {
 
     // Routes that configure a special header-based route and a default route.
     static PIZZA: http::HeaderName = http::HeaderName::from_static("pizza");
+    static PARTY: http::HeaderValue = http::HeaderValue::from_static("party");
     static TUBULAR: http::HeaderValue = http::HeaderValue::from_static("tubular");
     static COWABUNGA: http::HeaderValue = http::HeaderValue::from_static("cowabunga");
     let routes = Params::Http({
@@ -173,7 +174,7 @@ async fn http_filter_request_headers() {
 
     handle.allow(1);
     let req = http::Request::builder()
-        .header(&PIZZA, "party")
+        .header(&PIZZA, &PARTY)
         .body(http::BoxBody::default())
         .unwrap();
     let (req, _rsp) = tokio::select! {
@@ -185,11 +186,7 @@ async fn http_filter_request_headers() {
 
     assert_eq!(
         req.headers().get_all(&PIZZA).iter().collect::<Vec<_>>(),
-        vec![
-            &http::HeaderValue::from_static("party"),
-            &TUBULAR,
-            &COWABUNGA
-        ],
+        vec![&PARTY, &TUBULAR, &COWABUNGA],
     );
 
     // Hold the router to prevent inner services from being dropped.
