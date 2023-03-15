@@ -30,6 +30,13 @@ impl Gateway {
                 .unwrap_or(false)
         }
 
+        #[inline]
+        fn is_invalid_argument(e: &Error) -> bool {
+            errors::cause_ref::<tonic::Status>(e.as_ref())
+                .map(|s| s.code() == tonic::Code::InvalidArgument)
+                .unwrap_or(false)
+        }
+
         use futures::future;
 
         let allowlist = self.config.allow_discovery.clone();
@@ -68,8 +75,11 @@ impl Gateway {
                 match policy {
                     Ok(policy) => return Ok((Some(profile), policy)),
                     // The policy controller currently rejects discovery for pod
-                    // names (rather than service names) so we'll need to
-                    // synthesize a policy.
+                    // names (rather than service names) with `InvalidArgument`,
+                    // so we'll have to synthesize a policy.
+                    Err(error) if is_invalid_argument(&error) => {
+                        tracing::debug!("Policy controller returned InvalidArgument")
+                    }
                     Err(error) if is_not_found(&error) => tracing::debug!("Policy not found"),
                     Err(error) => return Err(error),
                 }
