@@ -57,70 +57,77 @@ impl<N> Outbound<N> {
                 .push(svc::ArcNewService::layer())
         })
     }
-}
 
-pub(crate) fn resolver(
-    profiles: impl profiles::GetProfile<Error = Error>,
-    policies: impl policy::GetPolicy,
-    queue: policy::Queue,
-    detect_timeout: Duration,
-) -> impl svc::Service<
-    OrigDstAddr,
-    Error = Error,
-    Response = (Option<profiles::Receiver>, policy::Receiver),
-    Future = impl Send,
-> + Clone
-       + Send
-       + Sync
-       + 'static {
-    svc::mk(move |OrigDstAddr(orig_dst)| {
-        tracing::debug!(addr = %orig_dst, "Discover");
-
-        let profile = profiles
-            .clone()
-            .get_profile(profiles::LookupAddr(orig_dst.into()))
-            .instrument(tracing::debug_span!("profiles"));
-        let policy = policies
-            .get_policy(orig_dst.into())
-            .instrument(tracing::debug_span!("policy"));
-
-        Box::pin(async move {
-            let (profile, policy) = tokio::join!(profile, policy);
-            tracing::debug!("Discovered");
-
-            let profile = profile.unwrap_or_else(|error| {
-                tracing::warn!(%error, "Error resolving ServiceProfile");
-                None
-            });
-
-            // If there was a policy resolution, return it with the profile so
-            // the stack can determine how to switch on them.
-            match policy {
-                Ok(policy) => return Ok((profile, policy)),
-                // XXX(ver) The policy controller may (for the time being) reject
-                // our lookups, since it doesn't yet serve endpoint metadata for
-                // forwarding.
-                Err(error) if is_not_found(&error) => tracing::debug!("Policy not found"),
-                Err(error) => return Err(error),
+    pub(crate) fn resolver(
+        &self,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policies: impl policy::GetPolicy,
+    ) -> impl svc::Service<
+        OrigDstAddr,
+        Error = Error,
+        Response = (Option<profiles::Receiver>, policy::Receiver),
+        Future = impl Send,
+    > + Clone
+           + Send
+           + Sync
+           + 'static {
+        let detect_timeout = self.config.proxy.detect_protocol_timeout;
+        let queue = {
+            let queue = self.config.tcp_connection_queue;
+            policy::Queue {
+                capacity: queue.capacity,
+                failfast_timeout: queue.failfast_timeout,
             }
+        };
+        svc::mk(move |OrigDstAddr(orig_dst)| {
+            tracing::debug!(addr = %orig_dst, "Discover");
 
-            // If there was a profile resolution, try to use it to synthesize a
-            // enpdoint policy.
-            if let Some(profile) = profile {
-                let policy = spawn_synthesized_profile_policy(
-                    orig_dst,
-                    profile.clone().into(),
-                    queue,
-                    detect_timeout,
-                );
-                return Ok((Some(profile), policy));
-            }
+            let profile = profiles
+                .clone()
+                .get_profile(profiles::LookupAddr(orig_dst.into()))
+                .instrument(tracing::debug_span!("profiles"));
+            let policy = policies
+                .get_policy(orig_dst.into())
+                .instrument(tracing::debug_span!("policy"));
 
-            // Otherwise, route the request to the original destination address.
-            let policy = spawn_synthesized_origdst_policy(orig_dst, queue, detect_timeout);
-            Ok((None, policy))
+            Box::pin(async move {
+                let (profile, policy) = tokio::join!(profile, policy);
+                tracing::debug!("Discovered");
+
+                let profile = profile.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "Error resolving ServiceProfile");
+                    None
+                });
+
+                // If there was a policy resolution, return it with the profile so
+                // the stack can determine how to switch on them.
+                match policy {
+                    Ok(policy) => return Ok((profile, policy)),
+                    // XXX(ver) The policy controller may (for the time being) reject
+                    // our lookups, since it doesn't yet serve endpoint metadata for
+                    // forwarding.
+                    Err(error) if is_not_found(&error) => tracing::debug!("Policy not found"),
+                    Err(error) => return Err(error),
+                }
+
+                // If there was a profile resolution, try to use it to synthesize a
+                // enpdoint policy.
+                if let Some(profile) = profile {
+                    let policy = spawn_synthesized_profile_policy(
+                        orig_dst,
+                        profile.clone().into(),
+                        queue,
+                        detect_timeout,
+                    );
+                    return Ok((Some(profile), policy));
+                }
+
+                // Otherwise, route the request to the original destination address.
+                let policy = spawn_synthesized_origdst_policy(orig_dst, queue, detect_timeout);
+                Ok((None, policy))
+            })
         })
-    })
+    }
 }
 
 #[inline]
