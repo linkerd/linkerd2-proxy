@@ -10,6 +10,7 @@ pub mod client;
 pub mod client_handle;
 pub mod detect;
 // pub mod failure_accrual_gate;
+pub mod classify;
 mod glue;
 pub mod h1;
 pub mod h2;
@@ -28,6 +29,7 @@ pub mod version;
 
 pub use self::{
     balance::NewBalancePeakEwma,
+    classify::{Classify, ClassifyEos, ClassifyResponse, NewInsertClassifyResponse},
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
     // failure_accrual_gate::NewFailureAccrualGate,
@@ -47,9 +49,6 @@ pub use http::{
 };
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
-pub use linkerd_http_classify::{
-    self as classify, Classify, ClassifyEos, ClassifyResponse, NewInsertClassifyResponse,
-};
 
 #[derive(Clone, Debug)]
 pub struct HeaderPair(pub HeaderName, pub HeaderValue);
