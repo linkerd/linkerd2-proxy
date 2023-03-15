@@ -1,5 +1,5 @@
 use crate::{
-    discover, http, opaq, policy,
+    http, opaq, policy,
     protocol::{self, Protocol},
     Discovery, Outbound,
 };
@@ -51,17 +51,6 @@ impl Outbound<()> {
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        let discover = {
-            let detect_timeout = self.config.proxy.detect_protocol_timeout;
-
-            let queue = self.config.tcp_connection_queue;
-            let default_queue = policy::Queue {
-                capacity: queue.capacity,
-                failfast_timeout: queue.failfast_timeout,
-            };
-            discover::resolver(profiles, policies, default_queue, detect_timeout)
-        };
-
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
 
         let http = self
@@ -78,7 +67,7 @@ impl Outbound<()> {
             // outbound sidecar stack configuration.
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
             // Access cached discovery information.
-            .push_discover(discover)
+            .push_discover(self.resolver(profiles, policies))
             // Instrument server-side connections for telemetry.
             .push_tcp_instrument(|t: &T| {
                 let addr: OrigDstAddr = t.param();
