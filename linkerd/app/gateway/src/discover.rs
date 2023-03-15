@@ -72,11 +72,32 @@ impl Gateway {
                     // synthesize a policy.
                     Err(error) if is_not_found(&error) => {
                         tracing::debug!("Policy not found");
-                        let policy = spawn_synthesized_profile_policy(
-                            addr,
+                        let policy = outbound::discover::spawn_synthesized_profile_policy(
                             profile.clone().into(),
-                            queue,
-                            detect_timeout,
+                            move |profile| {
+                                static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+                                    Arc::new(policy::Meta::Default {
+                                        name: "gateway".into(),
+                                    })
+                                });
+
+                                match profile.endpoint.clone() {
+                                    Some((addr, meta)) => ClientPolicy::synthesize_forward(
+                                        &META,
+                                        detect_timeout,
+                                        queue,
+                                        addr,
+                                        meta,
+                                    ),
+                                    None => {
+                                        // TODO(eliza): should we synthesize a policy from the nameaddr?
+                                        tracing::debug!(
+                                            "Gateway ServiceProfile does not contain an endpoint"
+                                        );
+                                        ClientPolicy::invalid(detect_timeout)
+                                    }
+                                }
+                            },
                         );
                         Ok((Some(profile), policy))
                     }
@@ -87,61 +108,4 @@ impl Gateway {
             future::Either::Right(discovery)
         })
     }
-}
-
-fn spawn_synthesized_profile_policy(
-    addr: NameAddr,
-    mut profile: watch::Receiver<profiles::Profile>,
-    queue: policy::Queue,
-    detect_timeout: Duration,
-) -> watch::Receiver<policy::ClientPolicy> {
-    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
-        Arc::new(policy::Meta::Default {
-            name: "gateway".into(),
-        })
-    });
-
-    let mk = move |profile: &profiles::Profile| {
-        match profile.endpoint.clone() {
-            Some((addr, meta)) => {
-                ClientPolicy::synthesize_forward(&META, detect_timeout, queue, addr, meta)
-            }
-            None => {
-                // TODO(eliza): should we synthesize a policy from the nameaddr?
-                tracing::debug!("Gateway ServiceProfile does not contain an endpoint");
-                ClientPolicy::invalid(detect_timeout)
-            }
-        }
-    };
-
-    let policy = mk(&*profile.borrow_and_update());
-    tracing::debug!(?policy, profile = ?*profile.borrow(), "Synthesizing policy from profile");
-    let (tx, rx) = watch::channel(policy);
-    tokio::spawn(
-        async move {
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = tx.closed() => {
-                        tracing::debug!("Policy watch closed; terminating");
-                        return;
-                    }
-                    res = profile.changed() => {
-                        if res.is_err() {
-                            tracing::debug!("Profile watch closed; terminating");
-                            return;
-                        }
-                    }
-                };
-                let policy = mk(&*profile.borrow());
-                tracing::debug!(?policy, "Profile updated; synthesizing policy");
-                if tx.send(policy).is_err() {
-                    tracing::debug!("Policy watch closed, terminating");
-                    return;
-                }
-            }
-        }
-        .in_current_span(),
-    );
-    rx
 }
