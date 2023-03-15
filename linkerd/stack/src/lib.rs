@@ -11,7 +11,6 @@ mod either;
 mod fail;
 mod fail_on_error;
 pub mod failfast;
-pub mod failure_accrual_gate;
 mod filter;
 pub mod gate;
 pub mod layer;

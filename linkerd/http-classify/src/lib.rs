@@ -1,9 +1,9 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-mod service;
+mod insert;
 
-pub use self::service::NewClassify;
+pub use self::insert::NewInsertClassifyResponse;
 use linkerd_error::Error;
 
 /// Determines how a request's response should be classified.

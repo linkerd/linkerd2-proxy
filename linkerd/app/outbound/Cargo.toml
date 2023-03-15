@@ -23,7 +23,6 @@ linkerd2-proxy-api = { version = "0.8", features = ["outbound"] }
 linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
 linkerd-distribute = { path = "../../distribute" }
-linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-http-route = { path = "../../http-route" }
 linkerd-identity = { path = "../../identity" }

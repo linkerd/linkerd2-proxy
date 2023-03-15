@@ -1,13 +1,12 @@
 use crate::profiles;
 use linkerd_error::Error;
-use linkerd_http_classify as classify;
 use linkerd_proxy_client_policy as client_policy;
-use linkerd_proxy_http::{HasH2Reason, ResponseTimeoutError};
+use linkerd_proxy_http::{classify, HasH2Reason, ResponseTimeoutError};
 use std::borrow::Cow;
 use tonic as grpc;
 use tracing::trace;
 
-pub type NewClassify<N, X = ()> = classify::NewClassify<Request, X, N>;
+pub type NewClassify<N, X = ()> = classify::NewInsertClassifyResponse<Request, X, N>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Request {
@@ -237,7 +236,7 @@ impl Class {
 mod tests {
     use super::Class;
     use http::{HeaderMap, Response, StatusCode};
-    use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
+    use linkerd_proxy_http::classify::{ClassifyEos, ClassifyResponse};
 
     #[test]
     fn http_response_status_ok() {

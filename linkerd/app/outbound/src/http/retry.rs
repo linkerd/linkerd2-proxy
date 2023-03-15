@@ -4,11 +4,10 @@ use linkerd_app_core::{
     http_metrics::retries::Handle,
     metrics::{self, ProfileRouteLabels},
     profiles::{self, http::Route},
-    proxy::http::{ClientHandle, EraseResponse, HttpBody},
+    proxy::http::{Classify, ClassifyEos, ClassifyResponse, ClientHandle, EraseResponse, HttpBody},
     svc::{layer, Either, Param},
     Error,
 };
-use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_http_retry::{
     with_trailers::{self, WithTrailers},
     ReplayBody,

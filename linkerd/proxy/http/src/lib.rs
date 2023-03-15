@@ -1,5 +1,6 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
+
 use http::header::AsHeaderName;
 use http::uri::Authority;
 use linkerd_error::Error;
@@ -8,6 +9,7 @@ pub mod balance;
 pub mod client;
 pub mod client_handle;
 pub mod detect;
+// pub mod failure_accrual_gate;
 mod glue;
 pub mod h1;
 pub mod h2;
@@ -28,6 +30,7 @@ pub use self::{
     balance::NewBalancePeakEwma,
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
+    // failure_accrual_gate::NewFailureAccrualGate,
     glue::{HyperServerSvc, UpgradeBody},
     header_from_target::NewHeaderFromTarget,
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
@@ -44,6 +47,9 @@ pub use http::{
 };
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
+pub use linkerd_http_classify::{
+    self as classify, Classify, ClassifyEos, ClassifyResponse, NewInsertClassifyResponse,
+};
 
 #[derive(Clone, Debug)]
 pub struct HeaderPair(pub HeaderName, pub HeaderValue);
