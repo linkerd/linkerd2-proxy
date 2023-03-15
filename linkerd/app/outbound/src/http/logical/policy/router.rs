@@ -2,7 +2,7 @@ use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
     route,
 };
-use linkerd_app_core::{proxy::http, svc, transport::addrs::*, Addr, Error, Result};
+use linkerd_app_core::{classify, proxy::http, svc, transport::addrs::*, Addr, Error, Result};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -57,7 +57,7 @@ where
         Key = route::MatchedRoute<T, M::Summary, F, E>,
         Error = NoRoute,
     >,
-    route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply,
+    route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply + svc::Param<classify::Request>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
