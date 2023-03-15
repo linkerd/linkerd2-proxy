@@ -1,4 +1,4 @@
-use super::{Classify, ClassifyEos, ClassifyResponse};
+use super::{ClassifyEos, ClassifyResponse};
 use futures::{prelude::*, ready};
 use linkerd_error::Error;
 use linkerd_stack::{layer, ExtractParam, NewService, Service};
@@ -9,28 +9,27 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tokio::sync::watch;
+use tokio::sync::mpsc;
 
 #[derive(Debug)]
-pub struct NewInsertClassifyRx<C, X, N> {
+pub struct NewBroadcastClassification<C, X, N> {
     inner: N,
     extract: X,
     _marker: PhantomData<fn() -> C>,
 }
 
-pub type Tx<C> = watch::Sender<Poll<C>>;
-
-#[derive(Clone, Debug)]
-pub struct Rx<C>(watch::Receiver<Poll<C>>);
-
 /// A HTTP `Service` that applies a [`super::Classify`] to each request and
 /// broadcasts the result to an [`Rx`] inserted to inner requests and outer
 /// responses..
 #[derive(Debug)]
-pub struct InsertClassifyRx<C: Classify, S> {
+pub struct BroadcastClassification<C: ClassifyResponse, S> {
     inner: S,
-    classify: C,
+    tx: mpsc::Sender<C::Class>,
+    _marker: PhantomData<fn() -> C>,
 }
+
+#[derive(Clone, Debug)]
+pub struct Tx<C>(pub mpsc::Sender<C>);
 
 #[pin_project]
 pub struct ResponseFuture<C: ClassifyResponse, B, F> {
@@ -50,13 +49,12 @@ pub struct ResponseBody<C: ClassifyEos, B> {
 #[derive(Debug)]
 struct State<C, T> {
     classify: C,
-    tx: Tx<T>,
-    rx: Rx<T>,
+    tx: mpsc::Sender<T>,
 }
 
-// === impl NewClassifyChannel ===
+// === impl NewBroadcastClassification ===
 
-impl<C, X: Clone, N> NewInsertClassifyRx<C, X, N> {
+impl<C, X: Clone, N> NewBroadcastClassification<C, X, N> {
     pub fn new(extract: X, inner: N) -> Self {
         Self {
             inner,
@@ -65,35 +63,33 @@ impl<C, X: Clone, N> NewInsertClassifyRx<C, X, N> {
         }
     }
 
-    #[inline]
     pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self::new(extract.clone(), inner))
     }
 }
 
-impl<C, N> NewInsertClassifyRx<C, (), N> {
-    #[inline]
+impl<C, N> NewBroadcastClassification<C, (), N> {
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
         Self::layer_via(())
     }
 }
 
-impl<T, C, X, N> NewService<T> for NewInsertClassifyRx<C, X, N>
+impl<T, C, X, N> NewService<T> for NewBroadcastClassification<C, X, N>
 where
-    C: Classify,
-    X: ExtractParam<C, T>,
+    C: ClassifyResponse,
+    X: ExtractParam<Tx<C::Class>, T>,
     N: NewService<T>,
 {
-    type Service = InsertClassifyRx<C, N::Service>;
+    type Service = BroadcastClassification<C, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let classify = self.extract.extract_param(&target);
+        let Tx(tx) = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
-        InsertClassifyRx::new(classify, inner)
+        BroadcastClassification::new(tx, inner)
     }
 }
 
-impl<C, X: Clone, N: Clone> Clone for NewInsertClassifyRx<C, X, N> {
+impl<C, X: Clone, N: Clone> Clone for NewBroadcastClassification<C, X, N> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -103,61 +99,59 @@ impl<C, X: Clone, N: Clone> Clone for NewInsertClassifyRx<C, X, N> {
     }
 }
 
-// === impl ClassifyChannel ===
+// === impl BroadcastClassification ===
 
-impl<C: Classify, S> InsertClassifyRx<C, S> {
-    pub fn new(classify: C, inner: S) -> Self {
-        Self { inner, classify }
+impl<C: ClassifyResponse, S> BroadcastClassification<C, S> {
+    pub fn new(tx: mpsc::Sender<C::Class>, inner: S) -> Self {
+        Self {
+            inner,
+            tx,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl<C, S, ReqB, RspB> Service<http::Request<ReqB>> for InsertClassifyRx<C, S>
+impl<C, S, ReqB, RspB> Service<http::Request<ReqB>> for BroadcastClassification<C, S>
 where
-    C: Classify,
+    C: ClassifyResponse,
     S: Service<http::Request<ReqB>, Response = http::Response<RspB>, Error = Error>,
 {
     type Response = http::Response<ResponseBody<C::ClassifyEos, RspB>>;
     type Error = Error;
-    type Future = ResponseFuture<C::ClassifyResponse, RspB, S::Future>;
+    type Future = ResponseFuture<C, RspB, S::Future>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, mut req: http::Request<ReqB>) -> Self::Future {
-        let classify = self.classify.classify(&req);
-
-        // This channel is used to communicate from this module to any other
-        // module that observes the receiver inserted into the request and
-        // response.
-        let (tx, rx) = watch::channel(Poll::Pending);
-        // Advertise the receiver to inner modules that observe the request.
-        req.extensions_mut().insert(Rx(rx.clone()));
-        let state = State {
-            tx,
-            rx: Rx(rx),
-            classify,
-        };
+    fn call(&mut self, req: http::Request<ReqB>) -> Self::Future {
+        let tx = self.tx.clone();
+        let state = req
+            .extensions()
+            .get::<C>()
+            .cloned()
+            .map(|classify| State { classify, tx });
 
         let inner = self.inner.call(req);
         ResponseFuture {
             inner,
-            state: Some(state),
+            state,
             _marker: PhantomData,
         }
     }
 }
 
-impl<C, S> Clone for InsertClassifyRx<C, S>
+impl<C, S> Clone for BroadcastClassification<C, S>
 where
-    C: Classify + Clone,
+    C: ClassifyResponse + Clone,
     S: Clone,
 {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            classify: self.classify.clone(),
+            tx: self.tx.clone(),
+            _marker: PhantomData,
         }
     }
 }
@@ -174,25 +168,20 @@ where
     #[inline]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let res = ready!(this.inner.try_poll(cx));
-        let State { classify, tx, rx } = this.state.take().expect("state must be set");
-        match res {
-            Ok(mut rsp) => {
-                let classify = classify.start(&rsp);
-
-                // Advertise the receiver to outer modules that observe the
-                // response.
-                rsp.extensions_mut().insert(rx.clone());
-
-                Poll::Ready(Ok(rsp.map(|inner| ResponseBody {
-                    inner,
-                    state: Some(State { classify, tx, rx }),
-                })))
+        match ready!(this.inner.try_poll(cx)) {
+            Ok(rsp) => {
+                let state = this.state.take().map(|State { classify, tx }| {
+                    let classify = classify.start(&rsp);
+                    State { classify, tx }
+                });
+                Poll::Ready(Ok(rsp.map(|inner| ResponseBody { inner, state })))
             }
 
             Err(e) => {
-                let class = classify.error(&e);
-                let _ = tx.send(Poll::Ready(class));
+                if let Some(State { classify, tx }) = this.state.take() {
+                    let class = classify.error(&e);
+                    let _ = tx.try_send(class);
+                }
                 Poll::Ready(Err(e))
             }
         }
@@ -218,8 +207,9 @@ where
             None => Poll::Ready(None),
             Some(Ok(data)) => Poll::Ready(Some(Ok(data))),
             Some(Err(e)) => {
-                let State { classify, tx, .. } = this.state.take().expect("state must be set");
-                let _ = tx.send(Poll::Ready(classify.error(&e)));
+                if let Some(State { classify, tx }) = this.state.take() {
+                    let _ = tx.try_send(classify.error(&e));
+                }
                 Poll::Ready(Some(Err(e)))
             }
         }
@@ -230,15 +220,17 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
         let this = self.project();
-        let res = ready!(this.inner.poll_trailers(cx));
-        let State { classify, tx, .. } = this.state.take().expect("state must be set");
-        match res {
+        match ready!(this.inner.poll_trailers(cx)) {
             Ok(trls) => {
-                let _ = tx.send(Poll::Ready(classify.eos(trls.as_ref())));
+                if let Some(State { classify, tx }) = this.state.take() {
+                    let _ = tx.try_send(classify.eos(trls.as_ref()));
+                }
                 Poll::Ready(Ok(trls))
             }
             Err(e) => {
-                let _ = tx.send(Poll::Ready(classify.error(&e)));
+                if let Some(State { classify, tx }) = this.state.take() {
+                    let _ = tx.try_send(classify.error(&e));
+                }
                 Poll::Ready(Err(e))
             }
         }
@@ -252,18 +244,5 @@ where
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         self.inner.size_hint()
-    }
-}
-
-// === impl Rx ===
-
-impl<C: Clone> Rx<C> {
-    pub async fn recv(&mut self) -> Result<C, watch::error::RecvError> {
-        loop {
-            if let Poll::Ready(ref c) = *self.0.borrow_and_update() {
-                return Ok(c.clone());
-            }
-            self.0.changed().await?;
-        }
     }
 }

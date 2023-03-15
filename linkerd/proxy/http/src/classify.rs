@@ -2,7 +2,7 @@ pub mod channel;
 mod insert;
 
 pub use self::{
-    channel::{InsertClassifyRx, NewInsertClassifyRx, Rx, Tx},
+    channel::{BroadcastClassification, NewBroadcastClassification, Tx},
     insert::{InsertClassifyResponse, NewInsertClassifyResponse},
 };
 pub use linkerd_http_classify::*;

@@ -1,16 +1,15 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use http::header::AsHeaderName;
-use http::uri::Authority;
+use http::{header::AsHeaderName, uri::Authority};
 use linkerd_error::Error;
 
 pub mod balance;
+pub mod classify;
 pub mod client;
 pub mod client_handle;
 pub mod detect;
 // pub mod failure_accrual_gate;
-pub mod classify;
 mod glue;
 pub mod h1;
 pub mod h2;
