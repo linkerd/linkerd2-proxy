@@ -119,6 +119,7 @@ impl<N> Outbound<N> {
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
             let balance = endpoint
+                // TODO(ver) Add a FailureAccrualGate.
                 .push_map_target({
                     let inbound_ips = inbound_ips.clone();
                     move |((addr, metadata), target): ((SocketAddr, Metadata), Balance<T>)| {
