@@ -1,6 +1,5 @@
 use crate::{policy, Outbound};
 use linkerd_app_core::{errors, profiles, svc, transport::OrigDstAddr, Error};
-use linkerd_proxy_client_policy::ClientPolicy;
 use once_cell::sync::Lazy;
 use std::{
     fmt::Debug,
@@ -156,7 +155,7 @@ fn spawn_synthesized_profile_policy(
             .unwrap_or_else(|| (orig_dst, Default::default()));
         // TODO(ver) We should be able to figure out resource coordinates for
         // the endpoint?
-        synthesize_forward_policy(&META, detect_timeout, queue, addr, meta)
+        policy::ClientPolicy::synthesize_forward(&META, detect_timeout, queue, addr, meta)
     };
 
     let policy = mk(&*profile.borrow_and_update());
@@ -210,67 +209,6 @@ fn spawn_synthesized_origdst_policy(
         tx.closed().await;
     });
     rx
-}
-
-fn synthesize_forward_policy(
-    meta: &Arc<policy::Meta>,
-    timeout: Duration,
-    queue: policy::Queue,
-    addr: SocketAddr,
-    metadata: policy::EndpointMetadata,
-) -> ClientPolicy {
-    static NO_HTTP_FILTERS: Lazy<Arc<[policy::http::Filter]>> = Lazy::new(|| Arc::new([]));
-    static NO_OPAQ_FILTERS: Lazy<Arc<[policy::opaq::Filter]>> = Lazy::new(|| Arc::new([]));
-
-    let backend = policy::Backend {
-        meta: meta.clone(),
-        queue,
-        dispatcher: policy::BackendDispatcher::Forward(addr, metadata),
-    };
-
-    let opaque = policy::opaq::Opaque {
-        policy: Some(policy::opaq::Policy {
-            meta: meta.clone(),
-            filters: NO_OPAQ_FILTERS.clone(),
-            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
-                policy::RouteBackend {
-                    filters: NO_OPAQ_FILTERS.clone(),
-                    backend: backend.clone(),
-                },
-            ])),
-        }),
-    };
-
-    let routes = Arc::new([policy::http::Route {
-        hosts: vec![],
-        rules: vec![policy::http::Rule {
-            matches: vec![policy::http::r#match::MatchRequest::default()],
-            policy: policy::http::Policy {
-                meta: meta.clone(),
-                filters: NO_HTTP_FILTERS.clone(),
-                distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
-                    policy::RouteBackend {
-                        filters: NO_HTTP_FILTERS.clone(),
-                        backend: backend.clone(),
-                    },
-                ])),
-            },
-        }],
-    }]);
-
-    let detect = policy::Protocol::Detect {
-        timeout,
-        http1: policy::http::Http1 {
-            routes: routes.clone(),
-        },
-        http2: policy::http::Http2 { routes },
-        opaque,
-    };
-
-    ClientPolicy {
-        protocol: detect,
-        backends: Arc::new([backend]),
-    }
 }
 
 // === impl Discovery ===

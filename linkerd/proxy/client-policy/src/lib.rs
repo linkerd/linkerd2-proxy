@@ -157,6 +157,60 @@ impl ClientPolicy {
             backends: BACKENDS.clone(),
         }
     }
+
+    pub fn synthesize_forward(
+        meta: &Arc<Meta>,
+        timeout: time::Duration,
+        queue: Queue,
+        addr: SocketAddr,
+        metadata: EndpointMetadata,
+    ) -> Self {
+        let backend = Backend {
+            meta: meta.clone(),
+            queue,
+            dispatcher: BackendDispatcher::Forward(addr, metadata),
+        };
+
+        let opaque = opaq::Opaque {
+            policy: Some(opaq::Policy {
+                meta: meta.clone(),
+                filters: opaq::NO_FILTERS.clone(),
+                distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
+                    filters: opaq::NO_FILTERS.clone(),
+                    backend: backend.clone(),
+                }])),
+            }),
+        };
+
+        let routes = Arc::new([http::Route {
+            hosts: vec![],
+            rules: vec![http::Rule {
+                matches: vec![http::r#match::MatchRequest::default()],
+                policy: http::Policy {
+                    meta: meta.clone(),
+                    filters: http::NO_FILTERS.clone(),
+                    distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
+                        filters: http::NO_FILTERS.clone(),
+                        backend: backend.clone(),
+                    }])),
+                },
+            }],
+        }]);
+
+        let detect = Protocol::Detect {
+            timeout,
+            http1: http::Http1 {
+                routes: routes.clone(),
+            },
+            http2: http::Http2 { routes },
+            opaque,
+        };
+
+        ClientPolicy {
+            protocol: detect,
+            backends: Arc::new([backend]),
+        }
+    }
 }
 
 // === impl Meta ===
