@@ -75,7 +75,9 @@ impl StatusRanges {
 
 impl Default for StatusRanges {
     fn default() -> Self {
-        Self(Arc::new([500..=599]))
+        use once_cell::sync::Lazy;
+        static STATUSES: Lazy<Arc<[RangeInclusive<u16>]>> = Lazy::new(|| Arc::new([500..=599]));
+        Self(STATUSES.clone())
     }
 }
 

@@ -21,7 +21,7 @@ pub enum Filter {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Codes(pub std::collections::BTreeSet<u16>);
+pub struct Codes(pub Arc<std::collections::BTreeSet<u16>>);
 
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     Route {
@@ -54,19 +54,23 @@ impl Codes {
 
 impl Default for Codes {
     fn default() -> Self {
-        Self(
-            [
-                tonic::Code::DataLoss,
-                tonic::Code::DeadlineExceeded,
-                tonic::Code::Internal,
-                tonic::Code::PermissionDenied,
-                tonic::Code::Unavailable,
-                tonic::Code::Unknown,
-            ]
-            .into_iter()
-            .map(|c| c as u16)
-            .collect(),
-        )
+        use once_cell::sync::Lazy;
+        static CODES: Lazy<Arc<std::collections::BTreeSet<u16>>> = Lazy::new(|| {
+            Arc::new(
+                [
+                    tonic::Code::DataLoss,
+                    tonic::Code::DeadlineExceeded,
+                    tonic::Code::Internal,
+                    tonic::Code::PermissionDenied,
+                    tonic::Code::Unavailable,
+                    tonic::Code::Unknown,
+                ]
+                .into_iter()
+                .map(|c| c as u16)
+                .collect(),
+            )
+        });
+        Self(CODES.clone())
     }
 }
 

@@ -905,6 +905,7 @@ dependencies = [
  "linkerd-metrics",
  "linkerd-opencensus",
  "linkerd-proxy-api-resolve",
+ "linkerd-proxy-client-policy",
  "linkerd-proxy-core",
  "linkerd-proxy-dns-resolve",
  "linkerd-proxy-http",

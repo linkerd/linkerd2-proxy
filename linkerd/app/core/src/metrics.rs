@@ -408,23 +408,27 @@ impl<'a> FmtLabels for Authority<'a> {
 
 impl FmtLabels for Class {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let class = |res: Result<(), ()>| res.map(|()| "success").unwrap_or("failure");
+        let class = |ok: bool| if ok { "success" } else { "failure" };
+
         match self {
-            Class::Default(res) => write!(
+            Class::Http(res) => write!(
                 f,
                 "classification=\"{}\",grpc_status=\"\",error=\"\"",
-                class(*res)
+                class(res.is_ok())
             ),
-            Class::Grpc(res, status) => write!(
+
+            Class::Grpc(res) => write!(
                 f,
                 "classification=\"{}\",grpc_status=\"{}\",error=\"\"",
-                class(*res),
-                status
+                class(res.is_ok()),
+                match res {
+                    Ok(code) | Err(code) => code,
+                }
             ),
-            Class::Error(res, msg) => write!(
+
+            Class::Error(msg) => write!(
                 f,
-                "classification=\"{}\",grpc_status=\"\",error=\"{}\"",
-                class(*res),
+                "classification=\"failure\",grpc_status=\"\",error=\"{}\"",
                 msg
             ),
         }
