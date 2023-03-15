@@ -108,13 +108,22 @@ where
             backends,
         } = rts;
 
+        let parent = parent.clone();
         let mk_concrete = {
-            let authority = addr.to_http_authority();
             let parent = parent.clone();
-            move |target: concrete::Dispatch| Concrete {
-                target,
-                authority: Some(authority.clone()),
-                parent: parent.clone(),
+            move |target: concrete::Dispatch| {
+                // XXX With policies we don't have a top-level authority name at
+                // the moment. So, instead, we use the concrete addr used for
+                // discovery for now.
+                let authority = match target {
+                    concrete::Dispatch::Balance(ref a, _) => Some(a.as_http_authority()),
+                    _ => None,
+                };
+                Concrete {
+                    target,
+                    authority,
+                    parent: parent.clone(),
+                }
             }
         };
 
