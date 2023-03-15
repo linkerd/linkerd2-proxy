@@ -1,6 +1,6 @@
 use crate::HeaderPair;
 use http::header::{HeaderName, HeaderValue};
-use linkerd_stack::{layer, ExtractParam, NewService};
+use linkerd_stack::{layer, ExtractParam, NewService, Service};
 use std::task::{Context, Poll};
 
 /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into
@@ -54,9 +54,9 @@ where
 
 // === impl HeaderFromTarget ===
 
-impl<S, B> tower::Service<http::Request<B>> for HeaderFromTarget<S>
+impl<S, B> Service<http::Request<B>> for HeaderFromTarget<S>
 where
-    S: tower::Service<http::Request<B>>,
+    S: Service<http::Request<B>>,
 {
     type Response = S::Response;
     type Error = S::Error;

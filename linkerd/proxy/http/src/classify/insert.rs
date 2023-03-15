@@ -52,7 +52,7 @@ impl<C, P, S, B> Proxy<http::Request<B>, S> for InsertClassifyResponse<C, P>
 where
     C: super::Classify,
     P: Proxy<http::Request<B>, S>,
-    S: tower::Service<P::Request>,
+    S: Service<P::Request>,
 {
     type Request = P::Request;
     type Response = P::Response;
@@ -70,7 +70,7 @@ where
 impl<C, S, B> Service<http::Request<B>> for InsertClassifyResponse<C, S>
 where
     C: super::Classify,
-    S: tower::Service<http::Request<B>>,
+    S: Service<http::Request<B>>,
 {
     type Response = S::Response;
     type Error = S::Error;

@@ -24,7 +24,7 @@ pub struct UpgradeBody {
     pub(super) upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
 }
 
-/// Glue for a `tower::Service` to used as a `hyper::server::Service`.
+/// Glue for a `Service` to used as a `hyper::server::Service`.
 #[derive(Debug)]
 pub struct HyperServerSvc<S> {
     service: S,
@@ -140,9 +140,9 @@ impl<S> HyperServerSvc<S> {
     }
 }
 
-impl<S> tower::Service<http::Request<hyper::Body>> for HyperServerSvc<S>
+impl<S> Service<http::Request<hyper::Body>> for HyperServerSvc<S>
 where
-    S: tower::Service<http::Request<UpgradeBody>>,
+    S: Service<http::Request<UpgradeBody>>,
 {
     type Response = S::Response;
     type Error = S::Error;

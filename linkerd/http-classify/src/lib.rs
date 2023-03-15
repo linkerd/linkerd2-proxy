@@ -1,14 +1,11 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-mod insert;
-
-pub use self::insert::NewInsertClassifyResponse;
 use linkerd_error::Error;
 
 /// Determines how a request's response should be classified.
 pub trait Classify {
-    type Class;
+    type Class: Clone + Send + Sync + 'static;
     type ClassifyEos: ClassifyEos<Class = Self::Class>;
 
     /// Classifies responses.
@@ -28,7 +25,7 @@ pub trait Classify {
 /// Classifies a single response.
 pub trait ClassifyResponse {
     /// A response classification.
-    type Class;
+    type Class: Clone + Send + Sync + 'static;
     type ClassifyEos: ClassifyEos<Class = Self::Class>;
 
     /// Produce a stream classifier for this response.
@@ -39,7 +36,7 @@ pub trait ClassifyResponse {
 }
 
 pub trait ClassifyEos {
-    type Class;
+    type Class: Clone + Send + Sync + 'static;
 
     /// Update the classifier with an EOS.
     ///

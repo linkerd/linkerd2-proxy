@@ -7,12 +7,13 @@ use futures::{
 };
 use hyper::upgrade::OnUpgrade;
 use linkerd_duplex::Duplex;
-use std::fmt;
-use std::mem;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use tracing::instrument::Instrument;
-use tracing::{debug, info, trace};
+use linkerd_stack as stack;
+use std::{
+    fmt, mem,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tracing::{debug, info, trace, Instrument};
 use try_lock::TryLock;
 
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.
@@ -172,9 +173,9 @@ impl<S> Service<S> {
 
 type ResponseFuture<F, B, E> = Either<F, future::Ready<Result<http::Response<B>, E>>>;
 
-impl<S, B> tower::Service<http::Request<hyper::Body>> for Service<S>
+impl<S, B> stack::Service<http::Request<hyper::Body>> for Service<S>
 where
-    S: tower::Service<http::Request<UpgradeBody>, Response = http::Response<B>>,
+    S: stack::Service<http::Request<UpgradeBody>, Response = http::Response<B>>,
     B: Default,
 {
     type Response = S::Response;

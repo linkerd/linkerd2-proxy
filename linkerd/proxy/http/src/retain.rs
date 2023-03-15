@@ -2,6 +2,7 @@
 //! being processed.
 
 use linkerd_stack::layer;
+use linkerd_stack::Service;
 use pin_project::pin_project;
 use std::{
     future::Future,
@@ -56,9 +57,9 @@ impl<S: Clone, B> Clone for Retain<S, B> {
 type RetainFuture<S, B, E> =
     Pin<Box<dyn Future<Output = Result<http::Response<RetainBody<S, B>>, E>> + Send + 'static>>;
 
-impl<S, Req, RspB> tower::Service<Req> for Retain<S, RspB>
+impl<S, Req, RspB> Service<Req> for Retain<S, RspB>
 where
-    S: tower::Service<Req, Response = http::Response<RspB>> + Clone + Send + 'static,
+    S: Service<Req, Response = http::Response<RspB>> + Clone + Send + 'static,
     S::Future: Send + 'static,
 {
     type Response = http::Response<RetainBody<S, RspB>>;
