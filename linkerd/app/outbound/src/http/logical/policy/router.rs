@@ -108,7 +108,6 @@ where
             backends,
         } = rts;
 
-        let parent = parent.clone();
         let mk_concrete = {
             let parent = parent.clone();
             move |target: concrete::Dispatch| {
