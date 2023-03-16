@@ -8,6 +8,7 @@ use linkerd_app_core::{
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
+        http::classify::gate,
         tap,
     },
     svc::{self, Layer},
@@ -51,6 +52,17 @@ struct Balance<T> {
     addr: NameAddr,
     ewma: balance::EwmaConfig,
     parent: T,
+}
+
+#[derive(Clone, Debug)]
+struct ConsecutiveFailureGateSet;
+
+#[derive(Copy, Clone, Debug)]
+struct ConsecutiveFailureGate {
+    max_failures: usize,
+    channel_capacity: usize,
+    init_ejection_backoff: time::Duration,
+    max_ejection_backoff: time::Duration,
 }
 
 // === impl Outbound ===
@@ -121,6 +133,7 @@ impl<N> Outbound<N> {
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
             let balance = endpoint
+                .check_new_service::<Endpoint<T>, http::Request<http::BoxBody>>()
                 .push_map_target({
                     let inbound_ips = inbound_ips.clone();
                     move |((addr, metadata), target): ((SocketAddr, Metadata), Balance<T>)| {
@@ -134,16 +147,18 @@ impl<N> Outbound<N> {
                         }
                     }
                 })
+                .check_new_service::<((SocketAddr, Metadata), Balance<T>), http::Request<http::BoxBody>>()
+                .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
+                .check_new_new_service::<Balance<T>, (SocketAddr, Metadata), http::Request<http::BoxBody>>()
                 .push(
-                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via(
-                        |_: &Balance<T>| {
-                            // TODO(ver) get failure accrual from balancer.
-                            |_: &(SocketAddr, Metadata)| consecutive_failures_gate(5)
-                        },
+                    http::NewClassifyGateSet::<classify::Response, ConsecutiveFailureGate, _, _>::layer_via(
+                        ConsecutiveFailureGateSet,
                     ),
                 )
+                .check_new_new_service::<Balance<T>, (SocketAddr, Metadata), http::Request<http::BoxBody>>()
                 .push(http::NewBalancePeakEwma::layer(resolve))
+                .check_new_service::<Balance<T>, http::Request<_>>()
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(http::BoxResponse::layer())
                 .push_on_service(
@@ -351,67 +366,111 @@ impl<T> tap::Inspect for Endpoint<T> {
     }
 }
 
-/// A simple failure accrual strategy.
-fn consecutive_failures_gate(max_failures: usize) -> http::classify::gate::Params<classify::Class> {
-    use linkerd_app_core::proxy::http::classify::gate;
-    let (prms, gate, rsps) = gate::Params::channel(100);
-    tokio::spawn(async move {
-        let mut failures = 0usize;
-        let mut state = gate::State::Open;
-        let mut transition =
-            ReusableBoxFuture::new(async move { futures::future::pending::<gate::State>().await });
-        loop {
-            tokio::select! {
-                biased;
-                _ = gate.closed() => return,
-                s = &mut transition => {
-                    state = s;
-                }
-                rsp = rsps.recv() => match rsp {
-                    None => return,
-                    Some(class) => match class {
-                        classify::Class::Http(Ok(_)) | classify::Class::Grpc(Ok(_)) => {
-                            if failures == 0 {
-                                continue;
+// === impl ConsecutiveFailureGateSet ===
+
+impl<T> svc::ExtractParam<ConsecutiveFailureGate, Balance<T>> for ConsecutiveFailureGateSet {
+    fn extract_param(&self, _: &Balance<T>) -> ConsecutiveFailureGate {
+        ConsecutiveFailureGate {
+            max_failures: 5,
+            channel_capacity: 100,
+            // TODO Use `ExponentialBackoff`
+            init_ejection_backoff: time::Duration::from_secs(1),
+            max_ejection_backoff: time::Duration::from_secs(60),
+        }
+    }
+}
+
+// === impl ConsecutiveFailureGate ===
+
+impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for ConsecutiveFailureGate {
+    fn extract_param(&self, _: &T) -> gate::Params<classify::Class> {
+        let Self {
+            max_failures,
+            channel_capacity,
+            init_ejection_backoff,
+            max_ejection_backoff,
+        } = *self;
+
+        // Create a channel so that we can receive response summaries and
+        // control the gate.
+        let (prms, gate, mut rsps) = gate::Params::channel(channel_capacity);
+
+        // 1. If 5 consecutive failures are encounted, shut the gate.
+        // 2. After an ejection timeout, open the gate so that 1 request can be processed.
+        // 3. If that request succeeds, open the gate. If it fails, increase the
+        //    ejection timeout and repeat.
+        enum State {
+            Open { failures: usize },
+            Probation(time::Duration),
+            Shut(time::Duration),
+        }
+        tokio::spawn(async move {
+            let mut state = State::Open { failures: 0 };
+            let mut transition =
+                ReusableBoxFuture::new(async move { futures::future::pending::<State>().await });
+
+            loop {
+                state = tokio::select! {
+                    biased;
+                    _ = gate.closed() => return,
+
+                    // The transition future completes with a new state if we're
+                    // in a Shut state waiting to enter probation.
+                    s = &mut transition => s,
+
+                    rsp = rsps.recv() => match rsp {
+                        None => return,
+                        // Process a response summary, changing returning a new state if the state changes.
+                        Some(class) => match state {
+                            State::Open { ref mut failures } => match class {
+                                classify::Class::Http(Ok(_)) | classify::Class::Grpc(Ok(_)) => {
+                                    if *failures == 0 {
+                                        continue;
+                                    }
+                                    State::Open { failures: 0 }
+                                }
+                                _ => {
+                                    *failures += 1;
+                                    if *failures < max_failures {
+                                        continue;
+                                    }
+                                    State::Shut(init_ejection_backoff)
+                                }
                             }
-                            failures = 0;
-                            state = gate::State::Open;
-                        }
-                        _ => {
-                            failures += 1;
-                            if failures >= max_failures {
-                                gate.shut();
-                                state = gate::State::Shut
+                            State::Shut(..) => continue,
+
+                            State::Probation(backoff) => match class {
+                                classify::Class::Http(Ok(_)) | classify::Class::Grpc(Ok(_)) => {
+                                    State::Open { failures: 0 }
+                                }
+                                _ => State::Shut((backoff * 2).min(max_ejection_backoff)),
                             }
-                        }
+                        },
                     },
-                },
-            };
+                };
 
-            match state {
-                gate::State::Open => {
-                    transition.set(async move { futures::future::pending::<gate::State>().await });
-                    gate.open();
-                }
+                match state {
+                    State::Open { .. } => {
+                        transition.set(async move { futures::future::pending::<State>().await });
+                        gate.open();
+                    }
 
-                gate::State::Shut => {
-                    transition.set(async move {
-                        tokio::time::sleep(time::Duration::from_secs(10)).await;
-                        gate::State::Limited(Arc::new(Semaphore::new(1)))
-                    });
-                    gate.shut();
-                }
+                    State::Shut(backoff) => {
+                        transition.set(async move {
+                            tokio::time::sleep(backoff).await;
+                            State::Probation(backoff)
+                        });
+                        gate.shut();
+                    }
 
-                gate::State::Limited(limit) => {
-                    transition.set(async move {
-                        tokio::time::sleep(time::Duration::from_secs(10)).await;
-                        gate::State::Open
-                    });
-                    gate.limit(limit);
+                    State::Probation(..) => {
+                        transition.set(async move { futures::future::pending::<State>().await });
+                        gate.limit(Arc::new(Semaphore::new(1)));
+                    }
                 }
             }
-        }
-    });
+        });
 
-    prms
+        prms
+    }
 }

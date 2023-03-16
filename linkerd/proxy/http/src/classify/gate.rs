@@ -64,6 +64,16 @@ where
     }
 }
 
+impl<C, P, X: Clone, N: Clone> Clone for NewClassifyGateSet<C, P, X, N> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            extract: self.extract.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 // === impl NewClassifyGate ===
 
 impl<C, X: Clone, N> NewClassifyGate<C, X, N> {
