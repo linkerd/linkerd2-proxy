@@ -15,6 +15,7 @@ use linkerd_app_core::{
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
+mod breaker;
 pub mod concrete;
 mod endpoint;
 pub mod logical;

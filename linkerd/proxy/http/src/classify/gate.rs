@@ -7,7 +7,7 @@ use linkerd_stack::{gate, layer, ExtractParam, Gate, NewService};
 use std::marker::PhantomData;
 use tokio::sync::mpsc;
 
-pub use linkerd_stack::gate::State;
+pub use linkerd_stack::gate::{Rx, State, Tx};
 
 #[derive(Clone, Debug)]
 pub struct Params<C> {

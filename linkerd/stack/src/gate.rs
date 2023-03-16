@@ -92,7 +92,7 @@ impl Rx {
 
 impl Tx {
     /// Returns when all associated `Rx` clones are dropped.
-    pub async fn closed(&self) {
+    pub async fn lost(&self) {
         self.0.closed().await
     }
 
@@ -180,10 +180,16 @@ where
 
     #[inline]
     fn call(&mut self, req: Req) -> Self::Future {
-        self.permit = match self.permit {
-            Poll::Ready(..) => Poll::Pending,
+        self.permit = match std::mem::replace(&mut self.permit, Poll::Pending) {
             Poll::Pending => panic!("poll_ready must be called first"),
+            Poll::Ready(permit) => {
+                if let Some(p) = permit {
+                    p.forget();
+                }
+                Poll::Pending
+            }
         };
+
         self.inner.call(req)
     }
 }
@@ -259,7 +265,7 @@ mod tests {
     #[tokio::test]
     async fn channel_closes() {
         let (tx, rx) = channel();
-        let mut closed = tokio_test::task::spawn(tx.closed());
+        let mut closed = tokio_test::task::spawn(tx.lost());
         assert!(closed.poll().is_pending());
         drop(rx);
         assert!(closed.poll().is_ready());
@@ -268,7 +274,7 @@ mod tests {
     #[tokio::test]
     async fn channel_closes_after_clones() {
         let (tx, rx0) = channel();
-        let mut closed = tokio_test::task::spawn(tx.closed());
+        let mut closed = tokio_test::task::spawn(tx.lost());
         let rx1 = rx0.clone();
         assert!(closed.poll().is_pending());
         drop(rx0);
@@ -280,7 +286,7 @@ mod tests {
     #[tokio::test]
     async fn channel_closes_after_clones_reordered() {
         let (tx, rx0) = channel();
-        let mut closed = tokio_test::task::spawn(tx.closed());
+        let mut closed = tokio_test::task::spawn(tx.lost());
         let rx1 = rx0.clone();
         assert!(closed.poll().is_pending());
         drop(rx1);

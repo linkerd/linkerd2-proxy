@@ -1,14 +1,13 @@
 //! A stack that (optionally) resolves a service to a set of endpoint replicas
 //! and distributes HTTP requests among them.
 
-use super::{balance, client};
+use super::{balance, breaker, client};
 use crate::{http, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
-        http::classify::gate,
         tap,
     },
     svc::{self, Layer},
@@ -16,9 +15,8 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     Error, Infallible, NameAddr,
 };
-use std::{fmt::Debug, net::SocketAddr, sync::Arc};
-use tokio::{sync::Semaphore, time};
-use tokio_util::sync::ReusableBoxFuture;
+use std::{fmt::Debug, net::SocketAddr};
+use tokio::time;
 use tracing::info_span;
 
 /// Parameter configuring dispatcher behavior.
@@ -52,17 +50,6 @@ struct Balance<T> {
     addr: NameAddr,
     ewma: balance::EwmaConfig,
     parent: T,
-}
-
-#[derive(Clone, Debug)]
-struct ConsecutiveFailureGateSet;
-
-#[derive(Copy, Clone, Debug)]
-struct ConsecutiveFailureGate {
-    max_failures: usize,
-    channel_capacity: usize,
-    init_ejection_backoff: time::Duration,
-    max_ejection_backoff: time::Duration,
 }
 
 // === impl Outbound ===
@@ -132,6 +119,15 @@ impl<N> Outbound<N> {
                 )
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
+            let breaker = |_: &Balance<T>| {
+                breaker::consecutive_failures::Params {
+                    max_failures: 5,
+                    channel_capacity: 100,
+                    init_ejection_backoff: time::Duration::from_secs(1),
+                    max_ejection_backoff: time::Duration::from_secs(60),
+                }
+            };
+
             let balance = endpoint
                 .check_new_service::<Endpoint<T>, http::Request<http::BoxBody>>()
                 .push_map_target({
@@ -151,11 +147,7 @@ impl<N> Outbound<N> {
                 .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
                 .check_new_new_service::<Balance<T>, (SocketAddr, Metadata), http::Request<http::BoxBody>>()
-                .push(
-                    http::NewClassifyGateSet::<classify::Response, ConsecutiveFailureGate, _, _>::layer_via(
-                        ConsecutiveFailureGateSet,
-                    ),
-                )
+                .push(http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via(breaker))
                 .check_new_new_service::<Balance<T>, (SocketAddr, Metadata), http::Request<http::BoxBody>>()
                 .push(http::NewBalancePeakEwma::layer(resolve))
                 .check_new_service::<Balance<T>, http::Request<_>>()
@@ -363,114 +355,5 @@ impl<T> tap::Inspect for Endpoint<T> {
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
         true
-    }
-}
-
-// === impl ConsecutiveFailureGateSet ===
-
-impl<T> svc::ExtractParam<ConsecutiveFailureGate, Balance<T>> for ConsecutiveFailureGateSet {
-    fn extract_param(&self, _: &Balance<T>) -> ConsecutiveFailureGate {
-        ConsecutiveFailureGate {
-            max_failures: 5,
-            channel_capacity: 100,
-            // TODO Use `ExponentialBackoff`
-            init_ejection_backoff: time::Duration::from_secs(1),
-            max_ejection_backoff: time::Duration::from_secs(60),
-        }
-    }
-}
-
-// === impl ConsecutiveFailureGate ===
-
-impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for ConsecutiveFailureGate {
-    fn extract_param(&self, _: &T) -> gate::Params<classify::Class> {
-        let Self {
-            max_failures,
-            channel_capacity,
-            init_ejection_backoff,
-            max_ejection_backoff,
-        } = *self;
-
-        // Create a channel so that we can receive response summaries and
-        // control the gate.
-        let (prms, gate, mut rsps) = gate::Params::channel(channel_capacity);
-
-        // 1. If 5 consecutive failures are encounted, shut the gate.
-        // 2. After an ejection timeout, open the gate so that 1 request can be processed.
-        // 3. If that request succeeds, open the gate. If it fails, increase the
-        //    ejection timeout and repeat.
-        enum State {
-            Open { failures: usize },
-            Probation(time::Duration),
-            Shut(time::Duration),
-        }
-        tokio::spawn(async move {
-            let mut state = State::Open { failures: 0 };
-            let mut transition =
-                ReusableBoxFuture::new(async move { futures::future::pending::<State>().await });
-
-            loop {
-                state = tokio::select! {
-                    biased;
-                    _ = gate.closed() => return,
-
-                    // The transition future completes with a new state if we're
-                    // in a Shut state waiting to enter probation.
-                    s = &mut transition => s,
-
-                    rsp = rsps.recv() => match rsp {
-                        None => return,
-                        // Process a response summary, changing returning a new state if the state changes.
-                        Some(class) => match state {
-                            State::Open { ref mut failures } => match class {
-                                classify::Class::Http(Ok(_)) | classify::Class::Grpc(Ok(_)) => {
-                                    if *failures == 0 {
-                                        continue;
-                                    }
-                                    State::Open { failures: 0 }
-                                }
-                                _ => {
-                                    *failures += 1;
-                                    if *failures < max_failures {
-                                        continue;
-                                    }
-                                    State::Shut(init_ejection_backoff)
-                                }
-                            }
-                            State::Shut(..) => continue,
-
-                            State::Probation(backoff) => match class {
-                                classify::Class::Http(Ok(_)) | classify::Class::Grpc(Ok(_)) => {
-                                    State::Open { failures: 0 }
-                                }
-                                _ => State::Shut((backoff * 2).min(max_ejection_backoff)),
-                            }
-                        },
-                    },
-                };
-
-                match state {
-                    State::Open { .. } => {
-                        transition.set(async move { futures::future::pending::<State>().await });
-                        gate.open();
-                    }
-
-                    State::Shut(backoff) => {
-                        transition.set(async move {
-                            tokio::time::sleep(backoff).await;
-                            State::Probation(backoff)
-                        });
-                        gate.shut();
-                    }
-
-                    State::Probation(..) => {
-                        transition.set(async move { futures::future::pending::<State>().await });
-                        gate.limit(Arc::new(Semaphore::new(1)));
-                    }
-                }
-            }
-        });
-
-        prms
     }
 }

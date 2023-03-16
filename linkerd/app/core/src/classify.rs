@@ -224,6 +224,12 @@ fn h2_error(err: &Error) -> String {
 // === impl Class ===
 
 impl Class {
+    #[inline]
+    pub fn is_success(&self) -> bool {
+        !self.is_failure()
+    }
+
+    #[inline]
     pub fn is_failure(&self) -> bool {
         matches!(
             self,
