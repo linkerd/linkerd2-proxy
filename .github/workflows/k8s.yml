@@ -1,0 +1,43 @@
+name: k8s
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - Dockerfile
+      - "**/*.rs"
+      - "**/*.toml"
+      - justfile
+      - .github/workflows/k8s.yml
+
+jobs:
+  k3d-linkerd-install:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: linkerd/dev/actions/setup-tools@v39
+
+      - name: Install linkerd CLI (edge)
+        id: linkerd
+        run: |
+          scurl https://run.linkerd.io/install-edge | sh
+          echo "PATH=$PATH:$HOME/.linkerd2/bin" >> "$GITHUB_ENV"
+          export PATH="$PATH:$HOME/.linkerd2/bin"
+          tag=$(linkerd version --client --short)
+          echo "linkerd $tag"
+          echo "LINKERD_TAG=$tag" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
+      - run: just docker
+
+      - run: just-k3d create
+      - run: just k3d-load-linkerd
+
+      - run: just linkerd-install
+      - run: just linkerd-check-contol-plane-proxy
+        env:
+          TMPDIR: ${{ runner.temp }}

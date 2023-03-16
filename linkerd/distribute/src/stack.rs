@@ -1,42 +1,51 @@
 use crate::{Distribute, Distribution};
-use ahash::AHashMap;
-use linkerd_stack::{NewService, Param};
-use std::{fmt::Debug, hash::Hash, sync::Arc};
+use linkerd_stack::{layer, ExtractParam, NewService};
+use std::{fmt::Debug, hash::Hash, marker::PhantomData};
 
 /// Builds `Distribute` services for a specific `Distribution`.
 #[derive(Clone, Debug)]
-pub struct NewDistribute<K, S> {
-    /// All potential backends.
-    all_backends: Arc<AHashMap<K, S>>,
+pub struct NewDistribute<K, X, N> {
+    inner: N,
+    extract: X,
+    _marker: PhantomData<fn() -> K>,
 }
 
 // === impl NewDistribute ===
 
-impl<K, S> From<Arc<AHashMap<K, S>>> for NewDistribute<K, S> {
-    fn from(all_backends: Arc<AHashMap<K, S>>) -> Self {
-        Self { all_backends }
+impl<K, X: Clone, N> NewDistribute<K, X, N> {
+    fn new(inner: N, extract: X) -> Self {
+        Self {
+            inner,
+            extract,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(inner, extract.clone()))
     }
 }
 
-impl<K, S> From<AHashMap<K, S>> for NewDistribute<K, S> {
-    fn from(backends: AHashMap<K, S>) -> Self {
-        Arc::new(backends).into()
+impl<K, N> From<N> for NewDistribute<K, (), N> {
+    fn from(inner: N) -> Self {
+        Self::new(inner, ())
     }
 }
 
-impl<K: Hash + Eq, S> FromIterator<(K, S)> for NewDistribute<K, S> {
-    fn from_iter<T: IntoIterator<Item = (K, S)>>(iter: T) -> Self {
-        iter.into_iter().collect::<AHashMap<_, _>>().into()
+impl<K, N> NewDistribute<K, (), N> {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(Self::from)
     }
 }
 
-impl<T, K, S> NewService<T> for NewDistribute<K, S>
+impl<T, K, KNew, X, N> NewService<T> for NewDistribute<K, X, N>
 where
-    T: Param<Distribution<K>>,
+    X: ExtractParam<Distribution<K>, T>,
     K: Debug + Hash + Eq + Clone,
-    S: Clone,
+    N: NewService<T, Service = KNew>,
+    KNew: NewService<K>,
 {
-    type Service = Distribute<K, S>;
+    type Service = Distribute<K, KNew::Service>;
 
     /// Create a new `Distribute` configured from a `Distribution` param.
     ///
@@ -45,26 +54,17 @@ where
     /// Distributions **MUST** include only keys configured in backends.
     /// Referencing other keys causes a panic.
     fn new_service(&self, target: T) -> Self::Service {
-        let dist = target.param();
+        let dist = self.extract.extract_param(&target);
+        tracing::debug!(backends = ?dist.keys(), "New distribution");
 
-        // Clone the backends needed for this distribution, in the required
+        // Build the backends needed for this distribution, in the required
         // order (so that weighted indices align).
-        //
-        // If the distribution references a key that is not present in the
-        // set of backends, we panic.
-        tracing::debug!(backends = ?dist.keys(), all = ?self.all_backends.keys(), "New distribution");
+        let newk = self.inner.new_service(target);
         let backends = dist
             .keys()
             .iter()
-            .map(|k| {
-                let svc = self
-                    .all_backends
-                    .get(k)
-                    .expect("distribution references unknown backend");
-                (k.clone(), svc.clone())
-            })
+            .map(|k| (k.clone(), newk.new_service(k.clone())))
             .collect();
-
         Distribute::new(backends, dist)
     }
 }

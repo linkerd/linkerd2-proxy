@@ -5,7 +5,9 @@ use linkerd_app_core::{
     transport::{listen, orig_dst, Keepalive, ListenAddr},
     Result,
 };
-use std::{fmt, future::Future, net::SocketAddr, pin::Pin, task::Poll, thread};
+use std::{
+    collections::HashSet, fmt, future::Future, net::SocketAddr, pin::Pin, task::Poll, thread,
+};
 use tokio::net::TcpStream;
 use tracing::instrument::Instrument;
 
@@ -28,6 +30,9 @@ pub struct Proxy {
     /// `server::Listener`.
     inbound_server: Option<server::Listening>,
     outbound_server: Option<server::Listening>,
+
+    inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
+    inbound_default_ports: HashSet<u16>,
 
     shutdown_signal: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
@@ -73,6 +78,7 @@ where
         let (bound, incoming) = listen::BindTcp::default().bind(params)?;
         let incoming = Box::pin(incoming.map(move |res| {
             let (inner, tcp) = res?;
+            tracing::info!(?inner, ?self, "mocking SO_ORIG_DST");
             let orig_dst = match self {
                 Self::Addr(addr) => OrigDstAddr(addr),
                 Self::Direct => OrigDstAddr(inner.server.into()),
@@ -138,12 +144,14 @@ impl Proxy {
 
     pub fn inbound(mut self, s: server::Listening) -> Self {
         self.inbound = MockOrigDst::Addr(s.addr);
+        self.inbound_default_ports.insert(s.addr.port());
         self.inbound_server = Some(s);
         self
     }
 
     pub fn inbound_ip(mut self, s: SocketAddr) -> Self {
         self.inbound = MockOrigDst::Addr(s);
+        self.inbound_default_ports.insert(s.port());
         self
     }
 
@@ -165,6 +173,17 @@ impl Proxy {
 
     pub fn outbound_ip(mut self, s: SocketAddr) -> Self {
         self.outbound = MockOrigDst::Addr(s);
+        self
+    }
+
+    pub fn disable_inbound_ports_protocol_detection(mut self, ports: Vec<u16>) -> Self {
+        self.inbound_default_ports.extend(ports.iter());
+        self.inbound_disable_ports_protocol_detection = Some(ports);
+        self
+    }
+
+    pub fn inbound_default_ports(mut self, ports: impl IntoIterator<Item = u16>) -> Self {
+        self.inbound_default_ports.extend(ports);
         self
     }
 
@@ -224,10 +243,10 @@ impl Listening {
             outbound_server,
             controller,
             identity,
+            policy,
             thread,
             shutdown,
             terminated,
-            policy,
             ..
         } = self;
 
@@ -254,16 +273,12 @@ impl Listening {
         }
         .instrument(tracing::info_span!("inbound"));
 
-        let policy_controller = policy
-            .join()
-            .instrument(tracing::info_span!("policy_controller"));
-
         tokio::join! {
             inbound,
             outbound,
-            policy_controller,
             identity.join(),
             controller.join(),
+            policy.join(),
         };
     }
 }
@@ -275,16 +290,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         controller
     } else {
         controller::new().run().await
-    };
-
-    let policy = match proxy.policy {
-        Some(policy) => policy,
-        None => {
-            controller::policy()
-                .with_inbound_default(policy::all_unauthenticated())
-                .run()
-                .await
-        }
     };
 
     let identity = if let Some(identity) = proxy.identity {
@@ -308,6 +313,22 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
             .await
     };
 
+    let (policy, inbound_policy_calls) = match proxy.policy {
+        Some(policy) => (policy, None),
+        None => {
+            let mut policy = controller::policy();
+
+            if let Some(opaque_ports) = proxy.inbound_disable_ports_protocol_detection.as_ref() {
+                tracing::info!(?opaque_ports, "disabling protocol detection");
+                for &opaque_port in opaque_ports.iter() {
+                    policy = policy.inbound(opaque_port, policy::opaque_unauthenticated());
+                }
+            }
+            let calls = policy.inbound_calls();
+            (policy.run().await, Some(calls))
+        }
+    };
+
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
 
@@ -315,13 +336,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         "LINKERD2_PROXY_DESTINATION_SVC_ADDR",
         controller.addr.to_string(),
     );
-
-    env.put("LINKERD2_PROXY_POLICY_SVC_ADDR", policy.addr.to_string());
-    env.put(
-        "LINKERD2_PROXY_POLICY_SVC_NAME",
-        "policy.linkerd.serviceaccount.identity.linkerd.cluster.local".to_string(),
-    );
-
     if random_ports {
         env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
     }
@@ -348,6 +362,42 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
 
     env.put(IDENTITY_SVC_NAME, "test-identity".to_owned());
     env.put(IDENTITY_SVC_ADDR, identity.addr.to_string());
+
+    env.put("LINKERD2_PROXY_POLICY_SVC_ADDR", policy.addr.to_string());
+    env.put(
+        "LINKERD2_PROXY_POLICY_SVC_NAME",
+        "policy.linkerd.serviceaccount.identity.linkerd.cluster.local".to_string(),
+    );
+
+    if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
+        let ports = ports
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        env.put(
+            app::env::ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+            ports,
+        );
+    }
+
+    let inbound_default_ports = proxy.inbound_default_ports;
+    if !env.contains_key(app::env::ENV_INBOUND_PORTS) {
+        // Ensure any inbound ports relevant to the test discover policy
+        // eagerly, so that the proxy doesn't flap between the default and the
+        // test policies.
+
+        use std::fmt::Write;
+        let mut ports = inbound_default_ports.iter();
+        if let Some(port) = ports.next() {
+            let mut var = format!("{}", port);
+            for port in ports {
+                write!(&mut var, ",{}", port).expect("writing to String should never fail");
+            }
+            info!("{}={:?}", app::env::ENV_INBOUND_PORTS, var);
+            env.put(app::env::ENV_INBOUND_PORTS, var);
+        }
+    }
 
     if !env.contains_key(app::env::ENV_DESTINATION_PROFILE_NETWORKS) {
         // If the test has not already overridden the destination search
@@ -443,6 +493,29 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                         });
 
                         let drain = main.spawn();
+
+                        if let Some(mut inbound_calls) = inbound_policy_calls {
+                            // Wait for the proxy to have started watches on all inbound default
+                            // ports before starting the test, to avoid potentially racy behavior.
+                            let mut ports = inbound_default_ports;
+                            debug!(
+                                ?ports,
+                                "waiting for inbound default port policies to be resolved..."
+                            );
+
+                            while !ports.is_empty() {
+                                let port = inbound_calls
+                                    .recv()
+                                    .await
+                                    .expect("policy controller has terminated unexpectedly!");
+                                debug!(%port, "inbound default port policy resolved");
+                                ports.remove(&port);
+                                // give the proxy a sec to actually consume the resolutions.
+                                tokio::task::yield_now().await;
+                            }
+
+                            info!("all inbound port policies resolved!");
+                        }
 
                         tokio::select! {
                             _ = on_shutdown => {

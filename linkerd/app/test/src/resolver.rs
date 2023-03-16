@@ -20,6 +20,11 @@ use std::task::{Context, Poll};
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
+#[cfg(feature = "client-policy")]
+mod client_policy;
+#[cfg(feature = "client-policy")]
+pub use self::client_policy::*;
+
 #[derive(Debug)]
 pub struct Resolver<A, E> {
     state: Arc<State<A, E>>,
@@ -174,6 +179,26 @@ impl Profiles {
         self.state.endpoints.lock().insert(addr.into(), None);
         self
     }
+
+    fn resolve(&self, addr: Addr) -> Option<profiles::Receiver> {
+        let span = tracing::trace_span!("mock_profile", ?addr);
+        let _e = span.enter();
+
+        self.state
+            .endpoints
+            .lock()
+            .remove(&addr)
+            .map(|x| {
+                tracing::trace!("found endpoint for addr");
+                x
+            })
+            .unwrap_or_else(|| {
+                tracing::debug!(?addr, "no endpoint configured for");
+                // An unknown endpoint was resolved!
+                self.state.only.store(false, Ordering::Release);
+                None
+            })
+    }
 }
 
 impl<T: Param<profiles::LookupAddr>> tower::Service<T> for Profiles {
@@ -187,28 +212,10 @@ impl<T: Param<profiles::LookupAddr>> tower::Service<T> for Profiles {
 
     fn call(&mut self, t: T) -> Self::Future {
         let profiles::LookupAddr(addr) = t.param();
-        let span = tracing::trace_span!("mock_profile", ?addr);
-        let _e = span.enter();
-
-        let res = self
-            .state
-            .endpoints
-            .lock()
-            .remove(&addr)
-            .map(|x| {
-                tracing::trace!("found endpoint for addr");
-                x
-            })
-            .unwrap_or_else(|| {
-                tracing::debug!(?addr, "no endpoint configured for");
-                // An unknown endpoint was resolved!
-                self.state.only.store(false, Ordering::Release);
-                None
-            });
-
-        future::ok(res)
+        future::ok(self.resolve(addr))
     }
 }
+
 // === impl Sender ===
 
 impl<E> DstSender<E> {

@@ -1,12 +1,12 @@
 use super::*;
 use crate::policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
-use linkerd_app_core::{svc::Service, transport::ServerAddr, Infallible};
+use linkerd_app_core::{svc::Service, Infallible};
 use std::sync::Arc;
 
 macro_rules! conn {
     ($client:expr, $dst:expr) => {{
         ConnectionMeta {
-            dst: ServerAddr(($dst, 8080).into()),
+            dst: OrigDstAddr(($dst, 8080).into()),
             client: Remote(ClientAddr(($client, 30120).into())),
             tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                 client_id: Some("foo.bar.bah".parse().unwrap()),

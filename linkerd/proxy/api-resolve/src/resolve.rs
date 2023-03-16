@@ -122,7 +122,7 @@ fn resolution(
                     } else {
                         Update::DoesNotExist
                     };
-                    yield update.into();
+                    yield update;
                 }
 
                 None => {} // continue

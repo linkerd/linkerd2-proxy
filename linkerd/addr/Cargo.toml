@@ -8,5 +8,6 @@ publish = false
 
 [dependencies]
 http = "0.2"
+ipnet = "2.7"
 linkerd-dns-name = { path = "../dns/name" }
 thiserror = "1"

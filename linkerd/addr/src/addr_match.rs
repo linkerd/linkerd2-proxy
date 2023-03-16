@@ -1,6 +1,6 @@
+use crate::Addr;
 use ipnet::IpNet;
-use linkerd_addr::Addr;
-use linkerd_dns::{Name, Suffix};
+use linkerd_dns_name::{Name, Suffix};
 use std::{fmt, iter::FromIterator, net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug, Default)]

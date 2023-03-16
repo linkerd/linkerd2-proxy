@@ -10,11 +10,7 @@ async fn fails_fast() {
 
     let max_unavailable = Duration::from_millis(100);
     let (service, mut handle) = mock::pair::<(), ()>();
-    let shared = Arc::new(Shared {
-        notify: tokio::sync::Notify::new(),
-        in_failfast: AtomicBool::new(false),
-    });
-    let mut service = Spawn::new(FailFast::new(max_unavailable, shared, service));
+    let mut service = Spawn::new(FailFast::new(max_unavailable, None, service));
 
     // The inner starts unavailable.
     handle.allow(0);

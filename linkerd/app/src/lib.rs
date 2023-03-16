@@ -7,6 +7,7 @@ pub mod dst;
 pub mod env;
 pub mod identity;
 pub mod oc_collector;
+pub mod policy;
 pub mod tap;
 
 pub use self::metrics::Metrics;
@@ -54,6 +55,7 @@ pub struct Config {
     pub dns: dns::Config,
     pub identity: identity::Config,
     pub dst: dst::Config,
+    pub policy: policy::Config,
     pub admin: admin::Config,
     pub tap: tap::Config,
     pub oc_collector: oc_collector::Config,
@@ -109,6 +111,7 @@ impl Config {
             admin,
             dns,
             dst,
+            policy,
             identity,
             inbound,
             oc_collector,
@@ -142,9 +145,16 @@ impl Config {
             info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.receiver().new_client()))
         }?;
 
+        let policies = {
+            let dns = dns.resolver.clone();
+            let metrics = metrics.control.clone();
+            info_span!("policy")
+                .in_scope(|| policy.build(dns, metrics, identity.receiver().new_client()))
+        }?;
+
         let oc_collector = {
             let identity = identity.receiver().new_client();
-            let dns = dns.resolver.clone();
+            let dns = dns.resolver;
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
             info_span!("opencensus")
@@ -153,7 +163,7 @@ impl Config {
 
         let runtime = ProxyRuntime {
             identity: identity.receiver(),
-            metrics: metrics.proxy.clone(),
+            metrics: metrics.proxy,
             tap: tap.registry(),
             span_sink: oc_collector.span_sink(),
             drain: drain_rx.clone(),
@@ -161,24 +171,30 @@ impl Config {
         let inbound = Inbound::new(inbound, runtime.clone());
         let outbound = Outbound::new(outbound, runtime);
 
-        let inbound_policies = {
-            let dns = dns.resolver;
-            let metrics = metrics.control;
-            info_span!("policy").in_scope(|| inbound.build_policies(dns, metrics))
-        };
+        let inbound_policies = inbound.build_policies(
+            policies.workload.clone(),
+            policies.client.clone(),
+            policies.backoff,
+        );
+
+        let outbound_policies = outbound.build_policies(
+            policies.workload.clone(),
+            policies.client.clone(),
+            policies.backoff,
+        );
 
         let admin = {
             let identity = identity.receiver().server();
             let metrics = inbound.metrics();
+            let policy = inbound_policies.clone();
             let report = inbound
                 .metrics()
                 .and_report(outbound.metrics())
                 .and_report(report);
-
-            admin
-                .build(
+            info_span!("admin").in_scope(move || {
+                admin.build(
                     bind_admin,
-                    &inbound_policies,
+                    policy,
                     identity,
                     report,
                     metrics,
@@ -186,13 +202,15 @@ impl Config {
                     drain_rx,
                     shutdown_tx,
                 )
-                .instrument(info_span!("admin"))
-                .await?
+            })?
         };
 
         let dst_addr = dst.addr.clone();
-        let gateway = gateway::Gateway::new(gateway, inbound.clone(), outbound.clone())
-            .stack(dst.resolve.clone(), dst.profiles.clone());
+        let gateway = gateway::Gateway::new(gateway, inbound.clone(), outbound.clone()).stack(
+            dst.resolve.clone(),
+            dst.profiles.clone(),
+            outbound_policies.clone(),
+        );
 
         // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
         // stacks until the proxy starts running.
@@ -216,7 +234,12 @@ impl Config {
 
                 tokio::spawn(
                     outbound
-                        .serve(outbound_listen, profiles.clone(), resolve)
+                        .serve(
+                            outbound_listen,
+                            profiles.clone(),
+                            outbound_policies,
+                            resolve,
+                        )
                         .instrument(info_span!("outbound").or_current()),
                 );
 
