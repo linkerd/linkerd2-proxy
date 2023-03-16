@@ -1,81 +1,89 @@
 use crate::Service;
 use futures::{ready, FutureExt};
 use std::{
-    sync::{atomic::AtomicBool, Arc},
+    sync::Arc,
     task::{Context, Poll},
 };
-use tokio::sync::Notify;
+use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore, TryAcquireError};
 use tokio_util::sync::ReusableBoxFuture;
-use tracing::{debug, trace};
+use tracing::debug;
 
 /// A middleware that alters its readiness state according to a gate channel.
 pub struct Gate<S> {
     inner: S,
     rx: Rx,
-    is_waiting: bool,
-    waiting: ReusableBoxFuture<'static, ()>,
+    acquire: ReusableBoxFuture<'static, Permit>,
+    permit: Poll<Permit>,
 }
 
 /// Observes gate state changes.
 #[derive(Clone, Debug)]
-pub struct Rx(Arc<Shared>, Arc<()>);
+pub struct Rx(watch::Receiver<State>);
 
 /// Changes the gate state.
 #[derive(Clone, Debug)]
-pub struct Tx(Arc<Shared>);
+pub struct Tx(Arc<watch::Sender<State>>);
 
-#[derive(Debug)]
-struct Shared {
-    open: AtomicBool,
-    notify: Notify,
-    closed: Notify,
+#[derive(Clone, Debug)]
+pub enum State {
+    Open,
+    Limited(Arc<Semaphore>),
+    Shut,
 }
 
 /// Creates a new gate channel.
 pub fn channel() -> (Tx, Rx) {
-    let shared = Arc::new(Shared {
-        open: AtomicBool::new(true),
-        notify: Notify::new(),
-        closed: Notify::new(),
-    });
-    (Tx(shared.clone()), Rx(shared, Arc::new(())))
+    let (tx, rx) = watch::channel(State::Open);
+    (Tx(Arc::new(tx)), Rx(rx))
 }
+
+type Permit = Option<OwnedSemaphorePermit>;
 
 // === impl Rx ===
 
 impl Rx {
     /// Indicates whether the gate is open.
-    pub fn is_open(&self) -> bool {
-        self.0.open.load(std::sync::atomic::Ordering::Acquire)
+    pub fn state(&self) -> State {
+        self.0.borrow().clone()
     }
 
-    /// Indicates whether the gate is closed.
-    #[inline]
+    pub fn is_open(&self) -> bool {
+        matches!(self.state(), State::Open)
+    }
+
+    pub fn is_limited(&self) -> bool {
+        matches!(self.state(), State::Limited(_))
+    }
+
     pub fn is_shut(&self) -> bool {
-        !self.is_open()
+        matches!(self.state(), State::Shut)
     }
 
     /// Waits for the gate state to change.
-    pub async fn changed(&self) -> bool {
-        self.0.notify.notified().await;
-        self.is_open()
+    pub async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
+        self.0.changed().await
     }
 
     /// Waits for the gate state to change to be open.
-    pub async fn opened(&self) {
-        if self.is_open() {
-            return;
-        }
+    pub async fn acquire(&mut self) -> Option<OwnedSemaphorePermit> {
+        loop {
+            let state = self.0.borrow_and_update().clone();
+            match state {
+                State::Open => return None,
+                State::Limited(sem) => match sem.acquire_owned().await {
+                    Ok(permit) => return Some(permit),
+                    Err(_) => {
+                        debug!("Gate closed");
+                        return None;
+                    }
+                },
+                State::Shut => {}
+            }
 
-        while !self.changed().await {}
-    }
-}
-
-impl Drop for Rx {
-    fn drop(&mut self) {
-        let Rx(_, handle) = self;
-        if Arc::strong_count(handle) == 1 {
-            self.0.closed.notify_waiters();
+            if let Err(e) = self.0.changed().await {
+                debug!("Gate closed: {:?}", e);
+                futures::future::pending::<()>().await;
+            }
         }
     }
 }
@@ -85,26 +93,27 @@ impl Drop for Rx {
 impl Tx {
     /// Returns when all associated `Rx` clones are dropped.
     pub async fn closed(&self) {
-        self.0.closed.notified().await;
+        self.0.closed().await
     }
 
     /// Opens the gate.
     pub fn open(&self) {
-        if !self.0.open.swap(true, std::sync::atomic::Ordering::Release) {
+        if self.0.send(State::Open).is_ok() {
             debug!("Gate opened");
-            self.0.notify.notify_waiters();
+        }
+    }
+
+    /// Opens the gate.
+    pub fn limit(&self, sem: Arc<Semaphore>) {
+        if self.0.send(State::Limited(sem)).is_ok() {
+            debug!("Gate limited");
         }
     }
 
     /// Closes the gate.
     pub fn shut(&self) {
-        if self
-            .0
-            .open
-            .swap(false, std::sync::atomic::Ordering::Release)
-        {
+        if self.0.send(State::Shut).is_ok() {
             debug!("Gate shut");
-            self.0.notify.notify_waiters();
         }
     }
 }
@@ -121,8 +130,8 @@ impl<S> Gate<S> {
         Self {
             inner,
             rx,
-            is_waiting: false,
-            waiting: ReusableBoxFuture::new(futures::future::pending()),
+            permit: Poll::Pending,
+            acquire: ReusableBoxFuture::new(futures::future::pending()),
         }
     }
 }
@@ -145,29 +154,50 @@ where
     type Future = S::Future;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // If the gate is shut, wait for it to open by storing a future that
-        // will complete when it opens. This ensures that waiters are notified.
-        while self.rx.is_shut() {
-            trace!(gate.open = false);
-            if !self.is_waiting {
-                let rx = self.rx.clone();
-                self.waiting.set(async move { rx.opened().await });
-                self.is_waiting = true;
+        match self.rx.state() {
+            State::Open => {
+                self.permit = Poll::Ready(None);
+                self.inner.poll_ready(cx)
             }
-            ready!(self.waiting.poll_unpin(cx));
+
+            State::Shut => self.poll_acquire(cx),
+
+            State::Limited(sem) => match sem.try_acquire_owned() {
+                Ok(permit) => {
+                    self.permit = Poll::Ready(Some(permit));
+                    self.inner.poll_ready(cx)
+                }
+
+                Err(TryAcquireError::NoPermits) => self.poll_acquire(cx),
+
+                Err(TryAcquireError::Closed) => {
+                    tracing::warn!("Gate closed");
+                    Poll::Pending
+                }
+            },
         }
-
-        debug_assert!(self.rx.is_open());
-        self.is_waiting = false;
-        trace!(gate.open = true);
-
-        // When the gate is open, poll the inner service.
-        self.inner.poll_ready(cx)
     }
 
     #[inline]
     fn call(&mut self, req: Req) -> Self::Future {
+        self.permit = match self.permit {
+            Poll::Ready(..) => Poll::Pending,
+            Poll::Pending => panic!("poll_ready must be called first"),
+        };
         self.inner.call(req)
+    }
+}
+
+impl<S> Gate<S> {
+    fn poll_acquire<Req>(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>>
+    where
+        S: Service<Req>,
+    {
+        let mut rx = self.rx.clone();
+        self.acquire.set(async move { rx.acquire().await });
+        let permit = ready!(self.acquire.poll_unpin(cx));
+        self.permit = Poll::Ready(permit);
+        self.inner.poll_ready(cx)
     }
 }
 
