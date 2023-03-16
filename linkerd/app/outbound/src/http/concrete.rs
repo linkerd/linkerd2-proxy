@@ -406,8 +406,8 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for ConsecutiveFailu
         }
         tokio::spawn(async move {
             let mut state = State::Open { failures: 0 };
-            let mut transition =
-                ReusableBoxFuture::new(async move { futures::future::pending::<State>().await });
+            let mut current_backoff = None;
+            let mut sleep = Box::pin(tokio::time::sleep(time::Duration::from_secs(0)));
 
             loop {
                 state = tokio::select! {
@@ -416,7 +416,9 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for ConsecutiveFailu
 
                     // The transition future completes with a new state if we're
                     // in a Shut state waiting to enter probation.
-                    s = &mut transition => s,
+                    _ = &mut sleep, if current_backoff.is_some() => {
+                        State::Probation(current_backoff.take().unwrap())
+                    }
 
                     rsp = rsps.recv() => match rsp {
                         None => return,
@@ -451,20 +453,18 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for ConsecutiveFailu
 
                 match state {
                     State::Open { .. } => {
-                        transition.set(async move { futures::future::pending::<State>().await });
+                        current_backoff = None;
                         gate.open();
                     }
 
                     State::Shut(backoff) => {
-                        transition.set(async move {
-                            tokio::time::sleep(backoff).await;
-                            State::Probation(backoff)
-                        });
+                        sleep.as_mut().reset(time::Instant::now() + backoff);
+                        current_backoff = Some(backoff);
                         gate.shut();
                     }
 
                     State::Probation(..) => {
-                        transition.set(async move { futures::future::pending::<State>().await });
+                        current_backoff = None;
                         gate.limit(Arc::new(Semaphore::new(1)));
                     }
                 }
