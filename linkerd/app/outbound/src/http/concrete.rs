@@ -18,7 +18,6 @@ use linkerd_app_core::{
 };
 use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tokio::{sync::Semaphore, time};
-use tokio_util::sync::ReusableBoxFuture;
 use tracing::info_span;
 
 /// Parameter configuring dispatcher behavior.
