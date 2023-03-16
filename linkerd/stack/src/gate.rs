@@ -123,10 +123,10 @@ impl Tx {
 impl<S> Gate<S> {
     pub fn channel(inner: S) -> (Tx, Self) {
         let (tx, rx) = channel();
-        (tx, Self::new(inner, rx))
+        (tx, Self::new(rx, inner))
     }
 
-    pub fn new(inner: S, rx: Rx) -> Self {
+    pub fn new(rx: Rx, inner: S) -> Self {
         Self {
             inner,
             rx,
@@ -141,7 +141,7 @@ where
     S: Clone,
 {
     fn clone(&self) -> Self {
-        Self::new(self.inner.clone(), self.rx.clone())
+        Self::new(self.rx.clone(), self.inner.clone())
     }
 }
 

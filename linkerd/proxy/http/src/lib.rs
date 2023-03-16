@@ -9,7 +9,6 @@ pub mod classify;
 pub mod client;
 pub mod client_handle;
 pub mod detect;
-// pub mod failure_accrual_gate;
 mod glue;
 pub mod h1;
 pub mod h2;
@@ -28,10 +27,12 @@ pub mod version;
 
 pub use self::{
     balance::NewBalancePeakEwma,
-    classify::{Classify, ClassifyEos, ClassifyResponse, NewInsertClassifyResponse},
+    classify::{
+        Classify, ClassifyEos, ClassifyResponse, NewClassifyGate, NewClassifyGateSet,
+        NewInsertClassifyResponse,
+    },
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
-    // failure_accrual_gate::NewFailureAccrualGate,
     glue::{HyperServerSvc, UpgradeBody},
     header_from_target::NewHeaderFromTarget,
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},

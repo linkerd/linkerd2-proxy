@@ -88,7 +88,7 @@ impl<S> FailFast<S> {
         layer::mk(move |inner| {
             let (tx, rx) = gate::channel();
             let inner = inner_layer.layer(Self::new(timeout, Some(tx), inner));
-            gate::Gate::new(inner, rx)
+            gate::Gate::new(rx, inner)
         })
     }
 

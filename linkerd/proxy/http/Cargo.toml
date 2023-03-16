@@ -49,4 +49,5 @@ tokio-test = "0.4"
 
 [dev-dependencies]
 tokio-test = "0.4"
+tower-test = "0.4"
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
