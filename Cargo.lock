@@ -1053,6 +1053,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
+ "tokio-util",
  "tonic",
  "tower",
  "tower-test",

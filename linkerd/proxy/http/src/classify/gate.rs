@@ -7,13 +7,15 @@ use linkerd_stack::{gate, layer, ExtractParam, Gate, NewService};
 use std::marker::PhantomData;
 use tokio::sync::mpsc;
 
+pub use linkerd_stack::gate::State;
+
 #[derive(Clone, Debug)]
 pub struct Params<C> {
     pub responses: mpsc::Sender<C>,
     pub gate: gate::Rx,
 }
 
-pub struct NewClassifyGateSet<P, C, X, N> {
+pub struct NewClassifyGateSet<C, P, X, N> {
     inner: N,
     extract: X,
     _marker: PhantomData<fn() -> (P, C)>,
@@ -27,7 +29,7 @@ pub struct NewClassifyGate<C, X, N> {
 
 // === impl NewClassifyGateSet ===
 
-impl<P, C, X: Clone, N> NewClassifyGateSet<P, C, X, N> {
+impl<C, P, X: Clone, N> NewClassifyGateSet<C, P, X, N> {
     pub fn new(extract: X, inner: N) -> Self {
         Self {
             inner,
@@ -41,13 +43,13 @@ impl<P, C, X: Clone, N> NewClassifyGateSet<P, C, X, N> {
     }
 }
 
-impl<P, C, N> NewClassifyGateSet<P, C, (), N> {
+impl<C, P, N> NewClassifyGateSet<C, P, (), N> {
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
         Self::layer_via(())
     }
 }
 
-impl<T, P, C, X, N> NewService<T> for NewClassifyGateSet<P, C, X, N>
+impl<T, C, P, X, N> NewService<T> for NewClassifyGateSet<C, P, X, N>
 where
     P: Clone,
     X: ExtractParam<P, T>,
@@ -106,5 +108,19 @@ impl<C, X: Clone, N: Clone> Clone for NewClassifyGate<C, X, N> {
             extract: self.extract.clone(),
             _marker: PhantomData,
         }
+    }
+}
+
+// === impl Params ===
+
+impl<C> Params<C> {
+    pub fn channel(capacity: usize) -> (Self, gate::Tx, mpsc::Receiver<C>) {
+        let (gate_tx, gate_rx) = gate::channel();
+        let (rsps_tx, rsps_rx) = mpsc::channel(capacity);
+        let prms = Self {
+            gate: gate_rx,
+            responses: rsps_tx,
+        };
+        (prms, gate_tx, rsps_rx)
     }
 }

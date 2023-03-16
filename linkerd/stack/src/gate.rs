@@ -209,7 +209,7 @@ mod tests {
     async fn gate() {
         let (tx, rx) = channel();
         let (mut gate, mut handle) =
-            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(inner, rx.clone()));
+            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
 
         handle.allow(1);
         tx.shut();
@@ -223,7 +223,7 @@ mod tests {
     async fn gate_polls_inner() {
         let (tx, rx) = channel();
         let (mut gate, mut handle) =
-            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(inner, rx.clone()));
+            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
 
         handle.allow(0);
         assert!(gate.poll_ready().is_pending());
@@ -242,7 +242,7 @@ mod tests {
     async fn notifies_on_open() {
         let (tx, rx) = channel();
         let (mut gate, mut handle) =
-            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(inner, rx.clone()));
+            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
 
         // Start with a shut gate on an available inner service.
         handle.allow(1);

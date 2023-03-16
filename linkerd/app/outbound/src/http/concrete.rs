@@ -4,7 +4,7 @@
 use super::{balance, client};
 use crate::{http, stack_labels, Outbound};
 use linkerd_app_core::{
-    metrics, profiles,
+    classify, metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
@@ -15,7 +15,9 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     Error, Infallible, NameAddr,
 };
-use std::{fmt::Debug, net::SocketAddr};
+use std::{fmt::Debug, net::SocketAddr, sync::Arc};
+use tokio::{sync::Semaphore, time};
+use tokio_util::sync::ReusableBoxFuture;
 use tracing::info_span;
 
 /// Parameter configuring dispatcher behavior.
@@ -119,7 +121,6 @@ impl<N> Outbound<N> {
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
             let balance = endpoint
-                // TODO(ver) Add a FailureAccrualGate.
                 .push_map_target({
                     let inbound_ips = inbound_ips.clone();
                     move |((addr, metadata), target): ((SocketAddr, Metadata), Balance<T>)| {
@@ -134,6 +135,14 @@ impl<N> Outbound<N> {
                     }
                 })
                 .lift_new_with_target()
+                .push(
+                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via(
+                        |_: &Balance<T>| {
+                            // TODO(ver) get failure accrual from balancer.
+                            |_: &(SocketAddr, Metadata)| consecutive_failures_gate(5)
+                        },
+                    ),
+                )
                 .push(http::NewBalancePeakEwma::layer(resolve))
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(http::BoxResponse::layer())
@@ -340,4 +349,69 @@ impl<T> tap::Inspect for Endpoint<T> {
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
         true
     }
+}
+
+/// A simple failure accrual strategy.
+fn consecutive_failures_gate(max_failures: usize) -> http::classify::gate::Params<classify::Class> {
+    use linkerd_app_core::proxy::http::classify::gate;
+    let (prms, gate, rsps) = gate::Params::channel(100);
+    tokio::spawn(async move {
+        let mut failures = 0usize;
+        let mut state = gate::State::Open;
+        let mut transition =
+            ReusableBoxFuture::new(async move { futures::future::pending::<gate::State>().await });
+        loop {
+            tokio::select! {
+                biased;
+                _ = gate.closed() => return,
+                s = &mut transition => {
+                    state = s;
+                }
+                rsp = rsps.recv() => match rsp {
+                    None => return,
+                    Some(class) => match class {
+                        classify::Class::Http(Ok(_)) | classify::Class::Grpc(Ok(_)) => {
+                            if failures == 0 {
+                                continue;
+                            }
+                            failures = 0;
+                            state = gate::State::Open;
+                        }
+                        _ => {
+                            failures += 1;
+                            if failures >= max_failures {
+                                gate.shut();
+                                state = gate::State::Shut
+                            }
+                        }
+                    },
+                },
+            };
+
+            match state {
+                gate::State::Open => {
+                    transition.set(async move { futures::future::pending::<gate::State>().await });
+                    gate.open();
+                }
+
+                gate::State::Shut => {
+                    transition.set(async move {
+                        tokio::time::sleep(time::Duration::from_secs(10)).await;
+                        gate::State::Limited(Arc::new(Semaphore::new(1)))
+                    });
+                    gate.shut();
+                }
+
+                gate::State::Limited(limit) => {
+                    transition.set(async move {
+                        tokio::time::sleep(time::Duration::from_secs(10)).await;
+                        gate::State::Open
+                    });
+                    gate.limit(limit);
+                }
+            }
+        }
+    });
+
+    prms
 }
