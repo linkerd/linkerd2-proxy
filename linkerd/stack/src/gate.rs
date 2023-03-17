@@ -26,8 +26,15 @@ pub struct Tx(Arc<watch::Sender<State>>);
 
 #[derive(Clone, Debug)]
 pub enum State {
+    /// The gate is open and unlimited.
     Open,
+
+    /// The gate is limited by the provided semaphore. Permits are forgotten as
+    /// requests are processed so that this semaphore can specify a limit on the
+    /// number of requests to be admitted by the [`Gate`].
     Limited(Arc<Semaphore>),
+
+    /// The gate is shut and no requests are to be admitted.
     Shut,
 }
 
@@ -37,7 +44,7 @@ pub fn channel() -> (Tx, Rx) {
     (Tx(Arc::new(tx)), Rx(rx))
 }
 
-type Permit = Option<OwnedSemaphorePermit>;
+pub struct Permit(Option<OwnedSemaphorePermit>);
 
 // === impl Rx ===
 
@@ -65,16 +72,16 @@ impl Rx {
     }
 
     /// Waits for the gate state to change to be open.
-    pub async fn acquire(&mut self) -> Option<OwnedSemaphorePermit> {
+    pub async fn acquire(&mut self) -> Permit {
         loop {
             let state = self.0.borrow_and_update().clone();
             match state {
-                State::Open => return None,
+                State::Open => return Permit(None),
                 State::Limited(sem) => match sem.acquire_owned().await {
-                    Ok(permit) => return Some(permit),
+                    Ok(permit) => return Permit(Some(permit)),
                     Err(_) => {
                         debug!("Gate closed");
-                        return None;
+                        return Permit(None);
                     }
                 },
                 State::Shut => {}
@@ -156,7 +163,7 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self.rx.state() {
             State::Open => {
-                self.permit = Poll::Ready(None);
+                self.permit = Poll::Ready(Permit(None));
                 self.inner.poll_ready(cx)
             }
 
@@ -164,7 +171,7 @@ where
 
             State::Limited(sem) => match sem.try_acquire_owned() {
                 Ok(permit) => {
-                    self.permit = Poll::Ready(Some(permit));
+                    self.permit = Poll::Ready(Permit(Some(permit)));
                     self.inner.poll_ready(cx)
                 }
 
@@ -182,12 +189,7 @@ where
     fn call(&mut self, req: Req) -> Self::Future {
         self.permit = match std::mem::replace(&mut self.permit, Poll::Pending) {
             Poll::Pending => panic!("poll_ready must be called first"),
-            Poll::Ready(permit) => {
-                if let Some(p) = permit {
-                    p.forget();
-                }
-                Poll::Pending
-            }
+            Poll::Ready(..) => Poll::Pending,
         };
 
         self.inner.call(req)
@@ -207,9 +209,22 @@ impl<S> Gate<S> {
     }
 }
 
+// === impl Permit ===
+
+impl Drop for Permit {
+    fn drop(&mut self) {
+        // Permits are forgotten so the `Tx` controller can decide when to allow
+        // more requests.
+        if let Some(p) = self.0.take() {
+            p.forget();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio_test::{assert_pending, assert_ready, task};
 
     #[tokio::test]
     async fn gate() {
@@ -219,10 +234,10 @@ mod tests {
 
         handle.allow(1);
         tx.shut();
-        assert!(gate.poll_ready().is_pending());
+        assert_pending!(gate.poll_ready());
 
         tx.open();
-        assert!(gate.poll_ready().is_ready());
+        assert_ready!(gate.poll_ready()).expect("ok");
     }
 
     #[tokio::test]
@@ -232,16 +247,16 @@ mod tests {
             tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
 
         handle.allow(0);
-        assert!(gate.poll_ready().is_pending());
+        assert_pending!(gate.poll_ready());
 
         tx.shut();
-        assert!(gate.poll_ready().is_pending());
+        assert_pending!(gate.poll_ready());
 
         tx.open();
-        assert!(gate.poll_ready().is_pending());
+        assert_pending!(gate.poll_ready());
 
         handle.allow(1);
-        assert!(gate.poll_ready().is_ready());
+        assert_ready!(gate.poll_ready()).expect("ok");
     }
 
     #[tokio::test]
@@ -255,43 +270,79 @@ mod tests {
         tx.shut();
 
         // Wait for the gated service to become ready.
-        assert!(gate.poll_ready().is_pending());
+        assert_pending!(gate.poll_ready());
 
         // Open the gate and verify that the readiness future fires.
         tx.open();
-        assert!(gate.poll_ready().is_ready());
+        assert_ready!(gate.poll_ready()).expect("ok");
     }
 
     #[tokio::test]
     async fn channel_closes() {
         let (tx, rx) = channel();
-        let mut closed = tokio_test::task::spawn(tx.lost());
-        assert!(closed.poll().is_pending());
+        let mut closed = task::spawn(tx.lost());
+        assert_pending!(closed.poll());
         drop(rx);
-        assert!(closed.poll().is_ready());
+        assert_ready!(closed.poll());
     }
 
     #[tokio::test]
     async fn channel_closes_after_clones() {
         let (tx, rx0) = channel();
-        let mut closed = tokio_test::task::spawn(tx.lost());
+        let mut closed = task::spawn(tx.lost());
         let rx1 = rx0.clone();
-        assert!(closed.poll().is_pending());
+        assert_pending!(closed.poll());
         drop(rx0);
-        assert!(closed.poll().is_pending());
+        assert_pending!(closed.poll());
         drop(rx1);
-        assert!(closed.poll().is_ready());
+        assert_ready!(closed.poll());
     }
 
     #[tokio::test]
     async fn channel_closes_after_clones_reordered() {
         let (tx, rx0) = channel();
-        let mut closed = tokio_test::task::spawn(tx.lost());
+        let mut closed = task::spawn(tx.lost());
         let rx1 = rx0.clone();
-        assert!(closed.poll().is_pending());
+        assert_pending!(closed.poll());
         drop(rx1);
-        assert!(closed.poll().is_pending());
+        assert_pending!(closed.poll());
         drop(rx0);
-        assert!(closed.poll().is_ready());
+        assert_ready!(closed.poll());
+    }
+
+    #[tokio::test]
+    async fn limits() {
+        let (tx, rx) = channel();
+        let (mut gate, mut handle) =
+            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
+
+        handle.allow(2);
+        let sem = Arc::new(Semaphore::new(0));
+        tx.limit(sem.clone());
+
+        assert_pending!(gate.poll_ready());
+        sem.add_permits(1);
+        assert_ready!(gate.poll_ready()).expect("ok");
+        assert_eq!(sem.available_permits(), 0);
+        let rsp = handle
+            .next_request()
+            .map(|tx| tx.unwrap().1.send_response(()));
+        let (res, _) = tokio::join!(gate.call(()), rsp);
+        res.expect("ok");
+
+        assert_pending!(gate.poll_ready());
+        sem.add_permits(1);
+        assert_ready!(gate.poll_ready()).expect("ok");
+        assert_eq!(sem.available_permits(), 0);
+        let rsp = handle
+            .next_request()
+            .map(|tx| tx.unwrap().1.send_response(()));
+        let (res, _) = tokio::join!(gate.call(()), rsp);
+        res.expect("ok");
+
+        assert_pending!(gate.poll_ready());
+        sem.add_permits(1);
+        assert_pending!(gate.poll_ready());
+        assert_eq!(sem.available_permits(), 0);
     }
 }

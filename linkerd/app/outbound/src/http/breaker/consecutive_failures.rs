@@ -184,7 +184,7 @@ mod tests {
             gate::State::Shut => panic!("still shut"),
             gate::State::Limited(sem) => {
                 assert_eq!(sem.available_permits(), 1);
-                params.gate.acquire().await.unwrap().forget();
+                params.gate.acquire().await;
                 assert_eq!(sem.available_permits(), 0);
             }
         }
@@ -213,7 +213,7 @@ mod tests {
             gate::State::Shut => panic!("still shut"),
             gate::State::Limited(sem) => {
                 assert_eq!(sem.available_permits(), 1);
-                params.gate.acquire().await.unwrap().forget();
+                params.gate.acquire().await;
                 assert_eq!(sem.available_permits(), 0);
             }
         }
