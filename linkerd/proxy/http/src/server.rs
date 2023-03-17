@@ -7,12 +7,13 @@ use crate::{
 };
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
-use linkerd_stack::{layer, NewService, Param, Service};
+use linkerd_stack::{layer, NewService, Param};
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
+use tower::Service;
 use tracing::{debug, Instrument};
 
 type Server = hyper::server::conn::Http<trace::Executor>;

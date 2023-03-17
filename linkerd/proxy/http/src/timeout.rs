@@ -27,7 +27,7 @@ pub struct ResponseTimeoutError(Duration);
 // === impl NewTimeout ===
 
 impl<X: Clone, N> NewTimeout<X, N> {
-    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
+    pub fn layer_via(extract: X) -> impl tower::layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
             extract: extract.clone(),
@@ -36,7 +36,7 @@ impl<X: Clone, N> NewTimeout<X, N> {
 }
 
 impl<N> NewTimeout<(), N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
+    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
         Self::layer_via(())
     }
 }

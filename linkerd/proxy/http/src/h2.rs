@@ -131,7 +131,7 @@ where
 
 // === impl Connection ===
 
-impl<B> Service<http::Request<B>> for Connection<B>
+impl<B> tower::Service<http::Request<B>> for Connection<B>
 where
     B: HttpBody + Send + 'static,
     B::Data: Send,

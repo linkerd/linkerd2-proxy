@@ -18,7 +18,7 @@ impl<H: Clone, S: Clone, R> Clone for StripHeader<H, S, R> {
 
 pub mod request {
     use http::header::AsHeaderName;
-    use linkerd_stack::{layer, Proxy, Service};
+    use linkerd_stack::{layer, Proxy};
     use std::{
         marker::PhantomData,
         task::{Context, Poll},
@@ -45,7 +45,7 @@ pub mod request {
     where
         P: Proxy<http::Request<B>, S>,
         H: AsHeaderName + Clone,
-        S: Service<P::Request>,
+        S: tower::Service<P::Request>,
     {
         type Request = P::Request;
         type Response = P::Response;
@@ -59,10 +59,10 @@ pub mod request {
         }
     }
 
-    impl<H, S, B> Service<http::Request<B>> for StripHeader<H, S>
+    impl<H, S, B> tower::Service<http::Request<B>> for StripHeader<H, S>
     where
         H: AsHeaderName + Clone,
-        S: Service<http::Request<B>>,
+        S: tower::Service<http::Request<B>>,
     {
         type Response = S::Response;
         type Error = S::Error;
@@ -85,7 +85,7 @@ pub mod response {
     use futures::{ready, Future, TryFuture};
     use http::header::AsHeaderName;
     use linkerd_error::Error;
-    use linkerd_stack::{layer, Service};
+    use linkerd_stack::layer;
     use pin_project::pin_project;
     use std::{
         marker::PhantomData,
@@ -123,10 +123,10 @@ pub mod response {
         }
     }
 
-    impl<H, S, B, Req> Service<Req> for StripHeader<H, S>
+    impl<H, S, B, Req> tower::Service<Req> for StripHeader<H, S>
     where
         H: AsHeaderName + Clone,
-        S: Service<Req, Response = http::Response<B>>,
+        S: tower::Service<Req, Response = http::Response<B>>,
         S::Error: Into<Error> + Send + Sync,
     {
         type Response = S::Response;

@@ -1,5 +1,5 @@
 use futures::{Future, TryFuture};
-use linkerd_stack::{layer, NewService, Param, Proxy, Service};
+use linkerd_stack::{layer, NewService, Param, Proxy};
 use std::{
     marker::PhantomData,
     pin::Pin,
@@ -56,7 +56,7 @@ pub struct ResponseInsertFuture<F, L, V, B> {
 // === impl NewInsert ===
 
 impl<P, N> NewInsert<P, N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy {
+    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Copy {
         layer::mk(|inner| Self {
             inner,
             _marker: PhantomData,
@@ -91,7 +91,7 @@ impl<N: Clone, P> Clone for NewInsert<P, N> {
 // === impl NewResponseInsert ===
 
 impl<P, N> NewResponseInsert<P, N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy {
+    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Copy {
         layer::mk(|inner| Self {
             inner,
             _marker: PhantomData,
@@ -139,7 +139,7 @@ impl<S, L, V> Insert<S, L, V> {
 impl<P, S, L, V, B> Proxy<http::Request<B>, S> for Insert<P, L, V>
 where
     P: Proxy<http::Request<B>, S>,
-    S: Service<P::Request>,
+    S: tower::Service<P::Request>,
     L: Lazy<V>,
     V: Clone + Send + Sync + 'static,
 {
@@ -154,9 +154,9 @@ where
     }
 }
 
-impl<S, L, V, B> Service<http::Request<B>> for Insert<S, L, V>
+impl<S, L, V, B> tower::Service<http::Request<B>> for Insert<S, L, V>
 where
-    S: Service<http::Request<B>>,
+    S: tower::Service<http::Request<B>>,
     L: Lazy<V>,
     V: Clone + Send + Sync + 'static,
 {
@@ -200,7 +200,7 @@ impl<S, L, V> ResponseInsert<S, L, V> {
 impl<Req, P, S, L, V, B> Proxy<Req, S> for ResponseInsert<P, L, V>
 where
     P: Proxy<Req, S, Response = http::Response<B>>,
-    S: Service<P::Request>,
+    S: tower::Service<P::Request>,
     L: Lazy<V>,
     V: Clone + Send + Sync + 'static,
 {
@@ -218,9 +218,9 @@ where
     }
 }
 
-impl<Req, S, L, V, B> Service<Req> for ResponseInsert<S, L, V>
+impl<Req, S, L, V, B> tower::Service<Req> for ResponseInsert<S, L, V>
 where
-    S: Service<Req, Response = http::Response<B>>,
+    S: tower::Service<Req, Response = http::Response<B>>,
     L: Lazy<V>,
     V: Clone + Send + Sync + 'static,
 {

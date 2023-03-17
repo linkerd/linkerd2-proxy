@@ -63,7 +63,7 @@ impl From<crate::Version> for Settings {
 
 type MakeFuture<C, T, B> = Pin<Box<dyn Future<Output = Result<Client<C, T, B>>> + Send + 'static>>;
 
-impl<C, T, B> Service<T> for MakeClient<C, B>
+impl<C, T, B> tower::Service<T> for MakeClient<C, B>
 where
     T: Clone + Send + Sync + 'static,
     T: Param<Settings>,

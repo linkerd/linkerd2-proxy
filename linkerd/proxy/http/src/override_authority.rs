@@ -1,6 +1,6 @@
 use super::h1;
 use http::{self, header::AsHeaderName, uri::Authority};
-use linkerd_stack::{layer, NewService, Param, Service};
+use linkerd_stack::{layer, NewService, Param};
 use std::{
     fmt,
     sync::Arc,
@@ -58,9 +58,9 @@ where
 
 // === impl Service ===
 
-impl<S, H, B> Service<http::Request<B>> for OverrideAuthority<S, H>
+impl<S, H, B> tower::Service<http::Request<B>> for OverrideAuthority<S, H>
 where
-    S: Service<http::Request<B>>,
+    S: tower::Service<http::Request<B>>,
     H: AsHeaderName + fmt::Display + Clone,
 {
     type Response = S::Response;

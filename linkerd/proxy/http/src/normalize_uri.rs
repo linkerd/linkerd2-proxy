@@ -18,7 +18,7 @@ use super::h1;
 use futures::{future, TryFutureExt};
 use http::uri::Authority;
 use linkerd_error::Error;
-use linkerd_stack::{layer, ExtractParam, NewService, Service};
+use linkerd_stack::{layer, ExtractParam, NewService};
 use std::task::{Context, Poll};
 use thiserror::Error;
 use tracing::trace;
@@ -93,9 +93,9 @@ impl<S> NormalizeUri<S> {
     }
 }
 
-impl<S, B> Service<http::Request<B>> for NormalizeUri<S>
+impl<S, B> tower::Service<http::Request<B>> for NormalizeUri<S>
 where
-    S: Service<http::Request<B>>,
+    S: tower::Service<http::Request<B>>,
     S::Error: Into<Error>,
 {
     type Response = S::Response;
@@ -142,9 +142,9 @@ impl<S> MarkAbsoluteForm<S> {
     }
 }
 
-impl<S, B> Service<http::Request<B>> for MarkAbsoluteForm<S>
+impl<S, B> tower::Service<http::Request<B>> for MarkAbsoluteForm<S>
 where
-    S: Service<http::Request<B>>,
+    S: tower::Service<http::Request<B>>,
 {
     type Response = S::Response;
     type Error = S::Error;

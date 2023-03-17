@@ -1,4 +1,3 @@
-use linkerd_stack::Service;
 use std::{
     future::Future,
     net::SocketAddr,
@@ -62,9 +61,9 @@ impl<S> SetClientHandle<S> {
     }
 }
 
-impl<B, S> Service<http::Request<B>> for SetClientHandle<S>
+impl<B, S> tower::Service<http::Request<B>> for SetClientHandle<S>
 where
-    S: Service<http::Request<B>>,
+    S: tower::Service<http::Request<B>>,
 {
     type Response = S::Response;
     type Error = S::Error;
