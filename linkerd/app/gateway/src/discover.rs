@@ -75,7 +75,7 @@ impl Gateway {
                     Err(error) => return Err(error),
                 }
 
-                let policy = outbound::discover::spawn_synthesized_profile_policy(
+                let policy = outbound::spawn_synthesized_profile_policy(
                     profile.clone().into(),
                     move |profile| {
                         static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
@@ -85,7 +85,7 @@ impl Gateway {
                         });
 
                         match profile.endpoint.clone() {
-                            Some((addr, meta)) => ClientPolicy::synthesize_forward(
+                            Some((addr, meta)) => outbound::synthesize_forward_policy(
                                 &META,
                                 detect_timeout,
                                 queue,

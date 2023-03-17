@@ -126,13 +126,7 @@ impl<N> Outbound<N> {
                                 .unwrap_or_else(|| (orig_dst, Default::default()));
                             // TODO(ver) We should be able to figure out resource coordinates for
                             // the endpoint?
-                            policy::ClientPolicy::synthesize_forward(
-                                &META,
-                                detect_timeout,
-                                queue,
-                                addr,
-                                meta,
-                            )
+                            synthesize_forward_policy(&META, detect_timeout, queue, addr, meta)
                         },
                     );
                     return Ok((Some(profile), policy));
@@ -189,6 +183,67 @@ pub fn spawn_synthesized_profile_policy(
     rx
 }
 
+pub fn synthesize_forward_policy(
+    meta: &Arc<policy::Meta>,
+    timeout: Duration,
+    queue: policy::Queue,
+    addr: SocketAddr,
+    metadata: policy::EndpointMetadata,
+) -> policy::ClientPolicy {
+    use policy::{
+        http, opaq, Backend, BackendDispatcher, Protocol, RouteBackend, RouteDistribution,
+    };
+
+    static NO_HTTP_FILTERS: Lazy<Arc<[http::Filter]>> = Lazy::new(|| Arc::new([]));
+    static NO_OPAQ_FILTERS: Lazy<Arc<[opaq::Filter]>> = Lazy::new(|| Arc::new([]));
+
+    let backend = Backend {
+        meta: meta.clone(),
+        queue,
+        dispatcher: BackendDispatcher::Forward(addr, metadata),
+    };
+
+    let opaque = opaq::Opaque {
+        policy: Some(opaq::Policy {
+            meta: meta.clone(),
+            filters: NO_OPAQ_FILTERS.clone(),
+            distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
+                filters: NO_OPAQ_FILTERS.clone(),
+                backend: backend.clone(),
+            }])),
+        }),
+    };
+
+    let routes = Arc::new([http::Route {
+        hosts: vec![],
+        rules: vec![http::Rule {
+            matches: vec![http::r#match::MatchRequest::default()],
+            policy: http::Policy {
+                meta: meta.clone(),
+                filters: NO_HTTP_FILTERS.clone(),
+                distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
+                    filters: NO_HTTP_FILTERS.clone(),
+                    backend: backend.clone(),
+                }])),
+            },
+        }],
+    }]);
+
+    let detect = Protocol::Detect {
+        timeout,
+        http1: http::Http1 {
+            routes: routes.clone(),
+        },
+        http2: http::Http2 { routes },
+        opaque,
+    };
+
+    policy::ClientPolicy {
+        protocol: detect,
+        backends: Arc::new([backend]),
+    }
+}
+
 fn spawn_synthesized_origdst_policy(
     orig_dst: SocketAddr,
     queue: policy::Queue,
@@ -200,13 +255,8 @@ fn spawn_synthesized_origdst_policy(
         })
     });
 
-    let policy = policy::ClientPolicy::synthesize_forward(
-        &META,
-        detect_timeout,
-        queue,
-        orig_dst,
-        Default::default(),
-    );
+    let policy =
+        synthesize_forward_policy(&META, detect_timeout, queue, orig_dst, Default::default());
     tracing::debug!(?policy, "Synthesizing policy");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(async move {

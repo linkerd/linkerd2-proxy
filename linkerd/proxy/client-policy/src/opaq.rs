@@ -1,6 +1,4 @@
 use crate::RoutePolicy;
-use once_cell::sync::Lazy;
-use std::sync::Arc;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Opaque {
@@ -12,8 +10,6 @@ pub type Policy = RoutePolicy<Filter>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Filter {}
 
-pub(crate) static NO_FILTERS: Lazy<Arc<[Filter]>> = Lazy::new(|| Arc::new([]));
-
 #[cfg(feature = "proto")]
 pub(crate) mod proto {
     use super::*;
@@ -22,6 +18,11 @@ pub(crate) mod proto {
         Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, opaque_route};
+
+    use once_cell::sync::Lazy;
+    use std::sync::Arc;
+
+    pub(crate) static NO_FILTERS: Lazy<Arc<[Filter]>> = Lazy::new(|| Arc::new([]));
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidOpaqueRoute {

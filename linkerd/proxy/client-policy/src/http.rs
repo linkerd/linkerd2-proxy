@@ -1,5 +1,4 @@
 use linkerd_http_route::http;
-use once_cell::sync::Lazy;
 use std::sync::Arc;
 
 pub use linkerd_http_route::http::{filter, find, r#match, RouteMatch};
@@ -41,8 +40,6 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
         }],
     }
 }
-
-pub(crate) static NO_FILTERS: Lazy<Arc<[Filter]>> = Lazy::new(|| Arc::new([]));
 
 // === impl Http1 ===
 
