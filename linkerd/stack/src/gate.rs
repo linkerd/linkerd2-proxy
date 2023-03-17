@@ -44,7 +44,7 @@ pub fn channel() -> (Tx, Rx) {
     (Tx(Arc::new(tx)), Rx(rx))
 }
 
-struct Permit(Option<OwnedSemaphorePermit>);
+pub struct Permit(Option<OwnedSemaphorePermit>);
 
 // === impl Rx ===
 
