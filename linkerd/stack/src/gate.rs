@@ -48,11 +48,12 @@ pub fn channel() -> (Tx, Rx) {
 // === impl Rx ===
 
 impl Rx {
-    /// Indicates whether the gate is open.
+    /// Returns a clone of the current state.
     pub fn state(&self) -> State {
         self.0.borrow().clone()
     }
 
+    /// Indicates whether the gate is open.
     pub fn is_open(&self) -> bool {
         matches!(self.state(), State::Open)
     }
