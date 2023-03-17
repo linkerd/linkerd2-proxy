@@ -1,14 +1,12 @@
 use crate::Gateway;
-use futures::TryFutureExt;
 use linkerd_app_core::{
-    errors, io, profiles, proxy::http, svc, tls, transport::addrs::*,
-    transport_header::SessionProtocol, Addr, Error,
+    io, profiles, proxy::http, svc, tls, transport::addrs::*, transport_header::SessionProtocol,
+    Addr, Error,
 };
 use linkerd_app_inbound::{self as inbound, GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_outbound::{self as outbound};
 use std::fmt::Debug;
 use tokio::sync::watch;
-use tracing::Instrument;
 
 /// Target for HTTP stacks.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
