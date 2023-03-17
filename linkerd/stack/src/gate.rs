@@ -186,7 +186,6 @@ impl<S> Gate<S> {
         S: Service<Req>,
     {
         if !self.acquiring {
-            let mut rx = self.rx.clone();
             match self.rx.state() {
                 State::Open => return Poll::Ready(None),
                 State::Shut => {}
@@ -201,6 +200,7 @@ impl<S> Gate<S> {
             }
 
             self.acquiring = true;
+            let mut rx = self.rx.clone();
             self.acquire.set(async move { rx.acquire().await });
         }
 
@@ -227,6 +227,7 @@ impl Permit {
         drop(self.0.take());
     }
 }
+
 impl Drop for Permit {
     fn drop(&mut self) {
         // Permits are forgotten so the `Tx` controller can decide when to allow
