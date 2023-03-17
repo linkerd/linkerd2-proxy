@@ -1,4 +1,7 @@
-use crate::{policy, Outbound};
+use crate::{
+    policy::{self, ClientPolicy},
+    Outbound,
+};
 use linkerd_app_core::{errors, profiles, svc, transport::OrigDstAddr, Error};
 use once_cell::sync::Lazy;
 use std::{
@@ -189,56 +192,56 @@ pub fn synthesize_forward_policy(
     queue: policy::Queue,
     addr: SocketAddr,
     metadata: policy::EndpointMetadata,
-) -> policy::ClientPolicy {
-    use policy::{
-        http, opaq, Backend, BackendDispatcher, Protocol, RouteBackend, RouteDistribution,
-    };
+) -> ClientPolicy {
+    static NO_HTTP_FILTERS: Lazy<Arc<[policy::http::Filter]>> = Lazy::new(|| Arc::new([]));
+    static NO_OPAQ_FILTERS: Lazy<Arc<[policy::opaq::Filter]>> = Lazy::new(|| Arc::new([]));
 
-    static NO_HTTP_FILTERS: Lazy<Arc<[http::Filter]>> = Lazy::new(|| Arc::new([]));
-    static NO_OPAQ_FILTERS: Lazy<Arc<[opaq::Filter]>> = Lazy::new(|| Arc::new([]));
-
-    let backend = Backend {
+    let backend = policy::Backend {
         meta: meta.clone(),
         queue,
-        dispatcher: BackendDispatcher::Forward(addr, metadata),
+        dispatcher: policy::BackendDispatcher::Forward(addr, metadata),
     };
 
-    let opaque = opaq::Opaque {
-        policy: Some(opaq::Policy {
+    let opaque = policy::opaq::Opaque {
+        policy: Some(policy::opaq::Policy {
             meta: meta.clone(),
             filters: NO_OPAQ_FILTERS.clone(),
-            distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
-                filters: NO_OPAQ_FILTERS.clone(),
-                backend: backend.clone(),
-            }])),
+            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                policy::RouteBackend {
+                    filters: NO_OPAQ_FILTERS.clone(),
+                    backend: backend.clone(),
+                },
+            ])),
         }),
     };
 
-    let routes = Arc::new([http::Route {
+    let routes = Arc::new([policy::http::Route {
         hosts: vec![],
-        rules: vec![http::Rule {
-            matches: vec![http::r#match::MatchRequest::default()],
-            policy: http::Policy {
+        rules: vec![policy::http::Rule {
+            matches: vec![policy::http::r#match::MatchRequest::default()],
+            policy: policy::http::Policy {
                 meta: meta.clone(),
                 filters: NO_HTTP_FILTERS.clone(),
-                distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
-                    filters: NO_HTTP_FILTERS.clone(),
-                    backend: backend.clone(),
-                }])),
+                distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                    policy::RouteBackend {
+                        filters: NO_HTTP_FILTERS.clone(),
+                        backend: backend.clone(),
+                    },
+                ])),
             },
         }],
     }]);
 
-    let detect = Protocol::Detect {
+    let detect = policy::Protocol::Detect {
         timeout,
-        http1: http::Http1 {
+        http1: policy::http::Http1 {
             routes: routes.clone(),
         },
-        http2: http::Http2 { routes },
+        http2: policy::http::Http2 { routes },
         opaque,
     };
 
-    policy::ClientPolicy {
+    ClientPolicy {
         protocol: detect,
         backends: Arc::new([backend]),
     }
