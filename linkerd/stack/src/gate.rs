@@ -1,7 +1,6 @@
 use crate::Service;
 use futures::{ready, FutureExt};
 use std::{
-    arch::x86_64::_addcarry_u64,
     sync::Arc,
     task::{Context, Poll},
 };
