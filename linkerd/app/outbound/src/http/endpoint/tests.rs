@@ -256,6 +256,12 @@ impl svc::Param<Remote<ServerAddr>> for Endpoint {
     }
 }
 
+impl svc::Param<http::handle_proxy_error_headers::Closable> for Endpoint {
+    fn param(&self) -> http::handle_proxy_error_headers::Closable {
+        http::handle_proxy_error_headers::Closable(true)
+    }
+}
+
 impl svc::Param<tls::ConditionalClientTls> for Endpoint {
     fn param(&self) -> tls::ConditionalClientTls {
         tls::ConditionalClientTls::None(tls::NoClientTls::Disabled)
