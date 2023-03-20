@@ -76,7 +76,10 @@ where
         // Spawn a background task to watch the inner service.
         tokio::spawn(
             async move {
-                let (up, rsp) = self.init(&target, None).await?;
+                let (up, rsp) = tokio::select! {
+                    res = self.init(&target, None) => res?,
+                    _ = tx.closed() => return Ok(()),
+                };
                 if tx.send(up).is_ok() {
                     self.publish_updates(target, tx, rsp.into_inner()).await;
                 }
