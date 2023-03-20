@@ -131,7 +131,7 @@ impl<N> Outbound<N> {
                             is_local,
                             parent: target.parent,
                             // We don't close server-side connections when we
-                            // get `l5d-proxy-connect: close` response headers
+                            // get `l5d-proxy-connection: close` response headers
                             // going through the balancer.
                             close_server_connection_on_remote_proxy_error: false,
                         }
