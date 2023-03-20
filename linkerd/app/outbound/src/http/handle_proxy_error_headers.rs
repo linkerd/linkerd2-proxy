@@ -142,8 +142,8 @@ fn update_response<B>(rsp: &mut http::Response<B>, closable: bool) -> bool {
         return false;
     }
 
-    let is_close = hdr.map(|v| v.as_bytes() == b"close").unwrap_or(false);
-    if !is_close {
+    static CLOSE: http::HeaderValue = http::HeaderValue::from_static("close");
+    if hdr.as_ref() != Some(&CLOSE) {
         return false;
     }
 
