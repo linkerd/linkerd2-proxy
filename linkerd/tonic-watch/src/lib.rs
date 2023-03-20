@@ -76,10 +76,7 @@ where
         // Spawn a background task to watch the inner service.
         tokio::spawn(
             async move {
-                let (up, rsp) = tokio::select! {
-                    res = self.init(&target, None) => res?,
-                    _ = tx.closed() => return Ok(()),
-                };
+                let (up, rsp) = self.init(&target, None).await?;
                 if tx.send(up).is_ok() {
                     self.publish_updates(target, tx, rsp.into_inner()).await;
                 }
@@ -170,15 +167,15 @@ where
                     return;
                 },
 
-                // Otherwise, continue to process updates. The stream may be
-                // re-instantiated each time an error is encountered.
+                // Otherwise, continue to get new profile versions and update the watch. The stream
+                // may be re-instantiated each time
                 res = self.recovering_next(&target, &mut stream) => match res {
                     Ok(profile) => {
                         // If sending the update fails, then we'll just look and hit the closed case above.
                         let _ = tx.send(profile);
                     }
                     Err(status) => {
-                        debug!(%status, "Stream failed");
+                        debug!(%status, "Profile stream failed");
                         return;
                     }
                 },
