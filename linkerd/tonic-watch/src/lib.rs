@@ -167,15 +167,15 @@ where
                     return;
                 },
 
-                // Otherwise, continue to get new profile versions and update the watch. The stream
-                // may be re-instantiated each time
+                // Otherwise, continue to process updates. The stream may be
+                // re-instantiated each time an error is encountered.
                 res = self.recovering_next(&target, &mut stream) => match res {
                     Ok(profile) => {
                         // If sending the update fails, then we'll just look and hit the closed case above.
                         let _ = tx.send(profile);
                     }
                     Err(status) => {
-                        debug!(%status, "Profile stream failed");
+                        debug!(%status, "Stream failed");
                         return;
                     }
                 },

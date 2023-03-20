@@ -93,7 +93,7 @@ impl<N> Outbound<N> {
         T: svc::Param<Remote<ServerAddr>>,
         T: svc::Param<http::client::Settings>,
         T: svc::Param<Option<http::AuthorityOverride>>,
-        T: svc::Param<handle_proxy_error_headers::Closable>,
+        T: svc::Param<handle_proxy_error_headers::CloseServerConnection>,
         T: svc::Param<metrics::EndpointLabels>,
         T: svc::Param<tls::ConditionalClientTls>,
         T: tap::Inspect,

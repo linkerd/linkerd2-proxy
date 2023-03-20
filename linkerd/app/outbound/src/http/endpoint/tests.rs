@@ -256,9 +256,9 @@ impl svc::Param<Remote<ServerAddr>> for Endpoint {
     }
 }
 
-impl svc::Param<http::handle_proxy_error_headers::Closable> for Endpoint {
-    fn param(&self) -> http::handle_proxy_error_headers::Closable {
-        http::handle_proxy_error_headers::Closable(true)
+impl svc::Param<http::handle_proxy_error_headers::CloseServerConnection> for Endpoint {
+    fn param(&self) -> http::handle_proxy_error_headers::CloseServerConnection {
+        http::handle_proxy_error_headers::CloseServerConnection(true)
     }
 }
 

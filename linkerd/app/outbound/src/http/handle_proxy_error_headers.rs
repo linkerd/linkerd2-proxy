@@ -12,7 +12,7 @@ use std::{
 use tracing::debug;
 
 #[derive(Copy, Clone, Debug)]
-pub struct Closable(pub bool);
+pub struct CloseServerConnection(pub bool);
 
 /// Close the accepted connection if the response from a peer proxy has the
 /// `l5d-proxy-connection: close` header. This means the peer proxy encountered
@@ -57,7 +57,7 @@ impl<N> NewHandleProxyErrorHeaders<(), N> {
 
 impl<T, X, N> svc::NewService<T> for NewHandleProxyErrorHeaders<X, N>
 where
-    X: svc::ExtractParam<Closable, T>,
+    X: svc::ExtractParam<CloseServerConnection, T>,
     X: svc::ExtractParam<tls::ConditionalClientTls, T>,
     N: svc::NewService<T>,
 {
@@ -65,7 +65,7 @@ where
 
     #[inline]
     fn new_service(&self, target: T) -> Self::Service {
-        let Closable(closable) = self.extract.extract_param(&target);
+        let CloseServerConnection(closable) = self.extract.extract_param(&target);
         let is_meshed = matches!(
             self.extract.extract_param(&target),
             tls::ConditionalClientTls::Some(_)

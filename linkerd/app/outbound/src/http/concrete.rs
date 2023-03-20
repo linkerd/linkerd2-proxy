@@ -41,7 +41,7 @@ pub struct Endpoint<T> {
     is_local: bool,
     metadata: Metadata,
     parent: T,
-    closable: bool,
+    close_server_connection_on_remote_proxy_error: bool,
 }
 
 /// A target configuring a load balancer stack.
@@ -133,7 +133,7 @@ impl<N> Outbound<N> {
                             // We don't close server-side connections when we
                             // get `l5d-proxy-connect: close` response headers
                             // going through the balancer.
-                            closable: false,
+                            close_server_connection_on_remote_proxy_error: false,
                         }
                     }
                 })
@@ -163,7 +163,7 @@ impl<N> Outbound<N> {
                                     addr,
                                     metadata,
                                     parent,
-                                    closable: true,
+                                    close_server_connection_on_remote_proxy_error: true,
                                 }
                             }),
                         })
@@ -226,9 +226,11 @@ impl<T> svc::Param<Option<http::AuthorityOverride>> for Endpoint<T> {
     }
 }
 
-impl<T> svc::Param<handle_proxy_error_headers::Closable> for Endpoint<T> {
-    fn param(&self) -> handle_proxy_error_headers::Closable {
-        handle_proxy_error_headers::Closable(self.closable)
+impl<T> svc::Param<handle_proxy_error_headers::CloseServerConnection> for Endpoint<T> {
+    fn param(&self) -> handle_proxy_error_headers::CloseServerConnection {
+        handle_proxy_error_headers::CloseServerConnection(
+            self.close_server_connection_on_remote_proxy_error,
+        )
     }
 }
 
