@@ -189,7 +189,7 @@ mod test {
         req.extensions_mut().insert(handle);
 
         let svc = HandleProxyErrorHeaders::for_test(
-            false,
+            true,
             svc::mk(|_: http::Request<hyper::Body>| {
                 future::ok::<_, Infallible>(
                     http::Response::builder()
