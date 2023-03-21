@@ -170,11 +170,8 @@ mod test {
     use tokio::time;
 
     impl<S> HandleProxyErrorHeaders<S> {
-        fn for_test(inner: S) -> Self {
-            Self {
-                closable: true,
-                inner,
-            }
+        fn for_test(closable: bool, inner: S) -> Self {
+            Self { closable, inner }
         }
     }
 
@@ -191,22 +188,18 @@ mod test {
         let (handle, closed) = ClientHandle::new(([192, 0, 2, 3], 50000).into());
         req.extensions_mut().insert(handle);
 
-        let svc =
-            HandleProxyErrorHeaders::for_test(svc::mk(move |_: http::Request<hyper::Body>| {
+        let svc = HandleProxyErrorHeaders::for_test(
+            false,
+            svc::mk(|_: http::Request<hyper::Body>| {
                 future::ok::<_, Infallible>(
                     http::Response::builder()
                         .status(http::StatusCode::BAD_GATEWAY)
                         .header(L5D_PROXY_CONNECTION, "close")
-                        .extension(tls::ConditionalClientTls::Some(tls::ClientTls {
-                            server_id: "foosa.barns.serviceaccount.identity.linkerd.cluster.local"
-                                .parse()
-                                .unwrap(),
-                            alpn: None,
-                        }))
                         .body(hyper::Body::default())
                         .unwrap(),
                 )
-            }));
+            }),
+        );
 
         let rsp = svc.oneshot(req).await.expect("request must succeed");
         assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
@@ -230,8 +223,9 @@ mod test {
         let (handle, closed) = ClientHandle::new(([192, 0, 2, 3], 50000).into());
         req.extensions_mut().insert(handle);
 
-        let svc =
-            HandleProxyErrorHeaders::for_test(svc::mk(move |_: http::Request<hyper::Body>| {
+        let svc = HandleProxyErrorHeaders::for_test(
+            false,
+            svc::mk(|_: http::Request<hyper::Body>| {
                 future::ok::<_, Infallible>(
                     http::Response::builder()
                         .status(http::StatusCode::BAD_GATEWAY)
@@ -239,7 +233,8 @@ mod test {
                         .body(hyper::Body::default())
                         .unwrap(),
                 )
-            }));
+            }),
+        );
 
         let rsp = svc.oneshot(req).await.expect("request must succeed");
         assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
