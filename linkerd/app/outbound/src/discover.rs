@@ -1,6 +1,8 @@
-use crate::{policy, Outbound};
+use crate::{
+    policy::{self, ClientPolicy},
+    Outbound,
+};
 use linkerd_app_core::{errors, profiles, svc, transport::OrigDstAddr, Error};
-use linkerd_proxy_client_policy::ClientPolicy;
 use once_cell::sync::Lazy;
 use std::{
     fmt::Debug,
@@ -114,10 +116,21 @@ impl<N> Outbound<N> {
                 // enpdoint policy.
                 if let Some(profile) = profile {
                     let policy = spawn_synthesized_profile_policy(
-                        orig_dst,
                         profile.clone().into(),
-                        queue,
-                        detect_timeout,
+                        move |profile: &profiles::Profile| {
+                            static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+                                Arc::new(policy::Meta::Default {
+                                    name: "endpoint".into(),
+                                })
+                            });
+                            let (addr, meta) = profile
+                                .endpoint
+                                .clone()
+                                .unwrap_or_else(|| (orig_dst, Default::default()));
+                            // TODO(ver) We should be able to figure out resource coordinates for
+                            // the endpoint?
+                            synthesize_forward_policy(&META, detect_timeout, queue, addr, meta)
+                        },
                     );
                     return Ok((Some(profile), policy));
                 }
@@ -137,29 +150,11 @@ fn is_not_found(e: &Error) -> bool {
         .unwrap_or(false)
 }
 
-fn spawn_synthesized_profile_policy(
-    orig_dst: SocketAddr,
+pub fn spawn_synthesized_profile_policy(
     mut profile: watch::Receiver<profiles::Profile>,
-    queue: policy::Queue,
-    detect_timeout: Duration,
+    synthesize: impl Fn(&profiles::Profile) -> policy::ClientPolicy + Send + 'static,
 ) -> watch::Receiver<policy::ClientPolicy> {
-    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
-        Arc::new(policy::Meta::Default {
-            name: "endpoint".into(),
-        })
-    });
-
-    let mk = move |profile: &profiles::Profile| {
-        let (addr, meta) = profile
-            .endpoint
-            .clone()
-            .unwrap_or_else(|| (orig_dst, Default::default()));
-        // TODO(ver) We should be able to figure out resource coordinates for
-        // the endpoint?
-        synthesize_forward_policy(&META, detect_timeout, queue, addr, meta)
-    };
-
-    let policy = mk(&*profile.borrow_and_update());
+    let policy = synthesize(&*profile.borrow_and_update());
     tracing::debug!(?policy, profile = ?*profile.borrow(), "Synthesizing policy from profile");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(
@@ -178,7 +173,7 @@ fn spawn_synthesized_profile_policy(
                         }
                     }
                 };
-                let policy = mk(&*profile.borrow());
+                let policy = synthesize(&*profile.borrow());
                 tracing::debug!(?policy, "Profile updated; synthesizing policy");
                 if tx.send(policy).is_err() {
                     tracing::debug!("Policy watch closed, terminating");
@@ -191,28 +186,7 @@ fn spawn_synthesized_profile_policy(
     rx
 }
 
-fn spawn_synthesized_origdst_policy(
-    orig_dst: SocketAddr,
-    queue: policy::Queue,
-    detect_timeout: Duration,
-) -> watch::Receiver<policy::ClientPolicy> {
-    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
-        Arc::new(policy::Meta::Default {
-            name: "fallback".into(),
-        })
-    });
-
-    let policy =
-        synthesize_forward_policy(&META, detect_timeout, queue, orig_dst, Default::default());
-    tracing::debug!(?policy, "Synthesizing policy");
-    let (tx, rx) = watch::channel(policy);
-    tokio::spawn(async move {
-        tx.closed().await;
-    });
-    rx
-}
-
-fn synthesize_forward_policy(
+pub fn synthesize_forward_policy(
     meta: &Arc<policy::Meta>,
     timeout: Duration,
     queue: policy::Queue,
@@ -271,6 +245,27 @@ fn synthesize_forward_policy(
         protocol: detect,
         backends: Arc::new([backend]),
     }
+}
+
+fn spawn_synthesized_origdst_policy(
+    orig_dst: SocketAddr,
+    queue: policy::Queue,
+    detect_timeout: Duration,
+) -> watch::Receiver<policy::ClientPolicy> {
+    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+        Arc::new(policy::Meta::Default {
+            name: "fallback".into(),
+        })
+    });
+
+    let policy =
+        synthesize_forward_policy(&META, detect_timeout, queue, orig_dst, Default::default());
+    tracing::debug!(?policy, "Synthesizing policy");
+    let (tx, rx) = watch::channel(policy);
+    tokio::spawn(async move {
+        tx.closed().await;
+    });
+    rx
 }
 
 // === impl Discovery ===
