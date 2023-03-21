@@ -1,7 +1,4 @@
-use self::{
-    proxy_connection_close::ProxyConnectionClose, require_id_header::NewRequireIdentity,
-    strip_proxy_error::NewStripProxyError,
-};
+use self::require_id_header::NewRequireIdentity;
 use crate::Outbound;
 use linkerd_app_core::{
     proxy::{
@@ -17,12 +14,11 @@ use tokio::sync::watch;
 
 pub mod concrete;
 mod endpoint;
+mod handle_proxy_error_headers;
 pub mod logical;
-mod proxy_connection_close;
 mod require_id_header;
 mod retry;
 mod server;
-mod strip_proxy_error;
 
 pub use self::logical::{policy, profile, LogicalAddr, Routes};
 pub(crate) use self::require_id_header::IdentityRequired;
