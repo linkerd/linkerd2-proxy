@@ -70,6 +70,7 @@ impl ClientPolicies {
                 policy: http::Policy {
                     meta: Meta::new_default("default"),
                     filters: Arc::new([]),
+                    failure_policy: http::StatusRanges::default(),
                     distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                         filters: Arc::new([]),
                         backend: backend.clone(),
@@ -90,6 +91,7 @@ impl ClientPolicies {
                 policy: Some(opaq::Policy {
                     meta: Meta::new_default("default"),
                     filters: Arc::new([]),
+                    failure_policy: Default::default(),
                     distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                         filters: Arc::new([]),
                         backend: backend.clone(),

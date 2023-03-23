@@ -206,6 +206,7 @@ pub fn synthesize_forward_policy(
         policy: Some(policy::opaq::Policy {
             meta: meta.clone(),
             filters: NO_OPAQ_FILTERS.clone(),
+            failure_policy: Default::default(),
             distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
                 policy::RouteBackend {
                     filters: NO_OPAQ_FILTERS.clone(),
@@ -222,6 +223,7 @@ pub fn synthesize_forward_policy(
             policy: policy::http::Policy {
                 meta: meta.clone(),
                 filters: NO_HTTP_FILTERS.clone(),
+                failure_policy: Default::default(),
                 distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
                     policy::RouteBackend {
                         filters: NO_HTTP_FILTERS.clone(),

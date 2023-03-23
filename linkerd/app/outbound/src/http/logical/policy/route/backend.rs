@@ -29,8 +29,10 @@ impl<T: Clone, F> Clone for Backend<T, F> {
 
 // === impl Matched ===
 
-impl<M, T, F> From<(Backend<T, F>, super::MatchedRoute<T, M, F>)> for MatchedBackend<T, M, F> {
-    fn from((params, route): (Backend<T, F>, super::MatchedRoute<T, M, F>)) -> Self {
+impl<M, T, F, E> From<(Backend<T, F>, super::MatchedRoute<T, M, F, E>)>
+    for MatchedBackend<T, M, F>
+{
+    fn from((params, route): (Backend<T, F>, super::MatchedRoute<T, M, F, E>)) -> Self {
         MatchedBackend {
             r#match: route.r#match,
             params,

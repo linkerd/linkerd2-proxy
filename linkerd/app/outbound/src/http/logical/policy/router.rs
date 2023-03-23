@@ -2,38 +2,42 @@ use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
     route,
 };
-use linkerd_app_core::{proxy::http, svc, transport::addrs::*, Addr, Error, Result};
+use linkerd_app_core::{classify, proxy::http, svc, transport::addrs::*, Addr, Error, Result};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Params<M, F> {
+pub struct Params<M, F, E> {
     pub addr: Addr,
-    pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F>>]>,
+    pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
 }
 
-pub type HttpParams = Params<http_route::http::MatchRequest, policy::http::Filter>;
-pub type GrpcParams = Params<http_route::grpc::MatchRoute, policy::grpc::Filter>;
+pub type HttpParams =
+    Params<http_route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>;
+pub type GrpcParams =
+    Params<http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F> {
+pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
     pub(super) parent: T,
     pub(super) addr: Addr,
-    pub(super) routes: Arc<[http_route::Route<M, route::Route<T, F>>]>,
+    pub(super) routes: Arc<[http_route::Route<M, route::Route<T, F, E>>]>,
     pub(super) backends: distribute::Backends<Concrete<T>>,
 }
 
-pub(super) type Http<T> = Router<T, http_route::http::MatchRequest, policy::http::Filter>;
-pub(super) type Grpc<T> = Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter>;
+pub(super) type Http<T> =
+    Router<T, http_route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>;
+pub(super) type Grpc<T> =
+    Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>;
 
 type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
 
 // === impl Router ===
 
-impl<T, M, F> Router<T, M, F>
+impl<T, M, F, E> Router<T, M, F, E>
 where
     // Parent target type.
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
@@ -44,14 +48,17 @@ where
     // Request filter.
     F: Debug + Eq + Hash,
     F: Clone + Send + Sync + 'static,
+    // Failure policy.
+    E: Debug + Eq + Hash,
+    E: Clone + Send + Sync + 'static,
     // Assert that we can route for the given match and filter types.
     Self: svc::router::SelectRoute<
         http::Request<http::BoxBody>,
-        Key = route::MatchedRoute<T, M::Summary, F>,
+        Key = route::MatchedRoute<T, M::Summary, F, E>,
         Error = NoRoute,
     >,
-    route::MatchedRoute<T, M::Summary, F>: route::filters::Apply,
-    route::backend::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
+    route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply + svc::Param<classify::Request>,
+    route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.
@@ -95,13 +102,14 @@ where
     }
 }
 
-impl<T, M, F> From<(Params<M, F>, T)> for Router<T, M, F>
+impl<T, M, F, E> From<(Params<M, F, E>, T)> for Router<T, M, F, E>
 where
     T: Eq + Hash + Clone + Debug,
     M: Clone,
     F: Clone,
+    E: Clone,
 {
-    fn from((rts, parent): (Params<M, F>, T)) -> Self {
+    fn from((rts, parent): (Params<M, F, E>, T)) -> Self {
         let Params {
             addr,
             routes,
@@ -160,15 +168,17 @@ where
             }
         };
 
-        let mk_policy = |policy::RoutePolicy::<F> {
+        let mk_policy = |policy::RoutePolicy::<F, E> {
                              meta,
                              filters,
                              distribution,
+                             failure_policy,
                          }| route::Route {
             addr: addr.clone(),
             parent: parent.clone(),
             meta,
             filters,
+            failure_policy,
             distribution: mk_distribution(&distribution),
         };
 
@@ -240,7 +250,7 @@ where
     }
 }
 
-impl<T, M, F> svc::Param<LogicalAddr> for Router<T, M, F>
+impl<T, M, F, E> svc::Param<LogicalAddr> for Router<T, M, F, E>
 where
     T: Eq + Hash + Clone + Debug,
 {
@@ -249,7 +259,7 @@ where
     }
 }
 
-impl<T, M, F> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F>
+impl<T, M, F, E> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F, E>
 where
     T: Eq + Hash + Clone + Debug,
 {

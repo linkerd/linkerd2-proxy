@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 pub use linkerd_http_route::grpc::{filter, find, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter>;
+pub type Policy = crate::RoutePolicy<Filter, Codes>;
 pub type Route = grpc::Route<Policy>;
 pub type Rule = grpc::Rule<Policy>;
 
@@ -20,6 +20,9 @@ pub enum Filter {
     InternalError(&'static str),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Codes(pub Arc<std::collections::BTreeSet<u16>>);
+
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     Route {
         hosts: vec![],
@@ -29,6 +32,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
+                failure_policy: Codes::default(),
             },
         }],
     }
@@ -39,6 +43,34 @@ impl Default for Grpc {
         Self {
             routes: Arc::new([]),
         }
+    }
+}
+
+impl Codes {
+    pub fn contains(&self, code: tonic::Code) -> bool {
+        self.0.contains(&(code as u16))
+    }
+}
+
+impl Default for Codes {
+    fn default() -> Self {
+        use once_cell::sync::Lazy;
+        static CODES: Lazy<Arc<std::collections::BTreeSet<u16>>> = Lazy::new(|| {
+            Arc::new(
+                [
+                    tonic::Code::DataLoss,
+                    tonic::Code::DeadlineExceeded,
+                    tonic::Code::Internal,
+                    tonic::Code::PermissionDenied,
+                    tonic::Code::Unavailable,
+                    tonic::Code::Unknown,
+                ]
+                .into_iter()
+                .map(|c| c as u16)
+                .collect(),
+            )
+        });
+        Self(CODES.clone())
     }
 }
 
@@ -176,6 +208,7 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
+                failure_policy: Codes::default(),
             },
         })
     }

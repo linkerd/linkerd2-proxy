@@ -52,10 +52,11 @@ pub enum Meta {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct RoutePolicy<T> {
+pub struct RoutePolicy<T, F> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
+    pub failure_policy: F,
 }
 
 // TODO(ver) Weighted random WITHOUT availability awareness, as required by
@@ -133,6 +134,7 @@ impl ClientPolicy {
                         ))
                         .collect(),
                         distribution: RouteDistribution::Empty,
+                        failure_policy: http::StatusRanges::default(),
                     },
                 }],
             }])

@@ -624,10 +624,10 @@ mod grpc_retry {
             .await;
         let client = &test.client;
 
-        let res = client
-            .request(client.request_builder("/retry"))
-            .await
-            .unwrap();
+        let req = client
+            .request_builder("/retry")
+            .header(http::header::CONTENT_TYPE, "application/grpc");
+        let res = client.request(req).await.unwrap();
 
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers().get(&GRPC_STATUS), Some(&GRPC_STATUS_OK));
@@ -672,10 +672,10 @@ mod grpc_retry {
             .await;
         let client = &test.client;
 
-        let res = client
-            .request(client.request_builder("/retry"))
-            .await
-            .unwrap();
+        let req = client
+            .request_builder("/retry")
+            .header(http::header::CONTENT_TYPE, "application/grpc");
+        let res = client.request(req).await.unwrap();
         assert_eq!(res.status(), 200);
         assert_eq!(res.headers().get(&GRPC_STATUS), None);
 

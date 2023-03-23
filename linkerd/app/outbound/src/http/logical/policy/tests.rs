@@ -25,6 +25,7 @@ async fn header_based_route() {
     let mk_policy = |name: &'static str, backend: policy::Backend| policy::RoutePolicy {
         meta: policy::Meta::new_default(name),
         filters: Arc::new([]),
+        failure_policy: Default::default(),
         distribution: policy::RouteDistribution::FirstAvailable(Arc::new([policy::RouteBackend {
             filters: Arc::new([]),
             backend,
@@ -144,6 +145,7 @@ async fn http_filter_request_headers() {
                     matches: vec![route::http::MatchRequest::default()],
                     policy: policy::RoutePolicy {
                         meta: policy::Meta::new_default("turtles"),
+                        failure_policy: Default::default(),
                         filters: Arc::new([policy::http::Filter::RequestHeaders(
                             policy::http::filter::ModifyHeader {
                                 add: vec![(PIZZA.clone(), TUBULAR.clone())],

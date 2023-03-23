@@ -1,5 +1,5 @@
 use super::super::Concrete;
-use linkerd_app_core::{proxy::http, svc, Addr, Error, Result};
+use linkerd_app_core::{classify, proxy::http, svc, Addr, Error, Result};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -22,26 +22,35 @@ pub(crate) struct Matched<M, P> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct Route<T, F> {
+pub(crate) struct Route<T, F, E> {
     pub(super) parent: T,
     pub(super) addr: Addr,
     pub(super) meta: Arc<policy::Meta>,
     pub(super) filters: Arc<[F]>,
     pub(super) distribution: BackendDistribution<T, F>,
+    pub(super) failure_policy: E,
 }
 
-pub(crate) type MatchedRoute<T, M, F> = Matched<M, Route<T, F>>;
-pub(crate) type Http<T> =
-    MatchedRoute<T, http_route::http::r#match::RequestMatch, policy::http::Filter>;
-pub(crate) type Grpc<T> =
-    MatchedRoute<T, http_route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
+pub(crate) type MatchedRoute<T, M, F, E> = Matched<M, Route<T, F, E>>;
+pub(crate) type Http<T> = MatchedRoute<
+    T,
+    http_route::http::r#match::RequestMatch,
+    policy::http::Filter,
+    policy::http::StatusRanges,
+>;
+pub(crate) type Grpc<T> = MatchedRoute<
+    T,
+    http_route::grpc::r#match::RouteMatch,
+    policy::grpc::Filter,
+    policy::grpc::Codes,
+>;
 
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
 
 // === impl MatchedRoute ===
 
-impl<T, M, F> MatchedRoute<T, M, F>
+impl<T, M, F, E> MatchedRoute<T, M, F, E>
 where
     // Parent target.
     T: Debug + Eq + Hash,
@@ -51,8 +60,11 @@ where
     // Request filter.
     F: Debug + Eq + Hash,
     F: Clone + Send + Sync + 'static,
+    // Failure policy.
+    E: Clone + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
+    Self: svc::Param<classify::Request>,
     MatchedBackend<T, M, F>: filters::Apply,
 {
     /// Builds a route stack that applies policy filters to requests and
@@ -93,14 +105,16 @@ where
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
+                // TODO(ver) attach the `E` typed failure policy to requests.
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
+                .push(classify::NewClassify::layer())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
         })
     }
 }
 
-impl<T: Clone, M, F> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T, M, F> {
+impl<T: Clone, M, F, E> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T, M, F, E> {
     fn param(&self) -> BackendDistribution<T, F> {
         self.params.distribution.clone()
     }
@@ -113,9 +127,25 @@ impl<T> filters::Apply for Http<T> {
     }
 }
 
+impl<T> svc::Param<classify::Request> for Http<T> {
+    fn param(&self) -> classify::Request {
+        classify::Request::ClientPolicy(classify::ClientPolicy::Http(
+            self.params.failure_policy.clone(),
+        ))
+    }
+}
+
 impl<T> filters::Apply for Grpc<T> {
     #[inline]
     fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
         filters::apply_grpc(&self.r#match, &self.params.filters, req)
+    }
+}
+
+impl<T> svc::Param<classify::Request> for Grpc<T> {
+    fn param(&self) -> classify::Request {
+        classify::Request::ClientPolicy(classify::ClientPolicy::Grpc(
+            self.params.failure_policy.clone(),
+        ))
     }
 }
