@@ -55,11 +55,6 @@ impl Rx {
         self.0.borrow().clone()
     }
 
-    /// Indicates whether the gate is open.
-    pub fn state(&self) -> State {
-        self.0.borrow().clone()
-    }
-
     pub fn is_open(&self) -> bool {
         matches!(self.state(), State::Open)
     }
