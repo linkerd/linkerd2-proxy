@@ -44,7 +44,10 @@ pub mod tcp;
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
 
-pub use self::{discover::Discovery, metrics::Metrics};
+pub use self::{
+    discover::{spawn_synthesized_profile_policy, synthesize_forward_policy, Discovery},
+    metrics::Metrics,
+};
 
 #[derive(Clone, Debug)]
 pub struct Config {

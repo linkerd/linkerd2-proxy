@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore, TryAcquireError};
+use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::ReusableBoxFuture;
 use tracing::debug;
 
@@ -12,8 +12,9 @@ use tracing::debug;
 pub struct Gate<S> {
     inner: S,
     rx: Rx,
-    acquire: ReusableBoxFuture<'static, Permit>,
-    permit: Poll<Permit>,
+    acquire: ReusableBoxFuture<'static, Option<OwnedSemaphorePermit>>,
+    acquiring: bool,
+    permit: Poll<Option<OwnedSemaphorePermit>>,
 }
 
 /// Observes gate state changes.
@@ -49,6 +50,11 @@ pub struct Permit(Option<OwnedSemaphorePermit>);
 // === impl Rx ===
 
 impl Rx {
+    /// Returns a clone of the current state.
+    pub fn state(&self) -> State {
+        self.0.borrow().clone()
+    }
+
     /// Indicates whether the gate is open.
     pub fn state(&self) -> State {
         self.0.borrow().clone()
@@ -72,22 +78,25 @@ impl Rx {
     }
 
     /// Waits for the gate state to change to be open.
-    pub async fn acquire(&mut self) -> Permit {
+    async fn acquire(&mut self) -> Option<OwnedSemaphorePermit> {
         loop {
             let state = self.0.borrow_and_update().clone();
             match state {
-                State::Open => return Permit(None),
+                State::Open => return None,
                 State::Limited(sem) => match sem.acquire_owned().await {
-                    Ok(permit) => return Permit(Some(permit)),
-                    Err(_) => {
-                        debug!("Gate closed");
-                        return Permit(None);
+                    Ok(permit) => return Some(permit),
+                    Err(_closed) => {
+                        // When the semaphore is closed, continue waiting for
+                        // the state to change.
+                        debug!("Semaphore closed");
                     }
                 },
                 State::Shut => {}
             }
 
             if let Err(e) = self.0.changed().await {
+                // If the `Tx` is dropped, then no further state changes can
+                // occur, so we simply remain in an unavilable state.
                 debug!("Gate closed: {:?}", e);
                 futures::future::pending::<()>().await;
             }
@@ -110,7 +119,7 @@ impl Tx {
         }
     }
 
-    /// Opens the gate.
+    /// Limits the gate with the provided semaphore.
     pub fn limit(&self, sem: Arc<Semaphore>) {
         if self.0.send(State::Limited(sem)).is_ok() {
             debug!("Gate limited");
@@ -139,6 +148,7 @@ impl<S> Gate<S> {
             rx,
             permit: Poll::Pending,
             acquire: ReusableBoxFuture::new(futures::future::pending()),
+            acquiring: false,
         }
     }
 }
@@ -161,35 +171,18 @@ where
     type Future = S::Future;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        match self.rx.state() {
-            State::Open => {
-                self.permit = Poll::Ready(Permit(None));
-                self.inner.poll_ready(cx)
-            }
-
-            State::Shut => self.poll_acquire(cx),
-
-            State::Limited(sem) => match sem.try_acquire_owned() {
-                Ok(permit) => {
-                    self.permit = Poll::Ready(Permit(Some(permit)));
-                    self.inner.poll_ready(cx)
-                }
-
-                Err(TryAcquireError::NoPermits) => self.poll_acquire(cx),
-
-                Err(TryAcquireError::Closed) => {
-                    tracing::warn!("Gate closed");
-                    Poll::Pending
-                }
-            },
-        }
+        let permit = ready!(self.poll_acquire(cx));
+        ready!(self.inner.poll_ready(cx))?;
+        self.permit = Poll::Ready(permit);
+        Poll::Ready(Ok(()))
     }
 
     #[inline]
     fn call(&mut self, req: Req) -> Self::Future {
-        self.permit = match std::mem::replace(&mut self.permit, Poll::Pending) {
+        match std::mem::replace(&mut self.permit, Poll::Pending) {
             Poll::Pending => panic!("poll_ready must be called first"),
-            Poll::Ready(..) => Poll::Pending,
+            Poll::Ready(Some(permit)) => permit.forget(),
+            Poll::Ready(None) => {}
         };
 
         self.inner.call(req)
@@ -197,27 +190,32 @@ where
 }
 
 impl<S> Gate<S> {
-    fn poll_acquire<Req>(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>>
+    fn poll_acquire<Req>(&mut self, cx: &mut Context<'_>) -> Poll<Option<OwnedSemaphorePermit>>
     where
         S: Service<Req>,
     {
-        let mut rx = self.rx.clone();
-        self.acquire.set(async move { rx.acquire().await });
-        let permit = ready!(self.acquire.poll_unpin(cx));
-        self.permit = Poll::Ready(permit);
-        self.inner.poll_ready(cx)
-    }
-}
+        if !self.acquiring {
+            match self.rx.state() {
+                State::Open => return Poll::Ready(None),
+                State::Limited(sem) => {
+                    if let Ok(permit) = sem.try_acquire_owned() {
+                        return Poll::Ready(Some(permit));
+                    }
+                    // If the semaphore is closed or at capacity, wait until
+                    // something changes.
+                }
+                // If the gate is shut, wait for the state to change.
+                State::Shut => {}
+            }
 
-// === impl Permit ===
-
-impl Drop for Permit {
-    fn drop(&mut self) {
-        // Permits are forgotten so the `Tx` controller can decide when to allow
-        // more requests.
-        if let Some(p) = self.0.take() {
-            p.forget();
+            self.acquiring = true;
+            let mut rx = self.rx.clone();
+            self.acquire.set(async move { rx.acquire().await });
         }
+
+        let permit = ready!(self.acquire.poll_unpin(cx));
+        self.acquiring = false;
+        Poll::Ready(permit)
     }
 }
 
@@ -310,8 +308,10 @@ mod tests {
         assert_ready!(closed.poll());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn limits() {
+        let _trace = linkerd_tracing::test::trace_init();
+
         let (tx, rx) = channel();
         let (mut gate, mut handle) =
             tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
@@ -343,6 +343,11 @@ mod tests {
         assert_pending!(gate.poll_ready());
         sem.add_permits(1);
         assert_pending!(gate.poll_ready());
-        assert_eq!(sem.available_permits(), 0);
+        assert_eq!(sem.available_permits(), 1);
+
+        let mut gate2 = gate.clone();
+        drop(gate);
+        assert_pending!(gate2.poll_ready());
+        assert_eq!(sem.available_permits(), 1);
     }
 }

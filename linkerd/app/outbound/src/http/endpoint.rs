@@ -1,6 +1,9 @@
 //! A stack that sends requests to an HTTP endpoint.
 
-use super::{NewRequireIdentity, NewStripProxyError, ProxyConnectionClose};
+use super::{
+    handle_proxy_error_headers::{self, NewHandleProxyErrorHeaders},
+    NewRequireIdentity,
+};
 use crate::{tcp::tagged_transport, Outbound};
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
@@ -87,9 +90,10 @@ impl<N> Outbound<N> {
     pub fn push_http_endpoint<T, B, NSvc>(self) -> Outbound<svc::ArcNewHttp<T, B>>
     where
         // Http endpoint target.
-        T: svc::Param<http::client::Settings>,
         T: svc::Param<Remote<ServerAddr>>,
+        T: svc::Param<http::client::Settings>,
         T: svc::Param<Option<http::AuthorityOverride>>,
+        T: svc::Param<handle_proxy_error_headers::CloseServerConnection>,
         T: svc::Param<metrics::EndpointLabels>,
         T: svc::Param<tls::ConditionalClientTls>,
         T: tap::Inspect,
@@ -119,17 +123,13 @@ impl<N> Outbound<N> {
                 // actively polled.
                 .push_on_service(svc::layer::mk(svc::SpawnReady::new))
                 .push_new_reconnect(backoff)
-                // Set the TLS status on responses so that the stack can detect whether the request
-                // was sent over a meshed connection.
-                .push_http_response_insert_target::<tls::ConditionalClientTls>()
                 .push(svc::NewMapErr::layer_from_target::<EndpointError, _>())
-                // If the outbound proxy is not configured to emit headers, then strip the
-                // `l5d-proxy-errors` header if set by the peer.
-                .push(NewStripProxyError::layer(config.emit_headers))
-                // Tear down server connections when a peer proxy generates an error.
-                // TODO(ver) this should only be honored when forwarding and not when the connection
-                // is part of a balancer.
-                .push(ProxyConnectionClose::layer())
+                .push_on_service(svc::MapErr::layer_boxed())
+                // Tear down server connections when a peer proxy generates a
+                // response with the `l5d-proxy-connection: close` header. This
+                // is only done when the `Closable` parameter is set to true.
+                // This module always strips error headers from responses.
+                .push(NewHandleProxyErrorHeaders::layer())
                 // Handle connection-level errors eagerly so that we can report 5XX failures in tap
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics

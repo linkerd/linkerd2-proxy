@@ -1,5 +1,5 @@
 use crate::{
-    discover, http, opaq, policy,
+    http, opaq, policy,
     protocol::{self, Protocol},
     Discovery, Outbound,
 };
@@ -22,8 +22,7 @@ use tracing::info_span;
 struct Sidecar {
     orig_dst: OrigDstAddr,
     profile: Option<profiles::Receiver>,
-    // TODO(ver) Policies should not be optional.
-    policy: Option<policy::Receiver>,
+    policy: policy::Receiver,
 }
 
 #[derive(Clone, Debug)]
@@ -52,17 +51,6 @@ impl Outbound<()> {
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        let discover = {
-            let detect_timeout = self.config.proxy.detect_protocol_timeout;
-
-            let queue = self.config.tcp_connection_queue;
-            let default_queue = policy::Queue {
-                capacity: queue.capacity,
-                failfast_timeout: queue.failfast_timeout,
-            };
-            discover::resolver(profiles, policies, default_queue, detect_timeout)
-        };
-
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
 
         let http = self
@@ -79,7 +67,7 @@ impl Outbound<()> {
             // outbound sidecar stack configuration.
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
             // Access cached discovery information.
-            .push_discover(discover)
+            .push_discover(self.resolver(profiles, policies))
             // Instrument server-side connections for telemetry.
             .push_tcp_instrument(|t: &T| {
                 let addr: OrigDstAddr = t.param();
@@ -179,7 +167,7 @@ impl From<protocol::Http<Sidecar>> for HttpSidecar {
     fn from(parent: protocol::Http<Sidecar>) -> Self {
         let orig_dst = (*parent).orig_dst;
         let version = svc::Param::<http::Version>::param(&parent);
-        let mut policy = (*parent).policy.clone().expect("policies are required");
+        let mut policy = (*parent).policy.clone();
 
         if let Some(mut profile) = (*parent).profile.clone().map(watch::Receiver::from) {
             // Only use service profiles if there are novel routes/target

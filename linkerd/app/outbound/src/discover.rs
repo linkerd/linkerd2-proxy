@@ -1,6 +1,8 @@
-use crate::{policy, Outbound};
+use crate::{
+    policy::{self, ClientPolicy},
+    Outbound,
+};
 use linkerd_app_core::{errors, profiles, svc, transport::OrigDstAddr, Error};
-use linkerd_proxy_client_policy::ClientPolicy;
 use once_cell::sync::Lazy;
 use std::{
     fmt::Debug,
@@ -21,8 +23,7 @@ mod tests;
 pub struct Discovery<T> {
     parent: T,
     profile: Option<profiles::Receiver>,
-    // TODO(ver) Policies should not be optional.
-    policy: Option<policy::Receiver>,
+    policy: policy::Receiver,
 }
 
 impl<N> Outbound<N> {
@@ -58,70 +59,88 @@ impl<N> Outbound<N> {
                 .push(svc::ArcNewService::layer())
         })
     }
-}
 
-pub(crate) fn resolver(
-    profiles: impl profiles::GetProfile<Error = Error>,
-    policies: impl policy::GetPolicy,
-    queue: policy::Queue,
-    detect_timeout: Duration,
-) -> impl svc::Service<
-    OrigDstAddr,
-    Error = Error,
-    Response = (Option<profiles::Receiver>, policy::Receiver),
-    Future = impl Send,
-> + Clone
-       + Send
-       + Sync
-       + 'static {
-    svc::mk(move |OrigDstAddr(orig_dst)| {
-        tracing::debug!(addr = %orig_dst, "Discover");
-
-        let profile = profiles
-            .clone()
-            .get_profile(profiles::LookupAddr(orig_dst.into()))
-            .instrument(tracing::debug_span!("profiles"));
-        let policy = policies
-            .get_policy(orig_dst.into())
-            .instrument(tracing::debug_span!("policy"));
-
-        Box::pin(async move {
-            let (profile, policy) = tokio::join!(profile, policy);
-            tracing::debug!("Discovered");
-
-            let profile = profile.unwrap_or_else(|error| {
-                tracing::warn!(%error, "Error resolving ServiceProfile");
-                None
-            });
-
-            // If there was a policy resolution, return it with the profile so
-            // the stack can determine how to switch on them.
-            match policy {
-                Ok(policy) => return Ok((profile, policy)),
-                // XXX(ver) The policy controller may (for the time being) reject
-                // our lookups, since it doesn't yet serve endpoint metadata for
-                // forwarding.
-                Err(error) if is_not_found(&error) => tracing::debug!("Policy not found"),
-                Err(error) => return Err(error),
+    pub(crate) fn resolver(
+        &self,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policies: impl policy::GetPolicy,
+    ) -> impl svc::Service<
+        OrigDstAddr,
+        Error = Error,
+        Response = (Option<profiles::Receiver>, policy::Receiver),
+        Future = impl Send,
+    > + Clone
+           + Send
+           + Sync
+           + 'static {
+        let detect_timeout = self.config.proxy.detect_protocol_timeout;
+        let queue = {
+            let queue = self.config.tcp_connection_queue;
+            policy::Queue {
+                capacity: queue.capacity,
+                failfast_timeout: queue.failfast_timeout,
             }
+        };
+        svc::mk(move |OrigDstAddr(orig_dst)| {
+            tracing::debug!(addr = %orig_dst, "Discover");
 
-            // If there was a profile resolution, try to use it to synthesize a
-            // enpdoint policy.
-            if let Some(profile) = profile {
-                let policy = spawn_synthesized_profile_policy(
-                    orig_dst,
-                    profile.clone().into(),
-                    queue,
-                    detect_timeout,
-                );
-                return Ok((Some(profile), policy));
-            }
+            let profile = profiles
+                .clone()
+                .get_profile(profiles::LookupAddr(orig_dst.into()))
+                .instrument(tracing::debug_span!("profiles"));
+            let policy = policies
+                .get_policy(orig_dst.into())
+                .instrument(tracing::debug_span!("policy"));
 
-            // Otherwise, route the request to the original destination address.
-            let policy = spawn_synthesized_origdst_policy(orig_dst, queue, detect_timeout);
-            Ok((None, policy))
+            Box::pin(async move {
+                let (profile, policy) = tokio::join!(profile, policy);
+                tracing::debug!("Discovered");
+
+                let profile = profile.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "Error resolving ServiceProfile");
+                    None
+                });
+
+                // If there was a policy resolution, return it with the profile so
+                // the stack can determine how to switch on them.
+                match policy {
+                    Ok(policy) => return Ok((profile, policy)),
+                    // XXX(ver) The policy controller may (for the time being) reject
+                    // our lookups, since it doesn't yet serve endpoint metadata for
+                    // forwarding.
+                    Err(error) if is_not_found(&error) => tracing::debug!("Policy not found"),
+                    Err(error) => return Err(error),
+                }
+
+                // If there was a profile resolution, try to use it to synthesize a
+                // enpdoint policy.
+                if let Some(profile) = profile {
+                    let policy = spawn_synthesized_profile_policy(
+                        profile.clone().into(),
+                        move |profile: &profiles::Profile| {
+                            static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+                                Arc::new(policy::Meta::Default {
+                                    name: "endpoint".into(),
+                                })
+                            });
+                            let (addr, meta) = profile
+                                .endpoint
+                                .clone()
+                                .unwrap_or_else(|| (orig_dst, Default::default()));
+                            // TODO(ver) We should be able to figure out resource coordinates for
+                            // the endpoint?
+                            synthesize_forward_policy(&META, detect_timeout, queue, addr, meta)
+                        },
+                    );
+                    return Ok((Some(profile), policy));
+                }
+
+                // Otherwise, route the request to the original destination address.
+                let policy = spawn_synthesized_origdst_policy(orig_dst, queue, detect_timeout);
+                Ok((None, policy))
+            })
         })
-    })
+    }
 }
 
 #[inline]
@@ -131,29 +150,11 @@ fn is_not_found(e: &Error) -> bool {
         .unwrap_or(false)
 }
 
-fn spawn_synthesized_profile_policy(
-    orig_dst: SocketAddr,
+pub fn spawn_synthesized_profile_policy(
     mut profile: watch::Receiver<profiles::Profile>,
-    queue: policy::Queue,
-    detect_timeout: Duration,
+    synthesize: impl Fn(&profiles::Profile) -> policy::ClientPolicy + Send + 'static,
 ) -> watch::Receiver<policy::ClientPolicy> {
-    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
-        Arc::new(policy::Meta::Default {
-            name: "endpoint".into(),
-        })
-    });
-
-    let mk = move |profile: &profiles::Profile| {
-        let (addr, meta) = profile
-            .endpoint
-            .clone()
-            .unwrap_or_else(|| (orig_dst, Default::default()));
-        // TODO(ver) We should be able to figure out resource coordinates for
-        // the endpoint?
-        synthesize_forward_policy(&META, detect_timeout, queue, addr, meta)
-    };
-
-    let policy = mk(&*profile.borrow_and_update());
+    let policy = synthesize(&*profile.borrow_and_update());
     tracing::debug!(?policy, profile = ?*profile.borrow(), "Synthesizing policy from profile");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(
@@ -172,7 +173,7 @@ fn spawn_synthesized_profile_policy(
                         }
                     }
                 };
-                let policy = mk(&*profile.borrow());
+                let policy = synthesize(&*profile.borrow());
                 tracing::debug!(?policy, "Profile updated; synthesizing policy");
                 if tx.send(policy).is_err() {
                     tracing::debug!("Policy watch closed, terminating");
@@ -185,28 +186,7 @@ fn spawn_synthesized_profile_policy(
     rx
 }
 
-fn spawn_synthesized_origdst_policy(
-    orig_dst: SocketAddr,
-    queue: policy::Queue,
-    detect_timeout: Duration,
-) -> watch::Receiver<policy::ClientPolicy> {
-    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
-        Arc::new(policy::Meta::Default {
-            name: "fallback".into(),
-        })
-    });
-
-    let policy =
-        synthesize_forward_policy(&META, detect_timeout, queue, orig_dst, Default::default());
-    tracing::debug!(?policy, "Synthesizing policy");
-    let (tx, rx) = watch::channel(policy);
-    tokio::spawn(async move {
-        tx.closed().await;
-    });
-    rx
-}
-
-fn synthesize_forward_policy(
+pub fn synthesize_forward_policy(
     meta: &Arc<policy::Meta>,
     timeout: Duration,
     queue: policy::Queue,
@@ -269,6 +249,27 @@ fn synthesize_forward_policy(
     }
 }
 
+fn spawn_synthesized_origdst_policy(
+    orig_dst: SocketAddr,
+    queue: policy::Queue,
+    detect_timeout: Duration,
+) -> watch::Receiver<policy::ClientPolicy> {
+    static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+        Arc::new(policy::Meta::Default {
+            name: "fallback".into(),
+        })
+    });
+
+    let policy =
+        synthesize_forward_policy(&META, detect_timeout, queue, orig_dst, Default::default());
+    tracing::debug!(?policy, "Synthesizing policy");
+    let (tx, rx) = watch::channel(policy);
+    tokio::spawn(async move {
+        tx.closed().await;
+    });
+    rx
+}
+
 // === impl Discovery ===
 
 impl<T> From<((Option<profiles::Receiver>, policy::Receiver), T)> for Discovery<T> {
@@ -279,17 +280,7 @@ impl<T> From<((Option<profiles::Receiver>, policy::Receiver), T)> for Discovery<
         Self {
             parent,
             profile,
-            policy: Some(policy),
-        }
-    }
-}
-
-impl<T> From<(Option<profiles::Receiver>, T)> for Discovery<T> {
-    fn from((profile, parent): (Option<profiles::Receiver>, T)) -> Self {
-        Self {
-            parent,
-            profile,
-            policy: None,
+            policy,
         }
     }
 }
@@ -312,8 +303,8 @@ impl<T> svc::Param<Option<profiles::LogicalAddr>> for Discovery<T> {
     }
 }
 
-impl<T> svc::Param<Option<policy::Receiver>> for Discovery<T> {
-    fn param(&self) -> Option<policy::Receiver> {
+impl<T> svc::Param<policy::Receiver> for Discovery<T> {
+    fn param(&self) -> policy::Receiver {
         self.policy.clone()
     }
 }

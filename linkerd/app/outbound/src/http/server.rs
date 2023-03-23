@@ -1,4 +1,4 @@
-use super::{IdentityRequired, ProxyConnectionClose};
+use super::IdentityRequired;
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{
     errors, http_tracing, io,
@@ -61,9 +61,7 @@ impl<N> Outbound<N> {
                         // limit is reached or the inner service is otherwise
                         // not ready for requests.
                         .push(svc::LoadShed::layer())
-                        .push(rt.metrics.http_errors.to_layer())
-                        // Tear down server connections when a peer proxy generates an error.
-                        .push(ProxyConnectionClose::layer()),
+                        .push(rt.metrics.http_errors.to_layer()),
                 )
                 // Synthesizes responses for proxy errors.
                 .check_new_service::<T, http::Request<_>>()

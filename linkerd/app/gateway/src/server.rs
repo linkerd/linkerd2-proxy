@@ -23,9 +23,10 @@ impl Gateway {
     /// Builds a server stack that discovers configuration for the target's
     /// `GatewayAddr`. The target's `SessionProtocol` is used to determine which
     /// inner stack to use.
-    pub fn server<T, I, P, O, H, OSvc, HSvc>(
+    pub fn server<T, I, O, H, OSvc, HSvc>(
         self,
-        profiles: P,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policies: impl outbound::policy::GetPolicy,
         opaq: O,
         http: H,
     ) -> svc::Stack<svc::ArcNewTcp<T, I>>
@@ -42,8 +43,6 @@ impl Gateway {
         // Server-side socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        // Discovery
-        P: profiles::GetProfile<Error = Error>,
         // Opaq outbound stack
         O: svc::NewService<Opaq<T>, Service = OSvc>,
         O: Clone + Send + Sync + Unpin + 'static,
@@ -74,21 +73,12 @@ impl Gateway {
             )
             .into_inner();
 
-        let discover = {
-            use profiles::GetProfile;
+        let discover = self.resolver(profiles, policies);
 
-            // Apply the gateway's allowlist to the profile discovery service.
-            let allowlist = self.config.allow_discovery.clone().into();
-            let mut profiles = profiles::WithAllowlist::new(profiles, allowlist);
-            self.outbound
-                .with_stack(protocol)
-                .push_discover(svc::mk(move |GatewayAddr(addr)| {
-                    profiles.get_profile(profiles::LookupAddr(addr.into()))
-                }))
-                .into_stack()
-        };
-
-        discover
+        self.outbound
+            .with_stack(protocol)
+            .push_discover(discover)
+            .into_stack()
             .push_on_service(svc::BoxService::layer())
             .push(svc::ArcNewService::layer())
     }

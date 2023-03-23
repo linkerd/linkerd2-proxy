@@ -1,7 +1,7 @@
 //! A stack that (optionally) resolves a service to a set of endpoint replicas
 //! and distributes HTTP requests among them.
 
-use super::{balance, breaker, client};
+use super::{balance, breaker, client, handle_proxy_error_headers};
 use crate::{http, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, metrics, profiles,
@@ -42,6 +42,7 @@ pub struct Endpoint<T> {
     is_local: bool,
     metadata: Metadata,
     parent: T,
+    close_server_connection_on_remote_proxy_error: bool,
 }
 
 /// A target configuring a load balancer stack.
@@ -140,6 +141,10 @@ impl<N> Outbound<N> {
                             metadata,
                             is_local,
                             parent: target.parent,
+                            // We don't close server-side connections when we
+                            // get `l5d-proxy-connection: close` response headers
+                            // going through the balancer.
+                            close_server_connection_on_remote_proxy_error: false,
                         }
                     }
                 })
@@ -175,6 +180,7 @@ impl<N> Outbound<N> {
                                     addr,
                                     metadata,
                                     parent,
+                                    close_server_connection_on_remote_proxy_error: true,
                                 }
                             }),
                         })
@@ -234,6 +240,14 @@ impl<T> svc::Param<Option<http::AuthorityOverride>> for Endpoint<T> {
             .authority_override()
             .cloned()
             .map(http::AuthorityOverride)
+    }
+}
+
+impl<T> svc::Param<handle_proxy_error_headers::CloseServerConnection> for Endpoint<T> {
+    fn param(&self) -> handle_proxy_error_headers::CloseServerConnection {
+        handle_proxy_error_headers::CloseServerConnection(
+            self.close_server_connection_on_remote_proxy_error,
+        )
     }
 }
 

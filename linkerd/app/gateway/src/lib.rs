@@ -13,9 +13,10 @@ use linkerd_app_core::{
     Error, NameMatch,
 };
 use linkerd_app_inbound::{self as inbound, GatewayAddr, Inbound};
-use linkerd_app_outbound::Outbound;
+use linkerd_app_outbound::{self as outbound, Outbound};
 use std::fmt::Debug;
 
+mod discover;
 mod http;
 mod opaq;
 mod server;
@@ -44,7 +45,12 @@ impl Gateway {
 
     /// Builds a gateway to the outbound stack, to be passed to the inbound
     /// stack.
-    pub fn stack<T, I, R, D>(self, resolve: R, disco: D) -> svc::Stack<svc::ArcNewTcp<T, I>>
+    pub fn stack<T, I, R>(
+        self,
+        resolve: R,
+        profiles: impl profiles::GetProfile<Error = Error>,
+        policies: impl outbound::policy::GetPolicy,
+    ) -> svc::Stack<svc::ArcNewTcp<T, I>>
     where
         // Target describing an inbound gateway connection.
         T: svc::Param<GatewayAddr>,
@@ -60,8 +66,6 @@ impl Gateway {
         I: Debug + Send + Sync + Unpin + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        // Discovery
-        D: profiles::GetProfile<Error = Error>,
     {
         let opaq = {
             let resolve = resolve.clone();
@@ -83,6 +87,6 @@ impl Gateway {
                 .into_inner()
         };
 
-        self.server(disco, opaq, http)
+        self.server(profiles, policies, opaq, http)
     }
 }
