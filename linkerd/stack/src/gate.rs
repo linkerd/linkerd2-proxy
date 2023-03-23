@@ -45,8 +45,6 @@ pub fn channel() -> (Tx, Rx) {
     (Tx(Arc::new(tx)), Rx(rx))
 }
 
-pub struct Permit(Option<OwnedSemaphorePermit>);
-
 // === impl Rx ===
 
 impl Rx {
@@ -73,7 +71,7 @@ impl Rx {
     }
 
     /// Waits for the gate state to change to be open.
-    async fn acquire(&mut self) -> Option<OwnedSemaphorePermit> {
+    pub async fn acquire(&mut self) -> Option<OwnedSemaphorePermit> {
         loop {
             let state = self.0.borrow_and_update().clone();
             match state {
