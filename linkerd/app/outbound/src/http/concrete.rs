@@ -4,7 +4,9 @@
 use super::{balance, breaker, client, handle_proxy_error_headers};
 use crate::{http, stack_labels, Outbound};
 use linkerd_app_core::{
-    classify, metrics, profiles,
+    classify,
+    exp_backoff::ExponentialBackoff,
+    metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
@@ -121,11 +123,11 @@ impl<N> Outbound<N> {
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
             let breaker = |_: &Balance<T>| {
+                let backoff = ExponentialBackoff::try_new(time::Duration::from_secs(1), time::Duration::from_secs(60), 0.5).expect("exponential backoff must be valid");
                 breaker::consecutive_failures::Params {
                     max_failures: 5,
                     channel_capacity: 100,
-                    init_ejection_backoff: time::Duration::from_secs(1),
-                    max_ejection_backoff: time::Duration::from_secs(60),
+                    backoff,
                 }
             };
 

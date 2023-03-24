@@ -34,6 +34,7 @@ pub struct ExponentialBackoffStream {
     iterations: u32,
     sleeping: bool,
     sleep: Pin<Box<time::Sleep>>,
+    duration: time::Duration,
 }
 
 #[derive(Clone, Debug, Error)]
@@ -75,6 +76,7 @@ impl ExponentialBackoff {
             iterations: 0,
             sleeping: false,
             sleep: Box::pin(time::sleep(time::Duration::from_secs(0))),
+            duration: time::Duration::from_secs(0),
         }
     }
 
@@ -136,9 +138,17 @@ impl Stream for ExponentialBackoffStream {
                 let base = this.backoff.base(*this.iterations);
                 base + this.backoff.jitter(base, &mut this.rng)
             };
+            *this.duration = backoff;
             this.sleep.as_mut().reset(time::Instant::now() + backoff);
             *this.sleeping = true;
         }
+    }
+}
+
+impl ExponentialBackoffStream {
+    /// Returns the duration of the current backoff.
+    pub fn duration(&self) -> time::Duration {
+        self.duration
     }
 }
 

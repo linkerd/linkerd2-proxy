@@ -1,17 +1,15 @@
-use linkerd_app_core::{classify, proxy::http::classify::gate, svc};
-use std::{fmt::Debug, pin::Pin, sync::Arc};
-use tokio::{
-    sync::{mpsc, Semaphore},
-    time,
+use futures::stream::StreamExt;
+use linkerd_app_core::{
+    classify, exp_backoff::ExponentialBackoff, proxy::http::classify::gate, svc,
 };
+use std::{fmt::Debug, sync::Arc};
+use tokio::sync::{mpsc, Semaphore};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Params {
     pub max_failures: usize,
     pub channel_capacity: usize,
-    // TODO Use `ExponentialBackoff`
-    pub init_ejection_backoff: time::Duration,
-    pub max_ejection_backoff: time::Duration,
+    pub backoff: ExponentialBackoff,
 }
 
 pub struct ConsecutiveFailures {
@@ -19,7 +17,6 @@ pub struct ConsecutiveFailures {
     gate: gate::Tx,
     rsps: mpsc::Receiver<classify::Class>,
     semaphore: Arc<Semaphore>,
-    sleep: Pin<Box<time::Sleep>>,
 }
 
 // === impl Params ===
@@ -50,7 +47,6 @@ impl ConsecutiveFailures {
             params,
             gate,
             rsps,
-            sleep: Box::pin(tokio::time::sleep(time::Duration::from_secs(0))),
             semaphore: Arc::new(Semaphore::new(0)),
         }
     }
@@ -91,20 +87,19 @@ impl ConsecutiveFailures {
         }
     }
 
-    /// Keep the breaker closed for at least `init_ejection_backoff` and then,
+    /// Keep the breaker closed for at least the initial backoff, and then,
     /// once the timeout expires, go into probation to admit a single request
     /// before reverting to the open state or continuing in the shut state.
     async fn closed(&mut self) -> Result<(), ()> {
-        let mut backoff = self.params.init_ejection_backoff;
+        let mut backoff = self.params.backoff.stream();
         loop {
             // The breaker is shut now. Wait until we can open it again.
-            tracing::debug!(backoff = ?backoff, "Shut");
+            tracing::debug!(backoff = ?backoff.duration(), "Shut");
             self.gate.shut();
 
-            self.sleep.as_mut().reset(time::Instant::now() + backoff);
             loop {
                 tokio::select! {
-                    _ = &mut self.sleep => break,
+                    _ = backoff.next() => break,
                     // Ignore responses while the breaker is shut.
                     _ = self.rsps.recv() => continue,
                     _ = self.gate.lost() => return Err(()),
@@ -117,9 +112,6 @@ impl ConsecutiveFailures {
                 // Open!
                 return Ok(());
             }
-
-            // Re-enter the shut state with the next backoff.
-            backoff = self.params.max_ejection_backoff.min(backoff * 2);
         }
     }
 
@@ -138,6 +130,7 @@ impl ConsecutiveFailures {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::time;
     use tokio_test::{assert_pending, task};
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -155,8 +148,13 @@ mod tests {
         let prms = Params {
             max_failures: 2,
             channel_capacity: 1,
-            init_ejection_backoff: time::Duration::from_secs(1),
-            max_ejection_backoff: time::Duration::from_secs(100),
+            backoff: ExponentialBackoff::try_new(
+                time::Duration::from_secs(1),
+                time::Duration::from_secs(100),
+                // Don't jitter backoffs to ensure tests are deterministic.
+                0.0,
+            )
+            .expect("backoff params are valid"),
         };
         let breaker = ConsecutiveFailures::new(prms, gate, rsps);
         let mut task = task::spawn(breaker.run());
