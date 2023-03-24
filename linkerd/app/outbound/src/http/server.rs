@@ -161,6 +161,9 @@ impl errors::HttpRescue<Error> for ServerRescue {
         if errors::is_caused_by::<errors::LoadShedError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::unavailable(error));
         }
+        if errors::is_caused_by::<super::concrete::NullDispatcher>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
+        }
 
         // No routes configured for a request.
         if errors::is_caused_by::<super::logical::NoRoute>(&*error) {

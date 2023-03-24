@@ -26,6 +26,11 @@ pub enum Dispatch {
     Null,
 }
 
+/// A backend dispatcher was null.
+#[derive(Debug, thiserror::Error)]
+#[error("no backend dispatcher configured")]
+pub struct NullDispatcher(());
+
 /// Wraps errors encountered in this module.
 #[derive(Debug, thiserror::Error)]
 #[error("concrete service {addr}: {source}")]
@@ -150,14 +155,20 @@ impl<N> Outbound<N> {
                 )
                 .instrument(|t: &Balance<T>| info_span!("balance", addr = %t.addr));
 
+            let null = svc::ArcNewService::new(|_: ()| {
+                svc::mk(|_| async move {
+                    Err::<http::Response<http::BoxBody>, NullDispatcher>(NullDispatcher(()))
+                })
+            });
             balance
+                .push_switch(Ok::<_, Infallible>, forward.into_inner())
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
                             Dispatch::Balance(addr, ewma) => {
-                                svc::Either::A(Balance { addr, ewma, parent })
+                                svc::Either::A(svc::Either::A(Balance { addr, ewma, parent }))
                             }
-                            Dispatch::Forward(addr, metadata) => svc::Either::B({
+                            Dispatch::Forward(addr, metadata) => svc::Either::A(svc::Either::B({
                                 let is_local = inbound_ips.contains(&addr.ip());
                                 Endpoint {
                                     is_local,
@@ -166,11 +177,11 @@ impl<N> Outbound<N> {
                                     parent,
                                     close_server_connection_on_remote_proxy_error: true,
                                 }
-                            }),
-                            Dispatch::Null => todo!("eliza: add a second switch here :("),
+                            })),
+                            Dispatch::Null => svc::Either::B(()),
                         })
                     },
-                    forward.into_inner(),
+                    null,
                 )
                 .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .push(svc::ArcNewService::layer())
