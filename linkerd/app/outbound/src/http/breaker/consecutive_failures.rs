@@ -170,7 +170,7 @@ mod tests {
         assert_pending!(task.poll());
         assert!(params.gate.is_shut());
 
-        // After two failures, we've the breaker is closed.
+        // After two failures, the breaker is closed.
         time::sleep(time::Duration::from_millis(500)).await;
         assert_pending!(task.poll());
         assert!(params.gate.is_shut());
@@ -179,15 +179,24 @@ mod tests {
         // limited to a single request.
         time::sleep(time::Duration::from_millis(500)).await;
         assert_pending!(task.poll());
+
+        // hold the permit to prevent the breaker from opening
         match params.gate.state() {
             gate::State::Open => panic!("still open"),
             gate::State::Shut => panic!("still shut"),
             gate::State::Limited(sem) => {
                 assert_eq!(sem.available_permits(), 1);
-                params.gate.acquire().await;
+                params
+                    .gate
+                    .acquire()
+                    .await
+                    .expect("permit should be acquired")
+                    // The `Gate` service would forget this permit when called, so
+                    // we must do the same here explicitly.
+                    .forget();
                 assert_eq!(sem.available_permits(), 0);
             }
-        }
+        };
 
         // The first request in probation fails, so the break remains closed.
         send(Err(http::StatusCode::BAD_GATEWAY));
@@ -204,16 +213,23 @@ mod tests {
         send(Ok(http::StatusCode::OK));
         assert_pending!(task.poll());
         assert!(params.gate.is_shut());
-
         // After that timeout elapses, we go into probation again.
         time::sleep(time::Duration::from_secs(1)).await;
         assert_pending!(task.poll());
+
         match params.gate.state() {
             gate::State::Open => panic!("still open"),
             gate::State::Shut => panic!("still shut"),
             gate::State::Limited(sem) => {
                 assert_eq!(sem.available_permits(), 1);
-                params.gate.acquire().await;
+                params
+                    .gate
+                    .acquire()
+                    .await
+                    .expect("permit should be acquired")
+                    // The `Gate` service would forget this permit when called, so
+                    // we must do the same here explicitly.
+                    .forget();
                 assert_eq!(sem.available_permits(), 0);
             }
         }
