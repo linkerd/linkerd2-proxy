@@ -23,6 +23,7 @@ use tracing::info_span;
 pub enum Dispatch {
     Balance(NameAddr, balance::EwmaConfig),
     Forward(Remote<ServerAddr>, Metadata),
+    Null,
 }
 
 /// Wraps errors encountered in this module.
@@ -166,6 +167,7 @@ impl<N> Outbound<N> {
                                     close_server_connection_on_remote_proxy_error: true,
                                 }
                             }),
+                            Dispatch::Null => todo!("eliza: add a second switch here :("),
                         })
                     },
                     forward.into_inner(),

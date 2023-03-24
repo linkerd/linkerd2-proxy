@@ -94,6 +94,7 @@ pub struct Queue {
 pub enum BackendDispatcher {
     Forward(SocketAddr, EndpointMetadata),
     BalanceP2c(Load, EndpointDiscovery),
+    Null,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -499,32 +500,28 @@ pub mod proto {
                 Arc::new(meta)
             };
 
-            let dispatcher = {
-                let pb = backend
-                    .kind
-                    .ok_or(InvalidBackend::Missing("backend kind"))?;
-                match pb {
-                    backend::Kind::Balancer(BalanceP2c { discovery, load }) => {
-                        let discovery = discovery
-                            .ok_or(InvalidBackend::Missing("balancer discovery"))?
-                            .try_into()?;
-                        let load = match load.ok_or(InvalidBackend::Missing("balancer load"))? {
-                            balance_p2c::Load::PeakEwma(balance_p2c::PeakEwma {
-                                default_rtt,
-                                decay,
-                            }) => Load::PeakEwma(PeakEwma {
-                                default_rtt: duration("peak EWMA default RTT", default_rtt)?,
-                                decay: duration("peak EWMA decay", decay)?,
-                            }),
-                        };
-                        BackendDispatcher::BalanceP2c(load, discovery)
-                    }
-                    backend::Kind::Forward(ep) => {
-                        let (addr, meta) = resolve::to_addr_meta(ep, &Default::default())
-                            .ok_or(InvalidBackend::ForwardAddr)?;
-                        BackendDispatcher::Forward(addr, meta)
-                    }
+            let dispatcher = match backend.kind {
+                Some(backend::Kind::Balancer(BalanceP2c { discovery, load })) => {
+                    let discovery = discovery
+                        .ok_or(InvalidBackend::Missing("balancer discovery"))?
+                        .try_into()?;
+                    let load = match load.ok_or(InvalidBackend::Missing("balancer load"))? {
+                        balance_p2c::Load::PeakEwma(balance_p2c::PeakEwma {
+                            default_rtt,
+                            decay,
+                        }) => Load::PeakEwma(PeakEwma {
+                            default_rtt: duration("peak EWMA default RTT", default_rtt)?,
+                            decay: duration("peak EWMA decay", decay)?,
+                        }),
+                    };
+                    BackendDispatcher::BalanceP2c(load, discovery)
                 }
+                Some(backend::Kind::Forward(ep)) => {
+                    let (addr, meta) = resolve::to_addr_meta(ep, &Default::default())
+                        .ok_or(InvalidBackend::ForwardAddr)?;
+                    BackendDispatcher::Forward(addr, meta)
+                }
+                None => BackendDispatcher::Null,
             };
 
             let queue = {
