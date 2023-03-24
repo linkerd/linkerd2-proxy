@@ -196,7 +196,7 @@ mod tests {
             }
         };
 
-        // The first request in probation fails, so the break remains closed.
+        // The first request in probation fails, so the breaker remains closed.
         send(Err(http::StatusCode::BAD_GATEWAY));
         assert_pending!(task.poll());
         assert!(params.gate.is_shut());
