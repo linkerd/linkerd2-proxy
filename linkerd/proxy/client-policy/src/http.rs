@@ -1,3 +1,4 @@
+use crate::FailurePolicy;
 use linkerd_http_route::http;
 use std::{ops::RangeInclusive, sync::Arc};
 
@@ -39,7 +40,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
-                failure_policy: StatusRanges::default(),
+                failure_policy: FailurePolicy::default(),
             },
         }],
     }
@@ -219,7 +220,7 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
-                failure_policy: StatusRanges::default(),
+                failure_policy: FailurePolicy::default(),
             },
         })
     }

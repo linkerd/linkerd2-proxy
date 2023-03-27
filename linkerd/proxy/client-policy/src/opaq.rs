@@ -125,7 +125,7 @@ pub(crate) mod proto {
         Ok(Policy {
             meta: meta.clone(),
             filters: NO_FILTERS.clone(),
-            failure_policy: NonIoErrors::default(),
+            failure_policy: crate::FailurePolicy::default(),
             distribution,
         })
     }

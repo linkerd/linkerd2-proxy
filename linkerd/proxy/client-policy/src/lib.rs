@@ -56,7 +56,7 @@ pub struct RoutePolicy<T, F> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
-    pub failure_policy: F,
+    pub failure_policy: FailurePolicy<F>,
 }
 
 // TODO(ver) Weighted random WITHOUT availability awareness, as required by
@@ -113,6 +113,21 @@ pub struct PeakEwma {
     pub default_rtt: time::Duration,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Default)]
+pub struct FailurePolicy<F> {
+    /// Configures what responses are classified as failures.
+    pub classification: F,
+
+    /// Configures how endpoints accrue observed failures.
+    pub accrual: FailureAccrual,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum FailureAccrual {
+    /// Endpoints do not become unavailable due to observed failures.
+    None,
+}
+
 // === impl ClientPolicy ===
 
 impl ClientPolicy {
@@ -134,7 +149,7 @@ impl ClientPolicy {
                         ))
                         .collect(),
                         distribution: RouteDistribution::Empty,
-                        failure_policy: http::StatusRanges::default(),
+                        failure_policy: FailurePolicy::default(),
                     },
                 }],
             }])
@@ -217,6 +232,14 @@ impl std::hash::Hash for Meta {
         self.group().hash(state);
         self.kind().hash(state);
         self.name().hash(state);
+    }
+}
+
+// === impl FailureAccrual ===
+
+impl Default for FailureAccrual {
+    fn default() -> Self {
+        Self::None
     }
 }
 
