@@ -1,7 +1,7 @@
 use super::*;
 use linkerd_proxy_client_policy::{
-    http, opaq, Backend, BackendDispatcher, ClientPolicy, EndpointDiscovery, Load, Meta, PeakEwma,
-    Protocol, Queue, RouteBackend, RouteDistribution,
+    http, opaq, Backend, BackendDispatcher, ClientPolicy, EndpointDiscovery, FailurePolicy, Load,
+    Meta, PeakEwma, Protocol, Queue, RouteBackend, RouteDistribution,
 };
 use std::time::Duration;
 
@@ -70,7 +70,7 @@ impl ClientPolicies {
                 policy: http::Policy {
                     meta: Meta::new_default("default"),
                     filters: Arc::new([]),
-                    failure_policy: http::StatusRanges::default(),
+                    failure_policy: FailurePolicy::default(),
                     distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                         filters: Arc::new([]),
                         backend: backend.clone(),

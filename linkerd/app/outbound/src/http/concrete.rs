@@ -4,8 +4,9 @@
 use super::{balance, client, handle_proxy_error_headers};
 use crate::{http, stack_labels, Outbound};
 use linkerd_app_core::{
-    metrics, profiles,
+    classify, metrics, profiles,
     proxy::{
+        self,
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
         tap,
@@ -15,6 +16,7 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     Error, Infallible, NameAddr,
 };
+use linkerd_proxy_client_policy::FailureAccrual;
 use std::{fmt::Debug, net::SocketAddr};
 use tracing::info_span;
 
@@ -82,6 +84,8 @@ impl<N> Outbound<N> {
         // Concrete target type.
         T: svc::Param<Dispatch>,
         // TODO(ver) T: svc::Param<svc::queue::Capacity> + svc::Param<svc::queue::Timeout>,
+        // Failure accrual policy.
+        T: svc::Param<FailureAccrual>,
         T: Clone + Debug + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
@@ -119,7 +123,19 @@ impl<N> Outbound<N> {
                 )
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
+            let mk_breaker = |target: &Balance<T>| {
+                match target.parent.param() {
+                    FailureAccrual::None => |_: &(SocketAddr, Metadata)| {
+                        // No failure accrual for this target; construct a gate
+                        // that will never close.
+                        let (prms, _, _) = proxy::http::classify::gate::Params::channel(0);
+                        prms
+                    },
+                }
+            };
+
             let balance = endpoint
+                .check_new_service::<Endpoint<T>, http::Request<http::BoxBody>>()
                 .push_map_target({
                     let inbound_ips = inbound_ips.clone();
                     move |((addr, metadata), target): ((SocketAddr, Metadata), Balance<T>)| {
@@ -137,8 +153,14 @@ impl<N> Outbound<N> {
                         }
                     }
                 })
+                .check_new_service::<((SocketAddr, Metadata), Balance<T>), http::Request<http::BoxBody>>()
+                .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
+                .check_new_new_service::<Balance<T>, (SocketAddr, Metadata), http::Request<http::BoxBody>>()
+                .push(http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via(mk_breaker))
+                .check_new_new_service::<Balance<T>, (SocketAddr, Metadata), http::Request<http::BoxBody>>()
                 .push(http::NewBalancePeakEwma::layer(resolve))
+                .check_new_service::<Balance<T>, http::Request<_>>()
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(http::BoxResponse::layer())
                 .push_on_service(

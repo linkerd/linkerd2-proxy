@@ -9,6 +9,7 @@ use linkerd_app_core::{
     transport::addrs::*,
     Addr, Error, Infallible, NameAddr, CANONICAL_DST_HEADER,
 };
+use linkerd_proxy_client_policy::FailureAccrual;
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
@@ -37,6 +38,7 @@ pub enum Routes {
 pub struct Concrete<T> {
     target: concrete::Dispatch,
     authority: Option<http::uri::Authority>,
+    failure_accrual: FailureAccrual,
     parent: T,
 }
 
@@ -251,6 +253,12 @@ impl<T> svc::Param<Option<http::uri::Authority>> for Concrete<T> {
 impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
     fn param(&self) -> concrete::Dispatch {
         self.target.clone()
+    }
+}
+
+impl<T> svc::Param<FailureAccrual> for Concrete<T> {
+    fn param(&self) -> concrete::Dispatch {
+        self.failure_accrual.clone()
     }
 }
 
