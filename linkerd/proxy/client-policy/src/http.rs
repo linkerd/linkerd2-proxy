@@ -209,10 +209,9 @@ pub mod proto {
             .map(Filter::try_from)
             .collect::<Result<Arc<[_]>, _>>()?;
 
-        let distribution = {
-            let backends = backends.ok_or(InvalidHttpRoute::Missing("distribution"))?;
-            try_distribution(meta, backends)?
-        };
+        let distribution = backends
+            .ok_or(InvalidHttpRoute::Missing("distribution"))?
+            .try_into()?;
 
         Ok(Rule {
             matches,
@@ -225,48 +224,56 @@ pub mod proto {
         })
     }
 
-    fn try_distribution(
-        meta: &Arc<Meta>,
-        distribution: http_route::Distribution,
-    ) -> Result<RouteDistribution<Filter>, InvalidDistribution> {
-        use http_route::{distribution, WeightedRouteBackend};
+    impl TryFrom<http_route::Distribution> for RouteDistribution<Filter> {
+        type Error = InvalidDistribution;
+        fn try_from(distribution: http_route::Distribution) -> Result<Self, Self::Error> {
+            use http_route::{distribution, WeightedRouteBackend};
 
-        Ok(
-            match distribution.kind.ok_or(InvalidDistribution::Missing)? {
-                distribution::Kind::Empty(_) => RouteDistribution::Empty,
-                distribution::Kind::RandomAvailable(distribution::RandomAvailable { backends }) => {
-                    let backends = backends
-                        .into_iter()
-                        .map(|WeightedRouteBackend { weight, backend }| {
-                            let backend = backend.ok_or(InvalidDistribution::MissingBackend)?;
-                            Ok((try_route_backend(meta, backend)?, weight))
-                        })
-                        .collect::<Result<Arc<[_]>, InvalidDistribution>>()?;
-                    if backends.is_empty() {
-                        return Err(InvalidDistribution::Empty("RandomAvailable"));
+            Ok(
+                match distribution.kind.ok_or(InvalidDistribution::Missing)? {
+                    distribution::Kind::Empty(_) => RouteDistribution::Empty,
+                    distribution::Kind::RandomAvailable(distribution::RandomAvailable {
+                        backends,
+                    }) => {
+                        let backends = backends
+                            .into_iter()
+                            .map(|WeightedRouteBackend { weight, backend }| {
+                                let backend = backend
+                                    .ok_or(InvalidDistribution::MissingBackend)?
+                                    .try_into()?;
+                                Ok((backend, weight))
+                            })
+                            .collect::<Result<Arc<[_]>, InvalidDistribution>>()?;
+                        if backends.is_empty() {
+                            return Err(InvalidDistribution::Empty("RandomAvailable"));
+                        }
+                        RouteDistribution::RandomAvailable(backends)
                     }
-                    RouteDistribution::RandomAvailable(backends)
-                }
-                distribution::Kind::FirstAvailable(distribution::FirstAvailable { backends }) => {
-                    let backends = backends
-                        .into_iter()
-                        .map(|backend| try_route_backend(meta, backend))
-                        .collect::<Result<Arc<[_]>, InvalidBackend>>()?;
-                    if backends.is_empty() {
-                        return Err(InvalidDistribution::Empty("FirstAvailable"));
+                    distribution::Kind::FirstAvailable(distribution::FirstAvailable {
+                        backends,
+                    }) => {
+                        let backends = backends
+                            .into_iter()
+                            .map(RouteBackend::try_from)
+                            .collect::<Result<Arc<[_]>, InvalidBackend>>()?;
+                        if backends.is_empty() {
+                            return Err(InvalidDistribution::Empty("FirstAvailable"));
+                        }
+                        RouteDistribution::FirstAvailable(backends)
                     }
-                    RouteDistribution::FirstAvailable(backends)
-                }
-            },
-        )
+                },
+            )
+        }
     }
 
-    fn try_route_backend(
-        meta: &Arc<Meta>,
-        http_route::RouteBackend { backend, filters }: http_route::RouteBackend,
-    ) -> Result<RouteBackend<Filter>, InvalidBackend> {
-        let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-        RouteBackend::try_from_proto(meta, backend, filters)
+    impl TryFrom<http_route::RouteBackend> for RouteBackend<Filter> {
+        type Error = InvalidBackend;
+        fn try_from(
+            http_route::RouteBackend { backend, filters }: http_route::RouteBackend,
+        ) -> Result<Self, Self::Error> {
+            let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
+            RouteBackend::try_from_proto(backend, filters)
+        }
     }
 
     impl TryFrom<http_route::Filter> for Filter {
