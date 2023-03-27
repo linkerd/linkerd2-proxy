@@ -123,7 +123,12 @@ impl<N> Outbound<N> {
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
             let breaker = |_: &Balance<T>| {
-                let backoff = ExponentialBackoff::try_new(time::Duration::from_secs(1), time::Duration::from_secs(60), 0.5).expect("exponential backoff must be valid");
+                let backoff = ExponentialBackoff::try_new(
+                    time::Duration::from_secs(1),
+                    time::Duration::from_secs(60),
+                    0.5,
+                )
+                .expect("exponential backoff must be valid");
                 breaker::consecutive_failures::Params {
                     max_failures: 5,
                     channel_capacity: 100,
