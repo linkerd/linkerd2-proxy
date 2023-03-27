@@ -283,6 +283,9 @@ pub mod proto {
 
         #[error("invalid endpoint discovery: {0}")]
         Discovery(#[from] InvalidDiscovery),
+
+        #[error("invalid backend metadata: {0}")]
+        Meta(#[from] InvalidMeta),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -455,7 +458,6 @@ pub mod proto {
 
     impl<T> RouteBackend<T> {
         pub(crate) fn try_from_proto<U>(
-            meta: &Arc<Meta>,
             backend: outbound::Backend,
             filters: impl IntoIterator<Item = U>,
         ) -> Result<Self, InvalidBackend>
@@ -463,23 +465,20 @@ pub mod proto {
             T: TryFrom<U>,
             T::Error: Into<Error>,
         {
+            let backend = Backend::try_from(backend)?;
             let filters = filters
                 .into_iter()
                 .map(T::try_from)
                 .collect::<Result<Arc<[_]>, _>>()
                 .map_err(|error| InvalidBackend::Filter(error.into()))?;
 
-            let backend = Backend::try_from_proto(meta, backend)?;
-
             Ok(RouteBackend { filters, backend })
         }
     }
 
-    impl Backend {
-        fn try_from_proto(
-            meta: &Arc<Meta>,
-            backend: outbound::Backend,
-        ) -> Result<Self, InvalidBackend> {
+    impl TryFrom<outbound::Backend> for Backend {
+        type Error = InvalidBackend;
+        fn try_from(backend: outbound::Backend) -> Result<Self, InvalidBackend> {
             use outbound::backend::{self, balance_p2c};
 
             fn duration(
@@ -491,6 +490,14 @@ pub mod proto {
                     .try_into()
                     .map_err(|error| InvalidBackend::Duration { field, error })
             }
+
+            let meta = {
+                let meta = backend
+                    .metadata
+                    .ok_or(InvalidBackend::Missing("backend metadata"))?
+                    .try_into()?;
+                Arc::new(meta)
+            };
 
             let dispatcher = {
                 let pb = backend
@@ -531,7 +538,7 @@ pub mod proto {
             let backend = Backend {
                 queue,
                 dispatcher,
-                meta: meta.clone(),
+                meta,
             };
 
             Ok(backend)
