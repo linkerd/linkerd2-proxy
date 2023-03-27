@@ -33,20 +33,22 @@ linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }
 linkerd-http-box = { path = "../../http-box" }
+linkerd-http-classify = { path = "../../http-classify" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-balance = { path = "../balance" }
 linkerd-stack = { path = "../../stack" }
+pin-project = "1"
 rand = "0.8"
 thiserror = "1"
-tokio = { version = "1", features = ["time", "rt"] }
-tower = { version = "0.4.13", default-features = false }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+tower = { version = "0.4", default-features = false }
 tracing = "0.1"
 try-lock = "0.2"
-pin-project = "1"
 
 [target.'cfg(fuzzing)'.dependencies]
 tokio-test = "0.4"
 
 [dev-dependencies]
 tokio-test = "0.4"
+tower-test = "0.4"
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }

@@ -1,10 +1,11 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
-use http::header::AsHeaderName;
-use http::uri::Authority;
+
+use http::{header::AsHeaderName, uri::Authority};
 use linkerd_error::Error;
 
 pub mod balance;
+pub mod classify;
 pub mod client;
 pub mod client_handle;
 pub mod detect;
@@ -26,6 +27,10 @@ pub mod version;
 
 pub use self::{
     balance::NewBalancePeakEwma,
+    classify::{
+        Classify, ClassifyEos, ClassifyResponse, NewClassifyGate, NewClassifyGateSet,
+        NewInsertClassifyResponse,
+    },
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
     glue::{HyperServerSvc, UpgradeBody},

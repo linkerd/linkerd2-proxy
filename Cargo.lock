@@ -896,7 +896,6 @@ dependencies = [
  "linkerd-error",
  "linkerd-error-respond",
  "linkerd-exp-backoff",
- "linkerd-http-classify",
  "linkerd-http-metrics",
  "linkerd-identity",
  "linkerd-idle-cache",
@@ -1227,8 +1226,6 @@ version = "0.1.0"
 dependencies = [
  "http",
  "linkerd-error",
- "linkerd-stack",
- "tower",
 ]
 
 [[package]]
@@ -1513,6 +1510,7 @@ dependencies = [
  "linkerd-duplex",
  "linkerd-error",
  "linkerd-http-box",
+ "linkerd-http-classify",
  "linkerd-io",
  "linkerd-proxy-balance",
  "linkerd-stack",
@@ -1523,6 +1521,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tower",
+ "tower-test",
  "tracing",
  "try-lock",
 ]
