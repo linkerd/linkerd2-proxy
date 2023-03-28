@@ -13,6 +13,7 @@ pub struct Params<M, F, E> {
     pub addr: Addr,
     pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
+    pub failure_accrual: policy::FailureAccrual,
 }
 
 pub type HttpParams =
@@ -114,6 +115,7 @@ where
             addr,
             routes,
             backends,
+            failure_accrual,
         } = rts;
 
         let mk_concrete = {
@@ -130,6 +132,7 @@ where
                     target,
                     authority,
                     parent: parent.clone(),
+                    failure_accrual,
                 }
             }
         };

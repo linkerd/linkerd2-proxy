@@ -212,23 +212,33 @@ impl HttpSidecar {
         // protocol changes but remains HTTP-ish, we propagate those
         // changes. If the protocol flips to an opaque protocol, we ignore
         // the protocol update.
-        let routes = match policy.protocol {
+        let (routes, failure_accrual) = match policy.protocol {
             policy::Protocol::Detect {
                 ref http1,
                 ref http2,
                 ..
             } => match version {
-                http::Version::Http1 => http1.routes.clone(),
-                http::Version::H2 => http2.routes.clone(),
+                http::Version::Http1 => (http1.routes.clone(), http1.failure_accrual),
+                http::Version::H2 => (http2.routes.clone(), http2.failure_accrual),
             },
-            policy::Protocol::Http1(ref http1) => http1.routes.clone(),
-            policy::Protocol::Http2(ref http2) => http2.routes.clone(),
-            policy::Protocol::Grpc(ref grpc) => {
+            policy::Protocol::Http1(policy::http::Http1 {
+                ref routes,
+                failure_accrual,
+            }) => (routes.clone(), failure_accrual),
+            policy::Protocol::Http2(policy::http::Http2 {
+                ref routes,
+                failure_accrual,
+            }) => (routes.clone(), failure_accrual),
+            policy::Protocol::Grpc(policy::grpc::Grpc {
+                ref routes,
+                failure_accrual,
+            }) => {
                 return Some(http::Routes::Policy(http::policy::Params::Grpc(
                     http::policy::GrpcParams {
                         addr: orig_dst.into(),
                         backends: policy.backends.clone(),
-                        routes: grpc.routes.clone(),
+                        routes: routes.clone(),
+                        failure_accrual,
                     },
                 )))
             }
@@ -245,6 +255,7 @@ impl HttpSidecar {
                 addr: orig_dst.into(),
                 routes,
                 backends: policy.backends.clone(),
+                failure_accrual,
             },
         )))
     }

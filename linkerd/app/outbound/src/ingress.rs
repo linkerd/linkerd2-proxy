@@ -417,40 +417,53 @@ fn policy_routes(
             ref http2,
             ..
         } => {
-            let routes = match version {
-                http::Version::Http1 => http1.routes.clone(),
-                http::Version::H2 => http2.routes.clone(),
+            let (routes, failure_accrual) = match version {
+                http::Version::Http1 => (http1.routes.clone(), http1.failure_accrual),
+                http::Version::H2 => (http2.routes.clone(), http2.failure_accrual),
             };
             Some(http::Routes::Policy(http::policy::Params::Http(
                 http::policy::HttpParams {
                     addr,
                     backends: policy.backends.clone(),
                     routes,
+                    failure_accrual,
                 },
             )))
         }
         // TODO(eliza): what do we do here if the configured
         // protocol doesn't match the actual protocol for the
         // target? probably should make an error route instead?
-        policy::Protocol::Http1(ref http1) => Some(http::Routes::Policy(
-            http::policy::Params::Http(http::policy::HttpParams {
+        policy::Protocol::Http1(policy::http::Http1 {
+            ref routes,
+            failure_accrual,
+        }) => Some(http::Routes::Policy(http::policy::Params::Http(
+            http::policy::HttpParams {
                 addr,
                 backends: policy.backends.clone(),
-                routes: http1.routes.clone(),
-            }),
-        )),
-        policy::Protocol::Http2(ref http2) => Some(http::Routes::Policy(
-            http::policy::Params::Http(http::policy::HttpParams {
+                routes: routes.clone(),
+                failure_accrual,
+            },
+        ))),
+        policy::Protocol::Http2(policy::http::Http2 {
+            ref routes,
+            failure_accrual,
+        }) => Some(http::Routes::Policy(http::policy::Params::Http(
+            http::policy::HttpParams {
                 addr,
                 backends: policy.backends.clone(),
-                routes: http2.routes.clone(),
-            }),
-        )),
-        policy::Protocol::Grpc(ref grpc) => Some(http::Routes::Policy(http::policy::Params::Grpc(
+                routes: routes.clone(),
+                failure_accrual,
+            },
+        ))),
+        policy::Protocol::Grpc(policy::grpc::Grpc {
+            ref routes,
+            failure_accrual,
+        }) => Some(http::Routes::Policy(http::policy::Params::Grpc(
             http::policy::GrpcParams {
                 addr,
                 backends: policy.backends.clone(),
-                routes: grpc.routes.clone(),
+                routes: routes.clone(),
+                failure_accrual,
             },
         ))),
         _ => None,
