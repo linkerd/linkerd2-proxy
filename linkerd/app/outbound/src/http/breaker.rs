@@ -1,4 +1,5 @@
-pub mod consecutive_failures;
+mod consecutive_failures;
+use consecutive_failures::ConsecutiveFailures;
 use linkerd_app_core::{classify, proxy::http::classify::gate, svc};
 use linkerd_proxy_client_policy::FailureAccrual;
 
@@ -28,20 +29,12 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
             } => {
                 tracing::trace!(max_failures, backoff = ?backoff, "Using consecutive-failures failure accrual policy.");
 
-                // 1. If the configured number of consecutive failures are encountered,
+                // 1. If the configured number of consecutive failures are encountered,'
                 //    shut the gate.
                 // 2. After an ejection timeout, open the gate so that 1 request can be processed.
                 // 3. If that request succeeds, open the gate. If it fails, increase the
                 //    ejection timeout and repeat.
-                let breaker = consecutive_failures::ConsecutiveFailures::new(
-                    consecutive_failures::Params {
-                        max_failures,
-                        backoff,
-                        channel_capacity: self.channel_capacity,
-                    },
-                    gate,
-                    rsps,
-                );
+                let breaker = ConsecutiveFailures::new(max_failures, backoff, gate, rsps);
                 tokio::spawn(breaker.run());
 
                 prms

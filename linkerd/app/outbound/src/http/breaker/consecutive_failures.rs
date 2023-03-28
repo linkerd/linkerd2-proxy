@@ -1,50 +1,26 @@
 use futures::stream::StreamExt;
-use linkerd_app_core::{
-    classify, exp_backoff::ExponentialBackoff, proxy::http::classify::gate, svc,
-};
-use std::{fmt::Debug, sync::Arc};
+use linkerd_app_core::{classify, exp_backoff::ExponentialBackoff, proxy::http::classify::gate};
+use std::sync::Arc;
 use tokio::sync::{mpsc, Semaphore};
 
-#[derive(Copy, Clone, Debug)]
-pub struct Params {
-    pub max_failures: usize,
-    pub channel_capacity: usize,
-    pub backoff: ExponentialBackoff,
-}
-
 pub struct ConsecutiveFailures {
-    params: Params,
+    max_failures: usize,
+    backoff: ExponentialBackoff,
     gate: gate::Tx,
     rsps: mpsc::Receiver<classify::Class>,
     semaphore: Arc<Semaphore>,
 }
 
-// === impl Params ===
-
-impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
-    fn extract_param(&self, _: &T) -> gate::Params<classify::Class> {
-        // Create a channel so that we can receive response summaries and
-        // control the gate.
-        let (prms, gate, rsps) = gate::Params::channel(self.channel_capacity);
-
-        // 1. If the configured number of consecutive failures are encountered,
-        //    shut the gate.
-        // 2. After an ejection timeout, open the gate so that 1 request can be processed.
-        // 3. If that request succeeds, open the gate. If it fails, increase the
-        //    ejection timeout and repeat.
-        let breaker = ConsecutiveFailures::new(*self, gate, rsps);
-        tokio::spawn(breaker.run());
-
-        prms
-    }
-}
-
-// === impl ConsecutiveFailures ===
-
 impl ConsecutiveFailures {
-    pub fn new(params: Params, gate: gate::Tx, rsps: mpsc::Receiver<classify::Class>) -> Self {
+    pub fn new(
+        max_failures: usize,
+        backoff: ExponentialBackoff,
+        gate: gate::Tx,
+        rsps: mpsc::Receiver<classify::Class>,
+    ) -> Self {
         Self {
-            params,
+            max_failures,
+            backoff,
             gate,
             rsps,
             semaphore: Arc::new(Semaphore::new(0)),
@@ -80,7 +56,7 @@ impl ConsecutiveFailures {
                 failures = 0;
             } else {
                 failures += 1;
-                if failures == self.params.max_failures {
+                if failures == self.max_failures {
                     return Ok(());
                 }
             }
@@ -91,7 +67,7 @@ impl ConsecutiveFailures {
     /// once the timeout expires, go into probation to admit a single request
     /// before reverting to the open state or continuing in the shut state.
     async fn closed(&mut self) -> Result<(), ()> {
-        let mut backoff = self.params.backoff.stream();
+        let mut backoff = self.backoff.stream();
         loop {
             // The breaker is shut now. Wait until we can open it again.
             tracing::debug!(backoff = ?backoff.duration(), "Shut");
@@ -145,18 +121,14 @@ mod tests {
                 .unwrap()
         };
 
-        let prms = Params {
-            max_failures: 2,
-            channel_capacity: 1,
-            backoff: ExponentialBackoff::try_new(
-                time::Duration::from_secs(1),
-                time::Duration::from_secs(100),
-                // Don't jitter backoffs to ensure tests are deterministic.
-                0.0,
-            )
-            .expect("backoff params are valid"),
-        };
-        let breaker = ConsecutiveFailures::new(prms, gate, rsps);
+        let backoff = ExponentialBackoff::try_new(
+            time::Duration::from_secs(1),
+            time::Duration::from_secs(100),
+            // Don't jitter backoffs to ensure tests are deterministic.
+            0.0,
+        )
+        .expect("backoff params are valid");
+        let breaker = ConsecutiveFailures::new(2, backoff, gate, rsps);
         let mut task = task::spawn(breaker.run());
 
         // Start open and failing.
