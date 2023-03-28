@@ -12,6 +12,11 @@ use std::{
 };
 use tokio::sync::mpsc;
 
+/// Constructs new [`BroadcastClassification`] services.
+///
+/// `X` is an [`ExtractParam`] implementation that extracts a [`Tx`] from each
+/// target. The [`Tx`] is used to broadcast the classification of each response
+/// from the constructed [`BroadcastClassification`] service.
 #[derive(Debug)]
 pub struct NewBroadcastClassification<C, X, N> {
     inner: N,
@@ -19,9 +24,8 @@ pub struct NewBroadcastClassification<C, X, N> {
     _marker: PhantomData<fn() -> C>,
 }
 
-/// A HTTP `Service` that applies a [`super::Classify`] to each request and
-/// broadcasts the result to an [`Rx`] inserted to inner requests and outer
-/// responses..
+/// A HTTP `Service` that applies a [`ClassifyResponse`] to each response, and
+/// broadcasts the classification over a [`mpsc`] channel.
 #[derive(Debug)]
 pub struct BroadcastClassification<C: ClassifyResponse, S> {
     inner: S,
@@ -29,6 +33,11 @@ pub struct BroadcastClassification<C: ClassifyResponse, S> {
     _marker: PhantomData<fn() -> C>,
 }
 
+/// A handle to a [`mpsc`] channel over which response classifications are
+/// broadcasted.
+///
+/// This is extracted from a target value by [`NewBroadcastClassification`] when
+/// constructing a [`BroadcastClassification`] service.
 #[derive(Clone, Debug)]
 pub struct Tx<C>(pub mpsc::Sender<C>);
 
@@ -64,12 +73,18 @@ impl<C, X: Clone, N> NewBroadcastClassification<C, X, N> {
         }
     }
 
+    /// Returns a [`layer::Layer`] that constructs `NewBroadcastClassification`
+    /// [`NewService`]s, using the provided [`ExtractParam`] implementation to
+    /// extract a classification [`Tx`] from the target.
     pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self::new(extract.clone(), inner))
     }
 }
 
 impl<C, N> NewBroadcastClassification<C, (), N> {
+    /// Returns a [`layer::Layer`] that constructs `NewBroadcastClassification`
+    /// [`NewService`]s when the target type implements
+    /// [`linkerd_stack::Param`]`<`[`Tx`]`>`.
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
         Self::layer_via(())
     }
