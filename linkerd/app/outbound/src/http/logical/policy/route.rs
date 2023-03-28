@@ -28,7 +28,7 @@ pub(crate) struct Route<T, F, E> {
     pub(super) meta: Arc<policy::Meta>,
     pub(super) filters: Arc<[F]>,
     pub(super) distribution: BackendDistribution<T, F>,
-    pub(super) failure_policy: policy::FailurePolicy<E>,
+    pub(super) failure_policy: E,
 }
 
 pub(crate) type MatchedRoute<T, M, F, E> = Matched<M, Route<T, F, E>>;
@@ -130,7 +130,7 @@ impl<T> filters::Apply for Http<T> {
 impl<T> svc::Param<classify::Request> for Http<T> {
     fn param(&self) -> classify::Request {
         classify::Request::ClientPolicy(classify::ClientPolicy::Http(
-            self.params.failure_policy.classification.clone(),
+            self.params.failure_policy.clone(),
         ))
     }
 }
@@ -145,7 +145,7 @@ impl<T> filters::Apply for Grpc<T> {
 impl<T> svc::Param<classify::Request> for Grpc<T> {
     fn param(&self) -> classify::Request {
         classify::Request::ClientPolicy(classify::ClientPolicy::Grpc(
-            self.params.failure_policy.classification.clone(),
+            self.params.failure_policy.clone(),
         ))
     }
 }

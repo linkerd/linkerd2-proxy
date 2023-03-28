@@ -238,8 +238,12 @@ pub fn synthesize_forward_policy(
         timeout,
         http1: policy::http::Http1 {
             routes: routes.clone(),
+            failure_accrual: Default::default(),
         },
-        http2: policy::http::Http2 { routes },
+        http2: policy::http::Http2 {
+            routes,
+            failure_accrual: Default::default(),
+        },
         opaque,
     };
 

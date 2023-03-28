@@ -1,4 +1,4 @@
-use crate::FailurePolicy;
+use crate::FailureAccrual;
 use linkerd_http_route::http;
 use std::{ops::RangeInclusive, sync::Arc};
 
@@ -12,12 +12,18 @@ pub type Rule = http::Rule<Policy>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http1 {
     pub routes: Arc<[Route]>,
+
+    /// Configures how endpoints accrue observed failures.
+    pub failure_accrual: FailureAccrual,
 }
 
 // TODO: window sizes, etc
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http2 {
     pub routes: Arc<[Route]>,
+
+    /// Configures how endpoints accrue observed failures.
+    pub failure_accrual: FailureAccrual,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -40,7 +46,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
-                failure_policy: FailurePolicy::default(),
+                failure_policy: StatusRanges::default(),
             },
         }],
     }
@@ -52,6 +58,7 @@ impl Default for Http1 {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
+            failure_accrual: Default::default(),
         }
     }
 }
@@ -62,6 +69,7 @@ impl Default for Http2 {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
+            failure_accrual: Default::default(),
         }
     }
 }
@@ -150,7 +158,12 @@ pub mod proto {
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
-            Ok(Self { routes })
+            Ok(Self {
+                routes,
+                // TODO(eliza): eventually, this will be included in the proxy
+                // API message...
+                failure_accrual: Default::default(),
+            })
         }
     }
 
@@ -162,7 +175,12 @@ pub mod proto {
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
-            Ok(Self { routes })
+            Ok(Self {
+                routes,
+                // TODO(eliza): eventually, this will be included in the proxy
+                // API message...
+                failure_accrual: Default::default(),
+            })
         }
     }
 
@@ -220,7 +238,7 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
-                failure_policy: FailurePolicy::default(),
+                failure_policy: StatusRanges::default(),
             },
         })
     }

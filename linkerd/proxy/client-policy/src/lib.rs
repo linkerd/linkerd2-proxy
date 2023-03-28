@@ -56,7 +56,9 @@ pub struct RoutePolicy<T, F> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
-    pub failure_policy: FailurePolicy<F>,
+
+    /// Configures what responses are classified as failures.
+    pub failure_policy: F,
 }
 
 // TODO(ver) Weighted random WITHOUT availability awareness, as required by
@@ -113,15 +115,6 @@ pub struct PeakEwma {
     pub default_rtt: time::Duration,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Default)]
-pub struct FailurePolicy<F> {
-    /// Configures what responses are classified as failures.
-    pub classification: F,
-
-    /// Configures how endpoints accrue observed failures.
-    pub accrual: FailureAccrual,
-}
-
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum FailureAccrual {
     /// Endpoints do not become unavailable due to observed failures.
@@ -149,7 +142,7 @@ impl ClientPolicy {
                         ))
                         .collect(),
                         distribution: RouteDistribution::Empty,
-                        failure_policy: FailurePolicy::default(),
+                        failure_policy: http::StatusRanges::default(),
                     },
                 }],
             }])
@@ -161,9 +154,11 @@ impl ClientPolicy {
                 timeout,
                 http1: http::Http1 {
                     routes: HTTP_ROUTES.clone(),
+                    failure_accrual: Default::default(),
                 },
                 http2: http::Http2 {
                     routes: HTTP_ROUTES.clone(),
+                    failure_accrual: Default::default(),
                 },
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
@@ -397,8 +392,8 @@ pub mod proto {
                     http::proto::fill_route_backends(&http2.routes, &mut backends);
                     opaque.fill_backends(&mut backends);
                 }
-                Protocol::Http1(http::Http1 { ref routes })
-                | Protocol::Http2(http::Http2 { ref routes }) => {
+                Protocol::Http1(http::Http1 { ref routes, .. })
+                | Protocol::Http2(http::Http2 { ref routes, .. }) => {
                     http::proto::fill_route_backends(routes, &mut backends);
                 }
                 Protocol::Opaque(ref p) | Protocol::Tls(ref p) => {
