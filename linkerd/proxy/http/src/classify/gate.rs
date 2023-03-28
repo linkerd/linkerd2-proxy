@@ -1,7 +1,3 @@
-// A `NewService` called `NewClassifyGate` that builds a
-// `BroadcastClassification` and a `Gate` so that the `gate::Tx` can be
-// controlled by the `BroadcastClassification`'s `Tx`.
-
 use crate::classify::{BroadcastClassification, ClassifyResponse};
 use linkerd_stack::{gate, layer, ExtractParam, Gate, NewService};
 use std::marker::PhantomData;
@@ -15,12 +11,38 @@ pub struct Params<C> {
     pub gate: gate::Rx,
 }
 
+/// A [`NewService`] that constructs [`NewClassifyGate`] [`NewService`]s.
+///
+/// `X` is an [`ExtractParam`] implementation that extracts _the
+/// [`ExtractParam`] implementation_ used to construct the [`NewClassifyGate`]
+/// [`NewService`]. The param type extracted by `X` represents a strategy for
+/// constructing failure accrual policies, and must implement
+/// [`ExtractParam`]`<T, `[`Params`]`<C>>` --- the [`Params`] type provides
+/// channels for communicating with a concrete instance of a failure accrual policy.
 pub struct NewClassifyGateSet<C, P, X, N> {
     inner: N,
     extract: X,
     _marker: PhantomData<fn() -> (P, C)>,
 }
 
+/// A [`NewService`] that constructs paired [`BroadcastClassification`] and
+/// [`Gate`] middleware.
+///
+/// The [`BroadcastClassification`] middleware classifies each response from an
+/// inner service and sends the response classification over a [`mpsc`] channel.
+/// The [`Gate`] middleware controls whether an inner service is ready.
+/// Paired with a _failure accrual policy_ that receives response
+/// classifications and controls the [`Gate`]'s readiness based on those
+/// classifications, a pair of these middleware can implement request-level
+/// circuit breaking.
+///
+/// `X` is an [`ExtractParam`] implementation that provides a [`Params`] type
+/// consisting of a [`mpsc::Sender`] of response classifications, used to
+/// construct the [`BroadcastClassification`] middleware, and a [`gate::Rx`] used
+/// to construct the [`Gate`] middleware. The other ends of these channels (the
+/// [`mpsc::Receiver`] of classifications and the [`gate::Tx`] that controls
+/// readiness) are used to implement a failure accrual policy, typically in a
+/// task spawned by the [`ExtractParam`] implementation.
 pub struct NewClassifyGate<C, X, N> {
     inner: N,
     extract: X,
