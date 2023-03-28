@@ -1455,6 +1455,7 @@ dependencies = [
  "http",
  "ipnet",
  "linkerd-error",
+ "linkerd-exp-backoff",
  "linkerd-http-route",
  "linkerd-proxy-api-resolve",
  "linkerd-proxy-core",

@@ -120,6 +120,15 @@ pub struct PeakEwma {
 pub enum FailureAccrual {
     /// Endpoints do not become unavailable due to observed failures.
     None,
+    /// Endpoints are marked as unavailable when `max_failures` consecutive
+    /// failures are observed.
+    ConsecutiveFailures {
+        /// The number of consecutive failures after which an endpoint becomes
+        /// unavailable.
+        max_failures: usize,
+        /// Backoff for probing the endpoint when it is in a failed state.
+        backoff: linkerd_exp_backoff::ExponentialBackoff,
+    },
 }
 
 // === impl ClientPolicy ===
