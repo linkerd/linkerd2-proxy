@@ -128,7 +128,7 @@ impl<N> Outbound<N> {
                     FailureAccrual::None => |_: &(SocketAddr, Metadata)| {
                         // No failure accrual for this target; construct a gate
                         // that will never close.
-                        let (prms, _, _) = proxy::http::classify::gate::Params::channel(0);
+                        let (prms, _, _) = proxy::http::classify::gate::Params::channel(1);
                         prms
                     },
                 }
