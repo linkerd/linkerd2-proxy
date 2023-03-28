@@ -128,6 +128,7 @@ impl<N> Outbound<N> {
                     FailureAccrual::None => |_: &(SocketAddr, Metadata)| {
                         // No failure accrual for this target; construct a gate
                         // that will never close.
+                        tracing::trace!("No failure accrual policy enabled.");
                         let (prms, _, _) = proxy::http::classify::gate::Params::channel(1);
                         prms
                     },
