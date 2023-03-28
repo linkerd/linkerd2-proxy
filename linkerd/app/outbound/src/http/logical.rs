@@ -258,7 +258,7 @@ impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
 
 impl<T> svc::Param<policy::FailureAccrual> for Concrete<T> {
     fn param(&self) -> policy::FailureAccrual {
-        self.failure_accrual.clone()
+        self.failure_accrual
     }
 }
 
