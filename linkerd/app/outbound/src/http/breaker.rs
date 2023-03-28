@@ -27,9 +27,13 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
                 max_failures,
                 backoff,
             } => {
-                tracing::trace!(max_failures, backoff = ?backoff, "Using consecutive-failures failure accrual policy.");
+                tracing::trace!(
+                    max_failures,
+                    backoff = ?backoff,
+                    "Using consecutive-failures failure accrual policy.",
+                );
 
-                // 1. If the configured number of consecutive failures are encountered,'
+                // 1. If the configured number of consecutive failures are encountered,
                 //    shut the gate.
                 // 2. After an ejection timeout, open the gate so that 1 request can be processed.
                 // 3. If that request succeeds, open the gate. If it fails, increase the
