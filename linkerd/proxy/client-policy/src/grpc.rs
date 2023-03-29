@@ -83,7 +83,7 @@ impl Default for Codes {
 pub mod proto {
     use super::*;
     use crate::{
-        proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
+        proto::{BackendSet, InvalidBackend, InvalidBreaker, InvalidDistribution, InvalidMeta},
         Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, grpc_route};
@@ -119,6 +119,12 @@ pub mod proto {
 
         #[error("missing {0}")]
         Missing(&'static str),
+
+        #[error("invalid failure policy: {0}")]
+        FailurePolicy(#[from] InvalidFailurePolicy),
+
+        #[error("invalid breaker: {0}")]
+        Breaker(#[from] InvalidBreaker),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -144,11 +150,13 @@ pub mod proto {
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
+            let failure_accrual = match proto.breaker {
+                Some(accrual) => accrual.try_into()?,
+                None => FailureAccrual::None,
+            };
             Ok(Self {
                 routes,
-                // TODO(eliza): eventually, this will be included in the proxy
-                // API message...
-                failure_accrual: Default::default(),
+                failure_accrual,
             })
         }
     }
