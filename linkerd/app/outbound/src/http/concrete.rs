@@ -15,7 +15,7 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     Error, Infallible, NameAddr,
 };
-use std::{fmt::Debug, net::SocketAddr};
+use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tracing::info_span;
 
 /// Parameter configuring dispatcher behavior.
@@ -23,7 +23,13 @@ use tracing::info_span;
 pub enum Dispatch {
     Balance(NameAddr, balance::EwmaConfig),
     Forward(Remote<ServerAddr>, Metadata),
+    Fail { message: Arc<str> },
 }
+
+/// A backend dispatcher explicitly fails all requests.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct DispatcherFailed(Arc<str>);
 
 /// Wraps errors encountered in this module.
 #[derive(Debug, thiserror::Error)]
@@ -149,14 +155,21 @@ impl<N> Outbound<N> {
                 )
                 .instrument(|t: &Balance<T>| info_span!("balance", addr = %t.addr));
 
+            let fail = svc::ArcNewService::new(|message: Arc<str>| {
+                svc::mk(move |_| {
+                    let error = DispatcherFailed(message.clone());
+                    futures::future::ready(Err(error))
+                })
+            });
             balance
+                .push_switch(Ok::<_, Infallible>, forward.into_inner())
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
                             Dispatch::Balance(addr, ewma) => {
-                                svc::Either::A(Balance { addr, ewma, parent })
+                                svc::Either::A(svc::Either::A(Balance { addr, ewma, parent }))
                             }
-                            Dispatch::Forward(addr, metadata) => svc::Either::B({
+                            Dispatch::Forward(addr, metadata) => svc::Either::A(svc::Either::B({
                                 let is_local = inbound_ips.contains(&addr.ip());
                                 Endpoint {
                                     is_local,
@@ -165,10 +178,11 @@ impl<N> Outbound<N> {
                                     parent,
                                     close_server_connection_on_remote_proxy_error: true,
                                 }
-                            }),
+                            })),
+                            Dispatch::Fail { message } => svc::Either::B(message),
                         })
                     },
-                    forward.into_inner(),
+                    fail,
                 )
                 .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .push(svc::ArcNewService::layer())
