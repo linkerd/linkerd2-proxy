@@ -126,9 +126,11 @@ impl<N> Outbound<N> {
             let mk_breaker = |target: &Balance<T>| {
                 match target.parent.param() {
                     FailureAccrual::None => |_: &(SocketAddr, Metadata)| {
-                        // No failure accrual for this target; construct a gate
-                        // that will never close.
-                        tracing::trace!("No failure accrual policy enabled.");
+                        // Construct a gate channel, dropping the controller
+                        // side of the channel such that response summaries
+                        // are never read. The failure accrual gate never
+                        // closes in this configuration.
+                        tracing::trace!("No failure accrual policy enabled");
                         let (prms, _, _) = proxy::http::classify::gate::Params::channel(1);
                         prms
                     },
@@ -136,7 +138,6 @@ impl<N> Outbound<N> {
             };
 
             let balance = endpoint
-                .check_new_service::<Endpoint<T>, http::Request<http::BoxBody>>()
                 .push_map_target({
                     let inbound_ips = inbound_ips.clone();
                     move |((addr, metadata), target): ((SocketAddr, Metadata), Balance<T>)| {
@@ -154,14 +155,10 @@ impl<N> Outbound<N> {
                         }
                     }
                 })
-                .check_new_service::<((SocketAddr, Metadata), Balance<T>), http::Request<http::BoxBody>>()
                 .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
-                .check_new_new_service::<Balance<T>, (SocketAddr, Metadata), http::Request<http::BoxBody>>()
                 .push(http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via(mk_breaker))
-                .check_new_new_service::<Balance<T>, (SocketAddr, Metadata), http::Request<http::BoxBody>>()
                 .push(http::NewBalancePeakEwma::layer(resolve))
-                .check_new_service::<Balance<T>, http::Request<_>>()
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(http::BoxResponse::layer())
                 .push_on_service(
