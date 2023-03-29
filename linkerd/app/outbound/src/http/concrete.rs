@@ -6,7 +6,6 @@ use crate::{http, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, metrics, profiles,
     proxy::{
-        self,
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
         tap,
@@ -131,7 +130,7 @@ impl<N> Outbound<N> {
                         // are never read. The failure accrual gate never
                         // closes in this configuration.
                         tracing::trace!("No failure accrual policy enabled");
-                        let (prms, _, _) = proxy::http::classify::gate::Params::channel(1);
+                        let (prms, _, _) = classify::gate::Params::channel(1);
                         prms
                     },
                 }
