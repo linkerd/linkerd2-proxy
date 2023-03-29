@@ -15,7 +15,7 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     Error, Infallible, NameAddr,
 };
-use std::{fmt::Debug, net::SocketAddr};
+use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tracing::info_span;
 
 /// Parameter configuring dispatcher behavior.
@@ -23,13 +23,13 @@ use tracing::info_span;
 pub enum Dispatch {
     Balance(NameAddr, balance::EwmaConfig),
     Forward(Remote<ServerAddr>, Metadata),
-    Null,
+    Fail { message: Arc<str> },
 }
 
-/// A backend dispatcher was null.
+/// A backend dispatcher explicitly fails all requests.
 #[derive(Debug, thiserror::Error)]
-#[error("no backend dispatcher configured")]
-pub struct NullDispatcher(());
+#[error("{0}")]
+pub struct DispatcherFailed(Arc<str>);
 
 /// Wraps errors encountered in this module.
 #[derive(Debug, thiserror::Error)]
@@ -155,9 +155,10 @@ impl<N> Outbound<N> {
                 )
                 .instrument(|t: &Balance<T>| info_span!("balance", addr = %t.addr));
 
-            let null = svc::ArcNewService::new(|_: ()| {
-                svc::mk(|_| async move {
-                    Err::<http::Response<http::BoxBody>, NullDispatcher>(NullDispatcher(()))
+            let fail = svc::ArcNewService::new(|message: Arc<str>| {
+                svc::mk(move |_| {
+                    let error = DispatcherFailed(message.clone());
+                    futures::future::ready(Err(error))
                 })
             });
             balance
@@ -178,10 +179,10 @@ impl<N> Outbound<N> {
                                     close_server_connection_on_remote_proxy_error: true,
                                 }
                             })),
-                            Dispatch::Null => svc::Either::B(()),
+                            Dispatch::Fail { message } => svc::Either::B(message),
                         })
                     },
-                    null,
+                    fail,
                 )
                 .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .push(svc::ArcNewService::layer())

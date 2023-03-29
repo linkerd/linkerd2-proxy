@@ -94,7 +94,7 @@ pub struct Queue {
 pub enum BackendDispatcher {
     Forward(SocketAddr, EndpointMetadata),
     BalanceP2c(Load, EndpointDiscovery),
-    Null,
+    Fail { message: Arc<str> },
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -492,7 +492,7 @@ pub mod proto {
                     .map_err(|error| InvalidBackend::Duration { field, error })
             }
 
-            let meta = {
+            let meta: Arc<Meta> = {
                 let meta = backend
                     .metadata
                     .ok_or(InvalidBackend::Missing("backend metadata"))?
@@ -521,7 +521,17 @@ pub mod proto {
                         .ok_or(InvalidBackend::ForwardAddr)?;
                     BackendDispatcher::Forward(addr, meta)
                 }
-                None => BackendDispatcher::Null,
+                None => {
+                    let message = format!(
+                        "backend for {} {}{}{} has no dispatcher",
+                        meta.kind(),
+                        meta.namespace(),
+                        if meta.namespace() != "" { "/" } else { "" },
+                        meta.name()
+                    )
+                    .into();
+                    BackendDispatcher::Fail { message }
+                }
             };
 
             let queue = {
