@@ -157,7 +157,9 @@ impl<N> Outbound<N> {
                 })
                 .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
-                .push(http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via(mk_breaker))
+                .push(
+                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via(mk_breaker),
+                )
                 .push(http::NewBalancePeakEwma::layer(resolve))
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(http::BoxResponse::layer())
