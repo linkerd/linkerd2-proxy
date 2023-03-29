@@ -38,6 +38,7 @@ pub struct Concrete<T> {
     target: concrete::Dispatch,
     authority: Option<http::uri::Authority>,
     parent: T,
+    failure_accrual: policy::FailureAccrual,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -169,6 +170,7 @@ where
                                     target: concrete::Dispatch::Forward(remote, meta),
                                     authority: None,
                                     parent,
+                                    failure_accrual: Default::default(),
                                 })
                             }
                             RouterParams::Profile(profile) => {
@@ -251,6 +253,12 @@ impl<T> svc::Param<Option<http::uri::Authority>> for Concrete<T> {
 impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
     fn param(&self) -> concrete::Dispatch {
         self.target.clone()
+    }
+}
+
+impl<T> svc::Param<policy::FailureAccrual> for Concrete<T> {
+    fn param(&self) -> policy::FailureAccrual {
+        self.failure_accrual
     }
 }
 

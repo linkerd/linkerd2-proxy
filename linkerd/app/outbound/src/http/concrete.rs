@@ -4,7 +4,7 @@
 use super::{balance, client, handle_proxy_error_headers};
 use crate::{http, stack_labels, Outbound};
 use linkerd_app_core::{
-    metrics, profiles,
+    classify, metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
@@ -15,6 +15,7 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     Error, Infallible, NameAddr,
 };
+use linkerd_proxy_client_policy::FailureAccrual;
 use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tracing::info_span;
 
@@ -88,6 +89,8 @@ impl<N> Outbound<N> {
         // Concrete target type.
         T: svc::Param<Dispatch>,
         // TODO(ver) T: svc::Param<svc::queue::Capacity> + svc::Param<svc::queue::Timeout>,
+        // Failure accrual policy.
+        T: svc::Param<FailureAccrual>,
         T: Clone + Debug + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
@@ -125,6 +128,20 @@ impl<N> Outbound<N> {
                 )
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
+            let mk_breaker = |target: &Balance<T>| {
+                match target.parent.param() {
+                    FailureAccrual::None => |_: &(SocketAddr, Metadata)| {
+                        // Construct a gate channel, dropping the controller
+                        // side of the channel such that response summaries
+                        // are never read. The failure accrual gate never
+                        // closes in this configuration.
+                        tracing::trace!("No failure accrual policy enabled");
+                        let (prms, _, _) = classify::gate::Params::channel(1);
+                        prms
+                    },
+                }
+            };
+
             let balance = endpoint
                 .push_map_target({
                     let inbound_ips = inbound_ips.clone();
@@ -143,7 +160,11 @@ impl<N> Outbound<N> {
                         }
                     }
                 })
+                .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
+                .push(
+                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via(mk_breaker),
+                )
                 .push(http::NewBalancePeakEwma::layer(resolve))
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(http::BoxResponse::layer())

@@ -56,6 +56,8 @@ pub struct RoutePolicy<T, F> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
+
+    /// Configures what responses are classified as failures.
     pub failure_policy: F,
 }
 
@@ -114,6 +116,12 @@ pub struct PeakEwma {
     pub default_rtt: time::Duration,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum FailureAccrual {
+    /// Endpoints do not become unavailable due to observed failures.
+    None,
+}
+
 // === impl ClientPolicy ===
 
 impl ClientPolicy {
@@ -147,9 +155,11 @@ impl ClientPolicy {
                 timeout,
                 http1: http::Http1 {
                     routes: HTTP_ROUTES.clone(),
+                    failure_accrual: Default::default(),
                 },
                 http2: http::Http2 {
                     routes: HTTP_ROUTES.clone(),
+                    failure_accrual: Default::default(),
                 },
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
@@ -218,6 +228,14 @@ impl std::hash::Hash for Meta {
         self.group().hash(state);
         self.kind().hash(state);
         self.name().hash(state);
+    }
+}
+
+// === impl FailureAccrual ===
+
+impl Default for FailureAccrual {
+    fn default() -> Self {
+        Self::None
     }
 }
 
@@ -375,8 +393,8 @@ pub mod proto {
                     http::proto::fill_route_backends(&http2.routes, &mut backends);
                     opaque.fill_backends(&mut backends);
                 }
-                Protocol::Http1(http::Http1 { ref routes })
-                | Protocol::Http2(http::Http2 { ref routes }) => {
+                Protocol::Http1(http::Http1 { ref routes, .. })
+                | Protocol::Http2(http::Http2 { ref routes, .. }) => {
                     http::proto::fill_route_backends(routes, &mut backends);
                 }
                 Protocol::Opaque(ref p) | Protocol::Tls(ref p) => {

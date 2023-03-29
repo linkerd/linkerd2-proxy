@@ -123,6 +123,7 @@ where
                 target: concrete::Dispatch::Balance(addr.clone(), DEFAULT_EWMA),
                 authority: Some(addr.as_http_authority()),
                 parent: parent.clone(),
+                failure_accrual: Default::default(),
             };
             let backends = std::iter::once(concrete.clone()).collect();
             let distribution = Distribution::first_available(std::iter::once(concrete));
@@ -134,6 +135,7 @@ where
                     target: concrete::Dispatch::Balance(t.addr.clone(), DEFAULT_EWMA),
                     authority: Some(t.addr.as_http_authority()),
                     parent: parent.clone(),
+                    failure_accrual: Default::default(),
                 })
                 .collect();
             let distribution = Distribution::random_available(targets.iter().cloned().map(
@@ -142,6 +144,7 @@ where
                         authority: Some(addr.as_http_authority()),
                         target: concrete::Dispatch::Balance(addr, DEFAULT_EWMA),
                         parent: parent.clone(),
+                        failure_accrual: Default::default(),
                     };
                     (concrete, weight)
                 },
