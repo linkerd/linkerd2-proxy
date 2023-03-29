@@ -219,6 +219,11 @@ pub mod proto {
             .ok_or(InvalidGrpcRoute::Missing("distribution"))?
             .try_into()?;
 
+        let failure_policy = match failure_policy {
+            Some(policy) => policy.try_into()?,
+            None => Codes::default(),
+        };
+
         Ok(Rule {
             matches,
             policy: Policy {
