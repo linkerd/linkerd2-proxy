@@ -148,7 +148,6 @@ pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
             }],
             filters: Vec::new(),
             backends: Some(http_first_available(std::iter::once(backend(dst)))),
-            failure_policy: None,
         }],
     }
 }

@@ -123,9 +123,6 @@ pub mod proto {
         #[error("invalid filter: {0}")]
         Filter(#[from] InvalidFilter),
 
-        #[error("invalid failure policy: {0}")]
-        FailurePolicy(#[from] InvalidFailurePolicy),
-
         #[error("invalid breaker: {0}")]
         Breaker(#[from] InvalidBreaker),
 

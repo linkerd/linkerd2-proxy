@@ -120,9 +120,6 @@ pub mod proto {
         #[error("missing {0}")]
         Missing(&'static str),
 
-        #[error("invalid failure policy: {0}")]
-        FailurePolicy(#[from] InvalidFailurePolicy),
-
         #[error("invalid breaker: {0}")]
         Breaker(#[from] InvalidBreaker),
     }
@@ -218,11 +215,6 @@ pub mod proto {
         let distribution = backends
             .ok_or(InvalidGrpcRoute::Missing("distribution"))?
             .try_into()?;
-
-        let failure_policy = match failure_policy {
-            Some(policy) => policy.try_into()?,
-            None => Codes::default(),
-        };
 
         Ok(Rule {
             matches,
