@@ -628,14 +628,14 @@ pub mod proto {
                         .ok_or(InvalidFailureAccrual::Missing("min_backoff"))?
                         .try_into()
                         .map_err(|error| InvalidFailureAccrual::Duration {
-                            field: "exponential backoff min",
+                            field: "max_backoff",
                             error,
                         })?;
                     let max = max_backoff
                         .ok_or(InvalidFailureAccrual::Missing("min_backoff"))?
                         .try_into()
                         .map_err(|error| InvalidFailureAccrual::Duration {
-                            field: "exponential backoff min",
+                            field: "min_backoff",
                             error,
                         })?;
                     let backoff = linkerd_exp_backoff::ExponentialBackoff::try_new(
