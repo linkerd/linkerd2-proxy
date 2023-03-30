@@ -148,6 +148,11 @@ where
             policy::BackendDispatcher::Forward(addr, ref metadata) => mk_concrete(
                 concrete::Dispatch::Forward(Remote(ServerAddr(addr)), metadata.clone()),
             ),
+            policy::BackendDispatcher::Fail { ref message } => {
+                mk_concrete(concrete::Dispatch::Fail {
+                    message: message.clone(),
+                })
+            }
         };
 
         let mk_route_backend = |rb: &policy::RouteBackend<F>| {
