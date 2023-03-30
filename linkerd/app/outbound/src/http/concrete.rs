@@ -149,15 +149,20 @@ impl<N> Outbound<N> {
                 .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
                 .push(
-                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via(
-                        |target: &Balance<T>| {
-                            breaker::Params {
-                                accrual: target.parent.param(),
-                                // TODO(eliza): should this reuse an existing queue configuration?
-                                channel_capacity: 100,
-                            }
-                        },
-                    ),
+                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
+                        // This sets the capacity of the channel used to send
+                        // response classifications to the failure accrual task.
+                        // Since the number of messages in this channel should
+                        // be roughly the same as the number of requests, size
+                        // it to the request queue capacity.
+                        // TODO(eliza): when queue capacity is configured
+                        // per-target, extract this from the target instead.
+                        let channel_capacity = config.http_request_queue.capacity;
+                        move |target: &Balance<T>| breaker::Params {
+                            accrual: target.parent.param(),
+                            channel_capacity,
+                        }
+                    }),
                 )
                 .push(http::NewBalancePeakEwma::layer(resolve))
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
