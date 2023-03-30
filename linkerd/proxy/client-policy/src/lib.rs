@@ -338,7 +338,7 @@ pub mod proto {
     }
 
     #[derive(Debug, thiserror::Error)]
-    pub enum InvalidBreaker {
+    pub enum InvalidFailureAccrual {
         #[error("invalid backoff: {0}")]
         Backoff(#[from] linkerd_exp_backoff::InvalidBackoff),
         #[error("invalid {field} duration: {error}")]
@@ -605,32 +605,32 @@ pub mod proto {
         }
     }
 
-    impl TryFrom<outbound::Breaker> for FailureAccrual {
-        type Error = InvalidBreaker;
-        fn try_from(breaker: outbound::Breaker) -> Result<Self, Self::Error> {
-            use outbound::breaker;
-            let kind = breaker.kind.ok_or(InvalidBreaker::Missing("kind"))?;
+    impl TryFrom<outbound::FailureAccrual> for FailureAccrual {
+        type Error = InvalidFailureAccrual;
+        fn try_from(accrual: outbound::FailureAccrual) -> Result<Self, Self::Error> {
+            use outbound::failure_accrual::{self, ConsecutiveFailures};
+            let kind = accrual.kind.ok_or(InvalidFailureAccrual::Missing("kind"))?;
             match kind {
-                breaker::Kind::ConsecutiveFailures(breaker::ConsecutiveFailures {
+                failure_accrual::Kind::ConsecutiveFailures(ConsecutiveFailures {
                     max_failures,
                     backoff,
                 }) => {
-                    // TODO(eliza): if other breaker kinds are added that also
-                    // use exponential backoffs, this could be factored out...
+                    // TODO(eliza): if other failure accrual kinds are added
+                    // that also use exponential backoffs, this could be factored out...
                     let outbound::ExponentialBackoff { min_backoff, max_backoff, jitter_ratio } =
                         // TODO(eliza): should this be defaulted?
-                        backoff.ok_or(InvalidBreaker::Missing("consecutive failures backoff"))?;
+                        backoff.ok_or(InvalidFailureAccrual::Missing("consecutive failures backoff"))?;
                     let min = min_backoff
-                        .ok_or(InvalidBreaker::Missing("min_backoff"))?
+                        .ok_or(InvalidFailureAccrual::Missing("min_backoff"))?
                         .try_into()
-                        .map_err(|error| InvalidBreaker::Duration {
+                        .map_err(|error| InvalidFailureAccrual::Duration {
                             field: "exponential backoff min",
                             error,
                         })?;
                     let max = max_backoff
-                        .ok_or(InvalidBreaker::Missing("min_backoff"))?
+                        .ok_or(InvalidFailureAccrual::Missing("min_backoff"))?
                         .try_into()
-                        .map_err(|error| InvalidBreaker::Duration {
+                        .map_err(|error| InvalidFailureAccrual::Duration {
                             field: "exponential backoff min",
                             error,
                         })?;

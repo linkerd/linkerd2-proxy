@@ -83,7 +83,9 @@ impl Default for Codes {
 pub mod proto {
     use super::*;
     use crate::{
-        proto::{BackendSet, InvalidBackend, InvalidBreaker, InvalidDistribution, InvalidMeta},
+        proto::{
+            BackendSet, InvalidBackend, InvalidDistribution, InvalidFailureAccrual, InvalidMeta,
+        },
         Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, grpc_route};
@@ -120,8 +122,8 @@ pub mod proto {
         #[error("missing {0}")]
         Missing(&'static str),
 
-        #[error("invalid breaker: {0}")]
-        Breaker(#[from] InvalidBreaker),
+        #[error("invalid failure accrual policy: {0}")]
+        Breaker(#[from] InvalidFailureAccrual),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -147,7 +149,7 @@ pub mod proto {
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
-            let failure_accrual = match proto.breaker {
+            let failure_accrual = match proto.failure_accrual {
                 Some(accrual) => accrual.try_into()?,
                 None => FailureAccrual::None,
             };

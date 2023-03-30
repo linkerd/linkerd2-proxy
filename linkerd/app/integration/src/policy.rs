@@ -116,11 +116,11 @@ pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
                 timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                 http1: Some(proxy_protocol::Http1 {
                     routes: vec![route.clone()],
-                    breaker: None,
+                    failure_accrual: None,
                 }),
                 http2: Some(proxy_protocol::Http2 {
                     routes: vec![route],
-                    breaker: None,
+                    failure_accrual: None,
                 }),
                 opaque: Some(proxy_protocol::Opaque {
                     routes: vec![outbound_default_opaque_route(dst)],
