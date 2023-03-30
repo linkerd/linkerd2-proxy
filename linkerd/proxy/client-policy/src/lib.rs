@@ -647,4 +647,13 @@ pub mod proto {
             }
         }
     }
+
+    impl TryFrom<Option<outbound::FailureAccrual>> for FailureAccrual {
+        type Error = InvalidFailureAccrual;
+        fn try_from(accrual: Option<outbound::FailureAccrual>) -> Result<Self, Self::Error> {
+            accrual
+                .map(Self::try_from)
+                .unwrap_or(Ok(FailureAccrual::None))
+        }
+    }
 }

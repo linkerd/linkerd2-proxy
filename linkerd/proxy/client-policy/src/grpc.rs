@@ -149,13 +149,9 @@ pub mod proto {
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
-            let failure_accrual = match proto.failure_accrual {
-                Some(accrual) => accrual.try_into()?,
-                None => FailureAccrual::None,
-            };
             Ok(Self {
                 routes,
-                failure_accrual,
+                failure_accrual: proto.failure_accrual.try_into()?,
             })
         }
     }
