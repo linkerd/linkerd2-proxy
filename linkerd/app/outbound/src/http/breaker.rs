@@ -2,6 +2,7 @@ mod consecutive_failures;
 use consecutive_failures::ConsecutiveFailures;
 use linkerd_app_core::{classify, proxy::http::classify::gate, svc};
 use linkerd_proxy_client_policy::FailureAccrual;
+use tracing::{trace_span, Instrument};
 
 /// Params configuring a circuit breaker stack.
 #[derive(Copy, Clone, Debug)]
@@ -39,7 +40,11 @@ impl<T> svc::ExtractParam<gate::Params<classify::Class>, T> for Params {
                 // 3. If that request succeeds, open the gate. If it fails, increase the
                 //    ejection timeout and repeat.
                 let breaker = ConsecutiveFailures::new(max_failures, backoff, gate, rsps);
-                tokio::spawn(breaker.run());
+                tokio::spawn(
+                    breaker
+                        .run()
+                        .instrument(trace_span!("consecutive_failures").or_current()),
+                );
 
                 prms
             }
