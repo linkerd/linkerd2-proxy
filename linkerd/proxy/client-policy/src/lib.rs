@@ -624,20 +624,14 @@ pub mod proto {
                     } = backoff.ok_or(InvalidFailureAccrual::Missing(
                         "consecutive failures backoff",
                     ))?;
-                    let min = min_backoff
-                        .ok_or(InvalidFailureAccrual::Missing("min_backoff"))?
-                        .try_into()
-                        .map_err(|error| InvalidFailureAccrual::Duration {
-                            field: "max_backoff",
-                            error,
-                        })?;
-                    let max = max_backoff
-                        .ok_or(InvalidFailureAccrual::Missing("min_backoff"))?
-                        .try_into()
-                        .map_err(|error| InvalidFailureAccrual::Duration {
-                            field: "min_backoff",
-                            error,
-                        })?;
+
+                    let duration = |dur: Option<prost_types::Duration>, field: &'static str| {
+                        dur.ok_or(InvalidFailureAccrual::Missing(field))?
+                            .try_into()
+                            .map_err(|error| InvalidFailureAccrual::Duration { field, error })
+                    };
+                    let min = duration(min_backoff, "min_backoff")?;
+                    let max = duration(max_backoff, "max_backoff")?;
                     let backoff = linkerd_exp_backoff::ExponentialBackoff::try_new(
                         min,
                         max,
