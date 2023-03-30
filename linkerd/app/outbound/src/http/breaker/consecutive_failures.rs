@@ -158,7 +158,7 @@ mod tests {
                 assert_eq!(sem.available_permits(), 1);
                 params
                     .gate
-                    .acquire()
+                    .acquire_for_test()
                     .await
                     .expect("permit should be acquired")
                     // The `Gate` service would forget this permit when called, so
@@ -194,7 +194,7 @@ mod tests {
                 assert_eq!(sem.available_permits(), 1);
                 params
                     .gate
-                    .acquire()
+                    .acquire_for_test()
                     .await
                     .expect("permit should be acquired")
                     // The `Gate` service would forget this permit when called, so

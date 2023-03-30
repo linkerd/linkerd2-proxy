@@ -72,7 +72,15 @@ impl Rx {
     }
 
     /// Waits for the gate state to change to be open.
-    pub async fn acquire(&mut self) -> Option<OwnedSemaphorePermit> {
+    ///
+    /// This is intended for testing purposes.
+    #[cfg(feature = "test-util")]
+    pub async fn acquire_for_test(&mut self) -> Option<OwnedSemaphorePermit> {
+        self.acquire().await
+    }
+
+    /// Waits for the gate state to change to be open.
+    async fn acquire(&mut self) -> Option<OwnedSemaphorePermit> {
         loop {
             let state = self.0.borrow_and_update().clone();
             match state {

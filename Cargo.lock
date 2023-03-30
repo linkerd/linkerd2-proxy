@@ -1048,6 +1048,7 @@ dependencies = [
  "linkerd-meshtls-rustls",
  "linkerd-proxy-client-policy",
  "linkerd-retry",
+ "linkerd-stack",
  "linkerd-tonic-watch",
  "linkerd-tracing",
  "linkerd2-proxy-api",
