@@ -1,7 +1,7 @@
 //! A stack that (optionally) resolves a service to a set of endpoint replicas
 //! and distributes HTTP requests among them.
 
-use super::{balance, client, handle_proxy_error_headers};
+use super::{balance, breaker, client, handle_proxy_error_headers};
 use crate::{http, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, metrics, profiles,
@@ -128,20 +128,6 @@ impl<N> Outbound<N> {
                 )
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
-            let mk_breaker = |target: &Balance<T>| {
-                match target.parent.param() {
-                    FailureAccrual::None => |_: &(SocketAddr, Metadata)| {
-                        // Construct a gate channel, dropping the controller
-                        // side of the channel such that response summaries
-                        // are never read. The failure accrual gate never
-                        // closes in this configuration.
-                        tracing::trace!("No failure accrual policy enabled");
-                        let (prms, _, _) = classify::gate::Params::channel(1);
-                        prms
-                    },
-                }
-            };
-
             let balance = endpoint
                 .push_map_target({
                     let inbound_ips = inbound_ips.clone();
@@ -163,7 +149,20 @@ impl<N> Outbound<N> {
                 .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
                 .push(
-                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via(mk_breaker),
+                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
+                        // This sets the capacity of the channel used to send
+                        // response classifications to the failure accrual task.
+                        // Since the number of messages in this channel should
+                        // be roughly the same as the number of requests, size
+                        // it to the request queue capacity.
+                        // TODO(eliza): when queue capacity is configured
+                        // per-target, extract this from the target instead.
+                        let channel_capacity = config.http_request_queue.capacity;
+                        move |target: &Balance<T>| breaker::Params {
+                            accrual: target.parent.param(),
+                            channel_capacity,
+                        }
+                    }),
                 )
                 .push(http::NewBalancePeakEwma::layer(resolve))
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())

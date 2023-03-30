@@ -50,6 +50,7 @@ linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [
     "test-util",
 ] }
+linkerd-stack = { path = "../../stack", features = ["test-util"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 parking_lot = "0.12"
 tokio = { version = "1", features = ["macros", "sync", "time"] }
