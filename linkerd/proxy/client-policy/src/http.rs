@@ -94,7 +94,9 @@ impl Default for StatusRanges {
 pub mod proto {
     use super::*;
     use crate::{
-        proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
+        proto::{
+            BackendSet, InvalidBackend, InvalidDistribution, InvalidFailureAccrual, InvalidMeta,
+        },
         Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, http_route};
@@ -122,6 +124,9 @@ pub mod proto {
 
         #[error("invalid filter: {0}")]
         Filter(#[from] InvalidFilter),
+
+        #[error("invalid failure accrual policy: {0}")]
+        Breaker(#[from] InvalidFailureAccrual),
 
         #[error("missing {0}")]
         Missing(&'static str),
@@ -160,9 +165,7 @@ pub mod proto {
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
-                // TODO(eliza): eventually, this will be included in the proxy
-                // API message...
-                failure_accrual: Default::default(),
+                failure_accrual: proto.failure_accrual.try_into()?,
             })
         }
     }
@@ -177,9 +180,7 @@ pub mod proto {
                 .collect::<Result<Arc<[_]>, _>>()?;
             Ok(Self {
                 routes,
-                // TODO(eliza): eventually, this will be included in the proxy
-                // API message...
-                failure_accrual: Default::default(),
+                failure_accrual: proto.failure_accrual.try_into()?,
             })
         }
     }

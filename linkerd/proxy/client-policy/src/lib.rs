@@ -337,6 +337,20 @@ pub mod proto {
         Missing,
     }
 
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidFailureAccrual {
+        #[error("invalid backoff: {0}")]
+        Backoff(#[from] linkerd_exp_backoff::InvalidBackoff),
+        #[error("invalid {field} duration: {error}")]
+        Duration {
+            field: &'static str,
+            #[source]
+            error: prost_types::DurationError,
+        },
+        #[error("missing {0}")]
+        Missing(&'static str),
+    }
+
     impl TryFrom<outbound::OutboundPolicy> for ClientPolicy {
         type Error = InvalidPolicy;
         fn try_from(policy: outbound::OutboundPolicy) -> Result<Self, Self::Error> {
@@ -588,6 +602,56 @@ pub mod proto {
                     Ok(EndpointDiscovery::DestinationGet { path })
                 }
             }
+        }
+    }
+
+    impl TryFrom<outbound::FailureAccrual> for FailureAccrual {
+        type Error = InvalidFailureAccrual;
+        fn try_from(accrual: outbound::FailureAccrual) -> Result<Self, Self::Error> {
+            use outbound::failure_accrual::{self, ConsecutiveFailures};
+            let kind = accrual.kind.ok_or(InvalidFailureAccrual::Missing("kind"))?;
+            match kind {
+                failure_accrual::Kind::ConsecutiveFailures(ConsecutiveFailures {
+                    max_failures,
+                    backoff,
+                }) => {
+                    // TODO(eliza): if other failure accrual kinds are added
+                    // that also use exponential backoffs, this could be factored out...
+                    let outbound::ExponentialBackoff {
+                        min_backoff,
+                        max_backoff,
+                        jitter_ratio,
+                    } = backoff.ok_or(InvalidFailureAccrual::Missing(
+                        "consecutive failures backoff",
+                    ))?;
+
+                    let duration = |dur: Option<prost_types::Duration>, field: &'static str| {
+                        dur.ok_or(InvalidFailureAccrual::Missing(field))?
+                            .try_into()
+                            .map_err(|error| InvalidFailureAccrual::Duration { field, error })
+                    };
+                    let min = duration(min_backoff, "min_backoff")?;
+                    let max = duration(max_backoff, "max_backoff")?;
+                    let backoff = linkerd_exp_backoff::ExponentialBackoff::try_new(
+                        min,
+                        max,
+                        jitter_ratio as f64,
+                    )?;
+                    Ok(FailureAccrual::ConsecutiveFailures {
+                        max_failures: max_failures as usize,
+                        backoff,
+                    })
+                }
+            }
+        }
+    }
+
+    impl TryFrom<Option<outbound::FailureAccrual>> for FailureAccrual {
+        type Error = InvalidFailureAccrual;
+        fn try_from(accrual: Option<outbound::FailureAccrual>) -> Result<Self, Self::Error> {
+            accrual
+                .map(Self::try_from)
+                .unwrap_or(Ok(FailureAccrual::None))
         }
     }
 }

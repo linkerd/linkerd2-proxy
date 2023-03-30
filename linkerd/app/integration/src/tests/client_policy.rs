@@ -60,9 +60,11 @@ async fn empty_http1_route() {
                                 hosts: Vec::new(),
                                 rules: Vec::new(),
                             }],
+                            failure_accrual: None,
                         }),
                         http2: Some(proxy_protocol::Http2 {
                             routes: vec![policy::outbound_default_http_route(&dst)],
+                            failure_accrual: None,
                         }),
                         opaque: Some(proxy_protocol::Opaque {
                             routes: vec![policy::outbound_default_opaque_route(&dst)],
@@ -140,6 +142,7 @@ async fn empty_http2_route() {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                         http1: Some(proxy_protocol::Http1 {
                             routes: vec![policy::outbound_default_http_route(&dst)],
+                            failure_accrual: None,
                         }),
                         http2: Some(proxy_protocol::Http2 {
                             routes: vec![outbound::HttpRoute {
@@ -147,6 +150,7 @@ async fn empty_http2_route() {
                                 hosts: Vec::new(),
                                 rules: Vec::new(),
                             }],
+                            failure_accrual: None,
                         }),
                         opaque: Some(proxy_protocol::Opaque {
                             routes: vec![policy::outbound_default_opaque_route(&dst)],
@@ -251,9 +255,11 @@ async fn header_based_routing() {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                         http1: Some(proxy_protocol::Http1 {
                             routes: vec![route.clone()],
+                            failure_accrual: None,
                         }),
                         http2: Some(proxy_protocol::Http2 {
                             routes: vec![route],
+                            failure_accrual: None,
                         }),
                         opaque: Some(proxy_protocol::Opaque {
                             routes: vec![policy::outbound_default_opaque_route(&dst_world)],
@@ -426,9 +432,11 @@ async fn path_based_routing() {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                         http1: Some(proxy_protocol::Http1 {
                             routes: vec![route.clone()],
+                            failure_accrual: None,
                         }),
                         http2: Some(proxy_protocol::Http2 {
                             routes: vec![route],
+                            failure_accrual: None,
                         }),
                         opaque: Some(proxy_protocol::Opaque {
                             routes: vec![policy::outbound_default_opaque_route(&dst_world)],
