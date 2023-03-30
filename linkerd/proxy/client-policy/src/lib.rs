@@ -618,7 +618,6 @@ pub mod proto {
                     // TODO(eliza): if other failure accrual kinds are added
                     // that also use exponential backoffs, this could be factored out...
                     let outbound::ExponentialBackoff { min_backoff, max_backoff, jitter_ratio } =
-                        // TODO(eliza): should this be defaulted?
                         backoff.ok_or(InvalidFailureAccrual::Missing("consecutive failures backoff"))?;
                     let min = min_backoff
                         .ok_or(InvalidFailureAccrual::Missing("min_backoff"))?
