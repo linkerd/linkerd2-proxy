@@ -4,12 +4,8 @@ use linkerd_app_core::{
     errors, exp_backoff::ExponentialBackoff, svc::NewService, svc::ServiceExt, trace, Error,
 };
 use linkerd_proxy_client_policy as client_policy;
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use parking_lot::Mutex;
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::watch;
 use tracing::Instrument;
 
@@ -98,7 +94,7 @@ async fn consecutive_failures_accrue() {
             routes: Arc::new([default_route(backend)]),
             failure_accrual: client_policy::FailureAccrual::ConsecutiveFailures {
                 max_failures: 3,
-                backoff: backoff.clone(),
+                backoff,
             },
         })));
     let target = Target {
@@ -254,7 +250,7 @@ impl svc::Param<watch::Receiver<Routes>> for Target {
 
 impl HttpConnect {
     fn service(self, addr: SocketAddr, svc: MockSvc) -> Self {
-        self.svcs.lock().unwrap().insert(addr, svc);
+        self.svcs.lock().insert(addr, svc);
         self
     }
 }
@@ -265,7 +261,6 @@ impl<T: svc::Param<Remote<ServerAddr>>> svc::NewService<T> for HttpConnect {
         let Remote(ServerAddr(addr)) = target.param();
         self.svcs
             .lock()
-            .unwrap()
             .get(&addr)
             .expect("tried to connect to an unexpected address")
             .clone()
@@ -362,7 +357,7 @@ fn default_route(backend: client_policy::Backend) -> client_policy::http::Route 
                 failure_policy: Default::default(),
                 distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                     filters: NO_FILTERS.clone(),
-                    backend: backend.clone(),
+                    backend,
                 }])),
             },
         }],
