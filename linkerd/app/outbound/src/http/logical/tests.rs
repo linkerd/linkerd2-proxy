@@ -1,6 +1,8 @@
 use super::*;
 use crate::test_util::*;
-use linkerd_app_core::{svc::NewService, svc::ServiceExt, trace};
+use linkerd_app_core::{
+    errors, exp_backoff::ExponentialBackoff, svc::NewService, svc::ServiceExt, trace, Error,
+};
 use linkerd_proxy_client_policy as client_policy;
 use std::{
     collections::HashMap,
@@ -8,7 +10,8 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::sync::watch;
+use tokio::{sync::watch, time};
+use tracing::Instrument;
 
 const AUTHORITY: &str = "logical.test.svc.cluster.local";
 const PORT: u16 = 666;
@@ -46,31 +49,119 @@ async fn routes() {
     let svc = stack.new_service(target);
 
     handle.allow(1);
+    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    serve_req(&mut handle, http::Response::builder().status(200)).await;
+    assert_eq!(
+        rsp.await.expect("request must succeed").status(),
+        http::StatusCode::OK
+    );
+}
 
-    tokio::spawn(async move {
-        let (req, send_rsp) = handle
-            .next_request()
-            .await
-            .expect("service must receive request");
-        tracing::info!(?req, "received request");
-        send_rsp.send_response(
-            http::Response::builder()
-                .status(http::StatusCode::OK)
-                .body(http::BoxBody::default())
+#[tokio::test(flavor = "current_thread")]
+async fn consecutive_failures_accrue() {
+    let _trace = trace::test::with_default_filter(format!(
+        "{},linkerd_app_outbound=trace",
+        trace::test::DEFAULT_LOG
+    ));
+
+    let addr = SocketAddr::new([192, 0, 2, 41].into(), PORT);
+    let dest: NameAddr = format!("{AUTHORITY}:{PORT}")
+        .parse::<NameAddr>()
+        .expect("dest addr is valid");
+    let (svc, mut handle) = tower_test::mock::pair();
+    let connect = HttpConnect::default().service(addr, svc);
+    let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
+    let (rt, _shutdown) = runtime();
+    let stack = Outbound::new(default_config(), rt)
+        .with_stack(connect)
+        .push_http_cached(resolve)
+        .into_inner();
+
+    let backend = default_backend(&dest);
+    let min_backoff = Duration::from_secs(1);
+    let max_backoff = Duration::from_secs(60);
+    let (_route_tx, routes) =
+        watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
+            addr: dest.into(),
+            backends: Arc::new([backend.clone()]),
+            routes: Arc::new([default_route(backend)]),
+            failure_accrual: client_policy::FailureAccrual::ConsecutiveFailures {
+                max_failures: 3,
+                backoff: ExponentialBackoff::try_new(
+                    min_backoff,
+                    max_backoff,
+                    // no jitter --- ensure the test is deterministic
+                    0.0,
+                )
                 .unwrap(),
-        );
-    });
-
-    let rsp = {
-        let req = req(http::Request::get("/"));
-        let rsp = svc.oneshot(req);
-        tokio::time::timeout(Duration::from_secs(5), rsp)
-            .await
-            .expect("request should complete in a timely manner")
-            .expect("request must succeed")
+            },
+        })));
+    let target = Target {
+        num: 1,
+        version: http::Version::H2,
+        routes,
     };
+    let svc = stack.new_service(target);
 
-    assert_eq!(rsp.status(), http::StatusCode::OK);
+    handle.allow(1);
+    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    serve_req(&mut handle, http::Response::builder().status(200)).await;
+    assert_eq!(
+        rsp.await.expect("request must succeed").status(),
+        http::StatusCode::OK
+    );
+
+    // fail 3 requests so that we hit the consecutive failures accrual limit
+    for _ in 0..3 {
+        handle.allow(1);
+        let rsp = send_req(svc.clone(), http::Request::get("/"));
+        serve_req(
+            &mut handle,
+            http::Response::builder().status(http::StatusCode::INTERNAL_SERVER_ERROR),
+        )
+        .await;
+        assert_eq!(
+            rsp.await.expect("request should succeed with 500").status(),
+            http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    // Ensure that the error is because of the breaker, and not because the
+    // underlying service doesn't poll ready.
+    handle.allow(1);
+    // We are now in failfast.
+    let error = send_req(svc.clone(), http::Request::get("/"))
+        .await
+        .expect_err("service should be in failfast");
+    assert!(
+        errors::is_caused_by::<errors::FailFastError>(error.as_ref()),
+        "service should be in failfast"
+    );
+
+    let error = send_req(svc.clone(), http::Request::get("/"))
+        .await
+        .expect_err("service should be in failfast");
+    assert!(
+        errors::is_caused_by::<errors::LoadShedError>(error.as_ref()),
+        "service should be in failfast"
+    );
+
+    // After the probation period, a subsequent request should be failed by
+    // hitting the service.
+    time::sleep(min_backoff + Duration::from_secs(1)).await;
+    tracing::info!("After probation");
+    tokio::task::yield_now().await;
+
+    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    serve_req(
+        &mut handle,
+        http::Response::builder().status(http::StatusCode::INTERNAL_SERVER_ERROR),
+    )
+    .await;
+    assert_eq!(
+        rsp.await.expect("request should succeed with 500").status(),
+        http::StatusCode::INTERNAL_SERVER_ERROR
+    );
 }
 
 #[derive(Clone, Debug)]
@@ -137,13 +228,58 @@ impl<T: svc::Param<Remote<ServerAddr>>> svc::NewService<T> for HttpConnect {
     }
 }
 
-fn req(builder: ::http::request::Builder) -> http::Request<http::BoxBody> {
+#[track_caller]
+fn send_req(
+    svc: impl svc::Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+            Future = impl Send + 'static,
+        > + Send
+        + 'static,
+    builder: ::http::request::Builder,
+) -> impl Future<Output = Result<http::Response<http::BoxBody>, Error>> + Send + 'static {
     let mut req = builder.body(http::BoxBody::default()).unwrap();
+    let span = tracing::info_span!(
+        "send_req",
+        "{} {} {:?}",
+        req.method(),
+        req.uri(),
+        req.version(),
+    );
+    let rsp = tokio::spawn(
+        async move {
+            tracing::info!("sending request...");
+            // the HTTP stack will panic if a request is missing a client handle
+            let (client_handle, _) =
+                http::ClientHandle::new(SocketAddr::new([10, 0, 0, 42].into(), 42069));
+            req.extensions_mut().insert(client_handle);
+            let rsp = svc.oneshot(req);
+            let rsp = time::timeout(Duration::from_secs(60), rsp)
+                .await
+                .expect("request should complete in a timely manner");
+            tracing::info!(?rsp);
+            rsp
+        }
+        .instrument(span),
+    );
+    async move { rsp.await.expect("request task must not panic") }
+}
 
-    // the HTTP stack will panic if a request is missing a client handle
-    let (client_handle, _) = http::ClientHandle::new(SocketAddr::new([10, 0, 0, 42].into(), 42069));
-    req.extensions_mut().insert(client_handle);
-    req
+async fn serve_req(
+    handle: &mut tower_test::mock::Handle<
+        http::Request<http::BoxBody>,
+        http::Response<http::BoxBody>,
+    >,
+    rsp: ::http::response::Builder,
+) {
+    let (req, send_rsp) = time::timeout(Duration::from_secs(60), handle.next_request())
+        .await
+        .expect("service must receive request in a timely manner")
+        .expect("service must receive request");
+    tracing::info!(?req, "received request");
+    send_rsp.send_response(rsp.body(http::BoxBody::default()).unwrap());
+    tracing::info!(?req, "response sent");
 }
 
 fn default_backend(path: impl ToString) -> client_policy::Backend {
