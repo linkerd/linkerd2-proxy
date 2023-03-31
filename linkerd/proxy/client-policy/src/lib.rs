@@ -13,6 +13,7 @@ pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
+    pub parent: Arc<Meta>,
     pub protocol: Protocol,
     pub backends: Arc<[Backend]>,
 }
@@ -160,6 +161,7 @@ impl ClientPolicy {
         static BACKENDS: Lazy<Arc<[Backend]>> = Lazy::new(|| Arc::new([]));
 
         Self {
+            parent: Meta::new_default("invalid"),
             protocol: Protocol::Detect {
                 timeout,
                 http1: http::Http1 {
@@ -281,6 +283,12 @@ pub mod proto {
         #[error("invalid protocol detection timeout: {0}")]
         Timeout(#[from] prost_types::DurationError),
 
+        #[error("{0}")]
+        Meta(#[from] InvalidMeta),
+
+        #[error("missing metadata")]
+        MissingMeta,
+
         #[error("missing top-level backend")]
         MissingBackend,
     }
@@ -353,8 +361,14 @@ pub mod proto {
 
     impl TryFrom<outbound::OutboundPolicy> for ClientPolicy {
         type Error = InvalidPolicy;
+
         fn try_from(policy: outbound::OutboundPolicy) -> Result<Self, Self::Error> {
             use outbound::proxy_protocol;
+
+            let parent = policy
+                .metadata
+                .ok_or(InvalidPolicy::MissingMeta)?
+                .try_into()?;
 
             let protocol = policy
                 .protocol
@@ -429,6 +443,7 @@ pub mod proto {
             }
 
             Ok(ClientPolicy {
+                parent: Arc::new(parent),
                 protocol,
                 backends: backends.into_iter().collect(),
             })

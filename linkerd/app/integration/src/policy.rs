@@ -111,6 +111,9 @@ pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
     let dst = dst.to_string();
     let route = outbound_default_http_route(dst.clone());
     outbound::OutboundPolicy {
+        metadata: Some(api::meta::Metadata {
+            kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
+        }),
         protocol: Some(outbound::ProxyProtocol {
             kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                 timeout: Some(Duration::from_secs(10).try_into().unwrap()),

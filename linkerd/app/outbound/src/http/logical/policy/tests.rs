@@ -55,6 +55,7 @@ async fn header_based_route() {
         let special = mk_backend("special", special_addr);
         router::HttpParams {
             addr: Addr::Socket(([127, 0, 0, 1], 8080).into()),
+            meta: policy::Meta::new_default("parent"),
             routes: Arc::new([policy::http::Route {
                 hosts: Default::default(),
                 rules: vec![
@@ -79,7 +80,8 @@ async fn header_based_route() {
         }
     });
 
-    let router = Policy::layer()
+    let metrics = RouteBackendMetrics::default();
+    let router = Policy::layer(metrics.clone())
         .layer(inner)
         .new_service(Policy::from((routes, ())));
 
@@ -112,6 +114,20 @@ async fn header_based_route() {
 
     // Hold the router to prevent inner services from being dropped.
     drop(router);
+
+    let report = linkerd_app_core::metrics::FmtMetrics::as_display(&metrics).to_string();
+    let mut lines = report
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .collect::<Vec<_>>();
+    lines.sort();
+    assert_eq!(
+        lines,
+        vec![
+            r#"outbound_http_route_backend_requests_total{parent_group="",parent_kind="default",parent_namespace="",parent_name="parent",route_group="",route_kind="default",route_namespace="",route_name="default",backend_group="",backend_kind="default",backend_namespace="",backend_name="default"} 1"#,
+            r#"outbound_http_route_backend_requests_total{parent_group="",parent_kind="default",parent_namespace="",parent_name="parent",route_group="",route_kind="default",route_namespace="",route_name="special",backend_group="",backend_kind="default",backend_namespace="",backend_name="special"} 1"#,
+        ]
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -140,6 +156,7 @@ async fn http_filter_request_headers() {
     let routes = Params::Http({
         router::HttpParams {
             addr: Addr::Socket(([127, 0, 0, 1], 8080).into()),
+            meta: policy::Meta::new_default("splinter"),
             routes: Arc::new([policy::http::Route {
                 hosts: Default::default(),
                 rules: vec![policy::http::Rule {
@@ -172,7 +189,7 @@ async fn http_filter_request_headers() {
         }
     });
 
-    let router = Policy::layer()
+    let router = Policy::layer(Default::default())
         .layer(inner)
         .new_service(Policy::from((routes, ())));
 

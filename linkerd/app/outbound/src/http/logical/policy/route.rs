@@ -1,4 +1,4 @@
-use super::super::Concrete;
+use super::{super::Concrete, RouteBackendMetrics};
 use linkerd_app_core::{classify, proxy::http, svc, Addr, Error, Result};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
@@ -66,11 +66,14 @@ where
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
     MatchedBackend<T, M, F>: filters::Apply,
+    backend::ExtractMetrics: svc::ExtractParam<backend::RequestCount, MatchedBackend<T, M, F>>,
 {
     /// Builds a route stack that applies policy filters to requests and
     /// distributes requests over each route's backends. These [`Concrete`]
     /// backends are expected to be cached/shared by the inner stack.
-    pub(crate) fn layer<N, S>() -> impl svc::Layer<
+    pub(crate) fn layer<N, S>(
+        backend_metrics: RouteBackendMetrics,
+    ) -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
             Self,
@@ -94,11 +97,11 @@ where
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
     {
-        svc::layer::mk(|inner| {
+        svc::layer::mk(move |inner| {
             svc::stack(inner)
                 // Distribute requests across route backends, applying policies
                 // and filters for each of the route-backends.
-                .push(MatchedBackend::layer())
+                .push(MatchedBackend::layer(backend_metrics.clone()))
                 .lift_new_with_target()
                 .push(NewDistribute::layer())
                 // The router does not take the backend's availability into

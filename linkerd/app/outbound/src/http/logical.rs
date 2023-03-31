@@ -1,9 +1,8 @@
 //! A stack that routes HTTP requests to concrete backends.
 
 use super::concrete;
-use crate::Outbound;
+use crate::{Outbound, OutboundMetrics};
 use linkerd_app_core::{
-    metrics,
     proxy::{api_resolve::Metadata, http},
     svc,
     transport::addrs::*,
@@ -118,7 +117,7 @@ impl<N> Outbound<N> {
             let watch = concrete
                 // Share the concrete stack with each router stack.
                 .lift_new()
-                .push_on_service(RouterParams::layer(rt.metrics.proxy.clone()))
+                .push_on_service(RouterParams::layer(rt.metrics.clone()))
                 // Rebuild the inner router stack every time the watch changes.
                 .push(svc::NewSpawnWatch::<Routes, _>::layer_into::<RouterParams<T>>());
 
@@ -136,7 +135,7 @@ where
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
 {
     fn layer<N, S>(
-        metrics: metrics::Proxy,
+        metrics: OutboundMetrics,
     ) -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
@@ -161,25 +160,22 @@ where
         S::Future: Send,
     {
         svc::layer::mk(move |concrete: N| {
-            let policy = svc::stack(concrete.clone()).push(policy::Policy::layer());
+            let policy = svc::stack(concrete.clone())
+                .push(policy::Policy::layer(metrics.http_route_backends.clone()));
             let profile =
-                svc::stack(concrete.clone()).push(profile::Params::layer(metrics.clone()));
+                svc::stack(concrete.clone()).push(profile::Params::layer(metrics.proxy.clone()));
             svc::stack(concrete)
                 .push_switch(
-                    |prms: RouterParams<T>| {
+                    |prms: Self| {
                         Ok::<_, Infallible>(match prms {
-                            RouterParams::Endpoint(remote, meta, parent) => {
-                                svc::Either::A(Concrete {
-                                    target: concrete::Dispatch::Forward(remote, meta),
-                                    authority: None,
-                                    parent,
-                                    failure_accrual: Default::default(),
-                                })
-                            }
-                            RouterParams::Profile(profile) => {
-                                svc::Either::B(svc::Either::A(profile))
-                            }
-                            RouterParams::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
+                            Self::Endpoint(remote, meta, parent) => svc::Either::A(Concrete {
+                                target: concrete::Dispatch::Forward(remote, meta),
+                                authority: None,
+                                parent,
+                                failure_accrual: Default::default(),
+                            }),
+                            Self::Profile(profile) => svc::Either::B(svc::Either::A(profile)),
+                            Self::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
                         })
                     },
                     // Switch profile and policy routing.

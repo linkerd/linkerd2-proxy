@@ -236,6 +236,7 @@ impl HttpSidecar {
                 return Some(http::Routes::Policy(http::policy::Params::Grpc(
                     http::policy::GrpcParams {
                         addr: orig_dst.into(),
+                        meta: policy.parent.clone(),
                         backends: policy.backends.clone(),
                         routes: routes.clone(),
                         failure_accrual,
@@ -253,6 +254,7 @@ impl HttpSidecar {
         Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr: orig_dst.into(),
+                meta: policy.parent.clone(),
                 routes,
                 backends: policy.backends.clone(),
                 failure_accrual,

@@ -38,6 +38,8 @@ impl ClientPolicies {
     pub fn policy_default(self, addr: impl Into<Addr>) -> Self {
         let addr = addr.into();
 
+        let parent = Meta::new_default(addr.to_string());
+
         let backend = {
             let dispatcher = match addr {
                 Addr::Name(ref addr) => {
@@ -102,8 +104,9 @@ impl ClientPolicies {
             },
         };
         let policy = ClientPolicy {
-            backends: Arc::new([backend]),
+            parent,
             protocol,
+            backends: Arc::new([backend]),
         };
         self.policy(addr, policy)
     }

@@ -424,6 +424,7 @@ fn policy_routes(
             Some(http::Routes::Policy(http::policy::Params::Http(
                 http::policy::HttpParams {
                     addr,
+                    meta: policy.parent.clone(),
                     backends: policy.backends.clone(),
                     routes,
                     failure_accrual,
@@ -439,6 +440,7 @@ fn policy_routes(
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr,
+                meta: policy.parent.clone(),
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
@@ -450,6 +452,7 @@ fn policy_routes(
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr,
+                meta: policy.parent.clone(),
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
@@ -461,6 +464,7 @@ fn policy_routes(
         }) => Some(http::Routes::Policy(http::policy::Params::Grpc(
             http::policy::GrpcParams {
                 addr,
+                meta: policy.parent.clone(),
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
