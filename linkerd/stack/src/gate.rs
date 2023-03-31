@@ -173,15 +173,11 @@ where
     type Future = S::Future;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // If we have previously acquired a permit, move it out of the `Gate` in
-        // order to poll the inner service. If the inner service is no longer
-        // ready, we will drop our previously acquired permit.
-        let permit = match std::mem::replace(&mut self.permit, Poll::Pending) {
-            Poll::Ready(permit) => permit,
-            Poll::Pending => ready!(self.poll_acquire(cx)),
-        };
-
-        ready!(self.inner.poll_ready(cx)?);
+        if self.permit.is_ready() {
+            return Poll::Ready(Ok(()));
+        }
+        let permit = ready!(self.poll_acquire(cx));
+        ready!(self.inner.poll_ready(cx))?;
         self.permit = Poll::Ready(permit);
         Poll::Ready(Ok(()))
     }
