@@ -10,7 +10,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::{sync::watch, time};
+use tokio::sync::watch;
 use tracing::Instrument;
 
 const AUTHORITY: &str = "logical.test.svc.cluster.local";
@@ -57,10 +57,10 @@ async fn routes() {
     );
 }
 
-#[tokio::test(flavor = "current_thread")]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn consecutive_failures_accrue() {
     let _trace = trace::test::with_default_filter(format!(
-        "{},linkerd_app_outbound=trace",
+        "{},linkerd_app_outbound=trace,linkerd_stack=trace",
         trace::test::DEFAULT_LOG
     ));
 
@@ -72,14 +72,25 @@ async fn consecutive_failures_accrue() {
     let connect = HttpConnect::default().service(addr, svc);
     let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt)
+    let cfg = default_config();
+    let stack = Outbound::new(cfg.clone(), rt)
         .with_stack(connect)
         .push_http_cached(resolve)
         .into_inner();
 
     let backend = default_backend(&dest);
-    let min_backoff = Duration::from_secs(1);
-    let max_backoff = Duration::from_secs(60);
+    // Ensure that the probe delay is longer than the failfast timeout, so that
+    // the service is only probed after it has entered failfast when the gate
+    // shuts.
+    let min_backoff = cfg.http_request_queue.failfast_timeout + Duration::from_secs(1);
+    let backoff = ExponentialBackoff::try_new(
+        min_backoff,
+        min_backoff * 6,
+        // no jitter --- ensure the test is deterministic
+        0.0,
+    )
+    .unwrap();
+    let mut backoffs = backoff.stream();
     let (_route_tx, routes) =
         watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
             addr: dest.into(),
@@ -87,13 +98,7 @@ async fn consecutive_failures_accrue() {
             routes: Arc::new([default_route(backend)]),
             failure_accrual: client_policy::FailureAccrual::ConsecutiveFailures {
                 max_failures: 3,
-                backoff: ExponentialBackoff::try_new(
-                    min_backoff,
-                    max_backoff,
-                    // no jitter --- ensure the test is deterministic
-                    0.0,
-                )
-                .unwrap(),
+                backoff: backoff.clone(),
             },
         })));
     let target = Target {
@@ -148,7 +153,7 @@ async fn consecutive_failures_accrue() {
 
     // After the probation period, a subsequent request should be failed by
     // hitting the service.
-    time::sleep(min_backoff + Duration::from_secs(1)).await;
+    backoffs.next().await;
     tracing::info!("After probation");
     tokio::task::yield_now().await;
 
@@ -161,6 +166,45 @@ async fn consecutive_failures_accrue() {
     assert_eq!(
         rsp.await.expect("request should succeed with 500").status(),
         http::StatusCode::INTERNAL_SERVER_ERROR
+    );
+
+    // We are now in failfast.
+    let error = send_req(svc.clone(), http::Request::get("/"))
+        .await
+        .expect_err("service should be in failfast");
+    assert!(
+        errors::is_caused_by::<errors::FailFastError>(error.as_ref()),
+        "service should be in failfast"
+    );
+
+    // Wait out the probation period again
+    handle.allow(1);
+    backoffs.next().await;
+    tracing::info!("After second probation");
+
+    // The probe request succeeds
+    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    serve_req(
+        &mut handle,
+        http::Response::builder().status(http::StatusCode::OK),
+    )
+    .await;
+    assert_eq!(
+        rsp.await.expect("request should succeed").status(),
+        http::StatusCode::OK
+    );
+
+    // The gate is now open again
+    handle.allow(1);
+    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    serve_req(
+        &mut handle,
+        http::Response::builder().status(http::StatusCode::OK),
+    )
+    .await;
+    assert_eq!(
+        rsp.await.expect("request should succeed").status(),
+        http::StatusCode::OK
     );
 }
 
@@ -254,10 +298,7 @@ fn send_req(
             let (client_handle, _) =
                 http::ClientHandle::new(SocketAddr::new([10, 0, 0, 42].into(), 42069));
             req.extensions_mut().insert(client_handle);
-            let rsp = svc.oneshot(req);
-            let rsp = time::timeout(Duration::from_secs(60), rsp)
-                .await
-                .expect("request should complete in a timely manner");
+            let rsp = svc.oneshot(req).await;
             tracing::info!(?rsp);
             rsp
         }
@@ -273,9 +314,9 @@ async fn serve_req(
     >,
     rsp: ::http::response::Builder,
 ) {
-    let (req, send_rsp) = time::timeout(Duration::from_secs(60), handle.next_request())
+    let (req, send_rsp) = handle
+        .next_request()
         .await
-        .expect("service must receive request in a timely manner")
         .expect("service must receive request");
     tracing::info!(?req, "received request");
     send_rsp.send_response(rsp.body(http::BoxBody::default()).unwrap());
