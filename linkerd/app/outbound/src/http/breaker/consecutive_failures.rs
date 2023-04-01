@@ -33,9 +33,12 @@ impl ConsecutiveFailures {
                 return;
             }
 
+            tracing::info!("Consecutive failure-accrual breaker tripped");
             if self.closed().await.is_err() {
                 return;
             }
+
+            tracing::info!("Consecutive failure-accrual breaker reopened");
         }
     }
 
