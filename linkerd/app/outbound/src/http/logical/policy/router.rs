@@ -4,9 +4,7 @@ use super::{
     RouteBackendMetrics,
 };
 use crate::{BackendRef, ParentRef};
-use linkerd_app_core::{
-    classify, config::QueueConfig, proxy::http, svc, transport::addrs::*, Addr, Error, Result,
-};
+use linkerd_app_core::{classify, proxy::http, svc, transport::addrs::*, Addr, Error, Result};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -149,17 +147,13 @@ where
             }
         };
 
-        let mk_dispatch = move |bck: &policy::Backend| match bck.dispatcher {
+        let mk_dispatch = move |bke: &policy::Backend| match bke.dispatcher {
             policy::BackendDispatcher::BalanceP2c(
                 policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
                 policy::EndpointDiscovery::DestinationGet { ref path },
             ) => mk_concrete(concrete::Dispatch::Balance {
                 addr: path.parse().expect("destination must be a nameaddr"),
-                meta: BackendRef(bck.meta),
-                queue: Some(QueueConfig {
-                    capacity: bck.queue.capacity,
-                    failfast_timeout: bck.queue.failfast_timeout,
-                }),
+                meta: BackendRef(bke.meta.clone()),
                 ewma: http::balance::EwmaConfig { decay, default_rtt },
             }),
             policy::BackendDispatcher::Forward(addr, ref metadata) => mk_concrete(
@@ -173,7 +167,7 @@ where
         };
 
         let mk_route_backend = {
-            let parent_ref = parent_ref.clone();
+            let mk_dispatch = mk_dispatch.clone();
             move |route_meta: &Arc<policy::Meta>, rb: &policy::RouteBackend<F>| {
                 let filters = rb.filters.clone();
                 let concrete = mk_dispatch(&rb.backend);

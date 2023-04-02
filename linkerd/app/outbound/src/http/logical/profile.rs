@@ -2,7 +2,7 @@ use super::{
     super::{concrete, retry},
     Concrete, NoRoute,
 };
-use crate::{policy, BackendRef, ParentRef};
+use crate::{policy, BackendRef, ParentRef, UNKNOWN_META};
 use linkerd_app_core::{
     classify, metrics,
     proxy::http::{self, balance},
@@ -119,7 +119,7 @@ where
         } = routes;
 
         fn service_meta(addr: &NameAddr) -> Option<Arc<policy::Meta>> {
-            let parts = addr.name().split('.');
+            let mut parts = addr.name().split('.');
 
             let name = parts.next()?;
             let namespace = parts.next()?;
@@ -137,9 +137,7 @@ where
             }))
         }
 
-        let unknown_meta = || policy::Meta::new_default("unknown");
-
-        let parent_meta = service_meta(&addr).unwrap_or_else(unknown_meta);
+        let parent_meta = service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone());
 
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if targets.is_empty() {
@@ -148,7 +146,6 @@ where
                 target: concrete::Dispatch::Balance {
                     addr: addr.clone(),
                     ewma: DEFAULT_EWMA,
-                    queue: None,
                     meta: BackendRef(parent_meta),
                 },
                 authority: Some(addr.as_http_authority()),
@@ -166,8 +163,9 @@ where
                     target: concrete::Dispatch::Balance {
                         addr: t.addr.clone(),
                         ewma: DEFAULT_EWMA,
-                        queue: None,
-                        meta: BackendRef(service_meta(&t.addr).unwrap_or_else(unknown_meta)),
+                        meta: BackendRef(
+                            service_meta(&t.addr).unwrap_or_else(|| UNKNOWN_META.clone()),
+                        ),
                     },
                     authority: Some(t.addr.as_http_authority()),
                     parent: parent.clone(),
@@ -182,8 +180,9 @@ where
                         target: concrete::Dispatch::Balance {
                             addr: addr.clone(),
                             ewma: DEFAULT_EWMA,
-                            queue: None,
-                            meta: BackendRef(service_meta(&addr).unwrap_or_else(unknown_meta)),
+                            meta: BackendRef(
+                                service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone()),
+                            ),
                         },
                         parent: parent.clone(),
                         failure_accrual: Default::default(),

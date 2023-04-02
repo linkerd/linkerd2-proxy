@@ -108,7 +108,9 @@ pub struct ParentRef(pub Arc<policy::Meta>);
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BackendRef(pub Arc<policy::Meta>);
 
-// TODO(ver) pub struct EndpointRef( pub Arc<policy::Meta>);
+/// A reference to a backend resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct EndpointRef(pub Arc<policy::Meta>);
 
 // === impl Outbound ===
 
@@ -256,18 +258,21 @@ pub fn trace_labels() -> HashMap<String, String> {
 }
 
 impl ParentRef {
-    fn unknown() -> Self {
-        Self(policy::Meta::new_default("unknown"))
-    }
-
     fn endpoint(md: &Metadata) -> Self {
+        let EndpointRef(meta) = EndpointRef::new(md);
+        Self(meta)
+    }
+}
+
+impl EndpointRef {
+    fn new(md: &Metadata) -> Self {
         let namespace = match md.labels().get("dst_namespace") {
             Some(ns) => ns.clone(),
-            None => return Self::unknown(),
+            None => return Self(UNKNOWN_META.clone()),
         };
         let name = match md.labels().get("dst_pod") {
             Some(pod) => pod.clone(),
-            None => return Self::unknown(),
+            None => return Self(UNKNOWN_META.clone()),
         };
         Self(Arc::new(policy::Meta::Resource {
             group: "core".to_string(),
@@ -278,3 +283,6 @@ impl ParentRef {
         }))
     }
 }
+
+static UNKNOWN_META: once_cell::sync::Lazy<Arc<policy::Meta>> =
+    once_cell::sync::Lazy::new(|| policy::Meta::new_default("unknown"));

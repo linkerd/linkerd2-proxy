@@ -257,6 +257,12 @@ impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
     }
 }
 
+impl<T> svc::Param<ParentRef> for Concrete<T> {
+    fn param(&self) -> ParentRef {
+        self.parent_ref.clone()
+    }
+}
+
 impl<T> svc::Param<policy::FailureAccrual> for Concrete<T> {
     fn param(&self) -> policy::FailureAccrual {
         self.failure_accrual
