@@ -2,7 +2,10 @@ use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
     route,
 };
-use linkerd_app_core::{classify, proxy::http, svc, transport::addrs::*, Addr, Error, Result};
+use crate::{BackendRef, ParentRef};
+use linkerd_app_core::{
+    classify, config::QueueConfig, proxy::http, svc, transport::addrs::*, Addr, Error, Result,
+};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -11,6 +14,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Params<M, F, E> {
     pub addr: Addr,
+    pub meta: ParentRef,
     pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
     pub failure_accrual: policy::FailureAccrual,
@@ -113,6 +117,7 @@ where
     fn from((rts, parent): (Params<M, F, E>, T)) -> Self {
         let Params {
             addr,
+            meta,
             routes,
             backends,
             failure_accrual,
@@ -120,31 +125,38 @@ where
 
         let mk_concrete = {
             let parent = parent.clone();
+            let parent_ref = meta.clone();
             move |target: concrete::Dispatch| {
                 // XXX With policies we don't have a top-level authority name at
                 // the moment. So, instead, we use the concrete addr used for
                 // discovery for now.
                 let authority = match target {
-                    concrete::Dispatch::Balance(ref a, _) => Some(a.as_http_authority()),
+                    concrete::Dispatch::Balance { ref addr, .. } => Some(addr.as_http_authority()),
                     _ => None,
                 };
                 Concrete {
                     target,
                     authority,
                     parent: parent.clone(),
+                    parent_ref: parent_ref.clone(),
                     failure_accrual,
                 }
             }
         };
 
-        let mk_dispatch = move |bd: &policy::BackendDispatcher| match *bd {
+        let mk_dispatch = move |bck: &policy::Backend| match bck.dispatcher {
             policy::BackendDispatcher::BalanceP2c(
                 policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
                 policy::EndpointDiscovery::DestinationGet { ref path },
-            ) => mk_concrete(concrete::Dispatch::Balance(
-                path.parse().expect("destination must be a nameaddr"),
-                http::balance::EwmaConfig { decay, default_rtt },
-            )),
+            ) => mk_concrete(concrete::Dispatch::Balance {
+                addr: path.parse().expect("destination must be a nameaddr"),
+                meta: BackendRef(bck.meta),
+                queue: Some(QueueConfig {
+                    capacity: bck.queue.capacity,
+                    failfast_timeout: bck.queue.failfast_timeout,
+                }),
+                ewma: http::balance::EwmaConfig { decay, default_rtt },
+            }),
             policy::BackendDispatcher::Forward(addr, ref metadata) => mk_concrete(
                 concrete::Dispatch::Forward(Remote(ServerAddr(addr)), metadata.clone()),
             ),
@@ -157,7 +169,7 @@ where
 
         let mk_route_backend = |rb: &policy::RouteBackend<F>| {
             let filters = rb.filters.clone();
-            let concrete = mk_dispatch(&rb.backend.dispatcher);
+            let concrete = mk_dispatch(&rb.backend);
             route::Backend { filters, concrete }
         };
 
@@ -206,10 +218,7 @@ where
             })
             .collect();
 
-        let backends = backends
-            .iter()
-            .map(|t| mk_dispatch(&t.dispatcher))
-            .collect();
+        let backends = backends.iter().map(mk_dispatch).collect();
 
         Self {
             routes,

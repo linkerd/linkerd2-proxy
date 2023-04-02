@@ -1,7 +1,7 @@
 //! A stack that routes HTTP requests to concrete backends.
 
 use super::concrete;
-use crate::Outbound;
+use crate::{Outbound, ParentRef};
 use linkerd_app_core::{
     metrics,
     proxy::{api_resolve::Metadata, http},
@@ -41,6 +41,7 @@ pub struct Concrete<T> {
     target: concrete::Dispatch,
     authority: Option<http::uri::Authority>,
     parent: T,
+    parent_ref: ParentRef,
     failure_accrual: policy::FailureAccrual,
 }
 
@@ -166,20 +167,17 @@ where
                 svc::stack(concrete.clone()).push(profile::Params::layer(metrics.clone()));
             svc::stack(concrete)
                 .push_switch(
-                    |prms: RouterParams<T>| {
+                    |prms: Self| {
                         Ok::<_, Infallible>(match prms {
-                            RouterParams::Endpoint(remote, meta, parent) => {
-                                svc::Either::A(Concrete {
-                                    target: concrete::Dispatch::Forward(remote, meta),
-                                    authority: None,
-                                    parent,
-                                    failure_accrual: Default::default(),
-                                })
-                            }
-                            RouterParams::Profile(profile) => {
-                                svc::Either::B(svc::Either::A(profile))
-                            }
-                            RouterParams::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
+                            Self::Endpoint(remote, meta, parent) => svc::Either::A(Concrete {
+                                parent_ref: ParentRef::endpoint(&meta),
+                                target: concrete::Dispatch::Forward(remote, meta),
+                                authority: None,
+                                parent,
+                                failure_accrual: Default::default(),
+                            }),
+                            Self::Profile(profile) => svc::Either::B(svc::Either::A(profile)),
+                            Self::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
                         })
                     },
                     // Switch profile and policy routing.

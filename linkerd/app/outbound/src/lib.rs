@@ -100,6 +100,16 @@ struct Runtime {
 
 pub type ConnectMeta = tls::ConnectMeta<Local<ClientAddr>>;
 
+/// A reference to a frontend/apex resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ParentRef(pub Arc<policy::Meta>);
+
+/// A reference to a backend resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BackendRef(pub Arc<policy::Meta>);
+
+// TODO(ver) pub struct EndpointRef( pub Arc<policy::Meta>);
+
 // === impl Outbound ===
 
 impl Outbound<()> {
@@ -243,4 +253,28 @@ pub fn trace_labels() -> HashMap<String, String> {
     let mut l = HashMap::new();
     l.insert("direction".to_string(), "outbound".to_string());
     l
+}
+
+impl ParentRef {
+    fn unknown() -> Self {
+        Self(policy::Meta::new_default("unknown"))
+    }
+
+    fn endpoint(md: &Metadata) -> Self {
+        let namespace = match md.labels().get("dst_namespace") {
+            Some(ns) => ns.clone(),
+            None => return Self::unknown(),
+        };
+        let name = match md.labels().get("dst_pod") {
+            Some(pod) => pod.clone(),
+            None => return Self::unknown(),
+        };
+        Self(Arc::new(policy::Meta::Resource {
+            group: "core".to_string(),
+            kind: "Pod".to_string(),
+            namespace,
+            name,
+            section: None,
+        }))
+    }
 }

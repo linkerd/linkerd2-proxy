@@ -2,9 +2,11 @@
 //! and distributes HTTP requests among them.
 
 use super::{balance, breaker, client, handle_proxy_error_headers};
-use crate::{http, stack_labels, Outbound};
+use crate::{http, stack_labels, BackendRef, Outbound, ParentRef};
 use linkerd_app_core::{
-    classify, metrics, profiles,
+    classify,
+    config::QueueConfig,
+    metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
@@ -22,9 +24,16 @@ use tracing::info_span;
 /// Parameter configuring dispatcher behavior.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Dispatch {
-    Balance(NameAddr, balance::EwmaConfig),
+    Balance {
+        addr: NameAddr,
+        meta: BackendRef,
+        ewma: balance::EwmaConfig,
+        queue: Option<QueueConfig>,
+    },
     Forward(Remote<ServerAddr>, Metadata),
-    Fail { message: Arc<str> },
+    Fail {
+        message: Arc<str>,
+    },
 }
 
 /// A backend dispatcher explicitly fails all requests.
@@ -55,6 +64,7 @@ pub struct Endpoint<T> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Balance<T> {
     addr: NameAddr,
+    meta: BackendRef,
     ewma: balance::EwmaConfig,
     parent: T,
 }
@@ -87,6 +97,7 @@ impl<N> Outbound<N> {
     >
     where
         // Concrete target type.
+        T: svc::Param<ParentRef>,
         T: svc::Param<Dispatch>,
         // TODO(ver) T: svc::Param<svc::queue::Capacity> + svc::Param<svc::queue::Timeout>,
         // Failure accrual policy.
@@ -175,7 +186,12 @@ impl<N> Outbound<N> {
                         .stack
                         .layer(stack_labels("http", "balance")),
                 )
-                .instrument(|t: &Balance<T>| info_span!("balance", addr = %t.addr));
+                .instrument(
+                    |t: &Balance<T>| {
+                        let BackendRef(ref meta) = t.meta;
+                        info_span!("balance", addr = %t.addr, ns = %meta.namespace(), name = %meta.name())
+                    },
+                );
 
             let fail = svc::ArcNewService::new(|message: Arc<str>| {
                 svc::mk(move |_| {
@@ -188,8 +204,13 @@ impl<N> Outbound<N> {
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Dispatch::Balance(addr, ewma) => {
-                                svc::Either::A(svc::Either::A(Balance { addr, ewma, parent }))
+                            Dispatch::Balance { addr, meta, ewma, queue } => {
+                                svc::Either::A(svc::Either::A(Balance {
+                                    addr,
+                                    meta,
+                                    ewma,
+                                    parent,
+                                }))
                             }
                             Dispatch::Forward(addr, metadata) => svc::Either::A(svc::Either::B({
                                 let is_local = inbound_ips.contains(&addr.ip());
