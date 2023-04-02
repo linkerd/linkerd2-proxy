@@ -248,6 +248,7 @@ pub fn synthesize_forward_policy(
     };
 
     ClientPolicy {
+        parent: meta.clone(),
         protocol: detect,
         backends: Arc::new([backend]),
     }

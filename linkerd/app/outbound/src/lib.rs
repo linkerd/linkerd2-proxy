@@ -46,7 +46,7 @@ pub mod test_util;
 
 pub use self::{
     discover::{spawn_synthesized_profile_policy, synthesize_forward_policy, Discovery},
-    metrics::Metrics,
+    metrics::OutboundMetrics,
 };
 
 #[derive(Clone, Debug)]
@@ -91,7 +91,7 @@ pub struct Outbound<S> {
 
 #[derive(Clone, Debug)]
 struct Runtime {
-    metrics: Metrics,
+    metrics: OutboundMetrics,
     identity: identity::NewClient,
     tap: tap::Registry,
     span_sink: OpenCensusSink,
@@ -115,7 +115,7 @@ pub struct BackendRef(pub Arc<policy::Meta>);
 impl Outbound<()> {
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         let runtime = Runtime {
-            metrics: Metrics::new(runtime.metrics),
+            metrics: OutboundMetrics::new(runtime.metrics),
             identity: runtime.identity.new_client(),
             tap: runtime.tap,
             span_sink: runtime.span_sink,
@@ -166,7 +166,7 @@ impl<S> Outbound<S> {
         &mut self.config
     }
 
-    pub fn metrics(&self) -> Metrics {
+    pub fn metrics(&self) -> OutboundMetrics {
         self.runtime.metrics.clone()
     }
 

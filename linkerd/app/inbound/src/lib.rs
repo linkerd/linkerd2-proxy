@@ -17,7 +17,7 @@ mod server;
 #[cfg(any(test, feature = "test-util", fuzzing))]
 pub mod test_util;
 
-pub use self::{metrics::Metrics, policy::DefaultPolicy};
+pub use self::{metrics::InboundMetrics, policy::DefaultPolicy};
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig, QueueConfig},
     drain,
@@ -63,7 +63,7 @@ pub struct Inbound<S> {
 
 #[derive(Clone)]
 struct Runtime {
-    metrics: Metrics,
+    metrics: InboundMetrics,
     identity: identity::creds::Receiver,
     tap: tap::Registry,
     span_sink: OpenCensusSink,
@@ -150,7 +150,7 @@ impl<S> Inbound<S> {
 impl Inbound<()> {
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         let runtime = Runtime {
-            metrics: Metrics::new(runtime.metrics),
+            metrics: InboundMetrics::new(runtime.metrics),
             identity: runtime.identity,
             tap: runtime.tap,
             span_sink: runtime.span_sink,
@@ -170,7 +170,7 @@ impl Inbound<()> {
         (this, drain)
     }
 
-    pub fn metrics(&self) -> Metrics {
+    pub fn metrics(&self) -> InboundMetrics {
         self.runtime.metrics.clone()
     }
 
