@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_util::*;
+use ::http::StatusCode;
 use linkerd_app_core::{
     errors, exp_backoff::ExponentialBackoff, svc::NewService, svc::ServiceExt, trace, Error,
 };
@@ -11,6 +12,9 @@ use tracing::Instrument;
 
 const AUTHORITY: &str = "logical.test.svc.cluster.local";
 const PORT: u16 = 666;
+
+type Request = http::Request<http::BoxBody>;
+type Response = http::Response<http::BoxBody>;
 
 #[tokio::test(flavor = "current_thread")]
 async fn routes() {
@@ -46,7 +50,7 @@ async fn routes() {
 
     handle.allow(1);
     let rsp = send_req(svc.clone(), http::Request::get("/"));
-    serve_req(&mut handle, http::Response::builder().status(200)).await;
+    serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
     assert_eq!(
         rsp.await.expect("request must succeed").status(),
         http::StatusCode::OK
@@ -106,11 +110,8 @@ async fn consecutive_failures_accrue() {
 
     handle.allow(1);
     let rsp = send_req(svc.clone(), http::Request::get("/"));
-    serve_req(&mut handle, http::Response::builder().status(200)).await;
-    assert_eq!(
-        rsp.await.expect("request must succeed").status(),
-        http::StatusCode::OK
-    );
+    serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
+    assert_rsp(rsp, StatusCode::OK, "good").await;
 
     // fail 3 requests so that we hit the consecutive failures accrual limit
     for _ in 0..3 {
@@ -118,13 +119,10 @@ async fn consecutive_failures_accrue() {
         let rsp = send_req(svc.clone(), http::Request::get("/"));
         serve_req(
             &mut handle,
-            http::Response::builder().status(http::StatusCode::INTERNAL_SERVER_ERROR),
+            mk_rsp(StatusCode::INTERNAL_SERVER_ERROR, "bad"),
         )
         .await;
-        assert_eq!(
-            rsp.await.expect("request should succeed with 500").status(),
-            http::StatusCode::INTERNAL_SERVER_ERROR
-        );
+        assert_rsp(rsp, StatusCode::INTERNAL_SERVER_ERROR, "bad").await;
     }
 
     // Ensure that the error is because of the breaker, and not because the
@@ -156,13 +154,10 @@ async fn consecutive_failures_accrue() {
     let rsp = send_req(svc.clone(), http::Request::get("/"));
     serve_req(
         &mut handle,
-        http::Response::builder().status(http::StatusCode::INTERNAL_SERVER_ERROR),
+        mk_rsp(StatusCode::INTERNAL_SERVER_ERROR, "bad"),
     )
     .await;
-    assert_eq!(
-        rsp.await.expect("request should succeed with 500").status(),
-        http::StatusCode::INTERNAL_SERVER_ERROR
-    );
+    assert_rsp(rsp, StatusCode::INTERNAL_SERVER_ERROR, "bad").await;
 
     // We are now in failfast.
     let error = send_req(svc.clone(), http::Request::get("/"))
@@ -180,28 +175,111 @@ async fn consecutive_failures_accrue() {
 
     // The probe request succeeds
     let rsp = send_req(svc.clone(), http::Request::get("/"));
-    serve_req(
-        &mut handle,
-        http::Response::builder().status(http::StatusCode::OK),
-    )
-    .await;
-    assert_eq!(
-        rsp.await.expect("request should succeed").status(),
-        http::StatusCode::OK
-    );
+    serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
+    assert_rsp(rsp, StatusCode::OK, "good").await;
 
     // The gate is now open again
     handle.allow(1);
     let rsp = send_req(svc.clone(), http::Request::get("/"));
-    serve_req(
-        &mut handle,
-        http::Response::builder().status(http::StatusCode::OK),
+    serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
+    assert_rsp(rsp, StatusCode::OK, "good").await;
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn balancer_doesnt_select_tripped_breakers() {
+    let _trace = trace::test::with_default_filter(format!(
+        "{},linkerd_app_outbound=trace,linkerd_stack=trace,linkerd2_proxy_http_balance=trace",
+        trace::test::DEFAULT_LOG
+    ));
+
+    let addr1 = SocketAddr::new([192, 0, 2, 41].into(), PORT);
+    let addr2 = SocketAddr::new([192, 0, 2, 42].into(), PORT);
+    let dest: NameAddr = format!("{AUTHORITY}:{PORT}")
+        .parse::<NameAddr>()
+        .expect("dest addr is valid");
+    let (svc1, mut handle1) = tower_test::mock::pair();
+    let (svc2, mut handle2) = tower_test::mock::pair();
+    let connect = HttpConnect::default()
+        .service(addr1, svc1)
+        .service(addr2, svc2);
+    let resolve = support::resolver();
+    let mut dest_tx = resolve.endpoint_tx(dest.clone());
+    dest_tx
+        .add([(addr1, Default::default()), (addr2, Default::default())])
+        .unwrap();
+    let (rt, _shutdown) = runtime();
+    let cfg = default_config();
+    let stack = Outbound::new(cfg.clone(), rt)
+        .with_stack(connect)
+        .push_http_cached(resolve)
+        .into_inner();
+
+    let backend = default_backend(&dest);
+    // Ensure that the probe delay is longer than the failfast timeout, so that
+    // the service is only probed after it has entered failfast when the gate
+    // shuts.
+    let min_backoff = cfg.http_request_queue.failfast_timeout + Duration::from_secs(1);
+    let backoff = ExponentialBackoff::try_new(
+        min_backoff,
+        min_backoff * 6,
+        // no jitter --- ensure the test is deterministic
+        0.0,
     )
-    .await;
-    assert_eq!(
-        rsp.await.expect("request should succeed").status(),
-        http::StatusCode::OK
-    );
+    .unwrap();
+    let (_route_tx, routes) =
+        watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
+            addr: dest.into(),
+            backends: Arc::new([backend.clone()]),
+            routes: Arc::new([default_route(backend)]),
+            failure_accrual: client_policy::FailureAccrual::ConsecutiveFailures {
+                max_failures: 3,
+                backoff,
+            },
+        })));
+    let target = Target {
+        num: 1,
+        version: http::Version::H2,
+        routes,
+    };
+    let svc = stack.new_service(target);
+
+    // fail 3 requests so that we hit the consecutive failures accrual limit
+    let mut failed = 0;
+    while failed < 3 {
+        handle1.allow(1);
+        handle2.allow(1);
+        tracing::info!(failed);
+        let rsp = send_req(svc.clone(), http::Request::get("/"));
+        let (expected_status, expected_body) = tokio::select! {
+            _ = serve_req(&mut handle1, mk_rsp(StatusCode::OK, "endpoint 1")) => {
+                tracing::info!("Balancer selected good endpoint");
+                (StatusCode::OK, "endpoint 1")
+            }
+            _ = serve_req(&mut handle2, mk_rsp(StatusCode::INTERNAL_SERVER_ERROR, "endpoint 2")) => {
+                tracing::info!("Balancer selected bad endpoint");
+                failed += 1;
+                (StatusCode::INTERNAL_SERVER_ERROR, "endpoint 2")
+            }
+        };
+        assert_rsp(rsp, expected_status, expected_body).await;
+        tokio::task::yield_now().await;
+    }
+
+    handle1.allow(1);
+    handle2.allow(1);
+    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    // The load balancer will select endpoint 1, because endpoint 2 isn't ready.
+    serve_req(&mut handle1, mk_rsp(StatusCode::OK, "endpoint 1")).await;
+    assert_rsp(rsp, StatusCode::OK, "endpoint 1").await;
+
+    // The load balancer should continue selecting the non-failing endpoint.
+    for _ in 0..8 {
+        handle1.allow(1);
+        handle2.allow(1);
+        let rsp = send_req(svc.clone(), http::Request::get("/"));
+        serve_req(&mut handle1, mk_rsp(StatusCode::OK, "endpoint 1")).await;
+        assert_rsp(rsp, StatusCode::OK, "endpoint 1").await;
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -211,7 +289,7 @@ struct Target {
     routes: watch::Receiver<Routes>,
 }
 
-type MockSvc = tower_test::mock::Mock<http::Request<http::BoxBody>, http::Response<http::BoxBody>>;
+type MockSvc = tower_test::mock::Mock<Request, Response>;
 
 #[derive(Clone, Default)]
 struct HttpConnect {
@@ -269,15 +347,11 @@ impl<T: svc::Param<Remote<ServerAddr>>> svc::NewService<T> for HttpConnect {
 
 #[track_caller]
 fn send_req(
-    svc: impl svc::Service<
-            http::Request<http::BoxBody>,
-            Response = http::Response<http::BoxBody>,
-            Error = Error,
-            Future = impl Send + 'static,
-        > + Send
+    svc: impl svc::Service<Request, Response = Response, Error = Error, Future = impl Send + 'static>
+        + Send
         + 'static,
     builder: ::http::request::Builder,
-) -> impl Future<Output = Result<http::Response<http::BoxBody>, Error>> + Send + 'static {
+) -> impl Future<Output = Result<Response, Error>> + Send + 'static {
     let mut req = builder.body(http::BoxBody::default()).unwrap();
     let span = tracing::info_span!(
         "send_req",
@@ -302,19 +376,36 @@ fn send_req(
     async move { rsp.await.expect("request task must not panic") }
 }
 
-async fn serve_req(
-    handle: &mut tower_test::mock::Handle<
-        http::Request<http::BoxBody>,
-        http::Response<http::BoxBody>,
-    >,
-    rsp: ::http::response::Builder,
-) {
+fn mk_rsp(status: StatusCode, body: impl ToString) -> Response {
+    http::Response::builder()
+        .status(status)
+        .body(http::BoxBody::new(body.to_string()))
+        .unwrap()
+}
+
+#[track_caller]
+async fn assert_rsp<T: std::fmt::Debug>(
+    rsp: impl Future<Output = Result<Response, Error>>,
+    status: StatusCode,
+    expected_body: T,
+) where
+    bytes::Bytes: PartialEq<T>,
+{
+    let rsp = rsp.await.expect("response must not fail");
+    assert_eq!(rsp.status(), status, "expected status code to be {status}");
+    let body = hyper::body::to_bytes(rsp.into_body())
+        .await
+        .expect("body must not fail");
+    assert_eq!(body, expected_body, "expected body to be {expected_body:?}");
+}
+
+async fn serve_req(handle: &mut tower_test::mock::Handle<Request, Response>, rsp: Response) {
     let (req, send_rsp) = handle
         .next_request()
         .await
         .expect("service must receive request");
     tracing::info!(?req, "received request");
-    send_rsp.send_response(rsp.body(http::BoxBody::default()).unwrap());
+    send_rsp.send_response(rsp);
     tracing::info!(?req, "response sent");
 }
 
