@@ -268,9 +268,8 @@ impl std::ops::Deref for ParentRef {
     }
 }
 
-impl ParentRef {
-    fn endpoint(md: &Metadata, port: NonZeroU16) -> Self {
-        let EndpointRef(meta) = EndpointRef::new(md, port);
+impl From<EndpointRef> for ParentRef {
+    fn from(EndpointRef(meta): EndpointRef) -> Self {
         Self(meta)
     }
 }
@@ -282,6 +281,18 @@ impl std::ops::Deref for BackendRef {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl From<ParentRef> for BackendRef {
+    fn from(ParentRef(meta): ParentRef) -> Self {
+        Self(meta)
+    }
+}
+
+impl From<EndpointRef> for BackendRef {
+    fn from(EndpointRef(meta): EndpointRef) -> Self {
+        Self(meta)
     }
 }
 

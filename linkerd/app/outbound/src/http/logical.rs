@@ -1,7 +1,7 @@
 //! A stack that routes HTTP requests to concrete backends.
 
 use super::concrete;
-use crate::{Outbound, OutboundMetrics, ParentRef};
+use crate::{BackendRef, EndpointRef, Outbound, OutboundMetrics, ParentRef};
 use linkerd_app_core::{
     proxy::{api_resolve::Metadata, http},
     svc,
@@ -41,6 +41,7 @@ pub struct Concrete<T> {
     authority: Option<http::uri::Authority>,
     parent: T,
     parent_ref: ParentRef,
+    backend_ref: BackendRef,
     failure_accrual: policy::FailureAccrual,
 }
 
@@ -168,16 +169,22 @@ where
                 .push_switch(
                     |prms: Self| {
                         Ok::<_, Infallible>(match prms {
-                            Self::Endpoint(remote, meta, parent) => svc::Either::A(Concrete {
-                                parent_ref: ParentRef::endpoint(
+                            Self::Endpoint(remote, meta, parent) => {
+                                let ep = EndpointRef::new(
                                     &meta,
                                     remote.port().try_into().expect("port must not be 0"),
-                                ),
-                                target: concrete::Dispatch::Forward(remote, meta),
-                                authority: None,
-                                parent,
-                                failure_accrual: Default::default(),
-                            }),
+                                );
+                                let parent_ref = ParentRef::from(ep.clone());
+                                let backend_ref = BackendRef::from(ep);
+                                svc::Either::A(Concrete {
+                                    parent_ref,
+                                    backend_ref,
+                                    target: concrete::Dispatch::Forward(remote, meta),
+                                    authority: None,
+                                    parent,
+                                    failure_accrual: Default::default(),
+                                })
+                            }
                             Self::Profile(profile) => svc::Either::B(svc::Either::A(profile)),
                             Self::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
                         })
@@ -262,6 +269,12 @@ impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
 impl<T> svc::Param<ParentRef> for Concrete<T> {
     fn param(&self) -> ParentRef {
         self.parent_ref.clone()
+    }
+}
+
+impl<T> svc::Param<BackendRef> for Concrete<T> {
+    fn param(&self) -> BackendRef {
+        self.backend_ref.clone()
     }
 }
 

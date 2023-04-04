@@ -22,15 +22,9 @@ use tracing::info_span;
 /// Parameter configuring dispatcher behavior.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Dispatch {
-    Balance {
-        addr: NameAddr,
-        meta: BackendRef,
-        ewma: balance::EwmaConfig,
-    },
+    Balance(NameAddr, balance::EwmaConfig),
     Forward(Remote<ServerAddr>, Metadata),
-    Fail {
-        message: Arc<str>,
-    },
+    Fail { message: Arc<str> },
 }
 
 /// A backend dispatcher explicitly fails all requests.
@@ -61,7 +55,6 @@ pub struct Endpoint<T> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Balance<T> {
     addr: NameAddr,
-    meta: BackendRef,
     ewma: balance::EwmaConfig,
     parent: T,
 }
@@ -95,6 +88,7 @@ impl<N> Outbound<N> {
     where
         // Concrete target type.
         T: svc::Param<ParentRef>,
+        T: svc::Param<BackendRef>,
         T: svc::Param<Dispatch>,
         T: svc::Param<FailureAccrual>,
         T: Clone + Debug + Send + Sync + 'static,
@@ -134,13 +128,8 @@ impl<N> Outbound<N> {
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Dispatch::Balance { addr, meta, ewma } => {
-                                svc::Either::A(svc::Either::A(Balance {
-                                    addr,
-                                    meta,
-                                    ewma,
-                                    parent,
-                                }))
+                            Dispatch::Balance(addr, ewma) => {
+                                svc::Either::A(svc::Either::A(Balance { addr, ewma, parent }))
                             }
                             Dispatch::Forward(addr, metadata) => svc::Either::A(svc::Either::B({
                                 let is_local = inbound_ips.contains(&addr.ip());
@@ -177,6 +166,7 @@ impl<T> Balance<T>
 where
     // Parent target.
     T: svc::Param<ParentRef>,
+    T: svc::Param<BackendRef>,
     T: svc::Param<FailureAccrual>,
     T: Clone + Debug + Send + Sync + 'static,
 {
@@ -257,11 +247,12 @@ where
                 .push_on_service(http::BoxResponse::layer())
                 .push_on_service(metrics.proxy.stack.layer(stack_labels("http", "balance")))
                 .instrument(|t: &Self| {
+                    let BackendRef(meta) = t.parent.param();
                     info_span!(
                         "service",
-                        ns = %t.meta.namespace(),
-                        name = %t.meta.name(),
-                        port = %t.meta.port().expect("port must be set"),
+                        ns = %meta.namespace(),
+                        name = %meta.name(),
+                        port = %meta.port().expect("port must be set"),
                     )
                 })
                 .push(svc::ArcNewService::layer())
@@ -272,12 +263,13 @@ where
 
 // === impl BalanceError ===
 
-impl<T> From<(&Balance<T>, Error)> for BalanceError {
+impl<T> From<(&Balance<T>, Error)> for BalanceError
+where
+    T: svc::Param<BackendRef>,
+{
     fn from((target, source): (&Balance<T>, Error)) -> Self {
-        Self {
-            backend: target.meta.clone(),
-            source,
-        }
+        let backend = target.parent.param();
+        Self { backend, source }
     }
 }
 

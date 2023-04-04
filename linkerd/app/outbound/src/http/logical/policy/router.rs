@@ -2,7 +2,7 @@ use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
     route::{self},
 };
-use crate::{BackendRef, ParentRef};
+use crate::{BackendRef, EndpointRef, ParentRef};
 use linkerd_app_core::{
     classify, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result,
 };
@@ -125,18 +125,19 @@ where
 
         let mk_concrete = {
             let parent = parent.clone();
-            move |target: concrete::Dispatch| {
+            move |backend_ref: BackendRef, target: concrete::Dispatch| {
                 // XXX With policies we don't have a top-level authority name at
                 // the moment. So, instead, we use the concrete addr used for
                 // discovery for now.
                 let authority = match target {
-                    concrete::Dispatch::Balance { ref addr, .. } => Some(addr.as_http_authority()),
+                    concrete::Dispatch::Balance(ref addr, ..) => Some(addr.as_http_authority()),
                     _ => None,
                 };
                 Concrete {
                     target,
                     authority,
                     parent: parent.clone(),
+                    backend_ref,
                     parent_ref: parent_ref.clone(),
                     failure_accrual,
                 }
@@ -147,21 +148,24 @@ where
             policy::BackendDispatcher::BalanceP2c(
                 policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
                 policy::EndpointDiscovery::DestinationGet { ref path },
-            ) => mk_concrete(concrete::Dispatch::Balance {
-                addr: path
-                    .parse::<NameAddr>()
-                    .expect("destination must be a nameaddr"),
-                meta: BackendRef(bke.meta.clone()),
-                ewma: http::balance::EwmaConfig { decay, default_rtt },
-            }),
-            policy::BackendDispatcher::Forward(addr, ref metadata) => mk_concrete(
-                concrete::Dispatch::Forward(Remote(ServerAddr(addr)), metadata.clone()),
+            ) => mk_concrete(
+                BackendRef(bke.meta.clone()),
+                concrete::Dispatch::Balance(
+                    path.parse::<NameAddr>()
+                        .expect("destination must be a nameaddr"),
+                    http::balance::EwmaConfig { decay, default_rtt },
+                ),
             ),
-            policy::BackendDispatcher::Fail { ref message } => {
-                mk_concrete(concrete::Dispatch::Fail {
+            policy::BackendDispatcher::Forward(addr, ref md) => mk_concrete(
+                EndpointRef::new(md, addr.port().try_into().expect("port must not be 0")).into(),
+                concrete::Dispatch::Forward(Remote(ServerAddr(addr)), md.clone()),
+            ),
+            policy::BackendDispatcher::Fail { ref message } => mk_concrete(
+                BackendRef(policy::Meta::new_default("fail")),
+                concrete::Dispatch::Fail {
                     message: message.clone(),
-                })
-            }
+                },
+            ),
         };
 
         let mk_route_backend = {

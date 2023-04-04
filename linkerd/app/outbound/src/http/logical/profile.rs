@@ -144,11 +144,8 @@ where
         let (backends, distribution) = if targets.is_empty() {
             let concrete = Concrete {
                 parent_ref: ParentRef(parent_meta.clone()),
-                target: concrete::Dispatch::Balance {
-                    addr: addr.clone(),
-                    ewma: DEFAULT_EWMA,
-                    meta: BackendRef(parent_meta),
-                },
+                backend_ref: BackendRef(parent_meta),
+                target: concrete::Dispatch::Balance(addr.clone(), DEFAULT_EWMA),
                 authority: Some(addr.as_http_authority()),
                 parent: parent.clone(),
                 failure_accrual: Default::default(),
@@ -161,13 +158,10 @@ where
                 .iter()
                 .map(|t| Concrete {
                     parent_ref: ParentRef(parent_meta.clone()),
-                    target: concrete::Dispatch::Balance {
-                        addr: t.addr.clone(),
-                        ewma: DEFAULT_EWMA,
-                        meta: BackendRef(
-                            service_meta(&t.addr).unwrap_or_else(|| UNKNOWN_META.clone()),
-                        ),
-                    },
+                    backend_ref: BackendRef(
+                        service_meta(&t.addr).unwrap_or_else(|| UNKNOWN_META.clone()),
+                    ),
+                    target: concrete::Dispatch::Balance(t.addr.clone(), DEFAULT_EWMA),
                     authority: Some(t.addr.as_http_authority()),
                     parent: parent.clone(),
                     failure_accrual: Default::default(),
@@ -177,14 +171,11 @@ where
                 |Target { addr, weight }| {
                     let concrete = Concrete {
                         parent_ref: ParentRef(parent_meta.clone()),
+                        backend_ref: BackendRef(
+                            service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone()),
+                        ),
                         authority: Some(addr.as_http_authority()),
-                        target: concrete::Dispatch::Balance {
-                            addr: addr.clone(),
-                            ewma: DEFAULT_EWMA,
-                            meta: BackendRef(
-                                service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone()),
-                            ),
-                        },
+                        target: concrete::Dispatch::Balance(addr.clone(), DEFAULT_EWMA),
                         parent: parent.clone(),
                         failure_accrual: Default::default(),
                     };
