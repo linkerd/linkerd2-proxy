@@ -252,7 +252,7 @@ where
                         "service",
                         ns = %meta.namespace(),
                         name = %meta.name(),
-                        port = %meta.port().expect("port must be set"),
+                        port = %meta.port().map(u16::from).unwrap_or(0),
                     )
                 })
                 .push(svc::ArcNewService::layer())
