@@ -1,7 +1,6 @@
 use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
-    route::{self, backend::RouteBackendMeta},
-    RouteBackendMetrics,
+    route::{self},
 };
 use crate::{BackendRef, ParentRef};
 use linkerd_app_core::{
@@ -65,14 +64,10 @@ where
     >,
     route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply + svc::Param<classify::Request>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
-    route::backend::ExtractMetrics:
-        svc::ExtractParam<route::backend::RequestCount, route::MatchedBackend<T, M::Summary, F>>,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.
-    pub(super) fn layer<N, S>(
-        route_backend_metrics: RouteBackendMetrics,
-    ) -> impl svc::Layer<
+    pub(super) fn layer<N, S>() -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
             Self,
@@ -104,7 +99,7 @@ where
                 .push(NewBackendCache::layer())
                 // Lazily cache a service for each `RouteParams` returned from the
                 // `SelectRoute` impl.
-                .push_on_service(route::MatchedRoute::layer(route_backend_metrics.clone()))
+                .push_on_service(route::MatchedRoute::layer())
                 .push(svc::NewOneshotRoute::<Self, (), _>::layer_cached())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
@@ -130,7 +125,6 @@ where
 
         let mk_concrete = {
             let parent = parent.clone();
-            let parent_ref = parent_ref.clone();
             move |target: concrete::Dispatch| {
                 // XXX With policies we don't have a top-level authority name at
                 // the moment. So, instead, we use the concrete addr used for
@@ -172,39 +166,29 @@ where
 
         let mk_route_backend = {
             let mk_dispatch = mk_dispatch.clone();
-            move |route_meta: &Arc<policy::Meta>, rb: &policy::RouteBackend<F>| {
+            move |rb: &policy::RouteBackend<F>| {
                 let filters = rb.filters.clone();
                 let concrete = mk_dispatch(&rb.backend);
-                let meta = RouteBackendMeta {
-                    parent: parent_ref.clone(),
-                    route: route_meta.clone(),
-                    backend: BackendRef(rb.backend.meta.clone()),
-                };
-                route::Backend {
-                    meta,
-                    filters,
-                    concrete,
-                }
+                route::Backend { filters, concrete }
             }
         };
 
-        let mk_distribution =
-            |route_meta: &Arc<policy::Meta>, d: &policy::RouteDistribution<F>| match d {
-                policy::RouteDistribution::Empty => route::BackendDistribution::Empty,
-                policy::RouteDistribution::FirstAvailable(backends) => {
-                    route::BackendDistribution::first_available(
-                        backends.iter().map(|b| mk_route_backend(route_meta, b)),
-                    )
-                }
-                policy::RouteDistribution::RandomAvailable(backends) => {
-                    route::BackendDistribution::random_available(
-                        backends
-                            .iter()
-                            .map(|(rb, weight)| (mk_route_backend(route_meta, rb), *weight)),
-                    )
-                    .expect("distribution must be valid")
-                }
-            };
+        let mk_distribution = |d: &policy::RouteDistribution<F>| match d {
+            policy::RouteDistribution::Empty => route::BackendDistribution::Empty,
+            policy::RouteDistribution::FirstAvailable(backends) => {
+                route::BackendDistribution::first_available(
+                    backends.iter().map(|b| mk_route_backend(b)),
+                )
+            }
+            policy::RouteDistribution::RandomAvailable(backends) => {
+                route::BackendDistribution::random_available(
+                    backends
+                        .iter()
+                        .map(|(rb, weight)| (mk_route_backend(rb), *weight)),
+                )
+                .expect("distribution must be valid")
+            }
+        };
 
         let mk_policy = |policy::RoutePolicy::<F, E> {
                              meta,
@@ -212,7 +196,7 @@ where
                              distribution,
                              failure_policy,
                          }| {
-            let distribution = mk_distribution(&meta, &distribution);
+            let distribution = mk_distribution(&distribution);
             route::Route {
                 addr: addr.clone(),
                 parent: parent.clone(),

@@ -161,8 +161,7 @@ where
         S::Future: Send,
     {
         svc::layer::mk(move |concrete: N| {
-            let policy = svc::stack(concrete.clone())
-                .push(policy::Policy::layer(metrics.http_route_backends.clone()));
+            let policy = svc::stack(concrete.clone()).push(policy::Policy::layer());
             let profile =
                 svc::stack(concrete.clone()).push(profile::Params::layer(metrics.proxy.clone()));
             svc::stack(concrete)
