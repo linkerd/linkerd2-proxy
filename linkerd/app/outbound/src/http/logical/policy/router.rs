@@ -127,7 +127,6 @@ where
             backends,
             failure_accrual,
         } = rts;
-        let ParentRef(_, parent_port) = parent_ref;
 
         let mk_concrete = {
             let parent = parent.clone();
@@ -154,17 +153,13 @@ where
             policy::BackendDispatcher::BalanceP2c(
                 policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
                 policy::EndpointDiscovery::DestinationGet { ref path },
-            ) => {
-                let addr = path
+            ) => mk_concrete(concrete::Dispatch::Balance {
+                addr: path
                     .parse::<NameAddr>()
-                    .expect("destination must be a nameaddr");
-                let port = addr.port().try_into().expect("port must not be 0");
-                mk_concrete(concrete::Dispatch::Balance {
-                    addr,
-                    meta: BackendRef(bke.meta.clone(), port),
-                    ewma: http::balance::EwmaConfig { decay, default_rtt },
-                })
-            }
+                    .expect("destination must be a nameaddr"),
+                meta: BackendRef(bke.meta.clone()),
+                ewma: http::balance::EwmaConfig { decay, default_rtt },
+            }),
             policy::BackendDispatcher::Forward(addr, ref metadata) => mk_concrete(
                 concrete::Dispatch::Forward(Remote(ServerAddr(addr)), metadata.clone()),
             ),
@@ -175,15 +170,6 @@ where
             }
         };
 
-        let backend_port = move |dsp: &concrete::Dispatch| match dsp {
-            concrete::Dispatch::Balance {
-                meta: BackendRef(_, port),
-                ..
-            } => *port,
-            concrete::Dispatch::Forward(addr, _) => addr.port().try_into().unwrap_or(parent_port),
-            concrete::Dispatch::Fail { .. } => parent_port,
-        };
-
         let mk_route_backend = {
             let mk_dispatch = mk_dispatch.clone();
             move |route_meta: &Arc<policy::Meta>, rb: &policy::RouteBackend<F>| {
@@ -192,7 +178,7 @@ where
                 let meta = RouteBackendMeta {
                     parent: parent_ref.clone(),
                     route: route_meta.clone(),
-                    backend: BackendRef(rb.backend.meta.clone(), backend_port(&concrete.target)),
+                    backend: BackendRef(rb.backend.meta.clone()),
                 };
                 route::Backend {
                     meta,

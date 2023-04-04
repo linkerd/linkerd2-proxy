@@ -103,15 +103,15 @@ pub type ConnectMeta = tls::ConnectMeta<Local<ClientAddr>>;
 
 /// A reference to a frontend/apex resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ParentRef(pub Arc<policy::Meta>, NonZeroU16);
+pub struct ParentRef(pub Arc<policy::Meta>);
 
 /// A reference to a backend resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BackendRef(pub Arc<policy::Meta>, NonZeroU16);
+pub struct BackendRef(pub Arc<policy::Meta>);
 
 /// A reference to a backend resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct EndpointRef(pub Arc<policy::Meta>, NonZeroU16);
+pub struct EndpointRef(pub Arc<policy::Meta>);
 
 // === impl Outbound ===
 
@@ -258,10 +258,40 @@ pub fn trace_labels() -> HashMap<String, String> {
     l
 }
 
+// === impl ParentRef ===
+
+impl std::ops::Deref for ParentRef {
+    type Target = policy::Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl ParentRef {
     fn endpoint(md: &Metadata, port: NonZeroU16) -> Self {
-        let EndpointRef(meta, port) = EndpointRef::new(md, port);
-        Self(meta, port)
+        let EndpointRef(meta) = EndpointRef::new(md, port);
+        Self(meta)
+    }
+}
+
+// === impl BackendRef ===
+
+impl std::ops::Deref for BackendRef {
+    type Target = policy::Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+// === impl EndpointRef ===
+
+impl std::ops::Deref for EndpointRef {
+    type Target = policy::Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -269,20 +299,20 @@ impl EndpointRef {
     fn new(md: &Metadata, port: NonZeroU16) -> Self {
         let namespace = match md.labels().get("dst_namespace") {
             Some(ns) => ns.clone(),
-            None => return Self(UNKNOWN_META.clone(), port),
+            None => return Self(UNKNOWN_META.clone()),
         };
         let name = match md.labels().get("dst_pod") {
             Some(pod) => pod.clone(),
-            None => return Self(UNKNOWN_META.clone(), port),
+            None => return Self(UNKNOWN_META.clone()),
         };
-        let meta = Arc::new(policy::Meta::Resource {
+        Self(Arc::new(policy::Meta::Resource {
             group: "core".to_string(),
             kind: "Pod".to_string(),
             namespace,
             name,
             section: None,
-        });
-        Self(meta, port)
+            port: Some(port),
+        }))
     }
 }
 

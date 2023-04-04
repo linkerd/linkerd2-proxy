@@ -207,10 +207,7 @@ impl HttpSidecar {
         version: http::Version,
         policy: &policy::ClientPolicy,
     ) -> Option<http::Routes> {
-        let parent_ref = ParentRef(
-            policy.parent.clone(),
-            orig_dst.port().try_into().expect("port must not be 0"),
-        );
+        let parent_ref = ParentRef(policy.parent.clone());
 
         // If we're doing HTTP policy routing, we've previously had a
         // protocol hint that made us think that was a good idea. If the

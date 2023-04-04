@@ -257,8 +257,12 @@ where
                 .push_on_service(http::BoxResponse::layer())
                 .push_on_service(metrics.proxy.stack.layer(stack_labels("http", "balance")))
                 .instrument(|t: &Self| {
-                    let BackendRef(ref meta, port) = t.meta;
-                    info_span!("service", ns = %meta.namespace(), name = %meta.name(), %port)
+                    info_span!(
+                        "service",
+                        ns = %t.meta.namespace(),
+                        name = %t.meta.name(),
+                        port = %t.meta.port().expect("port must be set"),
+                    )
                 })
                 .push(svc::ArcNewService::layer())
                 .into_inner()

@@ -56,10 +56,7 @@ async fn header_based_route() {
         let special = mk_backend("special", special_addr);
         router::HttpParams {
             addr: Addr::Socket(([127, 0, 0, 1], 8080).into()),
-            meta: ParentRef(
-                policy::Meta::new_default("parent"),
-                8080.try_into().unwrap(),
-            ),
+            meta: ParentRef(policy::Meta::new_default("parent")),
             routes: Arc::new([policy::http::Route {
                 hosts: Default::default(),
                 rules: vec![
@@ -160,10 +157,7 @@ async fn http_filter_request_headers() {
     let routes = Params::Http({
         router::HttpParams {
             addr: Addr::Socket(([127, 0, 0, 1], 8080).into()),
-            meta: ParentRef(
-                policy::Meta::new_default("splinter"),
-                8080.try_into().unwrap(),
-            ),
+            meta: ParentRef(policy::Meta::new_default("splinter")),
             routes: Arc::new([policy::http::Route {
                 hosts: Default::default(),
                 rules: vec![policy::http::Rule {

@@ -134,20 +134,20 @@ where
                 namespace: namespace.to_string(),
                 name: name.to_string(),
                 section: None,
+                port: Some(addr.port().try_into().ok()?),
             }))
         }
 
         let parent_meta = service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone());
-        let parent_port = addr.port().try_into().expect("port must not be 0");
 
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if targets.is_empty() {
             let concrete = Concrete {
-                parent_ref: ParentRef(parent_meta.clone(), parent_port),
+                parent_ref: ParentRef(parent_meta.clone()),
                 target: concrete::Dispatch::Balance {
                     addr: addr.clone(),
                     ewma: DEFAULT_EWMA,
-                    meta: BackendRef(parent_meta, parent_port),
+                    meta: BackendRef(parent_meta),
                 },
                 authority: Some(addr.as_http_authority()),
                 parent: parent.clone(),
@@ -160,13 +160,12 @@ where
             let backends = targets
                 .iter()
                 .map(|t| Concrete {
-                    parent_ref: ParentRef(parent_meta.clone(), parent_port),
+                    parent_ref: ParentRef(parent_meta.clone()),
                     target: concrete::Dispatch::Balance {
                         addr: t.addr.clone(),
                         ewma: DEFAULT_EWMA,
                         meta: BackendRef(
                             service_meta(&t.addr).unwrap_or_else(|| UNKNOWN_META.clone()),
-                            t.addr.port().try_into().expect("port must not be 0"),
                         ),
                     },
                     authority: Some(t.addr.as_http_authority()),
@@ -177,14 +176,13 @@ where
             let distribution = Distribution::random_available(targets.iter().cloned().map(
                 |Target { addr, weight }| {
                     let concrete = Concrete {
-                        parent_ref: ParentRef(parent_meta.clone(), parent_port),
+                        parent_ref: ParentRef(parent_meta.clone()),
                         authority: Some(addr.as_http_authority()),
                         target: concrete::Dispatch::Balance {
                             addr: addr.clone(),
                             ewma: DEFAULT_EWMA,
                             meta: BackendRef(
                                 service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone()),
-                                addr.port().try_into().expect("port must not be 0"),
                             ),
                         },
                         parent: parent.clone(),

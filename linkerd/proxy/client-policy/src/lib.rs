@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 use once_cell::sync::Lazy;
-use std::{borrow::Cow, hash::Hash, net::SocketAddr, sync::Arc, time};
+use std::{borrow::Cow, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::Arc, time};
 
 pub mod grpc;
 pub mod http;
@@ -38,7 +38,7 @@ pub enum Protocol {
     Tls(opaq::Opaque),
 }
 
-#[derive(Debug, Eq)]
+#[derive(Clone, Debug, Eq)]
 pub enum Meta {
     Default {
         name: Cow<'static, str>,
@@ -49,6 +49,7 @@ pub enum Meta {
         name: String,
         namespace: String,
         section: Option<String>,
+        port: Option<NonZeroU16>,
     },
 }
 
@@ -222,6 +223,13 @@ impl Meta {
         match self {
             Self::Default { .. } => "",
             Self::Resource { section, .. } => section.as_deref().unwrap_or(""),
+        }
+    }
+
+    pub fn port(&self) -> Option<NonZeroU16> {
+        match self {
+            Self::Default { .. } => None,
+            Self::Resource { port, .. } => *port,
         }
     }
 }
@@ -452,6 +460,7 @@ pub mod proto {
 
     impl TryFrom<meta::Metadata> for Meta {
         type Error = InvalidMeta;
+
         fn try_from(proto: meta::Metadata) -> Result<Self, Self::Error> {
             use meta::metadata;
 
@@ -466,6 +475,7 @@ pub mod proto {
                     name,
                     namespace,
                     section,
+                    port,
                 }) => {
                     macro_rules! ensure_nonempty{
                         ($($name:ident),+) => {
@@ -484,12 +494,17 @@ pub mod proto {
                         Some(section)
                     };
 
+                    let port = u16::try_from(port)
+                        .ok()
+                        .and_then(|p| NonZeroU16::try_from(p).ok());
+
                     Ok(Meta::Resource {
                         group,
                         kind,
                         name,
                         namespace,
                         section,
+                        port,
                     })
                 }
             }

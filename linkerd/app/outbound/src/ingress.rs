@@ -411,10 +411,7 @@ fn policy_routes(
     version: http::Version,
     policy: &policy::ClientPolicy,
 ) -> Option<http::Routes> {
-    let meta = ParentRef(
-        policy.parent.clone(),
-        addr.port().try_into().expect("port must not be 0"),
-    );
+    let meta = ParentRef(policy.parent.clone());
     match policy.protocol {
         policy::Protocol::Detect {
             ref http1,

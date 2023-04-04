@@ -502,6 +502,7 @@ fn httproute_meta(name: impl ToString) -> api::meta::Metadata {
             name: name.to_string(),
             namespace: "test".to_string(),
             section: "".to_string(),
+            port: 0,
         })),
     }
 }
