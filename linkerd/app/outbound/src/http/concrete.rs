@@ -120,15 +120,6 @@ impl<N> Outbound<N> {
                 .instrument(|e: &Endpoint<T>| info_span!("forward", addr = %e.addr));
 
             let endpoint = inner
-                .push_on_service(
-                    rt.metrics
-                        .proxy
-                        .stack
-                        .layer(stack_labels("http", "endpoint")),
-                )
-                .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
-
-            let balance = endpoint
                 .push_map_target({
                     let inbound_ips = inbound_ips.clone();
                     move |((addr, metadata), target): ((SocketAddr, Metadata), Balance<T>)| {
@@ -164,6 +155,17 @@ impl<N> Outbound<N> {
                         }
                     }),
                 )
+                .push_on_service(svc::OnServiceLayer::new(
+                    rt.metrics
+                        .proxy
+                        .stack
+                        .layer(stack_labels("http", "endpoint")),
+                ))
+                .push_on_service(svc::NewInstrumentLayer::new(
+                    |(addr, _): &(SocketAddr, _)| info_span!("endpoint", %addr),
+                ));
+
+            let balance = endpoint
                 .push(http::NewBalancePeakEwma::layer(resolve))
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(http::BoxResponse::layer())
