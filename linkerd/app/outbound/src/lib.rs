@@ -103,15 +103,19 @@ pub type ConnectMeta = tls::ConnectMeta<Local<ClientAddr>>;
 
 /// A reference to a frontend/apex resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ParentRef(pub Arc<policy::Meta>);
+pub struct ParentRef(Arc<policy::Meta>);
+
+/// A reference to a route resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct RouteRef(Arc<policy::Meta>);
 
 /// A reference to a backend resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BackendRef(pub Arc<policy::Meta>);
+pub struct BackendRef(Arc<policy::Meta>);
 
 /// A reference to a backend resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct EndpointRef(pub Arc<policy::Meta>);
+pub struct EndpointRef(Arc<policy::Meta>);
 
 // === impl Outbound ===
 
@@ -271,6 +275,16 @@ impl std::ops::Deref for ParentRef {
 impl From<EndpointRef> for ParentRef {
     fn from(EndpointRef(meta): EndpointRef) -> Self {
         Self(meta)
+    }
+}
+
+// === impl RouteRef ===
+
+impl std::ops::Deref for RouteRef {
+    type Target = policy::Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
