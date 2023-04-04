@@ -8,8 +8,6 @@
 //! to be updated frequently or in a performance-critical area. We should probably look to use
 //! `DashMap` as we migrate other metrics registries.
 
-use crate::http::policy::RouteBackendMetrics;
-
 pub(crate) mod error;
 
 pub use linkerd_app_core::metrics::*;
@@ -20,8 +18,6 @@ pub struct OutboundMetrics {
     pub(crate) http_errors: error::Http,
     pub(crate) tcp_errors: error::Tcp,
 
-    pub(crate) http_route_backends: RouteBackendMetrics,
-
     /// Holds metrics that are common to both inbound and outbound proxies. These metrics are
     /// reported separately
     pub(crate) proxy: Proxy,
@@ -30,17 +26,15 @@ pub struct OutboundMetrics {
 impl OutboundMetrics {
     pub(crate) fn new(proxy: Proxy) -> Self {
         Self {
-            proxy,
             http_errors: error::Http::default(),
             tcp_errors: error::Tcp::default(),
-            http_route_backends: RouteBackendMetrics::default(),
+            proxy,
         }
     }
 }
 
 impl FmtMetrics for OutboundMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.http_route_backends.fmt_metrics(f)?;
         self.http_errors.fmt_metrics(f)?;
         self.tcp_errors.fmt_metrics(f)?;
 
