@@ -411,6 +411,10 @@ fn policy_routes(
     version: http::Version,
     policy: &policy::ClientPolicy,
 ) -> Option<http::Routes> {
+    let meta = ParentRef(
+        policy.parent.clone(),
+        addr.port().try_into().expect("port must not be 0"),
+    );
     match policy.protocol {
         policy::Protocol::Detect {
             ref http1,
@@ -424,7 +428,7 @@ fn policy_routes(
             Some(http::Routes::Policy(http::policy::Params::Http(
                 http::policy::HttpParams {
                     addr,
-                    meta: ParentRef(policy.parent.clone()),
+                    meta,
                     backends: policy.backends.clone(),
                     routes,
                     failure_accrual,
@@ -440,7 +444,7 @@ fn policy_routes(
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr,
-                meta: ParentRef(policy.parent.clone()),
+                meta,
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
@@ -452,7 +456,7 @@ fn policy_routes(
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr,
-                meta: ParentRef(policy.parent.clone()),
+                meta,
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
@@ -464,7 +468,7 @@ fn policy_routes(
         }) => Some(http::Routes::Policy(http::policy::Params::Grpc(
             http::policy::GrpcParams {
                 addr,
-                meta: ParentRef(policy.parent.clone()),
+                meta,
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,

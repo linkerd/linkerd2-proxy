@@ -33,7 +33,10 @@ async fn routes() {
     let (_route_tx, routes) =
         watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
             addr: dest.into(),
-            meta: ParentRef(client_policy::Meta::new_default("parent")),
+            meta: ParentRef(
+                client_policy::Meta::new_default("parent"),
+                PORT.try_into().unwrap(),
+            ),
             backends: Arc::new([backend.clone()]),
             routes: Arc::new([default_route(backend)]),
             failure_accrual: client_policy::FailureAccrual::None,
@@ -91,7 +94,10 @@ async fn consecutive_failures_accrue() {
     let (_route_tx, routes) =
         watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
             addr: dest.into(),
-            meta: ParentRef(client_policy::Meta::new_default("parent")),
+            meta: ParentRef(
+                client_policy::Meta::new_default("parent"),
+                PORT.try_into().unwrap(),
+            ),
             backends: Arc::new([backend.clone()]),
             routes: Arc::new([default_route(backend)]),
             failure_accrual: client_policy::FailureAccrual::ConsecutiveFailures {

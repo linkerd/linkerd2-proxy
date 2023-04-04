@@ -170,7 +170,10 @@ where
                     |prms: Self| {
                         Ok::<_, Infallible>(match prms {
                             Self::Endpoint(remote, meta, parent) => svc::Either::A(Concrete {
-                                parent_ref: ParentRef::endpoint(&meta),
+                                parent_ref: ParentRef::endpoint(
+                                    &meta,
+                                    remote.port().try_into().expect("port must not be 0"),
+                                ),
                                 target: concrete::Dispatch::Forward(remote, meta),
                                 authority: None,
                                 parent,

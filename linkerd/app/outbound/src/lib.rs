@@ -28,6 +28,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     net::IpAddr,
+    num::NonZeroU16,
     sync::Arc,
     time::Duration,
 };
@@ -102,15 +103,15 @@ pub type ConnectMeta = tls::ConnectMeta<Local<ClientAddr>>;
 
 /// A reference to a frontend/apex resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ParentRef(pub Arc<policy::Meta>);
+pub struct ParentRef(pub Arc<policy::Meta>, NonZeroU16);
 
 /// A reference to a backend resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BackendRef(pub Arc<policy::Meta>);
+pub struct BackendRef(pub Arc<policy::Meta>, NonZeroU16);
 
 /// A reference to a backend resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct EndpointRef(pub Arc<policy::Meta>);
+pub struct EndpointRef(pub Arc<policy::Meta>, NonZeroU16);
 
 // === impl Outbound ===
 
@@ -258,29 +259,30 @@ pub fn trace_labels() -> HashMap<String, String> {
 }
 
 impl ParentRef {
-    fn endpoint(md: &Metadata) -> Self {
-        let EndpointRef(meta) = EndpointRef::new(md);
-        Self(meta)
+    fn endpoint(md: &Metadata, port: NonZeroU16) -> Self {
+        let EndpointRef(meta, port) = EndpointRef::new(md, port);
+        Self(meta, port)
     }
 }
 
 impl EndpointRef {
-    fn new(md: &Metadata) -> Self {
+    fn new(md: &Metadata, port: NonZeroU16) -> Self {
         let namespace = match md.labels().get("dst_namespace") {
             Some(ns) => ns.clone(),
-            None => return Self(UNKNOWN_META.clone()),
+            None => return Self(UNKNOWN_META.clone(), port),
         };
         let name = match md.labels().get("dst_pod") {
             Some(pod) => pod.clone(),
-            None => return Self(UNKNOWN_META.clone()),
+            None => return Self(UNKNOWN_META.clone(), port),
         };
-        Self(Arc::new(policy::Meta::Resource {
+        let meta = Arc::new(policy::Meta::Resource {
             group: "core".to_string(),
             kind: "Pod".to_string(),
             namespace,
             name,
             section: None,
-        }))
+        });
+        Self(meta, port)
     }
 }
 

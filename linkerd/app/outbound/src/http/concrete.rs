@@ -257,8 +257,8 @@ where
                 .push_on_service(http::BoxResponse::layer())
                 .push_on_service(metrics.proxy.stack.layer(stack_labels("http", "balance")))
                 .instrument(|t: &Self| {
-                    let BackendRef(ref meta) = t.meta;
-                    info_span!("service", ns = %meta.namespace(), name = %meta.name())
+                    let BackendRef(ref meta, port) = t.meta;
+                    info_span!("service", ns = %meta.namespace(), name = %meta.name(), %port)
                 })
                 .push(svc::ArcNewService::layer())
                 .into_inner()
