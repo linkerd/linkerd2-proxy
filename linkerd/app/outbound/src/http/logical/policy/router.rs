@@ -1,8 +1,8 @@
 use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
-    route::{self},
+    route, RouteBackendMetrics,
 };
-use crate::{BackendRef, EndpointRef, ParentRef};
+use crate::{BackendRef, EndpointRef, ParentRef, RouteRef};
 use linkerd_app_core::{
     classify, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result,
 };
@@ -64,10 +64,14 @@ where
     >,
     route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply + svc::Param<classify::Request>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
+    route::backend::ExtractMetrics:
+        svc::ExtractParam<route::backend::RequestCount, route::MatchedBackend<T, M::Summary, F>>,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.
-    pub(super) fn layer<N, S>() -> impl svc::Layer<
+    pub(super) fn layer<N, S>(
+        route_backend_metrics: RouteBackendMetrics,
+    ) -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
             Self,
@@ -99,7 +103,7 @@ where
                 .push(NewBackendCache::layer())
                 // Lazily cache a service for each `RouteParams` returned from the
                 // `SelectRoute` impl.
-                .push_on_service(route::MatchedRoute::layer())
+                .push_on_service(route::MatchedRoute::layer(route_backend_metrics.clone()))
                 .push(svc::NewOneshotRoute::<Self, (), _>::layer_cached())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
@@ -168,27 +172,28 @@ where
             ),
         };
 
-        let mk_route_backend = {
-            let mk_dispatch = mk_dispatch.clone();
-            move |rb: &policy::RouteBackend<F>| {
-                let filters = rb.filters.clone();
-                let concrete = mk_dispatch(&rb.backend);
-                route::Backend { filters, concrete }
+        let mk_route_backend = |route_ref: &RouteRef, rb: &policy::RouteBackend<F>| {
+            let filters = rb.filters.clone();
+            let concrete = mk_dispatch(&rb.backend);
+            route::Backend {
+                route_ref: route_ref.clone(),
+                filters,
+                concrete,
             }
         };
 
-        let mk_distribution = |d: &policy::RouteDistribution<F>| match d {
+        let mk_distribution = |rr: &RouteRef, d: &policy::RouteDistribution<F>| match d {
             policy::RouteDistribution::Empty => route::BackendDistribution::Empty,
             policy::RouteDistribution::FirstAvailable(backends) => {
                 route::BackendDistribution::first_available(
-                    backends.iter().map(|b| mk_route_backend(b)),
+                    backends.iter().map(|b| mk_route_backend(rr, b)),
                 )
             }
             policy::RouteDistribution::RandomAvailable(backends) => {
                 route::BackendDistribution::random_available(
                     backends
                         .iter()
-                        .map(|(rb, weight)| (mk_route_backend(rb), *weight)),
+                        .map(|(rb, weight)| (mk_route_backend(rr, rb), *weight)),
                 )
                 .expect("distribution must be valid")
             }
@@ -200,11 +205,12 @@ where
                              distribution,
                              failure_policy,
                          }| {
-            let distribution = mk_distribution(&distribution);
+            let route_ref = RouteRef(meta);
+            let distribution = mk_distribution(&route_ref, &distribution);
             route::Route {
                 addr: addr.clone(),
                 parent: parent.clone(),
-                meta,
+                route_ref,
                 filters,
                 failure_policy,
                 distribution,
@@ -248,7 +254,7 @@ where
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         tracing::trace!(uri = ?req.uri(), headers = ?req.headers(), "Selecting HTTP route");
         let (r#match, params) = policy::http::find(&*self.routes, req).ok_or(NoRoute)?;
-        tracing::debug!(meta = ?params.meta, "Selected route");
+        tracing::debug!(meta = ?params.route_ref, "Selected route");
         tracing::trace!(?r#match);
         Ok(route::Matched {
             r#match,
@@ -267,7 +273,7 @@ where
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         tracing::trace!(uri = ?req.uri(), headers = ?req.headers(), "Selecting gRPC route");
         let (r#match, params) = policy::grpc::find(&*self.routes, req).ok_or(NoRoute)?;
-        tracing::debug!(meta = ?params.meta, "Selected route");
+        tracing::debug!(meta = ?params.route_ref, "Selected route");
         tracing::trace!(?r#match);
         Ok(route::Matched {
             r#match,
