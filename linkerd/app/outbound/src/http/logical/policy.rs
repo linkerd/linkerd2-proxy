@@ -73,7 +73,7 @@ where
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
     {
-        svc::layer::mk(|inner: N| {
+        svc::layer::mk(move |inner: N| {
             let http = svc::stack(inner.clone()).push(router::Http::layer());
             let grpc = svc::stack(inner).push(router::Grpc::layer());
 

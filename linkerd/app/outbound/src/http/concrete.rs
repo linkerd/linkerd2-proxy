@@ -2,7 +2,7 @@
 //! and distributes HTTP requests among them.
 
 use super::{balance, breaker, client, handle_proxy_error_headers};
-use crate::{http, stack_labels, Outbound};
+use crate::{http, stack_labels, BackendRef, Outbound, ParentRef};
 use linkerd_app_core::{
     classify, metrics, profiles,
     proxy::{
@@ -34,9 +34,9 @@ pub struct DispatcherFailed(Arc<str>);
 
 /// Wraps errors encountered in this module.
 #[derive(Debug, thiserror::Error)]
-#[error("concrete service {addr}: {source}")]
-pub struct ConcreteError {
-    addr: NameAddr,
+#[error("{} {}.{}: {source}", backend.0.kind(), backend.0.name(), backend.0.namespace())]
+pub struct BalanceError {
+    backend: BackendRef,
     #[source]
     source: Error,
 }
@@ -87,9 +87,9 @@ impl<N> Outbound<N> {
     >
     where
         // Concrete target type.
+        T: svc::Param<ParentRef>,
+        T: svc::Param<BackendRef>,
         T: svc::Param<Dispatch>,
-        // TODO(ver) T: svc::Param<svc::queue::Capacity> + svc::Param<svc::queue::Timeout>,
-        // Failure accrual policy.
         T: svc::Param<FailureAccrual>,
         T: Clone + Debug + Send + Sync + 'static,
         // Endpoint resolution.
@@ -102,10 +102,6 @@ impl<N> Outbound<N> {
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
     {
-        let resolve =
-            svc::MapTargetLayer::new(|t: Balance<T>| -> ConcreteAddr { ConcreteAddr(t.addr) })
-                .layer(resolve.into_service());
-
         self.map_stack(|config, rt, inner| {
             let inbound_ips = config.inbound_ips.clone();
 
@@ -119,71 +115,15 @@ impl<N> Outbound<N> {
                 )
                 .instrument(|e: &Endpoint<T>| info_span!("forward", addr = %e.addr));
 
-            let endpoint = inner
-                .push_map_target({
-                    let inbound_ips = inbound_ips.clone();
-                    move |((addr, metadata), target): ((SocketAddr, Metadata), Balance<T>)| {
-                        tracing::trace!(%addr, ?metadata, ?target, "Resolved endpoint");
-                        let is_local = inbound_ips.contains(&addr.ip());
-                        Endpoint {
-                            addr: Remote(ServerAddr(addr)),
-                            metadata,
-                            is_local,
-                            parent: target.parent,
-                            // We don't close server-side connections when we
-                            // get `l5d-proxy-connection: close` response headers
-                            // going through the balancer.
-                            close_server_connection_on_remote_proxy_error: false,
-                        }
-                    }
-                })
-                .push_on_service(svc::MapErr::layer_boxed())
-                .lift_new_with_target()
-                .push(
-                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
-                        // This sets the capacity of the channel used to send
-                        // response classifications to the failure accrual task.
-                        // Since the number of messages in this channel should
-                        // be roughly the same as the number of requests, size
-                        // it to the request queue capacity.
-                        // TODO(eliza): when queue capacity is configured
-                        // per-target, extract this from the target instead.
-                        let channel_capacity = config.http_request_queue.capacity;
-                        move |target: &Balance<T>| breaker::Params {
-                            accrual: target.parent.param(),
-                            channel_capacity,
-                        }
-                    }),
-                )
-                .push_on_service(svc::OnServiceLayer::new(
-                    rt.metrics
-                        .proxy
-                        .stack
-                        .layer(stack_labels("http", "endpoint")),
-                ))
-                .push_on_service(svc::NewInstrumentLayer::new(
-                    |(addr, _): &(SocketAddr, _)| info_span!("endpoint", %addr),
-                ));
-
-            let balance = endpoint
-                .push(http::NewBalancePeakEwma::layer(resolve))
-                .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
-                .push_on_service(http::BoxResponse::layer())
-                .push_on_service(
-                    rt.metrics
-                        .proxy
-                        .stack
-                        .layer(stack_labels("http", "balance")),
-                )
-                .instrument(|t: &Balance<T>| info_span!("balance", addr = %t.addr));
-
             let fail = svc::ArcNewService::new(|message: Arc<str>| {
                 svc::mk(move |_| {
                     let error = DispatcherFailed(message.clone());
                     futures::future::ready(Err(error))
                 })
             });
-            balance
+
+            inner
+                .push(Balance::layer(config, rt, resolve))
                 .push_switch(Ok::<_, Infallible>, forward.into_inner())
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
@@ -206,20 +146,11 @@ impl<N> Outbound<N> {
                     },
                     fail,
                 )
+                // TODO(ver) Configure this queue from the target (i.e. from
+                // discovery).
                 .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .push(svc::ArcNewService::layer())
         })
-    }
-}
-
-// === impl ConcreteError ===
-
-impl<T> From<(&Balance<T>, Error)> for ConcreteError {
-    fn from((target, source): (&Balance<T>, Error)) -> Self {
-        Self {
-            addr: target.addr.clone(),
-            source,
-        }
     }
 }
 
@@ -228,6 +159,117 @@ impl<T> From<(&Balance<T>, Error)> for ConcreteError {
 impl<T> svc::Param<http::balance::EwmaConfig> for Balance<T> {
     fn param(&self) -> http::balance::EwmaConfig {
         self.ewma
+    }
+}
+
+impl<T> Balance<T>
+where
+    // Parent target.
+    T: svc::Param<ParentRef>,
+    T: svc::Param<BackendRef>,
+    T: svc::Param<FailureAccrual>,
+    T: Clone + Debug + Send + Sync + 'static,
+{
+    pub fn layer<N, NSvc, R>(
+        config: &crate::Config,
+        rt: &crate::Runtime,
+        resolve: R,
+    ) -> impl svc::Layer<
+        N,
+        Service = svc::ArcNewService<
+            Self,
+            impl svc::Service<
+                http::Request<http::BoxBody>,
+                Response = http::Response<http::BoxBody>,
+                Error = BalanceError,
+                Future = impl Send,
+            >,
+        >,
+    > + Clone
+    where
+        // Endpoint resolution.
+        R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + 'static,
+        // Endpoint stack.
+        N: svc::NewService<Endpoint<T>, Service = NSvc> + Clone + Send + Sync + 'static,
+        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Send
+            + 'static,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send,
+    {
+        let classify_channel_capacity = config.http_request_queue.capacity;
+        let inbound_ips = config.inbound_ips.clone();
+        let metrics = rt.metrics.clone();
+
+        let resolve = svc::MapTargetLayer::new(|t: Self| -> ConcreteAddr { ConcreteAddr(t.addr) })
+            .layer(resolve.into_service());
+
+        svc::layer::mk(move |inner: N| {
+            let endpoint = svc::stack(inner)
+                .push_map_target({
+                    let inbound_ips = inbound_ips.clone();
+                    move |((addr, metadata), target): ((SocketAddr, Metadata), Self)| {
+                        tracing::trace!(%addr, ?metadata, ?target, "Resolved endpoint");
+                        let is_local = inbound_ips.contains(&addr.ip());
+                        Endpoint {
+                            addr: Remote(ServerAddr(addr)),
+                            metadata,
+                            is_local,
+                            parent: target.parent,
+                            // We don't close server-side connections when we
+                            // get `l5d-proxy-connection: close` response headers
+                            // going through the balancer.
+                            close_server_connection_on_remote_proxy_error: false,
+                        }
+                    }
+                })
+                .push_on_service(svc::MapErr::layer_boxed())
+                .lift_new_with_target()
+                .push(
+                    http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
+                        move |target: &Self| breaker::Params {
+                            accrual: target.parent.param(),
+                            // TODO configure channel capacities from target.
+                            channel_capacity: classify_channel_capacity,
+                        }
+                    }),
+                )
+                .push_on_service(svc::OnServiceLayer::new(
+                    metrics.proxy.stack.layer(stack_labels("http", "endpoint")),
+                ))
+                .push_on_service(svc::NewInstrumentLayer::new(
+                    |(addr, _): &(SocketAddr, _)| info_span!("endpoint", %addr),
+                ));
+
+            endpoint
+                .push(http::NewBalancePeakEwma::layer(resolve.clone()))
+                .push(svc::NewMapErr::layer_from_target::<BalanceError, _>())
+                .push_on_service(http::BoxResponse::layer())
+                .push_on_service(metrics.proxy.stack.layer(stack_labels("http", "balance")))
+                .instrument(|t: &Self| {
+                    let BackendRef(meta) = t.parent.param();
+                    info_span!(
+                        "service",
+                        ns = %meta.namespace(),
+                        name = %meta.name(),
+                        port = %meta.port().map(u16::from).unwrap_or(0),
+                    )
+                })
+                .push(svc::ArcNewService::layer())
+                .into_inner()
+        })
+    }
+}
+
+// === impl BalanceError ===
+
+impl<T> From<(&Balance<T>, Error)> for BalanceError
+where
+    T: svc::Param<BackendRef>,
+{
+    fn from((target, source): (&Balance<T>, Error)) -> Self {
+        let backend = target.parent.param();
+        Self { backend, source }
     }
 }
 

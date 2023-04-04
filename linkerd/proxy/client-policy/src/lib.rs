@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 use once_cell::sync::Lazy;
-use std::{borrow::Cow, hash::Hash, net::SocketAddr, sync::Arc, time};
+use std::{borrow::Cow, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::Arc, time};
 
 pub mod grpc;
 pub mod http;
@@ -13,6 +13,7 @@ pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
+    pub parent: Arc<Meta>,
     pub protocol: Protocol,
     pub backends: Arc<[Backend]>,
 }
@@ -37,7 +38,7 @@ pub enum Protocol {
     Tls(opaq::Opaque),
 }
 
-#[derive(Debug, Eq)]
+#[derive(Clone, Debug, Eq)]
 pub enum Meta {
     Default {
         name: Cow<'static, str>,
@@ -48,6 +49,7 @@ pub enum Meta {
         name: String,
         namespace: String,
         section: Option<String>,
+        port: Option<NonZeroU16>,
     },
 }
 
@@ -160,6 +162,7 @@ impl ClientPolicy {
         static BACKENDS: Lazy<Arc<[Backend]>> = Lazy::new(|| Arc::new([]));
 
         Self {
+            parent: Meta::new_default("invalid"),
             protocol: Protocol::Detect {
                 timeout,
                 http1: http::Http1 {
@@ -222,6 +225,13 @@ impl Meta {
             Self::Resource { section, .. } => section.as_deref().unwrap_or(""),
         }
     }
+
+    pub fn port(&self) -> Option<NonZeroU16> {
+        match self {
+            Self::Default { .. } => None,
+            Self::Resource { port, .. } => *port,
+        }
+    }
 }
 
 impl std::cmp::PartialEq for Meta {
@@ -280,6 +290,12 @@ pub mod proto {
 
         #[error("invalid protocol detection timeout: {0}")]
         Timeout(#[from] prost_types::DurationError),
+
+        #[error("{0}")]
+        Meta(#[from] InvalidMeta),
+
+        #[error("missing metadata")]
+        MissingMeta,
 
         #[error("missing top-level backend")]
         MissingBackend,
@@ -353,8 +369,14 @@ pub mod proto {
 
     impl TryFrom<outbound::OutboundPolicy> for ClientPolicy {
         type Error = InvalidPolicy;
+
         fn try_from(policy: outbound::OutboundPolicy) -> Result<Self, Self::Error> {
             use outbound::proxy_protocol;
+
+            let parent = policy
+                .metadata
+                .ok_or(InvalidPolicy::MissingMeta)?
+                .try_into()?;
 
             let protocol = policy
                 .protocol
@@ -429,6 +451,7 @@ pub mod proto {
             }
 
             Ok(ClientPolicy {
+                parent: Arc::new(parent),
                 protocol,
                 backends: backends.into_iter().collect(),
             })
@@ -437,6 +460,7 @@ pub mod proto {
 
     impl TryFrom<meta::Metadata> for Meta {
         type Error = InvalidMeta;
+
         fn try_from(proto: meta::Metadata) -> Result<Self, Self::Error> {
             use meta::metadata;
 
@@ -451,6 +475,7 @@ pub mod proto {
                     name,
                     namespace,
                     section,
+                    port,
                 }) => {
                     macro_rules! ensure_nonempty{
                         ($($name:ident),+) => {
@@ -469,12 +494,17 @@ pub mod proto {
                         Some(section)
                     };
 
+                    let port = u16::try_from(port)
+                        .ok()
+                        .and_then(|p| NonZeroU16::try_from(p).ok());
+
                     Ok(Meta::Resource {
                         group,
                         kind,
                         name,
                         namespace,
                         section,
+                        port,
                     })
                 }
             }

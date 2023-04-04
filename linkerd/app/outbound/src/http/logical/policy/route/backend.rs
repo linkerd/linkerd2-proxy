@@ -81,10 +81,10 @@ where
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
     {
-        svc::layer::mk(|inner| {
+        svc::layer::mk(move |inner| {
             svc::stack(inner)
                 .push_map_target(
-                    |MatchedBackend {
+                    |Self {
                          params: Backend { concrete, .. },
                          ..
                      }| concrete,

@@ -51,6 +51,9 @@ async fn empty_http1_route() {
         .outbound(
             srv.addr,
             outbound::OutboundPolicy {
+                metadata: Some(api::meta::Metadata {
+                    kind: Some(api::meta::metadata::Kind::Default("test".to_string())),
+                }),
                 protocol: Some(outbound::ProxyProtocol {
                     kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
@@ -137,6 +140,9 @@ async fn empty_http2_route() {
         .outbound(
             srv.addr,
             outbound::OutboundPolicy {
+                metadata: Some(api::meta::Metadata {
+                    kind: Some(api::meta::metadata::Kind::Default("test".to_string())),
+                }),
                 protocol: Some(outbound::ProxyProtocol {
                     kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
@@ -250,6 +256,9 @@ async fn header_based_routing() {
         .outbound(
             srv.addr,
             outbound::OutboundPolicy {
+                metadata: Some(api::meta::Metadata {
+                    kind: Some(api::meta::metadata::Kind::Default("test".to_string())),
+                }),
                 protocol: Some(outbound::ProxyProtocol {
                     kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
@@ -427,6 +436,9 @@ async fn path_based_routing() {
         .outbound(
             srv.addr,
             outbound::OutboundPolicy {
+                metadata: Some(api::meta::Metadata {
+                    kind: Some(api::meta::metadata::Kind::Default("test".to_string())),
+                }),
                 protocol: Some(outbound::ProxyProtocol {
                     kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
                         timeout: Some(Duration::from_secs(10).try_into().unwrap()),
@@ -490,6 +502,7 @@ fn httproute_meta(name: impl ToString) -> api::meta::Metadata {
             name: name.to_string(),
             namespace: "test".to_string(),
             section: "".to_string(),
+            port: 0,
         })),
     }
 }

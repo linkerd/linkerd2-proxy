@@ -28,6 +28,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     net::IpAddr,
+    num::NonZeroU16,
     sync::Arc,
     time::Duration,
 };
@@ -99,6 +100,22 @@ struct Runtime {
 }
 
 pub type ConnectMeta = tls::ConnectMeta<Local<ClientAddr>>;
+
+/// A reference to a frontend/apex resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ParentRef(Arc<policy::Meta>);
+
+/// A reference to a route resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct RouteRef(Arc<policy::Meta>);
+
+/// A reference to a backend resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BackendRef(Arc<policy::Meta>);
+
+/// A reference to a backend resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct EndpointRef(Arc<policy::Meta>);
 
 // === impl Outbound ===
 
@@ -244,3 +261,85 @@ pub fn trace_labels() -> HashMap<String, String> {
     l.insert("direction".to_string(), "outbound".to_string());
     l
 }
+
+// === impl ParentRef ===
+
+impl std::ops::Deref for ParentRef {
+    type Target = policy::Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<EndpointRef> for ParentRef {
+    fn from(EndpointRef(meta): EndpointRef) -> Self {
+        Self(meta)
+    }
+}
+
+// === impl RouteRef ===
+
+impl std::ops::Deref for RouteRef {
+    type Target = policy::Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+// === impl BackendRef ===
+
+impl std::ops::Deref for BackendRef {
+    type Target = policy::Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<ParentRef> for BackendRef {
+    fn from(ParentRef(meta): ParentRef) -> Self {
+        Self(meta)
+    }
+}
+
+impl From<EndpointRef> for BackendRef {
+    fn from(EndpointRef(meta): EndpointRef) -> Self {
+        Self(meta)
+    }
+}
+
+// === impl EndpointRef ===
+
+impl std::ops::Deref for EndpointRef {
+    type Target = policy::Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl EndpointRef {
+    fn new(md: &Metadata, port: NonZeroU16) -> Self {
+        let namespace = match md.labels().get("dst_namespace") {
+            Some(ns) => ns.clone(),
+            None => return Self(UNKNOWN_META.clone()),
+        };
+        let name = match md.labels().get("dst_pod") {
+            Some(pod) => pod.clone(),
+            None => return Self(UNKNOWN_META.clone()),
+        };
+        Self(Arc::new(policy::Meta::Resource {
+            group: "core".to_string(),
+            kind: "Pod".to_string(),
+            namespace,
+            name,
+            section: None,
+            port: Some(port),
+        }))
+    }
+}
+
+static UNKNOWN_META: once_cell::sync::Lazy<Arc<policy::Meta>> =
+    once_cell::sync::Lazy::new(|| policy::Meta::new_default("unknown"));

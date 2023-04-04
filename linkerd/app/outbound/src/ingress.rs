@@ -1,4 +1,4 @@
-use crate::{http, opaq, policy, Config, Discovery, Outbound};
+use crate::{http, opaq, policy, Config, Discovery, Outbound, ParentRef};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, io, profiles,
@@ -411,6 +411,7 @@ fn policy_routes(
     version: http::Version,
     policy: &policy::ClientPolicy,
 ) -> Option<http::Routes> {
+    let meta = ParentRef(policy.parent.clone());
     match policy.protocol {
         policy::Protocol::Detect {
             ref http1,
@@ -424,6 +425,7 @@ fn policy_routes(
             Some(http::Routes::Policy(http::policy::Params::Http(
                 http::policy::HttpParams {
                     addr,
+                    meta,
                     backends: policy.backends.clone(),
                     routes,
                     failure_accrual,
@@ -439,6 +441,7 @@ fn policy_routes(
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr,
+                meta,
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
@@ -450,6 +453,7 @@ fn policy_routes(
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr,
+                meta,
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
@@ -461,6 +465,7 @@ fn policy_routes(
         }) => Some(http::Routes::Policy(http::policy::Params::Grpc(
             http::policy::GrpcParams {
                 addr,
+                meta,
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
