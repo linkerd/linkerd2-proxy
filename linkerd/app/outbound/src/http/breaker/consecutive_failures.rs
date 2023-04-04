@@ -33,7 +33,7 @@ impl ConsecutiveFailures {
                 return;
             }
 
-            tracing::info!("Consecutive failure-accrual breaker tripped");
+            tracing::info!("Consecutive failure-accrual breaker closed");
             if self.closed().await.is_err() {
                 return;
             }
