@@ -175,7 +175,7 @@ where
                             service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone()),
                         ),
                         authority: Some(addr.as_http_authority()),
-                        target: concrete::Dispatch::Balance(addr.clone(), DEFAULT_EWMA),
+                        target: concrete::Dispatch::Balance(addr, DEFAULT_EWMA),
                         parent: parent.clone(),
                         failure_accrual: Default::default(),
                     };

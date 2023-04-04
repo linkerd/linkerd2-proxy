@@ -26,9 +26,9 @@ pub struct OutboundMetrics {
 impl OutboundMetrics {
     pub(crate) fn new(proxy: Proxy) -> Self {
         Self {
-            proxy,
             http_errors: error::Http::default(),
             tcp_errors: error::Tcp::default(),
+            proxy,
         }
     }
 }
