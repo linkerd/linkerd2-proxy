@@ -16,7 +16,6 @@ test-subscriber = []
 test-util = ["linkerd-app-test", "linkerd-meshtls-rustls/test-util"]
 
 [dependencies]
-ahash = "0.8"
 bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
