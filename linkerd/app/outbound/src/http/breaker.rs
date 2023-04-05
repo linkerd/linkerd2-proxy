@@ -1,8 +1,10 @@
-mod consecutive_failures;
-use consecutive_failures::ConsecutiveFailures;
 use linkerd_app_core::{classify, proxy::http::classify::gate, svc};
 use linkerd_proxy_client_policy::FailureAccrual;
 use tracing::{trace_span, Instrument};
+
+mod consecutive_failures;
+
+use self::consecutive_failures::ConsecutiveFailures;
 
 /// Params configuring a circuit breaker stack.
 #[derive(Copy, Clone, Debug)]

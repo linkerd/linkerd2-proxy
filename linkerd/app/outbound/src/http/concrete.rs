@@ -4,7 +4,9 @@
 use super::{balance, breaker, client, handle_proxy_error_headers};
 use crate::{http, stack_labels, BackendRef, Outbound, ParentRef};
 use linkerd_app_core::{
-    classify, metrics, profiles,
+    classify,
+    metrics::{prefix_labels, EndpointLabels, OutboundEndpointLabels},
+    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
@@ -18,6 +20,12 @@ use linkerd_app_core::{
 use linkerd_proxy_client_policy::FailureAccrual;
 use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tracing::info_span;
+
+mod metrics;
+#[cfg(test)]
+mod tests;
+
+pub use self::metrics::BalancerMetrics;
 
 /// Parameter configuring dispatcher behavior.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -182,7 +190,9 @@ where
                 http::Request<http::BoxBody>,
                 Response = http::Response<http::BoxBody>,
                 Error = BalanceError,
-                Future = impl Send,
+                Future = impl std::future::Future<
+                    Output = Result<http::Response<http::BoxBody>, BalanceError>,
+                > + Send,
             >,
         >,
     > + Clone
@@ -234,6 +244,12 @@ where
                         }
                     }),
                 )
+                .push(balance::NewGaugeEndpoints::layer_via({
+                    let metrics = metrics.http_balancer.clone();
+                    move |target: &Self| {
+                        metrics.http_endpoints(target.parent.param(), target.parent.param())
+                    }
+                }))
                 .push_on_service(svc::OnServiceLayer::new(
                     metrics.proxy.stack.layer(stack_labels("http", "endpoint")),
                 ))
@@ -321,26 +337,26 @@ where
     }
 }
 
-impl<T> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<T>
+impl<T> svc::Param<OutboundEndpointLabels> for Endpoint<T>
 where
     T: svc::Param<Option<http::uri::Authority>>,
 {
-    fn param(&self) -> metrics::OutboundEndpointLabels {
-        metrics::OutboundEndpointLabels {
+    fn param(&self) -> OutboundEndpointLabels {
+        OutboundEndpointLabels {
             authority: self.parent.param(),
-            labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
+            labels: prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.param(),
             target_addr: self.addr.into(),
         }
     }
 }
 
-impl<T> svc::Param<metrics::EndpointLabels> for Endpoint<T>
+impl<T> svc::Param<EndpointLabels> for Endpoint<T>
 where
     T: svc::Param<Option<http::uri::Authority>>,
 {
-    fn param(&self) -> metrics::EndpointLabels {
-        metrics::EndpointLabels::Outbound(self.param())
+    fn param(&self) -> EndpointLabels {
+        EndpointLabels::Outbound(self.param())
     }
 }
 

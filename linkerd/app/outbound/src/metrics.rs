@@ -8,10 +8,12 @@
 //! to be updated frequently or in a performance-critical area. We should probably look to use
 //! `DashMap` as we migrate other metrics registries.
 
-use crate::http::policy::RouteBackendMetrics;
+use crate::{
+    http::{concrete::BalancerMetrics, policy::RouteBackendMetrics},
+    policy,
+};
 
 pub(crate) mod error;
-
 pub use linkerd_app_core::metrics::*;
 
 /// Holds outbound proxy metrics.
@@ -21,6 +23,7 @@ pub struct OutboundMetrics {
     pub(crate) tcp_errors: error::Tcp,
 
     pub(crate) http_route_backends: RouteBackendMetrics,
+    pub(crate) http_balancer: BalancerMetrics,
 
     /// Holds metrics that are common to both inbound and outbound proxies. These metrics are
     /// reported separately
@@ -34,6 +37,7 @@ impl OutboundMetrics {
             http_errors: error::Http::default(),
             tcp_errors: error::Tcp::default(),
             http_route_backends: RouteBackendMetrics::default(),
+            http_balancer: BalancerMetrics::default(),
         }
     }
 }
@@ -48,4 +52,30 @@ impl FmtMetrics for OutboundMetrics {
 
         Ok(())
     }
+}
+
+pub(crate) fn write_meta_labels(
+    scope: &str,
+    meta: &policy::Meta,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    write!(f, "{scope}_group=\"{}\"", meta.group())?;
+    write!(f, ",{scope}_kind=\"{}\"", meta.kind())?;
+    write!(f, ",{scope}_namespace=\"{}\"", meta.namespace())?;
+    write!(f, ",{scope}_name=\"{}\"", meta.name())?;
+    Ok(())
+}
+
+pub(crate) fn write_service_meta_labels(
+    scope: &str,
+    meta: &policy::Meta,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    write_meta_labels(scope, meta, f)?;
+    match meta.port() {
+        Some(port) => write!(f, ",{scope}_port=\"{port}\"")?,
+        None => write!(f, ",{scope}_port=\"\"")?,
+    }
+    write!(f, ",{scope}_section_name=\"{}\"", meta.section())?;
+    Ok(())
 }

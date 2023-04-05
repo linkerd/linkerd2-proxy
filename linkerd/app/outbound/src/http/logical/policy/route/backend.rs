@@ -8,7 +8,8 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 mod count_reqs;
 mod metrics;
 
-pub use self::{count_reqs::RequestCount, metrics::RouteBackendMetrics};
+pub use self::count_reqs::RequestCount;
+pub use self::metrics::RouteBackendMetrics;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Backend<T, F> {

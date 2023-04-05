@@ -1438,6 +1438,7 @@ dependencies = [
  "futures-util",
  "indexmap",
  "linkerd-error",
+ "linkerd-metrics",
  "linkerd-proxy-core",
  "linkerd-stack",
  "pin-project",
