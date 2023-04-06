@@ -15,7 +15,7 @@ async fn gauges_endpoints() {
     let (rt, _shutdown) = runtime();
     let outbound = Outbound::new(default_config(), rt);
 
-    let addr = format!("mysvc.myns.svc.cluster.local:80")
+    let addr = "mysvc.myns.svc.cluster.local:80"
         .parse::<NameAddr>()
         .unwrap();
     let ep0 = SocketAddr::new([192, 0, 2, 41].into(), 8080);
