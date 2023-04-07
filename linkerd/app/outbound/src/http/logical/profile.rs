@@ -1,6 +1,6 @@
 use super::{
     super::{concrete, retry},
-    Concrete, NoRoute,
+    CanonicalDstHeader, Concrete, NoRoute,
 };
 use crate::{policy, BackendRef, ParentRef, UNKNOWN_META};
 use linkerd_app_core::{
@@ -312,6 +312,18 @@ impl<T> RouteParams<T> {
                     metrics
                         .http_profile_route
                         .to_layer::<classify::Response, _, RouteParams<T>>(),
+                )
+                // Add l5d-dst-canonical header to requests.
+                //
+                // TODO(ver) move this into the endpoint stack so that we can
+                // only set this on meshed connections.
+                .push(
+                    http::NewHeaderFromTarget::<CanonicalDstHeader, _, _>::layer_via(
+                        |rp: &Self| {
+                            let LogicalAddr(addr) = rp.addr.clone();
+                            CanonicalDstHeader(addr)
+                        },
+                    ),
                 )
                 // Sets the per-route response classifier as a request
                 // extension.
