@@ -68,11 +68,6 @@ enum RouterParams<T: Clone + Debug + Eq + Hash> {
 }
 
 // Only applies to requests with profiles.
-//
-// TODO Add l5d-dst-canonical header to requests.
-//
-// TODO(ver) move this into the endpoint stack so that we can only
-// set this on meshed connections.
 #[derive(Clone, Debug)]
 struct CanonicalDstHeader(NameAddr);
 
