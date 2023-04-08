@@ -12,7 +12,7 @@ pub struct EndpointsGauges {
     pub pending: Arc<Gauge>,
 }
 
-/// A [`NewService`] that builds [`NewGaugeBalancerEndpoint`]s with an
+/// A [`NewService`] that builds `NewGaugeBalancerEndpoint`s with an
 /// endpoint gauge.
 #[derive(Clone, Debug, Default)]
 pub struct NewGaugeEndpoints<X, N> {
