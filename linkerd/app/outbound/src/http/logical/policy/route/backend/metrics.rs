@@ -1,10 +1,9 @@
+use crate::{BackendRef, ParentRef, RouteRef};
 use ahash::AHashMap;
 use linkerd_app_core::metrics::{metrics, Counter, FmtLabels, FmtMetrics};
 use linkerd_proxy_client_policy as policy;
 use parking_lot::Mutex;
 use std::{fmt::Write, sync::Arc};
-
-use crate::{BackendRef, ParentRef, RouteRef};
 
 metrics! {
     outbound_http_route_backend_requests_total: Counter {

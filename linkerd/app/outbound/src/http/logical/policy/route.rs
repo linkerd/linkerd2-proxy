@@ -1,6 +1,5 @@
+use super::super::Concrete;
 use crate::RouteRef;
-
-use super::{super::Concrete, RouteBackendMetrics};
 use linkerd_app_core::{classify, proxy::http, svc, Addr, Error, Result};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
@@ -74,7 +73,7 @@ where
     /// distributes requests over each route's backends. These [`Concrete`]
     /// backends are expected to be cached/shared by the inner stack.
     pub(crate) fn layer<N, S>(
-        backend_metrics: RouteBackendMetrics,
+        backend_metrics: backend::RouteBackendMetrics,
     ) -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<

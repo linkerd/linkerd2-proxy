@@ -9,10 +9,12 @@ use tower::{
 };
 
 mod discover;
+mod gauge_endpoints;
 
+pub use self::gauge_endpoints::{EndpointsGauges, NewGaugeEndpoints};
 pub use tower::load::peak_ewma::Handle;
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EwmaConfig {
     pub default_rtt: Duration,
     pub decay: Duration,
