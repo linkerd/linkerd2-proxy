@@ -30,7 +30,6 @@ pub struct NewGaugeBalancerEndpoint<N> {
 
 /// A [`Service`] that decrements an endpoint gauge when dropped.
 #[derive(Debug)]
-
 pub struct GaugeBalancerEndpoint<S> {
     inner: S,
     gauge: EndpointsGauges,
