@@ -20,7 +20,7 @@ ahash = "0.8"
 bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
-linkerd2-proxy-api = { version = "0.8", features = ["outbound"] }
+linkerd2-proxy-api = { version = "0.9", features = ["outbound"] }
 linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
 linkerd-distribute = { path = "../../distribute" }
