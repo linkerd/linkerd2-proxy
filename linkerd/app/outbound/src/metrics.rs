@@ -45,6 +45,7 @@ impl OutboundMetrics {
 impl FmtMetrics for OutboundMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.http_route_backends.fmt_metrics(f)?;
+        self.http_balancer.fmt_metrics(f)?;
         self.http_errors.fmt_metrics(f)?;
         self.tcp_errors.fmt_metrics(f)?;
 
