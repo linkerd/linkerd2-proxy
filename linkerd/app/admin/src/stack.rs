@@ -76,7 +76,7 @@ impl Config {
         policy: impl inbound::policy::GetPolicy,
         identity: identity::Server,
         report: R,
-        metrics: inbound::Metrics,
+        metrics: inbound::InboundMetrics,
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,

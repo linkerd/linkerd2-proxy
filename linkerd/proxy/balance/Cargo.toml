@@ -10,7 +10,8 @@ futures = { version = "0.3", default-features = false }
 futures-util = "0.3"
 indexmap = "1"
 linkerd-error = { path = "../../error" }
-linkerd-proxy-core = { path = "../../proxy/core" }
+linkerd-metrics = { path = "../../metrics" }
+linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 pin-project = "1"
 rand = "0.8"

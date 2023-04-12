@@ -1,9 +1,10 @@
+use crate::FailureAccrual;
 use linkerd_http_route::{grpc, http};
 use std::sync::Arc;
 
 pub use linkerd_http_route::grpc::{filter, find, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter>;
+pub type Policy = crate::RoutePolicy<Filter, Codes>;
 pub type Route = grpc::Route<Policy>;
 pub type Rule = grpc::Rule<Policy>;
 
@@ -11,6 +12,9 @@ pub type Rule = grpc::Rule<Policy>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Grpc {
     pub routes: Arc<[Route]>,
+
+    /// Configures how endpoints accrue observed failures.
+    pub failure_accrual: FailureAccrual,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -19,6 +23,9 @@ pub enum Filter {
     RequestHeaders(http::filter::ModifyHeader),
     InternalError(&'static str),
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Codes(pub Arc<std::collections::BTreeSet<u16>>);
 
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     Route {
@@ -29,6 +36,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
+                failure_policy: Codes::default(),
             },
         }],
     }
@@ -38,7 +46,36 @@ impl Default for Grpc {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
+            failure_accrual: Default::default(),
         }
+    }
+}
+
+impl Codes {
+    pub fn contains(&self, code: tonic::Code) -> bool {
+        self.0.contains(&(code as u16))
+    }
+}
+
+impl Default for Codes {
+    fn default() -> Self {
+        use once_cell::sync::Lazy;
+        static CODES: Lazy<Arc<std::collections::BTreeSet<u16>>> = Lazy::new(|| {
+            Arc::new(
+                [
+                    tonic::Code::DataLoss,
+                    tonic::Code::DeadlineExceeded,
+                    tonic::Code::Internal,
+                    tonic::Code::PermissionDenied,
+                    tonic::Code::Unavailable,
+                    tonic::Code::Unknown,
+                ]
+                .into_iter()
+                .map(|c| c as u16)
+                .collect(),
+            )
+        });
+        Self(CODES.clone())
     }
 }
 
@@ -46,7 +83,9 @@ impl Default for Grpc {
 pub mod proto {
     use super::*;
     use crate::{
-        proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
+        proto::{
+            BackendSet, InvalidBackend, InvalidDistribution, InvalidFailureAccrual, InvalidMeta,
+        },
         Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, grpc_route};
@@ -82,6 +121,9 @@ pub mod proto {
 
         #[error("missing {0}")]
         Missing(&'static str),
+
+        #[error("invalid failure accrual policy: {0}")]
+        Breaker(#[from] InvalidFailureAccrual),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -107,7 +149,10 @@ pub mod proto {
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
-            Ok(Self { routes })
+            Ok(Self {
+                routes,
+                failure_accrual: proto.failure_accrual.try_into()?,
+            })
         }
     }
 
@@ -165,10 +210,9 @@ pub mod proto {
             .map(Filter::try_from)
             .collect::<Result<Arc<[_]>, _>>()?;
 
-        let distribution = {
-            let backends = backends.ok_or(InvalidGrpcRoute::Missing("distribution"))?;
-            try_distribution(meta, backends)?
-        };
+        let distribution = backends
+            .ok_or(InvalidGrpcRoute::Missing("distribution"))?
+            .try_into()?;
 
         Ok(Rule {
             matches,
@@ -176,52 +220,61 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
+                failure_policy: Codes::default(),
             },
         })
     }
 
-    fn try_distribution(
-        meta: &Arc<Meta>,
-        distribution: grpc_route::Distribution,
-    ) -> Result<RouteDistribution<Filter>, InvalidDistribution> {
-        use grpc_route::{distribution, WeightedRouteBackend};
+    impl TryFrom<grpc_route::Distribution> for RouteDistribution<Filter> {
+        type Error = InvalidDistribution;
+        fn try_from(distribution: grpc_route::Distribution) -> Result<Self, Self::Error> {
+            use grpc_route::{distribution, WeightedRouteBackend};
 
-        Ok(
-            match distribution.kind.ok_or(InvalidDistribution::Missing)? {
-                distribution::Kind::Empty(_) => RouteDistribution::Empty,
-                distribution::Kind::RandomAvailable(distribution::RandomAvailable { backends }) => {
-                    let backends = backends
-                        .into_iter()
-                        .map(|WeightedRouteBackend { weight, backend }| {
-                            let backend = backend.ok_or(InvalidDistribution::MissingBackend)?;
-                            Ok((try_route_backend(meta, backend)?, weight))
-                        })
-                        .collect::<Result<Arc<[_]>, InvalidDistribution>>()?;
-                    if backends.is_empty() {
-                        return Err(InvalidDistribution::Empty("RandomAvailable"));
+            Ok(
+                match distribution.kind.ok_or(InvalidDistribution::Missing)? {
+                    distribution::Kind::Empty(_) => RouteDistribution::Empty,
+                    distribution::Kind::RandomAvailable(distribution::RandomAvailable {
+                        backends,
+                    }) => {
+                        let backends = backends
+                            .into_iter()
+                            .map(|WeightedRouteBackend { weight, backend }| {
+                                let backend = backend
+                                    .ok_or(InvalidDistribution::MissingBackend)?
+                                    .try_into()?;
+                                Ok((backend, weight))
+                            })
+                            .collect::<Result<Arc<[_]>, InvalidDistribution>>()?;
+                        if backends.is_empty() {
+                            return Err(InvalidDistribution::Empty("RandomAvailable"));
+                        }
+                        RouteDistribution::RandomAvailable(backends)
                     }
-                    RouteDistribution::RandomAvailable(backends)
-                }
-                distribution::Kind::FirstAvailable(distribution::FirstAvailable { backends }) => {
-                    let backends = backends
-                        .into_iter()
-                        .map(|backend| try_route_backend(meta, backend))
-                        .collect::<Result<Arc<[_]>, InvalidBackend>>()?;
-                    if backends.is_empty() {
-                        return Err(InvalidDistribution::Empty("FirstAvailable"));
+                    distribution::Kind::FirstAvailable(distribution::FirstAvailable {
+                        backends,
+                    }) => {
+                        let backends = backends
+                            .into_iter()
+                            .map(RouteBackend::try_from)
+                            .collect::<Result<Arc<[_]>, InvalidBackend>>()?;
+                        if backends.is_empty() {
+                            return Err(InvalidDistribution::Empty("FirstAvailable"));
+                        }
+                        RouteDistribution::FirstAvailable(backends)
                     }
-                    RouteDistribution::FirstAvailable(backends)
-                }
-            },
-        )
+                },
+            )
+        }
     }
 
-    fn try_route_backend(
-        meta: &Arc<Meta>,
-        grpc_route::RouteBackend { backend, filters }: grpc_route::RouteBackend,
-    ) -> Result<RouteBackend<Filter>, InvalidBackend> {
-        let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-        RouteBackend::try_from_proto(meta, backend, filters)
+    impl TryFrom<grpc_route::RouteBackend> for RouteBackend<Filter> {
+        type Error = InvalidBackend;
+        fn try_from(
+            grpc_route::RouteBackend { backend, filters }: grpc_route::RouteBackend,
+        ) -> Result<RouteBackend<Filter>, InvalidBackend> {
+            let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
+            RouteBackend::try_from_proto(backend, filters)
+        }
     }
 
     impl TryFrom<grpc_route::Filter> for Filter {

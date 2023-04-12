@@ -1,9 +1,8 @@
 //! A stack that routes HTTP requests to concrete backends.
 
 use super::concrete;
-use crate::Outbound;
+use crate::{BackendRef, EndpointRef, Outbound, OutboundMetrics, ParentRef};
 use linkerd_app_core::{
-    metrics,
     proxy::{api_resolve::Metadata, http},
     svc,
     transport::addrs::*,
@@ -14,6 +13,9 @@ use tokio::sync::watch;
 
 pub mod policy;
 pub mod profile;
+
+#[cfg(test)]
+mod tests;
 
 /// Indicates the address used for logical routing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -38,6 +40,9 @@ pub struct Concrete<T> {
     target: concrete::Dispatch,
     authority: Option<http::uri::Authority>,
     parent: T,
+    parent_ref: ParentRef,
+    backend_ref: BackendRef,
+    failure_accrual: policy::FailureAccrual,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -63,11 +68,6 @@ enum RouterParams<T: Clone + Debug + Eq + Hash> {
 }
 
 // Only applies to requests with profiles.
-//
-// TODO Add l5d-dst-canonical header to requests.
-//
-// TODO(ver) move this into the endpoint stack so that we can only
-// set this on meshed connections.
 #[derive(Clone, Debug)]
 struct CanonicalDstHeader(NameAddr);
 
@@ -114,7 +114,7 @@ impl<N> Outbound<N> {
             let watch = concrete
                 // Share the concrete stack with each router stack.
                 .lift_new()
-                .push_on_service(RouterParams::layer(rt.metrics.proxy.clone()))
+                .push_on_service(RouterParams::layer(rt.metrics.clone()))
                 // Rebuild the inner router stack every time the watch changes.
                 .push(svc::NewSpawnWatch::<Routes, _>::layer_into::<RouterParams<T>>());
 
@@ -132,7 +132,7 @@ where
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
 {
     fn layer<N, S>(
-        metrics: metrics::Proxy,
+        metrics: OutboundMetrics,
     ) -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
@@ -157,24 +157,32 @@ where
         S::Future: Send,
     {
         svc::layer::mk(move |concrete: N| {
-            let policy = svc::stack(concrete.clone()).push(policy::Policy::layer());
+            let policy = svc::stack(concrete.clone())
+                .push(policy::Policy::layer(metrics.http_route_backends.clone()));
             let profile =
-                svc::stack(concrete.clone()).push(profile::Params::layer(metrics.clone()));
+                svc::stack(concrete.clone()).push(profile::Params::layer(metrics.proxy.clone()));
             svc::stack(concrete)
                 .push_switch(
-                    |prms: RouterParams<T>| {
+                    |prms: Self| {
                         Ok::<_, Infallible>(match prms {
-                            RouterParams::Endpoint(remote, meta, parent) => {
+                            Self::Endpoint(remote, meta, parent) => {
+                                let ep = EndpointRef::new(
+                                    &meta,
+                                    remote.port().try_into().expect("port must not be 0"),
+                                );
+                                let parent_ref = ParentRef::from(ep.clone());
+                                let backend_ref = BackendRef::from(ep);
                                 svc::Either::A(Concrete {
+                                    parent_ref,
+                                    backend_ref,
                                     target: concrete::Dispatch::Forward(remote, meta),
                                     authority: None,
                                     parent,
+                                    failure_accrual: Default::default(),
                                 })
                             }
-                            RouterParams::Profile(profile) => {
-                                svc::Either::B(svc::Either::A(profile))
-                            }
-                            RouterParams::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
+                            Self::Profile(profile) => svc::Either::B(svc::Either::A(profile)),
+                            Self::Policy(policy) => svc::Either::B(svc::Either::B(policy)),
                         })
                     },
                     // Switch profile and policy routing.
@@ -251,6 +259,24 @@ impl<T> svc::Param<Option<http::uri::Authority>> for Concrete<T> {
 impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
     fn param(&self) -> concrete::Dispatch {
         self.target.clone()
+    }
+}
+
+impl<T> svc::Param<ParentRef> for Concrete<T> {
+    fn param(&self) -> ParentRef {
+        self.parent_ref.clone()
+    }
+}
+
+impl<T> svc::Param<BackendRef> for Concrete<T> {
+    fn param(&self) -> BackendRef {
+        self.backend_ref.clone()
+    }
+}
+
+impl<T> svc::Param<policy::FailureAccrual> for Concrete<T> {
+    fn param(&self) -> policy::FailureAccrual {
+        self.failure_accrual
     }
 }
 

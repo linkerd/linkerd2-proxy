@@ -1,68 +1,64 @@
 use crate::profiles;
+pub use classify::gate;
 use linkerd_error::Error;
-use linkerd_http_classify as classify;
-use linkerd_proxy_http::{HasH2Reason, ResponseTimeoutError};
+use linkerd_proxy_client_policy as client_policy;
+use linkerd_proxy_http::{classify, HasH2Reason, ResponseTimeoutError};
 use std::borrow::Cow;
 use tonic as grpc;
 use tracing::trace;
 
-pub type NewClassify<N, X = ()> = classify::NewClassify<Request, X, N>;
+pub type NewClassify<N, X = ()> = classify::NewInsertClassifyResponse<Request, X, N>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Request {
     Default,
     Profile(profiles::http::ResponseClasses),
+    ClientPolicy(ClientPolicy),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Response {
-    Default,
-    Grpc,
+    Http(client_policy::http::StatusRanges),
+    Grpc(client_policy::grpc::Codes),
     Profile(profiles::http::ResponseClasses),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ClientPolicy {
+    Grpc(client_policy::grpc::Codes),
+    Http(client_policy::http::StatusRanges),
 }
 
 #[derive(Clone, Debug)]
 pub enum Eos {
-    Default(http::StatusCode),
-    Grpc(GrpcEos),
-    Profile(Class),
-    Error(&'static str),
+    Class(Class),
+    GrpcOpen(client_policy::grpc::Codes),
+    ProfileUnmatched(Class),
 }
 
-#[derive(Clone, Debug)]
-pub enum GrpcEos {
-    NoBody(Class),
-    Open,
-}
+pub type Result<T> = std::result::Result<T, T>;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Class {
-    Default(SuccessOrFailure),
-    Grpc(SuccessOrFailure, u32),
-    Stream(SuccessOrFailure, Cow<'static, str>),
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum SuccessOrFailure {
-    Success,
-    Failure,
+    Http(Result<http::StatusCode>),
+    Grpc(Result<grpc::Code>),
+    Error(Cow<'static, str>),
 }
 
 // === impl Request ===
 
 impl From<profiles::http::ResponseClasses> for Request {
     fn from(classes: profiles::http::ResponseClasses) -> Self {
-        if classes.is_empty() {
-            Request::Default
-        } else {
-            Request::Profile(classes)
+        if !classes.is_empty() {
+            return Self::Profile(classes);
         }
+        Self::Default
     }
 }
 
 impl Default for Request {
     fn default() -> Self {
-        Request::Default
+        Self::Default
     }
 }
 
@@ -73,20 +69,22 @@ impl classify::Classify for Request {
 
     fn classify<B>(&self, req: &http::Request<B>) -> Self::ClassifyResponse {
         match self {
-            Request::Profile(classes) => Response::Profile(classes.clone()),
-            Request::Default => {
+            Self::Profile(classes) => Response::Profile(classes.clone()),
+
+            Self::ClientPolicy(ClientPolicy::Http(policy)) => Response::Http(policy.clone()),
+            Self::ClientPolicy(ClientPolicy::Grpc(policy)) => Response::Grpc(policy.clone()),
+
+            Self::Default => {
                 let is_grpc = req
                     .headers()
                     .get(http::header::CONTENT_TYPE)
                     .and_then(|v| v.to_str().ok())
-                    .map(|ct| ct.starts_with("application/grpc+"))
+                    .map(|ct| ct.starts_with("application/grpc"))
                     .unwrap_or(false);
-
                 if is_grpc {
-                    Response::Grpc
-                } else {
-                    Response::Default
+                    return Response::Grpc(Default::default());
                 }
+                Response::default()
             }
         }
     }
@@ -96,9 +94,7 @@ impl classify::Classify for Request {
 
 impl Default for Response {
     fn default() -> Self {
-        // By default, simply perform HTTP classification. This only applies
-        // when no `insert` layer is present.
-        Response::Default
+        Self::Http(client_policy::http::StatusRanges::default())
     }
 }
 
@@ -109,12 +105,12 @@ impl Response {
     ) -> Option<Class> {
         for class in classes {
             if class.is_match(rsp) {
-                let result = if class.is_failure() {
-                    SuccessOrFailure::Failure
+                let res = if class.is_failure() {
+                    Err(rsp.status())
                 } else {
-                    SuccessOrFailure::Success
+                    Ok(rsp.status())
                 };
-                return Some(Class::Default(result));
+                return Some(Class::Http(res));
             }
         }
 
@@ -127,19 +123,36 @@ impl classify::ClassifyResponse for Response {
     type ClassifyEos = Eos;
 
     fn start<B>(self, rsp: &http::Response<B>) -> Eos {
+        let status = rsp.status();
         match self {
-            Response::Default => grpc_class(rsp.headers())
-                .map(|c| Eos::Grpc(GrpcEos::NoBody(c)))
-                .unwrap_or_else(|| Eos::Default(rsp.status())),
-            Response::Grpc => grpc_class(rsp.headers())
-                .map(|c| Eos::Grpc(GrpcEos::NoBody(c)))
-                .unwrap_or(Eos::Grpc(GrpcEos::Open)),
-            Response::Profile(ref classes) => Self::match_class(rsp, classes.as_ref())
-                .map(Eos::Profile)
+            Self::Http(statuses) => Eos::Class(Class::Http(if statuses.contains(status) {
+                Err(status)
+            } else {
+                Ok(status)
+            })),
+
+            Self::Grpc(codes) => grpc_code(rsp.headers())
+                .map(|c| Eos::Class(Class::Grpc(if codes.contains(c) { Err(c) } else { Ok(c) })))
+                .unwrap_or(Eos::GrpcOpen(codes)),
+
+            Self::Profile(ref classes) => Self::match_class(rsp, classes.as_ref())
+                .map(Eos::Class)
                 .unwrap_or_else(|| {
-                    grpc_class(rsp.headers())
-                        .map(|c| Eos::Grpc(GrpcEos::NoBody(c)))
-                        .unwrap_or_else(|| Eos::Default(rsp.status()))
+                    if let Some(code) = grpc_code(rsp.headers()) {
+                        let codes = client_policy::grpc::Codes::default();
+                        return Eos::Class(Class::Grpc(if codes.contains(code) {
+                            Err(code)
+                        } else {
+                            Ok(code)
+                        }));
+                    }
+
+                    let http = Class::Http(if status.is_server_error() {
+                        Err(status)
+                    } else {
+                        Ok(status)
+                    });
+                    Eos::ProfileUnmatched(http)
                 }),
         }
     }
@@ -150,8 +163,7 @@ impl classify::ClassifyResponse for Response {
         } else {
             h2_error(err).into()
         };
-
-        Class::Stream(SuccessOrFailure::Failure, msg)
+        Class::Error(msg)
     }
 }
 
@@ -160,45 +172,43 @@ impl classify::ClassifyResponse for Response {
 impl classify::ClassifyEos for Eos {
     type Class = Class;
 
-    fn eos(self, trailers: Option<&http::HeaderMap>) -> Self::Class {
+    fn eos(self, trailers: Option<&http::HeaderMap>) -> Class {
         match self {
-            Eos::Default(status) if status.is_server_error() => {
-                Class::Default(SuccessOrFailure::Failure)
+            Self::Class(class) => class,
+            Self::GrpcOpen(codes) => {
+                let code = match trailers.and_then(grpc_code) {
+                    None => return Class::Grpc(Ok(grpc::Code::Unknown)),
+                    Some(code) => code,
+                };
+                if codes.contains(code) {
+                    return Class::Grpc(Err(code));
+                }
+                Class::Grpc(Ok(code))
             }
-            Eos::Default(_) => trailers
-                .and_then(grpc_class)
-                .unwrap_or(Class::Default(SuccessOrFailure::Success)),
-            Eos::Grpc(GrpcEos::NoBody(class)) => class,
-            Eos::Grpc(GrpcEos::Open) => trailers
-                .and_then(grpc_class)
-                .unwrap_or(Class::Grpc(SuccessOrFailure::Success, 0)),
-            Eos::Profile(class) => class,
-            Eos::Error(msg) => Class::Stream(SuccessOrFailure::Failure, msg.into()),
+            Self::ProfileUnmatched(http_class) => {
+                if let Some(code) = trailers.and_then(grpc_code) {
+                    let codes = client_policy::grpc::Codes::default();
+                    return Class::Grpc(if codes.contains(code) {
+                        Err(code)
+                    } else {
+                        Ok(code)
+                    });
+                }
+                http_class
+            }
         }
     }
 
-    fn error(self, err: &Error) -> Self::Class {
-        Class::Stream(SuccessOrFailure::Failure, h2_error(err).into())
+    fn error(self, err: &Error) -> Class {
+        Class::Error(h2_error(err).into())
     }
 }
 
-fn grpc_class(headers: &http::HeaderMap) -> Option<Class> {
-    headers
-        .get("grpc-status")
+fn grpc_code(hdrs: &http::HeaderMap) -> Option<grpc::Code> {
+    hdrs.get("grpc-status")
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u32>().ok())
-        .map(|grpc_status| {
-            let ok = match grpc::Code::from_i32(grpc_status as i32) {
-                grpc::Code::Unknown
-                | grpc::Code::DeadlineExceeded
-                | grpc::Code::Internal
-                | grpc::Code::Unavailable
-                | grpc::Code::PermissionDenied
-                | grpc::Code::DataLoss => SuccessOrFailure::Failure,
-                _ => SuccessOrFailure::Success,
-            };
-            Class::Grpc(ok, grpc_status)
-        })
+        .and_then(|s| s.parse::<u16>().ok())
+        .map(|code| grpc::Code::from_i32(code as i32))
 }
 
 fn h2_error(err: &Error) -> String {
@@ -215,27 +225,31 @@ fn h2_error(err: &Error) -> String {
 // === impl Class ===
 
 impl Class {
+    #[inline]
+    pub fn is_success(&self) -> bool {
+        !self.is_failure()
+    }
+
+    #[inline]
     pub fn is_failure(&self) -> bool {
         matches!(
             self,
-            Class::Default(SuccessOrFailure::Failure)
-                | Class::Grpc(SuccessOrFailure::Failure, _)
-                | Class::Stream(SuccessOrFailure::Failure, _)
+            Class::Http(Err(_)) | Class::Grpc(Err(_)) | Class::Error(_),
         )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Class, SuccessOrFailure};
+    use super::Class;
     use http::{HeaderMap, Response, StatusCode};
-    use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
+    use linkerd_proxy_http::classify::{ClassifyEos, ClassifyResponse};
 
     #[test]
     fn http_response_status_ok() {
         let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
-        let class = super::Response::Default.start(&rsp).eos(None);
-        assert_eq!(class, Class::Default(SuccessOrFailure::Success));
+        let class = super::Response::default().start(&rsp).eos(None);
+        assert_eq!(class, Class::Http(Ok(http::StatusCode::OK)));
     }
 
     #[test]
@@ -244,8 +258,8 @@ mod tests {
             .status(StatusCode::BAD_REQUEST)
             .body(())
             .unwrap();
-        let class = super::Response::Default.start(&rsp).eos(None);
-        assert_eq!(class, Class::Default(SuccessOrFailure::Success));
+        let class = super::Response::default().start(&rsp).eos(None);
+        assert_eq!(class, Class::Http(Ok(StatusCode::BAD_REQUEST)));
     }
 
     #[test]
@@ -254,8 +268,8 @@ mod tests {
             .status(StatusCode::INTERNAL_SERVER_ERROR)
             .body(())
             .unwrap();
-        let class = super::Response::Default.start(&rsp).eos(None);
-        assert_eq!(class, Class::Default(SuccessOrFailure::Failure));
+        let class = super::Response::default().start(&rsp).eos(None);
+        assert_eq!(class, Class::Http(Err(StatusCode::INTERNAL_SERVER_ERROR)));
     }
 
     #[test]
@@ -265,8 +279,10 @@ mod tests {
             .status(StatusCode::OK)
             .body(())
             .unwrap();
-        let class = super::Response::Grpc.start(&rsp).eos(None);
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Success, 0));
+        let class = super::Response::Grpc(Default::default())
+            .start(&rsp)
+            .eos(None);
+        assert_eq!(class, Class::Grpc(Ok(tonic::Code::Ok)));
     }
 
     #[test]
@@ -276,8 +292,10 @@ mod tests {
             .status(StatusCode::OK)
             .body(())
             .unwrap();
-        let class = super::Response::Grpc.start(&rsp).eos(None);
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 2));
+        let class = super::Response::Grpc(Default::default())
+            .start(&rsp)
+            .eos(None);
+        assert_eq!(class, Class::Grpc(Err(tonic::Code::Unknown)));
     }
 
     #[test]
@@ -286,8 +304,10 @@ mod tests {
         let mut trailers = HeaderMap::new();
         trailers.insert("grpc-status", 0.into());
 
-        let class = super::Response::Grpc.start(&rsp).eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Success, 0));
+        let class = super::Response::Grpc(Default::default())
+            .start(&rsp)
+            .eos(Some(&trailers));
+        assert_eq!(class, Class::Grpc(Ok(tonic::Code::Ok)));
     }
 
     #[test]
@@ -296,16 +316,20 @@ mod tests {
         let mut trailers = HeaderMap::new();
         trailers.insert("grpc-status", 4.into());
 
-        let class = super::Response::Grpc.start(&rsp).eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 4));
+        let class = super::Response::Grpc(Default::default())
+            .start(&rsp)
+            .eos(Some(&trailers));
+        assert_eq!(class, Class::Grpc(Err(tonic::Code::DeadlineExceeded)));
     }
 
     #[test]
     fn grpc_response_trailer_missing() {
         let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
         let trailers = HeaderMap::new();
-        let class = super::Response::Grpc.start(&rsp).eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Success, 0));
+        let class = super::Response::Grpc(Default::default())
+            .start(&rsp)
+            .eos(Some(&trailers));
+        assert_eq!(class, Class::Grpc(Ok(tonic::Code::Unknown)));
     }
 
     #[test]
@@ -317,6 +341,6 @@ mod tests {
         let class = super::Response::Profile(Default::default())
             .start(&rsp)
             .eos(Some(&trailers));
-        assert_eq!(class, Class::Grpc(SuccessOrFailure::Failure, 4));
+        assert_eq!(class, Class::Grpc(Err(tonic::Code::DeadlineExceeded)));
     }
 }

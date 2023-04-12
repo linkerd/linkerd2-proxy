@@ -16,6 +16,7 @@ use linkerd_app_inbound::{self as inbound, GatewayAddr, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
 use std::fmt::Debug;
 
+mod discover;
 mod http;
 mod opaq;
 mod server;

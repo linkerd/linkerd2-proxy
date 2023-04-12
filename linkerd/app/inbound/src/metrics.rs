@@ -15,7 +15,7 @@ pub use linkerd_app_core::metrics::*;
 
 /// Holds outbound proxy metrics.
 #[derive(Clone, Debug)]
-pub struct Metrics {
+pub struct InboundMetrics {
     pub http_authz: authz::HttpAuthzMetrics,
     pub http_errors: error::HttpErrorMetrics,
 
@@ -27,7 +27,7 @@ pub struct Metrics {
     pub proxy: Proxy,
 }
 
-impl Metrics {
+impl InboundMetrics {
     pub(crate) fn new(proxy: Proxy) -> Self {
         Self {
             http_authz: authz::HttpAuthzMetrics::default(),
@@ -39,7 +39,7 @@ impl Metrics {
     }
 }
 
-impl FmtMetrics for Metrics {
+impl FmtMetrics for InboundMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.http_authz.fmt_metrics(f)?;
         self.http_errors.fmt_metrics(f)?;

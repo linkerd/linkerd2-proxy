@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 use once_cell::sync::Lazy;
-use std::{borrow::Cow, hash::Hash, net::SocketAddr, sync::Arc, time};
+use std::{borrow::Cow, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::Arc, time};
 
 pub mod grpc;
 pub mod http;
@@ -13,6 +13,7 @@ pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
+    pub parent: Arc<Meta>,
     pub protocol: Protocol,
     pub backends: Arc<[Backend]>,
 }
@@ -37,7 +38,7 @@ pub enum Protocol {
     Tls(opaq::Opaque),
 }
 
-#[derive(Debug, Eq)]
+#[derive(Clone, Debug, Eq)]
 pub enum Meta {
     Default {
         name: Cow<'static, str>,
@@ -48,14 +49,18 @@ pub enum Meta {
         name: String,
         namespace: String,
         section: Option<String>,
+        port: Option<NonZeroU16>,
     },
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct RoutePolicy<T> {
+pub struct RoutePolicy<T, F> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
+
+    /// Configures what responses are classified as failures.
+    pub failure_policy: F,
 }
 
 // TODO(ver) Weighted random WITHOUT availability awareness, as required by
@@ -93,6 +98,7 @@ pub struct Queue {
 pub enum BackendDispatcher {
     Forward(SocketAddr, EndpointMetadata),
     BalanceP2c(Load, EndpointDiscovery),
+    Fail { message: Arc<str> },
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -110,6 +116,21 @@ pub enum Load {
 pub struct PeakEwma {
     pub decay: time::Duration,
     pub default_rtt: time::Duration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum FailureAccrual {
+    /// Endpoints do not become unavailable due to observed failures.
+    None,
+    /// Endpoints are marked as unavailable when `max_failures` consecutive
+    /// failures are observed.
+    ConsecutiveFailures {
+        /// The number of consecutive failures after which an endpoint becomes
+        /// unavailable.
+        max_failures: usize,
+        /// Backoff for probing the endpoint when it is in a failed state.
+        backoff: linkerd_exp_backoff::ExponentialBackoff,
+    },
 }
 
 // === impl ClientPolicy ===
@@ -133,6 +154,7 @@ impl ClientPolicy {
                         ))
                         .collect(),
                         distribution: RouteDistribution::Empty,
+                        failure_policy: http::StatusRanges::default(),
                     },
                 }],
             }])
@@ -140,13 +162,16 @@ impl ClientPolicy {
         static BACKENDS: Lazy<Arc<[Backend]>> = Lazy::new(|| Arc::new([]));
 
         Self {
+            parent: Meta::new_default("invalid"),
             protocol: Protocol::Detect {
                 timeout,
                 http1: http::Http1 {
                     routes: HTTP_ROUTES.clone(),
+                    failure_accrual: Default::default(),
                 },
                 http2: http::Http2 {
                     routes: HTTP_ROUTES.clone(),
+                    failure_accrual: Default::default(),
                 },
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
@@ -200,6 +225,13 @@ impl Meta {
             Self::Resource { section, .. } => section.as_deref().unwrap_or(""),
         }
     }
+
+    pub fn port(&self) -> Option<NonZeroU16> {
+        match self {
+            Self::Default { .. } => None,
+            Self::Resource { port, .. } => *port,
+        }
+    }
 }
 
 impl std::cmp::PartialEq for Meta {
@@ -215,6 +247,14 @@ impl std::hash::Hash for Meta {
         self.group().hash(state);
         self.kind().hash(state);
         self.name().hash(state);
+    }
+}
+
+// === impl FailureAccrual ===
+
+impl Default for FailureAccrual {
+    fn default() -> Self {
+        Self::None
     }
 }
 
@@ -251,6 +291,12 @@ pub mod proto {
         #[error("invalid protocol detection timeout: {0}")]
         Timeout(#[from] prost_types::DurationError),
 
+        #[error("{0}")]
+        Meta(#[from] InvalidMeta),
+
+        #[error("missing metadata")]
+        MissingMeta,
+
         #[error("missing top-level backend")]
         MissingBackend,
     }
@@ -281,6 +327,9 @@ pub mod proto {
 
         #[error("invalid endpoint discovery: {0}")]
         Discovery(#[from] InvalidDiscovery),
+
+        #[error("invalid backend metadata: {0}")]
+        Meta(#[from] InvalidMeta),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -304,10 +353,30 @@ pub mod proto {
         Missing,
     }
 
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidFailureAccrual {
+        #[error("invalid backoff: {0}")]
+        Backoff(#[from] linkerd_exp_backoff::InvalidBackoff),
+        #[error("invalid {field} duration: {error}")]
+        Duration {
+            field: &'static str,
+            #[source]
+            error: prost_types::DurationError,
+        },
+        #[error("missing {0}")]
+        Missing(&'static str),
+    }
+
     impl TryFrom<outbound::OutboundPolicy> for ClientPolicy {
         type Error = InvalidPolicy;
+
         fn try_from(policy: outbound::OutboundPolicy) -> Result<Self, Self::Error> {
             use outbound::proxy_protocol;
+
+            let parent = policy
+                .metadata
+                .ok_or(InvalidPolicy::MissingMeta)?
+                .try_into()?;
 
             let protocol = policy
                 .protocol
@@ -369,8 +438,8 @@ pub mod proto {
                     http::proto::fill_route_backends(&http2.routes, &mut backends);
                     opaque.fill_backends(&mut backends);
                 }
-                Protocol::Http1(http::Http1 { ref routes })
-                | Protocol::Http2(http::Http2 { ref routes }) => {
+                Protocol::Http1(http::Http1 { ref routes, .. })
+                | Protocol::Http2(http::Http2 { ref routes, .. }) => {
                     http::proto::fill_route_backends(routes, &mut backends);
                 }
                 Protocol::Opaque(ref p) | Protocol::Tls(ref p) => {
@@ -382,6 +451,7 @@ pub mod proto {
             }
 
             Ok(ClientPolicy {
+                parent: Arc::new(parent),
                 protocol,
                 backends: backends.into_iter().collect(),
             })
@@ -390,6 +460,7 @@ pub mod proto {
 
     impl TryFrom<meta::Metadata> for Meta {
         type Error = InvalidMeta;
+
         fn try_from(proto: meta::Metadata) -> Result<Self, Self::Error> {
             use meta::metadata;
 
@@ -404,6 +475,7 @@ pub mod proto {
                     name,
                     namespace,
                     section,
+                    port,
                 }) => {
                     macro_rules! ensure_nonempty{
                         ($($name:ident),+) => {
@@ -422,12 +494,17 @@ pub mod proto {
                         Some(section)
                     };
 
+                    let port = u16::try_from(port)
+                        .ok()
+                        .and_then(|p| NonZeroU16::try_from(p).ok());
+
                     Ok(Meta::Resource {
                         group,
                         kind,
                         name,
                         namespace,
                         section,
+                        port,
                     })
                 }
             }
@@ -453,7 +530,6 @@ pub mod proto {
 
     impl<T> RouteBackend<T> {
         pub(crate) fn try_from_proto<U>(
-            meta: &Arc<Meta>,
             backend: outbound::Backend,
             filters: impl IntoIterator<Item = U>,
         ) -> Result<Self, InvalidBackend>
@@ -461,23 +537,20 @@ pub mod proto {
             T: TryFrom<U>,
             T::Error: Into<Error>,
         {
+            let backend = Backend::try_from(backend)?;
             let filters = filters
                 .into_iter()
                 .map(T::try_from)
                 .collect::<Result<Arc<[_]>, _>>()
                 .map_err(|error| InvalidBackend::Filter(error.into()))?;
 
-            let backend = Backend::try_from_proto(meta, backend)?;
-
             Ok(RouteBackend { filters, backend })
         }
     }
 
-    impl Backend {
-        fn try_from_proto(
-            meta: &Arc<Meta>,
-            backend: outbound::Backend,
-        ) -> Result<Self, InvalidBackend> {
+    impl TryFrom<outbound::Backend> for Backend {
+        type Error = InvalidBackend;
+        fn try_from(backend: outbound::Backend) -> Result<Self, InvalidBackend> {
             use outbound::backend::{self, balance_p2c};
 
             fn duration(
@@ -490,31 +563,45 @@ pub mod proto {
                     .map_err(|error| InvalidBackend::Duration { field, error })
             }
 
-            let dispatcher = {
-                let pb = backend
-                    .kind
-                    .ok_or(InvalidBackend::Missing("backend kind"))?;
-                match pb {
-                    backend::Kind::Balancer(BalanceP2c { discovery, load }) => {
-                        let discovery = discovery
-                            .ok_or(InvalidBackend::Missing("balancer discovery"))?
-                            .try_into()?;
-                        let load = match load.ok_or(InvalidBackend::Missing("balancer load"))? {
-                            balance_p2c::Load::PeakEwma(balance_p2c::PeakEwma {
-                                default_rtt,
-                                decay,
-                            }) => Load::PeakEwma(PeakEwma {
-                                default_rtt: duration("peak EWMA default RTT", default_rtt)?,
-                                decay: duration("peak EWMA decay", decay)?,
-                            }),
-                        };
-                        BackendDispatcher::BalanceP2c(load, discovery)
-                    }
-                    backend::Kind::Forward(ep) => {
-                        let (addr, meta) = resolve::to_addr_meta(ep, &Default::default())
-                            .ok_or(InvalidBackend::ForwardAddr)?;
-                        BackendDispatcher::Forward(addr, meta)
-                    }
+            let meta: Arc<Meta> = {
+                let meta = backend
+                    .metadata
+                    .ok_or(InvalidBackend::Missing("backend metadata"))?
+                    .try_into()?;
+                Arc::new(meta)
+            };
+
+            let dispatcher = match backend.kind {
+                Some(backend::Kind::Balancer(BalanceP2c { discovery, load })) => {
+                    let discovery = discovery
+                        .ok_or(InvalidBackend::Missing("balancer discovery"))?
+                        .try_into()?;
+                    let load = match load.ok_or(InvalidBackend::Missing("balancer load"))? {
+                        balance_p2c::Load::PeakEwma(balance_p2c::PeakEwma {
+                            default_rtt,
+                            decay,
+                        }) => Load::PeakEwma(PeakEwma {
+                            default_rtt: duration("peak EWMA default RTT", default_rtt)?,
+                            decay: duration("peak EWMA decay", decay)?,
+                        }),
+                    };
+                    BackendDispatcher::BalanceP2c(load, discovery)
+                }
+                Some(backend::Kind::Forward(ep)) => {
+                    let (addr, meta) = resolve::to_addr_meta(ep, &Default::default())
+                        .ok_or(InvalidBackend::ForwardAddr)?;
+                    BackendDispatcher::Forward(addr, meta)
+                }
+                None => {
+                    let message = format!(
+                        "backend for {} {}{}{} has no dispatcher",
+                        meta.kind(),
+                        meta.namespace(),
+                        if meta.namespace() != "" { "/" } else { "" },
+                        meta.name()
+                    )
+                    .into();
+                    BackendDispatcher::Fail { message }
                 }
             };
 
@@ -529,7 +616,7 @@ pub mod proto {
             let backend = Backend {
                 queue,
                 dispatcher,
-                meta: meta.clone(),
+                meta,
             };
 
             Ok(backend)
@@ -545,6 +632,56 @@ pub mod proto {
                     Ok(EndpointDiscovery::DestinationGet { path })
                 }
             }
+        }
+    }
+
+    impl TryFrom<outbound::FailureAccrual> for FailureAccrual {
+        type Error = InvalidFailureAccrual;
+        fn try_from(accrual: outbound::FailureAccrual) -> Result<Self, Self::Error> {
+            use outbound::failure_accrual::{self, ConsecutiveFailures};
+            let kind = accrual.kind.ok_or(InvalidFailureAccrual::Missing("kind"))?;
+            match kind {
+                failure_accrual::Kind::ConsecutiveFailures(ConsecutiveFailures {
+                    max_failures,
+                    backoff,
+                }) => {
+                    // TODO(eliza): if other failure accrual kinds are added
+                    // that also use exponential backoffs, this could be factored out...
+                    let outbound::ExponentialBackoff {
+                        min_backoff,
+                        max_backoff,
+                        jitter_ratio,
+                    } = backoff.ok_or(InvalidFailureAccrual::Missing(
+                        "consecutive failures backoff",
+                    ))?;
+
+                    let duration = |dur: Option<prost_types::Duration>, field: &'static str| {
+                        dur.ok_or(InvalidFailureAccrual::Missing(field))?
+                            .try_into()
+                            .map_err(|error| InvalidFailureAccrual::Duration { field, error })
+                    };
+                    let min = duration(min_backoff, "min_backoff")?;
+                    let max = duration(max_backoff, "max_backoff")?;
+                    let backoff = linkerd_exp_backoff::ExponentialBackoff::try_new(
+                        min,
+                        max,
+                        jitter_ratio as f64,
+                    )?;
+                    Ok(FailureAccrual::ConsecutiveFailures {
+                        max_failures: max_failures as usize,
+                        backoff,
+                    })
+                }
+            }
+        }
+    }
+
+    impl TryFrom<Option<outbound::FailureAccrual>> for FailureAccrual {
+        type Error = InvalidFailureAccrual;
+        fn try_from(accrual: Option<outbound::FailureAccrual>) -> Result<Self, Self::Error> {
+            accrual
+                .map(Self::try_from)
+                .unwrap_or(Ok(FailureAccrual::None))
         }
     }
 }

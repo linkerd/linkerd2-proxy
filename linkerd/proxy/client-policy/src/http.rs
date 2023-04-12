@@ -1,9 +1,10 @@
+use crate::FailureAccrual;
 use linkerd_http_route::http;
-use std::sync::Arc;
+use std::{ops::RangeInclusive, sync::Arc};
 
 pub use linkerd_http_route::http::{filter, find, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter>;
+pub type Policy = crate::RoutePolicy<Filter, StatusRanges>;
 pub type Route = http::Route<Policy>;
 pub type Rule = http::Rule<Policy>;
 
@@ -11,12 +12,18 @@ pub type Rule = http::Rule<Policy>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http1 {
     pub routes: Arc<[Route]>,
+
+    /// Configures how endpoints accrue observed failures.
+    pub failure_accrual: FailureAccrual,
 }
 
 // TODO: window sizes, etc
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http2 {
     pub routes: Arc<[Route]>,
+
+    /// Configures how endpoints accrue observed failures.
+    pub failure_accrual: FailureAccrual,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -27,6 +34,9 @@ pub enum Filter {
     InternalError(&'static str),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct StatusRanges(pub Arc<[RangeInclusive<u16>]>);
+
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     Route {
         hosts: vec![],
@@ -36,6 +46,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
+                failure_policy: StatusRanges::default(),
             },
         }],
     }
@@ -47,6 +58,7 @@ impl Default for Http1 {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
+            failure_accrual: Default::default(),
         }
     }
 }
@@ -57,7 +69,24 @@ impl Default for Http2 {
     fn default() -> Self {
         Self {
             routes: Arc::new([]),
+            failure_accrual: Default::default(),
         }
+    }
+}
+
+// === impl StatusRanges ===
+
+impl StatusRanges {
+    pub fn contains(&self, code: ::http::StatusCode) -> bool {
+        self.0.iter().any(|range| range.contains(&code.as_u16()))
+    }
+}
+
+impl Default for StatusRanges {
+    fn default() -> Self {
+        use once_cell::sync::Lazy;
+        static STATUSES: Lazy<Arc<[RangeInclusive<u16>]>> = Lazy::new(|| Arc::new([500..=599]));
+        Self(STATUSES.clone())
     }
 }
 
@@ -65,7 +94,9 @@ impl Default for Http2 {
 pub mod proto {
     use super::*;
     use crate::{
-        proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
+        proto::{
+            BackendSet, InvalidBackend, InvalidDistribution, InvalidFailureAccrual, InvalidMeta,
+        },
         Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::outbound::{self, http_route};
@@ -93,6 +124,9 @@ pub mod proto {
 
         #[error("invalid filter: {0}")]
         Filter(#[from] InvalidFilter),
+
+        #[error("invalid failure accrual policy: {0}")]
+        Breaker(#[from] InvalidFailureAccrual),
 
         #[error("missing {0}")]
         Missing(&'static str),
@@ -129,7 +163,10 @@ pub mod proto {
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
-            Ok(Self { routes })
+            Ok(Self {
+                routes,
+                failure_accrual: proto.failure_accrual.try_into()?,
+            })
         }
     }
 
@@ -141,7 +178,10 @@ pub mod proto {
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
-            Ok(Self { routes })
+            Ok(Self {
+                routes,
+                failure_accrual: proto.failure_accrual.try_into()?,
+            })
         }
     }
 
@@ -189,10 +229,9 @@ pub mod proto {
             .map(Filter::try_from)
             .collect::<Result<Arc<[_]>, _>>()?;
 
-        let distribution = {
-            let backends = backends.ok_or(InvalidHttpRoute::Missing("distribution"))?;
-            try_distribution(meta, backends)?
-        };
+        let distribution = backends
+            .ok_or(InvalidHttpRoute::Missing("distribution"))?
+            .try_into()?;
 
         Ok(Rule {
             matches,
@@ -200,52 +239,61 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
+                failure_policy: StatusRanges::default(),
             },
         })
     }
 
-    fn try_distribution(
-        meta: &Arc<Meta>,
-        distribution: http_route::Distribution,
-    ) -> Result<RouteDistribution<Filter>, InvalidDistribution> {
-        use http_route::{distribution, WeightedRouteBackend};
+    impl TryFrom<http_route::Distribution> for RouteDistribution<Filter> {
+        type Error = InvalidDistribution;
+        fn try_from(distribution: http_route::Distribution) -> Result<Self, Self::Error> {
+            use http_route::{distribution, WeightedRouteBackend};
 
-        Ok(
-            match distribution.kind.ok_or(InvalidDistribution::Missing)? {
-                distribution::Kind::Empty(_) => RouteDistribution::Empty,
-                distribution::Kind::RandomAvailable(distribution::RandomAvailable { backends }) => {
-                    let backends = backends
-                        .into_iter()
-                        .map(|WeightedRouteBackend { weight, backend }| {
-                            let backend = backend.ok_or(InvalidDistribution::MissingBackend)?;
-                            Ok((try_route_backend(meta, backend)?, weight))
-                        })
-                        .collect::<Result<Arc<[_]>, InvalidDistribution>>()?;
-                    if backends.is_empty() {
-                        return Err(InvalidDistribution::Empty("RandomAvailable"));
+            Ok(
+                match distribution.kind.ok_or(InvalidDistribution::Missing)? {
+                    distribution::Kind::Empty(_) => RouteDistribution::Empty,
+                    distribution::Kind::RandomAvailable(distribution::RandomAvailable {
+                        backends,
+                    }) => {
+                        let backends = backends
+                            .into_iter()
+                            .map(|WeightedRouteBackend { weight, backend }| {
+                                let backend = backend
+                                    .ok_or(InvalidDistribution::MissingBackend)?
+                                    .try_into()?;
+                                Ok((backend, weight))
+                            })
+                            .collect::<Result<Arc<[_]>, InvalidDistribution>>()?;
+                        if backends.is_empty() {
+                            return Err(InvalidDistribution::Empty("RandomAvailable"));
+                        }
+                        RouteDistribution::RandomAvailable(backends)
                     }
-                    RouteDistribution::RandomAvailable(backends)
-                }
-                distribution::Kind::FirstAvailable(distribution::FirstAvailable { backends }) => {
-                    let backends = backends
-                        .into_iter()
-                        .map(|backend| try_route_backend(meta, backend))
-                        .collect::<Result<Arc<[_]>, InvalidBackend>>()?;
-                    if backends.is_empty() {
-                        return Err(InvalidDistribution::Empty("FirstAvailable"));
+                    distribution::Kind::FirstAvailable(distribution::FirstAvailable {
+                        backends,
+                    }) => {
+                        let backends = backends
+                            .into_iter()
+                            .map(RouteBackend::try_from)
+                            .collect::<Result<Arc<[_]>, InvalidBackend>>()?;
+                        if backends.is_empty() {
+                            return Err(InvalidDistribution::Empty("FirstAvailable"));
+                        }
+                        RouteDistribution::FirstAvailable(backends)
                     }
-                    RouteDistribution::FirstAvailable(backends)
-                }
-            },
-        )
+                },
+            )
+        }
     }
 
-    fn try_route_backend(
-        meta: &Arc<Meta>,
-        http_route::RouteBackend { backend, filters }: http_route::RouteBackend,
-    ) -> Result<RouteBackend<Filter>, InvalidBackend> {
-        let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-        RouteBackend::try_from_proto(meta, backend, filters)
+    impl TryFrom<http_route::RouteBackend> for RouteBackend<Filter> {
+        type Error = InvalidBackend;
+        fn try_from(
+            http_route::RouteBackend { backend, filters }: http_route::RouteBackend,
+        ) -> Result<Self, Self::Error> {
+            let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
+            RouteBackend::try_from_proto(backend, filters)
+        }
     }
 
     impl TryFrom<http_route::Filter> for Filter {

@@ -1,39 +1,48 @@
 use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
-    route,
+    route, RouteBackendMetrics,
 };
-use linkerd_app_core::{proxy::http, svc, transport::addrs::*, Addr, Error, Result};
+use crate::{BackendRef, EndpointRef, ParentRef, RouteRef};
+use linkerd_app_core::{
+    classify, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result,
+};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Params<M, F> {
+pub struct Params<M, F, E> {
     pub addr: Addr,
-    pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F>>]>,
+    pub meta: ParentRef,
+    pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
+    pub failure_accrual: policy::FailureAccrual,
 }
 
-pub type HttpParams = Params<http_route::http::MatchRequest, policy::http::Filter>;
-pub type GrpcParams = Params<http_route::grpc::MatchRoute, policy::grpc::Filter>;
+pub type HttpParams =
+    Params<http_route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>;
+pub type GrpcParams =
+    Params<http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F> {
+pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
     pub(super) parent: T,
     pub(super) addr: Addr,
-    pub(super) routes: Arc<[http_route::Route<M, route::Route<T, F>>]>,
+    pub(super) routes: Arc<[http_route::Route<M, route::Route<T, F, E>>]>,
     pub(super) backends: distribute::Backends<Concrete<T>>,
 }
 
-pub(super) type Http<T> = Router<T, http_route::http::MatchRequest, policy::http::Filter>;
-pub(super) type Grpc<T> = Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter>;
+pub(super) type Http<T> =
+    Router<T, http_route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>;
+pub(super) type Grpc<T> =
+    Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>;
 
 type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
 
 // === impl Router ===
 
-impl<T, M, F> Router<T, M, F>
+impl<T, M, F, E> Router<T, M, F, E>
 where
     // Parent target type.
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
@@ -44,18 +53,25 @@ where
     // Request filter.
     F: Debug + Eq + Hash,
     F: Clone + Send + Sync + 'static,
+    // Failure policy.
+    E: Debug + Eq + Hash,
+    E: Clone + Send + Sync + 'static,
     // Assert that we can route for the given match and filter types.
     Self: svc::router::SelectRoute<
         http::Request<http::BoxBody>,
-        Key = route::MatchedRoute<T, M::Summary, F>,
+        Key = route::MatchedRoute<T, M::Summary, F, E>,
         Error = NoRoute,
     >,
-    route::MatchedRoute<T, M::Summary, F>: route::filters::Apply,
-    route::backend::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
+    route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply + svc::Param<classify::Request>,
+    route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
+    route::backend::ExtractMetrics:
+        svc::ExtractParam<route::backend::RequestCount, route::MatchedBackend<T, M::Summary, F>>,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.
-    pub(super) fn layer<N, S>() -> impl svc::Layer<
+    pub(super) fn layer<N, S>(
+        route_backend_metrics: RouteBackendMetrics,
+    ) -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
             Self,
@@ -79,7 +95,7 @@ where
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
     {
-        svc::layer::mk(|inner| {
+        svc::layer::mk(move |inner| {
             svc::stack(inner)
                 .lift_new()
                 // Each route builds over concrete backends. All of these
@@ -87,7 +103,7 @@ where
                 .push(NewBackendCache::layer())
                 // Lazily cache a service for each `RouteParams` returned from the
                 // `SelectRoute` impl.
-                .push_on_service(route::MatchedRoute::layer())
+                .push_on_service(route::MatchedRoute::layer(route_backend_metrics.clone()))
                 .push(svc::NewOneshotRoute::<Self, (), _>::layer_cached())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
@@ -95,81 +111,110 @@ where
     }
 }
 
-impl<T, M, F> From<(Params<M, F>, T)> for Router<T, M, F>
+impl<T, M, F, E> From<(Params<M, F, E>, T)> for Router<T, M, F, E>
 where
     T: Eq + Hash + Clone + Debug,
     M: Clone,
     F: Clone,
+    E: Clone,
 {
-    fn from((rts, parent): (Params<M, F>, T)) -> Self {
+    fn from((rts, parent): (Params<M, F, E>, T)) -> Self {
         let Params {
             addr,
+            meta: parent_ref,
             routes,
             backends,
+            failure_accrual,
         } = rts;
 
         let mk_concrete = {
             let parent = parent.clone();
-            move |target: concrete::Dispatch| {
+            move |backend_ref: BackendRef, target: concrete::Dispatch| {
                 // XXX With policies we don't have a top-level authority name at
                 // the moment. So, instead, we use the concrete addr used for
                 // discovery for now.
                 let authority = match target {
-                    concrete::Dispatch::Balance(ref a, _) => Some(a.as_http_authority()),
+                    concrete::Dispatch::Balance(ref addr, ..) => Some(addr.as_http_authority()),
                     _ => None,
                 };
                 Concrete {
                     target,
                     authority,
                     parent: parent.clone(),
+                    backend_ref,
+                    parent_ref: parent_ref.clone(),
+                    failure_accrual,
                 }
             }
         };
 
-        let mk_dispatch = move |bd: &policy::BackendDispatcher| match *bd {
+        let mk_dispatch = move |bke: &policy::Backend| match bke.dispatcher {
             policy::BackendDispatcher::BalanceP2c(
                 policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
                 policy::EndpointDiscovery::DestinationGet { ref path },
-            ) => mk_concrete(concrete::Dispatch::Balance(
-                path.parse().expect("destination must be a nameaddr"),
-                http::balance::EwmaConfig { decay, default_rtt },
-            )),
-            policy::BackendDispatcher::Forward(addr, ref metadata) => mk_concrete(
-                concrete::Dispatch::Forward(Remote(ServerAddr(addr)), metadata.clone()),
+            ) => mk_concrete(
+                BackendRef(bke.meta.clone()),
+                concrete::Dispatch::Balance(
+                    path.parse::<NameAddr>()
+                        .expect("destination must be a nameaddr"),
+                    http::balance::EwmaConfig { decay, default_rtt },
+                ),
+            ),
+            policy::BackendDispatcher::Forward(addr, ref md) => mk_concrete(
+                EndpointRef::new(md, addr.port().try_into().expect("port must not be 0")).into(),
+                concrete::Dispatch::Forward(Remote(ServerAddr(addr)), md.clone()),
+            ),
+            policy::BackendDispatcher::Fail { ref message } => mk_concrete(
+                BackendRef(policy::Meta::new_default("fail")),
+                concrete::Dispatch::Fail {
+                    message: message.clone(),
+                },
             ),
         };
 
-        let mk_route_backend = |rb: &policy::RouteBackend<F>| {
+        let mk_route_backend = |route_ref: &RouteRef, rb: &policy::RouteBackend<F>| {
             let filters = rb.filters.clone();
-            let concrete = mk_dispatch(&rb.backend.dispatcher);
-            route::Backend { filters, concrete }
+            let concrete = mk_dispatch(&rb.backend);
+            route::Backend {
+                route_ref: route_ref.clone(),
+                filters,
+                concrete,
+            }
         };
 
-        let mk_distribution = |d: &policy::RouteDistribution<F>| match d {
+        let mk_distribution = |rr: &RouteRef, d: &policy::RouteDistribution<F>| match d {
             policy::RouteDistribution::Empty => route::BackendDistribution::Empty,
             policy::RouteDistribution::FirstAvailable(backends) => {
-                route::BackendDistribution::first_available(backends.iter().map(mk_route_backend))
+                route::BackendDistribution::first_available(
+                    backends.iter().map(|b| mk_route_backend(rr, b)),
+                )
             }
             policy::RouteDistribution::RandomAvailable(backends) => {
                 route::BackendDistribution::random_available(
                     backends
                         .iter()
-                        .map(|(rb, weight)| (mk_route_backend(rb), *weight)),
+                        .map(|(rb, weight)| (mk_route_backend(rr, rb), *weight)),
                 )
                 .expect("distribution must be valid")
             }
         };
 
-        let mk_policy = |policy::RoutePolicy::<F> {
+        let mk_policy = |policy::RoutePolicy::<F, E> {
                              meta,
                              filters,
                              distribution,
-                         }| route::Route {
-            addr: addr.clone(),
-            parent: parent.clone(),
-            meta,
-            filters,
-            distribution: mk_distribution(&distribution),
+                             failure_policy,
+                         }| {
+            let route_ref = RouteRef(meta);
+            let distribution = mk_distribution(&route_ref, &distribution);
+            route::Route {
+                addr: addr.clone(),
+                parent: parent.clone(),
+                route_ref,
+                filters,
+                failure_policy,
+                distribution,
+            }
         };
 
         let routes = routes
@@ -188,10 +233,7 @@ where
             })
             .collect();
 
-        let backends = backends
-            .iter()
-            .map(|t| mk_dispatch(&t.dispatcher))
-            .collect();
+        let backends = backends.iter().map(mk_dispatch).collect();
 
         Self {
             routes,
@@ -212,7 +254,7 @@ where
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         tracing::trace!(uri = ?req.uri(), headers = ?req.headers(), "Selecting HTTP route");
         let (r#match, params) = policy::http::find(&*self.routes, req).ok_or(NoRoute)?;
-        tracing::debug!(meta = ?params.meta, "Selected route");
+        tracing::debug!(meta = ?params.route_ref, "Selected route");
         tracing::trace!(?r#match);
         Ok(route::Matched {
             r#match,
@@ -231,7 +273,7 @@ where
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         tracing::trace!(uri = ?req.uri(), headers = ?req.headers(), "Selecting gRPC route");
         let (r#match, params) = policy::grpc::find(&*self.routes, req).ok_or(NoRoute)?;
-        tracing::debug!(meta = ?params.meta, "Selected route");
+        tracing::debug!(meta = ?params.route_ref, "Selected route");
         tracing::trace!(?r#match);
         Ok(route::Matched {
             r#match,
@@ -240,7 +282,7 @@ where
     }
 }
 
-impl<T, M, F> svc::Param<LogicalAddr> for Router<T, M, F>
+impl<T, M, F, E> svc::Param<LogicalAddr> for Router<T, M, F, E>
 where
     T: Eq + Hash + Clone + Debug,
 {
@@ -249,7 +291,7 @@ where
     }
 }
 
-impl<T, M, F> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F>
+impl<T, M, F, E> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F, E>
 where
     T: Eq + Hash + Clone + Debug,
 {

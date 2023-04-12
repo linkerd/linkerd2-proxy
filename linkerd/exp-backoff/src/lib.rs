@@ -34,11 +34,14 @@ pub struct ExponentialBackoffStream {
     iterations: u32,
     sleeping: bool,
     sleep: Pin<Box<time::Sleep>>,
+    duration: time::Duration,
 }
 
 #[derive(Clone, Debug, Error)]
 #[error("invalid backoff: {0}")]
 pub struct InvalidBackoff(&'static str);
+
+// === impl ExponentialBackoff ===
 
 impl ExponentialBackoff {
     pub const fn new_unchecked(min: time::Duration, max: time::Duration, jitter: f64) -> Self {
@@ -75,6 +78,7 @@ impl ExponentialBackoff {
             iterations: 0,
             sleeping: false,
             sleep: Box::pin(time::sleep(time::Duration::from_secs(0))),
+            duration: time::Duration::from_secs(0),
         }
     }
 
@@ -113,6 +117,28 @@ impl ExponentialBackoff {
     }
 }
 
+impl PartialEq for ExponentialBackoff {
+    fn eq(&self, other: &Self) -> bool {
+        debug_assert!(self.jitter.is_finite());
+        debug_assert!(other.jitter.is_finite());
+        self.min == other.min && self.max == other.max && self.jitter == other.jitter
+    }
+}
+
+// It's okay for `ExponentialBackoff`s to be `Eq` because we assert that the
+// jitter field (a float) is finite when constructing the backoff.
+impl Eq for ExponentialBackoff {}
+
+impl std::hash::Hash for ExponentialBackoff {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.min.hash(state);
+        self.max.hash(state);
+        self.jitter.to_bits().hash(state);
+    }
+}
+
+// === impl ExponentialBackoffStream ===
+
 impl Stream for ExponentialBackoffStream {
     type Item = ();
 
@@ -136,9 +162,17 @@ impl Stream for ExponentialBackoffStream {
                 let base = this.backoff.base(*this.iterations);
                 base + this.backoff.jitter(base, &mut this.rng)
             };
+            *this.duration = backoff;
             this.sleep.as_mut().reset(time::Instant::now() + backoff);
             *this.sleeping = true;
         }
+    }
+}
+
+impl ExponentialBackoffStream {
+    /// Returns the duration of the current backoff.
+    pub fn duration(&self) -> time::Duration {
+        self.duration
     }
 }
 
