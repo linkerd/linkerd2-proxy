@@ -16,7 +16,7 @@ async-trait = "0.1"
 bytes = "1"
 drain = "0.1"
 futures = { version = "0.3", default-features = false }
-h2 = "0.3"
+h2 = "0.3.17"
 http = "0.2"
 http-body = "0.4"
 httparse = "1"
