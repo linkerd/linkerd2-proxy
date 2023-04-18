@@ -16,7 +16,7 @@ ARG PROXY_FEATURES=""
 RUN apt-get update && \
     apt-get install -y time && \
     if [[ "$PROXY_FEATURES" =~ .*meshtls-boring.* ]] ; then \
-    apt-get install -y golang ; \
+      apt-get install -y golang ; \
     fi && \
     rm -rf /var/lib/apt/lists/*
 
