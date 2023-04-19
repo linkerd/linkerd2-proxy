@@ -611,13 +611,16 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             // Ensure that the admin server port is included in policy discovery.
             ports.insert(admin_listener_addr.port());
 
-
             // Determine any pre-configured opaque ports.
-            let opaque_ports = parse(strings, ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, parse_port_range_set)?
-                // If the `INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION` environment
-                // variable is not set, then there are no default opaque ports,
-                // and that's fine.
-                .unwrap_or_default();
+            let opaque_ports = parse(
+                strings,
+                ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+                parse_port_range_set,
+            )?
+            // If the `INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION` environment
+            // variable is not set, then there are no default opaque ports,
+            // and that's fine.
+            .unwrap_or_default();
 
             inbound::policy::Config::Discover {
                 default,

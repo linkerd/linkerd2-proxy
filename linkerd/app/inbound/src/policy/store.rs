@@ -42,7 +42,12 @@ impl<S> Store<S> {
     ) -> Self {
         let opaque_default_rx = Self::spawn_default(Self::make_opaque(default.clone()));
         let cache = {
-            let opaque_rxs = opaque_ports.iter().flat_map(|range| range.clone().into_iter().map(|port| (port, opaque_default_rx.clone())));
+            let opaque_rxs = opaque_ports.iter().flat_map(|range| {
+                range
+                    .clone()
+                    .into_iter()
+                    .map(|port| (port, opaque_default_rx.clone()))
+            });
             let rxs = ports.into_iter().map(|(p, s)| {
                 // When using a fixed policy, we don't need to watch for changes. It's
                 // safe to discard the sender, as the receiver will continue to let us
@@ -120,7 +125,7 @@ impl<S> Store<S> {
                     _ => unreachable!("default policy must have been configured to detect prior to marking it opaque"),
                 };
                 DefaultPolicy::Allow(policy)
-            },
+            }
             DefaultPolicy::Deny => DefaultPolicy::Deny,
         }
     }

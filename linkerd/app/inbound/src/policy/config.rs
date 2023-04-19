@@ -49,7 +49,7 @@ impl Config {
                 default,
                 ports,
                 cache_max_idle_age,
-                opaque_ports
+                opaque_ports,
             } => Store::spawn_fixed(default, cache_max_idle_age, ports, opaque_ports),
 
             Self::Discover {
