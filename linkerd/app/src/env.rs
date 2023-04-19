@@ -8,6 +8,7 @@ use crate::core::{
     Addr, AddrMatch, Conditional, IpNet,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound, policy};
+use rangemap::RangeInclusiveSet;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -75,6 +76,8 @@ pub enum ParseError {
         #[source]
         std::net::AddrParseError,
     ),
+    #[error("not a valid port range")]
+    NotAPortRange,
     #[error(transparent)]
     AddrError(addr::Error),
     #[error("not a valid identity name")]
@@ -608,10 +611,19 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             // Ensure that the admin server port is included in policy discovery.
             ports.insert(admin_listener_addr.port());
 
+
+            // Determine any pre-configured opaque ports.
+            let opaque_ports = parse(strings, ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, parse_port_range_set)?
+                // If the `INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION` environment
+                // variable is not set, then there are no default opaque ports,
+                // and that's fine.
+                .unwrap_or_default();
+
             inbound::policy::Config::Discover {
                 default,
                 ports,
                 cache_max_idle_age: discovery_idle_timeout,
+                opaque_ports,
             }
         };
 
@@ -934,6 +946,34 @@ fn parse_port_set(s: &str) -> Result<HashSet<u16>, ParseError> {
     if !s.is_empty() {
         for num in s.split(',') {
             set.insert(parse_number::<u16>(num)?);
+        }
+    }
+    Ok(set)
+}
+
+fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
+    let mut set = RangeInclusiveSet::new();
+    if !s.is_empty() {
+        for part in s.split(',') {
+            let mut parts = part.splitn(2, '-');
+            let low = parts.next().ok_or_else(|| {
+                error!("Not a valid port range: {part}");
+                ParseError::NotAPortRange
+            })?;
+            let low = parse_number::<u16>(low)?;
+            if let Some(high) = parts.next() {
+                let high = parse_number::<u16>(high).map_err(|e| {
+                    error!("Not a valid port range: {part}");
+                    e
+                })?;
+                if high < low {
+                    error!("Not a valid port range: {part}; {high} is greater than {low}");
+                    return Err(ParseError::NotAPortRange);
+                }
+                set.insert(low..=high);
+            } else {
+                set.insert(low..=low);
+            }
         }
     }
     Ok(set)

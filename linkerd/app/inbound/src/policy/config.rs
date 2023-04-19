@@ -1,5 +1,6 @@
 use super::{api::Api, DefaultPolicy, GetPolicy, Protocol, ServerPolicy, Store};
 use linkerd_app_core::{exp_backoff::ExponentialBackoff, proxy::http, Error};
+use rangemap::RangeInclusiveSet;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -17,11 +18,13 @@ pub enum Config {
         default: DefaultPolicy,
         cache_max_idle_age: Duration,
         ports: HashSet<u16>,
+        opaque_ports: RangeInclusiveSet<u16>,
     },
     Fixed {
         default: DefaultPolicy,
         cache_max_idle_age: Duration,
         ports: HashMap<u16, ServerPolicy>,
+        opaque_ports: RangeInclusiveSet<u16>,
     },
 }
 
@@ -46,12 +49,14 @@ impl Config {
                 default,
                 ports,
                 cache_max_idle_age,
-            } => Store::spawn_fixed(default, cache_max_idle_age, ports, Default::default()),
+                opaque_ports
+            } => Store::spawn_fixed(default, cache_max_idle_age, ports, opaque_ports),
 
             Self::Discover {
                 default,
                 ports,
                 cache_max_idle_age,
+                opaque_ports,
             } => {
                 let watch = {
                     let detect_timeout = match default {
@@ -63,7 +68,7 @@ impl Config {
                     };
                     Api::new(workload, detect_timeout, client).into_watch(backoff)
                 };
-                Store::spawn_discover(default, cache_max_idle_age, watch, ports, Default::default())
+                Store::spawn_discover(default, cache_max_idle_age, watch, ports, opaque_ports)
             }
         }
     }

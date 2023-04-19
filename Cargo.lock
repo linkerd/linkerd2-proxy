@@ -849,6 +849,7 @@ dependencies = [
  "linkerd-app-outbound",
  "linkerd-error",
  "linkerd-opencensus",
+ "rangemap",
  "regex",
  "thiserror",
  "tokio",
