@@ -112,7 +112,7 @@ impl Recover<tonic::Status> for GrpcRecover {
             // Non-retryable
             tonic::Code::InvalidArgument | tonic::Code::FailedPrecondition => Err(status),
             // Indicates no policy for this target
-            tonic::Code::NotFound => Err(status),
+            tonic::Code::NotFound | tonic::Code::Unimplemented => Err(status),
             _ => {
                 tracing::debug!(%status, "Recovering");
                 Ok(self.0.stream())

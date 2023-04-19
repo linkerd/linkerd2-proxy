@@ -108,7 +108,13 @@ impl<N> Outbound<N> {
                     // XXX(ver) The policy controller may (for the time being) reject
                     // our lookups, since it doesn't yet serve endpoint metadata for
                     // forwarding.
-                    Err(error) if is_not_found(&error) => tracing::debug!("Policy not found"),
+                    Err(error) if errors::has_grpc_status(&error, tonic::Code::NotFound) => tracing::debug!("Policy not found"),
+                    // Earlier versions of the Linkerd control plane (e.g.
+                    // 2.12.x) will return `Unimplemented` for requests to the
+                    // OutboundPolicy API. Log a warning and synthesize a policy
+                    // for backwards compatibility.
+                    Err(error) if errors::has_grpc_status(&error, tonic::Code::Unimplemented) =>
+                        tracing::warn!("Policy controller returned `Unimplemented`, the control plane may be out of date."),
                     Err(error) => return Err(error),
                 }
 
@@ -141,13 +147,6 @@ impl<N> Outbound<N> {
             })
         })
     }
-}
-
-#[inline]
-fn is_not_found(e: &Error) -> bool {
-    errors::cause_ref::<tonic::Status>(e.as_ref())
-        .map(|s| s.code() == tonic::Code::NotFound)
-        .unwrap_or(false)
 }
 
 pub fn spawn_synthesized_profile_policy(
