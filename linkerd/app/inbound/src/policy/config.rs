@@ -46,7 +46,7 @@ impl Config {
                 default,
                 ports,
                 cache_max_idle_age,
-            } => Store::spawn_fixed(default, cache_max_idle_age, ports),
+            } => Store::spawn_fixed(default, cache_max_idle_age, ports, Default::default()),
 
             Self::Discover {
                 default,
@@ -63,7 +63,7 @@ impl Config {
                     };
                     Api::new(workload, detect_timeout, client).into_watch(backoff)
                 };
-                Store::spawn_discover(default, cache_max_idle_age, watch, ports)
+                Store::spawn_discover(default, cache_max_idle_age, watch, ports, Default::default())
             }
         }
     }
