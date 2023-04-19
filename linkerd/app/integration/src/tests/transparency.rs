@@ -202,22 +202,9 @@ async fn test_server_speaks_first(env: TestEnv) {
 
     let _trace = trace_init();
 
-    let msg1 = "custom tcp server starts";
-    let msg2 = "custom tcp client second";
-
     let (tx, mut rx) = mpsc::channel(1);
     let srv = server::tcp()
-        .accept_fut(move |mut sock| {
-            async move {
-                sock.write_all(msg1.as_bytes()).await?;
-                let mut vec = vec![0; 512];
-                let n = sock.read(&mut vec).await?;
-                assert_eq!(s(&vec[..n]), msg2);
-                tx.send(()).await.unwrap();
-                Ok::<(), io::Error>(())
-            }
-            .map(|res| res.expect("TCP server must not fail"))
-        })
+        .accept_fut(move |sock| serve_server_first(sock, tx))
         .run()
         .await;
 
@@ -231,8 +218,8 @@ async fn test_server_speaks_first(env: TestEnv) {
 
     let tcp_client = client.connect().await;
 
-    assert_eq!(s(&tcp_client.read_timeout(TIMEOUT).await), msg1);
-    tcp_client.write(msg2).await;
+    assert_eq!(s(&tcp_client.read_timeout(TIMEOUT).await), SERVER_FIRST_MSG1);
+    tcp_client.write(SERVER_FIRST_MSG2).await;
     timeout(TIMEOUT, rx.recv()).await.unwrap();
 
     // TCP client must close first
@@ -242,9 +229,62 @@ async fn test_server_speaks_first(env: TestEnv) {
     proxy.join_servers().await;
 }
 
+
 #[tokio::test]
 async fn tcp_server_first() {
     test_server_speaks_first(TestEnv::default()).await;
+}
+
+/// Like `tcp_server_first`, but the opaque port configuration is not discovered
+/// from the policy controller before accepting the connection (i.e. the port is
+/// *not* in `LINKERD2_PROXY_INBOUND_PORTS`).
+#[tokio::test]
+async fn tcp_server_first_no_discovery() {
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    let _trace = trace_init();
+
+    let (tx, mut rx) = mpsc::channel(1);
+    let srv = server::tcp()
+        .accept_fut(move |sock| serve_server_first(sock, tx))
+        .run()
+        .await;
+
+    let mut env = TestEnv::default();
+    env.put(app::env::ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, srv.addr.port().to_string());
+
+    let proxy = proxy::new()
+        .inbound(srv)
+        .run_with_test_env(env)
+        .await;
+
+    let client = client::tcp(proxy.inbound);
+
+    let tcp_client = client.connect().await;
+
+    assert_eq!(s(&tcp_client.read_timeout(TIMEOUT).await), SERVER_FIRST_MSG1);
+    tcp_client.write(SERVER_FIRST_MSG2).await;
+    timeout(TIMEOUT, rx.recv()).await.unwrap();
+
+    // TCP client must close first
+    tcp_client.shutdown().await;
+
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
+}
+
+const SERVER_FIRST_MSG1: &str = "custom tcp server starts";
+const SERVER_FIRST_MSG2: &str = "custom tcp client second";
+
+async fn serve_server_first(mut sock: tokio::net::TcpStream, tx: mpsc::Sender<()>) {
+    async move {
+        sock.write_all(SERVER_FIRST_MSG1.as_bytes()).await?;
+        let mut vec = vec![0; 512];
+        let n = sock.read(&mut vec).await?;
+        assert_eq!(s(&vec[..n]), SERVER_FIRST_MSG2);
+        tx.send(()).await.unwrap();
+        Ok::<_, std::io::Error>(())
+    }.map(|res| res.expect("TCP server must not fail")).await
 }
 
 // FIXME(ver) this test doesn't actually test TLS functionality.
