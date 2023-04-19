@@ -594,7 +594,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             // Load the the set of all known inbound ports to be discovered
             // eagerly during initialization.
             let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_range_set)? {
-                Some(ports) => ports.into_iter().flat_map(|range| range.into_iter()).collect::<HashSet<_>>(),
+                Some(ports) => ports.into_iter().flatten().collect::<HashSet<_>>(),
                 None => {
                     error!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
                     Default::default()
