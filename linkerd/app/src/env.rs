@@ -593,8 +593,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
             // Load the the set of all known inbound ports to be discovered
             // eagerly during initialization.
-            let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
-                Some(ports) => ports,
+            let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_range_set)? {
+                Some(ports) => ports.into_iter().flat_map(|range| range.into_iter()).collect::<HashSet<_>>(),
                 None => {
                     error!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
                     Default::default()
@@ -939,16 +939,6 @@ fn parse_addr(s: &str) -> Result<Addr, ParseError> {
         error!("Not a valid address: {}", s);
         ParseError::AddrError(e)
     })
-}
-
-fn parse_port_set(s: &str) -> Result<HashSet<u16>, ParseError> {
-    let mut set = HashSet::new();
-    if !s.is_empty() {
-        for num in s.split(',') {
-            set.insert(parse_number::<u16>(num)?);
-        }
-    }
-    Ok(set)
 }
 
 fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
