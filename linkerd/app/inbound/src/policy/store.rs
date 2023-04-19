@@ -122,6 +122,7 @@ impl<S> Store<S> {
                     Protocol::Detect { tcp_authorizations, .. } => {
                         Protocol::Opaque(tcp_authorizations)
                     }
+                    opaq @ Protocol::Opaque(_) => opaq,
                     _ => unreachable!("default policy must have been configured to detect prior to marking it opaque"),
                 };
                 DefaultPolicy::Allow(policy)
