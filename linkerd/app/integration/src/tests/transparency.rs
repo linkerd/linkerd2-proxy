@@ -246,14 +246,19 @@ async fn outbound_opaque_tcp_server_first() {
     });
     let dest = dstctl.destination_tx(name.clone());
     dest.send_addr(srv.addr);
-    let policy = controller::policy().outbound(srv.addr, policy::outbound::OutboundPolicy {
+    let policy = controller::policy().outbound(
+        srv.addr,
+        policy::outbound::OutboundPolicy {
             protocol: Some(policy::outbound::ProxyProtocol {
-                kind: Some(policy::outbound::proxy_protocol::Kind::Opaque(policy::outbound::proxy_protocol::Opaque {
-                    routes: vec![policy::outbound_default_opaque_route(name.clone())]
-                })),
+                kind: Some(policy::outbound::proxy_protocol::Kind::Opaque(
+                    policy::outbound::proxy_protocol::Opaque {
+                        routes: vec![policy::outbound_default_opaque_route(name.clone())],
+                    },
+                )),
             }),
             ..policy::outbound_default(name)
-    });
+        },
+    );
     let proxy = proxy::new()
         .controller(dstctl.run().await)
         .policy(policy.run().await)
@@ -289,7 +294,10 @@ async fn server_first_client(addr: SocketAddr, mut rx: mpsc::Receiver<()>) {
 
     let tcp_client = client.connect().await;
 
-    assert_eq!(s(&tcp_client.read_timeout(TIMEOUT).await), SERVER_FIRST_MSG1);
+    assert_eq!(
+        s(&tcp_client.read_timeout(TIMEOUT).await),
+        SERVER_FIRST_MSG1
+    );
     tcp_client.write(SERVER_FIRST_MSG2).await;
     timeout(TIMEOUT, rx.recv()).await.unwrap();
 
