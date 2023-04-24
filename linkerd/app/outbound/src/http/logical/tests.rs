@@ -231,6 +231,7 @@ async fn balancer_doesnt_select_tripped_breakers() {
     let (_route_tx, routes) =
         watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
             addr: dest.into(),
+            meta: ParentRef(client_policy::Meta::new_default("parent")),
             backends: Arc::new([backend.clone()]),
             routes: Arc::new([default_route(backend)]),
             failure_accrual: client_policy::FailureAccrual::ConsecutiveFailures {
