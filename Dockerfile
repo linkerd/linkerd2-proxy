@@ -41,5 +41,5 @@ RUN --mount=type=cache,id=target,target=target \
 FROM $RUNTIME_IMAGE as runtime
 WORKDIR /linkerd
 COPY --from=build /out/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
-ENV LINKERD2_PROXY_LOG=warn,linkerd=info
+ENV LINKERD2_PROXY_LOG=warn,linkerd=info,trust_dns=error
 # Inherits the ENTRYPOINT from the runtime image.
