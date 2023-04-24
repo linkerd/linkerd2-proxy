@@ -1470,6 +1470,10 @@ mod tests {
         assert!(dbg!(parse_port_range_set("80-79")).is_err());
         assert!(dbg!(parse_port_range_set("1,2,5-2")).is_err());
 
+        // malformed (half-open) ranges
+        assert!(dbg!(parse_port_range_set("-1")).is_err());
+        assert!(dbg!(parse_port_range_set("1,2-,50")).is_err());
+        
         // not a u16
         assert!(dbg!(parse_port_range_set("69420")).is_err());
         assert!(dbg!(parse_port_range_set("1-69420")).is_err());
