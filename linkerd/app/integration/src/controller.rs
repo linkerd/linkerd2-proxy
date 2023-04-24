@@ -141,10 +141,10 @@ impl Controller {
         tx
     }
 
-    pub fn profile_tx(&self, dest: impl Into<String>) -> ProfileSender {
+    pub fn profile_tx(&self, dest: impl ToString) -> ProfileSender {
         let (tx, rx) = mpsc::unbounded_channel();
         let rx = UnboundedReceiverStream::new(rx);
-        let mut path = dest.into();
+        let mut path = dest.to_string();
         if !path.contains(':') {
             path.push_str(":80");
         };
