@@ -1436,4 +1436,34 @@ mod tests {
         assert!(parse_ip_set("10.4.0.3,foobar,192.168.0.69").is_err());
         assert!(parse_ip_set("10.0.1.1/24").is_err());
     }
+
+    #[test]
+    fn ranges() {
+        fn set(ranges: impl IntoIterator<Item = std::ops::RangeInclusive<u16>>) -> Result<RangeInclusiveSet<u16>, ParseError> {
+            Ok(ranges.into_iter().collect())
+        }
+
+        assert_eq!(dbg!(parse_port_range_set("1-65535")), set([1..=65535]));
+        assert_eq!(dbg!(parse_port_range_set("1-2,42-420")), set([1..=2, 42..=420]));
+        assert_eq!(dbg!(parse_port_range_set("1-2,42,80-420")), set([1..=2, 42..=42, 80..=420]));
+        assert_eq!(dbg!(parse_port_range_set("1,20,30,40")), set([1..=1, 20..=20, 30..=30, 40..=40]));
+        assert_eq!(dbg!(parse_port_range_set("40,30,20,1")), set([1..=1, 20..=20, 30..=30, 40..=40]));
+        // ignores empty list entries
+        assert_eq!(dbg!(parse_port_range_set("1,,,,2")), set([1..=1, 2..=2]));
+        // inores rando whitespace
+        assert_eq!(dbg!(parse_port_range_set("1, 2,\t3- 5")), set([1..=1, 2..=2, 3..=5]));
+
+        // non-numeric strings
+        assert!(dbg!(parse_port_range_set("asdf")).is_err());
+        assert!(dbg!(parse_port_range_set("80, 443, http")).is_err());
+        assert!(dbg!(parse_port_range_set("80,http-443")).is_err());
+
+        // backwards ranges
+        assert!(dbg!(parse_port_range_set("80-79")).is_err());
+        assert!(dbg!(parse_port_range_set("1,2,5-2")).is_err());
+
+        // not a u16
+        assert!(dbg!(parse_port_range_set("69420")).is_err());
+        assert!(dbg!(parse_port_range_set("1-69420")).is_err());
+    }
 }
