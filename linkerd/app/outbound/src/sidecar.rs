@@ -126,7 +126,12 @@ impl svc::Param<Protocol> for Sidecar {
             }
         }
 
-        Protocol::Detect
+        match self.policy.borrow().protocol {
+            policy::Protocol::Http1(_) => Protocol::Http1,
+            policy::Protocol::Http2(_) | policy::Protocol::Grpc(_) => Protocol::Http2,
+            policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => Protocol::Opaque,
+            policy::Protocol::Detect { .. } => Protocol::Detect,
+        }
     }
 }
 

@@ -197,12 +197,12 @@ async fn loop_inbound_http1() {
     assert_eq!(rsp.status(), http::StatusCode::FORBIDDEN);
 }
 
-async fn test_server_speaks_first(env: TestEnv) {
+async fn test_inbound_server_speaks_first(env: TestEnv) {
     const TIMEOUT: Duration = Duration::from_secs(5);
 
     let _trace = trace_init();
 
-    let (tx, mut rx) = mpsc::channel(1);
+    let (tx, rx) = mpsc::channel(1);
     let srv = server::tcp()
         .accept_fut(move |sock| serve_server_first(sock, tx))
         .run()
@@ -214,39 +214,27 @@ async fn test_server_speaks_first(env: TestEnv) {
         .run_with_test_env(env)
         .await;
 
-    let client = client::tcp(proxy.inbound);
-
-    let tcp_client = client.connect().await;
-
-    assert_eq!(
-        s(&tcp_client.read_timeout(TIMEOUT).await),
-        SERVER_FIRST_MSG1
-    );
-    tcp_client.write(SERVER_FIRST_MSG2).await;
-    timeout(TIMEOUT, rx.recv()).await.unwrap();
-
-    // TCP client must close first
-    tcp_client.shutdown().await;
+    server_first_client(proxy.inbound, rx).await;
 
     // ensure panics from the server are propagated
     proxy.join_servers().await;
 }
 
 #[tokio::test]
-async fn tcp_server_first() {
-    test_server_speaks_first(TestEnv::default()).await;
+async fn inbound_tcp_server_first() {
+    test_inbound_server_speaks_first(TestEnv::default()).await;
 }
 
 /// Like `tcp_server_first`, but the opaque port configuration is not discovered
 /// from the policy controller before accepting the connection (i.e. the port is
 /// *not* in `LINKERD2_PROXY_INBOUND_PORTS`).
 #[tokio::test]
-async fn tcp_server_first_no_discovery() {
+async fn inbound_tcp_server_first_no_discovery() {
     const TIMEOUT: Duration = Duration::from_secs(5);
 
     let _trace = trace_init();
 
-    let (tx, mut rx) = mpsc::channel(1);
+    let (tx, rx) = mpsc::channel(1);
     let srv = server::tcp()
         .accept_fut(move |sock| serve_server_first(sock, tx))
         .run()
@@ -260,44 +248,16 @@ async fn tcp_server_first_no_discovery() {
 
     let proxy = proxy::new().inbound(srv).run_with_test_env(env).await;
 
-    let client = client::tcp(proxy.inbound);
-
-    let tcp_client = client.connect().await;
-
-    assert_eq!(
-        s(&tcp_client.read_timeout(TIMEOUT).await),
-        SERVER_FIRST_MSG1
-    );
-    tcp_client.write(SERVER_FIRST_MSG2).await;
-    timeout(TIMEOUT, rx.recv()).await.unwrap();
-
-    // TCP client must close first
-    tcp_client.shutdown().await;
+    server_first_client(proxy.inbound, rx).await;
 
     // ensure panics from the server are propagated
     proxy.join_servers().await;
 }
 
-const SERVER_FIRST_MSG1: &str = "custom tcp server starts";
-const SERVER_FIRST_MSG2: &str = "custom tcp client second";
-
-async fn serve_server_first(mut sock: tokio::net::TcpStream, tx: mpsc::Sender<()>) {
-    async move {
-        sock.write_all(SERVER_FIRST_MSG1.as_bytes()).await?;
-        let mut vec = vec![0; 512];
-        let n = sock.read(&mut vec).await?;
-        assert_eq!(s(&vec[..n]), SERVER_FIRST_MSG2);
-        tx.send(()).await.unwrap();
-        Ok::<_, std::io::Error>(())
-    }
-    .map(|res| res.expect("TCP server must not fail"))
-    .await
-}
-
 // FIXME(ver) this test doesn't actually test TLS functionality.
 #[ignore]
 #[tokio::test]
-async fn tcp_server_first_tls() {
+async fn inbound_tcp_server_first_tls() {
     use std::path::PathBuf;
 
     let (_cert, _key, _trust_anchors) = {
@@ -336,9 +296,88 @@ async fn tcp_server_first_tls() {
     //    "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
     //);
 
-    test_server_speaks_first(env).await
+    test_inbound_server_speaks_first(env).await
 }
 
+/// Tests that the outbound proxy does not attempt to perform protocol detection
+/// when the policy controller returns an `OutboundPolicy` indicating that the
+/// destination is opaque.
+#[tokio::test]
+async fn outbound_opaque_tcp_server_first() {
+    let _trace = trace_init();
+
+    let (tx, rx) = mpsc::channel(1);
+    let srv = server::tcp()
+        .accept_fut(move |sock| serve_server_first(sock, tx))
+        .run()
+        .await;
+    let name = format!("opaque.test.svc.cluster.local:{}", srv.addr.port());
+    let dstctl = controller::new();
+    let profile = dstctl.profile_tx(srv.addr);
+    profile.send(controller::pb::DestinationProfile {
+        fully_qualified_name: name.clone(),
+        ..Default::default()
+    });
+    let dest = dstctl.destination_tx(name.clone());
+    dest.send_addr(srv.addr);
+    let policy = controller::policy().outbound(
+        srv.addr,
+        policy::outbound::OutboundPolicy {
+            protocol: Some(policy::outbound::ProxyProtocol {
+                kind: Some(policy::outbound::proxy_protocol::Kind::Opaque(
+                    policy::outbound::proxy_protocol::Opaque {
+                        routes: vec![policy::outbound_default_opaque_route(name.clone())],
+                    },
+                )),
+            }),
+            ..policy::outbound_default(name)
+        },
+    );
+    let proxy = proxy::new()
+        .controller(dstctl.run().await)
+        .policy(policy.run().await)
+        .outbound(srv)
+        .run()
+        .await;
+
+    server_first_client(proxy.outbound, rx).await;
+
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
+}
+
+const SERVER_FIRST_MSG1: &str = "custom tcp server starts";
+const SERVER_FIRST_MSG2: &str = "custom tcp client second";
+
+async fn serve_server_first(mut sock: tokio::net::TcpStream, tx: mpsc::Sender<()>) {
+    async move {
+        sock.write_all(SERVER_FIRST_MSG1.as_bytes()).await?;
+        let mut vec = vec![0; 512];
+        let n = sock.read(&mut vec).await?;
+        assert_eq!(s(&vec[..n]), SERVER_FIRST_MSG2);
+        tx.send(()).await.unwrap();
+        Ok::<_, std::io::Error>(())
+    }
+    .map(|res| res.expect("TCP server must not fail"))
+    .await
+}
+
+async fn server_first_client(addr: SocketAddr, mut rx: mpsc::Receiver<()>) {
+    const TIMEOUT: Duration = Duration::from_secs(5);
+    let client = client::tcp(addr);
+
+    let tcp_client = client.connect().await;
+
+    assert_eq!(
+        s(&tcp_client.read_timeout(TIMEOUT).await),
+        SERVER_FIRST_MSG1
+    );
+    tcp_client.write(SERVER_FIRST_MSG2).await;
+    timeout(TIMEOUT, rx.recv()).await.unwrap();
+
+    // TCP client must close first
+    tcp_client.shutdown().await;
+}
 #[tokio::test]
 async fn tcp_connections_close_if_client_closes() {
     let _trace = trace_init();
