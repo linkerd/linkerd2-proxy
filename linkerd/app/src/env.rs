@@ -948,13 +948,20 @@ fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
     let mut set = RangeInclusiveSet::new();
     if !s.is_empty() {
         for part in s.split(',') {
+            let part = part.trim();
+            // Ignore empty list entries
+            if part.is_empty() {
+                continue;
+            }
+
             let mut parts = part.splitn(2, '-');
             let low = parts.next().ok_or_else(|| {
                 error!("Not a valid port range: {part}");
                 ParseError::NotAPortRange
-            })?;
+            })?.trim();
             let low = parse_number::<u16>(low)?;
             if let Some(high) = parts.next() {
+                let high = high.trim();
                 let high = parse_number::<u16>(high).map_err(|e| {
                     error!("Not a valid port range: {part}");
                     e
@@ -1450,8 +1457,9 @@ mod tests {
         assert_eq!(dbg!(parse_port_range_set("40,30,20,1")), set([1..=1, 20..=20, 30..=30, 40..=40]));
         // ignores empty list entries
         assert_eq!(dbg!(parse_port_range_set("1,,,,2")), set([1..=1, 2..=2]));
-        // inores rando whitespace
+        // ignores rando whitespace
         assert_eq!(dbg!(parse_port_range_set("1, 2,\t3- 5")), set([1..=1, 2..=2, 3..=5]));
+        assert_eq!(dbg!(parse_port_range_set("1, , 2,")), set([1..=1, 2..=2]));
 
         // non-numeric strings
         assert!(dbg!(parse_port_range_set("asdf")).is_err());
