@@ -26,7 +26,7 @@ jobs:
       image: docker://ghcr.io/linkerd/dev:v40-rust
       options: --security-opt seccomp=unconfined # 🤷
     steps:
-      - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
       # XXX(ver) AFAICT, Tarpaulin doesn't allow us to compose a report over multiple invocations,
       # so we have to choose between getting coverage from unit tests and integration tests (since
       # integration tests require --no-default-features to avoid flakiness). Currently the
