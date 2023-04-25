@@ -29,6 +29,7 @@ jobs:
     container: docker://ghcr.io/linkerd/dev:v40-rust
     steps:
       - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: tj-actions/changed-files@db5dd7c176cf59a19ef6561bf1936f059dee4b74
         id: changed-files
         with:
@@ -52,6 +53,7 @@ jobs:
         crate: ${{ fromJson(needs.list-changed-crates.outputs.crates) }}
     steps:
       - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: just fetch
       - run: just check-crate ${{ matrix.crate }}
 
