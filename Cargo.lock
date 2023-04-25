@@ -849,6 +849,7 @@ dependencies = [
  "linkerd-app-outbound",
  "linkerd-error",
  "linkerd-opencensus",
+ "rangemap",
  "regex",
  "thiserror",
  "tokio",
@@ -985,6 +986,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "once_cell",
  "parking_lot",
+ "rangemap",
  "thiserror",
  "tokio",
  "tokio-test",
@@ -2299,6 +2301,12 @@ checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
 ]
+
+[[package]]
+name = "rangemap"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b9283c6b06096b47afc7109834fdedab891175bb5241ee5d4f7d2546549f263"
 
 [[package]]
 name = "redox_syscall"

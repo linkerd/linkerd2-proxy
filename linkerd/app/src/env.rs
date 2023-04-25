@@ -8,6 +8,7 @@ use crate::core::{
     Addr, AddrMatch, Conditional, IpNet,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound, policy};
+use rangemap::RangeInclusiveSet;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -75,6 +76,8 @@ pub enum ParseError {
         #[source]
         std::net::AddrParseError,
     ),
+    #[error("not a valid port range")]
+    NotAPortRange,
     #[error(transparent)]
     AddrError(addr::Error),
     #[error("not a valid identity name")]
@@ -590,8 +593,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
             // Load the the set of all known inbound ports to be discovered
             // eagerly during initialization.
-            let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
-                Some(ports) => ports,
+            let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_range_set)? {
+                Some(ports) => ports.into_iter().flatten().collect::<HashSet<_>>(),
                 None => {
                     error!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
                     Default::default()
@@ -608,10 +611,22 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             // Ensure that the admin server port is included in policy discovery.
             ports.insert(admin_listener_addr.port());
 
+            // Determine any pre-configured opaque ports.
+            let opaque_ports = parse(
+                strings,
+                ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+                parse_port_range_set,
+            )?
+            // If the `INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION` environment
+            // variable is not set, then there are no default opaque ports,
+            // and that's fine.
+            .unwrap_or_default();
+
             inbound::policy::Config::Discover {
                 default,
                 ports,
                 cache_max_idle_age: discovery_idle_timeout,
+                opaque_ports,
             }
         };
 
@@ -929,11 +944,39 @@ fn parse_addr(s: &str) -> Result<Addr, ParseError> {
     })
 }
 
-fn parse_port_set(s: &str) -> Result<HashSet<u16>, ParseError> {
-    let mut set = HashSet::new();
+fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
+    let mut set = RangeInclusiveSet::new();
     if !s.is_empty() {
-        for num in s.split(',') {
-            set.insert(parse_number::<u16>(num)?);
+        for part in s.split(',') {
+            let part = part.trim();
+            // Ignore empty list entries
+            if part.is_empty() {
+                continue;
+            }
+
+            let mut parts = part.splitn(2, '-');
+            let low = parts
+                .next()
+                .ok_or_else(|| {
+                    error!("Not a valid port range: {part}");
+                    ParseError::NotAPortRange
+                })?
+                .trim();
+            let low = parse_number::<u16>(low)?;
+            if let Some(high) = parts.next() {
+                let high = high.trim();
+                let high = parse_number::<u16>(high).map_err(|e| {
+                    error!("Not a valid port range: {part}");
+                    e
+                })?;
+                if high < low {
+                    error!("Not a valid port range: {part}; {high} is greater than {low}");
+                    return Err(ParseError::NotAPortRange);
+                }
+                set.insert(low..=high);
+            } else {
+                set.insert(low..=low);
+            }
         }
     }
     Ok(set)
@@ -1402,5 +1445,57 @@ mod tests {
         assert!(parse_ip_set("10.4.0.555").is_err());
         assert!(parse_ip_set("10.4.0.3,foobar,192.168.0.69").is_err());
         assert!(parse_ip_set("10.0.1.1/24").is_err());
+    }
+
+    #[test]
+    fn ranges() {
+        fn set(
+            ranges: impl IntoIterator<Item = std::ops::RangeInclusive<u16>>,
+        ) -> Result<RangeInclusiveSet<u16>, ParseError> {
+            Ok(ranges.into_iter().collect())
+        }
+
+        assert_eq!(dbg!(parse_port_range_set("1-65535")), set([1..=65535]));
+        assert_eq!(
+            dbg!(parse_port_range_set("1-2,42-420")),
+            set([1..=2, 42..=420])
+        );
+        assert_eq!(
+            dbg!(parse_port_range_set("1-2,42,80-420")),
+            set([1..=2, 42..=42, 80..=420])
+        );
+        assert_eq!(
+            dbg!(parse_port_range_set("1,20,30,40")),
+            set([1..=1, 20..=20, 30..=30, 40..=40])
+        );
+        assert_eq!(
+            dbg!(parse_port_range_set("40,30,20,1")),
+            set([1..=1, 20..=20, 30..=30, 40..=40])
+        );
+        // ignores empty list entries
+        assert_eq!(dbg!(parse_port_range_set("1,,,,2")), set([1..=1, 2..=2]));
+        // ignores rando whitespace
+        assert_eq!(
+            dbg!(parse_port_range_set("1, 2,\t3- 5")),
+            set([1..=1, 2..=2, 3..=5])
+        );
+        assert_eq!(dbg!(parse_port_range_set("1, , 2,")), set([1..=1, 2..=2]));
+
+        // non-numeric strings
+        assert!(dbg!(parse_port_range_set("asdf")).is_err());
+        assert!(dbg!(parse_port_range_set("80, 443, http")).is_err());
+        assert!(dbg!(parse_port_range_set("80,http-443")).is_err());
+
+        // backwards ranges
+        assert!(dbg!(parse_port_range_set("80-79")).is_err());
+        assert!(dbg!(parse_port_range_set("1,2,5-2")).is_err());
+
+        // malformed (half-open) ranges
+        assert!(dbg!(parse_port_range_set("-1")).is_err());
+        assert!(dbg!(parse_port_range_set("1,2-,50")).is_err());
+
+        // not a u16
+        assert!(dbg!(parse_port_range_set("69420")).is_err());
+        assert!(dbg!(parse_port_range_set("1-69420")).is_err());
     }
 }

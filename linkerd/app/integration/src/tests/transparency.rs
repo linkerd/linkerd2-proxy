@@ -225,6 +225,80 @@ async fn inbound_tcp_server_first() {
     test_inbound_server_speaks_first(TestEnv::default()).await;
 }
 
+/// Like `tcp_server_first`, but the opaque port configuration is not discovered
+/// from the policy controller before accepting the connection (i.e. the port is
+/// *not* in `LINKERD2_PROXY_INBOUND_PORTS`).
+#[tokio::test]
+async fn inbound_tcp_server_first_no_discovery() {
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    let _trace = trace_init();
+
+    let (tx, rx) = mpsc::channel(1);
+    let srv = server::tcp()
+        .accept_fut(move |sock| serve_server_first(sock, tx))
+        .run()
+        .await;
+
+    let mut env = TestEnv::default();
+    env.put(
+        app::env::ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+        srv.addr.port().to_string(),
+    );
+
+    let proxy = proxy::new().inbound(srv).run_with_test_env(env).await;
+
+    server_first_client(proxy.inbound, rx).await;
+
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
+}
+
+// FIXME(ver) this test doesn't actually test TLS functionality.
+#[ignore]
+#[tokio::test]
+async fn inbound_tcp_server_first_tls() {
+    use std::path::PathBuf;
+
+    let (_cert, _key, _trust_anchors) = {
+        let path_to_string = |path: &PathBuf| {
+            path.as_path()
+                .to_owned()
+                .into_os_string()
+                .into_string()
+                .unwrap()
+        };
+        let mut tls = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        tls.push("src");
+        tls.push("transport");
+        tls.push("tls");
+        tls.push("testdata");
+
+        tls.push("foo-ns1-ca1.crt");
+        let cert = path_to_string(&tls);
+
+        tls.set_file_name("foo-ns1-ca1.p8");
+        let key = path_to_string(&tls);
+
+        tls.set_file_name("ca1.pem");
+        let trust_anchors = path_to_string(&tls);
+        (cert, key, trust_anchors)
+    };
+
+    let env = TestEnv::default();
+
+    // FIXME
+    //env.put(app::env::ENV_TLS_CERT, cert);
+    //env.put(app::env::ENV_TLS_PRIVATE_KEY, key);
+    //env.put(app::env::ENV_TLS_TRUST_ANCHORS, trust_anchors);
+    //env.put(
+    //    app::env::ENV_TLS_LOCAL_IDENTITY,
+    //    "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
+    //);
+
+    test_inbound_server_speaks_first(env).await
+}
+
 /// Tests that the outbound proxy does not attempt to perform protocol detection
 /// when the policy controller returns an `OutboundPolicy` indicating that the
 /// destination is opaque.
@@ -304,52 +378,6 @@ async fn server_first_client(addr: SocketAddr, mut rx: mpsc::Receiver<()>) {
     // TCP client must close first
     tcp_client.shutdown().await;
 }
-
-// FIXME(ver) this test doesn't actually test TLS functionality.
-#[ignore]
-#[tokio::test]
-async fn inbound_tcp_server_first_tls() {
-    use std::path::PathBuf;
-
-    let (_cert, _key, _trust_anchors) = {
-        let path_to_string = |path: &PathBuf| {
-            path.as_path()
-                .to_owned()
-                .into_os_string()
-                .into_string()
-                .unwrap()
-        };
-        let mut tls = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        tls.push("src");
-        tls.push("transport");
-        tls.push("tls");
-        tls.push("testdata");
-
-        tls.push("foo-ns1-ca1.crt");
-        let cert = path_to_string(&tls);
-
-        tls.set_file_name("foo-ns1-ca1.p8");
-        let key = path_to_string(&tls);
-
-        tls.set_file_name("ca1.pem");
-        let trust_anchors = path_to_string(&tls);
-        (cert, key, trust_anchors)
-    };
-
-    let env = TestEnv::default();
-
-    // FIXME
-    //env.put(app::env::ENV_TLS_CERT, cert);
-    //env.put(app::env::ENV_TLS_PRIVATE_KEY, key);
-    //env.put(app::env::ENV_TLS_TRUST_ANCHORS, trust_anchors);
-    //env.put(
-    //    app::env::ENV_TLS_LOCAL_IDENTITY,
-    //    "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
-    //);
-
-    test_inbound_server_speaks_first(env).await
-}
-
 #[tokio::test]
 async fn tcp_connections_close_if_client_closes() {
     let _trace = trace_init();
