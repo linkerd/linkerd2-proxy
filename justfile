@@ -54,7 +54,7 @@ _features := if features == "all" {
         "--no-default-features --features=" + features
     } else { "" }
 
-# For dev:v39
+# For dev:v40
 export CXX := 'clang++-14'
 
 #

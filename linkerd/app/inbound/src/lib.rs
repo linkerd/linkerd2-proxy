@@ -4,6 +4,7 @@
 //! endpoints inbound to the local application.
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
+#![allow(opaque_hidden_inferred_bound)]
 #![forbid(unsafe_code)]
 
 mod accept;
