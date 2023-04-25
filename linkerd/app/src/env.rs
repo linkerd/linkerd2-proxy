@@ -955,10 +955,13 @@ fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
             }
 
             let mut parts = part.splitn(2, '-');
-            let low = parts.next().ok_or_else(|| {
-                error!("Not a valid port range: {part}");
-                ParseError::NotAPortRange
-            })?.trim();
+            let low = parts
+                .next()
+                .ok_or_else(|| {
+                    error!("Not a valid port range: {part}");
+                    ParseError::NotAPortRange
+                })?
+                .trim();
             let low = parse_number::<u16>(low)?;
             if let Some(high) = parts.next() {
                 let high = high.trim();
@@ -1446,19 +1449,36 @@ mod tests {
 
     #[test]
     fn ranges() {
-        fn set(ranges: impl IntoIterator<Item = std::ops::RangeInclusive<u16>>) -> Result<RangeInclusiveSet<u16>, ParseError> {
+        fn set(
+            ranges: impl IntoIterator<Item = std::ops::RangeInclusive<u16>>,
+        ) -> Result<RangeInclusiveSet<u16>, ParseError> {
             Ok(ranges.into_iter().collect())
         }
 
         assert_eq!(dbg!(parse_port_range_set("1-65535")), set([1..=65535]));
-        assert_eq!(dbg!(parse_port_range_set("1-2,42-420")), set([1..=2, 42..=420]));
-        assert_eq!(dbg!(parse_port_range_set("1-2,42,80-420")), set([1..=2, 42..=42, 80..=420]));
-        assert_eq!(dbg!(parse_port_range_set("1,20,30,40")), set([1..=1, 20..=20, 30..=30, 40..=40]));
-        assert_eq!(dbg!(parse_port_range_set("40,30,20,1")), set([1..=1, 20..=20, 30..=30, 40..=40]));
+        assert_eq!(
+            dbg!(parse_port_range_set("1-2,42-420")),
+            set([1..=2, 42..=420])
+        );
+        assert_eq!(
+            dbg!(parse_port_range_set("1-2,42,80-420")),
+            set([1..=2, 42..=42, 80..=420])
+        );
+        assert_eq!(
+            dbg!(parse_port_range_set("1,20,30,40")),
+            set([1..=1, 20..=20, 30..=30, 40..=40])
+        );
+        assert_eq!(
+            dbg!(parse_port_range_set("40,30,20,1")),
+            set([1..=1, 20..=20, 30..=30, 40..=40])
+        );
         // ignores empty list entries
         assert_eq!(dbg!(parse_port_range_set("1,,,,2")), set([1..=1, 2..=2]));
         // ignores rando whitespace
-        assert_eq!(dbg!(parse_port_range_set("1, 2,\t3- 5")), set([1..=1, 2..=2, 3..=5]));
+        assert_eq!(
+            dbg!(parse_port_range_set("1, 2,\t3- 5")),
+            set([1..=1, 2..=2, 3..=5])
+        );
         assert_eq!(dbg!(parse_port_range_set("1, , 2,")), set([1..=1, 2..=2]));
 
         // non-numeric strings
@@ -1473,7 +1493,7 @@ mod tests {
         // malformed (half-open) ranges
         assert!(dbg!(parse_port_range_set("-1")).is_err());
         assert!(dbg!(parse_port_range_set("1,2-,50")).is_err());
-        
+
         // not a u16
         assert!(dbg!(parse_port_range_set("69420")).is_err());
         assert!(dbg!(parse_port_range_set("1-69420")).is_err());
