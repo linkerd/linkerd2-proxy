@@ -37,7 +37,6 @@ async fn h2_exercise_goaways_connections() {
     let client = client::http2(proxy.inbound, "shutdown.example.com");
 
     let reqs = (0..NUM_REQUESTS)
-        .into_iter()
         .map(|_| client.request(client.request_builder("/").method("GET")))
         .collect::<Vec<_>>();
 

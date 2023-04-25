@@ -208,7 +208,7 @@ async fn run_server(tcp: TcpServer) -> server::Listening {
     let conn_count = Arc::new(AtomicUsize::from(0));
     let srv_conn_count = Arc::clone(&conn_count);
     let any_port = SocketAddr::from(([127, 0, 0, 1], 0));
-    let std_listener = StdTcpListener::bind(&any_port).expect("bind");
+    let std_listener = StdTcpListener::bind(any_port).expect("bind");
     let addr = std_listener.local_addr().expect("local_addr");
     let task = tokio::spawn(
         cancelable(drain.clone(), async move {

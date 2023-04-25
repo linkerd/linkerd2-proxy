@@ -15,15 +15,15 @@ fn set_env(name: &str, cmd: &mut Command) {
 fn main() {
     set_env(
         "GIT_BRANCH",
-        Command::new("git").args(&["rev-parse", "--abbrev-ref", "HEAD"]),
+        Command::new("git").args(["rev-parse", "--abbrev-ref", "HEAD"]),
     );
     set_env(
         "GIT_SHA",
-        Command::new("git").args(&["rev-parse", "--short", "HEAD"]),
+        Command::new("git").args(["rev-parse", "--short", "HEAD"]),
     );
     set_env(
         "GIT_VERSION",
-        Command::new("git").args(&["describe", "--always", "HEAD"]),
+        Command::new("git").args(["describe", "--always", "HEAD"]),
     );
     set_env("RUST_VERSION", Command::new("rustc").arg("--version"));
 

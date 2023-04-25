@@ -39,8 +39,8 @@ where
     S: Subscriber + for<'span> LookupSpan<'span>,
 {
     let writer: Box<dyn Layer<S> + Send + Sync + 'static> = match format {
-        Format::Apache => Box::new(Writer::<ApacheCommon>::default()),
-        Format::Json => Box::new(Writer::<format::JsonFields>::default()),
+        Format::Apache => Box::<Writer::<ApacheCommon>>::default(),
+        Format::Json => Box::<Writer::<format::JsonFields>>::default(),
     };
 
     writer.with_filter(

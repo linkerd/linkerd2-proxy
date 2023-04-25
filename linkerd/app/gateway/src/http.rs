@@ -122,7 +122,7 @@ impl Gateway {
                         svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&parent)
                             .ok_or(GatewayDomainInvalid)?;
                     let init =
-                        mk_routes(&*profile.borrow_and_update()).ok_or(GatewayDomainInvalid)?;
+                        mk_routes(&profile.borrow_and_update()).ok_or(GatewayDomainInvalid)?;
                     outbound::http::spawn_routes(profile, init, mk_routes)
                 };
 

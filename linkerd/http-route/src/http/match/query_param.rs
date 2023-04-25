@@ -16,7 +16,7 @@ impl MatchQueryParam {
                 Self::Exact(n, v) => *n == *q && *v == *p,
                 Self::Regex(n, r) => {
                     if *n == *q {
-                        if let Some(m) = r.find(&*p) {
+                        if let Some(m) = r.find(&p) {
                             // Check that the regex is anchored at the start and
                             // end of the value.
                             return m.start() == 0 && m.end() == p.len();

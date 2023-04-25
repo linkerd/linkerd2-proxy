@@ -170,16 +170,16 @@ impl std::hash::Hash for Sidecar {
 
 impl From<protocol::Http<Sidecar>> for HttpSidecar {
     fn from(parent: protocol::Http<Sidecar>) -> Self {
-        let orig_dst = (*parent).orig_dst;
+        let orig_dst = parent.orig_dst;
         let version = svc::Param::<http::Version>::param(&parent);
-        let mut policy = (*parent).policy.clone();
+        let mut policy = parent.policy.clone();
 
-        if let Some(mut profile) = (*parent).profile.clone().map(watch::Receiver::from) {
+        if let Some(mut profile) = parent.profile.clone().map(watch::Receiver::from) {
             // Only use service profiles if there are novel routes/target
             // overrides.
             if let Some(addr) = http::profile::should_override_policy(&profile) {
                 tracing::debug!("Using ServiceProfile");
-                let init = Self::mk_profile_routes(addr.clone(), &*profile.borrow_and_update());
+                let init = Self::mk_profile_routes(addr.clone(), &profile.borrow_and_update());
                 let routes =
                     http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
                         Some(Self::mk_profile_routes(addr.clone(), profile))
@@ -193,7 +193,7 @@ impl From<protocol::Http<Sidecar>> for HttpSidecar {
         }
 
         tracing::debug!("Using ClientPolicy routes");
-        let init = Self::mk_policy_routes(orig_dst, version, &*policy.borrow_and_update())
+        let init = Self::mk_policy_routes(orig_dst, version, &policy.borrow_and_update())
             .expect("initial policy must not be opaque");
         let routes = http::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
             Self::mk_policy_routes(orig_dst, version, policy)

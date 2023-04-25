@@ -45,7 +45,6 @@ impl<S> Store<S> {
             let opaque_rxs = opaque_ports.iter().flat_map(|range| {
                 range
                     .clone()
-                    .into_iter()
                     .map(|port| (port, opaque_default_rx.clone()))
             });
             let rxs = ports.into_iter().map(|(p, s)| {

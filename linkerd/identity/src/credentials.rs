@@ -37,6 +37,6 @@ impl Deref for DerX509 {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &self.0
     }
 }

@@ -152,7 +152,6 @@ async fn upgraded_request_remains_relative_form() {
             outbound,
             config: crate::Config {
                 allow_discovery: std::iter::once("example.com".parse().unwrap())
-                    .into_iter()
                     .collect(),
             },
         };

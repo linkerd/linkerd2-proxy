@@ -221,7 +221,7 @@ mod cross_version {
         let polctl = controller::policy();
 
         const NAME: &str = "unresolvable.svc.cluster.local";
-        let profile = dstctl.profile_tx(&srv.addr.to_string());
+        let profile = dstctl.profile_tx(srv.addr.to_string());
         profile.send_err(grpc::Status::new(
             grpc::Code::InvalidArgument,
             "unresolvable",

@@ -150,7 +150,7 @@ impl id::Credentials for Store {
         );
 
         // Use the client's verifier to validate the certificate for our local name.
-        self.validate(&*chain)?;
+        self.validate(&chain)?;
 
         let resolver = Arc::new(CertResolver(Arc::new(rustls::sign::CertifiedKey::new(
             chain,

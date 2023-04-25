@@ -246,7 +246,7 @@ where
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
-        route_for_request(&*self.profile_routes, req)
+        route_for_request(&self.profile_routes, req)
             .ok_or(NoRoute)
             .cloned()
     }
