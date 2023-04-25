@@ -129,8 +129,8 @@ where
             if let Some(lock) = req_metrics.take() {
                 let now = Instant::now();
                 let mut metrics = lock.lock();
-                (*metrics).last_update = now;
-                (*metrics).total.incr();
+                metrics.last_update = now;
+                metrics.total.incr();
             }
         }
 
@@ -178,8 +178,8 @@ where
             if let Some(lock) = req_metrics.take() {
                 let now = Instant::now();
                 let mut metrics = lock.lock();
-                (*metrics).last_update = now;
-                (*metrics).total.incr();
+                metrics.last_update = now;
+                metrics.total.incr();
             }
         }
 
@@ -269,8 +269,8 @@ where
         if let Some(lock) = this.metrics.take() {
             let now = Instant::now();
             let mut metrics = lock.lock();
-            (*metrics).last_update = now;
-            (*metrics).total.incr();
+            metrics.last_update = now;
+            metrics.total.incr();
         }
 
         Poll::Ready(frame)
@@ -336,7 +336,7 @@ where
         };
         let mut metrics = lock.lock();
 
-        (*metrics).last_update = now;
+        metrics.last_update = now;
 
         let status_metrics = metrics
             .by_status
@@ -378,7 +378,7 @@ fn measure_class<C: Hash + Eq>(
     let now = Instant::now();
     let mut metrics = lock.lock();
 
-    (*metrics).last_update = now;
+    metrics.last_update = now;
 
     let status_metrics = metrics
         .by_status

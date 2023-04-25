@@ -1,4 +1,5 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
+#![allow(clippy::large_enum_variant)]
 #![forbid(unsafe_code)]
 
 //! This crate provides a static interface for the proxy's x509 certificate

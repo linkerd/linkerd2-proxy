@@ -120,7 +120,7 @@ where
         if let ::http::Version::HTTP_11 | ::http::Version::HTTP_10 = request.version() {
             request.headers_mut().insert(
                 http::header::HOST,
-                http::header::HeaderValue::from_str(&*self.host)
+                http::header::HeaderValue::from_str(&self.host)
                     .expect("Host header value must be valid"),
             );
         }

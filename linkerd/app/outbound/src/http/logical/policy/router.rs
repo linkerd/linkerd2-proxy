@@ -253,7 +253,7 @@ where
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         tracing::trace!(uri = ?req.uri(), headers = ?req.headers(), "Selecting HTTP route");
-        let (r#match, params) = policy::http::find(&*self.routes, req).ok_or(NoRoute)?;
+        let (r#match, params) = policy::http::find(&self.routes, req).ok_or(NoRoute)?;
         tracing::debug!(meta = ?params.route_ref, "Selected route");
         tracing::trace!(?r#match);
         Ok(route::Matched {
@@ -272,7 +272,7 @@ where
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
         tracing::trace!(uri = ?req.uri(), headers = ?req.headers(), "Selecting gRPC route");
-        let (r#match, params) = policy::grpc::find(&*self.routes, req).ok_or(NoRoute)?;
+        let (r#match, params) = policy::grpc::find(&self.routes, req).ok_or(NoRoute)?;
         tracing::debug!(meta = ?params.route_ref, "Selected route");
         tracing::trace!(?r#match);
         Ok(route::Matched {

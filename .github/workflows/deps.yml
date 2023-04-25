@@ -46,9 +46,10 @@ jobs:
   deprecated:
     timeout-minutes: 20
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v39-rust
+    container: ghcr.io/linkerd/dev:v40-rust
     steps:
       - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: just fetch
       - run: RUSTFLAGS="-D deprecated" just check --exclude=linkerd-meshtls-boring
 

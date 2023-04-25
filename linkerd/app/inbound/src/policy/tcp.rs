@@ -68,7 +68,7 @@ where
         let authorized = {
             let p = policy.server.borrow();
             tracing::trace!(policy = ?p, "Authorizing connection");
-            check_authorized(&*p, policy.dst, client, &tls)
+            check_authorized(&p, policy.dst, client, &tls)
         };
         match authorized {
             Ok(permit) => {
@@ -157,7 +157,7 @@ where
                 tokio::select! {
                     res = &mut call => return res.map_err(Into::into),
                     _ = policy.changed() => {
-                        if let Err(denied) = check_authorized(&*policy.server.borrow(), policy.dst, client, &tls) {
+                        if let Err(denied) = check_authorized(&policy.server.borrow(), policy.dst, client, &tls) {
                             let meta = policy.meta();
                             tracing::info!(
                                 server.group = %meta.group(),

@@ -62,7 +62,7 @@ async fn outbound_tcp() {
         .await;
     let dstctl = controller::new();
     let _profile = dstctl.profile_tx_default(srv.addr, &srv.addr.to_string());
-    let dest = dstctl.destination_tx(&srv.addr.to_string());
+    let dest = dstctl.destination_tx(srv.addr.to_string());
     dest.send_addr(srv.addr);
     let proxy = proxy::new()
         .controller(dstctl.run().await)
@@ -99,7 +99,7 @@ async fn outbound_tcp_external() {
         .run()
         .await;
     let dstctl = controller::new();
-    let profile = dstctl.profile_tx(&srv.addr.to_string());
+    let profile = dstctl.profile_tx(srv.addr.to_string());
     profile.send_err(grpc::Status::invalid_argument(
         "we're pretending this is outside of the cluster",
     ));
@@ -198,8 +198,6 @@ async fn loop_inbound_http1() {
 }
 
 async fn test_inbound_server_speaks_first(env: TestEnv) {
-    const TIMEOUT: Duration = Duration::from_secs(5);
-
     let _trace = trace_init();
 
     let (tx, rx) = mpsc::channel(1);
@@ -230,8 +228,6 @@ async fn inbound_tcp_server_first() {
 /// *not* in `LINKERD2_PROXY_INBOUND_PORTS`).
 #[tokio::test]
 async fn inbound_tcp_server_first_no_discovery() {
-    const TIMEOUT: Duration = Duration::from_secs(5);
-
     let _trace = trace_init();
 
     let (tx, rx) = mpsc::channel(1);

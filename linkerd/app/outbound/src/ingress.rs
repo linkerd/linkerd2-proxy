@@ -321,7 +321,7 @@ impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
                         tracing::debug!(%addr, "Using ServiceProfile");
                         let routes = {
                             let route =
-                                mk_profile_routes(laddr.clone(), &*profile.borrow_and_update())
+                                mk_profile_routes(laddr.clone(), &profile.borrow_and_update())
                                     .ok_or_else(|| DiscoveryRequired(addr.clone()))?;
                             http::spawn_routes(profile, route, {
                                 let laddr = laddr.clone();
@@ -340,7 +340,7 @@ impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
 
                 // Otherwise, use a client policy if it provides an HTTP policy.
                 let route =
-                    policy_routes(addr.clone().into(), version, &*policy.borrow_and_update())
+                    policy_routes(addr.clone().into(), version, &policy.borrow_and_update())
                         .ok_or_else(|| DiscoveryRequired(addr.clone()))?;
                 tracing::debug!("Policy");
                 Ok(Http {
@@ -359,7 +359,7 @@ impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
                 // overrides.
                 if let Some(mut profile) = profile {
                     if let Some(laddr) = http::profile::should_override_policy(&profile) {
-                        let route = mk_profile_routes(laddr.clone(), &*profile.borrow_and_update());
+                        let route = mk_profile_routes(laddr.clone(), &profile.borrow_and_update());
                         if let Some(route) = route {
                             tracing::debug!(%addr, "Using ServiceProfile");
                             let routes = http::spawn_routes(profile.clone(), route, {
@@ -378,7 +378,7 @@ impl TryFrom<Discovery<Http<RequestTarget>>> for Http<Logical> {
                 }
 
                 // Otherwise, use a client policy if it provides an HTTP policy.
-                let route = policy_routes(addr.into(), version, &*policy.borrow_and_update())
+                let route = policy_routes(addr.into(), version, &policy.borrow_and_update())
                     .ok_or(PolicyRequired(OrigDstAddr(addr)))?;
                 tracing::debug!("Using Policy");
                 Ok(Http {

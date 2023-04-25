@@ -159,7 +159,7 @@ impl Deref for ResponseClasses {
     type Target = [ResponseClass];
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &self.0
     }
 }
 

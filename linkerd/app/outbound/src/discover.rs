@@ -153,7 +153,7 @@ pub fn spawn_synthesized_profile_policy(
     mut profile: watch::Receiver<profiles::Profile>,
     synthesize: impl Fn(&profiles::Profile) -> policy::ClientPolicy + Send + 'static,
 ) -> watch::Receiver<policy::ClientPolicy> {
-    let policy = synthesize(&*profile.borrow_and_update());
+    let policy = synthesize(&profile.borrow_and_update());
     tracing::debug!(?policy, profile = ?*profile.borrow(), "Synthesizing policy from profile");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(
@@ -172,7 +172,7 @@ pub fn spawn_synthesized_profile_policy(
                         }
                     }
                 };
-                let policy = synthesize(&*profile.borrow());
+                let policy = synthesize(&profile.borrow());
                 tracing::debug!(?policy, "Profile updated; synthesizing policy");
                 if tx.send(policy).is_err() {
                     tracing::debug!("Policy watch closed, terminating");

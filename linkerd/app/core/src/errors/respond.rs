@@ -459,7 +459,7 @@ where
                             message,
                             ..
                         } = rescue.rescue(error)?;
-                        let t = Self::grpc_trailers(grpc_status, &*message, *emit_headers);
+                        let t = Self::grpc_trailers(grpc_status, &message, *emit_headers);
                         *trailers = Some(t);
                         Poll::Ready(None)
                     }

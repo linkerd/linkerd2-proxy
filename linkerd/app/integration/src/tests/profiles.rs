@@ -83,12 +83,12 @@ impl TestBuilder {
         let port = srv.addr.port();
         let ctrl = controller::new();
 
-        let dst_tx = ctrl.destination_tx(&format!("{}:{}", host, port));
+        let dst_tx = ctrl.destination_tx(format!("{}:{}", host, port));
         dst_tx.send_addr(srv.addr);
 
         let ctrl = controller::new();
 
-        let dst_tx = ctrl.destination_tx(&format!("{}:{}", host, port));
+        let dst_tx = ctrl.destination_tx(format!("{}:{}", host, port));
         dst_tx.send_addr(srv.addr);
 
         let profile_tx = ctrl.profile_tx(srv.addr.to_string());

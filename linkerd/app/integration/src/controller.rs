@@ -133,7 +133,7 @@ impl Controller {
     }
 
     pub fn profile_tx_default(&self, target: impl ToString, dest: &str) -> ProfileSender {
-        let tx = self.profile_tx(&target.to_string());
+        let tx = self.profile_tx(target.to_string());
         tx.send(pb::DestinationProfile {
             fully_qualified_name: dest.to_owned(),
             ..Default::default()

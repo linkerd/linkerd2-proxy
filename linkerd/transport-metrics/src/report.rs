@@ -38,7 +38,7 @@ impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
         M: FmtMetric,
     {
         for (key, metrics) in inner.iter() {
-            let by_eos = (*metrics).by_eos.lock();
+            let by_eos = metrics.by_eos.lock();
             for (eos, m) in by_eos.metrics.iter() {
                 get_metric(m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
             }

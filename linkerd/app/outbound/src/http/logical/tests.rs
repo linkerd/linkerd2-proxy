@@ -386,7 +386,6 @@ fn mk_rsp(status: StatusCode, body: impl ToString) -> Response {
         .unwrap()
 }
 
-#[track_caller]
 async fn assert_rsp<T: std::fmt::Debug>(
     rsp: impl Future<Output = Result<Response, Error>>,
     status: StatusCode,

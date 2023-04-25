@@ -85,7 +85,7 @@ impl Creds {
 
         if let Some(certs) = &self.certs {
             tracing::debug!(
-                cert = ?super::fingerprint(&*certs.leaf),
+                cert = ?super::fingerprint(&certs.leaf),
                 "Configuring acceptor certificate",
             );
             conn.set_private_key(&self.base.key)?;
@@ -98,7 +98,7 @@ impl Creds {
 
         if !alpn_protocols.is_empty() {
             let p = serialize_alpn(alpn_protocols)?;
-            conn.set_alpn_protos(&*p)?;
+            conn.set_alpn_protos(&p)?;
         }
 
         Ok(conn.build())
@@ -132,7 +132,7 @@ impl Creds {
 
         if let Some(certs) = &self.certs {
             tracing::debug!(
-                cert = ?super::fingerprint(&*certs.leaf),
+                cert = ?super::fingerprint(&certs.leaf),
                 intermediates = %certs.intermediates.len(),
                 "Configuring connector certificate",
             );
@@ -146,7 +146,7 @@ impl Creds {
 
         if !alpn_protocols.is_empty() {
             let p = serialize_alpn(alpn_protocols)?;
-            conn.set_alpn_protos(&*p)?;
+            conn.set_alpn_protos(&p)?;
         }
 
         Ok(conn.build())
