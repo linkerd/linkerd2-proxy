@@ -8,10 +8,10 @@ mod router;
 mod tests;
 
 pub use self::{
-    route::errors,
+    route::{backend::RouteBackendMetrics, errors},
     router::{GrpcParams, HttpParams},
 };
-pub use linkerd_proxy_client_policy::ClientPolicy;
+pub use linkerd_proxy_client_policy::{ClientPolicy, FailureAccrual};
 
 /// HTTP or gRPC policy route parameters.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,7 +49,9 @@ where
     /// Builds a stack that dynamically updates and applies HTTP or gRPC policy
     /// routing configurations to route requests over cached inner backend
     /// services.
-    pub(super) fn layer<N, S>() -> impl svc::Layer<
+    pub(super) fn layer<N, S>(
+        route_backend_metrics: RouteBackendMetrics,
+    ) -> impl svc::Layer<
         N,
         Service = svc::ArcNewService<
             Self,
@@ -73,9 +75,10 @@ where
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
     {
-        svc::layer::mk(|inner: N| {
-            let http = svc::stack(inner.clone()).push(router::Http::layer());
-            let grpc = svc::stack(inner).push(router::Grpc::layer());
+        svc::layer::mk(move |inner: N| {
+            let http =
+                svc::stack(inner.clone()).push(router::Http::layer(route_backend_metrics.clone()));
+            let grpc = svc::stack(inner).push(router::Grpc::layer(route_backend_metrics.clone()));
 
             http.push_switch(
                 |pp: Policy<T>| {

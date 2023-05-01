@@ -119,7 +119,6 @@ impl Client {
         }
     }
 
-    #[track_caller]
     pub async fn get(&self, path: &str) -> String {
         let req = self.request_builder(path);
         let res = self.request(req.method("GET")).await.expect("response");

@@ -49,6 +49,7 @@ pub fn default_config() -> Config {
         }
         .into(),
         ports: Default::default(),
+        opaque_ports: Default::default(),
     };
 
     Config {

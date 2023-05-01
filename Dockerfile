@@ -3,7 +3,7 @@
 # This is intended **DEVELOPMENT ONLY**, i.e. so that proxy developers can
 # easily test the proxy in the context of the larger `linkerd2` project.
 
-ARG RUST_IMAGE=ghcr.io/linkerd/dev:v39-rust
+ARG RUST_IMAGE=ghcr.io/linkerd/dev:v40-rust
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
@@ -41,5 +41,5 @@ RUN --mount=type=cache,id=target,target=target \
 FROM $RUNTIME_IMAGE as runtime
 WORKDIR /linkerd
 COPY --from=build /out/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
-ENV LINKERD2_PROXY_LOG=warn,linkerd=info
+ENV LINKERD2_PROXY_LOG=warn,linkerd=info,trust_dns=error
 # Inherits the ENTRYPOINT from the runtime image.

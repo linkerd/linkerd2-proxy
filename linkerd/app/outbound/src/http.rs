@@ -12,6 +12,7 @@ use linkerd_app_core::{
 use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
+mod breaker;
 pub mod concrete;
 mod endpoint;
 mod handle_proxy_error_headers;

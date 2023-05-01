@@ -13,8 +13,8 @@ fn bootstrap() {
     let out_dir = std::path::PathBuf::from(std::env!("CARGO_MANIFEST_DIR"))
         .join("src")
         .join("gen");
-    generate(&*out_dir);
-    if changed(&*out_dir) {
+    generate(&out_dir);
+    if changed(&out_dir) {
         panic!("protobuf interfaces do not match generated sources");
     }
 }

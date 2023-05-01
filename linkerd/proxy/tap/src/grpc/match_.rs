@@ -85,7 +85,7 @@ impl Match {
                 .unwrap_or(false),
             Match::DestinationLabel(ref lbl) => inspect
                 .dst_labels(req)
-                .map(|l| lbl.matches(&*l))
+                .map(|l| lbl.matches(&l))
                 .unwrap_or(false),
             Match::RouteLabel(ref lbl) => inspect
                 .route_labels(req)

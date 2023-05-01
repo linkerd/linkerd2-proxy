@@ -192,7 +192,6 @@ impl MetricMatch {
         Ok(())
     }
 
-    #[track_caller]
     pub async fn assert_in(&self, client: &crate::client::Client) {
         use std::str::FromStr;
         use std::{env, u64};

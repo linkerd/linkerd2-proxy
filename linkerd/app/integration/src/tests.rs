@@ -1,4 +1,5 @@
 mod client_policy;
+mod direct;
 mod discovery;
 mod identity;
 mod orig_proto;

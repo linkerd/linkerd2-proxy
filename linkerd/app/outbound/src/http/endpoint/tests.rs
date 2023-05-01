@@ -314,10 +314,16 @@ impl svc::Param<http::client::Settings> for Endpoint {
         match self.version {
             http::Version::H2 => http::client::Settings::H2,
             http::Version::Http1 => match self.hint {
-                ProtocolHint::Unknown => http::client::Settings::Http1,
+                ProtocolHint::Unknown | ProtocolHint::Opaque => http::client::Settings::Http1,
                 ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
             },
         }
+    }
+}
+
+impl svc::Param<ProtocolHint> for Endpoint {
+    fn param(&self) -> ProtocolHint {
+        self.hint
     }
 }
 

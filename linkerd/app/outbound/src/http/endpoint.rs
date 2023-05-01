@@ -7,7 +7,7 @@ use super::{
 use crate::{tcp::tagged_transport, Outbound};
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
-    proxy::{http, tap},
+    proxy::{api_resolve::ProtocolHint, http, tap},
     svc::{self, ExtractParam},
     tls,
     transport::{self, Remote, ServerAddr},
@@ -206,9 +206,19 @@ impl errors::HttpRescue<Error> for ClientRescue {
 
 // === impl Connect ===
 
-impl<T> svc::Param<Option<SessionProtocol>> for Connect<T> {
+impl<T> svc::Param<Option<SessionProtocol>> for Connect<T>
+where
+    T: svc::Param<ProtocolHint>,
+{
     #[inline]
     fn param(&self) -> Option<SessionProtocol> {
+        // The discovered protocol hint indicates that this endpoint will treat
+        // all connections as opaque TCP streams. Don't send our detected
+        // session protocol as part of a transport header.
+        if self.inner.param() == ProtocolHint::Opaque {
+            return None;
+        }
+
         match self.version {
             http::Version::Http1 => Some(SessionProtocol::Http1),
             http::Version::H2 => Some(SessionProtocol::Http2),

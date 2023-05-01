@@ -59,9 +59,10 @@ jobs:
     continue-on-error: ${{ !needs.meta.outputs.publish }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    container: docker://ghcr.io/linkerd/dev:v39-rust-musl
+    container: docker://ghcr.io/linkerd/dev:v40-rust-musl
     steps:
-      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
+      - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: just fetch
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=release build

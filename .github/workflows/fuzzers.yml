@@ -27,11 +27,12 @@ jobs:
   list-changed:
     timeout-minutes: 3
     runs-on: ubuntu-latest
-    container: docker://rust:1.64.0-bullseye
+    container: docker://rust:1.69.0-bullseye
     steps:
       - run: apt update && apt install -y jo
-      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
-      - uses: tj-actions/changed-files@bd376fbcfae914347656e4c70801e2a3fafed05b
+      - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
+      - uses: tj-actions/changed-files@db5dd7c176cf59a19ef6561bf1936f059dee4b74
         id: changed-files
       - name: list changed crates
         id: list-changed
@@ -47,14 +48,15 @@ jobs:
     needs: [list-changed]
     timeout-minutes: 40
     runs-on: ubuntu-latest
-    container: docker://rust:1.64.0-bullseye
+    container: docker://rust:1.69.0-bullseye
     strategy:
       matrix:
         dir: ${{ fromJson(needs.list-changed.outputs.dirs) }}
     steps:
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz
-      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
+      - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - working-directory: ${{matrix.dir}}
         run: cargo +nightly fetch
       - working-directory: ${{matrix.dir}}

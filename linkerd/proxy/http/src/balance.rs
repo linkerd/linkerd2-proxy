@@ -1,9 +1,7 @@
-use hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
-use linkerd_proxy_balance as balance;
+pub use hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
+pub use linkerd_proxy_balance::*;
 
-pub type Body<B> = PendingUntilFirstDataBody<balance::Handle, B>;
-
-pub type EwmaConfig = balance::EwmaConfig;
+pub type Body<B> = PendingUntilFirstDataBody<Handle, B>;
 
 pub type NewBalancePeakEwma<B, R, N> =
-    balance::NewBalancePeakEwma<PendingUntilFirstData, http::Request<B>, R, N>;
+    linkerd_proxy_balance::NewBalancePeakEwma<PendingUntilFirstData, http::Request<B>, R, N>;

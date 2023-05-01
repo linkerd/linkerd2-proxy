@@ -108,7 +108,13 @@ impl<N> Outbound<N> {
                     // XXX(ver) The policy controller may (for the time being) reject
                     // our lookups, since it doesn't yet serve endpoint metadata for
                     // forwarding.
-                    Err(error) if is_not_found(&error) => tracing::debug!("Policy not found"),
+                    Err(error) if errors::has_grpc_status(&error, tonic::Code::NotFound) => tracing::debug!("Policy not found"),
+                    // Earlier versions of the Linkerd control plane (e.g.
+                    // 2.12.x) will return `Unimplemented` for requests to the
+                    // OutboundPolicy API. Log a warning and synthesize a policy
+                    // for backwards compatibility.
+                    Err(error) if errors::has_grpc_status(&error, tonic::Code::Unimplemented) =>
+                        tracing::warn!("Policy controller returned `Unimplemented`, the control plane may be out of date."),
                     Err(error) => return Err(error),
                 }
 
@@ -143,18 +149,11 @@ impl<N> Outbound<N> {
     }
 }
 
-#[inline]
-fn is_not_found(e: &Error) -> bool {
-    errors::cause_ref::<tonic::Status>(e.as_ref())
-        .map(|s| s.code() == tonic::Code::NotFound)
-        .unwrap_or(false)
-}
-
 pub fn spawn_synthesized_profile_policy(
     mut profile: watch::Receiver<profiles::Profile>,
     synthesize: impl Fn(&profiles::Profile) -> policy::ClientPolicy + Send + 'static,
 ) -> watch::Receiver<policy::ClientPolicy> {
-    let policy = synthesize(&*profile.borrow_and_update());
+    let policy = synthesize(&profile.borrow_and_update());
     tracing::debug!(?policy, profile = ?*profile.borrow(), "Synthesizing policy from profile");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(
@@ -173,7 +172,7 @@ pub fn spawn_synthesized_profile_policy(
                         }
                     }
                 };
-                let policy = synthesize(&*profile.borrow());
+                let policy = synthesize(&profile.borrow());
                 tracing::debug!(?policy, "Profile updated; synthesizing policy");
                 if tx.send(policy).is_err() {
                     tracing::debug!("Policy watch closed, terminating");
@@ -238,12 +237,17 @@ pub fn synthesize_forward_policy(
         timeout,
         http1: policy::http::Http1 {
             routes: routes.clone(),
+            failure_accrual: Default::default(),
         },
-        http2: policy::http::Http2 { routes },
+        http2: policy::http::Http2 {
+            routes,
+            failure_accrual: Default::default(),
+        },
         opaque,
     };
 
     ClientPolicy {
+        parent: meta.clone(),
         protocol: detect,
         backends: Arc::new([backend]),
     }

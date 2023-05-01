@@ -133,7 +133,7 @@ impl Controller {
     }
 
     pub fn profile_tx_default(&self, target: impl ToString, dest: &str) -> ProfileSender {
-        let tx = self.profile_tx(&target.to_string());
+        let tx = self.profile_tx(target.to_string());
         tx.send(pb::DestinationProfile {
             fully_qualified_name: dest.to_owned(),
             ..Default::default()
@@ -141,10 +141,10 @@ impl Controller {
         tx
     }
 
-    pub fn profile_tx(&self, dest: impl Into<String>) -> ProfileSender {
+    pub fn profile_tx(&self, dest: impl ToString) -> ProfileSender {
         let (tx, rx) = mpsc::unbounded_channel();
         let rx = UnboundedReceiverStream::new(rx);
-        let mut path = dest.into();
+        let mut path = dest.to_string();
         if !path.contains(':') {
             path.push_str(":80");
         };

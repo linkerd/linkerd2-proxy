@@ -38,6 +38,8 @@ impl ClientPolicies {
     pub fn policy_default(self, addr: impl Into<Addr>) -> Self {
         let addr = addr.into();
 
+        let parent = Meta::new_default(addr.to_string());
+
         let backend = {
             let dispatcher = match addr {
                 Addr::Name(ref addr) => {
@@ -70,7 +72,7 @@ impl ClientPolicies {
                 policy: http::Policy {
                     meta: Meta::new_default("default"),
                     filters: Arc::new([]),
-                    failure_policy: http::StatusRanges::default(),
+                    failure_policy: Default::default(),
                     distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                         filters: Arc::new([]),
                         backend: backend.clone(),
@@ -83,9 +85,11 @@ impl ClientPolicies {
             timeout: Duration::from_secs(10),
             http1: http::Http1 {
                 routes: http_routes.clone(),
+                failure_accrual: Default::default(),
             },
             http2: http::Http2 {
                 routes: http_routes,
+                failure_accrual: Default::default(),
             },
             opaque: opaq::Opaque {
                 policy: Some(opaq::Policy {
@@ -100,8 +104,9 @@ impl ClientPolicies {
             },
         };
         let policy = ClientPolicy {
-            backends: Arc::new([backend]),
+            parent,
             protocol,
+            backends: Arc::new([backend]),
         };
         self.policy(addr, policy)
     }

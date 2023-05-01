@@ -52,7 +52,14 @@ highlight = "all"
 deny = [
     { name = "rustls", wrappers = ["tokio-rustls"] },
 ]
-skip = []
+skip = [
+    # The proc-macro ecosystem is in the middle of a migration from `syn` v1 to
+    # `syn` v2. Allow both versions to coexist peacefully for now.
+    #
+    # Since `syn` is used by proc-macros (executed at compile time), duplicate
+    # versions won't have an impact on the final binary size.
+    { name = "syn" },
+]
 skip-tree = [
     # Hasn't seen a new release since 2017. Pulls in an older version of nom.
     { name = "procinfo" },

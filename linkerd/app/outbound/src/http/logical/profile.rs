@@ -1,11 +1,12 @@
 use super::{
     super::{concrete, retry},
-    Concrete, NoRoute,
+    CanonicalDstHeader, Concrete, NoRoute,
 };
+use crate::{policy, BackendRef, ParentRef, UNKNOWN_META};
 use linkerd_app_core::{
     classify, metrics,
     proxy::http::{self, balance},
-    svc, Error,
+    svc, Error, NameAddr,
 };
 use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash, sync::Arc, time};
@@ -117,12 +118,37 @@ where
             targets,
         } = routes;
 
+        fn service_meta(addr: &NameAddr) -> Option<Arc<policy::Meta>> {
+            let mut parts = addr.name().split('.');
+
+            let name = parts.next()?;
+            let namespace = parts.next()?;
+
+            if !parts.next()?.eq_ignore_ascii_case("svc") {
+                return None;
+            }
+
+            Some(Arc::new(policy::Meta::Resource {
+                group: "core".to_string(),
+                kind: "Service".to_string(),
+                namespace: namespace.to_string(),
+                name: name.to_string(),
+                section: None,
+                port: Some(addr.port().try_into().ok()?),
+            }))
+        }
+
+        let parent_meta = service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone());
+
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if targets.is_empty() {
             let concrete = Concrete {
+                parent_ref: ParentRef(parent_meta.clone()),
+                backend_ref: BackendRef(parent_meta),
                 target: concrete::Dispatch::Balance(addr.clone(), DEFAULT_EWMA),
                 authority: Some(addr.as_http_authority()),
                 parent: parent.clone(),
+                failure_accrual: Default::default(),
             };
             let backends = std::iter::once(concrete.clone()).collect();
             let distribution = Distribution::first_available(std::iter::once(concrete));
@@ -131,17 +157,27 @@ where
             let backends = targets
                 .iter()
                 .map(|t| Concrete {
+                    parent_ref: ParentRef(parent_meta.clone()),
+                    backend_ref: BackendRef(
+                        service_meta(&t.addr).unwrap_or_else(|| UNKNOWN_META.clone()),
+                    ),
                     target: concrete::Dispatch::Balance(t.addr.clone(), DEFAULT_EWMA),
                     authority: Some(t.addr.as_http_authority()),
                     parent: parent.clone(),
+                    failure_accrual: Default::default(),
                 })
                 .collect();
             let distribution = Distribution::random_available(targets.iter().cloned().map(
                 |Target { addr, weight }| {
                     let concrete = Concrete {
+                        parent_ref: ParentRef(parent_meta.clone()),
+                        backend_ref: BackendRef(
+                            service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone()),
+                        ),
                         authority: Some(addr.as_http_authority()),
                         target: concrete::Dispatch::Balance(addr, DEFAULT_EWMA),
                         parent: parent.clone(),
+                        failure_accrual: Default::default(),
                     };
                     (concrete, weight)
                 },
@@ -210,7 +246,7 @@ where
     type Error = NoRoute;
 
     fn select(&self, req: &http::Request<B>) -> Result<Self::Key, Self::Error> {
-        route_for_request(&*self.profile_routes, req)
+        route_for_request(&self.profile_routes, req)
             .ok_or(NoRoute)
             .cloned()
     }
@@ -276,6 +312,18 @@ impl<T> RouteParams<T> {
                     metrics
                         .http_profile_route
                         .to_layer::<classify::Response, _, RouteParams<T>>(),
+                )
+                // Add l5d-dst-canonical header to requests.
+                //
+                // TODO(ver) move this into the endpoint stack so that we can
+                // only set this on meshed connections.
+                .push(
+                    http::NewHeaderFromTarget::<CanonicalDstHeader, _, _>::layer_via(
+                        |rp: &Self| {
+                            let LogicalAddr(addr) = rp.addr.clone();
+                            CanonicalDstHeader(addr)
+                        },
+                    ),
                 )
                 // Sets the per-route response classifier as a request
                 // extension.

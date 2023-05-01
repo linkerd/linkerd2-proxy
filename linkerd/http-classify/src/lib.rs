@@ -1,14 +1,11 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-mod service;
-
-pub use self::service::NewClassify;
 use linkerd_error::Error;
 
 /// Determines how a request's response should be classified.
 pub trait Classify {
-    type Class;
+    type Class: Clone + Send + Sync + 'static;
     type ClassifyEos: ClassifyEos<Class = Self::Class>;
 
     /// Classifies responses.
@@ -16,19 +13,15 @@ pub trait Classify {
     /// Instances are intended to be used as an `http::Extension` that may be
     /// cloned to inner stack layers. Cloned instances are **not** intended to
     /// share state. Each clone should maintain its own internal state.
-    type ClassifyResponse: ClassifyResponse<Class = Self::Class, ClassifyEos = Self::ClassifyEos>
-        + Clone
-        + Send
-        + Sync
-        + 'static;
+    type ClassifyResponse: ClassifyResponse<Class = Self::Class, ClassifyEos = Self::ClassifyEos>;
 
     fn classify<B>(&self, req: &http::Request<B>) -> Self::ClassifyResponse;
 }
 
 /// Classifies a single response.
-pub trait ClassifyResponse {
+pub trait ClassifyResponse: Clone + Send + Sync + 'static {
     /// A response classification.
-    type Class;
+    type Class: Clone + Send + Sync + 'static;
     type ClassifyEos: ClassifyEos<Class = Self::Class>;
 
     /// Produce a stream classifier for this response.
@@ -39,7 +32,7 @@ pub trait ClassifyResponse {
 }
 
 pub trait ClassifyEos {
-    type Class;
+    type Class: Clone + Send + Sync + 'static;
 
     /// Update the classifier with an EOS.
     ///

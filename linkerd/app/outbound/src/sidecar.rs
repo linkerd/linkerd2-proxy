@@ -1,7 +1,7 @@
 use crate::{
     http, opaq, policy,
     protocol::{self, Protocol},
-    Discovery, Outbound,
+    Discovery, Outbound, ParentRef,
 };
 use linkerd_app_core::{
     io, profiles,
@@ -126,7 +126,12 @@ impl svc::Param<Protocol> for Sidecar {
             }
         }
 
-        Protocol::Detect
+        match self.policy.borrow().protocol {
+            policy::Protocol::Http1(_) => Protocol::Http1,
+            policy::Protocol::Http2(_) | policy::Protocol::Grpc(_) => Protocol::Http2,
+            policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => Protocol::Opaque,
+            policy::Protocol::Detect { .. } => Protocol::Detect,
+        }
     }
 }
 
@@ -165,16 +170,16 @@ impl std::hash::Hash for Sidecar {
 
 impl From<protocol::Http<Sidecar>> for HttpSidecar {
     fn from(parent: protocol::Http<Sidecar>) -> Self {
-        let orig_dst = (*parent).orig_dst;
+        let orig_dst = parent.orig_dst;
         let version = svc::Param::<http::Version>::param(&parent);
-        let mut policy = (*parent).policy.clone();
+        let mut policy = parent.policy.clone();
 
-        if let Some(mut profile) = (*parent).profile.clone().map(watch::Receiver::from) {
+        if let Some(mut profile) = parent.profile.clone().map(watch::Receiver::from) {
             // Only use service profiles if there are novel routes/target
             // overrides.
             if let Some(addr) = http::profile::should_override_policy(&profile) {
                 tracing::debug!("Using ServiceProfile");
-                let init = Self::mk_profile_routes(addr.clone(), &*profile.borrow_and_update());
+                let init = Self::mk_profile_routes(addr.clone(), &profile.borrow_and_update());
                 let routes =
                     http::spawn_routes(profile, init, move |profile: &profiles::Profile| {
                         Some(Self::mk_profile_routes(addr.clone(), profile))
@@ -188,7 +193,7 @@ impl From<protocol::Http<Sidecar>> for HttpSidecar {
         }
 
         tracing::debug!("Using ClientPolicy routes");
-        let init = Self::mk_policy_routes(orig_dst, version, &*policy.borrow_and_update())
+        let init = Self::mk_policy_routes(orig_dst, version, &policy.borrow_and_update())
             .expect("initial policy must not be opaque");
         let routes = http::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
             Self::mk_policy_routes(orig_dst, version, policy)
@@ -207,28 +212,41 @@ impl HttpSidecar {
         version: http::Version,
         policy: &policy::ClientPolicy,
     ) -> Option<http::Routes> {
+        let parent_ref = ParentRef(policy.parent.clone());
+
         // If we're doing HTTP policy routing, we've previously had a
         // protocol hint that made us think that was a good idea. If the
         // protocol changes but remains HTTP-ish, we propagate those
         // changes. If the protocol flips to an opaque protocol, we ignore
         // the protocol update.
-        let routes = match policy.protocol {
+        let (routes, failure_accrual) = match policy.protocol {
             policy::Protocol::Detect {
                 ref http1,
                 ref http2,
                 ..
             } => match version {
-                http::Version::Http1 => http1.routes.clone(),
-                http::Version::H2 => http2.routes.clone(),
+                http::Version::Http1 => (http1.routes.clone(), http1.failure_accrual),
+                http::Version::H2 => (http2.routes.clone(), http2.failure_accrual),
             },
-            policy::Protocol::Http1(ref http1) => http1.routes.clone(),
-            policy::Protocol::Http2(ref http2) => http2.routes.clone(),
-            policy::Protocol::Grpc(ref grpc) => {
+            policy::Protocol::Http1(policy::http::Http1 {
+                ref routes,
+                failure_accrual,
+            }) => (routes.clone(), failure_accrual),
+            policy::Protocol::Http2(policy::http::Http2 {
+                ref routes,
+                failure_accrual,
+            }) => (routes.clone(), failure_accrual),
+            policy::Protocol::Grpc(policy::grpc::Grpc {
+                ref routes,
+                failure_accrual,
+            }) => {
                 return Some(http::Routes::Policy(http::policy::Params::Grpc(
                     http::policy::GrpcParams {
                         addr: orig_dst.into(),
+                        meta: parent_ref,
                         backends: policy.backends.clone(),
-                        routes: grpc.routes.clone(),
+                        routes: routes.clone(),
+                        failure_accrual,
                     },
                 )))
             }
@@ -243,8 +261,10 @@ impl HttpSidecar {
         Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr: orig_dst.into(),
+                meta: parent_ref,
                 routes,
                 backends: policy.backends.clone(),
+                failure_accrual,
             },
         )))
     }
