@@ -313,10 +313,17 @@ where
     fn param(&self) -> client::Settings {
         match self.param() {
             http::Version::H2 => client::Settings::H2,
-            http::Version::Http1 => match self.metadata.protocol_hint() {
-                ProtocolHint::Unknown => client::Settings::Http1,
-                ProtocolHint::Http2 => client::Settings::OrigProtoUpgrade,
-            },
+            http::Version::Http1 => {
+                // If the target addr is the same as the source
+                // then do not upgrade to h2
+                if self.is_local {
+                    return client::Settings::Http1;
+                }
+                match self.metadata.protocol_hint() {
+                    ProtocolHint::Unknown => client::Settings::Http1,
+                    ProtocolHint::Http2 => client::Settings::OrigProtoUpgrade,
+                }
+            }
         }
     }
 }
