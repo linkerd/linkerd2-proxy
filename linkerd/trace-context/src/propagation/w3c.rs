@@ -25,7 +25,7 @@ pub fn increment_http_span_id<B>(request: &mut http::Request<B>, context: &Trace
         buf.push('-');
         buf.push_str(&hex::encode(context.trace_id.as_ref()));
         buf.push('-');
-        buf.push_str(&hex::encode(context.parent_id.as_ref()));
+        buf.push_str(&hex::encode(span_id.as_ref()));
         buf.push('-');
         buf.push_str(&hex::encode(vec![context.flags.0]));
         buf
