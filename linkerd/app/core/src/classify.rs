@@ -72,13 +72,7 @@ impl classify::Classify for Request {
             Self::Profile(classes) => Response::Profile(classes.clone()),
 
             Self::ClientPolicy(ClientPolicy::Http(policy)) => {
-                let is_grpc = req
-                    .headers()
-                    .get(http::header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|ct| ct.starts_with("application/grpc"))
-                    .unwrap_or(false);
-                if is_grpc {
+                if is_grpc(req.headers()) {
                     return Response::Grpc(Default::default());
                 }
                 Response::Http(policy.clone())
@@ -86,13 +80,7 @@ impl classify::Classify for Request {
             Self::ClientPolicy(ClientPolicy::Grpc(policy)) => Response::Grpc(policy.clone()),
 
             Self::Default => {
-                let is_grpc = req
-                    .headers()
-                    .get(http::header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|ct| ct.starts_with("application/grpc"))
-                    .unwrap_or(false);
-                if is_grpc {
+                if is_grpc(req.headers()) {
                     return Response::Grpc(Default::default());
                 }
                 Response::default()
@@ -233,6 +221,13 @@ fn h2_error(err: &Error) -> String {
     }
 }
 
+fn is_grpc(hdrs: &http::HeaderMap) -> bool {
+    hdrs.get(http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.starts_with("application/grpc"))
+        .unwrap_or(false)
+}
+
 // === impl Class ===
 
 impl Class {
@@ -359,7 +354,24 @@ mod tests {
     }
 
     #[test]
-    fn http_handles_grpc_requests() {
+    fn grpc_over_http_trailer_ok() {
+        let req = Request::builder()
+            .header(http::header::CONTENT_TYPE, "application/grpc+proto")
+            .body(())
+            .unwrap();
+        let rsp = Response::builder().status(StatusCode::OK).body(()).unwrap();
+        let mut trailers = HeaderMap::new();
+        trailers.insert("grpc-status", 0.into());
+        let class = super::Request::ClientPolicy(super::ClientPolicy::Http(Default::default()))
+            .classify(&req)
+            .start(&rsp)
+            .eos(Some(&trailers));
+
+        assert_eq!(class, Class::Grpc(Ok(tonic::Code::Ok)));
+    }
+
+    #[test]
+    fn grpc_over_http_trailer_error() {
         let req = Request::builder()
             .header(http::header::CONTENT_TYPE, "application/grpc+proto")
             .body(())
