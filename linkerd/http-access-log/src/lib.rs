@@ -118,12 +118,18 @@ where
                 .unwrap_or_default()
         };
 
+        let path = match request.uri().path_and_query() {
+            Some(v) => v.as_str(),
+            _ => ""
+        };
+
         let span = span!(target: TRACE_TARGET, Level::INFO, "http",
             client.addr = %self.client_addr,
             client.id = self.client_id.as_ref().map(|n| n.as_str()).unwrap_or("-"),
             timestamp = %now(),
             method = request.method().as_str(),
             uri =  %request.uri(),
+            path,
             version = ?request.version(),
             trace_id = trace_id(),
             request_bytes = get_header(http::header::CONTENT_LENGTH),
@@ -133,7 +139,10 @@ where
             processing_ns = field::Empty,
             user_agent = get_header(http::header::USER_AGENT),
             host = get_header(http::header::HOST),
+            x_forwarded_for = get_header(http::header::HeaderName::from_static("x-forwarded-for")),
+            requested_server_name = get_header(http::header::HeaderName::from_static("x-envoy-decorator-operation")),
         );
+
 
         // The access log span is only enabled by the `tracing` subscriber if
         // access logs are being recorded. If it's disabled, we can skip
