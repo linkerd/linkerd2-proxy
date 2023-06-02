@@ -73,9 +73,11 @@ impl ClientPolicies {
                     meta: Meta::new_default("default"),
                     filters: Arc::new([]),
                     failure_policy: Default::default(),
+                    request_timeout: None,
                     distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                         filters: Arc::new([]),
                         backend: backend.clone(),
+                        request_timeout: None,
                     }])),
                 },
             }],
@@ -96,9 +98,11 @@ impl ClientPolicies {
                     meta: Meta::new_default("default"),
                     filters: Arc::new([]),
                     failure_policy: Default::default(),
+                    request_timeout: None,
                     distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                         filters: Arc::new([]),
                         backend: backend.clone(),
+                        request_timeout: None,
                     }])),
                 }),
             },

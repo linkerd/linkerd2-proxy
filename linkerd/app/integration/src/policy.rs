@@ -151,6 +151,7 @@ pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
             }],
             filters: Vec::new(),
             backends: Some(http_first_available(std::iter::once(backend(dst)))),
+            request_timeout: None,
         }],
     }
 }
@@ -214,6 +215,7 @@ pub fn http_first_available(
                     .map(|backend| http_route::RouteBackend {
                         backend: Some(backend),
                         filters: Vec::new(),
+                        request_timeout: None,
                     })
                     .collect(),
             },

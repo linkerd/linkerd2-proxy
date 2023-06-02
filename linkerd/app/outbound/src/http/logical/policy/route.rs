@@ -30,6 +30,7 @@ pub(crate) struct Route<T, F, E> {
     pub(super) filters: Arc<[F]>,
     pub(super) distribution: BackendDistribution<T, F>,
     pub(super) failure_policy: E,
+    pub(super) request_timeout: Option<std::time::Duration>,
 }
 
 pub(crate) type MatchedRoute<T, M, F, E> = Matched<M, Route<T, F, E>>;
@@ -109,6 +110,8 @@ where
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
+                // Sets an optional request timeout.
+                .push(http::NewTimeout::layer())
                 // TODO(ver) attach the `E` typed failure policy to requests.
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 .push(classify::NewClassify::layer())
@@ -121,6 +124,12 @@ where
 impl<T: Clone, M, F, E> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T, M, F, E> {
     fn param(&self) -> BackendDistribution<T, F> {
         self.params.distribution.clone()
+    }
+}
+
+impl<T, M, F, E> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, M, F, E> {
+    fn param(&self) -> http::timeout::ResponseTimeout {
+        http::timeout::ResponseTimeout(self.params.request_timeout)
     }
 }
 
