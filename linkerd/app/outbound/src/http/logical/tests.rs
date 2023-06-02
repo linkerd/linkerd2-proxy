@@ -345,7 +345,6 @@ async fn route_request_timeout() {
     ));
 }
 
-
 #[tokio::test(flavor = "current_thread")]
 async fn backend_request_timeout() {
     tokio::time::pause();
@@ -368,18 +367,22 @@ async fn backend_request_timeout() {
         .push_http_cached(resolve)
         .into_inner();
 
-        let (_route_tx, routes) = {
-            let backend = default_backend(&dest);
-            // Set both a route request timeout and a backend request timeout.
-            let route = timeout_route(backend.clone(), Some(ROUTE_REQUEST_TIMEOUT), Some(BACKEND_REQUEST_TIMEOUT));
-            watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
-                addr: dest.into(),
-                meta: ParentRef(client_policy::Meta::new_default("parent")),
-                backends: Arc::new([backend]),
-                routes: Arc::new([route]),
-                failure_accrual: client_policy::FailureAccrual::None,
-            })))
-        };
+    let (_route_tx, routes) = {
+        let backend = default_backend(&dest);
+        // Set both a route request timeout and a backend request timeout.
+        let route = timeout_route(
+            backend.clone(),
+            Some(ROUTE_REQUEST_TIMEOUT),
+            Some(BACKEND_REQUEST_TIMEOUT),
+        );
+        watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
+            addr: dest.into(),
+            meta: ParentRef(client_policy::Meta::new_default("parent")),
+            backends: Arc::new([backend]),
+            routes: Arc::new([route]),
+            failure_accrual: client_policy::FailureAccrual::None,
+        })))
+    };
     let target = Target {
         num: 1,
         version: http::Version::H2,
@@ -413,7 +416,9 @@ async fn backend_request_timeout() {
         errors::is_caused_by::<crate::http::endpoint::EndpointError>(error.as_ref()),
         "error must originate in the endpoint stack",
     );
-    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(error.as_ref()));
+    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
+        error.as_ref()
+    ));
 
     // If we spend time in the proxy before the service is acquired, the backend
     // request timeout should *not* apply.
@@ -436,7 +441,9 @@ async fn backend_request_timeout() {
         !errors::is_caused_by::<crate::http::endpoint::EndpointError>(error.as_ref()),
         "error must originate in the logcal stack",
     );
-    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(error.as_ref()));
+    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
+        error.as_ref()
+    ));
 }
 
 #[derive(Clone, Debug)]
@@ -613,8 +620,11 @@ fn default_route(backend: client_policy::Backend) -> client_policy::http::Route 
     }
 }
 
-
-fn timeout_route(backend: client_policy::Backend, route_timeout: Option<Duration>, backend_timeout: Option<Duration>) -> client_policy::http::Route {
+fn timeout_route(
+    backend: client_policy::Backend,
+    route_timeout: Option<Duration>,
+    backend_timeout: Option<Duration>,
+) -> client_policy::http::Route {
     use client_policy::{
         http::{self, Filter, Policy, Route, Rule},
         Meta, RouteBackend, RouteDistribution,

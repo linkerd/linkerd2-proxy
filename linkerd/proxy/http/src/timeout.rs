@@ -1,5 +1,9 @@
 use linkerd_error::Error;
-use linkerd_stack::{layer, ExtractParam, MapErr, NewService, timeout::{Timeout, TimeoutFuture, TimeoutError}, Service};
+use linkerd_stack::{
+    layer,
+    timeout::{Timeout, TimeoutError, TimeoutFuture},
+    ExtractParam, MapErr, NewService, Service,
+};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -82,24 +86,26 @@ where
     type Error = Error;
     type Response = S::Response;
 
-    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
         self.0.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         use futures::TryFutureExt;
-        
+
         let timeout = req.extensions().get::<ResponseTimeout>().cloned();
         let f = match timeout {
             Some(ResponseTimeout(Some(t))) => {
                 tracing::trace!(timeout = ?t, "Using timeout from request extensions");
                 TimeoutFuture::Timeout(tokio::time::timeout(t, self.0.call(req)), t)
-            },
+            }
             _ => TimeoutFuture::Passthru(self.0.call(req)),
         };
         f.map_err(ResponseTimeoutError::wrap_err)
     }
-
 }
 
 // === impl ResponseTimeoutError ===
