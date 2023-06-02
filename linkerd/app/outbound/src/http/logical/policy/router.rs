@@ -179,6 +179,7 @@ where
                 route_ref: route_ref.clone(),
                 filters,
                 concrete,
+                request_timeout: rb.request_timeout,
             }
         };
 

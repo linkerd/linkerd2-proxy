@@ -16,6 +16,7 @@ pub(crate) struct Backend<T, F> {
     pub(crate) route_ref: RouteRef,
     pub(crate) concrete: Concrete<T>,
     pub(crate) filters: Arc<[F]>,
+    pub(crate) request_timeout: Option<std::time::Duration>,
 }
 
 pub(crate) type MatchedBackend<T, M, F> = super::Matched<M, Backend<T, F>>;
@@ -37,6 +38,7 @@ impl<T: Clone, F> Clone for Backend<T, F> {
             route_ref: self.route_ref.clone(),
             filters: self.filters.clone(),
             concrete: self.concrete.clone(),
+            request_timeout: self.request_timeout,
         }
     }
 }
