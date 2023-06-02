@@ -108,6 +108,7 @@ where
                          ..
                      }| concrete,
                 )
+                .push(http::insert::NewInsert::<http::ResponseTimeout, _>::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 .push(count_reqs::NewCountRequests::layer_via(ExtractMetrics {
                     metrics: metrics.clone(),
@@ -115,6 +116,12 @@ where
                 .push(svc::ArcNewService::layer())
                 .into_inner()
         })
+    }
+}
+
+impl<T, M, F> svc::Param<http::ResponseTimeout> for MatchedBackend<T, M, F> {
+    fn param(&self) -> http::ResponseTimeout {
+        http::ResponseTimeout(self.params.request_timeout)
     }
 }
 
