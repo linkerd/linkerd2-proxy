@@ -336,8 +336,13 @@ async fn route_request_timeout() {
     let rsp = send_req(svc.clone(), http::Request::get("/"));
     tokio::time::sleep(REQUEST_TIMEOUT).await;
     let error = rsp.await.expect_err("request must fail with a timeout");
-    assert!(error.is::<LogicalError>(), "error must originate in the logical stack");
-    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(error.as_ref()));
+    assert!(
+        error.is::<LogicalError>(),
+        "error must originate in the logical stack"
+    );
+    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
+        error.as_ref()
+    ));
 }
 
 #[derive(Clone, Debug)]

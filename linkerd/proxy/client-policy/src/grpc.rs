@@ -279,7 +279,11 @@ pub mod proto {
     impl TryFrom<grpc_route::RouteBackend> for RouteBackend<Filter> {
         type Error = InvalidBackend;
         fn try_from(
-            grpc_route::RouteBackend { backend, filters, request_timeout }: grpc_route::RouteBackend,
+            grpc_route::RouteBackend {
+                backend,
+                filters,
+                request_timeout,
+            }: grpc_route::RouteBackend,
         ) -> Result<RouteBackend<Filter>, InvalidBackend> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
             RouteBackend::try_from_proto(backend, filters, request_timeout)

@@ -238,7 +238,9 @@ pub mod proto {
             .ok_or(InvalidHttpRoute::Missing("distribution"))?
             .try_into()?;
 
-        let request_timeout = request_timeout.map(std::time::Duration::try_from).transpose()?;
+        let request_timeout = request_timeout
+            .map(std::time::Duration::try_from)
+            .transpose()?;
 
         Ok(Rule {
             matches,
@@ -297,7 +299,11 @@ pub mod proto {
     impl TryFrom<http_route::RouteBackend> for RouteBackend<Filter> {
         type Error = InvalidBackend;
         fn try_from(
-            http_route::RouteBackend { backend, filters, request_timeout }: http_route::RouteBackend,
+            http_route::RouteBackend {
+                backend,
+                filters,
+                request_timeout,
+            }: http_route::RouteBackend,
         ) -> Result<Self, Self::Error> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
             RouteBackend::try_from_proto(backend, filters, request_timeout)

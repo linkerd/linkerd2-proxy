@@ -547,12 +547,20 @@ pub mod proto {
                 .map(T::try_from)
                 .collect::<Result<Arc<[_]>, _>>()
                 .map_err(|error| InvalidBackend::Filter(error.into()))?;
-            let request_timeout = request_timeout
-                .map(|d| d.try_into())
-                .transpose()
-                .map_err(|error| InvalidBackend::Duration { field: "backend request timeout", error })?;
+            let request_timeout =
+                request_timeout
+                    .map(|d| d.try_into())
+                    .transpose()
+                    .map_err(|error| InvalidBackend::Duration {
+                        field: "backend request timeout",
+                        error,
+                    })?;
 
-            Ok(RouteBackend { filters, backend, request_timeout })
+            Ok(RouteBackend {
+                filters,
+                backend,
+                request_timeout,
+            })
         }
     }
 
