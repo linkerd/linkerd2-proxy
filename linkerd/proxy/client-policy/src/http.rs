@@ -47,6 +47,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 filters: Arc::new([]),
                 distribution,
                 failure_policy: StatusRanges::default(),
+                request_timeout: None,
             },
         }],
     }
@@ -130,6 +131,9 @@ pub mod proto {
 
         #[error("missing {0}")]
         Missing(&'static str),
+
+        #[error("invalid request timeout: {0}")]
+        Timeout(#[from] prost_types::DurationError),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -217,6 +221,7 @@ pub mod proto {
             matches,
             backends,
             filters,
+            request_timeout,
         } = proto;
 
         let matches = matches
@@ -233,6 +238,8 @@ pub mod proto {
             .ok_or(InvalidHttpRoute::Missing("distribution"))?
             .try_into()?;
 
+        let request_timeout = request_timeout.map(std::time::Duration::try_from).transpose()?;
+
         Ok(Rule {
             matches,
             policy: Policy {
@@ -240,6 +247,7 @@ pub mod proto {
                 filters,
                 distribution,
                 failure_policy: StatusRanges::default(),
+                request_timeout,
             },
         })
     }
@@ -289,10 +297,10 @@ pub mod proto {
     impl TryFrom<http_route::RouteBackend> for RouteBackend<Filter> {
         type Error = InvalidBackend;
         fn try_from(
-            http_route::RouteBackend { backend, filters }: http_route::RouteBackend,
+            http_route::RouteBackend { backend, filters, request_timeout }: http_route::RouteBackend,
         ) -> Result<Self, Self::Error> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-            RouteBackend::try_from_proto(backend, filters)
+            RouteBackend::try_from_proto(backend, filters, request_timeout)
         }
     }
 

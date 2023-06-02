@@ -58,6 +58,7 @@ pub struct RoutePolicy<T, F> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
+    pub request_timeout: Option<time::Duration>,
 
     /// Configures what responses are classified as failures.
     pub failure_policy: F,
@@ -78,6 +79,7 @@ pub enum RouteDistribution<T> {
 pub struct RouteBackend<T> {
     pub filters: Arc<[T]>,
     pub backend: Backend,
+    pub request_timeout: Option<time::Duration>,
 }
 
 // TODO(ver) how does configuration like failure accrual fit in here? What about
@@ -155,6 +157,7 @@ impl ClientPolicy {
                         .collect(),
                         distribution: RouteDistribution::Empty,
                         failure_policy: http::StatusRanges::default(),
+                        request_timeout: None,
                     },
                 }],
             }])
@@ -532,6 +535,7 @@ pub mod proto {
         pub(crate) fn try_from_proto<U>(
             backend: outbound::Backend,
             filters: impl IntoIterator<Item = U>,
+            request_timeout: Option<prost_types::Duration>,
         ) -> Result<Self, InvalidBackend>
         where
             T: TryFrom<U>,
@@ -543,8 +547,12 @@ pub mod proto {
                 .map(T::try_from)
                 .collect::<Result<Arc<[_]>, _>>()
                 .map_err(|error| InvalidBackend::Filter(error.into()))?;
+            let request_timeout = request_timeout
+                .map(|d| d.try_into())
+                .transpose()
+                .map_err(|error| InvalidBackend::Duration { field: "backend request timeout", error })?;
 
-            Ok(RouteBackend { filters, backend })
+            Ok(RouteBackend { filters, backend, request_timeout })
         }
     }
 
