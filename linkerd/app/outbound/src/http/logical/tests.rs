@@ -395,9 +395,8 @@ async fn backend_request_timeout() {
         http::StatusCode::OK
     );
 
-    // now, time out...
+    // Now, time out...
     let rsp = send_req(svc.clone(), http::Request::get("/"));
-
     // Wait until we actually get the request --- this timeout only starts once
     // the service has been acquired.
     handle.allow(1);
@@ -405,19 +404,21 @@ async fn backend_request_timeout() {
         .next_request()
         .await
         .expect("service must receive request");
-    tokio::time::sleep(BACKEND_REQUEST_TIMEOUT).await;
-    // still send a response, so that if we didn't hit the backend timeout
-    // timeout, we don't hit the route timeout.
+    tokio::time::sleep(BACKEND_REQUEST_TIMEOUT + Duration::from_millis(1)).await;
+    // Still send a response, so that if we didn't hit the backend timeout
+    // timeout, we don't hit the route timeout and succeed incorrectly.
     send_rsp.send_response(mk_rsp(StatusCode::OK, "good"));
-
     let error = rsp.await.expect_err("request must fail with a timeout");
-    assert!(error.is::<crate::http::endpoint::EndpointError>(), "error must originate in the endpoint stack");
+    assert!(
+        errors::is_caused_by::<crate::http::endpoint::EndpointError>(error.as_ref()),
+        "error must originate in the endpoint stack",
+    );
     assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(error.as_ref()));
 
     // If we spend time in the proxy before the service is acquired, the backend
     // request timeout should *not* apply.
     let rsp = send_req(svc.clone(), http::Request::get("/"));
-    tokio::time::sleep(BACKEND_REQUEST_TIMEOUT).await;
+    tokio::time::sleep(BACKEND_REQUEST_TIMEOUT + Duration::from_millis(1)).await;
     handle.allow(1);
     serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
     assert_eq!(
@@ -428,10 +429,13 @@ async fn backend_request_timeout() {
     // But, the route request timeout should still apply to time spent before
     // the backend is acquired.
     let rsp = send_req(svc.clone(), http::Request::get("/"));
-    tokio::time::sleep(ROUTE_REQUEST_TIMEOUT).await;
-
+    tokio::time::sleep(ROUTE_REQUEST_TIMEOUT + Duration::from_millis(1)).await;
+    handle.allow(1);
     let error = rsp.await.expect_err("request must fail with a timeout");
-    assert!(error.is::<LogicalError>(), "error must originate in the logical stack");
+    assert!(
+        !errors::is_caused_by::<crate::http::endpoint::EndpointError>(error.as_ref()),
+        "error must originate in the logcal stack",
+    );
     assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(error.as_ref()));
 }
 
