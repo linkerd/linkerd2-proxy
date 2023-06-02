@@ -350,7 +350,9 @@ async fn route_request_timeout() {
 async fn backend_request_timeout() {
     tokio::time::pause();
     let _trace = trace::test::trace_init();
-    const ROUTE_REQUEST_TIMEOUT: Duration = std::time::Duration::from_secs(5);
+    // must be less than the `default_config` failfast timeout, or we'll hit
+    // that instead.
+    const ROUTE_REQUEST_TIMEOUT: Duration = std::time::Duration::from_secs(2);
     const BACKEND_REQUEST_TIMEOUT: Duration = std::time::Duration::from_secs(1);
 
     let addr = SocketAddr::new([192, 0, 2, 41].into(), PORT);
@@ -399,14 +401,17 @@ async fn backend_request_timeout() {
     // Wait until we actually get the request --- this timeout only starts once
     // the service has been acquired.
     handle.allow(1);
-    let (req, send_rsp) = handle
+    let (_, send_rsp) = handle
         .next_request()
         .await
         .expect("service must receive request");
     tokio::time::sleep(BACKEND_REQUEST_TIMEOUT).await;
+    // still send a response, so that if we didn't hit the backend timeout
+    // timeout, we don't hit the route timeout.
+    send_rsp.send_response(mk_rsp(StatusCode::OK, "good"));
 
     let error = rsp.await.expect_err("request must fail with a timeout");
-    // assert!(error.is::<LogicalError>(), "error must originate in the logical stack");
+    assert!(error.is::<crate::http::endpoint::EndpointError>(), "error must originate in the endpoint stack");
     assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(error.as_ref()));
 
     // If we spend time in the proxy before the service is acquired, the backend
