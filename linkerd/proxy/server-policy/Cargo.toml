@@ -17,7 +17,7 @@ prost-types = { version = "0.11", optional = true }
 thiserror = "1"
 
 [dependencies.linkerd2-proxy-api]
-version = "0.9"
+version = "0.10"
 features = ["inbound"]
 optional = true
 
