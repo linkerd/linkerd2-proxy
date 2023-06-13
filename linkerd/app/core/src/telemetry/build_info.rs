@@ -1,14 +1,11 @@
 use linkerd_metrics::{metrics, FmtLabels, FmtMetric, FmtMetrics, Gauge};
-use std::env;
-use std::fmt;
-use std::string::String;
-use std::sync::Arc;
+use std::{env, fmt};
 
-const GIT_BRANCH: &str = env!("GIT_BRANCH");
-const GIT_SHA: &str = env!("GIT_SHA");
-const GIT_VERSION: &str = env!("GIT_VERSION");
-const PROFILE: &str = env!("PROFILE");
-const RUST_VERSION: &str = env!("RUST_VERSION");
+pub const VERSION: &str = env!("LINKERD2_PROXY_VERSION");
+pub const DATE: &str = env!("LINKERD2_PROXY_BUILD_DATE");
+pub const VENDOR: &str = env!("LINKERD2_PROXY_VENDOR");
+pub const GIT_SHA: &str = env!("GIT_SHA");
+pub const PROFILE: &str = env!("PROFILE");
 
 metrics! {
     proxy_build_info: Gauge {
@@ -17,56 +14,25 @@ metrics! {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Report {
-    name: String,
-    // `value` remains constant over the lifetime of the proxy so that
-    // build information in `labels` remains accurate
-    value: Arc<Gauge>,
-    labels: Arc<BuildInfoLabels>,
-}
+pub struct Report(());
 
-#[derive(Clone, Debug, Default)]
-struct BuildInfoLabels {
-    git_branch: String,
-    git_sha: String,
-    git_version: String,
-    profile: String,
-    rust_version: String,
-}
-
-impl Report {
-    pub fn new() -> Self {
-        let labels = Arc::new(BuildInfoLabels {
-            git_branch: GIT_BRANCH.to_string(),
-            git_sha: GIT_SHA.to_string(),
-            git_version: GIT_VERSION.to_string(),
-            profile: PROFILE.to_string(),
-            rust_version: RUST_VERSION.to_string(),
-        });
-        Self {
-            name: "proxy_build_info".to_string(),
-            value: Arc::new(1.into()),
-            labels,
-        }
-    }
-}
+struct Labels;
 
 impl FmtMetrics for Report {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         proxy_build_info.fmt_help(f)?;
-        self.value
-            .fmt_metric_labeled(f, self.name.as_str(), self.labels.as_ref())?;
+        Gauge::from(1).fmt_metric_labeled(f, "proxy_build_info", &Labels)?;
         Ok(())
     }
 }
 
-impl FmtLabels for BuildInfoLabels {
+impl FmtLabels for Labels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "git_branch=\"{}\"", self.git_branch)?;
-        write!(f, ",git_sha=\"{}\"", self.git_sha)?;
-        write!(f, ",git_version=\"{}\"", self.git_version)?;
-        write!(f, ",profile=\"{}\"", self.profile)?;
-        write!(f, ",rust_version=\"{}\"", self.rust_version)?;
+        write!(f, "version=\"{VERSION}\"")?;
+        write!(f, ",git_sha=\"{GIT_SHA}\"")?;
+        write!(f, ",profile=\"{PROFILE}\"")?;
+        write!(f, ",date=\"{DATE}\"")?;
+        write!(f, ",vendor=\"{VENDOR}\"")?;
         Ok(())
     }
 }

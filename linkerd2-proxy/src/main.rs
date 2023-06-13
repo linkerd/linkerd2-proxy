@@ -12,7 +12,10 @@ compile_error!(
 );
 
 use linkerd_app::{
-    core::{telemetry::StartTime, transport::BindTcp},
+    core::{
+        telemetry::{build_info, StartTime},
+        transport::BindTcp,
+    },
     trace, Config,
 };
 use linkerd_signal as signal;
@@ -36,6 +39,15 @@ fn main() {
             std::process::exit(EX_USAGE);
         }
     };
+
+    info!(
+        "{profile} {version} ({sha}) by {vendor} on {date}",
+        date = build_info::DATE,
+        sha = build_info::GIT_SHA,
+        version = build_info::VERSION,
+        profile = build_info::PROFILE,
+        vendor = build_info::VENDOR,
+    );
 
     // Load configuration from the environment without binding ports.
     let config = match Config::try_from_env() {

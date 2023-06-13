@@ -31,8 +31,9 @@ RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
     just fetch
 ARG TARGETARCH="amd64"
 ARG PROFILE="release"
-RUN --mount=type=cache,id=target,target=target \
-    --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
+ARG LINKERD2_PROXY_VERSION=""
+ARG LINKERD2_PROXY_VENDOR=""
+RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
     just arch="$TARGETARCH" features="$PROXY_FEATURES" profile="$PROFILE" build && \
     mkdir -p /out && \
     mv $(just --evaluate profile="$PROFILE" _target_bin) /out/linkerd2-proxy
