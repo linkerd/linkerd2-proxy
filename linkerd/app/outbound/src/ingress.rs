@@ -1,7 +1,7 @@
 use crate::{http, opaq, policy, Config, Discovery, Outbound, ParentRef};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, io, profiles,
+    detect, errors, io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -10,9 +10,11 @@ use linkerd_app_core::{
     transport::addrs::*,
     Addr, Error, Infallible, NameAddr, Result,
 };
-use std::{fmt::Debug, hash::Hash};
+use once_cell::sync::Lazy;
+use std::{fmt::Debug, hash::Hash, sync::Arc};
 use thiserror::Error;
 use tokio::sync::watch;
+use tracing::Instrument;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Http<T> {
@@ -79,20 +81,95 @@ impl Outbound<()> {
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
     {
-        let discover = svc::mk(move |DiscoverAddr(addr)| {
-            let profile = profiles
-                .clone()
-                .get_profile(profiles::LookupAddr(addr.clone()));
-            let policy = policies.get_policy(addr);
-            Box::pin(async move {
-                let (profile, policy) = tokio::join!(profile, policy);
-                let profile = profile.unwrap_or_else(|error| {
-                    tracing::warn!(%error, "Failed to resolve profile");
-                    None
-                });
-                Ok((profile, policy?))
+        let discover = {
+            let detect_timeout = self.config.proxy.detect_protocol_timeout;
+            let queue = {
+                let queue = self.config.tcp_connection_queue;
+                policy::Queue {
+                    capacity: queue.capacity,
+                    failfast_timeout: queue.failfast_timeout,
+                }
+            };
+            svc::mk(move |DiscoverAddr(addr)| {
+                tracing::debug!(%addr, "Discover");
+
+                let profile = profiles
+                    .clone()
+                    .get_profile(profiles::LookupAddr(addr))
+                    .instrument(tracing::debug_span!("profiles"));
+                let policy = policies
+                    .get_policy(addr)
+                    .instrument(tracing::debug_span!("policy"));
+
+                Box::pin(async move {
+                    let (profile, policy) = tokio::join!(profile, policy);
+                    tracing::debug!("Discovered");
+
+                    let profile = profile.unwrap_or_else(|error| {
+                        tracing::warn!(%error, "Error resolving ServiceProfile");
+                        None
+                    });
+
+                    // If there was a policy resolution, return it with the profile so
+                    // the stack can determine how to switch on them.
+                    let policy_error = match policy {
+                        Ok(policy) => return Ok((profile, policy)),
+                        // XXX(ver) The policy controller may (for the time being) reject
+                        // our lookups, since it doesn't yet serve endpoint metadata for
+                        // forwarding.
+                        Err(error) if errors::has_grpc_status(&error, tonic::Code::NotFound) => {
+                            tracing::debug!("Policy not found");
+                            error
+                        }
+                        // Earlier versions of the Linkerd control plane (e.g.
+                        // 2.12.x) will return `Unimplemented` for requests to the
+                        // OutboundPolicy API. Log a warning and synthesize a policy
+                        // for backwards compatibility.
+                        Err(error)
+                            if errors::has_grpc_status(&error, tonic::Code::Unimplemented) =>
+                        {
+                            tracing::warn!("Policy controller returned `Unimplemented`, the control plane may be out of date.");
+                            error
+                        }
+                        Err(error) => return Err(error),
+                    };
+
+                    // If there was a profile resolution, try to use it to synthesize a
+                    // enpdoint policy.
+                    if let Some(profile) = profile {
+                        let policy = crate::discover::spawn_synthesized_profile_policy(
+                            profile.clone().into(),
+                            move |profile: &profiles::Profile| {
+                                static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+                                    Arc::new(policy::Meta::Default {
+                                        name: "endpoint".into(),
+                                    })
+                                });
+                                let (addr, meta) = match profile.endpoint.clone() {
+                                    Some(ep) => ep,
+                                    // XXX(eliza): we probably need to
+                                    // handle this...
+                                    None => return Err(policy_error),
+                                };
+                                // TODO(ver) We should be able to figure out resource coordinates for
+                                // the endpoint?
+                                crate::synthesize_forward_policy(
+                                    &META,
+                                    detect_timeout,
+                                    queue,
+                                    addr,
+                                    meta,
+                                )
+                            },
+                        );
+                        return Ok((Some(profile), policy));
+                    }
+
+                    // Otherwise, return an error.
+                    return Err(policy_error);
+                })
             })
-        });
+        };
 
         // The fallback stack is the same thing as the normal proxy stack, but
         // it doesn't include TCP metrics, since they are already instrumented
