@@ -182,6 +182,37 @@ impl ClientPolicy {
             backends: BACKENDS.clone(),
         }
     }
+
+    pub fn empty() -> Self {
+        static META: Lazy<Arc<Meta>> = Lazy::new(|| {
+            Arc::new(Meta::Default {
+                name: "empty".into(),
+            })
+        });
+        static NO_HTTP_ROUTES: Lazy<Arc<[http::Route]>> = Lazy::new(|| Arc::new([]));
+        static NO_BACKENDS: Lazy<Arc<[Backend]>> = Lazy::new(|| Arc::new([]));
+
+        Self {
+            parent: META.clone()
+            protocol: Protocol::Detect {
+                timeout,
+                http1: http::Http1 {
+                    routes: NO_HTTP_ROUTES.clone(),
+                    failure_accrual: Default::default(),
+                },
+                http2: http::Http2 {
+                    routes: NO_HTTP_ROUTES.clone(),
+                    failure_accrual: Default::default(),
+                },
+                opaque: opaq::Opaque {
+                    // TODO(eliza): eventually, can we configure the opaque
+                    // policy to fail conns?
+                    policy: None,
+                },
+            },
+            backends: BACKENDS.clone(),
+        }
+    }
 }
 
 // === impl Meta ===

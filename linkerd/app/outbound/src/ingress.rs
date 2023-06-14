@@ -220,7 +220,10 @@ impl Outbound<()> {
                                 );
                             }
 
-                            todo!("eliza: orig dst? needs to fail");
+                            // Return an empty policy so that a
+                            // `DiscoveryRejected` error is returned if
+                            // selecting the policy.
+                            return policy::ClientPolicy::empty();
                         },
                     );
                     return Ok((Some(profile), policy));
