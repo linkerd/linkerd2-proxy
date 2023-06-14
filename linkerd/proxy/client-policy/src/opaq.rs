@@ -127,8 +127,7 @@ pub(crate) mod proto {
             filters: NO_FILTERS.clone(),
             failure_policy: NonIoErrors::default(),
             distribution,
-            // XXX(eliza): maybe this shouldn't even be present on opaque
-            // routes...might have to turn it into a filter...
+            // Request timeouts are ignored on opaque routes.
             request_timeout: None,
         })
     }

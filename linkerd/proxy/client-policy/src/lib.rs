@@ -58,6 +58,17 @@ pub struct RoutePolicy<T, F> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
+    /// Request timeout applied to HTTP and gRPC routes.
+    ///
+    /// Opaque routes are proxied as opaque TCP, and therefore, we have no
+    /// concept of a "request", so this field is ignored by opaque routes.
+    /// It's somewhat unfortunate that this field is part of the `RoutePolicy`
+    /// struct, which is used to represent routes for all protocols, rather than
+    /// as a filter, which are a generic type that depends on the protocol in
+    /// use. However, this can't be easily modeled as a filter using the current
+    /// design for filters, as filters synchronously modify a request or return
+    /// an error --- a filter cannot wrap the response future in order to add a
+    /// timeout.
     pub request_timeout: Option<time::Duration>,
 
     /// Configures what responses are classified as failures.
