@@ -223,6 +223,7 @@ async fn header_based_routing() {
             backends: Some(policy::http_first_available(std::iter::once(
                 policy::backend(dst),
             ))),
+            request_timeout: None,
         };
 
     let route = outbound::HttpRoute {
@@ -236,6 +237,7 @@ async fn header_based_routing() {
                 backends: Some(policy::http_first_available(std::iter::once(
                     policy::backend(&dst_world),
                 ))),
+                request_timeout: None,
             },
             // x-hello-city: sf | x-hello-city: san francisco
             mk_header_rule(
@@ -398,6 +400,8 @@ async fn path_based_routing() {
             backends: Some(policy::http_first_available(std::iter::once(
                 policy::backend(dst),
             ))),
+
+            request_timeout: None,
         };
 
     let route = outbound::HttpRoute {
@@ -411,6 +415,7 @@ async fn path_based_routing() {
                 backends: Some(policy::http_first_available(std::iter::once(
                     policy::backend(&dst_world),
                 ))),
+                request_timeout: None,
             },
             // /goodbye/*
             mk_path_rule(
