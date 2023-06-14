@@ -110,10 +110,10 @@ where
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
-                // Sets an optional request timeout.
-                .push(http::NewTimeout::layer())
                 // TODO(ver) attach the `E` typed failure policy to requests.
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
+                // Sets an optional request timeout.
+                .push(http::NewTimeout::layer())
                 .push(classify::NewClassify::layer())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
