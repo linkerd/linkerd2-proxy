@@ -9,7 +9,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 pub(crate) mod backend;
 pub(crate) mod filters;
 
-pub(crate) use self::backend::{Backend, MatchedBackend};
+pub(crate) use self::backend::{Backend, BackendError, MatchedBackend};
 pub use self::filters::errors;
 
 /// A target type that includes a summary of exactly how a request was matched.
@@ -49,6 +49,15 @@ pub(crate) type Grpc<T> = MatchedRoute<
 
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
+
+/// Wraps errors encountered in this module.
+#[derive(Debug, thiserror::Error)]
+#[error("{}: {source}", route.0)]
+pub struct RouteError {
+    route: RouteRef,
+    #[source]
+    source: Error,
+}
 
 // === impl MatchedRoute ===
 
@@ -115,6 +124,13 @@ where
                 // Sets an optional request timeout.
                 .push(http::NewTimeout::layer())
                 .push(classify::NewClassify::layer())
+                .push(svc::NewMapErr::layer_with(|rt: Self| {
+                    let route = rt.params.route_ref.clone();
+                    move |source| RouteError {
+                        route: route.clone(),
+                        source,
+                    }
+                }))
                 .push(svc::ArcNewService::layer())
                 .into_inner()
         })

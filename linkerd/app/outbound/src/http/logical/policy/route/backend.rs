@@ -29,6 +29,15 @@ pub struct ExtractMetrics {
     metrics: RouteBackendMetrics,
 }
 
+/// Wraps errors encountered in this module.
+#[derive(Debug, thiserror::Error)]
+#[error("backend {}: {source}", backend.0)]
+pub(crate) struct BackendError {
+    backend: BackendRef,
+    #[source]
+    source: Error,
+}
+
 // === impl Backend ===
 
 impl<T: Clone, F> Clone for Backend<T, F> {
@@ -109,6 +118,13 @@ where
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 .push(count_reqs::NewCountRequests::layer_via(ExtractMetrics {
                     metrics: metrics.clone(),
+                }))
+                .push(svc::NewMapErr::layer_with(|t: Self| {
+                    let backend = t.params.concrete.backend_ref.clone();
+                    move |source| BackendError {
+                        backend: backend.clone(),
+                        source,
+                    }
                 }))
                 .push(svc::ArcNewService::layer())
                 .into_inner()
