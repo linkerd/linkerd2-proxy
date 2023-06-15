@@ -29,10 +29,10 @@ pub struct ExtractMetrics {
     metrics: RouteBackendMetrics,
 }
 
-/// Wraps errors encountered in this module.
+/// Wraps errors with backend metadata.
 #[derive(Debug, thiserror::Error)]
 #[error("backend {}: {source}", backend.0)]
-pub(crate) struct BackendError {
+struct BackendError {
     backend: BackendRef,
     #[source]
     source: Error,

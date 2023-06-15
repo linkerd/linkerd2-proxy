@@ -50,10 +50,10 @@ pub(crate) type Grpc<T> = MatchedRoute<
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
 
-/// Wraps errors encountered in this module.
+/// Wraps errors with route metadata.
 #[derive(Debug, thiserror::Error)]
-#[error("{}: {source}", route.0)]
-pub struct RouteError {
+#[error("route {}: {source}", route.0)]
+struct RouteError {
     route: RouteRef,
     #[source]
     source: Error,
