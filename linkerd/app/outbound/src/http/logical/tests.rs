@@ -412,10 +412,6 @@ async fn backend_request_timeout() {
     // timeout, we don't hit the route timeout and succeed incorrectly.
     send_rsp.send_response(mk_rsp(StatusCode::OK, "good"));
     let error = rsp.await.expect_err("request must fail with a timeout");
-    assert!(
-        errors::is_caused_by::<crate::http::endpoint::EndpointError>(error.as_ref()),
-        "error must originate in the endpoint stack",
-    );
     assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
         error.as_ref()
     ));
@@ -437,10 +433,6 @@ async fn backend_request_timeout() {
     tokio::time::sleep(ROUTE_REQUEST_TIMEOUT + Duration::from_millis(1)).await;
     handle.allow(1);
     let error = rsp.await.expect_err("request must fail with a timeout");
-    assert!(
-        !errors::is_caused_by::<crate::http::endpoint::EndpointError>(error.as_ref()),
-        "error must originate in the logcal stack",
-    );
     assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
         error.as_ref()
     ));

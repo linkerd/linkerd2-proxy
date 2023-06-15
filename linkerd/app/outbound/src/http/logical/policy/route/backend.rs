@@ -108,8 +108,8 @@ where
                          ..
                      }| concrete,
                 )
-                .push(http::insert::NewInsert::<http::ResponseTimeout, _>::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
+                .push(http::NewTimeout::layer())
                 .push(count_reqs::NewCountRequests::layer_via(ExtractMetrics {
                     metrics: metrics.clone(),
                 }))

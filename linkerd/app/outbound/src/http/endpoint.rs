@@ -119,7 +119,6 @@ impl<N> Outbound<N> {
             // is typically used (i.e. when communicating with other proxies); though
             // HTTP/1.x fallback is supported as needed.
             inner
-                .push_on_service(http::timeout::TimeoutFromRequest::layer())
                 // Drive the connection to completion regardless of whether the reconnect is being
                 // actively polled.
                 .push_on_service(svc::layer::mk(svc::SpawnReady::new))
