@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 use once_cell::sync::Lazy;
-use std::{borrow::Cow, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::Arc, time};
+use std::{borrow::Cow, fmt, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::Arc, time};
 
 pub mod grpc;
 pub mod http;
@@ -261,6 +261,27 @@ impl std::hash::Hash for Meta {
         self.group().hash(state);
         self.kind().hash(state);
         self.name().hash(state);
+    }
+}
+
+impl fmt::Display for Meta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Default { name } => write!(f, "default.{name}"),
+            Self::Resource {
+                kind,
+                name,
+                namespace,
+                port,
+                ..
+            } => {
+                write!(f, "{kind}.{namespace}.{name}")?;
+                if let Some(port) = port {
+                    write!(f, ":{port}")?
+                }
+                Ok(())
+            }
+        }
     }
 }
 
