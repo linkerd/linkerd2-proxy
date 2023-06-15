@@ -26,7 +26,7 @@ pub mod queue;
 mod result;
 mod switch_ready;
 mod thunk;
-pub mod timeout;
+mod timeout;
 mod unwrap_or;
 mod watch;
 
