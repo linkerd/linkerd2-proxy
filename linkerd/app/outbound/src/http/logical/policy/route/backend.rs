@@ -1,5 +1,5 @@
 use super::{super::Concrete, filters};
-use crate::RouteRef;
+use crate::{BackendRef, RouteRef};
 use linkerd_app_core::{proxy::http, svc, Error, Result};
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -119,11 +119,13 @@ where
                 .push(count_reqs::NewCountRequests::layer_via(ExtractMetrics {
                     metrics: metrics.clone(),
                 }))
-                .push(svc::NewMapErr::layer_with(|t: Self| {
+                .push(svc::NewMapErr::layer_with(|t: &Self| {
                     let backend = t.params.concrete.backend_ref.clone();
-                    move |source| BackendError {
-                        backend: backend.clone(),
-                        source,
+                    move |source| {
+                        Error::from(BackendError {
+                            backend: backend.clone(),
+                            source,
+                        })
                     }
                 }))
                 .push(svc::ArcNewService::layer())

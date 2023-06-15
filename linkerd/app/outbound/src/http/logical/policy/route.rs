@@ -9,7 +9,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 pub(crate) mod backend;
 pub(crate) mod filters;
 
-pub(crate) use self::backend::{Backend, BackendError, MatchedBackend};
+pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
 
 /// A target type that includes a summary of exactly how a request was matched.
@@ -124,11 +124,13 @@ where
                 // Sets an optional request timeout.
                 .push(http::NewTimeout::layer())
                 .push(classify::NewClassify::layer())
-                .push(svc::NewMapErr::layer_with(|rt: Self| {
+                .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();
-                    move |source| RouteError {
-                        route: route.clone(),
-                        source,
+                    move |source| {
+                        Error::from(RouteError {
+                            route: route.clone(),
+                            source,
+                        })
                     }
                 }))
                 .push(svc::ArcNewService::layer())
