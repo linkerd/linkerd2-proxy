@@ -1,5 +1,5 @@
 use super::{super::Concrete, filters};
-use crate::RouteRef;
+use crate::{BackendRef, RouteRef};
 use linkerd_app_core::{proxy::http, svc, Error, Result};
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -28,6 +28,15 @@ pub(crate) type Grpc<T> =
 #[derive(Clone, Debug)]
 pub struct ExtractMetrics {
     metrics: RouteBackendMetrics,
+}
+
+/// Wraps errors with backend metadata.
+#[derive(Debug, thiserror::Error)]
+#[error("backend {}: {source}", backend.0)]
+struct BackendError {
+    backend: BackendRef,
+    #[source]
+    source: Error,
 }
 
 // === impl Backend ===
@@ -112,6 +121,15 @@ where
                 .push(http::NewTimeout::layer())
                 .push(count_reqs::NewCountRequests::layer_via(ExtractMetrics {
                     metrics: metrics.clone(),
+                }))
+                .push(svc::NewMapErr::layer_with(|t: &Self| {
+                    let backend = t.params.concrete.backend_ref.clone();
+                    move |source| {
+                        Error::from(BackendError {
+                            backend: backend.clone(),
+                            source,
+                        })
+                    }
                 }))
                 .push(svc::ArcNewService::layer())
                 .into_inner()

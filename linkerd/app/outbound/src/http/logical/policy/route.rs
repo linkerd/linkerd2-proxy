@@ -50,6 +50,15 @@ pub(crate) type Grpc<T> = MatchedRoute<
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
 
+/// Wraps errors with route metadata.
+#[derive(Debug, thiserror::Error)]
+#[error("route {}: {source}", route.0)]
+struct RouteError {
+    route: RouteRef,
+    #[source]
+    source: Error,
+}
+
 // === impl MatchedRoute ===
 
 impl<T, M, F, E> MatchedRoute<T, M, F, E>
@@ -115,6 +124,15 @@ where
                 // Sets an optional request timeout.
                 .push(http::NewTimeout::layer())
                 .push(classify::NewClassify::layer())
+                .push(svc::NewMapErr::layer_with(|rt: &Self| {
+                    let route = rt.params.route_ref.clone();
+                    move |source| {
+                        Error::from(RouteError {
+                            route: route.clone(),
+                            source,
+                        })
+                    }
+                }))
                 .push(svc::ArcNewService::layer())
                 .into_inner()
         })
