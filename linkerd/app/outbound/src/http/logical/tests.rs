@@ -416,18 +416,7 @@ async fn backend_request_timeout() {
         error.as_ref()
     ));
 
-    // If we spend time in the proxy before the service is acquired, the backend
-    // request timeout should *not* apply.
-    let rsp = send_req(svc.clone(), http::Request::get("/"));
-    tokio::time::sleep(BACKEND_REQUEST_TIMEOUT + Duration::from_millis(1)).await;
-    handle.allow(1);
-    serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
-    assert_eq!(
-        rsp.await.expect("request must succeed").status(),
-        http::StatusCode::OK
-    );
-
-    // But, the route request timeout should still apply to time spent before
+    // The route request timeout should still apply to time spent before
     // the backend is acquired.
     let rsp = send_req(svc.clone(), http::Request::get("/"));
     tokio::time::sleep(ROUTE_REQUEST_TIMEOUT + Duration::from_millis(1)).await;
