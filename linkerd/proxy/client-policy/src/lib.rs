@@ -183,7 +183,7 @@ impl ClientPolicy {
         }
     }
 
-    pub fn empty() -> Self {
+    pub fn empty(timeout: time::Duration) -> Self {
         static META: Lazy<Arc<Meta>> = Lazy::new(|| {
             Arc::new(Meta::Default {
                 name: "empty".into(),
@@ -210,7 +210,7 @@ impl ClientPolicy {
                     policy: None,
                 },
             },
-            backends: BACKENDS.clone(),
+            backends: NO_BACKENDS.clone(),
         }
     }
 }
