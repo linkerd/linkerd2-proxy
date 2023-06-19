@@ -193,7 +193,7 @@ impl ClientPolicy {
         static NO_BACKENDS: Lazy<Arc<[Backend]>> = Lazy::new(|| Arc::new([]));
 
         Self {
-            parent: META.clone()
+            parent: META.clone(),
             protocol: Protocol::Detect {
                 timeout,
                 http1: http::Http1 {
