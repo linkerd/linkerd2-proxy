@@ -192,14 +192,47 @@ pub fn synthesize_forward_policy(
     addr: SocketAddr,
     metadata: policy::EndpointMetadata,
 ) -> ClientPolicy {
+    policy_for_backend(
+        meta,
+        timeout,
+        policy::Backend {
+            meta: meta.clone(),
+            queue,
+            dispatcher: policy::BackendDispatcher::Forward(addr, metadata),
+        },
+    )
+}
+
+pub fn synthesize_balance_policy(
+    meta: &Arc<policy::Meta>,
+    timeout: Duration,
+    queue: policy::Queue,
+    load: policy::Load,
+    addr: impl ToString,
+) -> ClientPolicy {
+    policy_for_backend(
+        meta,
+        timeout,
+        policy::Backend {
+            meta: meta.clone(),
+            queue,
+            dispatcher: policy::BackendDispatcher::BalanceP2c(
+                load,
+                policy::EndpointDiscovery::DestinationGet {
+                    path: addr.to_string(),
+                },
+            ),
+        },
+    )
+}
+
+fn policy_for_backend(
+    meta: &Arc<policy::Meta>,
+    timeout: Duration,
+    backend: policy::Backend,
+) -> ClientPolicy {
     static NO_HTTP_FILTERS: Lazy<Arc<[policy::http::Filter]>> = Lazy::new(|| Arc::new([]));
     static NO_OPAQ_FILTERS: Lazy<Arc<[policy::opaq::Filter]>> = Lazy::new(|| Arc::new([]));
-
-    let backend = policy::Backend {
-        meta: meta.clone(),
-        queue,
-        dispatcher: policy::BackendDispatcher::Forward(addr, metadata),
-    };
 
     let opaque = policy::opaq::Opaque {
         policy: Some(policy::opaq::Policy {
