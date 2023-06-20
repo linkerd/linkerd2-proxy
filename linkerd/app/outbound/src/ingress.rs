@@ -223,14 +223,14 @@ impl Outbound<()> {
                             // Return an empty policy so that a
                             // `DiscoveryRejected` error is returned if
                             // selecting the policy.
-                            return policy::ClientPolicy::empty(detect_timeout);
+                            policy::ClientPolicy::empty(detect_timeout)
                         },
                     );
-                    return Ok((Some(profile), policy));
+                    Ok((Some(profile), policy))
+                } else {
+                    // Otherwise, return an error.
+                    Err(policy_error)
                 }
-
-                // Otherwise, return an error.
-                return Err(policy_error);
             })
         })
     }
