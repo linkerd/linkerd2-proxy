@@ -184,53 +184,55 @@ impl Outbound<()> {
                 };
 
                 // If there was a profile resolution, try to use it to synthesize a
-                // policy.
-                if let Some(profile) = profile {
-                    let policy = crate::discover::spawn_synthesized_profile_policy(
-                        profile.clone().into(),
-                        move |profile: &profiles::Profile| {
-                            static ENDPOINT_META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
-                                Arc::new(policy::Meta::Default {
-                                    name: "endpoint".into(),
-                                })
-                            });
-                            static PROFILE_META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
-                                Arc::new(policy::Meta::Default {
-                                    name: "profile".into(),
-                                })
-                            });
+                // policy. Otherwise, return an error, as we have neither a
+                // policy nor a ServiceProfile and can't synthesize a policy.
+                let profile = match profile {
+                    Some(profile) => profile,
+                    None => return Err(policy_error),
+                };
 
-                            if let Some((addr, meta)) = profile.endpoint.clone() {
-                                return crate::discover::synthesize_forward_policy(
-                                    &ENDPOINT_META,
-                                    detect_timeout,
-                                    queue,
-                                    addr,
-                                    meta,
-                                );
-                            }
+                let policy = crate::discover::spawn_synthesized_profile_policy(
+                    profile.clone().into(),
+                    move |profile: &profiles::Profile| {
+                        static ENDPOINT_META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+                            Arc::new(policy::Meta::Default {
+                                name: "endpoint".into(),
+                            })
+                        });
+                        static PROFILE_META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
+                            Arc::new(policy::Meta::Default {
+                                name: "profile".into(),
+                            })
+                        });
 
-                            if let Some(ref logical) = profile.addr {
-                                return crate::discover::synthesize_balance_policy(
-                                    &PROFILE_META,
-                                    detect_timeout,
-                                    queue,
-                                    load,
-                                    logical,
-                                );
-                            }
+                        if let Some((addr, meta)) = profile.endpoint.clone() {
+                            return crate::discover::synthesize_forward_policy(
+                                &ENDPOINT_META,
+                                detect_timeout,
+                                queue,
+                                addr,
+                                meta,
+                            );
+                        }
 
-                            // Return an empty policy so that a
-                            // `DiscoveryRejected` error is returned if
-                            // selecting the policy.
-                            policy::ClientPolicy::empty(detect_timeout)
-                        },
-                    );
-                    Ok((Some(profile), policy))
-                } else {
-                    // Otherwise, return an error.
-                    Err(policy_error)
-                }
+                        if let Some(ref logical) = profile.addr {
+                            return crate::discover::synthesize_balance_policy(
+                                &PROFILE_META,
+                                detect_timeout,
+                                queue,
+                                load,
+                                logical,
+                            );
+                        }
+
+                        // Return an empty policy so that a
+                        // `DiscoveryRejected` error is returned if
+                        // selecting the policy.
+                        policy::ClientPolicy::empty(detect_timeout)
+                    },
+                );
+
+                Ok((Some(profile), policy))
             })
         })
     }
