@@ -28,7 +28,7 @@ pub fn ms_per_tick() -> io::Result<u64> {
 }
 
 pub fn blocking_stat() -> ProcResult<Stat> {
-    Process::myself().unwrap().stat()
+    Process::myself()?.stat()
 }
 
 pub fn open_fds(pid: pid_t) -> io::Result<u64> {
@@ -42,9 +42,28 @@ pub fn open_fds(pid: pid_t) -> io::Result<u64> {
 }
 
 pub fn max_fds() -> io::Result<Option<u64>> {
-    let limit1 = Process::myself().unwrap().limits().unwrap().max_open_files;
-    let max_fds = or(limit1.soft_limit, limit1.hard_limit);
-    Ok(max_fds)
+    match Process::myself() {
+        Ok(p) => match p.limits() {
+            Ok(limits) => {
+                let limit = limits.max_open_files;
+                match limit.soft_limit {
+                    process::LimitValue::Unlimited => match limit.hard_limit {
+                        process::LimitValue::Unlimited => Ok(None),
+                        process::LimitValue::Value(v) => Ok(Some(v)),
+                    },
+                    process::LimitValue::Value(v) => Ok(Some(v)),
+                }
+            }
+            Err(e) => {
+                error!("Failed to get process limits: {}", e);
+                Ok(None)
+            }
+        },
+        Err(e) => {
+            error!("Failed to get process limits: {}", e);
+            Ok(None)
+        }
+    }
 }
 
 #[allow(unsafe_code)]
@@ -56,15 +75,5 @@ fn sysconf(num: libc::c_int, name: &'static str) -> Result<u64, io::Error> {
             Err(error)
         }
         val => Ok(val as u64),
-    }
-}
-
-fn or(soft_limit: process::LimitValue, hard_limit: process::LimitValue) -> Option<u64> {
-    match soft_limit {
-        process::LimitValue::Unlimited => match hard_limit {
-            process::LimitValue::Unlimited => Some(u64::max_value()),
-            process::LimitValue::Value(v) => Some(v),
-        },
-        process::LimitValue::Value(v) => Some(v),
     }
 }
