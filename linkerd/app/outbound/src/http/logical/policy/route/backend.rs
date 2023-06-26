@@ -1,5 +1,5 @@
 use super::{super::Concrete, filters};
-use crate::RouteRef;
+use crate::{BackendRef, RouteRef};
 use linkerd_app_core::{proxy::http, svc, Error, Result};
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -16,6 +16,7 @@ pub(crate) struct Backend<T, F> {
     pub(crate) route_ref: RouteRef,
     pub(crate) concrete: Concrete<T>,
     pub(crate) filters: Arc<[F]>,
+    pub(crate) request_timeout: Option<std::time::Duration>,
 }
 
 pub(crate) type MatchedBackend<T, M, F> = super::Matched<M, Backend<T, F>>;
@@ -29,6 +30,15 @@ pub struct ExtractMetrics {
     metrics: RouteBackendMetrics,
 }
 
+/// Wraps errors with backend metadata.
+#[derive(Debug, thiserror::Error)]
+#[error("backend {}: {source}", backend.0)]
+struct BackendError {
+    backend: BackendRef,
+    #[source]
+    source: Error,
+}
+
 // === impl Backend ===
 
 impl<T: Clone, F> Clone for Backend<T, F> {
@@ -37,6 +47,7 @@ impl<T: Clone, F> Clone for Backend<T, F> {
             route_ref: self.route_ref.clone(),
             filters: self.filters.clone(),
             concrete: self.concrete.clone(),
+            request_timeout: self.request_timeout,
         }
     }
 }
@@ -107,12 +118,28 @@ where
                      }| concrete,
                 )
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
+                .push(http::NewTimeout::layer())
                 .push(count_reqs::NewCountRequests::layer_via(ExtractMetrics {
                     metrics: metrics.clone(),
+                }))
+                .push(svc::NewMapErr::layer_with(|t: &Self| {
+                    let backend = t.params.concrete.backend_ref.clone();
+                    move |source| {
+                        Error::from(BackendError {
+                            backend: backend.clone(),
+                            source,
+                        })
+                    }
                 }))
                 .push(svc::ArcNewService::layer())
                 .into_inner()
         })
+    }
+}
+
+impl<T, M, F> svc::Param<http::ResponseTimeout> for MatchedBackend<T, M, F> {
+    fn param(&self) -> http::ResponseTimeout {
+        http::ResponseTimeout(self.params.request_timeout)
     }
 }
 

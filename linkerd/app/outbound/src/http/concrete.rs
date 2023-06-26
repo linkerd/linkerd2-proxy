@@ -42,7 +42,7 @@ pub struct DispatcherFailed(Arc<str>);
 
 /// Wraps errors encountered in this module.
 #[derive(Debug, thiserror::Error)]
-#[error("{} {}.{}: {source}", backend.0.kind(), backend.0.name(), backend.0.namespace())]
+#[error("{}: {source}", backend.0)]
 pub struct BalanceError {
     backend: BackendRef,
     #[source]

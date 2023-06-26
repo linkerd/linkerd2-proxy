@@ -30,6 +30,7 @@ pub(crate) struct Route<T, F, E> {
     pub(super) filters: Arc<[F]>,
     pub(super) distribution: BackendDistribution<T, F>,
     pub(super) failure_policy: E,
+    pub(super) request_timeout: Option<std::time::Duration>,
 }
 
 pub(crate) type MatchedRoute<T, M, F, E> = Matched<M, Route<T, F, E>>;
@@ -48,6 +49,15 @@ pub(crate) type Grpc<T> = MatchedRoute<
 
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
+
+/// Wraps errors with route metadata.
+#[derive(Debug, thiserror::Error)]
+#[error("route {}: {source}", route.0)]
+struct RouteError {
+    route: RouteRef,
+    #[source]
+    source: Error,
+}
 
 // === impl MatchedRoute ===
 
@@ -111,7 +121,18 @@ where
                 .push_on_service(svc::LoadShed::layer())
                 // TODO(ver) attach the `E` typed failure policy to requests.
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
+                // Sets an optional request timeout.
+                .push(http::NewTimeout::layer())
                 .push(classify::NewClassify::layer())
+                .push(svc::NewMapErr::layer_with(|rt: &Self| {
+                    let route = rt.params.route_ref.clone();
+                    move |source| {
+                        Error::from(RouteError {
+                            route: route.clone(),
+                            source,
+                        })
+                    }
+                }))
                 .push(svc::ArcNewService::layer())
                 .into_inner()
         })
@@ -121,6 +142,12 @@ where
 impl<T: Clone, M, F, E> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T, M, F, E> {
     fn param(&self) -> BackendDistribution<T, F> {
         self.params.distribution.clone()
+    }
+}
+
+impl<T, M, F, E> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, M, F, E> {
+    fn param(&self) -> http::timeout::ResponseTimeout {
+        http::timeout::ResponseTimeout(self.params.request_timeout)
     }
 }
 

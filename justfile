@@ -15,8 +15,11 @@ toolchain := ""
 
 features := ""
 
+export LINKERD2_PROXY_VERSION := env_var_or_default("LINKERD2_PROXY_VERSION", "0.0.0-dev." + `git rev-parse --short HEAD`)
+export LINKERD2_PROXY_VENDOR := env_var_or_default("LINKERD2_PROXY_VENDOR", `whoami` + "@" + `hostname`)
+
 # The version name to use for packages.
-package_version := `git rev-parse --short HEAD`
+package_version := "v" + LINKERD2_PROXY_VERSION
 
 # Docker image name & tag.
 docker-repo := "localhost/linkerd/proxy"
@@ -175,6 +178,9 @@ docker *args='--output=type=docker': && _clean-cache
         --pull \
         --tag={{ docker-image }} \
         --build-arg PROFILE='{{ profile }}' \
+        --build-arg LINKERD2_PROXY_VENDOR='{{ LINKERD2_PROXY_VENDOR }}' \
+        --build-arg LINKERD2_PROXY_VERSION='{{ LINKERD2_PROXY_VERSION }}' \
+        --no-cache-filter=runtime \
         {{ if linkerd-tag == '' { '' } else { '--build-arg=RUNTIME_IMAGE=ghcr.io/linkerd/proxy:' + linkerd-tag } }} \
         {{ if features != "" { "--build-arg PROXY_FEATURES=" + features } else { "" } }} \
         {{ if DOCKER_BUILDX_CACHE_DIR == '' { '' } else { '--cache-from=type=local,src=' + DOCKER_BUILDX_CACHE_DIR + ' --cache-to=type=local,dest=' + DOCKER_BUILDX_CACHE_DIR } }} \

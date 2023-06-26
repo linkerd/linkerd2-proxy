@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 use once_cell::sync::Lazy;
-use std::{borrow::Cow, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::Arc, time};
+use std::{borrow::Cow, fmt, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::Arc, time};
 
 pub mod grpc;
 pub mod http;
@@ -58,6 +58,18 @@ pub struct RoutePolicy<T, F> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
+    /// Request timeout applied to HTTP and gRPC routes.
+    ///
+    /// Opaque routes are proxied as opaque TCP, and therefore, we have no
+    /// concept of a "request", so this field is ignored by opaque routes.
+    /// It's somewhat unfortunate that this field is part of the `RoutePolicy`
+    /// struct, which is used to represent routes for all protocols, rather than
+    /// as a filter, which are a generic type that depends on the protocol in
+    /// use. However, this can't be easily modeled as a filter using the current
+    /// design for filters, as filters synchronously modify a request or return
+    /// an error --- a filter cannot wrap the response future in order to add a
+    /// timeout.
+    pub request_timeout: Option<time::Duration>,
 
     /// Configures what responses are classified as failures.
     pub failure_policy: F,
@@ -78,6 +90,7 @@ pub enum RouteDistribution<T> {
 pub struct RouteBackend<T> {
     pub filters: Arc<[T]>,
     pub backend: Backend,
+    pub request_timeout: Option<time::Duration>,
 }
 
 // TODO(ver) how does configuration like failure accrual fit in here? What about
@@ -155,6 +168,7 @@ impl ClientPolicy {
                         .collect(),
                         distribution: RouteDistribution::Empty,
                         failure_policy: http::StatusRanges::default(),
+                        request_timeout: None,
                     },
                 }],
             }])
@@ -180,6 +194,37 @@ impl ClientPolicy {
                 },
             },
             backends: BACKENDS.clone(),
+        }
+    }
+
+    pub fn empty(timeout: time::Duration) -> Self {
+        static META: Lazy<Arc<Meta>> = Lazy::new(|| {
+            Arc::new(Meta::Default {
+                name: "empty".into(),
+            })
+        });
+        static NO_HTTP_ROUTES: Lazy<Arc<[http::Route]>> = Lazy::new(|| Arc::new([]));
+        static NO_BACKENDS: Lazy<Arc<[Backend]>> = Lazy::new(|| Arc::new([]));
+
+        Self {
+            parent: META.clone(),
+            protocol: Protocol::Detect {
+                timeout,
+                http1: http::Http1 {
+                    routes: NO_HTTP_ROUTES.clone(),
+                    failure_accrual: Default::default(),
+                },
+                http2: http::Http2 {
+                    routes: NO_HTTP_ROUTES.clone(),
+                    failure_accrual: Default::default(),
+                },
+                opaque: opaq::Opaque {
+                    // TODO(eliza): eventually, can we configure the opaque
+                    // policy to fail conns?
+                    policy: None,
+                },
+            },
+            backends: NO_BACKENDS.clone(),
         }
     }
 }
@@ -247,6 +292,27 @@ impl std::hash::Hash for Meta {
         self.group().hash(state);
         self.kind().hash(state);
         self.name().hash(state);
+    }
+}
+
+impl fmt::Display for Meta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Default { name } => write!(f, "default.{name}"),
+            Self::Resource {
+                kind,
+                name,
+                namespace,
+                port,
+                ..
+            } => {
+                write!(f, "{kind}.{namespace}.{name}")?;
+                if let Some(port) = port {
+                    write!(f, ":{port}")?
+                }
+                Ok(())
+            }
+        }
     }
 }
 
@@ -532,6 +598,7 @@ pub mod proto {
         pub(crate) fn try_from_proto<U>(
             backend: outbound::Backend,
             filters: impl IntoIterator<Item = U>,
+            request_timeout: Option<prost_types::Duration>,
         ) -> Result<Self, InvalidBackend>
         where
             T: TryFrom<U>,
@@ -543,8 +610,20 @@ pub mod proto {
                 .map(T::try_from)
                 .collect::<Result<Arc<[_]>, _>>()
                 .map_err(|error| InvalidBackend::Filter(error.into()))?;
+            let request_timeout =
+                request_timeout
+                    .map(|d| d.try_into())
+                    .transpose()
+                    .map_err(|error| InvalidBackend::Duration {
+                        field: "backend request timeout",
+                        error,
+                    })?;
 
-            Ok(RouteBackend { filters, backend })
+            Ok(RouteBackend {
+                filters,
+                backend,
+                request_timeout,
+            })
         }
     }
 

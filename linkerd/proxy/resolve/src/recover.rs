@@ -147,7 +147,7 @@ where
     type Item = Result<Update<R::Endpoint>, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut this = self.project();
+        let this = self.project();
         loop {
             // XXX(eliza): note that this match was originally an `if let`,
             // but that doesn't work with `#[project]` for some kinda reason

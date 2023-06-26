@@ -48,9 +48,11 @@ async fn header_based_route() {
         }),
         filters: Arc::new([]),
         failure_policy: Default::default(),
+        request_timeout: None,
         distribution: policy::RouteDistribution::FirstAvailable(Arc::new([policy::RouteBackend {
             filters: Arc::new([]),
             backend,
+            request_timeout: None,
         }])),
     };
 
@@ -197,6 +199,7 @@ async fn http_filter_request_headers() {
                     policy: policy::RoutePolicy {
                         meta: policy::Meta::new_default("turtles"),
                         failure_policy: Default::default(),
+                        request_timeout: None,
                         filters: Arc::new([policy::http::Filter::RequestHeaders(
                             policy::http::filter::ModifyHeader {
                                 add: vec![(PIZZA.clone(), TUBULAR.clone())],
@@ -212,6 +215,7 @@ async fn http_filter_request_headers() {
                                         ..Default::default()
                                     },
                                 )]),
+                                request_timeout: None,
                             },
                         ])),
                     },

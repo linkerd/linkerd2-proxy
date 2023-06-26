@@ -149,7 +149,7 @@ impl Metrics {
     ) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
         let process = telemetry::process::Report::new(start_time);
 
-        let build_info = telemetry::build_info::Report::new();
+        let build_info = telemetry::build_info::Report::default();
 
         let (control, control_report) = {
             let m = metrics::Requests::<ControlLabels, Class>::default();
