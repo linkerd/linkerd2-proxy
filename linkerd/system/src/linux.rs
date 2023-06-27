@@ -1,6 +1,6 @@
 use libc::{self, pid_t};
 use procfs::{
-    process::{self, Process},
+    process::{self, LimitValue, Process},
     ProcResult,
 };
 use std::{fs, io};
@@ -41,28 +41,14 @@ pub fn open_fds(pid: pid_t) -> io::Result<u64> {
     Ok(open)
 }
 
-pub fn max_fds() -> io::Result<Option<u64>> {
-    match Process::myself() {
-        Ok(p) => match p.limits() {
-            Ok(limits) => {
-                let limit = limits.max_open_files;
-                match limit.soft_limit {
-                    process::LimitValue::Unlimited => match limit.hard_limit {
-                        process::LimitValue::Unlimited => Ok(None),
-                        process::LimitValue::Value(v) => Ok(Some(v)),
-                    },
-                    process::LimitValue::Value(v) => Ok(Some(v)),
-                }
-            }
-            Err(e) => {
-                error!("Failed to get process limits: {}", e);
-                Ok(None)
-            }
+pub fn max_fds() -> ProcResult<u64> {
+    let limits = Process::myself()?.limits()?.max_open_files;
+    match limits.soft_limit {
+        LimitValue::Unlimited => match limits.hard_limit {
+            LimitValue::Unlimited => Ok(0),
+            LimitValue::Value(hard) => Ok(hard),
         },
-        Err(e) => {
-            error!("Failed to get process limits: {}", e);
-            Ok(None)
-        }
+        LimitValue::Value(soft) => Ok(soft),
     }
 }
 

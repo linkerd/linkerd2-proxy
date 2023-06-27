@@ -190,8 +190,7 @@ mod linux {
             }
 
             match sys::max_fds() {
-                Ok(None) => {}
-                Ok(Some(max_fds)) => {
+                Ok(max_fds) => {
                     process_max_fds.fmt_help(f)?;
                     process_max_fds.fmt_metric(f, &max_fds.into())?;
                 }
