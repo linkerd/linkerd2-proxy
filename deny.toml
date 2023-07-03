@@ -64,8 +64,12 @@ skip = [
     { name = "bitflags", version = "1" },
 ]
 skip-tree = [
-    # Hasn't seen a new release since 2017. Pulls in an older version of nom.
-    { name = "procinfo" },
+    # right now we have a mix of versions of this crate in the ecosystem
+    # procfs uses 0.36.14, tempfile uses 0.37.4
+    { name = "rustix" },
+    # right now we have a mix of versions of this crate in the ecosystem
+    # rustix 0.36.14 uses 0.1.4, rustix 0,37.4 uses 0.3.0
+    { name = "linux-raw-sys" },
 ]
 
 [sources]
