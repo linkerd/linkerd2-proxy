@@ -18,7 +18,7 @@ proto = [
 ahash = "0.8"
 ipnet = "2"
 http = "0.2"
-linkerd2-proxy-api = { version = "0.10", optional = true, features = [
+linkerd2-proxy-api = { version = "0.11", optional = true, features = [
     "outbound",
 ] }
 linkerd-error = { path = "../../error" }
