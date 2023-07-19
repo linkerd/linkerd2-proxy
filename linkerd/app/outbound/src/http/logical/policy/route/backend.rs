@@ -145,15 +145,24 @@ impl<T, M, F> svc::Param<http::ResponseTimeout> for MatchedBackend<T, M, F> {
 
 impl<T> filters::Apply for Http<T> {
     #[inline]
-    fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
-        filters::apply_http(&self.r#match, &self.params.filters, req)
+    fn apply_request<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
+        filters::apply_http_request(&self.r#match, &self.params.filters, req)
+    }
+
+    #[inline]
+    fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()> {
+        filters::apply_http_response(&self.params.filters, rsp)
     }
 }
 
 impl<T> filters::Apply for Grpc<T> {
     #[inline]
-    fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
-        filters::apply_grpc(&self.r#match, &self.params.filters, req)
+    fn apply_request<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
+        filters::apply_grpc_request(&self.r#match, &self.params.filters, req)
+    }
+
+    fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()> {
+        filters::apply_grpc_response(&self.params.filters, rsp)
     }
 }
 

@@ -46,19 +46,6 @@ pub mod proto {
         type Error = InvalidModifyHeader;
 
         fn try_from(rhm: api::RequestHeaderModifier) -> Result<Self, Self::Error> {
-            fn to_pairs(
-                hs: Option<http_types::Headers>,
-            ) -> Result<Vec<(HeaderName, HeaderValue)>, InvalidModifyHeader> {
-                hs.into_iter()
-                    .flat_map(|a| a.headers.into_iter())
-                    .map(|h| {
-                        let name = h.name.parse::<HeaderName>()?;
-                        let value = HeaderValue::from_bytes(&h.value)?;
-                        Ok((name, value))
-                    })
-                    .collect()
-            }
-
             let add = to_pairs(rhm.add)?;
             let set = to_pairs(rhm.set)?;
             let remove = rhm
@@ -68,5 +55,35 @@ pub mod proto {
                 .collect::<Result<Vec<HeaderName>, http::header::InvalidHeaderName>>()?;
             Ok(ModifyHeader { add, set, remove })
         }
+    }
+
+    // === impl ModifyResponseHeader ===
+
+    impl TryFrom<api::ResponseHeaderModifier> for ModifyHeader {
+        type Error = InvalidModifyHeader;
+
+        fn try_from(rhm: api::ResponseHeaderModifier) -> Result<Self, Self::Error> {
+            let add = to_pairs(rhm.add)?;
+            let set = to_pairs(rhm.set)?;
+            let remove = rhm
+                .remove
+                .into_iter()
+                .map(|n| n.parse())
+                .collect::<Result<Vec<HeaderName>, http::header::InvalidHeaderName>>()?;
+            Ok(ModifyHeader { add, set, remove })
+        }
+    }
+
+    fn to_pairs(
+        hs: Option<http_types::Headers>,
+    ) -> Result<Vec<(HeaderName, HeaderValue)>, InvalidModifyHeader> {
+        hs.into_iter()
+            .flat_map(|a| a.headers.into_iter())
+            .map(|h| {
+                let name = h.name.parse::<HeaderName>()?;
+                let value = HeaderValue::from_bytes(&h.value)?;
+                Ok((name, value))
+            })
+            .collect()
     }
 }

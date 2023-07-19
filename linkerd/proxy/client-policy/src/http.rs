@@ -31,6 +31,7 @@ pub enum Filter {
     InjectFailure(filter::InjectFailure),
     Redirect(filter::RedirectRequest),
     RequestHeaders(filter::ModifyHeader),
+    ResponseHeaders(filter::ModifyHeader),
     InternalError(&'static str),
 }
 
@@ -320,6 +321,9 @@ pub mod proto {
                 Kind::FailureInjector(filter) => Ok(Filter::InjectFailure(filter.try_into()?)),
                 Kind::RequestHeaderModifier(filter) => {
                     Ok(Filter::RequestHeaders(filter.try_into()?))
+                }
+                Kind::ResponseHeaderModifier(filter) => {
+                    Ok(Filter::ResponseHeaders(filter.try_into()?))
                 }
                 Kind::Redirect(filter) => Ok(Filter::Redirect(filter.try_into()?)),
             }

@@ -1,10 +1,15 @@
-use futures::{future, TryFutureExt};
+use futures::{future, ready, Future, TryFuture, TryFutureExt};
 use linkerd_app_core::{
     svc::{self, ExtractParam},
     Error, Result,
 };
 use linkerd_proxy_client_policy::{grpc, http};
-use std::{marker::PhantomData, task};
+use pin_project::pin_project;
+use std::{
+    marker::PhantomData,
+    pin::Pin,
+    task::{self, Context, Poll},
+};
 
 /// A middleware that enforces policy on each HTTP request.
 ///
@@ -24,6 +29,15 @@ pub struct NewApplyFilters<A, X, N> {
 pub struct ApplyFilters<A, S> {
     apply: A,
     inner: S,
+}
+
+#[derive(Clone, Debug)]
+#[pin_project]
+pub struct ResponseFuture<A, F> {
+    apply: A,
+
+    #[pin]
+    inner: F,
 }
 
 pub mod errors {
@@ -61,10 +75,11 @@ pub mod errors {
 }
 
 pub(crate) trait Apply {
-    fn apply<B>(&self, req: &mut ::http::Request<B>) -> Result<()>;
+    fn apply_request<B>(&self, req: &mut ::http::Request<B>) -> Result<()>;
+    fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()>;
 }
 
-pub fn apply_http<B>(
+pub fn apply_http_request<B>(
     r#match: &http::RouteMatch,
     filters: &[http::Filter],
     req: &mut ::http::Request<B>,
@@ -99,13 +114,32 @@ pub fn apply_http<B>(
             http::Filter::InternalError(msg) => {
                 return Err(errors::HttpInvalidPolicy(msg).into());
             }
+            http::Filter::ResponseHeaders(_) => {} // ResponseHeaders filter does not apply to requests.
         }
     }
 
     Ok(())
 }
 
-pub fn apply_grpc<B>(
+pub fn apply_http_response<B>(
+    filters: &[http::Filter],
+    rsp: &mut ::http::Response<B>,
+) -> Result<()> {
+    // TODO Do any metrics apply here?
+    for filter in filters {
+        match filter {
+            http::Filter::InjectFailure(_) => {} // InjectFailure filter does not apply to responses.
+            http::Filter::Redirect(_) => {}      // Redirect filter does not apply to responses.
+            http::Filter::RequestHeaders(_) => {} // RequestHeaders filter does not apply to responses.
+            http::Filter::InternalError(_) => {} // InternalError filter does not apply to responses.
+            http::Filter::ResponseHeaders(rh) => rh.apply(rsp.headers_mut()),
+        }
+    }
+
+    Ok(())
+}
+
+pub fn apply_grpc_request<B>(
     _match: &grpc::RouteMatch,
     filters: &[grpc::Filter],
     req: &mut ::http::Request<B>,
@@ -131,6 +165,20 @@ pub fn apply_grpc<B>(
     Ok(())
 }
 
+pub fn apply_grpc_response<B>(
+    filters: &[grpc::Filter],
+    _rsp: &mut ::http::Response<B>,
+) -> Result<()> {
+    for filter in filters {
+        match filter {
+            grpc::Filter::InjectFailure(_) => {} // InjectFailure filter does not apply to responses.
+            grpc::Filter::RequestHeaders(_) => {} // RequestHeaders filter does not apply to responses.
+            grpc::Filter::InternalError(_) => {} // InternalError filter does not apply to responses.
+        }
+    }
+
+    Ok(())
+}
 // === impl NewApplyFilters ===
 
 impl<A, X: Clone, N> NewApplyFilters<A, X, N> {
@@ -167,14 +215,16 @@ where
 
 impl<B, A, S> svc::Service<::http::Request<B>> for ApplyFilters<A, S>
 where
-    A: Apply,
-    S: svc::Service<::http::Request<B>>,
+    A: Apply + Clone,
+    S: svc::Service<::http::Request<B>, Response = ::http::Response<B>>,
     S::Error: Into<Error>,
 {
     type Response = S::Response;
     type Error = Error;
-    type Future =
-        future::Either<future::Ready<Result<Self::Response>>, future::ErrInto<S::Future, Error>>;
+    type Future = future::Either<
+        future::Ready<Result<Self::Response>>,
+        future::ErrInto<ResponseFuture<A, S::Future>, Error>,
+    >;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> task::Poll<Result<()>> {
@@ -182,10 +232,36 @@ where
     }
 
     fn call(&mut self, mut req: ::http::Request<B>) -> Self::Future {
-        if let Err(e) = self.apply.apply(&mut req) {
+        if let Err(e) = self.apply.apply_request(&mut req) {
             return future::Either::Left(future::err(e));
         }
+        let rsp = ResponseFuture {
+            apply: self.apply.clone(),
+            inner: self.inner.call(req),
+        };
+        future::Either::Right(rsp.err_into::<Error>())
+    }
+}
 
-        future::Either::Right(self.inner.call(req).err_into::<Error>())
+// === impl ResponseFuture ===
+
+impl<B, A, F> Future for ResponseFuture<A, F>
+where
+    A: Apply,
+    F: TryFuture<Ok = ::http::Response<B>>,
+    F::Error: Into<Error>,
+{
+    type Output = Result<::http::Response<B>>;
+
+    #[inline]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let mut out = ready!(this.inner.try_poll(cx));
+        if let Ok(rsp) = &mut out {
+            if let Err(e) = this.apply.apply_response(rsp) {
+                return Poll::Ready(Err(e));
+            };
+        }
+        Poll::Ready(out.map_err(Into::into))
     }
 }
