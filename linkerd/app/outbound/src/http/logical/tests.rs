@@ -596,6 +596,7 @@ fn default_route(backend: client_policy::Backend) -> client_policy::http::Route 
                     backend,
                     request_timeout: None,
                 }])),
+                retry_policy: None,
             },
         }],
     }
@@ -626,6 +627,7 @@ fn timeout_route(
                     backend,
                     request_timeout: backend_timeout,
                 }])),
+                retry_policy: None,
             },
         }],
     }

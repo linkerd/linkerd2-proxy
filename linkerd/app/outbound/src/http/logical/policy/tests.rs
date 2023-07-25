@@ -54,6 +54,7 @@ async fn header_based_route() {
             backend,
             request_timeout: None,
         }])),
+        retry_policy: None,
     };
 
     // Stack that produces mock services.
@@ -218,6 +219,7 @@ async fn http_filter_request_headers() {
                                 request_timeout: None,
                             },
                         ])),
+                        retry_policy: None,
                     },
                 }],
             }]),
