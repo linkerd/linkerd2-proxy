@@ -206,6 +206,7 @@ where
                              distribution,
                              failure_policy,
                              request_timeout,
+                             retry_policy,
                          }| {
             let route_ref = RouteRef(meta);
             let distribution = mk_distribution(&route_ref, &distribution);

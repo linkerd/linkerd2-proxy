@@ -79,6 +79,7 @@ impl ClientPolicies {
                         backend: backend.clone(),
                         request_timeout: None,
                     }])),
+                    retry_policy: None,
                 },
             }],
         }]);
@@ -88,10 +89,12 @@ impl ClientPolicies {
             http1: http::Http1 {
                 routes: http_routes.clone(),
                 failure_accrual: Default::default(),
+                retry_budget: None,
             },
             http2: http::Http2 {
                 routes: http_routes,
                 failure_accrual: Default::default(),
+                retry_budget: None,
             },
             opaque: opaq::Opaque {
                 policy: Some(opaq::Policy {
@@ -104,6 +107,7 @@ impl ClientPolicies {
                         backend: backend.clone(),
                         request_timeout: None,
                     }])),
+                    retry_policy: None,
                 }),
             },
         };

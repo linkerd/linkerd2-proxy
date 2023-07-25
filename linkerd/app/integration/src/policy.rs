@@ -120,10 +120,12 @@ pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
                 http1: Some(proxy_protocol::Http1 {
                     routes: vec![route.clone()],
                     failure_accrual: None,
+                    retry_budget: None,
                 }),
                 http2: Some(proxy_protocol::Http2 {
                     routes: vec![route],
                     failure_accrual: None,
+                    retry_budget: None,
                 }),
                 opaque: Some(proxy_protocol::Opaque {
                     routes: vec![outbound_default_opaque_route(dst)],
@@ -152,6 +154,7 @@ pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
             filters: Vec::new(),
             backends: Some(http_first_available(std::iter::once(backend(dst)))),
             request_timeout: None,
+            retry_policy: None,
         }],
     }
 }

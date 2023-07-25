@@ -247,6 +247,7 @@ fn policy_for_backend(
                     request_timeout: None,
                 },
             ])),
+            retry_policy: None,
         }),
     };
 
@@ -266,6 +267,7 @@ fn policy_for_backend(
                         request_timeout: None,
                     },
                 ])),
+                retry_policy: None,
             },
         }],
     }]);
@@ -275,10 +277,12 @@ fn policy_for_backend(
         http1: policy::http::Http1 {
             routes: routes.clone(),
             failure_accrual: Default::default(),
+            retry_budget: None,
         },
         http2: policy::http::Http2 {
             routes,
             failure_accrual: Default::default(),
+            retry_budget: None,
         },
         opaque,
     };

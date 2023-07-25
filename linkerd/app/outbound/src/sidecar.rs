@@ -231,10 +231,12 @@ impl HttpSidecar {
             policy::Protocol::Http1(policy::http::Http1 {
                 ref routes,
                 failure_accrual,
+                retry_budget,
             }) => (routes.clone(), failure_accrual),
             policy::Protocol::Http2(policy::http::Http2 {
                 ref routes,
                 failure_accrual,
+                retry_budget,
             }) => (routes.clone(), failure_accrual),
             policy::Protocol::Grpc(policy::grpc::Grpc {
                 ref routes,
