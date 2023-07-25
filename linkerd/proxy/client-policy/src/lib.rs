@@ -7,11 +7,12 @@ use std::{borrow::Cow, fmt, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::
 pub mod grpc;
 pub mod http;
 pub mod opaq;
+pub mod retry;
 
 pub use linkerd_http_route as route;
 pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ClientPolicy {
     pub parent: Arc<Meta>,
     pub protocol: Protocol,
@@ -19,7 +20,8 @@ pub struct ClientPolicy {
 }
 
 // TODO additional server configs (e.g. concurrency limits, window sizes, etc)
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
+// #[derive(Hash, Eq)]
 pub enum Protocol {
     Detect {
         timeout: time::Duration,
@@ -53,7 +55,7 @@ pub enum Meta {
     },
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RoutePolicy<T, F> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
@@ -73,6 +75,9 @@ pub struct RoutePolicy<T, F> {
 
     /// Configures what responses are classified as failures.
     pub failure_policy: F,
+
+    /// Configures retries for this route.
+    pub retry_policy: Option<retry::RoutePolicy<F>>,
 }
 
 // TODO(ver) Weighted random WITHOUT availability awareness, as required by
@@ -145,7 +150,6 @@ pub enum FailureAccrual {
         backoff: linkerd_exp_backoff::ExponentialBackoff,
     },
 }
-
 // === impl ClientPolicy ===
 
 impl ClientPolicy {
@@ -169,6 +173,7 @@ impl ClientPolicy {
                         distribution: RouteDistribution::Empty,
                         failure_policy: http::StatusRanges::default(),
                         request_timeout: None,
+                        retry_policy: None,
                     },
                 }],
             }])
@@ -182,10 +187,12 @@ impl ClientPolicy {
                 http1: http::Http1 {
                     routes: HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    retry_budget: None,
                 },
                 http2: http::Http2 {
                     routes: HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    retry_budget: None,
                 },
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
@@ -213,10 +220,12 @@ impl ClientPolicy {
                 http1: http::Http1 {
                     routes: NO_HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    retry_budget: None,
                 },
                 http2: http::Http2 {
                     routes: NO_HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    retry_budget: None,
                 },
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque

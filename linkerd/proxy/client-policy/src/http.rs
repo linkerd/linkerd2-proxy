@@ -1,4 +1,4 @@
-use crate::FailureAccrual;
+use crate::{retry, FailureAccrual};
 use linkerd_http_route::http;
 use std::{ops::RangeInclusive, sync::Arc};
 
@@ -15,6 +15,9 @@ pub struct Http1 {
 
     /// Configures how endpoints accrue observed failures.
     pub failure_accrual: FailureAccrual,
+
+    /// Configures retry budgets.
+    pub retry_budget: Option<retry::Budget>,
 }
 
 // TODO: window sizes, etc
@@ -24,6 +27,9 @@ pub struct Http2 {
 
     /// Configures how endpoints accrue observed failures.
     pub failure_accrual: FailureAccrual,
+
+    /// Configures retry budgets.
+    pub retry_budget: Option<retry::Budget>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -49,6 +55,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 distribution,
                 failure_policy: StatusRanges::default(),
                 request_timeout: None,
+                retry_policy: None,
             },
         }],
     }
@@ -61,6 +68,7 @@ impl Default for Http1 {
         Self {
             routes: Arc::new([]),
             failure_accrual: Default::default(),
+            retry_budget: None,
         }
     }
 }
@@ -72,6 +80,7 @@ impl Default for Http2 {
         Self {
             routes: Arc::new([]),
             failure_accrual: Default::default(),
+            retry_budget: None,
         }
     }
 }
@@ -92,6 +101,12 @@ impl Default for StatusRanges {
     }
 }
 
+impl FromIterator<RangeInclusive<u16>> for StatusRanges {
+    fn from_iter<T: IntoIterator<Item = RangeInclusive<u16>>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
@@ -99,9 +114,13 @@ pub mod proto {
         proto::{
             BackendSet, InvalidBackend, InvalidDistribution, InvalidFailureAccrual, InvalidMeta,
         },
+        retry::InvalidRetryBudget,
         Meta, RouteBackend, RouteDistribution,
     };
-    use linkerd2_proxy_api::outbound::{self, http_route};
+    use linkerd2_proxy_api::{
+        destination,
+        outbound::{self, http_route},
+    };
     use linkerd_http_route::http::{
         filter::{
             inject_failure::proto::InvalidFailureResponse,
@@ -109,6 +128,7 @@ pub mod proto {
         },
         r#match::{host::proto::InvalidHostMatch, proto::InvalidRouteMatch},
     };
+    use std::num::NonZeroU32;
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidHttpRoute {
@@ -135,6 +155,12 @@ pub mod proto {
 
         #[error("invalid request timeout: {0}")]
         Timeout(#[from] prost_types::DurationError),
+
+        #[error("invalid retry budget: {0}")]
+        RetryBudget(#[from] InvalidRetryBudget),
+
+        #[error("invalid retry policy: {0}")]
+        RetryPolicy(#[from] InvalidStatusRange),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -150,6 +176,14 @@ pub mod proto {
 
         #[error("invalid HTTP redirect: {0}")]
         Redirect(#[from] InvalidRequestRedirect),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidStatusRange {
+        #[error("min ({min}) greater than max ({max})")]
+        MinGreaterThanMax { min: u16, max: u16 },
+        #[error("{which} not a u16: {value}")]
+        NotAU16 { which: &'static str, value: u32 },
     }
 
     pub(crate) fn fill_route_backends(rts: &[Route], set: &mut BackendSet) {
@@ -168,9 +202,14 @@ pub mod proto {
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
+            let retry_budget = proto
+                .retry_budget
+                .map(retry::Budget::try_from)
+                .transpose()?;
             Ok(Self {
                 routes,
                 failure_accrual: proto.failure_accrual.try_into()?,
+                retry_budget,
             })
         }
     }
@@ -183,9 +222,14 @@ pub mod proto {
                 .into_iter()
                 .map(try_route)
                 .collect::<Result<Arc<[_]>, _>>()?;
+            let retry_budget = proto
+                .retry_budget
+                .map(retry::Budget::try_from)
+                .transpose()?;
             Ok(Self {
                 routes,
                 failure_accrual: proto.failure_accrual.try_into()?,
+                retry_budget,
             })
         }
     }
@@ -223,6 +267,7 @@ pub mod proto {
             backends,
             filters,
             request_timeout,
+            retry_policy,
         } = proto;
 
         let matches = matches
@@ -243,6 +288,8 @@ pub mod proto {
             .map(std::time::Duration::try_from)
             .transpose()?;
 
+        let retry_policy = retry_policy.map(retry::RoutePolicy::try_from).transpose()?;
+
         Ok(Rule {
             matches,
             policy: Policy {
@@ -251,6 +298,7 @@ pub mod proto {
                 distribution,
                 failure_policy: StatusRanges::default(),
                 request_timeout,
+                retry_policy,
             },
         })
     }
@@ -327,6 +375,39 @@ pub mod proto {
                 }
                 Kind::Redirect(filter) => Ok(Filter::Redirect(filter.try_into()?)),
             }
+        }
+    }
+
+    impl TryFrom<http_route::RetryPolicy> for retry::RoutePolicy<StatusRanges> {
+        type Error = InvalidStatusRange;
+        fn try_from(
+            http_route::RetryPolicy {
+                max_per_request,
+                retry_statuses,
+            }: http_route::RetryPolicy,
+        ) -> Result<Self, Self::Error> {
+            let retryable = retry_statuses
+                .into_iter()
+                .map(|destination::HttpStatusRange { min, max }| {
+                    let min = u16::try_from(min).map_err(|_| InvalidStatusRange::NotAU16 {
+                        value: min,
+                        which: "min",
+                    })?;
+                    let max = u16::try_from(max).map_err(|_| InvalidStatusRange::NotAU16 {
+                        value: max,
+                        which: "max",
+                    })?;
+                    if min > max {
+                        return Err(InvalidStatusRange::MinGreaterThanMax { min, max });
+                    }
+                    Ok(min..=max)
+                })
+                .collect::<Result<StatusRanges, _>>()?;
+            let max_per_request = NonZeroU32::new(max_per_request);
+            Ok(retry::RoutePolicy {
+                retryable,
+                max_per_request,
+            })
         }
     }
 }

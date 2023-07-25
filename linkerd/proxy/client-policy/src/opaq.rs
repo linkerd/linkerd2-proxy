@@ -129,6 +129,8 @@ pub(crate) mod proto {
             distribution,
             // Request timeouts are ignored on opaque routes.
             request_timeout: None,
+            // Retry policies are ignored on opaque routes.
+            retry_policy: None,
         })
     }
 

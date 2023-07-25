@@ -9,7 +9,7 @@ pub type Route = grpc::Route<Policy>;
 pub type Rule = grpc::Rule<Policy>;
 
 // TODO HTTP2 settings
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Grpc {
     pub routes: Arc<[Route]>,
 
@@ -38,6 +38,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 distribution,
                 failure_policy: Codes::default(),
                 request_timeout: None,
+                retry_policy: None,
             },
         }],
     }
@@ -229,6 +230,7 @@ pub mod proto {
                 filters,
                 distribution,
                 failure_policy: Codes::default(),
+                retry_policy: None,
                 request_timeout,
             },
         })
