@@ -14,6 +14,7 @@ use linkerd_http_retry::{
     ReplayBody,
 };
 use linkerd_retry as retry;
+pub use retry::Budget;
 use std::sync::Arc;
 
 pub fn layer<N>(
@@ -35,7 +36,7 @@ pub struct NewRetryPolicy {
 pub struct RetryPolicy {
     metrics: Handle,
     budget: Arc<retry::Budget>,
-    response_classes: profiles::http::ResponseClasses,
+    response_classes: classify::Request,
 }
 
 /// Allow buffering requests up to 64 kb
@@ -51,17 +52,18 @@ impl NewRetryPolicy {
 
 impl<T> retry::NewPolicy<T> for NewRetryPolicy
 where
-    T: Param<Route> + Param<ProfileRouteLabels>,
+    T: Param<Option<Arc<Budget>>> + Param<ProfileRouteLabels> + Param<classify::Request>,
 {
     type Policy = RetryPolicy;
 
     fn new_policy(&self, target: &T) -> Option<Self::Policy> {
-        let route: Route = target.param();
+        let budget = Param::<Option<Arc<Budget>>>::param(target)?;
+        let response_classes = target.param();
         let labels: ProfileRouteLabels = target.param();
         Some(RetryPolicy {
             metrics: self.metrics.get_handle(labels),
-            budget: route.retries()?.budget().clone(),
-            response_classes: route.response_classes().clone(),
+            budget,
+            response_classes,
         })
     }
 }
@@ -86,7 +88,8 @@ where
             Err(_) => false,
             Ok(rsp) => {
                 // is the request a failure?
-                let is_failure = classify::Request::from(self.response_classes.clone())
+                let is_failure = self
+                    .response_classes
                     .classify(req)
                     .start(rsp)
                     .eos(rsp.body().trailers())

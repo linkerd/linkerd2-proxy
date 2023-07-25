@@ -353,6 +353,12 @@ impl<T> svc::Param<Route> for RouteParams<T> {
     }
 }
 
+impl<T> svc::Param<Option<Arc<retry::Budget>>> for RouteParams<T> {
+    fn param(&self) -> Option<Arc<retry::Budget>> {
+        Some(self.profile.retries()?.budget().clone())
+    }
+}
+
 impl<T> svc::Param<metrics::ProfileRouteLabels> for RouteParams<T> {
     fn param(&self) -> metrics::ProfileRouteLabels {
         metrics::ProfileRouteLabels::outbound(self.addr.clone(), &self.profile)
