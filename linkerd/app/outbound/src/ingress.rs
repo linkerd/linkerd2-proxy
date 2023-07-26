@@ -549,7 +549,7 @@ fn policy_routes(
                     backends: policy.backends.clone(),
                     routes,
                     failure_accrual,
-                    retry_budget: http::retry::policy_budget(retry_budget),
+                    retry_budget,
                 },
             )))
         }
@@ -559,7 +559,7 @@ fn policy_routes(
         policy::Protocol::Http1(policy::http::Http1 {
             ref routes,
             failure_accrual,
-            retry_budget,
+            ref retry_budget,
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr,
@@ -567,13 +567,13 @@ fn policy_routes(
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
-                retry_budget: http::retry::policy_budget(retry_budget),
+                retry_budget: retry_budget.clone(),
             },
         ))),
         policy::Protocol::Http2(policy::http::Http2 {
             ref routes,
             failure_accrual,
-            retry_budget,
+            ref retry_budget,
         }) => Some(http::Routes::Policy(http::policy::Params::Http(
             http::policy::HttpParams {
                 addr,
@@ -581,7 +581,7 @@ fn policy_routes(
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
-                retry_budget: http::retry::policy_budget(retry_budget),
+                retry_budget: retry_budget.clone(),
             },
         ))),
         policy::Protocol::Grpc(policy::grpc::Grpc {

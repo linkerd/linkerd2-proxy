@@ -14,7 +14,7 @@ use linkerd_http_retry::{
 };
 use linkerd_retry as retry;
 pub use retry::Budget;
-use std::sync::Arc;
+use std::{num::NonZeroU32, sync::Arc};
 
 pub fn layer<N>(
     metrics: metrics::HttpProfileRouteRetry,
@@ -26,10 +26,10 @@ pub fn layer<N>(
         .with_proxy(EraseResponse::new(()))
 }
 
-pub(crate) fn policy_budget(
-    p: Option<linkerd_proxy_client_policy::retry::Budget>,
-) -> Option<Arc<Budget>> {
-    p.map(|p| Arc::new(Budget::new(p.ttl(), p.min_per_sec(), p.retry_ratio())))
+#[derive(Clone, Debug)]
+pub struct Params {
+    pub budget: Arc<Budget>,
+    pub max_per_request: Option<NonZeroU32>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,10 +42,14 @@ pub struct RetryPolicy {
     metrics: Handle,
     budget: Arc<retry::Budget>,
     response_classes: classify::Request,
+    max_per_request: Option<NonZeroU32>,
 }
 
 /// Allow buffering requests up to 64 kb
 const MAX_BUFFERED_BYTES: usize = 64 * 1024;
+
+#[derive(Copy, Clone, Debug)]
+pub struct RetryCount(u32);
 
 // === impl NewRetryPolicy ===
 
@@ -57,18 +61,24 @@ impl NewRetryPolicy {
 
 impl<T> retry::NewPolicy<T> for NewRetryPolicy
 where
-    T: Param<Option<Arc<Budget>>> + Param<ProfileRouteLabels> + Param<classify::Request>,
+    T: Param<Option<Params>>,
+    T: Param<classify::Request>,
+    T: Param<ProfileRouteLabels>,
 {
     type Policy = RetryPolicy;
 
     fn new_policy(&self, target: &T) -> Option<Self::Policy> {
-        let budget = Param::<Option<Arc<Budget>>>::param(target)?;
-        let response_classes = target.param();
+        let Params {
+            budget,
+            max_per_request,
+        } = Param::<Option<Params>>::param(target)?;
         let labels: ProfileRouteLabels = target.param();
+        let response_classes = target.param();
         Some(RetryPolicy {
             metrics: self.metrics.get_handle(labels),
             budget,
             response_classes,
+            max_per_request,
         })
     }
 }
@@ -99,10 +109,30 @@ where
                     .start(rsp)
                     .eos(rsp.body().trailers())
                     .is_failure();
+
                 // did the body exceed the maximum length limit?
                 let exceeded_max_len = req.body().is_capped();
-                let retryable = is_failure && !exceeded_max_len;
-                tracing::trace!(is_failure, exceeded_max_len, retryable);
+
+                // was the per-request retry limit exceeded?
+                let exceeded_max_retries =
+                    match (self.max_per_request, req.extensions().get::<RetryCount>()) {
+                        (Some(max_retries), Some(RetryCount(retries))) => {
+                            retries >= &max_retries.get()
+                        }
+                        // if `max_retries_per_request` is `None`, we don't have
+                        // a per-request retry limit. if the request's
+                        // `RetryCount` is `None`, then it was the initial request.
+                        _ => false,
+                    };
+
+                let retryable = is_failure && !exceeded_max_len && !exceeded_max_retries;
+
+                tracing::trace!(
+                    is_failure,
+                    exceeded_max_len,
+                    exceeded_max_retries,
+                    retryable
+                );
                 retryable
             }
         };
@@ -137,6 +167,18 @@ where
         // server-side connection.
         if let Some(client_handle) = req.extensions().get::<ClientHandle>().cloned() {
             clone.extensions_mut().insert(client_handle);
+        }
+
+        // Increment the retry count, if we care about tracking retry counts.
+        if self.max_per_request.is_some() {
+            let prev = req
+                .extensions()
+                .get::<RetryCount>()
+                .map(|&RetryCount(i)| i)
+                // If there's no `retry_count` extension, then this request is
+                // the first retry.
+                .unwrap_or(0);
+            clone.extensions_mut().insert(RetryCount(prev + 1));
         }
 
         Some(clone)

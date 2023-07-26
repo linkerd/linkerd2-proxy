@@ -353,9 +353,14 @@ impl<T> svc::Param<Route> for RouteParams<T> {
     }
 }
 
-impl<T> svc::Param<Option<Arc<retry::Budget>>> for RouteParams<T> {
-    fn param(&self) -> Option<Arc<retry::Budget>> {
-        Some(self.profile.retries()?.budget().clone())
+impl<T> svc::Param<Option<retry::Params>> for RouteParams<T> {
+    fn param(&self) -> Option<retry::Params> {
+        let retries = self.profile.retries()?;
+        Some(retry::Params {
+            budget: retries.budget().clone(),
+            // Per-request retry limits are not configured by ServiceProfiles
+            max_per_request: None,
+        })
     }
 }
 

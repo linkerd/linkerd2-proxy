@@ -113,8 +113,8 @@ pub mod proto {
     use crate::{
         proto::{
             BackendSet, InvalidBackend, InvalidDistribution, InvalidFailureAccrual, InvalidMeta,
+            InvalidRetryBudget,
         },
-        retry::InvalidRetryBudget,
         Meta, RouteBackend, RouteDistribution,
     };
     use linkerd2_proxy_api::{

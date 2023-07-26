@@ -2,7 +2,7 @@ use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
     route, RouteBackendMetrics,
 };
-use crate::{http::retry, BackendRef, EndpointRef, ParentRef, RouteRef};
+use crate::{BackendRef, EndpointRef, ParentRef, RouteRef};
 use linkerd_app_core::{
     classify, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result,
 };
@@ -11,14 +11,14 @@ use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Params<M, F, E> {
     pub addr: Addr,
     pub meta: ParentRef,
     pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
     pub failure_accrual: policy::FailureAccrual,
-    pub retry_budget: Option<Arc<retry::Budget>>,
+    pub retry_budget: Option<policy::retry::Budget>,
 }
 
 pub type HttpParams =
@@ -220,6 +220,7 @@ where
                 failure_policy,
                 distribution,
                 request_timeout,
+                retry_policy: todo!("eliza"),
             }
         };
 

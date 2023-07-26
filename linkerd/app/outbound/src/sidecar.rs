@@ -239,12 +239,12 @@ impl HttpSidecar {
             policy::Protocol::Http1(policy::http::Http1 {
                 ref routes,
                 failure_accrual,
-                retry_budget,
+                ref retry_budget,
             }) => (routes.clone(), failure_accrual, retry_budget.clone()),
             policy::Protocol::Http2(policy::http::Http2 {
                 ref routes,
                 failure_accrual,
-                retry_budget,
+                ref retry_budget,
             }) => (routes.clone(), failure_accrual, retry_budget.clone()),
             policy::Protocol::Grpc(policy::grpc::Grpc {
                 ref routes,
@@ -276,7 +276,7 @@ impl HttpSidecar {
                 routes,
                 backends: policy.backends.clone(),
                 failure_accrual,
-                retry_budget: http::retry::policy_budget(retry_budget),
+                retry_budget,
             },
         )))
     }

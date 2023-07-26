@@ -336,6 +336,7 @@ impl Default for FailureAccrual {
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
+    pub use crate::retry::proto::InvalidRetryBudget;
     use linkerd2_proxy_api::{
         meta,
         outbound::{self, backend::BalanceP2c},

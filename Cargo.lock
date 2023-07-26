@@ -1479,6 +1479,7 @@ dependencies = [
  "quickcheck",
  "thiserror",
  "tonic",
+ "tower",
 ]
 
 [[package]]
