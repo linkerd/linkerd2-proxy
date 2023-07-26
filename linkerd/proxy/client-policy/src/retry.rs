@@ -59,7 +59,7 @@ pub mod proto {
         PercentOutOfRange(f32),
     }
 
-    const VALID_RATIOS: RangeInclusive<f32> = 1.0..=1000.0;
+    const VALID_RATIOS: RangeInclusive<f32> = 0.0..=1000.0;
     const VALID_TTLS: RangeInclusive<Duration> = Duration::from_secs(1)..=Duration::from_secs(60);
 
     impl TryFrom<destination::RetryBudget> for Budget {
