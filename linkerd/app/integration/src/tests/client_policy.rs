@@ -515,32 +515,44 @@ async fn path_based_routing() {
 }
 
 #[tokio::test]
-async fn retry() {
+async fn http1_retries() {
+    test_basic_retry(client::http1, server::http1).await
+}
+
+#[tokio::test]
+async fn http2_retries() {
+    test_basic_retry(client::http1, server::http1).await
+}
+
+#[tokio::test]
+async fn http1_doesnt_retry_non_retryable_rule() {
+    test_non_retryable(client::http1, server::http1).await
+}
+
+#[tokio::test]
+async fn http2_doesnt_retry_non_retryable_rule() {
+    test_non_retryable(client::http2, server::http2).await
+}
+
+#[tokio::test]
+async fn http1_doesnt_retry_at_per_request_limit() {
+    test_retry_limit(client::http1, server::http1).await
+}
+
+#[tokio::test]
+async fn http2_doesnt_retry_at_per_request_limit() {
+    test_retry_limit(client::http2, server::http2).await
+}
+
+async fn test_basic_retry(
+    mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
+    mk_server: fn() -> server::Server,
+) {
     let _trace = trace_init();
 
     const AUTHORITY: &str = "policy.test.svc.cluster.local";
 
-    let retries = AtomicUsize::new(0);
-    let srv = server::http1()
-        .route_fn("/retry", move |_| {
-            let status = if retries.fetch_add(1, Ordering::SeqCst) > 1 {
-                http::StatusCode::OK
-            } else {
-                http::StatusCode::INTERNAL_SERVER_ERROR
-            };
-            http::Response::builder()
-                .status(status)
-                .body("".into())
-                .unwrap()
-        })
-        .route_fn("/no-retry", move |_| {
-            http::Response::builder()
-                .status(http::StatusCode::INTERNAL_SERVER_ERROR)
-                .body("".into())
-                .unwrap()
-        })
-        .run()
-        .await;
+    let srv = retry_server(mk_server, 1).run().await;
     let ctrl = controller::new();
 
     let dst = format!("{AUTHORITY}:{}", srv.addr.port());
@@ -550,67 +562,7 @@ async fn retry() {
     let policy = controller::policy()
         // stop the admin server from entering an infinite retry loop
         .with_inbound_default(policy::all_unauthenticated())
-        .outbound(
-            srv.addr,
-            outbound::OutboundPolicy {
-                metadata: Some(api::meta::Metadata {
-                    kind: Some(api::meta::metadata::Kind::Default("test".to_string())),
-                }),
-                protocol: Some(outbound::ProxyProtocol {
-                    kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
-                        timeout: Some(Duration::from_secs(10).try_into().unwrap()),
-                        http1: Some(proxy_protocol::Http1 {
-                            routes: vec![outbound::HttpRoute {
-                                metadata: Some(httproute_meta("retry")),
-                                hosts: Vec::new(),
-                                rules: vec![
-                                    // this rule is retryable
-                                    outbound::http_route::Rule {
-                                        matches: vec![policy::match_path_prefix("/retry")],
-                                        filters: Vec::new(),
-                                        backends: Some(policy::http_first_available(
-                                            std::iter::once(policy::backend(dst.clone())),
-                                        )),
-                                        request_timeout: None,
-                                        retry_policy: Some(outbound::http_route::RetryPolicy {
-                                            retry_statuses: vec![controller::pb::HttpStatusRange {
-                                                min: 500,
-                                                max: 599,
-                                            }],
-                                            max_per_request: 0,
-                                        }),
-                                    },
-                                    // this route is not retryable
-                                    outbound::http_route::Rule {
-                                        matches: vec![policy::match_path_prefix("/no-retry")],
-                                        filters: Vec::new(),
-                                        backends: Some(policy::http_first_available(
-                                            std::iter::once(policy::backend(dst.clone())),
-                                        )),
-                                        request_timeout: None,
-                                        retry_policy: None,
-                                    },
-                                ],
-                            }],
-                            failure_accrual: None,
-                            retry_budget: Some(controller::retry_budget(
-                                Duration::from_secs(10),
-                                0.5,
-                                10,
-                            )),
-                        }),
-                        http2: Some(proxy_protocol::Http2 {
-                            routes: vec![policy::outbound_default_http_route(&dst)],
-                            failure_accrual: None,
-                            retry_budget: None,
-                        }),
-                        opaque: Some(proxy_protocol::Opaque {
-                            routes: vec![policy::outbound_default_opaque_route(&dst)],
-                        }),
-                    })),
-                }),
-            },
-        );
+        .outbound(srv.addr, retry_policy(dst));
 
     let proxy = proxy::new()
         .controller(ctrl.run().await)
@@ -618,7 +570,7 @@ async fn retry() {
         .outbound(srv)
         .run()
         .await;
-    let client = client::http1(proxy.outbound, AUTHORITY);
+    let client = mk_client(proxy.outbound, AUTHORITY);
     let rsp = client
         .request(client.request_builder("/retry"))
         .await
@@ -629,7 +581,37 @@ async fn retry() {
         "retry route should succeed"
     );
 
-    let client = client::http1(proxy.outbound, AUTHORITY);
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
+}
+
+async fn test_non_retryable(
+    mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
+    mk_server: fn() -> server::Server,
+) {
+    let _trace = trace_init();
+
+    const AUTHORITY: &str = "policy.test.svc.cluster.local";
+
+    let srv = retry_server(mk_server, 1).run().await;
+    let ctrl = controller::new();
+
+    let dst = format!("{AUTHORITY}:{}", srv.addr.port());
+    let dst_tx = ctrl.destination_tx(&dst);
+    dst_tx.send_addr(srv.addr);
+    let _profile_tx = ctrl.profile_tx_default(srv.addr, AUTHORITY);
+    let policy = controller::policy()
+        // stop the admin server from entering an infinite retry loop
+        .with_inbound_default(policy::all_unauthenticated())
+        .outbound(srv.addr, retry_policy(dst));
+
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .policy(policy.run().await)
+        .outbound(srv)
+        .run()
+        .await;
+    let client = mk_client(proxy.outbound, AUTHORITY);
     let rsp = client
         .request(client.request_builder("/no-retry"))
         .await
@@ -637,7 +619,60 @@ async fn retry() {
     assert_eq!(
         rsp.status(),
         http::StatusCode::INTERNAL_SERVER_ERROR,
-        "no-retry route should not be retried"
+        "non-retryable route should not be retried"
+    );
+
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
+}
+
+async fn test_retry_limit(
+    mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
+    mk_server: fn() -> server::Server,
+) {
+    let _trace = trace_init();
+
+    const AUTHORITY: &str = "policy.test.svc.cluster.local";
+
+    // fail 4 times, so that the first request will reach the per-request limit
+    // of 3 retries.
+    let srv = retry_server(mk_server, 4).run().await;
+    let ctrl = controller::new();
+
+    let dst = format!("{AUTHORITY}:{}", srv.addr.port());
+    let dst_tx = ctrl.destination_tx(&dst);
+    dst_tx.send_addr(srv.addr);
+    let _profile_tx = ctrl.profile_tx_default(srv.addr, AUTHORITY);
+    let policy = controller::policy()
+        // stop the admin server from entering an infinite retry loop
+        .with_inbound_default(policy::all_unauthenticated())
+        .outbound(srv.addr, retry_policy(dst));
+
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .policy(policy.run().await)
+        .outbound(srv)
+        .run()
+        .await;
+    let client = mk_client(proxy.outbound, AUTHORITY);
+    let rsp = client
+        .request(client.request_builder("/retry"))
+        .await
+        .unwrap();
+    assert_eq!(
+        rsp.status(),
+        http::StatusCode::INTERNAL_SERVER_ERROR,
+        "retries should stop when at the per-request limit"
+    );
+
+    let rsp = client
+        .request(client.request_builder("/retry"))
+        .await
+        .unwrap();
+    assert_eq!(
+        rsp.status(),
+        http::StatusCode::OK,
+        "retry limit should be tracked per-request"
     );
 
     // ensure panics from the server are propagated
@@ -654,5 +689,83 @@ fn httproute_meta(name: impl ToString) -> api::meta::Metadata {
             section: "".to_string(),
             port: 0,
         })),
+    }
+}
+
+fn retry_server(srv: fn() -> server::Server, fails: usize) -> server::Server {
+    let retries = AtomicUsize::new(0);
+    srv()
+        .route_fn("/retry", move |_| {
+            let status = if retries.fetch_add(1, Ordering::SeqCst) > fails {
+                http::StatusCode::OK
+            } else {
+                http::StatusCode::INTERNAL_SERVER_ERROR
+            };
+            http::Response::builder()
+                .status(status)
+                .body("".into())
+                .unwrap()
+        })
+        .route_fn("/no-retry", move |_| {
+            http::Response::builder()
+                .status(http::StatusCode::INTERNAL_SERVER_ERROR)
+                .body("".into())
+                .unwrap()
+        })
+}
+
+fn retry_policy(dst: impl ToString) -> outbound::OutboundPolicy {
+    let dst = dst.to_string();
+    let routes = vec![outbound::HttpRoute {
+        metadata: Some(httproute_meta("retry")),
+        hosts: Vec::new(),
+        rules: vec![
+            // this rule is retryable
+            outbound::http_route::Rule {
+                matches: vec![policy::match_path_prefix("/retry")],
+                filters: Vec::new(),
+                backends: Some(policy::http_first_available(std::iter::once(
+                    policy::backend(dst.clone()),
+                ))),
+                request_timeout: None,
+                retry_policy: Some(outbound::http_route::RetryPolicy {
+                    retry_statuses: vec![controller::pb::HttpStatusRange { min: 500, max: 599 }],
+                    max_per_request: 3,
+                }),
+            },
+            // this route is not retryable
+            outbound::http_route::Rule {
+                matches: vec![policy::match_path_prefix("/no-retry")],
+                filters: Vec::new(),
+                backends: Some(policy::http_first_available(std::iter::once(
+                    policy::backend(dst.clone()),
+                ))),
+                request_timeout: None,
+                retry_policy: None,
+            },
+        ],
+    }];
+    outbound::OutboundPolicy {
+        metadata: Some(api::meta::Metadata {
+            kind: Some(api::meta::metadata::Kind::Default("retry-test".to_string())),
+        }),
+        protocol: Some(outbound::ProxyProtocol {
+            kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
+                timeout: Some(Duration::from_secs(10).try_into().unwrap()),
+                http1: Some(proxy_protocol::Http1 {
+                    routes: routes.clone(),
+                    failure_accrual: None,
+                    retry_budget: Some(controller::retry_budget(Duration::from_secs(10), 0.5, 10)),
+                }),
+                http2: Some(proxy_protocol::Http2 {
+                    routes,
+                    failure_accrual: None,
+                    retry_budget: None,
+                }),
+                opaque: Some(proxy_protocol::Opaque {
+                    routes: vec![policy::outbound_default_opaque_route(&dst)],
+                }),
+            })),
+        }),
     }
 }
