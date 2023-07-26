@@ -220,7 +220,7 @@ where
                 failure_policy,
                 distribution,
                 request_timeout,
-                retry_policy: todo!("eliza"),
+                retry_policy: route::RouteRetryPolicy::new(retry_budget.clone(), retry_policy),
             }
         };
 

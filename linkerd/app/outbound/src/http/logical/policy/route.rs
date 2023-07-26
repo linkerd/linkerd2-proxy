@@ -159,6 +159,20 @@ impl<T, M, F, E> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, 
     }
 }
 
+impl<T, M, F, E> svc::Param<Option<retry::Params>> for MatchedRoute<T, M, F, E> {
+    fn param(&self) -> Option<retry::Params> {
+        let &RouteRetryPolicy {
+            ref budget,
+            max_per_request,
+            ..
+        } = self.params.retry_policy.as_ref()?;
+        Some(retry::Params {
+            budget: budget.clone().into(),
+            max_per_request,
+        })
+    }
+}
+
 impl<T> filters::Apply for Http<T> {
     #[inline]
     fn apply_request<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
@@ -196,5 +210,25 @@ impl<T> svc::Param<classify::Request> for Grpc<T> {
         classify::Request::ClientPolicy(classify::ClientPolicy::Grpc(
             self.params.failure_policy.clone(),
         ))
+    }
+}
+
+// === impl RouteRetryPolicy ===
+
+impl<E> RouteRetryPolicy<E> {
+    pub(super) fn new(
+        budget: Option<policy::retry::Budget>,
+        policy: Option<policy::retry::RoutePolicy<E>>,
+    ) -> Option<Self> {
+        let budget = budget?;
+        let policy::retry::RoutePolicy {
+            retryable,
+            max_per_request,
+        } = policy?;
+        Some(Self {
+            budget,
+            max_per_request,
+            retryable,
+        })
     }
 }

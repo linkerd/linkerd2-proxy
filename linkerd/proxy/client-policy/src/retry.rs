@@ -29,6 +29,12 @@ impl std::hash::Hash for Budget {
     }
 }
 
+impl From<Budget> for Arc<tower::retry::budget::Budget> {
+    fn from(Budget(this): Budget) -> Self {
+        this
+    }
+}
+
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
