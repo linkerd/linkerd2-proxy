@@ -360,6 +360,11 @@ impl<T> svc::Param<Option<retry::Params>> for RouteParams<T> {
             budget: retries.budget().clone(),
             // Per-request retry limits are not configured by ServiceProfiles
             max_per_request: None,
+            profile_labels: Some(metrics::ProfileRouteLabels::outbound(
+                self.addr.clone(),
+                &self.profile,
+            )),
+            response_classes: self.profile.response_classes().clone().into(),
         })
     }
 }

@@ -30,6 +30,8 @@ pub fn layer<N>(
 pub struct Params {
     pub budget: Arc<Budget>,
     pub max_per_request: Option<NonZeroU32>,
+    pub profile_labels: Option<ProfileRouteLabels>,
+    pub response_classes: classify::Request,
 }
 
 #[derive(Clone, Debug)]
@@ -39,7 +41,7 @@ pub struct NewRetryPolicy {
 
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
-    metrics: Handle,
+    metrics: Option<Handle>,
     budget: Arc<retry::Budget>,
     response_classes: classify::Request,
     max_per_request: Option<NonZeroU32>,
@@ -62,8 +64,6 @@ impl NewRetryPolicy {
 impl<T> retry::NewPolicy<T> for NewRetryPolicy
 where
     T: Param<Option<Params>>,
-    T: Param<classify::Request>,
-    T: Param<ProfileRouteLabels>,
 {
     type Policy = RetryPolicy;
 
@@ -71,11 +71,12 @@ where
         let Params {
             budget,
             max_per_request,
+            profile_labels,
+            response_classes,
         } = Param::<Option<Params>>::param(target)?;
-        let labels: ProfileRouteLabels = target.param();
-        let response_classes = target.param();
+        let metrics = profile_labels.map(|labels| self.metrics.get_handle(labels));
         Some(RetryPolicy {
-            metrics: self.metrics.get_handle(labels),
+            metrics,
             budget,
             response_classes,
             max_per_request,
@@ -143,7 +144,9 @@ where
         }
 
         let withdrew = self.budget.withdraw().is_ok();
-        self.metrics.incr_retryable(withdrew);
+        if let Some(ref metrics) = self.metrics {
+            metrics.incr_retryable(withdrew);
+        }
         if !withdrew {
             return None;
         }

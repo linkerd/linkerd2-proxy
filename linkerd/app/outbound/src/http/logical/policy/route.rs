@@ -159,20 +159,6 @@ impl<T, M, F, E> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, 
     }
 }
 
-impl<T, M, F, E> svc::Param<Option<retry::Params>> for MatchedRoute<T, M, F, E> {
-    fn param(&self) -> Option<retry::Params> {
-        let &RouteRetryPolicy {
-            ref budget,
-            max_per_request,
-            ..
-        } = self.params.retry_policy.as_ref()?;
-        Some(retry::Params {
-            budget: budget.clone().into(),
-            max_per_request,
-        })
-    }
-}
-
 impl<T> filters::Apply for Http<T> {
     #[inline]
     fn apply_request<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
@@ -193,6 +179,24 @@ impl<T> svc::Param<classify::Request> for Http<T> {
     }
 }
 
+impl<T> svc::Param<Option<retry::Params>> for Http<T> {
+    fn param(&self) -> Option<retry::Params> {
+        let &RouteRetryPolicy {
+            ref budget,
+            max_per_request,
+            ref retryable,
+        } = self.params.retry_policy.as_ref()?;
+        Some(retry::Params {
+            budget: budget.clone().into(),
+            max_per_request,
+            profile_labels: None,
+            response_classes: classify::Request::ClientPolicy(classify::ClientPolicy::Http(
+                retryable.clone(),
+            )),
+        })
+    }
+}
+
 impl<T> filters::Apply for Grpc<T> {
     #[inline]
     fn apply_request<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
@@ -210,6 +214,14 @@ impl<T> svc::Param<classify::Request> for Grpc<T> {
         classify::Request::ClientPolicy(classify::ClientPolicy::Grpc(
             self.params.failure_policy.clone(),
         ))
+    }
+}
+
+impl<T> svc::Param<Option<retry::Params>> for Grpc<T> {
+    fn param(&self) -> Option<retry::Params> {
+        // gRPC client policies cannot currently configure retries.
+        // TODO: in the future, this should be implemented.
+        None
     }
 }
 
