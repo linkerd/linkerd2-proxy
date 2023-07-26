@@ -544,139 +544,148 @@ async fn http2_doesnt_retry_at_per_request_limit() {
     test_retry_limit(client::http2, server::http2).await
 }
 
+#[tokio::test]
+async fn http1_retries_post_body() {
+    test_retry_body(client::http1, server::http1, http::Method::POST).await
+}
+
+#[tokio::test]
+async fn http2_retries_post_body() {
+    test_retry_body(client::http2, server::http2, http::Method::POST).await
+}
+
+#[tokio::test]
+async fn http1_retries_put_body() {
+    test_retry_body(client::http1, server::http1, http::Method::PUT).await
+}
+
+#[tokio::test]
+async fn http2_retries_put_body() {
+    test_retry_body(client::http2, server::http2, http::Method::PUT).await
+}
+
+#[tokio::test]
+async fn http1_doesnt_retry_long_body() {
+    test_too_long_retry_body(client::http1, server::http1).await
+}
+
+#[tokio::test]
+async fn http2_doesnt_retry_long_body() {
+    test_too_long_retry_body(client::http2, server::http2).await
+}
+
 async fn test_basic_retry(
     mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
     mk_server: fn() -> server::Server,
 ) {
-    let _trace = trace_init();
-
-    const AUTHORITY: &str = "policy.test.svc.cluster.local";
-
     let srv = retry_server(mk_server, 1).run().await;
-    let ctrl = controller::new();
-
-    let dst = format!("{AUTHORITY}:{}", srv.addr.port());
-    let dst_tx = ctrl.destination_tx(&dst);
-    dst_tx.send_addr(srv.addr);
-    let _profile_tx = ctrl.profile_tx_default(srv.addr, AUTHORITY);
-    let policy = controller::policy()
-        // stop the admin server from entering an infinite retry loop
-        .with_inbound_default(policy::all_unauthenticated())
-        .outbound(srv.addr, retry_policy(dst));
-
-    let proxy = proxy::new()
-        .controller(ctrl.run().await)
-        .policy(policy.run().await)
-        .outbound(srv)
-        .run()
-        .await;
-    let client = mk_client(proxy.outbound, AUTHORITY);
-    let rsp = client
-        .request(client.request_builder("/retry"))
-        .await
-        .unwrap();
-    assert_eq!(
-        rsp.status(),
-        http::StatusCode::OK,
-        "retry route should succeed"
-    );
-
-    // ensure panics from the server are propagated
-    proxy.join_servers().await;
+    run_retry_test(mk_client, srv, |client| async move {
+        let rsp = client
+            .request(client.request_builder("/retry"))
+            .await
+            .unwrap();
+        assert_eq!(
+            rsp.status(),
+            http::StatusCode::OK,
+            "retry route should succeed"
+        );
+    })
+    .await
 }
 
 async fn test_non_retryable(
     mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
     mk_server: fn() -> server::Server,
 ) {
-    let _trace = trace_init();
-
-    const AUTHORITY: &str = "policy.test.svc.cluster.local";
-
     let srv = retry_server(mk_server, 1).run().await;
-    let ctrl = controller::new();
-
-    let dst = format!("{AUTHORITY}:{}", srv.addr.port());
-    let dst_tx = ctrl.destination_tx(&dst);
-    dst_tx.send_addr(srv.addr);
-    let _profile_tx = ctrl.profile_tx_default(srv.addr, AUTHORITY);
-    let policy = controller::policy()
-        // stop the admin server from entering an infinite retry loop
-        .with_inbound_default(policy::all_unauthenticated())
-        .outbound(srv.addr, retry_policy(dst));
-
-    let proxy = proxy::new()
-        .controller(ctrl.run().await)
-        .policy(policy.run().await)
-        .outbound(srv)
-        .run()
-        .await;
-    let client = mk_client(proxy.outbound, AUTHORITY);
-    let rsp = client
-        .request(client.request_builder("/no-retry"))
-        .await
-        .unwrap();
-    assert_eq!(
-        rsp.status(),
-        http::StatusCode::INTERNAL_SERVER_ERROR,
-        "non-retryable route should not be retried"
-    );
-
-    // ensure panics from the server are propagated
-    proxy.join_servers().await;
+    run_retry_test(mk_client, srv, |client| async move {
+        let rsp = client
+            .request(client.request_builder("/no-retry"))
+            .await
+            .unwrap();
+        assert_eq!(
+            rsp.status(),
+            http::StatusCode::INTERNAL_SERVER_ERROR,
+            "non-retryable route should not be retried"
+        );
+    })
+    .await;
 }
 
 async fn test_retry_limit(
     mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
     mk_server: fn() -> server::Server,
 ) {
-    let _trace = trace_init();
-
-    const AUTHORITY: &str = "policy.test.svc.cluster.local";
-
     // fail 4 times, so that the first request will reach the per-request limit
     // of 3 retries.
     let srv = retry_server(mk_server, 4).run().await;
-    let ctrl = controller::new();
+    run_retry_test(mk_client, srv, |client| async move {
+        let rsp = client
+            .request(client.request_builder("/retry"))
+            .await
+            .unwrap();
+        assert_eq!(
+            rsp.status(),
+            http::StatusCode::INTERNAL_SERVER_ERROR,
+            "retries should stop when at the per-request limit"
+        );
 
-    let dst = format!("{AUTHORITY}:{}", srv.addr.port());
-    let dst_tx = ctrl.destination_tx(&dst);
-    dst_tx.send_addr(srv.addr);
-    let _profile_tx = ctrl.profile_tx_default(srv.addr, AUTHORITY);
-    let policy = controller::policy()
-        // stop the admin server from entering an infinite retry loop
-        .with_inbound_default(policy::all_unauthenticated())
-        .outbound(srv.addr, retry_policy(dst));
+        let rsp = client
+            .request(client.request_builder("/retry"))
+            .await
+            .unwrap();
+        assert_eq!(
+            rsp.status(),
+            http::StatusCode::OK,
+            "retry limit should be tracked per-request"
+        );
+    })
+    .await
+}
 
-    let proxy = proxy::new()
-        .controller(ctrl.run().await)
-        .policy(policy.run().await)
-        .outbound(srv)
-        .run()
-        .await;
-    let client = mk_client(proxy.outbound, AUTHORITY);
-    let rsp = client
-        .request(client.request_builder("/retry"))
-        .await
-        .unwrap();
-    assert_eq!(
-        rsp.status(),
-        http::StatusCode::INTERNAL_SERVER_ERROR,
-        "retries should stop when at the per-request limit"
-    );
+async fn test_retry_body(
+    mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
+    mk_server: fn() -> server::Server,
+    method: http::Method,
+) {
+    let srv = retry_server(mk_server, 1).run().await;
+    run_retry_test(mk_client, srv, move |client| async move {
+        let req = client
+            .request_builder("/retry")
+            .method(method.clone())
+            .body("i'm a request body".into())
+            .unwrap();
+        let rsp = client.request_body(req).await;
 
-    let rsp = client
-        .request(client.request_builder("/retry"))
-        .await
-        .unwrap();
-    assert_eq!(
-        rsp.status(),
-        http::StatusCode::OK,
-        "retry limit should be tracked per-request"
-    );
+        assert_eq!(
+            rsp.status(),
+            http::StatusCode::OK,
+            "{method:?} request with body should be retried"
+        );
+    })
+    .await
+}
 
-    // ensure panics from the server are propagated
-    proxy.join_servers().await;
+async fn test_too_long_retry_body(
+    mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
+    mk_server: fn() -> server::Server,
+) {
+    let srv = retry_server(mk_server, 1).run().await;
+    run_retry_test(mk_client, srv, move |client| async move {
+        let req = client
+            .request_builder("/retry")
+            .method(http::Method::POST)
+            .body(hyper::Body::from(&[1u8; 64 * 1024 + 1][..]))
+            .unwrap();
+        let rsp = client.request_body(req).await;
+
+        assert_eq!(
+            rsp.status(),
+            http::StatusCode::INTERNAL_SERVER_ERROR,
+            "request with too long body should not be retried"
+        );
+    })
+    .await
 }
 
 fn httproute_meta(name: impl ToString) -> api::meta::Metadata {
@@ -690,6 +699,38 @@ fn httproute_meta(name: impl ToString) -> api::meta::Metadata {
             port: 0,
         })),
     }
+}
+
+async fn run_retry_test<F: Future<Output = ()>>(
+    mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
+    srv: server::Listening,
+    test: impl FnOnce(client::Client) -> F,
+) {
+    let _trace = trace_init();
+
+    const AUTHORITY: &str = "policy.test.svc.cluster.local";
+    let ctrl = controller::new();
+
+    let dst = format!("{AUTHORITY}:{}", srv.addr.port());
+    let dst_tx = ctrl.destination_tx(&dst);
+    dst_tx.send_addr(srv.addr);
+    let _profile_tx = ctrl.profile_tx_default(srv.addr, AUTHORITY);
+    let policy = controller::policy()
+        // stop the admin server from entering an infinite retry loop
+        .with_inbound_default(policy::all_unauthenticated())
+        .outbound(srv.addr, retry_policy(dst));
+
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .policy(policy.run().await)
+        .outbound(srv)
+        .run()
+        .await;
+    let client = mk_client(proxy.outbound, AUTHORITY);
+    test(client).await;
+
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
 }
 
 fn retry_server(srv: fn() -> server::Server, fails: usize) -> server::Server {
