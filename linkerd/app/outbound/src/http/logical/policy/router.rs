@@ -2,7 +2,7 @@ use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
     route, RouteBackendMetrics,
 };
-use crate::{BackendRef, EndpointRef, ParentRef, RouteRef};
+use crate::{http::retry, BackendRef, EndpointRef, ParentRef, RouteRef};
 use linkerd_app_core::{
     classify, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result,
 };
@@ -63,7 +63,8 @@ where
         Key = route::MatchedRoute<T, M::Summary, F, E>,
         Error = NoRoute,
     >,
-    route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply + svc::Param<classify::Request>,
+    route::MatchedRoute<T, M::Summary, F, E>:
+        route::filters::Apply + svc::Param<classify::Request> + svc::Param<Option<retry::Params>>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
     route::backend::ExtractMetrics:
         svc::ExtractParam<route::backend::RequestCount, route::MatchedBackend<T, M::Summary, F>>,

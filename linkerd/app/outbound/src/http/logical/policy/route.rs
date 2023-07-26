@@ -84,6 +84,7 @@ where
     // Assert that filters can be applied.
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
+    Self: svc::Param<Option<retry::Params>>,
     MatchedBackend<T, M, F>: filters::Apply,
     backend::ExtractMetrics: svc::ExtractParam<backend::RequestCount, MatchedBackend<T, M, F>>,
 {
@@ -123,10 +124,22 @@ where
                 .push(MatchedBackend::layer(backend_metrics.clone()))
                 .lift_new_with_target()
                 .push(NewDistribute::layer())
-                // The router does not take the backend's availability into
-                // consideration, so we must eagerly fail requests to prevent
-                // leaking tasks onto the runtime.
-                .push_on_service(svc::LoadShed::layer())
+                .check_new_service::<Self, http::Request<http::BoxBody>>()
+                .push_on_service(
+                    svc::layers()
+                        // The router does not take the backend's availability into
+                        // consideration, so we must eagerly fail requests to prevent
+                        // leaking tasks onto the runtime.
+                        .push(svc::LoadShed::layer())
+                        // Depending on whether or not the request can be
+                        // retried, it may have one of two `Body` types. This
+                        // layer unifies any `Body` type into `BoxBody`.
+                        .push(http::BoxRequest::erased()),
+                )
+                .check_new_service::<Self, http::Request<http::BoxBody>>()
+                // Sets an optional retry policy.
+                .push(retry::layer(None))
+                .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // TODO(ver) attach the `E` typed failure policy to requests.
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 // Sets an optional request timeout.

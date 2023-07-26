@@ -3,7 +3,7 @@ use crate::{BackendRef, RouteRef};
 use linkerd_app_core::{proxy::http, svc, Error, Result};
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
-use std::{fmt::Debug, hash::Hash, sync::Arc};
+use std::{fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
 mod count_reqs;
 mod metrics;
@@ -93,7 +93,7 @@ where
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
                     Error = Error,
-                    Future = impl Send,
+                    Future = impl Future<Output = Result<http::Response<http::BoxBody>, Error>> + Send,
                 > + Clone,
         >,
     > + Clone

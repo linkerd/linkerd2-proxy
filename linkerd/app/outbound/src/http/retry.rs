@@ -17,7 +17,7 @@ pub use retry::Budget;
 use std::{num::NonZeroU32, sync::Arc};
 
 pub fn layer<N>(
-    metrics: metrics::HttpProfileRouteRetry,
+    metrics: Option<metrics::HttpProfileRouteRetry>,
 ) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N, EraseResponse<()>>> + Clone {
     retry::layer(NewRetryPolicy::new(metrics))
         // Because we wrap the response body type on retries, we must include a
@@ -36,7 +36,7 @@ pub struct Params {
 
 #[derive(Clone, Debug)]
 pub struct NewRetryPolicy {
-    metrics: metrics::HttpProfileRouteRetry,
+    metrics: Option<metrics::HttpProfileRouteRetry>,
 }
 
 #[derive(Clone, Debug)]
@@ -56,7 +56,7 @@ pub struct RetryCount(u32);
 // === impl NewRetryPolicy ===
 
 impl NewRetryPolicy {
-    pub fn new(metrics: metrics::HttpProfileRouteRetry) -> Self {
+    pub fn new(metrics: Option<metrics::HttpProfileRouteRetry>) -> Self {
         Self { metrics }
     }
 }
@@ -74,7 +74,10 @@ where
             profile_labels,
             response_classes,
         } = Param::<Option<Params>>::param(target)?;
-        let metrics = profile_labels.map(|labels| self.metrics.get_handle(labels));
+        let metrics = self
+            .metrics
+            .as_ref()
+            .and_then(|metrics| Some(metrics.get_handle(profile_labels?)));
         Some(RetryPolicy {
             metrics,
             budget,

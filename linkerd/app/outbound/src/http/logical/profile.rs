@@ -304,7 +304,7 @@ impl<T> RouteParams<T> {
                 // layer unifies any `Body` type into `BoxBody`.
                 .push_on_service(http::BoxRequest::erased())
                 // Sets an optional retry policy.
-                .push(retry::layer(metrics.http_profile_route_retry.clone()))
+                .push(retry::layer(Some(metrics.http_profile_route_retry.clone())))
                 // Sets an optional request timeout.
                 .push(http::NewTimeout::layer())
                 // Records per-route metrics.
