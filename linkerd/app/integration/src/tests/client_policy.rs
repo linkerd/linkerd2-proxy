@@ -574,6 +574,34 @@ async fn http2_doesnt_retry_long_body() {
     test_too_long_retry_body(client::http2, server::http2).await
 }
 
+// these tests doesn't currently work as we would expect, because backend
+// request timeouts are not turned into synthesized 504s until a layer above the
+// retry layer. instead of being `Ok(Response)`s with a failure status, they're
+// `Err(Error)`s when the retry layer sees them, so they don't get retried.
+// TODO(eliza): figure that out
+
+/*
+#[tokio::test]
+async fn http1_backend_request_timeout_is_per_try() {
+    test_backend_timeout_is_per_try(client::http1, server::http1).await
+}
+
+#[tokio::test]
+async fn http2_backend_request_timeout_is_per_try() {
+    test_backend_timeout_is_per_try(client::http2, server::http2).await
+}
+*/
+
+#[tokio::test]
+async fn http1_request_timeout_across_retries() {
+    test_request_timeout_across_retries(client::http1, server::http1).await
+}
+
+#[tokio::test]
+async fn http2_request_timeout_across_retries() {
+    test_request_timeout_across_retries(client::http2, server::http2).await
+}
+
 async fn test_basic_retry(
     mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
     mk_server: fn() -> server::Server,
@@ -688,6 +716,66 @@ async fn test_too_long_retry_body(
     .await
 }
 
+// this doesn't currently work as we would expect, because backend request
+// timeouts are not turned into synthesized 504s until a layer above the retry
+// layer...
+
+// async fn test_backend_timeout_is_per_try(
+//     mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
+//     mk_server: fn() -> server::Server,
+// ) {
+//     let srv = retry_server(mk_server, 1).run().await;
+//     run_retry_timeout_test(
+//         mk_client,
+//         srv,
+//         None,
+//         Some(Duration::from_millis(400)),
+//         move |client| async move {
+//             let req = client
+//                 .request_builder("/retry/timeout")
+//                 .method(http::Method::GET)
+//                 .body("".into())
+//                 .unwrap();
+//             let rsp = client.request_body(req).await;
+
+//             assert_eq!(
+//                 rsp.status(),
+//                 http::StatusCode::OK,
+//                 "backend request timeouts should be retried"
+//             );
+//         },
+//     )
+//     .await
+// }
+
+async fn test_request_timeout_across_retries(
+    mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
+    mk_server: fn() -> server::Server,
+) {
+    let srv = retry_server(mk_server, 2).run().await;
+    run_retry_timeout_test(
+        mk_client,
+        srv,
+        Some(Duration::from_secs(1)),
+        Some(Duration::from_millis(400)),
+        move |client| async move {
+            let req = client
+                .request_builder("/retry/timeout")
+                .method(http::Method::GET)
+                .body("".into())
+                .unwrap();
+            let rsp = client.request_body(req).await;
+
+            assert_eq!(
+                rsp.status(),
+                http::StatusCode::GATEWAY_TIMEOUT,
+                "the request timeout should be tracked across retries"
+            );
+        },
+    )
+    .await
+}
+
 fn httproute_meta(name: impl ToString) -> api::meta::Metadata {
     api::meta::Metadata {
         kind: Some(api::meta::metadata::Kind::Resource(api::meta::Resource {
@@ -706,6 +794,16 @@ async fn run_retry_test<F: Future<Output = ()>>(
     srv: server::Listening,
     test: impl FnOnce(client::Client) -> F,
 ) {
+    run_retry_timeout_test(mk_client, srv, None, None, test).await
+}
+
+async fn run_retry_timeout_test<F: Future<Output = ()>>(
+    mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
+    srv: server::Listening,
+    request_timeout: Option<Duration>,
+    backend_timeout: Option<Duration>,
+    test: impl FnOnce(client::Client) -> F,
+) {
     let _trace = trace_init();
 
     const AUTHORITY: &str = "policy.test.svc.cluster.local";
@@ -718,7 +816,10 @@ async fn run_retry_test<F: Future<Output = ()>>(
     let policy = controller::policy()
         // stop the admin server from entering an infinite retry loop
         .with_inbound_default(policy::all_unauthenticated())
-        .outbound(srv.addr, retry_policy(dst));
+        .outbound(
+            srv.addr,
+            retry_policy(dst, request_timeout, backend_timeout),
+        );
 
     let proxy = proxy::new()
         .controller(ctrl.run().await)
@@ -734,20 +835,41 @@ async fn run_retry_test<F: Future<Output = ()>>(
 }
 
 fn retry_server(srv: fn() -> server::Server, fails: usize) -> server::Server {
-    let retries = AtomicUsize::new(0);
     srv()
-        .route_fn("/retry", move |_| {
-            let status = if retries.fetch_add(1, Ordering::SeqCst) > fails {
-                http::StatusCode::OK
-            } else {
-                http::StatusCode::INTERNAL_SERVER_ERROR
-            };
-            http::Response::builder()
-                .status(status)
-                .body("".into())
-                .unwrap()
+        .route_fn("/retry", {
+            let retries = AtomicUsize::new(0);
+            move |_| {
+                let attempt = retries.fetch_add(1, Ordering::SeqCst);
+                tracing::info!(attempt, "/retry");
+                let status = if attempt > fails {
+                    http::StatusCode::OK
+                } else {
+                    http::StatusCode::INTERNAL_SERVER_ERROR
+                };
+                http::Response::builder()
+                    .status(status)
+                    .body("".into())
+                    .unwrap()
+            }
+        })
+        .route_async("/retry/timeout", {
+            let retries = Arc::new(AtomicUsize::new(0));
+            move |_| {
+                let retries = retries.clone();
+                async move {
+                    let attempt = retries.fetch_add(1, Ordering::SeqCst);
+                    tracing::info!(attempt, "/retry/timeout");
+                    if attempt < fails {
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    };
+                    http::Response::builder()
+                        .status(http::StatusCode::OK)
+                        .body("".into())
+                }
+            }
         })
         .route_fn("/no-retry", move |_| {
+            tracing::info!("/no-retry");
             http::Response::builder()
                 .status(http::StatusCode::INTERNAL_SERVER_ERROR)
                 .body("".into())
@@ -755,8 +877,26 @@ fn retry_server(srv: fn() -> server::Server, fails: usize) -> server::Server {
         })
 }
 
-fn retry_policy(dst: impl ToString) -> outbound::OutboundPolicy {
+fn retry_policy(
+    dst: impl ToString,
+    request_timeout: Option<Duration>,
+    backend_timeout: Option<Duration>,
+) -> outbound::OutboundPolicy {
+    use outbound::http_route::{self, distribution};
     let dst = dst.to_string();
+
+    let dist = http_route::Distribution {
+        kind: Some(distribution::Kind::FirstAvailable(
+            distribution::FirstAvailable {
+                backends: vec![http_route::RouteBackend {
+                    backend: Some(policy::backend(dst.clone())),
+                    filters: Vec::new(),
+                    request_timeout: backend_timeout.map(|t| t.try_into().unwrap()),
+                }],
+            },
+        )),
+    };
+
     let routes = vec![outbound::HttpRoute {
         metadata: Some(httproute_meta("retry")),
         hosts: Vec::new(),
@@ -765,10 +905,8 @@ fn retry_policy(dst: impl ToString) -> outbound::OutboundPolicy {
             outbound::http_route::Rule {
                 matches: vec![policy::match_path_prefix("/retry")],
                 filters: Vec::new(),
-                backends: Some(policy::http_first_available(std::iter::once(
-                    policy::backend(dst.clone()),
-                ))),
-                request_timeout: None,
+                backends: Some(dist.clone()),
+                request_timeout: request_timeout.map(|t| t.try_into().unwrap()),
                 retry_policy: Some(outbound::http_route::RetryPolicy {
                     retry_statuses: vec![controller::pb::HttpStatusRange { min: 500, max: 599 }],
                     max_per_request: 3,
@@ -778,14 +916,15 @@ fn retry_policy(dst: impl ToString) -> outbound::OutboundPolicy {
             outbound::http_route::Rule {
                 matches: vec![policy::match_path_prefix("/no-retry")],
                 filters: Vec::new(),
-                backends: Some(policy::http_first_available(std::iter::once(
-                    policy::backend(dst.clone()),
-                ))),
+                backends: Some(dist),
                 request_timeout: None,
                 retry_policy: None,
             },
         ],
     }];
+
+    let retry_budget = Some(controller::retry_budget(Duration::from_secs(10), 0.5, 10));
+
     outbound::OutboundPolicy {
         metadata: Some(api::meta::Metadata {
             kind: Some(api::meta::metadata::Kind::Default("retry-test".to_string())),
@@ -796,12 +935,12 @@ fn retry_policy(dst: impl ToString) -> outbound::OutboundPolicy {
                 http1: Some(proxy_protocol::Http1 {
                     routes: routes.clone(),
                     failure_accrual: None,
-                    retry_budget: Some(controller::retry_budget(Duration::from_secs(10), 0.5, 10)),
+                    retry_budget: retry_budget.clone(),
                 }),
                 http2: Some(proxy_protocol::Http2 {
                     routes,
                     failure_accrual: None,
-                    retry_budget: None,
+                    retry_budget,
                 }),
                 opaque: Some(proxy_protocol::Opaque {
                     routes: vec![policy::outbound_default_opaque_route(&dst)],
