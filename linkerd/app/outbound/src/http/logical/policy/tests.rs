@@ -113,6 +113,7 @@ async fn header_based_route() {
             }]),
             backends: std::iter::once(default).chain(Some(special)).collect(),
             failure_accrual: Default::default(),
+            retry_budget: None,
         }
     });
 
@@ -225,6 +226,7 @@ async fn http_filter_request_headers() {
             }]),
             backends: std::iter::once(backend).collect(),
             failure_accrual: Default::default(),
+            retry_budget: None,
         }
     });
 

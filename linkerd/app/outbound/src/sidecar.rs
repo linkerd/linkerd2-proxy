@@ -219,25 +219,33 @@ impl HttpSidecar {
         // protocol changes but remains HTTP-ish, we propagate those
         // changes. If the protocol flips to an opaque protocol, we ignore
         // the protocol update.
-        let (routes, failure_accrual) = match policy.protocol {
+        let (routes, failure_accrual, retry_budget) = match policy.protocol {
             policy::Protocol::Detect {
                 ref http1,
                 ref http2,
                 ..
             } => match version {
-                http::Version::Http1 => (http1.routes.clone(), http1.failure_accrual),
-                http::Version::H2 => (http2.routes.clone(), http2.failure_accrual),
+                http::Version::Http1 => (
+                    http1.routes.clone(),
+                    http1.failure_accrual,
+                    http1.retry_budget.clone(),
+                ),
+                http::Version::H2 => (
+                    http2.routes.clone(),
+                    http2.failure_accrual,
+                    http2.retry_budget.clone(),
+                ),
             },
             policy::Protocol::Http1(policy::http::Http1 {
                 ref routes,
                 failure_accrual,
                 retry_budget,
-            }) => (routes.clone(), failure_accrual),
+            }) => (routes.clone(), failure_accrual, retry_budget.clone()),
             policy::Protocol::Http2(policy::http::Http2 {
                 ref routes,
                 failure_accrual,
                 retry_budget,
-            }) => (routes.clone(), failure_accrual),
+            }) => (routes.clone(), failure_accrual, retry_budget.clone()),
             policy::Protocol::Grpc(policy::grpc::Grpc {
                 ref routes,
                 failure_accrual,
@@ -249,6 +257,7 @@ impl HttpSidecar {
                         backends: policy.backends.clone(),
                         routes: routes.clone(),
                         failure_accrual,
+                        retry_budget: None,
                     },
                 )))
             }
@@ -267,6 +276,7 @@ impl HttpSidecar {
                 routes,
                 backends: policy.backends.clone(),
                 failure_accrual,
+                retry_budget: http::retry::policy_budget(retry_budget),
             },
         )))
     }

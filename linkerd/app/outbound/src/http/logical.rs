@@ -22,7 +22,7 @@ mod tests;
 pub struct LogicalAddr(pub Addr);
 
 /// Configures the flavor of HTTP routing.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum Routes {
     /// Policy routes.
     Policy(policy::Params),

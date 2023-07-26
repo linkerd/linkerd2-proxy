@@ -3,7 +3,6 @@ use linkerd_app_core::{
     classify,
     http_metrics::retries::Handle,
     metrics::{self, ProfileRouteLabels},
-    profiles::{self, http::Route},
     proxy::http::{ClientHandle, EraseResponse, HttpBody},
     svc::{layer, Either, Param},
     Error,
@@ -25,6 +24,12 @@ pub fn layer<N>(
         // `Proxy` middleware for unifying the response body types of the retry
         // and non-retry services.
         .with_proxy(EraseResponse::new(()))
+}
+
+pub(crate) fn policy_budget(
+    p: Option<linkerd_proxy_client_policy::retry::Budget>,
+) -> Option<Arc<Budget>> {
+    p.map(|p| Arc::new(Budget::new(p.ttl(), p.min_per_sec(), p.retry_ratio())))
 }
 
 #[derive(Clone, Debug)]

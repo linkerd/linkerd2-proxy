@@ -530,9 +530,17 @@ fn policy_routes(
             ref http2,
             ..
         } => {
-            let (routes, failure_accrual) = match version {
-                http::Version::Http1 => (http1.routes.clone(), http1.failure_accrual),
-                http::Version::H2 => (http2.routes.clone(), http2.failure_accrual),
+            let (routes, failure_accrual, retry_budget) = match version {
+                http::Version::Http1 => (
+                    http1.routes.clone(),
+                    http1.failure_accrual,
+                    http1.retry_budget.clone(),
+                ),
+                http::Version::H2 => (
+                    http2.routes.clone(),
+                    http2.failure_accrual,
+                    http2.retry_budget.clone(),
+                ),
             };
             Some(http::Routes::Policy(http::policy::Params::Http(
                 http::policy::HttpParams {
@@ -541,6 +549,7 @@ fn policy_routes(
                     backends: policy.backends.clone(),
                     routes,
                     failure_accrual,
+                    retry_budget: http::retry::policy_budget(retry_budget),
                 },
             )))
         }
@@ -558,6 +567,7 @@ fn policy_routes(
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
+                retry_budget: http::retry::policy_budget(retry_budget),
             },
         ))),
         policy::Protocol::Http2(policy::http::Http2 {
@@ -571,6 +581,7 @@ fn policy_routes(
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
+                retry_budget: http::retry::policy_budget(retry_budget),
             },
         ))),
         policy::Protocol::Grpc(policy::grpc::Grpc {
@@ -583,6 +594,9 @@ fn policy_routes(
                 backends: policy.backends.clone(),
                 routes: routes.clone(),
                 failure_accrual,
+                // Retry configuration is not currently implemented for gRPC
+                // policy routes...
+                retry_budget: None,
             },
         ))),
         _ => None,
