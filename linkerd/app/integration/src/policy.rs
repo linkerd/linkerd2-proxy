@@ -136,26 +136,30 @@ pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
 }
 
 pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
-    use api::http_route;
     outbound::HttpRoute {
         metadata: Some(api::meta::Metadata {
             kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
         }),
         hosts: Vec::new(),
         rules: vec![outbound::http_route::Rule {
-            matches: vec![http_route::HttpRouteMatch {
-                path: Some(http_route::PathMatch {
-                    kind: Some(http_route::path_match::Kind::Prefix("/".to_string())),
-                }),
-                headers: Vec::new(),
-                query_params: Vec::new(),
-                method: None,
-            }],
+            matches: vec![match_path_prefix("/")],
             filters: Vec::new(),
             backends: Some(http_first_available(std::iter::once(backend(dst)))),
             request_timeout: None,
             retry_policy: None,
         }],
+    }
+}
+
+pub fn match_path_prefix(path: impl ToString) -> api::http_route::HttpRouteMatch {
+    use api::http_route;
+    http_route::HttpRouteMatch {
+        path: Some(http_route::PathMatch {
+            kind: Some(http_route::path_match::Kind::Prefix(path.to_string())),
+        }),
+        headers: Vec::new(),
+        query_params: Vec::new(),
+        method: None,
     }
 }
 

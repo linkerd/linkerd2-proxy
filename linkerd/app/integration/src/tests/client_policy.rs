@@ -1,6 +1,10 @@
 use crate::*;
 use linkerd2_proxy_api::{self as api};
 use policy::outbound::{self, proxy_protocol};
+use std::{
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
 
 #[tokio::test]
 async fn default_http1_route() {
@@ -505,6 +509,136 @@ async fn path_based_routing() {
     assert_eq!(client.get("/goodbye").await, "goodbye world!");
     assert_eq!(client.get("/goodbye/austin").await, "goodbye austin!");
     assert_eq!(client.get("/goodbye/sf").await, "goodbye san francisco!");
+
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
+}
+
+#[tokio::test]
+async fn retry() {
+    let _trace = trace_init();
+
+    const AUTHORITY: &str = "policy.test.svc.cluster.local";
+
+    let retries = AtomicUsize::new(0);
+    let srv = server::http1()
+        .route_fn("/retry", move |_| {
+            let status = if retries.fetch_add(1, Ordering::SeqCst) > 1 {
+                http::StatusCode::OK
+            } else {
+                http::StatusCode::INTERNAL_SERVER_ERROR
+            };
+            http::Response::builder()
+                .status(status)
+                .body("".into())
+                .unwrap()
+        })
+        .route_fn("/no-retry", move |_| {
+            http::Response::builder()
+                .status(http::StatusCode::INTERNAL_SERVER_ERROR)
+                .body("".into())
+                .unwrap()
+        })
+        .run()
+        .await;
+    let ctrl = controller::new();
+
+    let dst = format!("{AUTHORITY}:{}", srv.addr.port());
+    let dst_tx = ctrl.destination_tx(&dst);
+    dst_tx.send_addr(srv.addr);
+    let _profile_tx = ctrl.profile_tx_default(srv.addr, AUTHORITY);
+    let policy = controller::policy()
+        // stop the admin server from entering an infinite retry loop
+        .with_inbound_default(policy::all_unauthenticated())
+        .outbound(
+            srv.addr,
+            outbound::OutboundPolicy {
+                metadata: Some(api::meta::Metadata {
+                    kind: Some(api::meta::metadata::Kind::Default("test".to_string())),
+                }),
+                protocol: Some(outbound::ProxyProtocol {
+                    kind: Some(proxy_protocol::Kind::Detect(proxy_protocol::Detect {
+                        timeout: Some(Duration::from_secs(10).try_into().unwrap()),
+                        http1: Some(proxy_protocol::Http1 {
+                            routes: vec![outbound::HttpRoute {
+                                metadata: Some(httproute_meta("retry")),
+                                hosts: Vec::new(),
+                                rules: vec![
+                                    // this rule is retryable
+                                    outbound::http_route::Rule {
+                                        matches: vec![policy::match_path_prefix("/retry")],
+                                        filters: Vec::new(),
+                                        backends: Some(policy::http_first_available(
+                                            std::iter::once(policy::backend(dst.clone())),
+                                        )),
+                                        request_timeout: None,
+                                        retry_policy: Some(outbound::http_route::RetryPolicy {
+                                            retry_statuses: vec![controller::pb::HttpStatusRange {
+                                                min: 500,
+                                                max: 599,
+                                            }],
+                                            max_per_request: 0,
+                                        }),
+                                    },
+                                    // this route is not retryable
+                                    outbound::http_route::Rule {
+                                        matches: vec![policy::match_path_prefix("/no-retry")],
+                                        filters: Vec::new(),
+                                        backends: Some(policy::http_first_available(
+                                            std::iter::once(policy::backend(dst.clone())),
+                                        )),
+                                        request_timeout: None,
+                                        retry_policy: None,
+                                    },
+                                ],
+                            }],
+                            failure_accrual: None,
+                            retry_budget: Some(controller::retry_budget(
+                                Duration::from_secs(10),
+                                0.5,
+                                10,
+                            )),
+                        }),
+                        http2: Some(proxy_protocol::Http2 {
+                            routes: vec![policy::outbound_default_http_route(&dst)],
+                            failure_accrual: None,
+                            retry_budget: None,
+                        }),
+                        opaque: Some(proxy_protocol::Opaque {
+                            routes: vec![policy::outbound_default_opaque_route(&dst)],
+                        }),
+                    })),
+                }),
+            },
+        );
+
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .policy(policy.run().await)
+        .outbound(srv)
+        .run()
+        .await;
+    let client = client::http1(proxy.outbound, AUTHORITY);
+    let rsp = client
+        .request(client.request_builder("/retry"))
+        .await
+        .unwrap();
+    assert_eq!(
+        rsp.status(),
+        http::StatusCode::OK,
+        "retry route should succeed"
+    );
+
+    let client = client::http1(proxy.outbound, AUTHORITY);
+    let rsp = client
+        .request(client.request_builder("/no-retry"))
+        .await
+        .unwrap();
+    assert_eq!(
+        rsp.status(),
+        http::StatusCode::INTERNAL_SERVER_ERROR,
+        "no-retry route should not be retried"
+    );
 
     // ensure panics from the server are propagated
     proxy.join_servers().await;
