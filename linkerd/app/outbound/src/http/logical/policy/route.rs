@@ -87,7 +87,6 @@ where
     Self: svc::Param<classify::Request>,
     Self: svc::Param<Option<retry::Params>>,
     MatchedBackend<T, M, F>: filters::Apply,
-    // MatchedBackend<T, M, F>: svc::Param<linkerd_app_core::errors::respond::EmitHeaders>,
     backend::ExtractMetrics: svc::ExtractParam<backend::RequestCount, MatchedBackend<T, M, F>>,
 {
     /// Builds a route stack that applies policy filters to requests and
@@ -138,10 +137,8 @@ where
                         // layer unifies any `Body` type into `BoxBody`.
                         .push(http::BoxRequest::erased()),
                 )
-                .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // Sets an optional retry policy.
                 .push(retry::layer(None))
-                .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // TODO(ver) attach the `E` typed failure policy to requests.
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 // Sets an optional request timeout.
