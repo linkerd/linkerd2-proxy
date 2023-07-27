@@ -4,81 +4,122 @@ use std::{
     time::Duration,
 };
 
+/// Tests that a failed HTTP/1.1 response is retried.
 #[tokio::test]
 async fn http1_retries() {
     test_basic_retry(client::http1, server::http1).await
 }
 
+/// Tests that a failed HTTP/2 response is retried.
 #[tokio::test]
 async fn http2_retries() {
     test_basic_retry(client::http1, server::http1).await
 }
 
+/// Tests that a failed HTTP/1.1 response that matches a route rule *without* a
+/// retry policy iss not retried, even if the `OutboundPolicy` contains a retry
+/// budget.
 #[tokio::test]
 async fn http1_doesnt_retry_non_retryable_rule() {
     test_non_retryable(client::http1, server::http1).await
 }
 
+/// Tests that a failed HTTP/2 response that matches a route rule *without* a
+/// retry policy iss not retried, even if the `OutboundPolicy` contains a retry
+/// budget.
 #[tokio::test]
 async fn http2_doesnt_retry_non_retryable_rule() {
     test_non_retryable(client::http2, server::http2).await
 }
 
+/// Tests that a failed HTTP/1.1 response is retried until the per-request retry
+/// limit is reached, and that a subsequent request has its own separate
+/// per-request retry limit.
 #[tokio::test]
 async fn http1_doesnt_retry_at_per_request_limit() {
     test_retry_limit(client::http1, server::http1).await
 }
 
+/// Tests that a failed HTTP/2 response is retried until the per-request retry
+/// limit is reached, and that a subsequent request has its own separate
+/// per-request retry limit.
 #[tokio::test]
 async fn http2_doesnt_retry_at_per_request_limit() {
     test_retry_limit(client::http2, server::http2).await
 }
 
+/// Tests that an HTTP/1.1 POST request with a body is retried.
 #[tokio::test]
 async fn http1_retries_post_body() {
     test_retry_body(client::http1, server::http1, http::Method::POST).await
 }
 
+/// Tests that an HTTP/2 POST request with a body is retried.
 #[tokio::test]
 async fn http2_retries_post_body() {
     test_retry_body(client::http2, server::http2, http::Method::POST).await
 }
 
+/// Tests that an HTTP/1.1 PUT request with a body is retried.
 #[tokio::test]
 async fn http1_retries_put_body() {
     test_retry_body(client::http1, server::http1, http::Method::PUT).await
 }
 
+/// Tests that an HTTP/2 PUT request with a body is retried.
 #[tokio::test]
 async fn http2_retries_put_body() {
     test_retry_body(client::http2, server::http2, http::Method::PUT).await
 }
 
+/// Tests that an HTTP/1.1 request with a body is not retried if the body's
+/// length exceeds the maximum buffered body limit.
 #[tokio::test]
 async fn http1_doesnt_retry_long_body() {
     test_too_long_retry_body(client::http1, server::http1).await
 }
 
+/// Tests that an HTTP/2 request with a body is not retried if the body's
+/// length exceeds the maximum buffered body limit.
 #[tokio::test]
 async fn http2_doesnt_retry_long_body() {
     test_too_long_retry_body(client::http2, server::http2).await
 }
 
+/// Tests that the `timeouts.backend_request` timeout is applied separately for
+/// each individual time a request is retried, rather than starting when the
+/// request is recieved and including the time spent on all retries of that
+/// request. Also, tests that requests which hit the `backend_request` timeout
+/// are retried as though they were HTTP 504 responses.
 #[tokio::test]
 async fn http1_backend_request_timeout_is_per_try() {
     test_backend_timeout_is_per_try(client::http1, server::http1).await
 }
 
+/// Tests that the `timeouts.backend_request` timeout is applied separately for
+/// each individual time a request is retried, rather than starting when the
+/// request is recieved and including the time spent on all retries of that
+/// request. Also, tests that requests which hit the `backend_request` timeout
+/// are retried as though they were HTTP 504 responses.
 #[tokio::test]
 async fn http2_backend_request_timeout_is_per_try() {
     test_backend_timeout_is_per_try(client::http2, server::http2).await
 }
+
+/// Tests that the `timeouts.request` timeout applies to *all* retries of a
+/// request, and that a request will fail if the total time spent retrying it
+/// exceeds the `request` timeout, even if each individual retry request is
+/// below that timeout.
 
 #[tokio::test]
 async fn http1_request_timeout_across_retries() {
     test_request_timeout_across_retries(client::http1, server::http1).await
 }
 
+/// Tests that the `timeouts.request` timeout applies to *all* retries of a
+/// request, and that a request will fail if the total time spent retrying it
+/// exceeds the `request` timeout, even if each individual retry request is
+/// below that timeout.
 #[tokio::test]
 async fn http2_request_timeout_across_retries() {
     test_request_timeout_across_retries(client::http2, server::http2).await
