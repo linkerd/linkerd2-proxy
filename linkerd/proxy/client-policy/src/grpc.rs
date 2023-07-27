@@ -9,7 +9,7 @@ pub type Route = grpc::Route<Policy>;
 pub type Rule = grpc::Rule<Policy>;
 
 // TODO HTTP2 settings
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Grpc {
     pub routes: Arc<[Route]>,
 

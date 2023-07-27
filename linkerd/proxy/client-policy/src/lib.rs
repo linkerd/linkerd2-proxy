@@ -12,7 +12,7 @@ pub mod retry;
 pub use linkerd_http_route as route;
 pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
     pub parent: Arc<Meta>,
     pub protocol: Protocol,
@@ -20,8 +20,7 @@ pub struct ClientPolicy {
 }
 
 // TODO additional server configs (e.g. concurrency limits, window sizes, etc)
-#[derive(Clone, Debug, PartialEq)]
-// #[derive(Hash, Eq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Protocol {
     Detect {
         timeout: time::Duration,
@@ -55,7 +54,7 @@ pub enum Meta {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RoutePolicy<T, F> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
