@@ -1,6 +1,7 @@
 use self::require_id_header::NewRequireIdentity;
 use crate::Outbound;
 use linkerd_app_core::{
+    errors,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -26,7 +27,10 @@ pub(crate) use self::require_id_header::IdentityRequired;
 pub use linkerd_app_core::proxy::http::{self as http, *};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Http<T>(T);
+pub struct Http<T> {
+    target: T,
+    error_headers: errors::respond::EmitHeaders,
+}
 
 pub fn spawn_routes<T>(
     mut route_rx: watch::Receiver<T>,
@@ -114,8 +118,12 @@ impl<N> Outbound<N> {
             .push_http_concrete(resolve)
             .push_http_logical()
             .map_stack(move |config, _, stk| {
+                let error_headers = config.emit_headers;
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
-                    .push_map_target(Http)
+                    .push_map_target(move |target| Http {
+                        target,
+                        error_headers: errors::respond::EmitHeaders(error_headers),
+                    })
                     .push(svc::ArcNewService::layer())
             })
     }
@@ -128,7 +136,7 @@ where
     T: svc::Param<http::Version>,
 {
     fn param(&self) -> http::Version {
-        self.0.param()
+        self.target.param()
     }
 }
 
@@ -137,6 +145,12 @@ where
     T: svc::Param<watch::Receiver<Routes>>,
 {
     fn param(&self) -> watch::Receiver<Routes> {
-        self.0.param()
+        self.target.param()
+    }
+}
+
+impl<T> svc::Param<errors::respond::EmitHeaders> for Http<T> {
+    fn param(&self) -> errors::respond::EmitHeaders {
+        self.error_headers
     }
 }

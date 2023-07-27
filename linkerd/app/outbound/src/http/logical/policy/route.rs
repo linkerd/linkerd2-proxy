@@ -86,6 +86,7 @@ where
     Self: svc::Param<classify::Request>,
     Self: svc::Param<Option<retry::Params>>,
     MatchedBackend<T, M, F>: filters::Apply,
+    // MatchedBackend<T, M, F>: svc::Param<linkerd_app_core::errors::respond::EmitHeaders>,
     backend::ExtractMetrics: svc::ExtractParam<backend::RequestCount, MatchedBackend<T, M, F>>,
 {
     /// Builds a route stack that applies policy filters to requests and
