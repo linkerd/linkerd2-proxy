@@ -125,9 +125,13 @@ async fn header_based_route() {
 
     default.allow(1);
     special.allow(1);
-    let req = http::Request::builder()
+
+    let mut req = http::Request::builder()
         .body(http::BoxBody::default())
         .unwrap();
+    let (client_handle, _close) = http::ClientHandle::new(([127, 0, 0, 1], 9999).into());
+    req.extensions_mut().insert(client_handle);
+
     let _ = tokio::select! {
         biased;
         _ = router.clone().oneshot(req) => panic!("unexpected response"),
@@ -138,10 +142,13 @@ async fn header_based_route() {
 
     default.allow(1);
     special.allow(1);
-    let req = http::Request::builder()
+    let mut req = http::Request::builder()
         .header("x-special", "true")
         .body(http::BoxBody::default())
         .unwrap();
+    let (client_handle, _close) = http::ClientHandle::new(([127, 0, 0, 1], 9999).into());
+    req.extensions_mut().insert(client_handle);
+
     let _ = tokio::select! {
         biased;
         _ = router.clone().oneshot(req) => panic!("unexpected response"),
@@ -236,10 +243,14 @@ async fn http_filter_request_headers() {
         .new_service(Policy::from((routes, Target)));
 
     handle.allow(1);
-    let req = http::Request::builder()
+
+    let mut req = http::Request::builder()
         .header(&PIZZA, &PARTY)
         .body(http::BoxBody::default())
         .unwrap();
+    let (client_handle, _close) = http::ClientHandle::new(([127, 0, 0, 1], 9999).into());
+    req.extensions_mut().insert(client_handle);
+
     let (req, _rsp) = tokio::select! {
         biased;
         _ = router.clone().oneshot(req) => panic!("unexpected response"),
