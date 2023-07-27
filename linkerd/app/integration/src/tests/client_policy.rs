@@ -574,13 +574,6 @@ async fn http2_doesnt_retry_long_body() {
     test_too_long_retry_body(client::http2, server::http2).await
 }
 
-// these tests doesn't currently work as we would expect, because backend
-// request timeouts are not turned into synthesized 504s until a layer above the
-// retry layer. instead of being `Ok(Response)`s with a failure status, they're
-// `Err(Error)`s when the retry layer sees them, so they don't get retried.
-// TODO(eliza): figure that out
-
-/*
 #[tokio::test]
 async fn http1_backend_request_timeout_is_per_try() {
     test_backend_timeout_is_per_try(client::http1, server::http1).await
@@ -590,7 +583,6 @@ async fn http1_backend_request_timeout_is_per_try() {
 async fn http2_backend_request_timeout_is_per_try() {
     test_backend_timeout_is_per_try(client::http2, server::http2).await
 }
-*/
 
 #[tokio::test]
 async fn http1_request_timeout_across_retries() {
@@ -716,37 +708,33 @@ async fn test_too_long_retry_body(
     .await
 }
 
-// this doesn't currently work as we would expect, because backend request
-// timeouts are not turned into synthesized 504s until a layer above the retry
-// layer...
-
-// async fn test_backend_timeout_is_per_try(
-//     mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
-//     mk_server: fn() -> server::Server,
-// ) {
-//     let srv = retry_server(mk_server, 1).run().await;
-//     run_retry_timeout_test(
-//         mk_client,
-//         srv,
-//         None,
-//         Some(Duration::from_millis(400)),
-//         move |client| async move {
-//             let req = client
-//                 .request_builder("/retry/timeout")
-//                 .method(http::Method::GET)
-//                 .body("".into())
-//                 .unwrap();
-//             let rsp = client.request_body(req).await;
-
-//             assert_eq!(
-//                 rsp.status(),
-//                 http::StatusCode::OK,
-//                 "backend request timeouts should be retried"
-//             );
-//         },
-//     )
-//     .await
-// }
+async fn test_backend_timeout_is_per_try(
+    mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
+    mk_server: fn() -> server::Server,
+) {
+    let srv = retry_server(mk_server, 1).run().await;
+    run_retry_timeout_test(
+        mk_client,
+        srv,
+        None,
+        Some(Duration::from_millis(400)),
+        move |client| async move {
+            let req = client
+                .request_builder("/retry/timeout")
+                .method(http::Method::GET)
+                .body("".into())
+                .unwrap();
+            let rsp = client.request_body(req).await;
+            tracing::info!(?rsp);
+            assert_eq!(
+                rsp.status(),
+                http::StatusCode::OK,
+                "backend request timeouts should be retried"
+            );
+        },
+    )
+    .await
+}
 
 async fn test_request_timeout_across_retries(
     mk_client: fn(addr: SocketAddr, auth: &'static str) -> client::Client,
@@ -756,7 +744,7 @@ async fn test_request_timeout_across_retries(
     run_retry_timeout_test(
         mk_client,
         srv,
-        Some(Duration::from_secs(1)),
+        Some(Duration::from_millis(800)),
         Some(Duration::from_millis(400)),
         move |client| async move {
             let req = client
