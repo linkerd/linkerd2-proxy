@@ -84,6 +84,7 @@ where
     // Parent target.
     T: Debug + Eq + Hash,
     T: Clone + Send + Sync + 'static,
+    T: svc::Param<errors::respond::EmitHeaders>,
     // Request match summary
     M: Clone + Send + Sync + 'static,
     // Request filter.
@@ -91,7 +92,6 @@ where
     // Assert that filters can be applied.
     Self: filters::Apply,
     ExtractMetrics: svc::ExtractParam<RequestCount, Self>,
-    // Self: svc::Param<errors::respond::EmitHeaders>,
 {
     /// Builds a stack that applies per-route-backend policy filters over an
     /// inner [`Concrete`] stack.
@@ -222,14 +222,14 @@ impl<T> svc::ExtractParam<Self, T> for TimeoutRescue {
     }
 }
 
-impl<T> svc::ExtractParam<errors::respond::EmitHeaders, T> for TimeoutRescue
-// where
-//     T: svc::Param<errors::respond::EmitHeaders>,
+impl<T, M, F> svc::ExtractParam<errors::respond::EmitHeaders, MatchedBackend<T, M, F>>
+    for TimeoutRescue
+where
+    Concrete<T>: svc::Param<errors::respond::EmitHeaders>,
 {
     #[inline]
-    fn extract_param(&self, target: &T) -> errors::respond::EmitHeaders {
-        // target.param()
-        errors::respond::EmitHeaders(true)
+    fn extract_param(&self, target: &MatchedBackend<T, M, F>) -> errors::respond::EmitHeaders {
+        svc::Param::param(&target.params.concrete)
     }
 }
 

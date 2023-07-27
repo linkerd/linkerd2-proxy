@@ -1,6 +1,7 @@
 use super::{super::concrete, *};
 use crate::ParentRef;
 use linkerd_app_core::{
+    errors,
     svc::NewService,
     svc::{Layer, ServiceExt},
     trace,
@@ -60,7 +61,7 @@ async fn header_based_route() {
     // Stack that produces mock services.
     let (inner_default, mut default) = tower_test::mock::pair();
     let (inner_special, mut special) = tower_test::mock::pair();
-    let inner = move |concrete: Concrete<()>| {
+    let inner = move |concrete: Concrete<Target>| {
         if let concrete::Dispatch::Balance(ref addr, ..) = concrete.target {
             if addr
                 .name()
@@ -120,7 +121,7 @@ async fn header_based_route() {
     let metrics = RouteBackendMetrics::default();
     let router = Policy::layer(metrics.clone())
         .layer(inner)
-        .new_service(Policy::from((routes, ())));
+        .new_service(Policy::from((routes, Target)));
 
     default.allow(1);
     special.allow(1);
@@ -183,7 +184,7 @@ async fn http_filter_request_headers() {
 
     // Stack that produces mock services.
     let (inner, mut handle) = tower_test::mock::pair();
-    let inner = move |_: Concrete<()>| inner.clone();
+    let inner = move |_: Concrete<Target>| inner.clone();
 
     // Routes that configure a special header-based route and a default route.
     static PIZZA: http::HeaderName = http::HeaderName::from_static("pizza");
@@ -232,7 +233,7 @@ async fn http_filter_request_headers() {
 
     let router = Policy::layer(Default::default())
         .layer(inner)
-        .new_service(Policy::from((routes, ())));
+        .new_service(Policy::from((routes, Target)));
 
     handle.allow(1);
     let req = http::Request::builder()
@@ -253,4 +254,13 @@ async fn http_filter_request_headers() {
 
     // Hold the router to prevent inner services from being dropped.
     drop(router);
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+struct Target;
+
+impl svc::Param<errors::respond::EmitHeaders> for Target {
+    fn param(&self) -> errors::respond::EmitHeaders {
+        errors::respond::EmitHeaders(true)
+    }
 }

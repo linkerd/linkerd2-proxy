@@ -74,6 +74,7 @@ where
     // Parent target.
     T: Debug + Eq + Hash,
     T: Clone + Send + Sync + 'static,
+    T: svc::Param<linkerd_app_core::errors::respond::EmitHeaders>,
     // Match summary
     M: Clone + Send + Sync + 'static,
     // Request filter.
