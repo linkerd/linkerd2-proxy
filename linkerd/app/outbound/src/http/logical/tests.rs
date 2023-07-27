@@ -416,20 +416,23 @@ async fn backend_request_timeout() {
     // Still send a response, so that if we didn't hit the backend timeout
     // timeout, we don't hit the route timeout and succeed incorrectly.
     send_rsp.send_response(mk_rsp(StatusCode::OK, "good"));
-    let error = rsp.await.expect_err("request must fail with a timeout");
-    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
-        error.as_ref()
-    ));
+    // This timeout returns a 504 response, rather than an error, because they
+    // must be mapped to synthesized HTTP responses in the backend stack for
+    // retries.
+    assert_eq!(
+        rsp.await.expect("request must succeed with a 504").status(),
+        http::StatusCode::GATEWAY_TIMEOUT
+    );
 
     // The route request timeout should still apply to time spent before
     // the backend is acquired.
     let rsp = send_req(svc.clone(), http::Request::get("/"));
     tokio::time::sleep(ROUTE_REQUEST_TIMEOUT + Duration::from_millis(1)).await;
     handle.allow(1);
-    let error = rsp.await.expect_err("request must fail with a timeout");
-    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
-        error.as_ref()
-    ));
+    assert_eq!(
+        rsp.await.expect("request must succeed with a 504").status(),
+        http::StatusCode::GATEWAY_TIMEOUT
+    );
 }
 
 #[derive(Clone, Debug)]
