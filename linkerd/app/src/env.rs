@@ -237,7 +237,7 @@ pub const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
 const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 
-const DEFAULT_INBOUND_HTTP_QUEUE_CAPACITY: usize = 100;
+const DEFAULT_INBOUND_HTTP_QUEUE_CAPACITY: usize = 10_000;
 const DEFAULT_INBOUND_HTTP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_INBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
@@ -246,7 +246,7 @@ const DEFAULT_INBOUND_CONNECT_BACKOFF: ExponentialBackoff =
 
 const DEFAULT_OUTBOUND_TCP_QUEUE_CAPACITY: usize = 10;
 const DEFAULT_OUTBOUND_TCP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(3);
-const DEFAULT_OUTBOUND_HTTP_QUEUE_CAPACITY: usize = 100;
+const DEFAULT_OUTBOUND_HTTP_QUEUE_CAPACITY: usize = 10_000;
 const DEFAULT_OUTBOUND_HTTP_FAILFAST_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_OUTBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
