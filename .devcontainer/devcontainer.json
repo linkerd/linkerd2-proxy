@@ -1,6 +1,6 @@
 {
 	"name": "linkerd2-proxy",
-	"image": "ghcr.io/linkerd/dev:v40",
+       "dockerFile": "Dockerfile",
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -15,7 +15,12 @@
 			"settings": {}
 		}
 	},
-	"onCreateCommand": ".devcontainer/on-create.sh",
+	"build": {
+		"args": {
+			"http_proxy": "${localEnv:http_proxy}",
+			"https_proxy": "${localEnv:https_proxy}"
+		}
+	},
 	// Support docker + debugger
 	"runArgs": [
 		"--init",
