@@ -1,6 +1,6 @@
 use super::{super::Concrete, filters};
 use crate::{BackendRef, RouteRef};
-use linkerd_app_core::{errors, proxy::http, svc, Error, Result};
+use linkerd_app_core::{proxy::http, svc, Error, Result};
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, future::Future, hash::Hash, sync::Arc};
@@ -39,20 +39,6 @@ struct BackendError {
     source: Error,
 }
 
-/// Synthesizes 504 Gateway Timeout responses for the `timeouts.backend_request`
-/// timeout.
-///
-/// This is necessary because we want these timeouts to be retried, and the
-/// retry layer only retries requests that fail with an HTTP status code, rather
-/// than for requests that fail with Rust `Err`s. Errors returned by the
-/// `MatchedBackend` stack are converted to HTTP responses by the `ServerRescue`
-/// layer, which is much higher up the stack than the `retry` layer, which is in
-/// the `MatchedRoute` stack. Therefore, it's necessary to eagerly synthesize
-/// responses for the `backend_request` timeout, so that the retry layer sees
-/// them as 504 responses rather than as `Err`s.
-#[derive(Copy, Clone, Debug)]
-struct TimeoutRescue;
-
 // === impl Backend ===
 
 impl<T: Clone, F> Clone for Backend<T, F> {
@@ -84,7 +70,6 @@ where
     // Parent target.
     T: Debug + Eq + Hash,
     T: Clone + Send + Sync + 'static,
-    T: svc::Param<errors::respond::EmitHeaders>,
     // Request match summary
     M: Clone + Send + Sync + 'static,
     // Request filter.
@@ -146,10 +131,6 @@ where
                         })
                     }
                 }))
-                // Eagerly synthesize 504 responses for backend_request timeout
-                // errors.
-                // See the doc comment on `TimeoutRescue` for details.
-                .push(TimeoutRescue::layer())
                 .push_on_service(http::BoxResponse::<_>::layer())
                 .push(svc::ArcNewService::layer())
                 .into_inner()
@@ -203,45 +184,5 @@ impl<T> svc::ExtractParam<RequestCount, Grpc<T>> for ExtractMetrics {
             params.params.route_ref.clone(),
             params.params.concrete.backend_ref.clone(),
         ))
-    }
-}
-
-// === impl TimeoutRescue ===
-
-impl TimeoutRescue {
-    pub fn layer<N>(
-    ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
-        errors::respond::layer(Self)
-    }
-}
-
-impl<T> svc::ExtractParam<Self, T> for TimeoutRescue {
-    #[inline]
-    fn extract_param(&self, _: &T) -> Self {
-        *self
-    }
-}
-
-impl<T, M, F> svc::ExtractParam<errors::respond::EmitHeaders, MatchedBackend<T, M, F>>
-    for TimeoutRescue
-where
-    Concrete<T>: svc::Param<errors::respond::EmitHeaders>,
-{
-    #[inline]
-    fn extract_param(&self, target: &MatchedBackend<T, M, F>) -> errors::respond::EmitHeaders {
-        svc::Param::param(&target.params.concrete)
-    }
-}
-
-impl errors::HttpRescue<Error> for TimeoutRescue {
-    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        // A policy configured request timeout was encountered.
-        if errors::is_caused_by::<http::ResponseTimeoutError>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
-        }
-
-        // Forward any other error up-stack to be handled by a higher-level
-        // `HttpRescue` layer.
-        Err(error)
     }
 }

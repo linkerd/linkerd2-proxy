@@ -1,6 +1,11 @@
 use super::super::Concrete;
 use crate::{http::retry, RouteRef};
-use linkerd_app_core::{classify, proxy::http, svc, Addr, Error, Result};
+use linkerd_app_core::{
+    classify,
+    errors::{self as core_errors, respond},
+    proxy::http,
+    svc, Addr, Error, Result,
+};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -67,6 +72,20 @@ struct RouteError {
     source: Error,
 }
 
+/// Synthesizes 504 Gateway Timeout responses for the `timeouts.backend_request`
+/// timeout.
+///
+/// This is necessary because we want these timeouts to be retried, and the
+/// retry layer only retries requests that fail with an HTTP status code, rather
+/// than for requests that fail with Rust `Err`s. Errors returned by the
+/// `MatchedBackend` stack are converted to HTTP responses by the `ServerRescue`
+/// layer, which is much higher up the stack than the `retry` layer, which is in
+/// the `MatchedRoute` stack. Therefore, it's necessary to eagerly synthesize
+/// responses for the `backend_request` timeout, so that the retry layer sees
+/// them as 504 responses rather than as `Err`s.
+#[derive(Copy, Clone, Debug)]
+struct TimeoutRescue;
+
 // === impl MatchedRoute ===
 
 impl<T, M, F, E> MatchedRoute<T, M, F, E>
@@ -74,7 +93,7 @@ where
     // Parent target.
     T: Debug + Eq + Hash,
     T: Clone + Send + Sync + 'static,
-    T: svc::Param<linkerd_app_core::errors::respond::EmitHeaders>,
+    T: svc::Param<respond::EmitHeaders>,
     // Match summary
     M: Clone + Send + Sync + 'static,
     // Request filter.
@@ -132,13 +151,21 @@ where
                         // consideration, so we must eagerly fail requests to prevent
                         // leaking tasks onto the runtime.
                         .push(svc::LoadShed::layer())
-                        // Depending on whether or not the request can be
+                        // Depending on whether or not the request can b
                         // retried, it may have one of two `Body` types. This
                         // layer unifies any `Body` type into `BoxBody`.
                         .push(http::BoxRequest::erased()),
                 )
-                // Sets an optional retry policy.
-                .push(retry::layer(None))
+                // Retries
+                .push(
+                    svc::layers()
+                        // Eagerly synthesize 504 responses for backend_request timeout
+                        // errors. so that they can be retried if 504s are retryable.
+                        // See the doc comment on `TimeoutRescue` for details.
+                        .push(TimeoutRescue::layer())
+                        // Sets an optional retry policy.
+                        .push(retry::layer(None)),
+                )
                 // TODO(ver) attach the `E` typed failure policy to requests.
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 // Sets an optional request timeout.
@@ -254,5 +281,45 @@ impl<E> RouteRetryPolicy<E> {
             max_per_request,
             retryable,
         })
+    }
+}
+
+// === impl TimeoutRescue ===
+
+impl TimeoutRescue {
+    pub fn layer<N>(
+    ) -> impl svc::layer::Layer<N, Service = respond::NewRespondService<Self, Self, N>> + Clone
+    {
+        respond::layer(Self)
+    }
+}
+
+impl<T> svc::ExtractParam<Self, T> for TimeoutRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Self {
+        *self
+    }
+}
+
+impl<T, M, F, E> svc::ExtractParam<respond::EmitHeaders, MatchedRoute<T, M, F, E>> for TimeoutRescue
+where
+    T: svc::Param<respond::EmitHeaders>,
+{
+    #[inline]
+    fn extract_param(&self, target: &MatchedRoute<T, M, F, E>) -> respond::EmitHeaders {
+        svc::Param::param(&target.params.parent)
+    }
+}
+
+impl respond::HttpRescue<Error> for TimeoutRescue {
+    fn rescue(&self, error: Error) -> Result<core_errors::SyntheticHttpResponse> {
+        // A policy configured request timeout was encountered.
+        if core_errors::is_caused_by::<http::ResponseTimeoutError>(&*error) {
+            return Ok(core_errors::SyntheticHttpResponse::gateway_timeout(error));
+        }
+
+        // Forward any other error up-stack to be handled by a higher-level
+        // `HttpRescue` layer.
+        Err(error)
     }
 }
