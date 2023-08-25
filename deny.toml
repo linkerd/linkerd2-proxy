@@ -59,6 +59,9 @@ skip = [
     # Since `syn` is used by proc-macros (executed at compile time), duplicate
     # versions won't have an impact on the final binary size.
     { name = "syn" },
+    # `tonic` v0.6 depends on `bitflags` v1.x, while `boring-sys` depends on
+    # `bitflags` v2.x. Allow both versions to coexist peacefully for now.
+    { name = "bitflags", version = "1" },
 ]
 skip-tree = [
     # Hasn't seen a new release since 2017. Pulls in an older version of nom.
