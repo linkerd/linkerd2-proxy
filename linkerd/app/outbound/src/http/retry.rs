@@ -3,7 +3,6 @@ use linkerd_app_core::{
     classify,
     http_metrics::retries::Handle,
     metrics::{self, ProfileRouteLabels},
-    profiles::{self, http::Route},
     proxy::http::{ClientHandle, EraseResponse, HttpBody},
     svc::{layer, Either, Param},
     Error,
@@ -14,10 +13,11 @@ use linkerd_http_retry::{
     ReplayBody,
 };
 use linkerd_retry as retry;
-use std::sync::Arc;
+pub use retry::Budget;
+use std::{num::NonZeroU32, sync::Arc};
 
 pub fn layer<N>(
-    metrics: metrics::HttpProfileRouteRetry,
+    metrics: Option<metrics::HttpProfileRouteRetry>,
 ) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N, EraseResponse<()>>> + Clone {
     retry::layer(NewRetryPolicy::new(metrics))
         // Because we wrap the response body type on retries, we must include a
@@ -27,41 +27,62 @@ pub fn layer<N>(
 }
 
 #[derive(Clone, Debug)]
+pub struct Params {
+    pub budget: Arc<Budget>,
+    pub max_per_request: Option<NonZeroU32>,
+    pub profile_labels: Option<ProfileRouteLabels>,
+    pub response_classes: classify::Request,
+}
+
+#[derive(Clone, Debug)]
 pub struct NewRetryPolicy {
-    metrics: metrics::HttpProfileRouteRetry,
+    metrics: Option<metrics::HttpProfileRouteRetry>,
 }
 
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
-    metrics: Handle,
+    metrics: Option<Handle>,
     budget: Arc<retry::Budget>,
-    response_classes: profiles::http::ResponseClasses,
+    response_classes: classify::Request,
+    max_per_request: Option<NonZeroU32>,
 }
 
 /// Allow buffering requests up to 64 kb
 const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 
+#[derive(Copy, Clone, Debug)]
+pub struct RetryCount(u32);
+
 // === impl NewRetryPolicy ===
 
 impl NewRetryPolicy {
-    pub fn new(metrics: metrics::HttpProfileRouteRetry) -> Self {
+    pub fn new(metrics: Option<metrics::HttpProfileRouteRetry>) -> Self {
         Self { metrics }
     }
 }
 
 impl<T> retry::NewPolicy<T> for NewRetryPolicy
 where
-    T: Param<Route> + Param<ProfileRouteLabels>,
+    T: Param<Option<Params>>,
 {
     type Policy = RetryPolicy;
 
     fn new_policy(&self, target: &T) -> Option<Self::Policy> {
-        let route: Route = target.param();
-        let labels: ProfileRouteLabels = target.param();
+        let Params {
+            budget,
+            max_per_request,
+            profile_labels,
+            response_classes,
+        } = Param::<Option<Params>>::param(target)?;
+        let metrics = self
+            .metrics
+            .as_ref()
+            .and_then(|metrics| Some(metrics.get_handle(profile_labels?)));
         Some(RetryPolicy {
-            metrics: self.metrics.get_handle(labels),
-            budget: route.retries()?.budget().clone(),
-            response_classes: route.response_classes().clone(),
+            metrics,
+            budget,
+            response_classes,
+            max_per_request,
         })
     }
 }
@@ -86,15 +107,36 @@ where
             Err(_) => false,
             Ok(rsp) => {
                 // is the request a failure?
-                let is_failure = classify::Request::from(self.response_classes.clone())
+                let is_failure = self
+                    .response_classes
                     .classify(req)
                     .start(rsp)
                     .eos(rsp.body().trailers())
                     .is_failure();
+
                 // did the body exceed the maximum length limit?
                 let exceeded_max_len = req.body().is_capped();
-                let retryable = is_failure && !exceeded_max_len;
-                tracing::trace!(is_failure, exceeded_max_len, retryable);
+
+                // was the per-request retry limit exceeded?
+                let exceeded_max_retries =
+                    match (self.max_per_request, req.extensions().get::<RetryCount>()) {
+                        (Some(max_retries), Some(RetryCount(retries))) => {
+                            retries >= &max_retries.get()
+                        }
+                        // if `max_retries_per_request` is `None`, we don't have
+                        // a per-request retry limit. if the request's
+                        // `RetryCount` is `None`, then it was the initial request.
+                        _ => false,
+                    };
+
+                let retryable = is_failure && !exceeded_max_len && !exceeded_max_retries;
+
+                tracing::trace!(
+                    is_failure,
+                    exceeded_max_len,
+                    exceeded_max_retries,
+                    retryable
+                );
                 retryable
             }
         };
@@ -105,7 +147,9 @@ where
         }
 
         let withdrew = self.budget.withdraw().is_ok();
-        self.metrics.incr_retryable(withdrew);
+        if let Some(ref metrics) = self.metrics {
+            metrics.incr_retryable(withdrew);
+        }
         if !withdrew {
             return None;
         }
@@ -129,6 +173,18 @@ where
         // server-side connection.
         if let Some(client_handle) = req.extensions().get::<ClientHandle>().cloned() {
             clone.extensions_mut().insert(client_handle);
+        }
+
+        // Increment the retry count, if we care about tracking retry counts.
+        if self.max_per_request.is_some() {
+            let prev = req
+                .extensions()
+                .get::<RetryCount>()
+                .map(|&RetryCount(i)| i)
+                // If there's no `retry_count` extension, then this request is
+                // the first retry.
+                .unwrap_or(0);
+            clone.extensions_mut().insert(RetryCount(prev + 1));
         }
 
         Some(clone)

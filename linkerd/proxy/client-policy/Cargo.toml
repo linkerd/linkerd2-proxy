@@ -29,6 +29,7 @@ linkerd-proxy-core = { path = "../core" }
 once_cell = { version = "1" }
 prost-types = { version = "0.11", optional = true }
 tonic = { version = "0.8", default-features = false }
+tower = { version = "0.4", default-features = false, features = ["retry"] }
 thiserror = { version = "1", optional = true }
 
 [dev-dependencies]

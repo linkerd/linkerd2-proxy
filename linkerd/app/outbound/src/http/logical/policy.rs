@@ -14,7 +14,7 @@ pub use self::{
 pub use linkerd_proxy_client_policy::{ClientPolicy, FailureAccrual};
 
 /// HTTP or gRPC policy route parameters.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum Params {
     Http(router::HttpParams),
     Grpc(router::GrpcParams),

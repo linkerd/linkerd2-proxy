@@ -1,10 +1,10 @@
 use super::super::Concrete;
-use crate::RouteRef;
+use crate::{http::retry, RouteRef};
 use linkerd_app_core::{classify, proxy::http, svc, Addr, Error, Result};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
-use std::{fmt::Debug, hash::Hash, sync::Arc};
+use std::{fmt::Debug, hash::Hash, num::NonZeroU32, sync::Arc};
 
 pub(crate) mod backend;
 pub(crate) mod filters;
@@ -31,6 +31,14 @@ pub(crate) struct Route<T, F, E> {
     pub(super) distribution: BackendDistribution<T, F>,
     pub(super) failure_policy: E,
     pub(super) request_timeout: Option<std::time::Duration>,
+    pub(super) retry_policy: Option<RouteRetryPolicy<E>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(super) struct RouteRetryPolicy<E> {
+    pub(super) budget: policy::retry::Budget,
+    pub(super) max_per_request: Option<NonZeroU32>,
+    pub(super) retryable: E,
 }
 
 pub(crate) type MatchedRoute<T, M, F, E> = Matched<M, Route<T, F, E>>;
@@ -76,6 +84,7 @@ where
     // Assert that filters can be applied.
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
+    Self: svc::Param<Option<retry::Params>>,
     MatchedBackend<T, M, F>: filters::Apply,
     backend::ExtractMetrics: svc::ExtractParam<backend::RequestCount, MatchedBackend<T, M, F>>,
 {
@@ -115,10 +124,22 @@ where
                 .push(MatchedBackend::layer(backend_metrics.clone()))
                 .lift_new_with_target()
                 .push(NewDistribute::layer())
-                // The router does not take the backend's availability into
-                // consideration, so we must eagerly fail requests to prevent
-                // leaking tasks onto the runtime.
-                .push_on_service(svc::LoadShed::layer())
+                .check_new_service::<Self, http::Request<http::BoxBody>>()
+                .push_on_service(
+                    svc::layers()
+                        // The router does not take the backend's availability into
+                        // consideration, so we must eagerly fail requests to prevent
+                        // leaking tasks onto the runtime.
+                        .push(svc::LoadShed::layer())
+                        // Depending on whether or not the request can b
+                        // retried, it may have one of two `Body` types. This
+                        // layer unifies any `Body` type into `BoxBody`.
+                        .push(http::BoxRequest::erased()),
+                )
+                // Sets an optional retry policy.
+                // TODO(eliza): currently, HTTPRoute retries don't have metrics
+                // the way profile retries do...
+                .push(retry::layer(None))
                 // TODO(ver) attach the `E` typed failure policy to requests.
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 // Sets an optional request timeout.
@@ -171,6 +192,24 @@ impl<T> svc::Param<classify::Request> for Http<T> {
     }
 }
 
+impl<T> svc::Param<Option<retry::Params>> for Http<T> {
+    fn param(&self) -> Option<retry::Params> {
+        let &RouteRetryPolicy {
+            ref budget,
+            max_per_request,
+            ref retryable,
+        } = self.params.retry_policy.as_ref()?;
+        Some(retry::Params {
+            budget: budget.clone().into(),
+            max_per_request,
+            profile_labels: None,
+            response_classes: classify::Request::ClientPolicy(classify::ClientPolicy::Http(
+                retryable.clone(),
+            )),
+        })
+    }
+}
+
 impl<T> filters::Apply for Grpc<T> {
     #[inline]
     fn apply_request<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
@@ -188,5 +227,33 @@ impl<T> svc::Param<classify::Request> for Grpc<T> {
         classify::Request::ClientPolicy(classify::ClientPolicy::Grpc(
             self.params.failure_policy.clone(),
         ))
+    }
+}
+
+impl<T> svc::Param<Option<retry::Params>> for Grpc<T> {
+    fn param(&self) -> Option<retry::Params> {
+        // gRPC client policies cannot currently configure retries.
+        // TODO: in the future, this should be implemented.
+        None
+    }
+}
+
+// === impl RouteRetryPolicy ===
+
+impl<E> RouteRetryPolicy<E> {
+    pub(super) fn new(
+        budget: Option<policy::retry::Budget>,
+        policy: Option<policy::retry::RoutePolicy<E>>,
+    ) -> Option<Self> {
+        let budget = budget?;
+        let policy::retry::RoutePolicy {
+            retryable,
+            max_per_request,
+        } = policy?;
+        Some(Self {
+            budget,
+            max_per_request,
+            retryable,
+        })
     }
 }

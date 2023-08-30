@@ -41,6 +41,7 @@ async fn routes() {
             backends: Arc::new([backend.clone()]),
             routes: Arc::new([default_route(backend)]),
             failure_accrual: client_policy::FailureAccrual::None,
+            retry_budget: None,
         })));
     let target = Target {
         num: 1,
@@ -102,6 +103,7 @@ async fn consecutive_failures_accrue() {
                 max_failures: 3,
                 backoff,
             },
+            retry_budget: None,
         })));
     let target = Target {
         num: 1,
@@ -238,6 +240,7 @@ async fn balancer_doesnt_select_tripped_breakers() {
                 max_failures: 3,
                 backoff,
             },
+            retry_budget: None,
         })));
     let target = Target {
         num: 1,
@@ -315,6 +318,7 @@ async fn route_request_timeout() {
             backends: Arc::new([backend]),
             routes: Arc::new([route]),
             failure_accrual: client_policy::FailureAccrual::None,
+            retry_budget: None,
         })))
     };
     let target = Target {
@@ -381,6 +385,7 @@ async fn backend_request_timeout() {
             backends: Arc::new([backend]),
             routes: Arc::new([route]),
             failure_accrual: client_policy::FailureAccrual::None,
+            retry_budget: None,
         })))
     };
     let target = Target {
@@ -596,6 +601,7 @@ fn default_route(backend: client_policy::Backend) -> client_policy::http::Route 
                     backend,
                     request_timeout: None,
                 }])),
+                retry_policy: None,
             },
         }],
     }
@@ -626,6 +632,7 @@ fn timeout_route(
                     backend,
                     request_timeout: backend_timeout,
                 }])),
+                retry_policy: None,
             },
         }],
     }

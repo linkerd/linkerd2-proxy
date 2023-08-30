@@ -304,7 +304,7 @@ impl<T> RouteParams<T> {
                 // layer unifies any `Body` type into `BoxBody`.
                 .push_on_service(http::BoxRequest::erased())
                 // Sets an optional retry policy.
-                .push(retry::layer(metrics.http_profile_route_retry.clone()))
+                .push(retry::layer(Some(metrics.http_profile_route_retry.clone())))
                 // Sets an optional request timeout.
                 .push(http::NewTimeout::layer())
                 // Records per-route metrics.
@@ -350,6 +350,22 @@ impl<T: Clone> svc::Param<Distribution<T>> for RouteParams<T> {
 impl<T> svc::Param<Route> for RouteParams<T> {
     fn param(&self) -> Route {
         self.profile.clone()
+    }
+}
+
+impl<T> svc::Param<Option<retry::Params>> for RouteParams<T> {
+    fn param(&self) -> Option<retry::Params> {
+        let retries = self.profile.retries()?;
+        Some(retry::Params {
+            budget: retries.budget().clone(),
+            // Per-request retry limits are not configured by ServiceProfiles
+            max_per_request: None,
+            profile_labels: Some(metrics::ProfileRouteLabels::outbound(
+                self.addr.clone(),
+                &self.profile,
+            )),
+            response_classes: self.profile.response_classes().clone().into(),
+        })
     }
 }
 

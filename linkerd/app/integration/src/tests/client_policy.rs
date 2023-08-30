@@ -2,6 +2,8 @@ use crate::*;
 use linkerd2_proxy_api::{self as api};
 use policy::outbound::{self, proxy_protocol};
 
+mod retries;
+
 #[tokio::test]
 async fn default_http1_route() {
     let _trace = trace_init();
@@ -64,10 +66,12 @@ async fn empty_http1_route() {
                                 rules: Vec::new(),
                             }],
                             failure_accrual: None,
+                            retry_budget: None,
                         }),
                         http2: Some(proxy_protocol::Http2 {
                             routes: vec![policy::outbound_default_http_route(&dst)],
                             failure_accrual: None,
+                            retry_budget: None,
                         }),
                         opaque: Some(proxy_protocol::Opaque {
                             routes: vec![policy::outbound_default_opaque_route(&dst)],
@@ -149,6 +153,7 @@ async fn empty_http2_route() {
                         http1: Some(proxy_protocol::Http1 {
                             routes: vec![policy::outbound_default_http_route(&dst)],
                             failure_accrual: None,
+                            retry_budget: None,
                         }),
                         http2: Some(proxy_protocol::Http2 {
                             routes: vec![outbound::HttpRoute {
@@ -157,6 +162,7 @@ async fn empty_http2_route() {
                                 rules: Vec::new(),
                             }],
                             failure_accrual: None,
+                            retry_budget: None,
                         }),
                         opaque: Some(proxy_protocol::Opaque {
                             routes: vec![policy::outbound_default_opaque_route(&dst)],
@@ -224,6 +230,7 @@ async fn header_based_routing() {
                 policy::backend(dst),
             ))),
             request_timeout: None,
+            retry_policy: None,
         };
 
     let route = outbound::HttpRoute {
@@ -238,6 +245,7 @@ async fn header_based_routing() {
                     policy::backend(&dst_world),
                 ))),
                 request_timeout: None,
+                retry_policy: None,
             },
             // x-hello-city: sf | x-hello-city: san francisco
             mk_header_rule(
@@ -267,10 +275,12 @@ async fn header_based_routing() {
                         http1: Some(proxy_protocol::Http1 {
                             routes: vec![route.clone()],
                             failure_accrual: None,
+                            retry_budget: None,
                         }),
                         http2: Some(proxy_protocol::Http2 {
                             routes: vec![route],
                             failure_accrual: None,
+                            retry_budget: None,
                         }),
                         opaque: Some(proxy_protocol::Opaque {
                             routes: vec![policy::outbound_default_opaque_route(&dst_world)],
@@ -400,8 +410,8 @@ async fn path_based_routing() {
             backends: Some(policy::http_first_available(std::iter::once(
                 policy::backend(dst),
             ))),
-
             request_timeout: None,
+            retry_policy: None,
         };
 
     let route = outbound::HttpRoute {
@@ -416,6 +426,7 @@ async fn path_based_routing() {
                     policy::backend(&dst_world),
                 ))),
                 request_timeout: None,
+                retry_policy: None,
             },
             // /goodbye/*
             mk_path_rule(
@@ -450,10 +461,12 @@ async fn path_based_routing() {
                         http1: Some(proxy_protocol::Http1 {
                             routes: vec![route.clone()],
                             failure_accrual: None,
+                            retry_budget: None,
                         }),
                         http2: Some(proxy_protocol::Http2 {
                             routes: vec![route],
                             failure_accrual: None,
+                            retry_budget: None,
                         }),
                         opaque: Some(proxy_protocol::Opaque {
                             routes: vec![policy::outbound_default_opaque_route(&dst_world)],

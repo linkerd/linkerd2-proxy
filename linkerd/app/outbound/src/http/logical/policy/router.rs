@@ -2,7 +2,7 @@ use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
     route, RouteBackendMetrics,
 };
-use crate::{BackendRef, EndpointRef, ParentRef, RouteRef};
+use crate::{http::retry, BackendRef, EndpointRef, ParentRef, RouteRef};
 use linkerd_app_core::{
     classify, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result,
 };
@@ -11,13 +11,14 @@ use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Params<M, F, E> {
     pub addr: Addr,
     pub meta: ParentRef,
     pub routes: Arc<[http_route::Route<M, policy::RoutePolicy<F, E>>]>,
     pub backends: Arc<[policy::Backend]>,
     pub failure_accrual: policy::FailureAccrual,
+    pub retry_budget: Option<policy::retry::Budget>,
 }
 
 pub type HttpParams =
@@ -62,7 +63,8 @@ where
         Key = route::MatchedRoute<T, M::Summary, F, E>,
         Error = NoRoute,
     >,
-    route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply + svc::Param<classify::Request>,
+    route::MatchedRoute<T, M::Summary, F, E>:
+        route::filters::Apply + svc::Param<classify::Request> + svc::Param<Option<retry::Params>>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
     route::backend::ExtractMetrics:
         svc::ExtractParam<route::backend::RequestCount, route::MatchedBackend<T, M::Summary, F>>,
@@ -125,6 +127,7 @@ where
             routes,
             backends,
             failure_accrual,
+            retry_budget,
         } = rts;
 
         let mk_concrete = {
@@ -206,6 +209,7 @@ where
                              distribution,
                              failure_policy,
                              request_timeout,
+                             retry_policy,
                          }| {
             let route_ref = RouteRef(meta);
             let distribution = mk_distribution(&route_ref, &distribution);
@@ -217,6 +221,7 @@ where
                 failure_policy,
                 distribution,
                 request_timeout,
+                retry_policy: route::RouteRetryPolicy::new(retry_budget.clone(), retry_policy),
             }
         };
 

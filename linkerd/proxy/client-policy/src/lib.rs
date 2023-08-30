@@ -7,6 +7,7 @@ use std::{borrow::Cow, fmt, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::
 pub mod grpc;
 pub mod http;
 pub mod opaq;
+pub mod retry;
 
 pub use linkerd_http_route as route;
 pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
@@ -73,6 +74,9 @@ pub struct RoutePolicy<T, F> {
 
     /// Configures what responses are classified as failures.
     pub failure_policy: F,
+
+    /// Configures retries for this route.
+    pub retry_policy: Option<retry::RoutePolicy<F>>,
 }
 
 // TODO(ver) Weighted random WITHOUT availability awareness, as required by
@@ -145,7 +149,6 @@ pub enum FailureAccrual {
         backoff: linkerd_exp_backoff::ExponentialBackoff,
     },
 }
-
 // === impl ClientPolicy ===
 
 impl ClientPolicy {
@@ -169,6 +172,7 @@ impl ClientPolicy {
                         distribution: RouteDistribution::Empty,
                         failure_policy: http::StatusRanges::default(),
                         request_timeout: None,
+                        retry_policy: None,
                     },
                 }],
             }])
@@ -182,10 +186,12 @@ impl ClientPolicy {
                 http1: http::Http1 {
                     routes: HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    retry_budget: None,
                 },
                 http2: http::Http2 {
                     routes: HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    retry_budget: None,
                 },
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
@@ -213,10 +219,12 @@ impl ClientPolicy {
                 http1: http::Http1 {
                     routes: NO_HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    retry_budget: None,
                 },
                 http2: http::Http2 {
                     routes: NO_HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
+                    retry_budget: None,
                 },
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
@@ -327,6 +335,7 @@ impl Default for FailureAccrual {
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
+    pub use crate::retry::proto::InvalidRetryBudget;
     use linkerd2_proxy_api::{
         meta,
         outbound::{self, backend::BalanceP2c},

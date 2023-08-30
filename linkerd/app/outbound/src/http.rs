@@ -18,7 +18,7 @@ mod endpoint;
 mod handle_proxy_error_headers;
 pub mod logical;
 mod require_id_header;
-mod retry;
+pub(crate) mod retry;
 mod server;
 
 pub use self::logical::{policy, profile, LogicalAddr, Routes};
@@ -26,7 +26,9 @@ pub(crate) use self::require_id_header::IdentityRequired;
 pub use linkerd_app_core::proxy::http::{self as http, *};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Http<T>(T);
+pub struct Http<T> {
+    target: T,
+}
 
 pub fn spawn_routes<T>(
     mut route_rx: watch::Receiver<T>,
@@ -115,7 +117,7 @@ impl<N> Outbound<N> {
             .push_http_logical()
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
-                    .push_map_target(Http)
+                    .push_map_target(|target| Http { target })
                     .push(svc::ArcNewService::layer())
             })
     }
@@ -128,7 +130,7 @@ where
     T: svc::Param<http::Version>,
 {
     fn param(&self) -> http::Version {
-        self.0.param()
+        self.target.param()
     }
 }
 
@@ -137,6 +139,6 @@ where
     T: svc::Param<watch::Receiver<Routes>>,
 {
     fn param(&self) -> watch::Receiver<Routes> {
-        self.0.param()
+        self.target.param()
     }
 }

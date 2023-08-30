@@ -38,6 +38,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 distribution,
                 failure_policy: Codes::default(),
                 request_timeout: None,
+                retry_policy: None,
             },
         }],
     }
@@ -229,6 +230,7 @@ pub mod proto {
                 filters,
                 distribution,
                 failure_policy: Codes::default(),
+                retry_policy: None,
                 request_timeout,
             },
         })
