@@ -82,8 +82,6 @@ debug = false
 lto = true
 
 [patch.crates-io]
-boring = { git = "https://github.com/cloudflare/boring" }
-tokio-boring = { git = "https://github.com/cloudflare/boring" }
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.22" }
 
 [patch.crates-io.linkerd2-proxy-api]
