@@ -3,7 +3,6 @@
 use super::concrete;
 use crate::{BackendRef, EndpointRef, Outbound, OutboundMetrics, ParentRef};
 use linkerd_app_core::{
-    errors,
     proxy::{api_resolve::Metadata, http},
     svc,
     transport::addrs::*,
@@ -98,7 +97,6 @@ impl<N> Outbound<N> {
     where
         // Logical target.
         T: svc::Param<watch::Receiver<Routes>>,
-        T: svc::Param<errors::respond::EmitHeaders>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Concrete stack.
         N: svc::NewService<Concrete<T>, Service = NSvc> + Clone + Send + Sync + 'static,
@@ -132,7 +130,6 @@ impl<N> Outbound<N> {
 impl<T> RouterParams<T>
 where
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
-    T: svc::Param<errors::respond::EmitHeaders>,
 {
     fn layer<N, S>(
         metrics: OutboundMetrics,
@@ -280,15 +277,6 @@ impl<T> svc::Param<BackendRef> for Concrete<T> {
 impl<T> svc::Param<policy::FailureAccrual> for Concrete<T> {
     fn param(&self) -> policy::FailureAccrual {
         self.failure_accrual
-    }
-}
-
-impl<T> svc::Param<errors::respond::EmitHeaders> for Concrete<T>
-where
-    T: svc::Param<errors::respond::EmitHeaders>,
-{
-    fn param(&self) -> errors::respond::EmitHeaders {
-        self.parent.param()
     }
 }
 

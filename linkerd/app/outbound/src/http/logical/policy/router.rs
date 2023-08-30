@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{http::retry, BackendRef, EndpointRef, ParentRef, RouteRef};
 use linkerd_app_core::{
-    classify, errors, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result,
+    classify, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result,
 };
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
@@ -47,7 +47,6 @@ impl<T, M, F, E> Router<T, M, F, E>
 where
     // Parent target type.
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
-    T: svc::Param<errors::respond::EmitHeaders>,
     // Request matcher.
     M: http_route::Match,
     M: Clone + Send + Sync + 'static,

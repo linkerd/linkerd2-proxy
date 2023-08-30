@@ -45,7 +45,6 @@ where
     // Parent target type.
     T: Debug + Eq + Hash,
     T: Clone + Send + Sync + 'static,
-    T: svc::Param<linkerd_app_core::errors::respond::EmitHeaders>,
 {
     /// Builds a stack that dynamically updates and applies HTTP or gRPC policy
     /// routing configurations to route requests over cached inner backend

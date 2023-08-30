@@ -40,7 +40,7 @@ pub struct SyntheticHttpResponse {
     location: Option<HeaderValue>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug)]
 pub struct EmitHeaders(pub bool);
 
 #[derive(Clone, Debug)]
