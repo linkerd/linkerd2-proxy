@@ -130,9 +130,12 @@ fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<Client
     let certs = session.peer_certificates()?;
     let c = certs.first().map(Certificate::as_ref)?;
     let end_cert = webpki::EndEntityCert::try_from(c).ok()?;
-    let mut dns_names = end_cert.dns_names().ok()?;
+    let mut dns_names = end_cert
+        .dns_names()
+        .map_err(|err| println!("error: {err:?}"))
+        .ok()?;
 
-    let name: &str = dns_names.next()?.into();
+    let name: &str = dbg!(dns_names.next().map(Into::into))?;
     if name == "*" {
         // Wildcards can perhaps be handled in a future path...
         return None;

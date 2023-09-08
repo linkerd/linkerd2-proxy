@@ -80,3 +80,6 @@ debug = false
 
 [profile.release]
 lto = true
+
+[patch.crates-io]
+rustls-webpki = { git = "https://github.com/cpu/webpki", branch = "cpu-0.101.5-prep" }
