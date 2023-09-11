@@ -129,14 +129,26 @@ fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<Client
     let (_io, session) = tls.get_ref();
     let certs = session.peer_certificates()?;
     let c = certs.first().map(Certificate::as_ref)?;
-    let end_cert = webpki::EndEntityCert::try_from(c).ok()?;
-    let name: &str = end_cert.dns_names().ok()?.next().map(Into::into)?;
+    let end_cert = webpki::EndEntityCert::try_from(c)
+        .map_err(|error| tracing::warn!(%error, "Failed to parse client end-entity certificate"))
+        .ok()?;
+    let name: &str = end_cert
+        .dns_names()
+        .map_err(
+            |error| tracing::warn!(%error, "Failed to parse DNS names from client certificate"),
+        )
+        .ok()?
+        .next()
+        .map(Into::into)?;
     if name == "*" {
         // Wildcards can perhaps be handled in a future path...
         return None;
     }
 
-    name.parse().ok().map(ClientId)
+    name.parse()
+        .map_err(|error| tracing::warn!(%error, "Client certificate contained an invalid DNS name"))
+        .ok()
+        .map(ClientId)
 }
 
 // === impl ServerIo ===
