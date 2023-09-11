@@ -2465,7 +2465,7 @@ dependencies = [
 [[package]]
 name = "rustls-webpki"
 version = "0.101.5"
-source = "git+https://github.com/cpu/webpki?branch=cpu-0.101.5-prep#702d57f444e3f7d743277524e832a2363290ec4d"
+source = "git+https://github.com/cpu/webpki?rev=702d57f444e3f7d743277524e832a2363290ec4d#702d57f444e3f7d743277524e832a2363290ec4d"
 dependencies = [
  "ring",
  "untrusted",
