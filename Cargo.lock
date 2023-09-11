@@ -1380,11 +1380,11 @@ dependencies = [
  "linkerd-tls-test-util",
  "ring",
  "rustls-pemfile",
+ "rustls-webpki",
  "thiserror",
  "tokio",
  "tokio-rustls",
  "tracing",
- "webpki",
 ]
 
 [[package]]
@@ -2435,6 +2435,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-webpki"
+version = "0.101.5"
+source = "git+https://github.com/cpu/webpki?rev=702d57f444e3f7d743277524e832a2363290ec4d#702d57f444e3f7d743277524e832a2363290ec4d"
+dependencies = [
+ "ring",
+ "untrusted",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3114,8 +3123,9 @@ dependencies = [
 
 [[package]]
 name = "webpki"
-version = "0.22.0"
-source = "git+https://github.com/linkerd/webpki?branch=cert-dns-names-0.22#a26def03ec88d3b69542ccd2f0073369ecedc4f9"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0e74f82d49d545ad128049b7e88f6576df2da6b02e9ce565c6f533be576957e"
 dependencies = [
  "ring",
  "untrusted",

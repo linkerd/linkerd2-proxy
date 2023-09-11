@@ -130,18 +130,13 @@ fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<Client
     let certs = session.peer_certificates()?;
     let c = certs.first().map(Certificate::as_ref)?;
     let end_cert = webpki::EndEntityCert::try_from(c).ok()?;
-    let dns_names = end_cert.dns_names().ok()?;
-
-    match dns_names.first()? {
-        webpki::GeneralDnsNameRef::DnsName(n) => {
-            let s: &str = (*n).into();
-            s.parse().ok().map(ClientId)
-        }
-        webpki::GeneralDnsNameRef::Wildcard(_) => {
-            // Wildcards can perhaps be handled in a future path...
-            None
-        }
+    let name: &str = end_cert.dns_names().ok()?.next().map(Into::into)?;
+    if name == "*" {
+        // Wildcards can perhaps be handled in a future path...
+        return None;
     }
+
+    name.parse().ok().map(ClientId)
 }
 
 // === impl ServerIo ===
