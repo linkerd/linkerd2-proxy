@@ -239,9 +239,11 @@ impl rustls::server::ResolvesServerCert for CertResolver {
         hello: rustls::server::ClientHello<'_>,
     ) -> Option<Arc<rustls::sign::CertifiedKey>> {
         let server_name = match hello.server_name() {
-            Some(name) => webpki::DnsNameRef::try_from_ascii_str(name)
-                .expect("server name must be a valid server name"),
-
+            Some(name) => {
+                let name = webpki::DnsNameRef::try_from_ascii_str(name)
+                    .expect("server name must be a valid server name");
+                webpki::SubjectNameRef::DnsName(name)
+            }
             None => {
                 debug!("no SNI -> no certificate");
                 return None;
@@ -251,7 +253,7 @@ impl rustls::server::ResolvesServerCert for CertResolver {
         // Verify that our certificate is valid for the given SNI name.
         let c = self.0.cert.first()?;
         if let Err(error) = webpki::EndEntityCert::try_from(c.as_ref())
-            .and_then(|c| c.verify_is_valid_for_dns_name(server_name))
+            .and_then(|c| c.verify_is_valid_for_subject_name(server_name))
         {
             debug!(%error, "Local certificate is not valid for SNI");
             return None;
