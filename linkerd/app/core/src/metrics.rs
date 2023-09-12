@@ -6,7 +6,7 @@
 //! each case. And the metric registries should be instantiated in the
 //! inbound/outbound crates, etc.
 
-pub use crate::transport::labels::{TargetAddr, TlsAccept};
+pub use crate::transport::labels::{TlsAccept};
 use crate::{
     classify::Class,
     control, http_metrics, http_metrics as metrics, opencensus, profiles, stack_metrics,
@@ -19,7 +19,6 @@ pub use linkerd_metrics::*;
 use linkerd_proxy_server_policy as policy;
 use std::{
     fmt::{self, Write},
-    net::SocketAddr,
     sync::Arc,
     time::Duration,
 };
@@ -66,8 +65,6 @@ pub enum EndpointLabels {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InboundEndpointLabels {
     pub tls: tls::ConditionalServerTls,
-    pub authority: Option<http::uri::Authority>,
-    pub target_addr: SocketAddr,
     pub policy: RouteAuthzLabels,
 }
 
@@ -99,9 +96,7 @@ pub struct RouteAuthzLabels {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OutboundEndpointLabels {
     pub server_id: tls::ConditionalClientTls,
-    pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
-    pub target_addr: SocketAddr,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -306,7 +301,7 @@ impl FmtLabels for InboundEndpointLabels {
         }
 
         (
-            (TargetAddr(self.target_addr), TlsAccept::from(&self.tls)),
+            (TlsAccept::from(&self.tls)),
             &self.policy,
         )
             .fmt_labels(f)?;
@@ -373,9 +368,8 @@ impl FmtLabels for OutboundEndpointLabels {
             write!(f, ",")?;
         }
 
-        let ta = TargetAddr(self.target_addr);
         let tls = TlsConnect::from(&self.server_id);
-        (ta, tls).fmt_labels(f)?;
+        (tls).fmt_labels(f)?;
 
         if let Some(labels) = self.labels.as_ref() {
             write!(f, ",{}", labels)?;

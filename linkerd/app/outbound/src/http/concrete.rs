@@ -342,11 +342,13 @@ where
     T: svc::Param<Option<http::uri::Authority>>,
 {
     fn param(&self) -> OutboundEndpointLabels {
+        let mut dst_labels = self.metadata.labels().clone();
+        dst_labels.remove("pod");
+        dst_labels.remove("pod_template_hash");
+
         OutboundEndpointLabels {
-            authority: self.parent.param(),
-            labels: prefix_labels("dst", self.metadata.labels().iter()),
+            labels: prefix_labels("dst", dst_labels.iter()),
             server_id: self.param(),
-            target_addr: self.addr.into(),
         }
     }
 }
