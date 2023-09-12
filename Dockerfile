@@ -21,6 +21,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 ENV CARGO_INCREMENTAL=0
+
 ENV CARGO_NET_RETRY=10
 ENV RUSTFLAGS="-D warnings -A deprecated"
 ENV RUSTUP_MAX_RETRIES=10
