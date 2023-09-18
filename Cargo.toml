@@ -84,5 +84,3 @@ lto = true
 [patch.crates-io]
 boring = { git = "https://github.com/cloudflare/boring" }
 tokio-boring = { git = "https://github.com/cloudflare/boring" }
-# remove this patch when https://github.com/rustls/webpki/pull/170 is published!
-rustls-webpki = { git = "https://github.com/cpu/webpki", rev = "702d57f444e3f7d743277524e832a2363290ec4d" }
