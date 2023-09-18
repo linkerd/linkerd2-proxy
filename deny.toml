@@ -72,7 +72,3 @@ skip-tree = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = [
-    # remove this when https://github.com/rustls/webpki/pull/170 is published!
-    "https://github.com/cpu/webpki",
-]
