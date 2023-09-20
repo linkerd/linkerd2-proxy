@@ -161,7 +161,7 @@ mod linux {
             };
 
             if let Some(mpt) = self.ms_per_tick {
-                let clock_ticks = stat.utime as u64 + stat.stime as u64;
+                let clock_ticks = stat.utime + stat.stime;
                 let cpu_ms = clock_ticks * mpt;
                 process_cpu_seconds_total.fmt_help(f)?;
                 process_cpu_seconds_total.fmt_metric(f, &Counter::from(cpu_ms))?;
@@ -170,11 +170,11 @@ mod linux {
             }
 
             process_virtual_memory_bytes.fmt_help(f)?;
-            process_virtual_memory_bytes.fmt_metric(f, &Gauge::from(stat.vsize as u64))?;
+            process_virtual_memory_bytes.fmt_metric(f, &Gauge::from(stat.vsize))?;
 
             if let Some(ps) = self.page_size {
                 process_resident_memory_bytes.fmt_help(f)?;
-                process_resident_memory_bytes.fmt_metric(f, &Gauge::from(stat.rss as u64 * ps))?;
+                process_resident_memory_bytes.fmt_metric(f, &Gauge::from(stat.rss * ps))?;
             } else {
                 warn!("Could not determine process_resident_memory_bytes");
             }
@@ -190,8 +190,7 @@ mod linux {
             }
 
             match sys::max_fds() {
-                Ok(None) => {}
-                Ok(Some(max_fds)) => {
+                Ok(max_fds) => {
                     process_max_fds.fmt_help(f)?;
                     process_max_fds.fmt_metric(f, &max_fds.into())?;
                 }
