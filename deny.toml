@@ -51,6 +51,8 @@ wildcards = "allow"
 highlight = "all"
 deny = [
     { name = "rustls", wrappers = ["tokio-rustls"] },
+    # rustls-webpki should be used instead.
+    { name = "webpki" },
 ]
 skip = [
     # The proc-macro ecosystem is in the middle of a migration from `syn` v1 to
