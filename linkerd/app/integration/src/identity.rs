@@ -114,8 +114,8 @@ impl Identity {
             .with_safe_default_kx_groups()
             .with_protocol_versions(TLS_VERSIONS)
             .expect("server config must be valid")
-            .with_client_cert_verifier(rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(
-                roots,
+            .with_client_cert_verifier(Arc::new(
+                rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(roots),
             ))
             .with_single_cert(certs.chain(), key)
             .unwrap();

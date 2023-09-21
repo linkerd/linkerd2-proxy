@@ -63,7 +63,7 @@ mod tests {
     fn empty_server_config() -> rustls::ServerConfig {
         rustls::ServerConfig::builder()
             .with_safe_defaults()
-            .with_client_cert_verifier(rustls::server::NoClientAuth::new())
+            .with_client_cert_verifier(Arc::new(rustls::server::NoClientAuth))
             .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()))
     }
 
