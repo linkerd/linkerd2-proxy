@@ -54,7 +54,9 @@ pub(super) fn server_config(
     // controlling the set of trusted signature algorithms), but they provide good enough
     // defaults for now.
     // TODO: lock down the verification further.
-    let client_cert_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(roots);
+    let client_cert_verifier = Arc::new(
+        rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(roots),
+    );
     rustls::ServerConfig::builder()
         .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
         .with_safe_default_kx_groups()
@@ -95,7 +97,7 @@ impl Store {
 
         // Disable session resumption for the time-being until resumption is
         // more tested.
-        cfg.enable_tickets = false;
+        cfg.resumption = rustls::client::Resumption::disabled();
 
         cfg.into()
     }
@@ -183,7 +185,7 @@ impl rustls::sign::SigningKey for Key {
         Some(Box::new(self.clone()))
     }
 
-    fn algorithm(&self) -> rustls::internal::msgs::enums::SignatureAlgorithm {
+    fn algorithm(&self) -> rustls::SignatureAlgorithm {
         SIGNATURE_ALG_RUSTLS_ALGORITHM
     }
 }

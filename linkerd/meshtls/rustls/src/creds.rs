@@ -65,7 +65,11 @@ pub fn watch(
         // client certificate resolver.
         let mut c =
             store::client_config_builder(server_cert_verifier.clone()).with_no_client_auth();
-        c.enable_tickets = false;
+
+        // Disable session resumption for the time-being until resumption is
+        // more tested.
+        c.resumption = rustls::client::Resumption::disabled();
+
         watch::channel(Arc::new(c))
     };
     let (server_tx, server_rx) = {
@@ -114,8 +118,8 @@ mod params {
         &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING;
     pub const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
         rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
-    pub const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
-        rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
+    pub const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::SignatureAlgorithm =
+        rustls::SignatureAlgorithm::ECDSA;
     pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
     pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
         &[rustls::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];
