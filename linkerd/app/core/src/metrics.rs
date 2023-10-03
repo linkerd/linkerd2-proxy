@@ -422,7 +422,7 @@ impl FmtLabels for Class {
                 "classification=\"{}\",grpc_status=\"{}\",error=\"\"",
                 class(res.is_ok()),
                 match res {
-                    Ok(code) | Err(code) => Into::<i32>::into(*code),
+                    Ok(code) | Err(code) => <i32>::from(*code),
                 }
             ),
 
