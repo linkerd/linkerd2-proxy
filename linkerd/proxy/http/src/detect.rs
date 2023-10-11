@@ -22,11 +22,15 @@ const SMALLEST_POSSIBLE_HTTP1_REQ: &str = "GET / HTTP/1.1";
 /// messages. In rare situations, we may fail to properly detect that a stream is
 /// HTTP.
 #[derive(Clone, Debug, Default)]
-pub struct DetectHttp(());
+pub struct DetectHttp(Option<Version>);
 
 #[async_trait::async_trait]
 impl<I: io::AsyncRead + Send + Unpin + 'static> Detect<I> for DetectHttp {
     type Protocol = Version;
+
+    fn known(&self) -> Option<Self::Protocol> {
+        self.0
+    }
 
     async fn detect(&self, io: &mut I, buf: &mut BytesMut) -> Result<Option<Version>, Error> {
         trace!(capacity = buf.capacity(), "Reading");

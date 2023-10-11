@@ -20,6 +20,8 @@ use tracing::{debug, info, trace};
 pub trait Detect<I>: Clone + Send + Sync + 'static {
     type Protocol: Send;
 
+    fn known(&self) -> Option<Self::Protocol>;
+
     async fn detect(&self, io: &mut I, buf: &mut BytesMut)
         -> Result<Option<Self::Protocol>, Error>;
 }
@@ -141,23 +143,27 @@ where
         let target = self.target.clone();
         let inner = self.inner.clone();
         Box::pin(async move {
-            trace!(%capacity, ?timeout, "Starting protocol detection");
-            let t0 = time::Instant::now();
-
-            let mut buf = BytesMut::with_capacity(capacity);
-            let detected = match time::timeout(timeout, detect.detect(&mut io, &mut buf)).await {
-                Ok(Ok(protocol)) => {
-                    debug!(?protocol, elapsed = ?time::Instant::now().saturating_duration_since(t0), "DetectResult");
-                    Ok(protocol)
-                }
-                Err(_) => Err(DetectTimeoutError(timeout, std::marker::PhantomData)),
-                Ok(Err(e)) => return Err(e),
+            let (detected, io) = if let Some(proto) = detect.known() {
+                (Ok(Some(proto)), io::PrefixedIo::from(io))
+            } else {
+                trace!(%capacity, ?timeout, "Starting protocol detection");
+                let t0 = time::Instant::now();
+                let mut buf = BytesMut::with_capacity(capacity);
+                let res = match time::timeout(timeout, detect.detect(&mut io, &mut buf)).await {
+                    Ok(Ok(protocol)) => {
+                        debug!(?protocol, elapsed = ?time::Instant::now().saturating_duration_since(t0), "DetectResult");
+                        Ok(protocol)
+                    }
+                    Err(_) => Err(DetectTimeoutError(timeout, std::marker::PhantomData)),
+                    Ok(Err(e)) => return Err(e),
+                };
+                (res, io::PrefixedIo::new(buf.freeze(), io))
             };
 
             trace!("Dispatching connection");
             let svc = inner.new_service((detected, target));
             let mut svc = svc.ready_oneshot().await.map_err(Into::into)?;
-            svc.call(io::PrefixedIo::new(buf.freeze(), io))
+            svc.call(io)
                 .await
                 .map_err(Into::into)?;
 
