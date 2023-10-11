@@ -6,11 +6,12 @@ use linkerd_app_core::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
     },
-    svc::{self, stack::Param},
+    svc::{self, stack::Param, http::DetectHttp},
     tls,
     transport::{OrigDstAddr, Remote, ServerAddr},
     AddrMatch, Error, Infallible, NameAddr,
 };
+use tokio::time;
 use thiserror::Error;
 use tracing::{debug, debug_span, info_span};
 
@@ -79,7 +80,27 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
 
         self.push_http_logical(resolve)
             .map_stack(|config, rt, http_logical| {
-                let detect_http = config.proxy.detect_http();
+                let detect_http = {
+                    #[derive(Copy, Clone, Debug)]
+                    struct ExtractDetect(time::Duration);
+
+                    impl<T: Param<OrigDstAddr>> svc::ExtractParam<detect::Config<DetectHttp>, T> for ExtractDetect {
+                        fn extract_param(&self, t: &T) -> detect::Config<DetectHttp> {
+                            if t.param().port() == 8080 {
+                                return detect::Config {
+                                    detect: http::Version::Http1.into(),
+                                    timeout: self.0,
+                                    capacity: detect::DEFAULT_CAPACITY,
+                                };
+                            }
+
+                            detect::Config::from_timeout(self.0)
+                        }
+                    }
+
+                    ExtractDetect(config.proxy.detect_protocol_timeout)
+                };
+
                 let Config {
                     allow_discovery,
                     proxy:

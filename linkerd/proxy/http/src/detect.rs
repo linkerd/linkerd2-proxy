@@ -24,6 +24,12 @@ const SMALLEST_POSSIBLE_HTTP1_REQ: &str = "GET / HTTP/1.1";
 #[derive(Clone, Debug, Default)]
 pub struct DetectHttp(Option<Version>);
 
+impl From<Version> for DetectHttp {
+    fn from(v: Version) -> Self {
+        Self(Some(v))
+    }
+}
+
 #[async_trait::async_trait]
 impl<I: io::AsyncRead + Send + Unpin + 'static> Detect<I> for DetectHttp {
     type Protocol = Version;
