@@ -16,23 +16,27 @@ where
 {
     let (tx, rx) = mpsc::channel(capacity);
 
-    let send = |tx: &mpsc::Sender<_>, change| {
-        if let Err(e) = tx.try_send(change) {
-            match e {
-                // The balancer has been dropped (and will never be used again).
-                mpsc::error::TrySendError::Closed(_) => {
-                    debug!("Discovery receiver dropped");
-                }
+    // Attempts to send an update to the balancer, returning `true` if sending
+    // was successful and `false` otherwise.
+    let send = |tx: &mpsc::Sender<_>, up| {
+        match tx.try_send(up) {
+            Ok(()) => true,
 
-                // The balancer is stalled and we can't continue to buffer
-                // updates for it.
-                mpsc::error::TrySendError::Full(_) => {
-                    warn!("The balancer is not processing discovery updates; aborting discovery stream");
-                }
+            // The balancer has been dropped (and will never be used again).
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                debug!("Discovery receiver dropped");
+                false
             }
-            return false;
+
+            // The balancer is stalled and we can't continue to buffer
+            // updates for it.
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                warn!(
+                    "The balancer is not processing discovery updates; aborting discovery stream"
+                );
+                false
+            }
         }
-        true
     };
 
     debug!(%capacity, "Spawning discovery buffer");
@@ -82,7 +86,7 @@ where
                         debug!("Discovery stream closed");
                         return;
                     }
-                };
+                }
             }
         }
         .in_current_span()
