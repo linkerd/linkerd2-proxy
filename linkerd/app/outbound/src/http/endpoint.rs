@@ -14,6 +14,7 @@ use linkerd_app_core::{
     transport_header::SessionProtocol,
     Error, Result, CANONICAL_DST_HEADER,
 };
+use tokio::time;
 
 #[cfg(test)]
 mod tests;
@@ -136,6 +137,12 @@ impl<N> Outbound<N> {
                 // track proxy errors that occur higher in the stack.
                 .push(ClientRescue::layer(config.emit_headers))
                 .push_on_service(http::BoxRequest::layer())
+                .push(http::NewStreamTimeout::layer_via(svc::CloneParam::from(
+                    http::StreamTimeouts {
+                        request: time::Duration::from_secs(4 * 60),
+                        response: time::Duration::from_secs(4 * 60),
+                    },
+                )))
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics

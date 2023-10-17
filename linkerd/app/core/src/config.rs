@@ -41,6 +41,12 @@ pub struct QueueConfig {
     pub failfast_timeout: Duration,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct StreamTimeouts {
+    pub request: Duration,
+    pub response: Duration,
+}
+
 // === impl QueueConfig ===
 
 impl<T> ExtractParam<queue::Capacity, T> for QueueConfig {

@@ -8,6 +8,7 @@ use linkerd_app_core::{
     Error, Infallible, NameAddr, Result,
 };
 use std::{fmt, net::SocketAddr};
+// use tokio::time;
 use tracing::{debug, debug_span};
 
 /// Describes an HTTP client target.
@@ -113,9 +114,14 @@ impl<C> Inbound<C> {
                     config.proxy.connect.h2_settings,
                 ))
                 .check_service::<Http>()
-                .push_on_service(svc::MapErr::layer_boxed())
                 .into_new_service()
                 .push_new_reconnect(config.proxy.connect.backoff)
+                // .push(http::NewStreamTimeout::layer_via(svc::CloneParam::from(
+                //     http::StreamTimeouts {
+                //         request: time::Duration::from_secs(4 * 60),
+                //         response: time::Duration::from_secs(4 * 60),
+                //     },
+                // )))
                 .push_map_target(Http::from)
                 // Handle connection-level errors eagerly so that we can report 5XX failures in tap
                 // and metrics. HTTP error metrics are not incremented here so that errors are not

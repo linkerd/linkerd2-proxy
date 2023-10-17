@@ -400,31 +400,6 @@ where
     }
 }
 
-impl<T> svc::Param<client::Settings> for Endpoint<T>
-where
-    T: svc::Param<http::Version>,
-{
-    fn param(&self) -> client::Settings {
-        match self.param() {
-            http::Version::H2 => client::Settings::H2,
-            http::Version::Http1 => {
-                // When the target is local (i.e. same as source of traffic)
-                // then do not perform a protocol upgrade to HTTP/2
-                if self.is_local {
-                    return client::Settings::Http1;
-                }
-                match self.metadata.protocol_hint() {
-                    // If the protocol hint is unknown or indicates that the
-                    // endpoint's proxy will treat connections as opaque, do not
-                    // perform a protocol upgrade to HTTP/2.
-                    ProtocolHint::Unknown | ProtocolHint::Opaque => client::Settings::Http1,
-                    ProtocolHint::Http2 => client::Settings::OrigProtoUpgrade,
-                }
-            }
-        }
-    }
-}
-
 impl<T> svc::Param<ProtocolHint> for Endpoint<T> {
     fn param(&self) -> ProtocolHint {
         self.metadata.protocol_hint()
@@ -462,5 +437,30 @@ impl<T> tap::Inspect for Endpoint<T> {
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
         true
+    }
+}
+
+impl<T> svc::Param<client::Settings> for Endpoint<T>
+where
+    T: svc::Param<http::Version>,
+{
+    fn param(&self) -> client::Settings {
+        match self.param() {
+            http::Version::H2 => client::Settings::H2,
+            http::Version::Http1 => {
+                // When the target is local (i.e. same as source of traffic)
+                // then do not perform a protocol upgrade to HTTP/2
+                if self.is_local {
+                    return client::Settings::Http1;
+                }
+                match self.metadata.protocol_hint() {
+                    // If the protocol hint is unknown or indicates that the
+                    // endpoint's proxy will treat connections as opaque, do not
+                    // perform a protocol upgrade to HTTP/2.
+                    ProtocolHint::Unknown | ProtocolHint::Opaque => client::Settings::Http1,
+                    ProtocolHint::Http2 => client::Settings::OrigProtoUpgrade,
+                }
+            }
+        }
     }
 }
