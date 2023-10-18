@@ -1480,6 +1480,7 @@ dependencies = [
  "linkerd-stack",
  "pin-project",
  "rand",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tokio-util",
