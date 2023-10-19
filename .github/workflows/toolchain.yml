@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: |
-          VERSION="$(cat rust-toolchain)"
+          VERSION="$(grep 'channel = ".*"' rust-version.toml | grep '[0-9]+.[0-9]+.[0-9]+' --only-matching)"
           if [ "$(cargo --version | cut -d' ' -f2)" != "$VERSION" ]; then
             echo "::error file=rust-toolchain::rust-toolchain $VERSION does not match devcontainer $(cargo --version)"
             exit 1
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
       - shell: bash
         run: |
-          VERSION="$(cat rust-toolchain)"
+          VERSION="$(grep 'channel = ".*"' rust-version.toml | grep '[0-9]+.[0-9]+.[0-9]+' --only-matching)"
           ex=0
           while IFS= read -r file ; do
             while IFS= read -r image ; do
