@@ -18,7 +18,6 @@ use std::sync::{
 };
 use std::task::{Context, Poll};
 use tokio::sync::{mpsc, watch};
-use tokio_stream::wrappers::UnboundedReceiverStream;
 
 #[cfg(feature = "client-policy")]
 mod client_policy;
@@ -62,7 +61,8 @@ struct State<A, E> {
     only: AtomicBool,
 }
 
-pub type DstReceiver<E> = UnboundedReceiverStream<Result<Update<E>, Error>>;
+#[pin_project::pin_project]
+pub struct DstReceiver<T>(#[pin] mpsc::UnboundedReceiver<Result<Update<T>, Error>>);
 
 #[derive(Debug)]
 pub struct SendFailed(());
@@ -106,7 +106,7 @@ impl<E> Dst<E> {
         self.state
             .endpoints
             .lock()
-            .insert(addr.into(), UnboundedReceiverStream::new(rx));
+            .insert(addr.into(), DstReceiver(rx));
         DstSender(tx)
     }
 
@@ -146,7 +146,7 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
                 self.state.only.store(false, Ordering::Release);
                 let (tx, rx) = mpsc::unbounded_channel();
                 let _ = tx.send(Ok(Update::DoesNotExist));
-                UnboundedReceiverStream::new(rx)
+                DstReceiver(rx)
             });
 
         future::ok(res)
@@ -302,5 +302,17 @@ impl<T: Param<profiles::LookupAddr>> tower::Service<T> for NoProfiles {
             "no profile resolutions were expected in this test, but tried to resolve {}",
             addr
         );
+    }
+}
+
+impl<T> futures::Stream for DstReceiver<T> {
+    type Item = Result<Update<T>, Error>;
+
+    fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self.project();
+        match futures::ready!(this.0.poll_recv(cx)) {
+            Some(item) => Poll::Ready(Some(item)),
+            None => Poll::Pending,
+        }
     }
 }
