@@ -1,11 +1,16 @@
 use futures_util::future::poll_fn;
 use linkerd_error::Error;
+use std::sync::{atomic::AtomicBool, Arc};
 use tokio::sync::mpsc;
 use tower::discover;
 use tracing::{debug, debug_span, instrument::Instrument, trace, warn};
 
 pub type Result<K, S> = std::result::Result<discover::Change<K, S>, Error>;
-pub type Buffer<K, S> = tokio_stream::wrappers::ReceiverStream<Result<K, S>>;
+
+pub struct Buffer<K, S> {
+    pub(super) rx: mpsc::Receiver<Result<K, S>>,
+    pub(super) overflow: Arc<AtomicBool>,
+}
 
 pub fn spawn<D>(capacity: usize, inner: D) -> Buffer<D::Key, D::Service>
 where
@@ -39,8 +44,11 @@ where
         }
     };
 
+    let overflow = Arc::new(AtomicBool::new(false));
+
     debug!(%capacity, "Spawning discovery buffer");
-    tokio::spawn(
+    tokio::spawn({
+        let overflow = overflow.clone();
         async move {
             tokio::pin!(inner);
 
@@ -60,19 +68,14 @@ where
                     Some(Ok(change)) => {
                         trace!("Changed");
                         if !send(&tx, Ok(change)) {
-                            // XXX(ver) We don't actually have a way to "blow
-                            // up" the balancer in this situation. My
-                            // understanding is that this will cause the
-                            // balancer to get cut off from further updates,
-                            // should it ever become available again. That needs
-                            // to be fixed.
-                            //
-                            // One option would be to drop the discovery stream
-                            // and rebuild it if the balancer ever becomes
-                            // unblocked.
-                            //
-                            // Ultimately we need to track down how we're
-                            // getting into this blocked/idle state
+                            // Tell the outer discovery stream that we've
+                            // stopped processing updates. We assume that the
+                            // consumer is stuck in a _ready_ state (i.e.
+                            // waiting for requests), otherwise it would be
+                            // consuming from the channel. We flip the overflow
+                            // state so that the consumer can check it and
+                            // return an error if it ever tries to poll again.
+                            overflow.store(true, std::sync::atomic::Ordering::Release);
                             return;
                         }
                     }
@@ -90,8 +93,8 @@ where
             }
         }
         .in_current_span()
-        .instrument(debug_span!("discover")),
-    );
+        .instrument(debug_span!("discover"))
+    });
 
-    Buffer::new(rx)
+    Buffer { rx, overflow }
 }
