@@ -25,7 +25,7 @@ pub struct NewServices<T, N> {
 
 #[derive(Debug, thiserror::Error)]
 #[error("Discovery stream lost")]
-pub struct DiscoveryStreamLost(());
+pub struct DiscoveryStreamOverflow(());
 
 // === impl NewServices ===
 
@@ -51,15 +51,19 @@ where
         // If the buffer has lost the ability to process new discovery updates
         // from its resolution, blow up the entire balancer without processing
         // further updates from the channel.
-        if this.buffer.lost.load(std::sync::atomic::Ordering::Acquire) {
-            return Poll::Ready(Some(Err(DiscoveryStreamLost(()).into())));
+        if this
+            .buffer
+            .overflow
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Poll::Ready(Some(Err(DiscoveryStreamOverflow(()).into())));
         };
 
         // Process any buffered updates.
         let change_tgt = match ready!(this.buffer.rx.poll_recv(cx)) {
             Some(Ok(c)) => c,
             Some(Err(e)) => return Poll::Ready(Some(Err(e))),
-            None => return Poll::Ready(Some(Err(DiscoveryStreamLost(()).into()))),
+            None => return Poll::Ready(Some(Err(DiscoveryStreamOverflow(()).into()))),
         };
 
         // Build a new service for the endpoint and log the change at INFO.

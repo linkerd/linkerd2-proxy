@@ -1,7 +1,6 @@
-use std::sync::{atomic::AtomicBool, Arc};
-
 use futures_util::future::poll_fn;
 use linkerd_error::Error;
+use std::sync::{atomic::AtomicBool, Arc};
 use tokio::sync::mpsc;
 use tower::discover;
 use tracing::{debug, debug_span, instrument::Instrument, trace, warn};
@@ -10,7 +9,7 @@ pub type Result<K, S> = std::result::Result<discover::Change<K, S>, Error>;
 
 pub struct Buffer<K, S> {
     pub(super) rx: mpsc::Receiver<Result<K, S>>,
-    pub(super) lost: Arc<AtomicBool>,
+    pub(super) overflow: Arc<AtomicBool>,
 }
 
 pub fn spawn<D>(capacity: usize, inner: D) -> Buffer<D::Key, D::Service>
@@ -45,11 +44,11 @@ where
         }
     };
 
-    let lost = Arc::new(AtomicBool::new(false));
+    let overflow = Arc::new(AtomicBool::new(false));
 
     debug!(%capacity, "Spawning discovery buffer");
     tokio::spawn({
-        let lost = lost.clone();
+        let overflow = overflow.clone();
         async move {
             tokio::pin!(inner);
 
@@ -71,7 +70,7 @@ where
                         if !send(&tx, Ok(change)) {
                             // Tell the outer discovery stream that we've
                             // stopped processing updates.
-                            lost.store(true, std::sync::atomic::Ordering::Release);
+                            overflow.store(true, std::sync::atomic::Ordering::Release);
                             return;
                         }
                     }
@@ -92,5 +91,5 @@ where
         .instrument(debug_span!("discover"))
     });
 
-    Buffer { rx, lost }
+    Buffer { rx, overflow }
 }

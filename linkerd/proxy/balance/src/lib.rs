@@ -12,7 +12,10 @@ use tower::{
 mod discover;
 mod gauge_endpoints;
 
-pub use self::gauge_endpoints::{EndpointsGauges, NewGaugeEndpoints};
+pub use self::{
+    discover::DiscoveryStreamOverflow,
+    gauge_endpoints::{EndpointsGauges, NewGaugeEndpoints},
+};
 pub use tower::load::peak_ewma::Handle;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
