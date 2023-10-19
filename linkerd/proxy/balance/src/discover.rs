@@ -16,7 +16,7 @@ mod from_resolve;
 
 pub(super) use self::from_resolve::FromResolve;
 
-// Prepares a discovery update for the balancer by turning it into a Service.
+/// Prepares a discovery update for the balancer by turning it into a Service.
 #[pin_project]
 pub struct NewServices<T, N> {
     buffer: buffer::Buffer<SocketAddr, T>,
@@ -24,7 +24,7 @@ pub struct NewServices<T, N> {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Discovery stream lost")]
+#[error("discovery stream lost")]
 pub struct DiscoveryStreamOverflow(());
 
 // === impl NewServices ===
@@ -60,6 +60,9 @@ where
         };
 
         // Process any buffered updates.
+        //
+        // When an error is received from the buffer, that error is considered
+        // fatal, so this stream should not be polled again.
         let change_tgt = match ready!(this.buffer.rx.poll_recv(cx)) {
             Some(Ok(c)) => c,
             Some(Err(e)) => return Poll::Ready(Some(Err(e))),

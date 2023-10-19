@@ -312,6 +312,8 @@ impl<T> futures::Stream for DstReceiver<T> {
         let mut this = self.project();
         match futures::ready!(this.0.poll_recv(cx)) {
             Some(item) => Poll::Ready(Some(item)),
+            // If the stream terminates, the balancer will error, so we simply
+            // stop updating when the sender is closed.
             None => Poll::Pending,
         }
     }

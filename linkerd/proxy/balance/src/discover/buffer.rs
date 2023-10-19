@@ -69,7 +69,12 @@ where
                         trace!("Changed");
                         if !send(&tx, Ok(change)) {
                             // Tell the outer discovery stream that we've
-                            // stopped processing updates.
+                            // stopped processing updates. We assume that the
+                            // consumer is stuck in a _ready_ state (i.e.
+                            // waiting for requests), otherwise it would be
+                            // consuming from the channel. We flip the overflow
+                            // state so that the consumer can check it and
+                            // return an error if it ever tries to poll again.
                             overflow.store(true, std::sync::atomic::Ordering::Release);
                             return;
                         }
