@@ -121,18 +121,19 @@ impl<N> Outbound<N> {
                         .stack
                         .layer(stack_labels("http", "forward")),
                 )
+                // TODO(ver) Configure this queue from the target (i.e. from
+                // discovery).
+                .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .instrument(|e: &Endpoint<T>| info_span!("forward", addr = %e.addr));
 
             let fail = svc::ArcNewService::new(|message: Arc<str>| {
-                svc::mk(move |_| {
-                    let error = DispatcherFailed(message.clone());
-                    futures::future::ready(Err(error))
-                })
+                svc::mk(move |_| futures::future::ready(Err(DispatcherFailed(message.clone()))))
             });
 
             inner
                 .push(Balance::layer(config, rt, resolve))
-                .push_switch(Ok::<_, Infallible>, forward.into_inner())
+                .check_new_clone()
+                .push_switch(Ok::<_, Infallible>, forward.check_new_clone().into_inner())
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
@@ -152,11 +153,8 @@ impl<N> Outbound<N> {
                             Dispatch::Fail { message } => svc::Either::B(message),
                         })
                     },
-                    fail,
+                    svc::stack(fail).check_new_clone().into_inner(),
                 )
-                // TODO(ver) Configure this queue from the target (i.e. from
-                // discovery).
-                .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -187,13 +185,13 @@ where
         Service = svc::ArcNewService<
             Self,
             impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = BalanceError,
-                Future = impl std::future::Future<
-                    Output = Result<http::Response<http::BoxBody>, BalanceError>,
-                > + Send,
-            >,
+                    http::Request<http::BoxBody>,
+                    Response = http::Response<http::BoxBody>,
+                    Error = BalanceError,
+                    Future = impl std::future::Future<
+                        Output = Result<http::Response<http::BoxBody>, BalanceError>,
+                    > + Send,
+                > + Clone,
         >,
     > + Clone
     where
@@ -207,7 +205,7 @@ where
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
     {
-        let classify_channel_capacity = config.http_request_queue.capacity;
+        let http_queue = config.http_request_queue;
         let inbound_ips = config.inbound_ips.clone();
         let metrics = rt.metrics.clone();
 
@@ -237,10 +235,11 @@ where
                 .lift_new_with_target()
                 .push(
                     http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
+                        // TODO configure channel capacities from target.
+                        let channel_capacity = http_queue.capacity;
                         move |target: &Self| breaker::Params {
                             accrual: target.parent.param(),
-                            // TODO configure channel capacities from target.
-                            channel_capacity: classify_channel_capacity,
+                            channel_capacity,
                         }
                     }),
                 )
@@ -259,9 +258,17 @@ where
 
             endpoint
                 .push(http::NewBalancePeakEwma::layer(resolve.clone()))
-                .push(svc::NewMapErr::layer_from_target::<BalanceError, _>())
+                .check_new_service::<Self, http::Request<_>>()
                 .push_on_service(http::BoxResponse::layer())
+                .check_new_service::<Self, http::Request<_>>()
                 .push_on_service(metrics.proxy.stack.layer(stack_labels("http", "balance")))
+                .check_new_service::<Self, http::Request<_>>()
+                // TODO(ver) Configure this queue from the target (i.e. from
+                // discovery).
+                .push(svc::NewQueue::layer_via(http_queue))
+                .check_new_service::<Self, http::Request<_>>()
+                .push(svc::NewMapErr::layer_from_target::<BalanceError, _>())
+                .check_new_service::<Self, http::Request<_>>()
                 .instrument(|t: &Self| {
                     let BackendRef(meta) = t.parent.param();
                     info_span!(
