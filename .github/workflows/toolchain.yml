@@ -20,10 +20,11 @@ jobs:
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: |
           VERSION_REGEX='channel = "[0-9]+.[0-9]+.[0-9]+"'
-          toolchain=$(cat rust-toolchain.toml)
-          if [[ $toolchain =~ $VERSION_REGEX ]]; then
+          TOOLCHAIN=$(cat rust-toolchain.toml)
+          if [[ $TOOLCHAIN =~ $VERSION_REGEX ]]; then
+            VERSION=${BASH_REMATCH[1]}
             if [ "$(cargo --version | cut -d' ' -f2)" != "$VERSION" ]; then
-              echo "::error file=rust-toolchain.toml::rust-toolchain $VERSION does not match devcontainer $(cargo --version)"
+              echo "::error file=rust-toolchain.toml::rust-toolchain channel $VERSION does not match devcontainer $(cargo --version)"
               exit 1
             fi
           else
@@ -40,7 +41,15 @@ jobs:
       - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
       - shell: bash
         run: |
-          VERSION="$(grep 'channel = ".*"' rust-toolchain.toml | grep '[0-9]+.[0-9]+.[0-9]+' --only-matching)"
+          VERSION_REGEX='channel = "[0-9]+.[0-9]+.[0-9]+"'
+          TOOLCHAIN=$(cat rust-toolchain.toml)
+          if [[ $TOOLCHAIN =~ $VERSION_REGEX ]]; then
+            VERSION=${BASH_REMATCH[1]}
+          else
+            echo "::error file=rust-toolchain.toml::failed to parse rust-toolchain.toml"
+            exit 1
+          fi
+
           ex=0
           while IFS= read -r file ; do
             while IFS= read -r image ; do
