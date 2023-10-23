@@ -1,52 +1,55 @@
-use super::{error, future::ResponseFuture, message::Message, worker};
-use futures_util::TryStream;
+use crate::{error, future::ResponseFuture, message::Message, worker, Pool};
+use futures::TryStream;
 use linkerd_error::{Error, Result};
-use linkerd_proxy_core::{Pool, Update};
+use linkerd_proxy_core::Update;
 use linkerd_stack::{gate, Service};
 use std::{
     future::Future,
     task::{Context, Poll},
 };
-use tokio::{
-    sync::{mpsc, oneshot},
-    task::JoinHandle,
-    time,
-};
+use tokio::{sync::mpsc, time};
 use tokio_util::sync::PollSender;
 
+/// A shareable service backed by a dynamic set of endpoints.
 #[derive(Debug)]
-pub struct Queue<Req, F> {
+pub struct PoolQ<Req, F> {
     tx: PollSender<Message<Req, F>>,
     terminal_failure: worker::SharedTerminalFailure,
 }
 
-impl<Req, F> Queue<Req, F>
+impl<Req, F> PoolQ<Req, F>
 where
+    Req: Send + 'static,
     F: Send + 'static,
 {
     pub fn spawn<T, R, P>(
+        failfast: time::Duration,
         resolution: R,
         pool: P,
         bound: usize,
-    ) -> (gate::Gate<Self>, JoinHandle<Result<()>>)
+    ) -> gate::Gate<Self>
     where
         T: Clone + Eq + std::fmt::Debug + Send,
-        R: TryStream<Ok = Update<T>> + Send + Unpin,
+        R: TryStream<Ok = Update<T>> + Send + Unpin + 'static,
         R::Error: Into<Error> + Send,
         P: Pool<T> + Service<Req, Future = F> + Send + 'static,
-        P::Future: Send,
         P::Error: Into<Error> + Send + Sync,
         Req: Send + 'static,
     {
         let (gate_tx, gate_rx) = gate::channel();
         let (tx, rx) = mpsc::channel(bound);
-        const FAILFAST: time::Duration = time::Duration::from_secs(10);
-        let (terminal_failure, worker) = worker::spawn(rx, FAILFAST, gate_tx, resolution, pool);
-        let service = Self {
+        let (terminal_failure, _task) = worker::spawn(rx, failfast, gate_tx, resolution, pool);
+        gate::Gate::new(gate_rx, Self::new(tx, terminal_failure))
+    }
+
+    fn new(
+        tx: mpsc::Sender<Message<Req, F>>,
+        terminal_failure: worker::SharedTerminalFailure,
+    ) -> Self {
+        Self {
             tx: PollSender::new(tx),
             terminal_failure,
-        };
-        (gate::Gate::new(gate_rx, service), worker)
+        }
     }
 
     #[inline]
@@ -58,7 +61,7 @@ where
     }
 }
 
-impl<Req, Rsp, F, E> Service<Req> for Queue<Req, F>
+impl<Req, Rsp, F, E> Service<Req> for PoolQ<Req, F>
 where
     Req: Send + 'static,
     F: Future<Output = Result<Rsp, E>> + Send + 'static,
@@ -91,7 +94,7 @@ where
     }
 }
 
-impl<Req, F> Clone for Queue<Req, F>
+impl<Req, F> Clone for PoolQ<Req, F>
 where
     Req: Send + 'static,
     F: Send + 'static,

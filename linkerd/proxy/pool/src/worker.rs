@@ -1,20 +1,21 @@
-use super::{
-    error::{Closed, ServiceError},
+use crate::{
+    error::ServiceError,
     failfast::{self, Failfast},
     message::Message,
+    Pool,
 };
-use futures_util::{TryStream, TryStreamExt};
+use futures::{TryStream, TryStreamExt};
 use linkerd_error::{Error, Result};
-use linkerd_proxy_core::{Pool, Update};
+use linkerd_proxy_core::Update;
 use linkerd_stack::{gate, FailFastError, Service, ServiceExt};
 use parking_lot::Mutex;
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 use tokio::{sync::mpsc, task::JoinHandle, time};
 use tracing::Instrument;
 
-/// Get the error out
+/// Provides a copy of the terminal failure error to all handles.
 #[derive(Clone, Debug)]
-pub(super) struct SharedTerminalFailure {
+pub(crate) struct SharedTerminalFailure {
     inner: Arc<Mutex<Option<ServiceError>>>,
 }
 
@@ -34,7 +35,7 @@ struct Discovery<R> {
 
 /// Spawns a task that simultaneously updates a pool of services from a
 /// discovery stream and dispatches requests to the inner pool.
-pub(super) fn spawn<T, Req, R, P>(
+pub(crate) fn spawn<T, Req, R, P>(
     mut requests: mpsc::Receiver<Message<Req, P::Future>>,
     failfast: time::Duration,
     gate: gate::Tx,
@@ -42,12 +43,12 @@ pub(super) fn spawn<T, Req, R, P>(
     pool: P,
 ) -> (SharedTerminalFailure, JoinHandle<Result<()>>)
 where
-    Req: Send,
+    Req: Send + 'static,
     T: Clone + Eq + std::fmt::Debug + Send,
-    R: TryStream<Ok = Update<T>> + Unpin + Send,
+    R: TryStream<Ok = Update<T>> + Unpin + Send + 'static,
     R::Error: Into<Error> + Send,
-    P: Pool<T> + Service<Req> + Send,
-    P::Future: Send,
+    P: Pool<T> + Service<Req> + Send + 'static,
+    P::Future: Send + 'static,
     P::Error: Into<Error> + Send,
 {
     let shared = SharedTerminalFailure {
@@ -57,7 +58,7 @@ where
     let task = tokio::spawn({
         let shared = shared.clone();
         async move {
-            let worker = Worker {
+            let mut worker = Worker {
                 pool,
                 terminal_failure: None,
                 discovery: Discovery::new(resolution),
@@ -104,8 +105,8 @@ where
                             });
                         }
 
-                        /// When the requests channel is fully closed, we're
-                        /// done.
+                        // When the requests channel is fully closed, we're
+                        // done.
                         None => {
                             tracing::debug!("Requests channel closed");
                             return Ok(());
@@ -317,7 +318,7 @@ where
                 tracing::debug!("Resolution stream closed");
                 self.closed = true;
                 // Never returns.
-                return futures::future::pending().await;
+                futures::future::pending().await
             }
 
             Err(e) => {

@@ -1,29 +1,20 @@
 [package]
-name = "linkerd-proxy-balance"
+name = "linkerd-proxy-pool"
 version = "0.1.0"
 edition = "2021"
-license = "Apache-2.0"
 publish = false
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-futures-util = "0.3"
-indexmap = "1"
 linkerd-error = { path = "../../error" }
-linkerd-metrics = { path = "../../metrics" }
+# linkerd-metrics = { path = "../../metrics" }
 linkerd-proxy-core = { path = "../core" }
-linkerd-proxy-pool = { path = "../pool" }
 linkerd-stack = { path = "../../stack" }
 parking_lot = "0.11"
 pin-project = "1"
-rand = "0.8"
+# rand = "0.8"
 thiserror = "1"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
+# tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = "0.7"
 tracing = "0.1"
-
-[dependencies.tower]
-version = "0.4.13"
-default-features = false
-features = ["balance", "discover", "load"]

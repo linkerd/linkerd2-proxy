@@ -3,6 +3,7 @@
 use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_proxy_core::Resolve;
+use linkerd_proxy_pool::PoolQ;
 use linkerd_stack::{layer, NewService, Param, Service};
 use std::{fmt::Debug, hash::Hash, marker::PhantomData, net::SocketAddr, time::Duration};
 use tower::{
@@ -10,7 +11,6 @@ use tower::{
     load::{self, PeakEwma},
 };
 
-mod buffer;
 mod discover;
 mod gauge_endpoints;
 

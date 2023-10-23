@@ -1478,6 +1478,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-metrics",
  "linkerd-proxy-core",
+ "linkerd-proxy-pool",
  "linkerd-stack",
  "parking_lot 0.11.2",
  "pin-project",
@@ -1586,6 +1587,22 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-proxy-pool"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-proxy-core",
+ "linkerd-stack",
+ "parking_lot 0.11.2",
+ "pin-project",
+ "thiserror",
+ "tokio",
+ "tokio-util",
  "tracing",
 ]
 

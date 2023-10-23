@@ -67,7 +67,7 @@ where
                 }
                 ResponseStateProj::Rx { rx } => match ready!(rx.poll(cx)) {
                     Ok(Ok(fut)) => this.state.set(ResponseState::Poll { fut }),
-                    Ok(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Ok(Err(e)) => return Poll::Ready(Err(e)),
                     Err(_) => return Poll::Ready(Err(Closed::new().into())),
                 },
                 ResponseStateProj::Poll { fut } => return fut.poll(cx).map_err(Into::into),
