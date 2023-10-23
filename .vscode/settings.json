@@ -1,0 +1,4 @@
+{
+    "rust-analyzer.cargo.features": [],
+    "files.insertFinalNewline": true
+}
