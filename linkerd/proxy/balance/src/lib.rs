@@ -1,14 +1,16 @@
+#![allow(warnings)]
+
 use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_proxy_core::Resolve;
 use linkerd_stack::{layer, NewService, Param, Service};
-use rand::thread_rng;
 use std::{fmt::Debug, hash::Hash, marker::PhantomData, net::SocketAddr, time::Duration};
 use tower::{
     balance::p2c,
     load::{self, PeakEwma},
 };
 
+mod buffer;
 mod discover;
 mod gauge_endpoints;
 
@@ -101,13 +103,10 @@ where
             _marker: PhantomData,
         };
 
-        let disco = {
-            let r = discover::FromResolve::new(self.resolve.resolve(target).try_flatten_stream());
-            let d = discover::buffer::spawn(self.update_queue_capacity, r);
-            discover::NewServices::new(d, new_endpoint)
-        };
+        let disco = self.resolve.resolve(target).try_flatten_stream();
 
-        Balance::from_rng(disco, &mut thread_rng()).expect("RNG must be valid")
+        // BalanceQueue::from_rng(disco, &mut thread_rng()).expect("RNG must be valid")
+        todo!()
     }
 }
 

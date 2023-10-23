@@ -13,6 +13,7 @@ linkerd-error = { path = "../../error" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
+parking_lot = "0.11"
 pin-project = "1"
 rand = "0.8"
 thiserror = "1"

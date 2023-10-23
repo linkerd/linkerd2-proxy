@@ -26,6 +26,16 @@ impl<S> TrackService<S> {
     }
 }
 
+impl<S: Clone> Clone for TrackService<S> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            metrics: self.metrics.clone(),
+            blocked_since: None,
+        }
+    }
+}
+
 impl<T, S> tower::Service<T> for TrackService<S>
 where
     S: tower::Service<T>,
@@ -76,6 +86,10 @@ where
 
 impl<S> Drop for TrackService<S> {
     fn drop(&mut self) {
-        self.metrics.drop_total.incr();
+        if Arc::strong_count(&self.metrics) == 1 {
+            // If we're the last reference to the metrics, then we can
+            // increment the drop count.
+            self.metrics.drop_total.incr();
+        }
     }
 }
