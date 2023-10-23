@@ -1,4 +1,4 @@
-use super::{future::ResponseFuture, message::Message, worker};
+use super::{error, future::ResponseFuture, message::Message, worker};
 use futures_util::TryStream;
 use linkerd_error::{Error, Result};
 use linkerd_proxy_core::{Pool, Update};
@@ -14,16 +14,13 @@ use tokio::{
 };
 use tokio_util::sync::PollSender;
 
-/// Adds an mpsc buffer in front of an inner service.
-///
-/// See the module documentation for more details.
 #[derive(Debug)]
-pub struct Buffer<Req, F> {
+pub struct Queue<Req, F> {
     tx: PollSender<Message<Req, F>>,
-    handle: worker::SharedTerminalFailure,
+    terminal_failure: worker::SharedTerminalFailure,
 }
 
-impl<Req, F> Buffer<Req, F>
+impl<Req, F> Queue<Req, F>
 where
     F: Send + 'static,
 {
@@ -44,20 +41,24 @@ where
         let (gate_tx, gate_rx) = gate::channel();
         let (tx, rx) = mpsc::channel(bound);
         const FAILFAST: time::Duration = time::Duration::from_secs(10);
-        let (handle, worker) = worker::spawn(rx, FAILFAST, gate_tx, resolution, pool);
-        let buffer = Self {
+        let (terminal_failure, worker) = worker::spawn(rx, FAILFAST, gate_tx, resolution, pool);
+        let service = Self {
             tx: PollSender::new(tx),
-            handle,
+            terminal_failure,
         };
-        (gate::Gate::new(gate_rx, buffer), worker)
+        (gate::Gate::new(gate_rx, service), worker)
     }
 
-    fn get_worker_error(&self) -> Error {
-        self.handle.get_error_on_closed()
+    #[inline]
+    fn error_or_closed(&self) -> Error {
+        self.terminal_failure
+            .get()
+            .map(Into::into)
+            .unwrap_or_else(|| error::Closed::new().into())
     }
 }
 
-impl<Req, Rsp, F, E> Service<Req> for Buffer<Req, F>
+impl<Req, Rsp, F, E> Service<Req> for Queue<Req, F>
 where
     Req: Send + 'static,
     F: Future<Output = Result<Rsp, E>> + Send + 'static,
@@ -71,47 +72,33 @@ where
         // First, check if the worker is still alive.
         if self.tx.is_closed() {
             // If the inner service has errored, then we error here.
-            return Poll::Ready(Err(self.get_worker_error()));
+            return Poll::Ready(Err(self.error_or_closed()));
         }
 
         // Poll the sender to acquire a permit.
-        self.tx
-            .poll_reserve(cx)
-            .map_err(|_| self.get_worker_error())
+        self.tx.poll_reserve(cx).map_err(|_| self.error_or_closed())
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        tracing::trace!("sending request to buffer worker");
-
-        // get the current Span so that we can explicitly propagate it to the worker
-        // if we didn't do this, events on the worker related to this span wouldn't be counted
-        // towards that span since the worker would have no way of entering it.
-        let span = tracing::Span::current();
-
-        // If we've made it here, then a channel permit has already been
-        // acquired, so we can freely allocate a oneshot.
-        let (tx, rx) = oneshot::channel();
-
-        let t0 = time::Instant::now();
-        match self.tx.send_item(Message { req, span, tx, t0 }) {
-            Ok(_) => ResponseFuture::new(rx),
-            // If the channel is closed, propagate the error from the worker.
-            Err(_) => {
-                tracing::trace!("buffer channel closed");
-                ResponseFuture::failed(self.get_worker_error())
-            }
+        tracing::trace!("Sending request to worker");
+        let (msg, rx) = Message::channel(req);
+        if self.tx.send_item(msg).is_err() {
+            // The channel closed since poll_ready was called, so propagate the
+            // failure in the response future.
+            return ResponseFuture::failed(self.error_or_closed());
         }
+        ResponseFuture::new(rx)
     }
 }
 
-impl<Req, F> Clone for Buffer<Req, F>
+impl<Req, F> Clone for Queue<Req, F>
 where
     Req: Send + 'static,
     F: Send + 'static,
 {
     fn clone(&self) -> Self {
         Self {
-            handle: self.handle.clone(),
+            terminal_failure: self.terminal_failure.clone(),
             tx: self.tx.clone(),
         }
     }

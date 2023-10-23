@@ -11,7 +11,7 @@ pub(super) struct Failfast {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum State {
+pub(super) enum State {
     Waiting { since: time::Instant },
     Failfast { since: time::Instant },
 }
@@ -34,24 +34,10 @@ impl Failfast {
     }
 
     /// Clears any waiting or failfast state.
-    pub(super) fn set_ready(&mut self) {
-        if let Some(state) = self.state.take() {
-            self.gate.open();
-            match state {
-                State::Waiting { since } => {
-                    tracing::debug!(
-                        elapsed = (time::Instant::now() - since).as_secs_f64(),
-                        "Ready"
-                    );
-                }
-                State::Failfast { since } => {
-                    tracing::info!(
-                        elapsed = (time::Instant::now() - since).as_secs_f64(),
-                        "Exited failfast"
-                    );
-                }
-            };
-        }
+    pub(super) fn set_ready(&mut self) -> Option<State> {
+        let state = self.state.take()?;
+        self.gate.open();
+        Some(state)
     }
 
     /// Waits for the failfast timeout to expire and enters the failfast state.

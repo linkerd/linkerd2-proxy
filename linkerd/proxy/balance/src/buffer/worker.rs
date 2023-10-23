@@ -1,6 +1,6 @@
 use super::{
     error::{Closed, ServiceError},
-    failfast::Failfast,
+    failfast::{self, Failfast},
     message::Message,
 };
 use futures_util::{TryStream, TryStreamExt};
@@ -14,7 +14,7 @@ use tracing::Instrument;
 
 /// Get the error out
 #[derive(Clone, Debug)]
-pub(crate) struct SharedTerminalFailure {
+pub(super) struct SharedTerminalFailure {
     inner: Arc<Mutex<Option<ServiceError>>>,
 }
 
@@ -57,17 +57,11 @@ where
     let task = tokio::spawn({
         let shared = shared.clone();
         async move {
-            let worker = {
-                let discovery = Discovery {
-                    resolution,
-                    closed: false,
-                };
-                Worker {
-                    pool,
-                    terminal_failure: None,
-                    discovery,
-                    failfast: Failfast::new(failfast, gate),
-                }
+            let worker = Worker {
+                pool,
+                terminal_failure: None,
+                discovery: Discovery::new(resolution),
+                failfast: Failfast::new(failfast, gate),
             };
 
             loop {
@@ -129,12 +123,8 @@ where
 // === impl Handle ===
 
 impl SharedTerminalFailure {
-    pub(crate) fn get_error_on_closed(&self) -> Error {
-        self.inner
-            .lock()
-            .as_ref()
-            .map(|svc_err| svc_err.clone().into())
-            .unwrap_or_else(|| Closed::new().into())
+    pub(crate) fn get(&self) -> Option<ServiceError> {
+        (*self.inner.lock()).clone()
     }
 }
 
@@ -152,9 +142,9 @@ where
         P: Service<Req>,
         P::Error: Into<Error>,
     {
-        // If we're in a temporary or permanent failure state, skip preparation
-        // so that we can get right to the business of failing requests.
-        if self.terminal_failure.is_some() || self.failfast.is_active() {
+        // If we're in a permanent failure state, skip preparation so that we
+        // can get right to the business of failing requests.
+        if self.terminal_failure.is_some() {
             return;
         }
 
@@ -163,7 +153,10 @@ where
                 // If the pool updated, continue waiting for the pool to be
                 // ready.
                 res = self.discovery.discover() => match res {
-                    Ok(up) => self.pool.update_pool(up),
+                    Ok(update) => {
+                        tracing::debug!(?update, "Discovered");
+                        self.pool.update_pool(update);
+                    }
                     Err(e) => {
                         self.terminal_failure = Some(e);
                         return;
@@ -179,7 +172,21 @@ where
                 // When the pool is ready, clear any failfast state we may have
                 // set before returning.
                 res = self.pool.ready() => {
-                    self.failfast.set_ready();
+                    match self.failfast.set_ready() {
+                        Some(failfast::State::Waiting { since }) => {
+                            tracing::debug!(
+                                elapsed = (time::Instant::now() - since).as_secs_f64(),
+                                "Ready"
+                            );
+                        }
+                         Some(failfast::State::Failfast { since }) => {
+                            tracing::info!(
+                                elapsed = (time::Instant::now() - since).as_secs_f64(),
+                                "Available; exited failfast"
+                            );
+                        }
+                        None => {}
+                    }
                     if let Err(e) = res {
                         self.terminal_failure = Some(ServiceError::new(e.into()));
                     }
@@ -217,7 +224,15 @@ where
                 // ready, we clear the failfast state; but there's no need to
                 // yield control. We continue to process discoery udpates.
                 res = self.pool.ready(), if self.failfast.is_active() => {
-                    self.failfast.set_ready();
+                    match self.failfast.set_ready() {
+                        Some(failfast::State::Failfast { since }) => {
+                            tracing::info!(
+                                elapsed = (time::Instant::now() - since).as_secs_f64(),
+                                "Exited failfast"
+                            );
+                        }
+                        _ => unreachable!("Fail-fast must be active"),
+                    };
                     if let Err(e) = res {
                         self.terminal_failure = Some(ServiceError::new(e.into()));
                         return;
@@ -229,8 +244,9 @@ where
                 // requests.
                 res = self.discovery.discover() => {
                     match res {
-                        Ok(up) => {
-                            self.pool.update_pool(up);
+                        Ok(update) => {
+                            tracing::debug!(?update, "Discovered");
+                            self.pool.update_pool(update);
                             if self.failfast.is_active() {
                                 // If we're in failfast, then there's no point
                                 // in returning until the pool is ready and
@@ -278,6 +294,13 @@ where
     R: TryStream<Ok = Update<T>> + Unpin,
     R::Error: Into<Error>,
 {
+    fn new(resolution: R) -> Self {
+        Self {
+            resolution,
+            closed: false,
+        }
+    }
+
     /// Await the next service discovery update.
     ///
     /// If the discovery stream has closed, this never returns.

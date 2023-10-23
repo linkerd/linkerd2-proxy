@@ -11,7 +11,16 @@ pub(crate) struct Message<Req, Fut> {
 }
 
 /// Response sender
-pub(crate) type Tx<Fut> = oneshot::Sender<Result<Fut>>;
+type Tx<Fut> = oneshot::Sender<Result<Fut>>;
 
 /// Response receiver
 pub(crate) type Rx<Fut> = oneshot::Receiver<Result<Fut>>;
+
+impl<Req, Fut> Message<Req, Fut> {
+    pub(crate) fn channel(req: Req) -> (Self, Rx<Fut>) {
+        let (tx, rx) = oneshot::channel();
+        let t0 = time::Instant::now();
+        let span = tracing::Span::current();
+        (Message { req, span, tx, t0 }, rx)
+    }
+}
