@@ -1,11 +1,11 @@
 use super::{
     error::{Closed, ServiceError},
+    failfast::Failfast,
     message::Message,
-    Pool,
 };
 use futures_util::{TryStream, TryStreamExt};
 use linkerd_error::{Error, Result};
-use linkerd_proxy_core::Update;
+use linkerd_proxy_core::{Pool, Update};
 use linkerd_stack::{gate, FailFastError, Service, ServiceExt};
 use parking_lot::Mutex;
 use std::{pin::Pin, sync::Arc};
@@ -32,20 +32,8 @@ struct Discovery<R> {
     closed: bool,
 }
 
-#[derive(Debug)]
-struct Failfast {
-    timeout: time::Duration,
-    sleep: Pin<Box<time::Sleep>>,
-    state: Option<FailfastState>,
-    gate: gate::Tx,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum FailfastState {
-    Waiting,
-    Failfast,
-}
-
+/// Spawns a task that simultaneously updates a pool of services from a
+/// discovery stream and dispatches requests to the inner pool.
 pub(super) fn spawn<T, Req, R, P>(
     mut requests: mpsc::Receiver<Message<Req, P::Future>>,
     failfast: time::Duration,
@@ -58,8 +46,7 @@ where
     T: Clone + Eq + std::fmt::Debug + Send,
     R: TryStream<Ok = Update<T>> + Unpin + Send,
     R::Error: Into<Error> + Send,
-    P: Pool<T> + Send,
-    P: Service<Req>,
+    P: Pool<T> + Service<Req> + Send,
     P::Future: Send,
     P::Error: Into<Error> + Send,
 {
@@ -69,27 +56,20 @@ where
 
     let task = tokio::spawn({
         let shared = shared.clone();
-
-        let worker = {
-            let failfast = Failfast {
-                gate,
-                timeout: failfast,
-                sleep: Box::pin(time::sleep(time::Duration::MAX)),
-                state: None,
-            };
-            let discovery = Discovery {
-                resolution,
-                closed: false,
-            };
-            Worker {
-                pool,
-                terminal_failure: None,
-                discovery,
-                failfast,
-            }
-        };
-
         async move {
+            let worker = {
+                let discovery = Discovery {
+                    resolution,
+                    closed: false,
+                };
+                Worker {
+                    pool,
+                    terminal_failure: None,
+                    discovery,
+                    failfast: Failfast::new(failfast, gate),
+                }
+            };
+
             loop {
                 // Before handling a request, prepare the pool by processing
                 // discovery and updates. This returns as soon as (1) the pool
@@ -115,13 +95,23 @@ where
                     // processing requests.
                     _ = worker.discover_while_awaiting_requests() => {}
 
-                    // Process requests, either by dispatchign them to the pool
+                    // Process requests, either by dispatching them to the pool
                     // or by serving errors directly.
                     msg = requests.recv() => match msg {
-                        Some(Message { req, tx, span }) => {
-                            let _enter = span.enter();
-                            let _ = tx.send(worker.dispatch(req));
+                        Some(Message { req, tx, span, t0 }) => {
+                            let _ = tx.send({
+                                let _enter = span.enter();
+                                // TODO(ver) track histogram.
+                                tracing::debug!(
+                                    latency = (time::Instant::now() - t0).as_secs_f64(),
+                                    "Dispatch"
+                                );
+                                worker.dispatch(req)
+                            });
                         }
+
+                        /// When the requests channel is fully closed, we're
+                        /// done.
                         None => {
                             tracing::debug!("Requests channel closed");
                             return Ok(());
@@ -189,7 +179,7 @@ where
                 // When the pool is ready, clear any failfast state we may have
                 // set before returning.
                 res = self.pool.ready() => {
-                    self.failfast.clear();
+                    self.failfast.set_ready();
                     if let Err(e) = res {
                         self.terminal_failure = Some(ServiceError::new(e.into()));
                     }
@@ -227,7 +217,7 @@ where
                 // ready, we clear the failfast state; but there's no need to
                 // yield control. We continue to process discoery udpates.
                 res = self.pool.ready(), if self.failfast.is_active() => {
-                    self.failfast.clear();
+                    self.failfast.set_ready();
                     if let Err(e) = res {
                         self.terminal_failure = Some(ServiceError::new(e.into()));
                         return;
@@ -280,7 +270,7 @@ where
     }
 }
 
-// === impl Resolution ===
+// === impl Discovery ===
 
 impl<T, R> Discovery<R>
 where
@@ -314,43 +304,5 @@ where
                 Err(error)
             }
         }
-    }
-}
-
-impl Failfast {
-    fn clear(&mut self) {
-        if self.state.take().is_some() {
-            self.gate.open();
-        }
-    }
-
-    fn is_active(&self) -> bool {
-        matches!(self.state, Some(FailfastState::Failfast))
-    }
-
-    async fn timeout(&mut self) {
-        match self.state {
-            // If we're already in failfast, then we don't need to wait.
-            Some(FailfastState::Failfast) => {
-                return;
-            }
-
-            // Ensure that the timer's been initialized.
-            Some(FailfastState::Waiting) => {}
-            None => {
-                self.sleep
-                    .as_mut()
-                    .reset(time::Instant::now() + self.timeout);
-            }
-        }
-        self.state = Some(FailfastState::Waiting);
-
-        // Wait for the failfast timer to expire.
-        self.sleep.as_mut().await;
-
-        // Once we enter failfast, shut the upstream gate so that we can
-        // advertise backpressure past the queue.
-        self.state = Some(FailfastState::Failfast);
-        self.gate.shut();
     }
 }

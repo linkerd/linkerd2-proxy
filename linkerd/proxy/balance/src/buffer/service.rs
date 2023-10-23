@@ -1,7 +1,7 @@
-use super::{future::ResponseFuture, message::Message, worker, Pool};
+use super::{future::ResponseFuture, message::Message, worker};
 use futures_util::TryStream;
 use linkerd_error::{Error, Result};
-use linkerd_proxy_core::Update;
+use linkerd_proxy_core::{Pool, Update};
 use linkerd_stack::{gate, Service};
 use std::{
     future::Future,
@@ -36,8 +36,7 @@ where
         T: Clone + Eq + std::fmt::Debug + Send,
         R: TryStream<Ok = Update<T>> + Send + Unpin,
         R::Error: Into<Error> + Send,
-        P: Pool<T> + Send + 'static,
-        P: Service<Req, Future = F>,
+        P: Pool<T> + Service<Req, Future = F> + Send + 'static,
         P::Future: Send,
         P::Error: Into<Error> + Send + Sync,
         Req: Send + 'static,
@@ -93,7 +92,8 @@ where
         // acquired, so we can freely allocate a oneshot.
         let (tx, rx) = oneshot::channel();
 
-        match self.tx.send_item(Message { req, span, tx }) {
+        let t0 = time::Instant::now();
+        match self.tx.send_item(Message { req, span, tx, t0 }) {
             Ok(_) => ResponseFuture::new(rx),
             // If the channel is closed, propagate the error from the worker.
             Err(_) => {

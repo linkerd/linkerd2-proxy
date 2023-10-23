@@ -4,3 +4,8 @@
 pub mod resolve;
 
 pub use self::resolve::{Resolve, ResolveService, Update};
+
+/// A collection of services updated from a resolution.
+pub trait Pool<T> {
+    fn update_pool(&mut self, update: Update<T>);
+}
