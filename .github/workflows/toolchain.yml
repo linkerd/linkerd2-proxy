@@ -19,12 +19,12 @@ jobs:
       - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: |
-          VERSION_REGEX='channel = "[0-9]+.[0-9]+.[0-9]+"'
+          VERSION_REGEX='channel = "([0-9]+\.[0-9]+\.[0-9]+)"'
           TOOLCHAIN=$(cat rust-toolchain.toml)
           if [[ $TOOLCHAIN =~ $VERSION_REGEX ]]; then
             VERSION=${BASH_REMATCH[1]}
             if [ "$(cargo --version | cut -d' ' -f2)" != "$VERSION" ]; then
-              echo "::error file=rust-toolchain.toml::rust-toolchain channel $VERSION does not match devcontainer $(cargo --version)"
+              echo "::error file=rust-toolchain.toml::rust-toolchain channel '$VERSION' does not match devcontainer '$(cargo --version)'"
               exit 1
             fi
           else
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
       - shell: bash
         run: |
-          VERSION_REGEX='channel = "[0-9]+.[0-9]+.[0-9]+"'
+          VERSION_REGEX='channel = "([0-9]+\.[0-9]+\.[0-9]+)"'
           TOOLCHAIN=$(cat rust-toolchain.toml)
           if [[ $TOOLCHAIN =~ $VERSION_REGEX ]]; then
             VERSION=${BASH_REMATCH[1]}
@@ -57,7 +57,7 @@ jobs:
                 tag="${image##*rust:}"
                 v="${tag%%-*}"
                 if [[ "$v" != "$VERSION" ]]; then
-                  echo "::warning file=$file::$file uses incorrect rust version: $v"
+                  echo "::warning file=$file::$file uses incorrect rust version: '$v' (rust-toolchain.toml contains '$VERSION')"
                   ex=$((ex + 1))
                 fi
               fi
