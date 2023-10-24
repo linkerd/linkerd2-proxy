@@ -141,6 +141,10 @@ where
 
         loop {
             tokio::select! {
+                // Tests, especially, depend on discovery updates being
+                // processed before ready returning.
+                biased;
+
                 // If the pool updated, continue waiting for the pool to be
                 // ready.
                 res = self.discovery.discover() => match res {
@@ -153,12 +157,6 @@ where
                         return;
                     }
                 },
-
-                // If the failfast timeout expires,
-                () = self.failfast.timeout() => {
-                    tracing::info!("Unavailable; entering fail-fast");
-                    return;
-                }
 
                 // When the pool is ready, clear any failfast state we may have
                 // set before returning.
@@ -182,6 +180,12 @@ where
                         }
                         None => tracing::trace!("Ready"),
                     }
+                    return;
+                }
+
+                // If the failfast timeout expires, allow requests to be processed.
+                () = self.failfast.timeout() => {
+                    tracing::info!("Unavailable; entering fail-fast");
                     return;
                 }
             }
