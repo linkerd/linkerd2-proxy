@@ -10,6 +10,7 @@ Utilities for composing Tower services.
 """
 
 [features]
+ready-cache = ["tower/ready-cache"]
 test-util = []
 
 [dependencies]
@@ -20,7 +21,12 @@ pin-project = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-util = { version = "0.7" }
-tower = { version = "0.4", features = ["buffer", "filter", "spawn-ready", "util"] }
+tower = { version = "0.4", features = [
+    "buffer",
+    "filter",
+    "spawn-ready",
+    "util",
+] }
 tracing = "0.1"
 
 [dev-dependencies]

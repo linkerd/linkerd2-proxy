@@ -13,8 +13,9 @@ mod service;
 mod worker;
 
 pub use self::service::PoolQ;
+pub use linkerd_proxy_core::Update;
 
 /// A collection of services updated from a resolution.
 pub trait Pool<T> {
-    fn update_pool(&mut self, update: linkerd_proxy_core::Update<T>);
+    fn update_pool(&mut self, update: Update<T>);
 }

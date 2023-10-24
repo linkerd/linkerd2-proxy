@@ -4,15 +4,16 @@ use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_proxy_core::Resolve;
 use linkerd_proxy_pool::PoolQ;
-use linkerd_stack::{layer, NewService, Param, Service};
-use std::{fmt::Debug, hash::Hash, marker::PhantomData, net::SocketAddr, time::Duration};
-use tower::{
-    balance::p2c,
-    load::{self, PeakEwma},
-};
+use linkerd_stack::{layer, Gate, NewService, Param, Service};
+use std::{fmt::Debug, hash::Hash, marker::PhantomData, net::SocketAddr};
+use tokio::time;
+use tower::load::{self, PeakEwma};
 
 mod discover;
 mod gauge_endpoints;
+mod p2c_pool;
+
+use crate::p2c_pool::P2cPool;
 
 pub use self::{
     discover::DiscoveryStreamOverflow,
@@ -22,8 +23,8 @@ pub use tower::load::peak_ewma::Handle;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EwmaConfig {
-    pub default_rtt: Duration,
-    pub decay: Duration,
+    pub default_rtt: time::Duration,
+    pub decay: time::Duration,
 }
 
 /// Configures a stack to resolve targets to balance requests over `N`-typed
@@ -36,8 +37,7 @@ pub struct NewBalancePeakEwma<C, Req, R, N> {
     _marker: PhantomData<fn(Req) -> C>,
 }
 
-pub type Balance<T, C, Req, N> =
-    p2c::Balance<discover::NewServices<T, NewPeakEwma<C, Req, N>>, Req>;
+pub type Balance<Req, F> = Gate<PoolQ<Req, F>>;
 
 /// Wraps the inner services in [`PeakEwma`] services so their load is tracked
 /// for the p2c balancer.
@@ -85,16 +85,18 @@ impl<C, T, Req, R, M, N, S> NewService<T> for NewBalancePeakEwma<C, Req, R, M>
 where
     T: Param<EwmaConfig> + Clone + Send,
     R: Resolve<T>,
+    R::Resolution: Unpin,
     R::Error: Send,
     M: NewService<T, Service = N> + Clone,
     N: NewService<(SocketAddr, R::Endpoint), Service = S> + Send + 'static,
-    S: Service<Req> + Send,
+    S: Service<Req> + Send + 'static,
+    S::Future: Send + 'static,
     S::Error: Into<Error>,
     C: load::TrackCompletion<load::peak_ewma::Handle, S::Response> + Default + Send + 'static,
-    Req: 'static,
-    Balance<R::Endpoint, C, Req, N>: Service<Req>,
+    Req: Send + 'static,
+    Balance<Req, S::Future>: Service<Req>,
 {
-    type Service = Balance<R::Endpoint, C, Req, N>;
+    type Service = Balance<Req, future::ErrInto<<PeakEwma<S, C> as Service<Req>>::Future, Error>>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let new_endpoint = NewPeakEwma {
@@ -105,8 +107,10 @@ where
 
         let disco = self.resolve.resolve(target).try_flatten_stream();
 
-        // BalanceQueue::from_rng(disco, &mut thread_rng()).expect("RNG must be valid")
-        todo!()
+        const FAILFAST: time::Duration = time::Duration::from_secs(10);
+        const CAPACITY: usize = 10_000;
+        let pool = P2cPool::new(new_endpoint);
+        PoolQ::spawn(disco, pool, CAPACITY, FAILFAST)
     }
 }
 
@@ -137,7 +141,7 @@ where
         // Due to a lossy transformation, the maximum value that can be
         // represented is ~585 years, which, I hope, is more than enough to
         // represent request latencies.
-        fn nanos(d: Duration) -> f64 {
+        fn nanos(d: time::Duration) -> f64 {
             const NANOS_PER_SEC: u64 = 1_000_000_000;
             let n = f64::from(d.subsec_nanos());
             let s = d.as_secs().saturating_mul(NANOS_PER_SEC) as f64;

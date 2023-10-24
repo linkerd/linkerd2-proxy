@@ -9,11 +9,12 @@ publish = false
 futures = { version = "0.3", default-features = false }
 futures-util = "0.3"
 indexmap = "1"
+rustc-hash = "1"
 linkerd-error = { path = "../../error" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-proxy-pool = { path = "../pool" }
-linkerd-stack = { path = "../../stack" }
+linkerd-stack = { path = "../../stack", features = ["ready-cache"] }
 parking_lot = "0.11"
 pin-project = "1"
 rand = "0.8"

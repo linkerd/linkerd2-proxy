@@ -57,6 +57,8 @@ pub use self::{
     unwrap_or::UnwrapOr,
     watch::{NewSpawnWatch, SpawnWatch},
 };
+#[cfg(feature = "ready-cache")]
+pub use tower::ready_cache;
 pub use tower::{
     service_fn,
     util::{self, future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},

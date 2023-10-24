@@ -2,22 +2,15 @@ use crate::{
     error::ServiceError,
     failfast::{self, Failfast},
     message::Message,
+    service::SharedTerminalState,
     Pool,
 };
 use futures::{TryStream, TryStreamExt};
 use linkerd_error::{Error, Result};
 use linkerd_proxy_core::Update;
 use linkerd_stack::{gate, FailFastError, Service, ServiceExt};
-use parking_lot::Mutex;
-use std::sync::Arc;
 use tokio::{sync::mpsc, task::JoinHandle, time};
 use tracing::Instrument;
-
-/// Provides a copy of the terminal failure error to all handles.
-#[derive(Clone, Debug)]
-pub(crate) struct SharedTerminalFailure {
-    inner: Arc<Mutex<Option<ServiceError>>>,
-}
 
 #[derive(Debug)]
 struct Worker<R, P> {
@@ -34,14 +27,19 @@ struct Discovery<R> {
 }
 
 /// Spawns a task that simultaneously updates a pool of services from a
-/// discovery stream and dispatches requests to the inner pool.
+/// discovery stream and dispatches requests to it.
+///
+/// If the pool service does not become ready within the failfast timeout, then
+/// request are failed with a FailFastError until the pool becomes ready. While
+/// in the failfast state, the provided gate is shut so that the caller may
+/// exert backpressure to eliminate requests from being added to the queue.
 pub(crate) fn spawn<T, Req, R, P>(
     mut requests: mpsc::Receiver<Message<Req, P::Future>>,
     failfast: time::Duration,
     gate: gate::Tx,
     resolution: R,
     pool: P,
-) -> (SharedTerminalFailure, JoinHandle<Result<()>>)
+) -> (SharedTerminalState, JoinHandle<Result<()>>)
 where
     Req: Send + 'static,
     T: Clone + Eq + std::fmt::Debug + Send,
@@ -51,9 +49,7 @@ where
     P::Future: Send + 'static,
     P::Error: Into<Error> + Send,
 {
-    let shared = SharedTerminalFailure {
-        inner: Arc::new(Mutex::new(None)),
-    };
+    let shared = SharedTerminalState::default();
 
     let task = tokio::spawn({
         let shared = shared.clone();
@@ -76,7 +72,7 @@ where
                 // enqueuing additional requests. We continue processing queued
                 // requests, however.
                 if let Some(e) = worker.terminal_failure.clone() {
-                    *shared.inner.lock() = Some(e.clone());
+                    shared.set(e.clone());
                     requests.close();
                 }
 
@@ -119,14 +115,6 @@ where
     });
 
     (shared, task)
-}
-
-// === impl Handle ===
-
-impl SharedTerminalFailure {
-    pub(crate) fn get(&self) -> Option<ServiceError> {
-        (*self.inner.lock()).clone()
-    }
 }
 
 // === impl Worker ===

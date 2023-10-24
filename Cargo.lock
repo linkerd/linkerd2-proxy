@@ -1483,6 +1483,7 @@ dependencies = [
  "parking_lot 0.11.2",
  "pin-project",
  "rand",
+ "rustc-hash",
  "thiserror",
  "tokio",
  "tokio-stream",

@@ -3,8 +3,10 @@ use futures::TryStream;
 use linkerd_error::{Error, Result};
 use linkerd_proxy_core::Update;
 use linkerd_stack::{gate, Service};
+use parking_lot::Mutex;
 use std::{
     future::Future,
+    sync::Arc,
     task::{Context, Poll},
 };
 use tokio::{sync::mpsc, time};
@@ -14,7 +16,25 @@ use tokio_util::sync::PollSender;
 #[derive(Debug)]
 pub struct PoolQ<Req, F> {
     tx: PollSender<Message<Req, F>>,
-    terminal_failure: worker::SharedTerminalFailure,
+    terminal: SharedTerminalState,
+}
+
+/// Provides a copy of the terminal failure error to all handles.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SharedTerminalState {
+    inner: Arc<Mutex<Option<error::ServiceError>>>,
+}
+
+// === impl SharedTerminalFailure ===
+
+impl SharedTerminalState {
+    fn get(&self) -> Option<error::ServiceError> {
+        (*self.inner.lock()).clone()
+    }
+
+    pub(crate) fn set(&self, error: error::ServiceError) {
+        *self.inner.lock() = Some(error);
+    }
 }
 
 impl<Req, F> PoolQ<Req, F>
@@ -23,10 +43,10 @@ where
     F: Send + 'static,
 {
     pub fn spawn<T, R, P>(
-        failfast: time::Duration,
         resolution: R,
         pool: P,
-        bound: usize,
+        capacity: usize,
+        failfast: time::Duration,
     ) -> gate::Gate<Self>
     where
         T: Clone + Eq + std::fmt::Debug + Send,
@@ -37,24 +57,21 @@ where
         Req: Send + 'static,
     {
         let (gate_tx, gate_rx) = gate::channel();
-        let (tx, rx) = mpsc::channel(bound);
+        let (tx, rx) = mpsc::channel(capacity);
         let (terminal_failure, _task) = worker::spawn(rx, failfast, gate_tx, resolution, pool);
         gate::Gate::new(gate_rx, Self::new(tx, terminal_failure))
     }
 
-    fn new(
-        tx: mpsc::Sender<Message<Req, F>>,
-        terminal_failure: worker::SharedTerminalFailure,
-    ) -> Self {
+    fn new(tx: mpsc::Sender<Message<Req, F>>, terminal: SharedTerminalState) -> Self {
         Self {
             tx: PollSender::new(tx),
-            terminal_failure,
+            terminal,
         }
     }
 
     #[inline]
     fn error_or_closed(&self) -> Error {
-        self.terminal_failure
+        self.terminal
             .get()
             .map(Into::into)
             .unwrap_or_else(|| error::Closed::new().into())
@@ -101,7 +118,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            terminal_failure: self.terminal_failure.clone(),
+            terminal: self.terminal.clone(),
             tx: self.tx.clone(),
         }
     }
