@@ -10,7 +10,7 @@ use linkerd_error::{Error, Result};
 use linkerd_proxy_core::Update;
 use linkerd_stack::{gate, FailFastError, ServiceExt};
 use tokio::{sync::mpsc, task::JoinHandle, time};
-use tracing::Instrument;
+use tracing::{debug_span, Instrument};
 
 #[derive(Debug)]
 struct Worker<R, P> {
@@ -65,7 +65,9 @@ where
                 // Before handling a request, prepare the pool by processing
                 // discovery and updates. This returns as soon as (1) the pool
                 // has ready endpoints or (2) the pool enters failfast.
+                tracing::trace!("Preparing");
                 worker.prepare_pool().await;
+                tracing::trace!("Prepared");
 
                 // If either discovery or the pool has failed, then we tell the
                 // client handles to use the shared error value instead of
@@ -74,6 +76,7 @@ where
                 if let Some(e) = worker.terminal_failure.clone() {
                     shared.set(e.clone());
                     requests.close();
+                    tracing::trace!("Closed");
                 }
 
                 tokio::select! {
@@ -111,7 +114,7 @@ where
                 }
             }
         }
-        .in_current_span()
+        .instrument(debug_span!("pool"))
     });
 
     (shared, task)
@@ -160,6 +163,10 @@ where
                 // When the pool is ready, clear any failfast state we may have
                 // set before returning.
                 res = self.pool.ready() => {
+                    tracing::trace!(ready.ok = res.is_ok());
+                    if let Err(e) = res {
+                        self.terminal_failure = Some(ServiceError::new(e.into()));
+                    }
                     match self.failfast.set_ready() {
                         Some(failfast::State::Waiting { since }) => {
                             tracing::debug!(
@@ -173,10 +180,7 @@ where
                                 "Available; exited failfast"
                             );
                         }
-                        None => {}
-                    }
-                    if let Err(e) = res {
-                        self.terminal_failure = Some(ServiceError::new(e.into()));
+                        None => tracing::trace!("Ready"),
                     }
                     return;
                 }
@@ -195,6 +199,8 @@ where
         P: Pool<T, Req>,
         P::Error: Into<Error>,
     {
+        tracing::trace!("Discovering while awaiting requests");
+
         // If a terminal failure has been set, then we're draining requests from
         // the queue, so there's no need to process any further updates.
         if self.terminal_failure.is_some() {

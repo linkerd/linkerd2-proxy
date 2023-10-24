@@ -157,7 +157,7 @@ where
 
 impl<T, N, Req, S> Pool<T, Req> for P2cPool<T, N, Req, S>
 where
-    T: Clone + Eq,
+    T: Clone + Eq + std::fmt::Debug,
     N: NewService<(SocketAddr, T), Service = S>,
     S: Service<Req> + Load,
     S::Error: Into<Error>,
@@ -165,6 +165,7 @@ where
     S::Metric: std::fmt::Debug,
 {
     fn update_pool(&mut self, update: Update<T>) {
+        tracing::trace!(?update);
         let changed = match update {
             Update::Reset(targets) => self.reset(targets),
             Update::Add(targets) => self.add(targets),
@@ -191,12 +192,16 @@ where
     type Future = futures::future::ErrInto<S::Future, Error>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        tracing::trace!("Polling pending");
         if let Err(e) = self.poll_pending(cx) {
             return Poll::Ready(Err(e));
         }
 
+        self.next_idx = self.p2c_ready_index(cx);
+
+        // We've polled both pending updates and any ready endpoints. If there
+        // still isn't an index then we rely on something changing.
         if self.next_idx.is_none() {
-            self.next_idx = self.p2c_ready_index(cx);
             return Poll::Pending;
         }
 

@@ -36,6 +36,7 @@ impl Failfast {
     /// Clears any waiting or failfast state.
     pub(super) fn set_ready(&mut self) -> Option<State> {
         let state = self.state.take()?;
+        tracing::trace!("Exiting failfast");
         self.gate.open();
         Some(state)
     }
@@ -59,7 +60,9 @@ impl Failfast {
         };
 
         // Wait for the failfast timer to expire.
+        tracing::trace!("Waiting for failfast timeout");
         self.sleep.as_mut().await;
+        tracing::trace!("Entering failfast");
 
         // Once we enter failfast, shut the upstream gate so that we can
         // advertise backpressure past the queue.
