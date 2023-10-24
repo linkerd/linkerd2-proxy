@@ -117,7 +117,7 @@ where
         Ok(())
     }
 
-    fn p2c_ready_index(&mut self, cx: &mut Context<'_>) -> Option<usize> {
+    fn p2c_ready_index(&mut self) -> Option<usize> {
         match self.pool.ready_len() {
             0 => None,
             1 => Some(0),
@@ -193,19 +193,24 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         tracing::trace!("Polling pending");
-        if let Err(e) = self.poll_pending(cx) {
-            return Poll::Ready(Err(e));
+        loop {
+            if let Err(e) = self.poll_pending(cx) {
+                return Poll::Ready(Err(e));
+            }
+
+            match self.p2c_ready_index() {
+                None => return Poll::Pending,
+                Some(idx) => match self.pool.check_ready_index(cx, idx) {
+                    Ok(false) => continue,
+                    Ok(true) => {
+                        tracing::trace!(ready.index = idx);
+                        self.next_idx = Some(idx);
+                        return Poll::Ready(Ok(()));
+                    }
+                    Err(e) => return Poll::Ready(Err(e.into())),
+                },
+            }
         }
-
-        self.next_idx = self.p2c_ready_index(cx);
-
-        // We've polled both pending updates and any ready endpoints. If there
-        // still isn't an index then we rely on something changing.
-        if self.next_idx.is_none() {
-            return Poll::Pending;
-        }
-
-        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, req: Req) -> Self::Future {

@@ -36,8 +36,10 @@ impl Failfast {
     /// Clears any waiting or failfast state.
     pub(super) fn set_ready(&mut self) -> Option<State> {
         let state = self.state.take()?;
-        tracing::trace!("Exiting failfast");
-        self.gate.open();
+        if matches!(state, State::Failfast { .. }) {
+            tracing::trace!("Exiting failfast");
+            self.gate.open();
+        }
         Some(state)
     }
 

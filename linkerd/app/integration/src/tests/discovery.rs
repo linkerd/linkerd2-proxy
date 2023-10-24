@@ -458,6 +458,7 @@ mod http2 {
 
         // Simulate the first server falling over without discovery
         // knowing about it...
+        tracing::info!("Stopping {}", srv1.addr);
         srv1.join().await;
         tokio::task::yield_now().await;
 
@@ -469,15 +470,18 @@ mod http2 {
             .value(1u64)
             .assert_in(&metrics)
             .await;
+        tracing::info!("Connection closed");
 
         // Start a new request to the destination, now that the server is dead.
         // This request should be waiting at the balancer for a ready endpoint.
         //
         // The only one it knows about is dead, so it won't have progressed.
+        tracing::info!("Sending /bye");
         let fut = client.request(client.request_builder("/bye"));
 
         // When we tell the balancer about a new endpoint, it should have added
         // it and then dispatched the request...
+        tracing::info!("Adding {}", srv2.addr);
         dst.send_addr(srv2.addr);
 
         let res = fut.await.expect("/bye response");
