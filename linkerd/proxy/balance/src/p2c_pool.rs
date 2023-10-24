@@ -4,7 +4,12 @@ use linkerd_proxy_pool::{Pool, Update};
 use linkerd_stack::{ready_cache::ReadyCache, NewService, Service};
 use rand::{rngs::SmallRng, thread_rng, Rng, SeedableRng};
 use rustc_hash::FxHashMap;
-use std::{collections::hash_map::Entry, net::SocketAddr, pin::Pin};
+use std::{
+    collections::hash_map::Entry,
+    net::SocketAddr,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tower::{
     load::{self, Load},
     ready_cache::error::Failed,
@@ -105,14 +110,14 @@ where
         changed
     }
 
-    fn poll_pending(&mut self, cx: &mut std::task::Context<'_>) -> Result<(), Error> {
-        if let std::task::Poll::Ready(Err(e)) = self.pool.poll_pending(cx) {
+    fn poll_pending(&mut self, cx: &mut Context<'_>) -> Result<(), Error> {
+        if let Poll::Ready(Err(e)) = self.pool.poll_pending(cx) {
             return Err(e.into());
         }
         Ok(())
     }
 
-    fn p2c_ready(&mut self, cx: &mut std::task::Context<'_>) -> Option<usize> {
+    fn p2c_ready_index(&mut self, cx: &mut Context<'_>) -> Option<usize> {
         match self.pool.ready_len() {
             0 => None,
             1 => Some(0),
@@ -126,8 +131,8 @@ where
                 }
                 debug_assert_ne!(aidx, bidx, "random indices must be distinct");
 
-                let aload = self.ready_index_load(aidx as usize);
-                let bload = self.ready_index_load(bidx as usize);
+                let aload = self.ready_index_load(aidx);
+                let bload = self.ready_index_load(bidx);
                 let chosen = if aload <= bload { aidx } else { bidx };
 
                 tracing::trace!(
@@ -150,12 +155,13 @@ where
     }
 }
 
-impl<T, N, Req, S> Pool<T> for P2cPool<T, N, Req, S>
+impl<T, N, Req, S> Pool<T, Req> for P2cPool<T, N, Req, S>
 where
     T: Clone + Eq,
     N: NewService<(SocketAddr, T), Service = S>,
     S: Service<Req> + Load,
     S::Error: Into<Error>,
+    S::Future: Send + 'static,
     S::Metric: std::fmt::Debug,
 {
     fn update_pool(&mut self, update: Update<T>) {
@@ -184,15 +190,17 @@ where
     type Error = Error;
     type Future = futures::future::ErrInto<S::Future, Error>;
 
-    fn poll_ready(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if let Err(e) = self.poll_pending(cx) {
-            return std::task::Poll::Ready(Err(e));
+            return Poll::Ready(Err(e));
         }
 
-        std::task::Poll::Ready(Ok(()))
+        if self.next_idx.is_none() {
+            self.next_idx = self.p2c_ready_index(cx);
+            return Poll::Pending;
+        }
+
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, req: Req) -> Self::Future {

@@ -52,7 +52,7 @@ where
         T: Clone + Eq + std::fmt::Debug + Send,
         R: TryStream<Ok = Update<T>> + Send + Unpin + 'static,
         R::Error: Into<Error> + Send,
-        P: Pool<T> + Service<Req, Future = F> + Send + 'static,
+        P: Pool<T, Req, Future = F> + Send + 'static,
         P::Error: Into<Error> + Send + Sync,
         Req: Send + 'static,
     {

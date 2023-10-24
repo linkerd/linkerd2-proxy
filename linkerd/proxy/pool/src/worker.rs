@@ -8,7 +8,7 @@ use crate::{
 use futures::{TryStream, TryStreamExt};
 use linkerd_error::{Error, Result};
 use linkerd_proxy_core::Update;
-use linkerd_stack::{gate, FailFastError, Service, ServiceExt};
+use linkerd_stack::{gate, FailFastError, ServiceExt};
 use tokio::{sync::mpsc, task::JoinHandle, time};
 use tracing::Instrument;
 
@@ -45,7 +45,7 @@ where
     T: Clone + Eq + std::fmt::Debug + Send,
     R: TryStream<Ok = Update<T>> + Unpin + Send + 'static,
     R::Error: Into<Error> + Send,
-    P: Pool<T> + Service<Req> + Send + 'static,
+    P: Pool<T, Req> + Send + 'static,
     P::Future: Send + 'static,
     P::Error: Into<Error> + Send,
 {
@@ -127,8 +127,7 @@ where
 {
     async fn prepare_pool<Req>(&mut self)
     where
-        P: Pool<T>,
-        P: Service<Req>,
+        P: Pool<T, Req>,
         P::Error: Into<Error>,
     {
         // If we're in a permanent failure state, skip preparation so that we
@@ -193,8 +192,7 @@ where
     /// If the discovery stream is closed, this never returns.
     async fn discover_while_awaiting_requests<Req>(&mut self)
     where
-        P: Pool<T>,
-        P: Service<Req>,
+        P: Pool<T, Req>,
         P::Error: Into<Error>,
     {
         // If a terminal failure has been set, then we're draining requests from
@@ -256,8 +254,7 @@ where
     /// Dispatches a request to the pool when appropriate.
     fn dispatch<Req>(&mut self, req: Req) -> Result<P::Future, Error>
     where
-        P: Pool<T>,
-        P: Service<Req>,
+        P: Pool<T, Req>,
         P::Error: Into<Error>,
     {
         // If the service or discovery stream failed, fail requests.
