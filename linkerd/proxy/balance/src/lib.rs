@@ -73,9 +73,10 @@ impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
         }
     }
 
-    pub fn layer(resolve: R) -> impl layer::Layer<N, Service = Self> + Clone
+    pub fn layer<T>(resolve: R) -> impl layer::Layer<N, Service = Self> + Clone
     where
         R: Clone,
+        Self: NewService<T>,
     {
         layer::mk(move |inner| Self::new(inner, resolve.clone()))
     }
@@ -94,23 +95,23 @@ where
     S::Error: Into<Error>,
     C: load::TrackCompletion<load::peak_ewma::Handle, S::Response> + Default + Send + 'static,
     Req: Send + 'static,
-    Balance<Req, S::Future>: Service<Req>,
+    Balance<Req, future::ErrInto<<PeakEwma<S, C> as Service<Req>>::Future, Error>>: Service<Req>,
 {
     type Service = Balance<Req, future::ErrInto<<PeakEwma<S, C> as Service<Req>>::Future, Error>>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let new_endpoint = NewPeakEwma {
-            config: target.param(),
-            inner: self.inner.new_service(target.clone()),
-            _marker: PhantomData,
-        };
-
-        let disco = self.resolve.resolve(target).try_flatten_stream();
-
+        // TODO(ver) QueueConfig.
         const FAILFAST: time::Duration = time::Duration::from_secs(10);
         const CAPACITY: usize = 10_000;
-        let pool = P2cPool::new(new_endpoint);
-        PoolQ::spawn(disco, pool, CAPACITY, FAILFAST)
+
+        let disco = self.resolve.resolve(target.clone()).try_flatten_stream();
+
+        let pool = P2cPool::new(NewPeakEwma::new(
+            target.param(),
+            self.inner.new_service(target),
+        ));
+
+        PoolQ::spawn(CAPACITY, FAILFAST, disco, pool)
     }
 }
 
@@ -126,6 +127,16 @@ impl<C, Req, R: Clone, N: Clone> Clone for NewBalancePeakEwma<C, Req, R, N> {
 }
 
 // === impl NewPeakEwma ===
+
+impl<C, Req, N> NewPeakEwma<C, Req, N> {
+    fn new(config: EwmaConfig, inner: N) -> Self {
+        Self {
+            config,
+            inner,
+            _marker: PhantomData,
+        }
+    }
+}
 
 impl<C, T, N, Req, S> NewService<T> for NewPeakEwma<C, Req, N>
 where

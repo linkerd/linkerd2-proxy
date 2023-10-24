@@ -50,6 +50,7 @@ impl Outbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
 

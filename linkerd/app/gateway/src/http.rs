@@ -79,6 +79,7 @@ impl Gateway {
         T: Clone + Send + Sync + Unpin + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
         // HTTP outbound stack.
         N: svc::NewService<
             outbound::http::concrete::Endpoint<

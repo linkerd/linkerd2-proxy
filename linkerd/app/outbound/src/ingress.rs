@@ -81,6 +81,7 @@ impl Outbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
         let discover = self.ingress_resolver(profiles, policies);
 

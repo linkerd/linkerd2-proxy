@@ -99,6 +99,7 @@ impl<N> Outbound<N> {
         T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
         // HTTP client stack
         N: svc::NewService<concrete::Endpoint<logical::Concrete<Http<T>>>, Service = NSvc>,
         N: Clone + Send + Sync + Unpin + 'static,

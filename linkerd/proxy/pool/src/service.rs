@@ -43,10 +43,10 @@ where
     F: Send + 'static,
 {
     pub fn spawn<T, R, P>(
-        resolution: R,
-        pool: P,
         capacity: usize,
         failfast: time::Duration,
+        resolution: R,
+        pool: P,
     ) -> gate::Gate<Self>
     where
         T: Clone + Eq + std::fmt::Debug + Send,
@@ -58,8 +58,8 @@ where
     {
         let (gate_tx, gate_rx) = gate::channel();
         let (tx, rx) = mpsc::channel(capacity);
-        let (terminal_failure, _task) = worker::spawn(rx, failfast, gate_tx, resolution, pool);
-        gate::Gate::new(gate_rx, Self::new(tx, terminal_failure))
+        let (terminal, _task) = worker::spawn(rx, failfast, gate_tx, resolution, pool);
+        gate::Gate::new(gate_rx, Self::new(tx, terminal))
     }
 
     fn new(tx: mpsc::Sender<Message<Req, F>>, terminal: SharedTerminalState) -> Self {

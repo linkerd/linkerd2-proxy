@@ -102,6 +102,7 @@ impl<N> Outbound<N> {
         T: Clone + Debug + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
+        R::Resolution: Unpin,
         // Endpoint stack.
         N: svc::NewService<Endpoint<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -197,6 +198,7 @@ where
     where
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + 'static,
+        R::Resolution: Unpin,
         // Endpoint stack.
         N: svc::NewService<Endpoint<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>

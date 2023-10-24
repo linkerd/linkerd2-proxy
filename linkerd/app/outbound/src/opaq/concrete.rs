@@ -78,6 +78,7 @@ impl<C> Outbound<C> {
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
         // Endpoint connector.
         C: svc::MakeConnection<Endpoint<T>> + Clone + Send + 'static,
         C::Connection: Send + Unpin,
