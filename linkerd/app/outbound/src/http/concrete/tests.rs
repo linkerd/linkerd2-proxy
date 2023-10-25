@@ -66,17 +66,23 @@ async fn gauges_endpoints() {
         .metrics
         .http_balancer
         .http_endpoints(svc::Param::param(&Target), svc::Param::param(&Target));
-    assert_eq!(gauge.pending.value(), 0);
-    assert_eq!(gauge.ready.value(), 0);
+    assert_eq!(
+        (gauge.pending.value(), gauge.ready.value()),
+        (0, 0),
+        "No endpoints"
+    );
 
     // Begin with a single endpoint. When the balancer can process requests, the
     // gauge is accurate.
     resolve_tx.add(vec![(ep0, Metadata::default())]).unwrap();
     handle0.allow(1);
-    ready.notify_one();
     tokio::task::yield_now().await;
-    assert_eq!(gauge.pending.value(), 0);
-    assert_eq!(gauge.ready.value(), 1);
+    assert_eq!(
+        (gauge.pending.value(), gauge.ready.value()),
+        (0, 1),
+        "After adding an endpoint one should be ready"
+    );
+    ready.notify_one();
     let (_, res) = handle0.next_request().await.unwrap();
     res.send_response(http::Response::default());
 
@@ -84,34 +90,40 @@ async fn gauges_endpoints() {
     resolve_tx.add(vec![(ep1, Metadata::default())]).unwrap();
     handle0.allow(0);
     handle1.allow(1);
-    ready.notify_one();
     tokio::task::yield_now().await;
-    assert_eq!(gauge.pending.value(), 1);
-    assert_eq!(gauge.ready.value(), 1);
+    assert_eq!(
+        (gauge.pending.value(), gauge.ready.value()),
+        (1, 1),
+        "Added a pending endpoint"
+    );
+    ready.notify_one();
     let (_, res) = handle1.next_request().await.unwrap();
     res.send_response(http::Response::default());
 
     // Remove the first endpoint.
     resolve_tx.remove(vec![ep0]).unwrap();
     handle1.allow(2);
-    ready.notify_one();
-    let (_, res) = handle1.next_request().await.unwrap();
-    res.send_response(http::Response::default());
 
     // The inner endpoint isn't actually dropped until the balancer's subsequent poll.
-    ready.notify_one();
     tokio::task::yield_now().await;
-    assert_eq!(gauge.pending.value(), 0);
-    assert_eq!(gauge.ready.value(), 1);
+    assert_eq!(
+        (gauge.pending.value(), gauge.ready.value()),
+        (0, 1),
+        "Removed an endpoint"
+    );
+    ready.notify_one();
     let (_, res) = handle1.next_request().await.unwrap();
     res.send_response(http::Response::default());
 
     // Dropping the remaining endpoint, the gauge is updated.
     resolve_tx.remove(vec![ep1]).unwrap();
-    ready.notify_one();
     tokio::task::yield_now().await;
-    assert_eq!(gauge.pending.value(), 0);
-    assert_eq!(gauge.ready.value(), 0);
+    ready.notify_one();
+    assert_eq!(
+        (gauge.pending.value(), gauge.ready.value()),
+        (0, 0),
+        "Removed all endpoints"
+    );
 }
 
 #[derive(Clone, Debug)]
