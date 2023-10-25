@@ -181,6 +181,7 @@ where
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
+        tracing::trace!("Polling pending");
         self.pool.poll_pending(cx).map_err(|Failed(_, e)| e)
     }
 }
@@ -199,25 +200,25 @@ where
     type Future = futures::future::ErrInto<S::Future, Error>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        tracing::trace!("Polling pending");
         loop {
+            tracing::trace!("Polling pending");
             if let Err(e) = self.poll_pending(cx) {
                 return Poll::Ready(Err(e));
             }
 
-            match self.p2c_ready_index() {
-                None => return Poll::Pending,
-                Some(idx) => match self.pool.check_ready_index(cx, idx) {
-                    Ok(false) => continue,
-                    Ok(true) => {
-                        tracing::trace!(ready.index = idx);
-                        self.next_idx = Some(idx);
-                        return Poll::Ready(Ok(()));
-                    }
-                    Err(e) => {
-                        return Poll::Ready(Err(e.into()));
-                    }
-                },
+            if let Some(idx) = self.next_idx {
+                tracing::trace!(ready.index = idx, "Check");
+                if self.pool.check_ready_index(cx, idx)? {
+                    tracing::trace!(ready.index = idx, "Ready");
+                    return Poll::Ready(Ok(()));
+                }
+                tracing::trace!(ready.index = idx, "Pending");
+                self.next_idx = None;
+            }
+
+            self.next_idx = self.p2c_ready_index();
+            if self.next_idx.is_none() {
+                return Poll::Pending;
             }
         }
     }

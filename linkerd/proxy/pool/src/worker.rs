@@ -106,8 +106,8 @@ where
                             .expect("must not fail twice")
                             .send(err.clone());
                         requests.close();
-                        tracing::trace!("Closed");
                         terminal_failure = Some(err);
+                        tracing::trace!("Closed");
                     } else {
                         tracing::trace!("Pool ready");
                     }

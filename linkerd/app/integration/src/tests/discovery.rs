@@ -1,5 +1,6 @@
 use crate::*;
 use linkerd2_proxy_api as pb;
+use tokio::time;
 
 const HOST: &str = "disco.test.svc.cluster.local";
 
@@ -427,26 +428,16 @@ mod http2 {
         // See https://github.com/linkerd/linkerd2/issues/2550
         let _t = trace_init();
 
-        let srv1 = server::http2()
-            .route("/", "hello")
-            .route("/bye", "bye")
-            .run()
-            .await;
-
-        let srv2 = server::http2()
-            .route("/", "hello")
-            .route("/bye", "bye")
-            .run()
-            .await;
-        let srv1_addr = srv1.addr;
+        let alpha = server::http2().route("/", "alpha").run().await;
+        let beta = server::http2().route("/", "beta").run().await;
 
         // Start with the first server.
         let dstctl = controller::new();
         let polctl = controller::policy();
-        let (_profile, _policy, dst) = send_default_dst(&dstctl, &polctl, &srv1);
+        let (_profile, _policy, dst) = send_default_dst(&dstctl, &polctl, &alpha);
 
         let proxy = proxy::new()
-            .outbound_ip(srv1.addr)
+            .outbound_ip(alpha.addr)
             .controller(dstctl.run().await)
             .policy(polctl.run().await)
             .run()
@@ -454,38 +445,50 @@ mod http2 {
         let client = client::http2(proxy.outbound, HOST);
         let metrics = client::http1(proxy.admin, "localhost");
 
-        assert_eq!(client.get("/").await, "hello");
+        assert_eq!(client.get("/").await, "alpha");
 
         // Simulate the first server falling over without discovery
         // knowing about it...
-        tracing::info!("Stopping {}", srv1.addr);
-        srv1.join().await;
-        tokio::task::yield_now().await;
+        tracing::info!(%alpha.addr, "Stopping");
+        let alpha_addr = alpha.addr;
+        alpha.join().await;
 
-        // Wait until the proxy has seen the `srv1` disconnect...
+        // Wait until the proxy has seen the `alpha` disconnect...
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("target_addr", srv1_addr.to_string())
+            .label("target_addr", alpha_addr.to_string())
             .value(1u64)
             .assert_in(&metrics)
             .await;
         tracing::info!("Connection closed");
 
+        time::sleep(time::Duration::from_secs(1)).await;
+
         // Start a new request to the destination, now that the server is dead.
         // This request should be waiting at the balancer for a ready endpoint.
         //
         // The only one it knows about is dead, so it won't have progressed.
-        tracing::info!("Sending /bye");
-        let fut = client.request(client.request_builder("/bye"));
+        tracing::info!("Sending request");
+        let fut = client.request(client.request_builder("/"));
 
         // When we tell the balancer about a new endpoint, it should have added
         // it and then dispatched the request...
-        tracing::info!("Adding {}", srv2.addr);
-        dst.send_addr(srv2.addr);
+        tracing::info!(%beta.addr, "Adding");
+        dst.send_addr(beta.addr);
 
-        let res = fut.await.expect("/bye response");
+        let res = fut.await.expect("beta response");
         assert_eq!(res.status(), http::StatusCode::OK);
+        assert_eq!(
+            String::from_utf8(
+                hyper::body::to_bytes(res.into_body())
+                    .await
+                    .unwrap()
+                    .to_vec(),
+            )
+            .unwrap(),
+            "beta"
+        );
     }
 }
 

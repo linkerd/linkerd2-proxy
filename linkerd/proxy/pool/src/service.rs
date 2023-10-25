@@ -89,13 +89,6 @@ where
     type Future = ResponseFuture<F>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // First, check if the worker is still alive.
-        if self.tx.is_closed() {
-            // If the inner service has errored, then we error here.
-            return Poll::Ready(Err(self.error_or_closed()));
-        }
-
-        // Poll the sender to acquire a permit.
         self.tx.poll_reserve(cx).map_err(|_| self.error_or_closed())
     }
 

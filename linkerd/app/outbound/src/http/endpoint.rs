@@ -152,6 +152,9 @@ impl<N> Outbound<N> {
                     "host",
                     CANONICAL_DST_HEADER,
                 ]))
+                .push(svc::NewInstrumentLayer::new(|_: &_| {
+                    tracing::debug_span!("http.endpoint")
+                }))
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxResponse::layer())
