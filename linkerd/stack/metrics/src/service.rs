@@ -14,6 +14,7 @@ pub struct TrackService<S> {
     inner: S,
     metrics: Arc<Metrics>,
     blocked_since: Option<Instant>,
+    _tracker: Arc<()>,
 }
 
 impl<S> TrackService<S> {
@@ -22,6 +23,7 @@ impl<S> TrackService<S> {
             inner,
             metrics,
             blocked_since: None,
+            _tracker: Arc::new(()),
         }
     }
 }
@@ -32,6 +34,7 @@ impl<S: Clone> Clone for TrackService<S> {
             inner: self.inner.clone(),
             metrics: self.metrics.clone(),
             blocked_since: None,
+            _tracker: self._tracker.clone(),
         }
     }
 }
@@ -86,7 +89,7 @@ where
 
 impl<S> Drop for TrackService<S> {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.metrics) == 1 {
+        if Arc::strong_count(&self._tracker) == 1 {
             // If we're the last reference to the metrics, then we can
             // increment the drop count.
             self.metrics.drop_total.incr();
