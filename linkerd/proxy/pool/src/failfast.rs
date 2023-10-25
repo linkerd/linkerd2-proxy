@@ -28,6 +28,10 @@ impl Failfast {
         }
     }
 
+    pub(super) fn duration(&self) -> time::Duration {
+        self.timeout
+    }
+
     /// Returns true if we are currently in a failfast state.
     pub(super) fn is_active(&self) -> bool {
         matches!(self.state, Some(State::Failfast { .. }))

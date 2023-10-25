@@ -16,23 +16,19 @@ use tokio_util::sync::PollSender;
 #[derive(Debug)]
 pub struct PoolQ<Req, F> {
     tx: PollSender<Message<Req, F>>,
-    terminal: SharedTerminalState,
+    terminal: Arc<Mutex<Option<error::TerminalFailure>>>,
 }
 
 /// Provides a copy of the terminal failure error to all handles.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct SharedTerminalState {
-    inner: Arc<Mutex<Option<error::ServiceError>>>,
+pub(crate) struct Terminate {
+    inner: Arc<Mutex<Option<error::TerminalFailure>>>,
 }
 
 // === impl SharedTerminalFailure ===
 
-impl SharedTerminalState {
-    fn get(&self) -> Option<error::ServiceError> {
-        (*self.inner.lock()).clone()
-    }
-
-    pub(crate) fn set(&self, error: error::ServiceError) {
+impl Terminate {
+    pub(crate) fn send(self, error: error::TerminalFailure) {
         *self.inner.lock() = Some(error);
     }
 }
@@ -58,21 +54,25 @@ where
     {
         let (gate_tx, gate_rx) = gate::channel();
         let (tx, rx) = mpsc::channel(capacity);
-        let (terminal, _task) = worker::spawn(rx, failfast, gate_tx, resolution, pool);
-        gate::Gate::new(gate_rx, Self::new(tx, terminal))
+        let inner = Self::new(tx);
+        let terminate = Terminate {
+            inner: inner.terminal.clone(),
+        };
+        worker::spawn(rx, failfast, gate_tx, terminate, resolution, pool);
+        gate::Gate::new(gate_rx, inner)
     }
 
-    fn new(tx: mpsc::Sender<Message<Req, F>>, terminal: SharedTerminalState) -> Self {
+    fn new(tx: mpsc::Sender<Message<Req, F>>) -> Self {
         Self {
             tx: PollSender::new(tx),
-            terminal,
+            terminal: Default::default(),
         }
     }
 
     #[inline]
     fn error_or_closed(&self) -> Error {
-        self.terminal
-            .get()
+        (*self.terminal.lock())
+            .clone()
             .map(Into::into)
             .unwrap_or_else(|| error::Closed::new().into())
     }

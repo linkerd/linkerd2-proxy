@@ -3,12 +3,13 @@
 use linkerd_error::Error;
 use std::{fmt, sync::Arc};
 
-/// An error produced by a [`Service`] wrapped by a [`Buffer`]
+/// A shareable, terminal error produced by either a service or discovery
+/// resolution.
 ///
 /// [`Service`]: crate::Service
 /// [`Buffer`]: crate::buffer::Buffer
 #[derive(Clone, Debug)]
-pub struct ServiceError {
+pub struct TerminalFailure {
     inner: Arc<Error>,
 }
 
@@ -19,27 +20,27 @@ pub struct Closed {
 
 // ===== impl ServiceError =====
 
-impl ServiceError {
-    pub(crate) fn new(inner: Error) -> ServiceError {
+impl TerminalFailure {
+    pub(crate) fn new(inner: Error) -> TerminalFailure {
         let inner = Arc::new(inner);
-        ServiceError { inner }
+        TerminalFailure { inner }
     }
 
     // Private to avoid exposing `Clone` trait as part of the public API
-    pub(crate) fn clone(&self) -> ServiceError {
-        ServiceError {
+    pub(crate) fn clone(&self) -> TerminalFailure {
+        TerminalFailure {
             inner: self.inner.clone(),
         }
     }
 }
 
-impl fmt::Display for ServiceError {
+impl fmt::Display for TerminalFailure {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(fmt, "buffered service failed: {}", self.inner)
     }
 }
 
-impl std::error::Error for ServiceError {
+impl std::error::Error for TerminalFailure {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         Some(&**self.inner)
     }

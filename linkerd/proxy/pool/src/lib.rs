@@ -20,4 +20,9 @@ use linkerd_stack::Service;
 /// A collection of services updated from a resolution.
 pub trait Pool<T, Req>: Service<Req> {
     fn update_pool(&mut self, update: Update<T>);
+
+    fn poll_pool(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>>;
 }

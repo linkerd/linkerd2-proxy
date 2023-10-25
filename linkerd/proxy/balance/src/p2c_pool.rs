@@ -176,6 +176,13 @@ where
             self.next_idx = None;
         }
     }
+
+    fn poll_pool(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.pool.poll_pending(cx).map_err(|Failed(_, e)| e)
+    }
 }
 
 impl<T, N, Req, S> Service<Req> for P2cPool<T, N, Req, S>
@@ -207,7 +214,9 @@ where
                         self.next_idx = Some(idx);
                         return Poll::Ready(Ok(()));
                     }
-                    Err(e) => return Poll::Ready(Err(e.into())),
+                    Err(e) => {
+                        return Poll::Ready(Err(e.into()));
+                    }
                 },
             }
         }
