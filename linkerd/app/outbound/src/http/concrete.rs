@@ -132,6 +132,7 @@ impl<N> Outbound<N> {
             });
 
             inner
+                .instrument(|_: &_| tracing::debug_span!("bal"))
                 .push(Balance::layer(config, rt, resolve))
                 .check_new_clone()
                 .push_switch(Ok::<_, Infallible>, forward.check_new_clone().into_inner())
@@ -264,10 +265,6 @@ where
                 .push_on_service(http::BoxResponse::layer())
                 .check_new_service::<Self, http::Request<_>>()
                 .push_on_service(metrics.proxy.stack.layer(stack_labels("http", "balance")))
-                .check_new_service::<Self, http::Request<_>>()
-                // TODO(ver) Configure this queue from the target (i.e. from
-                // discovery).
-                .push(svc::NewQueue::layer_via(http_queue))
                 .check_new_service::<Self, http::Request<_>>()
                 .push(svc::NewMapErr::layer_from_target::<BalanceError, _>())
                 .check_new_service::<Self, http::Request<_>>()
