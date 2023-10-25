@@ -19,11 +19,20 @@ jobs:
       - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: |
-          VERSION="$(cat rust-toolchain)"
-          if [ "$(cargo --version | cut -d' ' -f2)" != "$VERSION" ]; then
-            echo "::error file=rust-toolchain::rust-toolchain $VERSION does not match devcontainer $(cargo --version)"
+          VERSION_REGEX='channel = "([0-9]+\.[0-9]+\.[0-9]+)"'
+          TOOLCHAIN=$(cat rust-toolchain.toml)
+          if [[ $TOOLCHAIN =~ $VERSION_REGEX ]]; then
+            VERSION=${BASH_REMATCH[1]}
+            if [ "$(cargo --version | cut -d' ' -f2)" != "$VERSION" ]; then
+              echo "::error file=rust-toolchain.toml::rust-toolchain channel '$VERSION' does not match devcontainer '$(cargo --version)'"
+              exit 1
+            fi
+          else
+            echo "::error file=rust-toolchain.toml::failed to parse rust-toolchain.toml"
             exit 1
           fi
+        shell: bash
+
 
   workflows:
     runs-on: ubuntu-latest
@@ -32,7 +41,15 @@ jobs:
       - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
       - shell: bash
         run: |
-          VERSION="$(cat rust-toolchain)"
+          VERSION_REGEX='channel = "([0-9]+\.[0-9]+\.[0-9]+)"'
+          TOOLCHAIN=$(cat rust-toolchain.toml)
+          if [[ $TOOLCHAIN =~ $VERSION_REGEX ]]; then
+            VERSION=${BASH_REMATCH[1]}
+          else
+            echo "::error file=rust-toolchain.toml::failed to parse rust-toolchain.toml"
+            exit 1
+          fi
+
           ex=0
           while IFS= read -r file ; do
             while IFS= read -r image ; do
@@ -40,7 +57,7 @@ jobs:
                 tag="${image##*rust:}"
                 v="${tag%%-*}"
                 if [[ "$v" != "$VERSION" ]]; then
-                  echo "::warning file=$file::$file uses incorrect rust version: $v"
+                  echo "::warning file=$file::$file uses incorrect rust version: '$v' (rust-toolchain.toml contains '$VERSION')"
                   ex=$((ex + 1))
                 fi
               fi
