@@ -236,6 +236,7 @@ where
                 })
                 .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
+                .push_on_service(svc::NewInstrumentLayer::new(|_: &_| tracing::debug_span!("INNR")))
                 .push(
                     http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
                         // TODO configure channel capacities from target.
@@ -246,6 +247,7 @@ where
                         }
                     }),
                 )
+                .push_on_service(svc::NewInstrumentLayer::new(|_: &_| tracing::debug_span!("GATE")))
                 .push(balance::NewGaugeEndpoints::layer_via({
                     let metrics = metrics.http_balancer.clone();
                     move |target: &Self| {

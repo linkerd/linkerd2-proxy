@@ -174,6 +174,7 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if self.permit.is_ready() {
+            ready!(self.inner.poll_ready(cx))?;
             return Poll::Ready(Ok(()));
         }
         let permit = ready!(self.poll_acquire(cx));
