@@ -101,7 +101,7 @@ where
 
     fn new_service(&self, target: T) -> Self::Service {
         // TODO(ver) QueueConfig.
-        const FAILFAST: time::Duration = time::Duration::from_secs(10);
+        const FAILFAST: time::Duration = time::Duration::from_secs(3);
         const CAPACITY: usize = 10_000;
 
         let disco = self.resolve.resolve(target.clone()).try_flatten_stream();

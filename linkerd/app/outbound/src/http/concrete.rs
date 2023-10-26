@@ -132,8 +132,9 @@ impl<N> Outbound<N> {
             });
 
             inner
-                .instrument(|_: &_| tracing::debug_span!("bal"))
+                .instrument(|_: &_| tracing::debug_span!("bal.ep"))
                 .push(Balance::layer(config, rt, resolve))
+                .instrument(|_: &_| tracing::debug_span!("bal"))
                 .check_new_clone()
                 .push_switch(Ok::<_, Infallible>, forward.check_new_clone().into_inner())
                 .push_switch(
@@ -236,7 +237,9 @@ where
                 })
                 .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
-                .push_on_service(svc::NewInstrumentLayer::new(|_: &_| tracing::debug_span!("INNR")))
+                .push_on_service(svc::NewInstrumentLayer::new(|_: &_| {
+                    tracing::debug_span!("INNR")
+                }))
                 .push(
                     http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
                         // TODO configure channel capacities from target.
@@ -247,7 +250,9 @@ where
                         }
                     }),
                 )
-                .push_on_service(svc::NewInstrumentLayer::new(|_: &_| tracing::debug_span!("GATE")))
+                .push_on_service(svc::NewInstrumentLayer::new(|_: &_| {
+                    tracing::debug_span!("GATE")
+                }))
                 .push(balance::NewGaugeEndpoints::layer_via({
                     let metrics = metrics.http_balancer.clone();
                     move |target: &Self| {
@@ -263,13 +268,9 @@ where
 
             endpoint
                 .push(http::NewBalancePeakEwma::layer(resolve.clone()))
-                .check_new_service::<Self, http::Request<_>>()
                 .push_on_service(http::BoxResponse::layer())
-                .check_new_service::<Self, http::Request<_>>()
                 .push_on_service(metrics.proxy.stack.layer(stack_labels("http", "balance")))
-                .check_new_service::<Self, http::Request<_>>()
                 .push(svc::NewMapErr::layer_from_target::<BalanceError, _>())
-                .check_new_service::<Self, http::Request<_>>()
                 .instrument(|t: &Self| {
                     let BackendRef(meta) = t.parent.param();
                     info_span!(

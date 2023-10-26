@@ -251,7 +251,24 @@ impl<P> PoolDriver<P> {
         P: Pool<T, Req>,
         P::Error: Into<Error>,
     {
-        tracing::trace!("Driving");
+        if self.failfast.is_active() {
+            tracing::trace!("Waiting to leave failfast");
+            let res = self.pool.ready().await;
+            match self.failfast.set_ready() {
+                Some(failfast::State::Failfast { since }) => {
+                    tracing::info!(
+                        elapsed = (time::Instant::now() - since).as_secs_f64(),
+                        "Available; exited failfast"
+                    );
+                }
+                _ => unreachable!("must be in failfast"),
+            }
+            if let Err(e) = res {
+                return e.into();
+            }
+        }
+
+        tracing::trace!("Driving pending endpoints");
         if let Err(e) = poll_fn(|cx| self.pool.poll_pool(cx)).await {
             return e.into();
         }
@@ -266,12 +283,15 @@ impl<P> PoolDriver<P> {
         P::Error: Into<Error>,
     {
         tokio::select! {
+            biased;
+
             res = self.pool.ready() => {
                 match self.failfast.set_ready() {
+                    None => tracing::trace!("Ready"),
                     Some(failfast::State::Waiting { since }) => {
                         tracing::debug!(
                             elapsed = (time::Instant::now() - since).as_secs_f64(),
-                            "Ready"
+                            "Available"
                         );
                     }
                     Some(failfast::State::Failfast { since }) => {
@@ -280,7 +300,6 @@ impl<P> PoolDriver<P> {
                             "Available; exited failfast"
                         );
                     }
-                    None => tracing::trace!("Ready"),
                 }
                 if let Err(e) = res {
                     return Err(e.into());

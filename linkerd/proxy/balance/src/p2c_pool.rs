@@ -110,13 +110,6 @@ where
         changed
     }
 
-    fn poll_pending(&mut self, cx: &mut Context<'_>) -> Result<(), Error> {
-        if let Poll::Ready(Err(e)) = self.pool.poll_pending(cx) {
-            return Err(e.into());
-        }
-        Ok(())
-    }
-
     fn p2c_ready_index(&mut self) -> Option<usize> {
         match self.pool.ready_len() {
             0 => None,
@@ -201,25 +194,30 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
-            tracing::trace!("Polling pending");
-            if let Err(e) = self.poll_pending(cx) {
-                return Poll::Ready(Err(e));
+            tracing::trace!(pending = self.pool.pending_len(), "Polling pending");
+            match self.pool.poll_pending(cx)? {
+                Poll::Ready(()) => tracing::trace!("All endpoints are ready"),
+                Poll::Pending => tracing::trace!("Endpoints are pending"),
             }
 
-            if let Some(idx) = self.next_idx {
-                tracing::trace!(ready.index = idx, "Check");
-                if self.pool.check_ready_index(cx, idx)? {
-                    tracing::trace!(ready.index = idx, "Ready");
-                    return Poll::Ready(Ok(()));
+            let idx = match self.next_idx.take().or_else(|| self.p2c_ready_index()) {
+                Some(idx) => idx,
+                None => {
+                    // Above, poll_pending return
+                    tracing::debug!("No ready endpoints");
+                    return Poll::Pending;
                 }
-                tracing::trace!(ready.index = idx, "Pending");
-                self.next_idx = None;
+            };
+
+            tracing::trace!(ready.index = idx, "Selected");
+            if !self.pool.check_ready_index(cx, idx)? {
+                tracing::trace!(ready.index = idx, "Reverted to pending");
+                continue;
             }
 
-            self.next_idx = self.p2c_ready_index();
-            if self.next_idx.is_none() {
-                return Poll::Pending;
-            }
+            tracing::trace!(ready.index = idx, "Ready");
+            self.next_idx = Some(idx);
+            return Poll::Ready(Ok(()));
         }
     }
 

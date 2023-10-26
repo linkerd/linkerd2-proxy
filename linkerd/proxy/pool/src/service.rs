@@ -89,7 +89,9 @@ where
     type Future = ResponseFuture<F>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.tx.poll_reserve(cx).map_err(|_| self.error_or_closed())
+        let poll = self.tx.poll_reserve(cx).map_err(|_| self.error_or_closed());
+        tracing::trace!(?poll);
+        poll
     }
 
     fn call(&mut self, req: Req) -> Self::Future {

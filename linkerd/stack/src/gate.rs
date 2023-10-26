@@ -83,19 +83,27 @@ impl Rx {
     async fn acquire(&mut self) -> Option<OwnedSemaphorePermit> {
         loop {
             let state = self.0.borrow_and_update().clone();
+            tracing::trace!(rx.state = ?state);
             match state {
                 State::Open => return None,
-                State::Limited(sem) => match sem.acquire_owned().await {
-                    Ok(permit) => return Some(permit),
-                    Err(_closed) => {
-                        // When the semaphore is closed, continue waiting for
-                        // the state to change.
-                        debug!("Semaphore closed");
+                State::Limited(sem) => {
+                    tokio::select! {
+                        biased;
+                        _ = self.0.changed() => continue,
+                        res = sem.acquire_owned() => match res {
+                            Ok(permit) => return Some(permit),
+                            Err(_closed) => {
+                                // When the semaphore is closed, continue waiting for
+                                // the state to change.
+                                debug!("Semaphore closed");
+                            }
+                        },
                     }
-                },
+                }
                 State::Shut => {}
             }
 
+            tracing::trace!("Waiting for gate change");
             if let Err(e) = self.0.changed().await {
                 // If the `Tx` is dropped, then no further state changes can
                 // occur, so we simply remain in an unavilable state.
@@ -175,10 +183,18 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // If we previously polled to ready and acquired a permit, clear it so
         // we can reestablish readiness without holding it.
-        self.permit = Poll::Pending;
+        if let Poll::Ready(Some(permit)) = std::mem::replace(&mut self.permit, Poll::Pending) {
+            tracing::trace!("Dropping permit");
+            drop(permit);
+        };
+
+        tracing::trace!("Acquiring permit");
         let permit = ready!(self.poll_acquire(cx));
-        ready!(self.inner.poll_ready(cx))?;
         tracing::trace!("Acquired permit");
+
+        ready!(self.inner.poll_ready(cx))?;
+        tracing::trace!("Ready");
+
         self.permit = Poll::Ready(permit);
         Poll::Ready(Ok(()))
     }
@@ -200,28 +216,39 @@ impl<S> Gate<S> {
     where
         S: Service<Req>,
     {
-        if !self.acquiring {
-            match self.rx.state() {
-                State::Open => return Poll::Ready(None),
-                State::Limited(sem) => {
-                    if let Ok(permit) = sem.try_acquire_owned() {
-                        return Poll::Ready(Some(permit));
+        loop {
+            if !self.acquiring {
+                match self.rx.state() {
+                    State::Open => {
+                        tracing::trace!("Open");
+                        return Poll::Ready(None);
                     }
-                    // If the semaphore is closed or at capacity, wait until
-                    // something changes.
+                    State::Limited(sem) => {
+                        tracing::trace!("Limited");
+                        if let Ok(permit) = sem.try_acquire_owned() {
+                            tracing::trace!("Acquired");
+                            return Poll::Ready(Some(permit));
+                        }
+                        // If the semaphore is closed or at capacity, wait until
+                        // something changes.
+                    }
+                    // If the gate is shut, wait for the state to change.
+                    State::Shut => tracing::trace!("Shut"),
                 }
-                // If the gate is shut, wait for the state to change.
-                State::Shut => {}
+
+                tracing::debug!("Deferring acquisition");
+                self.acquiring = true;
+                let mut rx = self.rx.clone();
+                self.acquire.set(async move { rx.acquire().await });
             }
 
-            self.acquiring = true;
-            let mut rx = self.rx.clone();
-            self.acquire.set(async move { rx.acquire().await });
-        }
+            tracing::trace!("Acquiring");
+            let permit = ready!(self.acquire.poll_unpin(cx));
+            self.acquiring = false;
 
-        let permit = ready!(self.acquire.poll_unpin(cx));
-        self.acquiring = false;
-        Poll::Ready(permit)
+            tracing::debug!("Acquired");
+            return Poll::Ready(permit);
+        }
     }
 }
 
