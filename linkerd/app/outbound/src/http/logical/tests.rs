@@ -58,7 +58,7 @@ async fn routes() {
     );
 }
 
-#[tokio::test(flavor = "current_thread")]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn consecutive_failures_accrue() {
     let _trace = trace::test::with_default_filter(format!("{},trace", trace::test::DEFAULT_LOG));
 
