@@ -42,7 +42,7 @@ impl Failfast {
         let state = self.state.take()?;
         if matches!(state, State::Failfast { .. }) {
             tracing::trace!("Exiting failfast");
-            self.gate.open();
+            let _ = self.gate.open();
         }
         Some(state)
     }
@@ -73,6 +73,6 @@ impl Failfast {
         // Once we enter failfast, shut the upstream gate so that we can
         // advertise backpressure past the queue.
         self.state = Some(State::Failfast { since });
-        self.gate.shut();
+        let _ = self.gate.shut();
     }
 }

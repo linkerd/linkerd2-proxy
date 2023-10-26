@@ -169,7 +169,7 @@ where
 
                         warn!("Service entering failfast after {:?}", self.timeout);
                         if let Some(gate) = self.gate.as_ref() {
-                            gate.shut();
+                            let _ = gate.shut();
                         }
 
                         let gate = self.gate.clone();
@@ -179,7 +179,7 @@ where
                             // advertising readiness so that the failfast
                             // service can advance.
                             if let Some(gate) = gate {
-                                gate.open();
+                                let _ = gate.open();
                             }
                             match res {
                                 Ok(_) => {
