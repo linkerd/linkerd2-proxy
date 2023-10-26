@@ -75,16 +75,21 @@ impl Rx {
     ///
     /// This is intended for testing purposes.
     #[cfg(feature = "test-util")]
-    pub async fn acquire_for_test(&mut self) -> Option<OwnedSemaphorePermit> {
-        self.acquire().await
+    pub async fn opened_for_test(&mut self) -> Option<OwnedSemaphorePermit> {
+        self.opened().await
     }
 
-    /// Waits for the gate state to change to be open.
-    async fn acquire(&mut self) -> Option<OwnedSemaphorePermit> {
+    /// Waits for the gate state to change to be open. Returns a permit if the
+    /// gate is in a limited state.
+    async fn opened(&mut self) -> Option<OwnedSemaphorePermit> {
         loop {
             let state = self.0.borrow_and_update().clone();
             match state {
                 State::Open => return None,
+                State::Shut => {}
+
+                // If the state changes while we're waiting for a permit, the
+                // semaphore is closed.
                 State::Limited(sem) => match sem.acquire_owned().await {
                     Ok(permit) => return Some(permit),
                     Err(_closed) => {
@@ -93,7 +98,6 @@ impl Rx {
                         debug!("Semaphore closed");
                     }
                 },
-                State::Shut => {}
             }
 
             if let Err(e) = self.0.changed().await {
@@ -116,22 +120,54 @@ impl Tx {
 
     /// Opens the gate.
     pub fn open(&self) {
-        if self.0.send(State::Open).is_ok() {
-            debug!("Gate opened");
+        if self.0.is_closed() {
+            return;
+        }
+        match self.0.send_replace(State::Open) {
+            State::Open => {}
+            State::Limited(lim) => {
+                debug!("Limited => Open");
+                lim.close();
+            }
+            State::Shut => {
+                debug!("Shut => Open");
+            }
         }
     }
 
     /// Limits the gate with the provided semaphore.
     pub fn limit(&self, sem: Arc<Semaphore>) {
-        if self.0.send(State::Limited(sem)).is_ok() {
-            debug!("Gate limited");
+        if self.0.is_closed() {
+            return;
+        }
+        match self.0.send_replace(State::Limited(sem)) {
+            State::Open => {
+                debug!("Open => Limited");
+            }
+            State::Limited(lim) => {
+                debug!("Limited => Limited; replaced semaphore");
+                lim.close();
+            }
+            State::Shut => {
+                debug!("Shut => Limited");
+            }
         }
     }
 
     /// Closes the gate.
     pub fn shut(&self) {
-        if self.0.send(State::Shut).is_ok() {
-            debug!("Gate shut");
+        if self.0.is_closed() {
+            return;
+        }
+        match self.0.send_replace(State::Shut) {
+            State::Shut => {}
+            State::Open => {
+                debug!("Open => Shut");
+            }
+            State::Limited(lim) => {
+                debug!("Limited => Shut");
+                lim.close();
+            }
         }
     }
 }
@@ -216,7 +252,7 @@ impl<S> Gate<S> {
 
             self.acquiring = true;
             let mut rx = self.rx.clone();
-            self.acquire.set(async move { rx.acquire().await });
+            self.acquire.set(async move { rx.opened().await });
         }
 
         let permit = ready!(self.acquire.poll_unpin(cx));
@@ -316,6 +352,47 @@ mod tests {
         tx.shut();
 
         // Wait for the gated service to become ready.
+        assert_pending!(gate.poll_ready());
+
+        // Open the gate and verify that the readiness future fires.
+        tx.open();
+        assert_ready!(gate.poll_ready()).expect("ok");
+    }
+
+    #[tokio::test]
+    async fn notifies_on_open_when_limited() {
+        let (tx, rx) = channel();
+        let (mut gate, mut handle) =
+            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
+
+        // Start with a shut gate on an available inner service.
+        handle.allow(1);
+
+        let sem = Arc::new(Semaphore::new(0));
+        tx.limit(sem.clone());
+
+        // Wait for the gated service to become ready.
+        assert_pending!(gate.poll_ready());
+
+        // Open the gate and verify that the readiness future fires.
+        tx.open();
+        assert_ready!(gate.poll_ready()).expect("ok");
+    }
+
+    #[tokio::test]
+    async fn notifies_on_shut_and_open_when_limited() {
+        let (tx, rx) = channel();
+        let (mut gate, mut handle) =
+            tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
+
+        // Start with a limited gate on an available inner service.
+        handle.allow(1);
+        let sem = Arc::new(Semaphore::new(0));
+        tx.limit(sem.clone());
+        assert_pending!(gate.poll_ready());
+
+        // Shut it.
+        tx.shut();
         assert_pending!(gate.poll_ready());
 
         // Open the gate and verify that the readiness future fires.
