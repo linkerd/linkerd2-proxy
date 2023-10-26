@@ -15,7 +15,7 @@ linkerd-metrics = { path = "../../metrics" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-proxy-pool = { path = "../pool" }
 linkerd-stack = { path = "../../stack", features = ["ready-cache"] }
-parking_lot = "0.11"
+parking_lot = "0.12"
 pin-project = "1"
 rand = "0.8"
 thiserror = "1"
