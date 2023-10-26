@@ -39,6 +39,10 @@ pub enum State {
     Shut,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("gate closed")]
+pub struct Closed(());
+
 /// Creates a new gate channel.
 pub fn channel() -> (Tx, Rx) {
     let (tx, rx) = watch::channel(State::Open);
@@ -119,9 +123,9 @@ impl Tx {
     }
 
     /// Opens the gate.
-    pub fn open(&self) {
+    pub fn open(&self) -> Result<(), Closed> {
         if self.0.is_closed() {
-            return;
+            return Err(Closed(()));
         }
         match self.0.send_replace(State::Open) {
             State::Open => {}
@@ -133,14 +137,16 @@ impl Tx {
                 debug!("Shut => Open");
             }
         }
+        Ok(())
     }
 
     /// Limits the gate with the provided semaphore.
-    pub fn limit(&self, sem: Arc<Semaphore>) {
+    pub fn limit(&self) -> Result<Arc<Semaphore>, Closed> {
         if self.0.is_closed() {
-            return;
+            return Err(Closed(()));
         }
-        match self.0.send_replace(State::Limited(sem)) {
+        let sem = Arc::new(Semaphore::new(0));
+        match self.0.send_replace(State::Limited(sem.clone())) {
             State::Open => {
                 debug!("Open => Limited");
             }
@@ -152,12 +158,13 @@ impl Tx {
                 debug!("Shut => Limited");
             }
         }
+        Ok(sem)
     }
 
     /// Closes the gate.
-    pub fn shut(&self) {
+    pub fn shut(&self) -> Result<(), Closed> {
         if self.0.is_closed() {
-            return;
+            return Err(Closed(()));
         }
         match self.0.send_replace(State::Shut) {
             State::Shut => {}
@@ -169,6 +176,7 @@ impl Tx {
                 lim.close();
             }
         }
+        Ok(())
     }
 }
 
@@ -274,10 +282,10 @@ mod tests {
             tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
 
         handle.allow(1);
-        tx.shut();
+        tx.shut().unwrap();
         assert_pending!(gate.poll_ready());
 
-        tx.open();
+        tx.open().unwrap();
         assert_ready!(gate.poll_ready()).expect("ok");
     }
 
@@ -290,10 +298,10 @@ mod tests {
         handle.allow(0);
         assert_pending!(gate.poll_ready());
 
-        tx.shut();
+        tx.shut().unwrap();
         assert_pending!(gate.poll_ready());
 
-        tx.open();
+        tx.open().unwrap();
         assert_pending!(gate.poll_ready());
 
         handle.allow(1);
@@ -330,7 +338,7 @@ mod tests {
             })
         };
 
-        tx.open();
+        tx.open().unwrap();
         handle.allow(1);
         assert_ready!(gate.poll_ready()).expect("ok");
 
@@ -349,13 +357,13 @@ mod tests {
 
         // Start with a shut gate on an available inner service.
         handle.allow(1);
-        tx.shut();
+        tx.shut().unwrap();
 
         // Wait for the gated service to become ready.
         assert_pending!(gate.poll_ready());
 
         // Open the gate and verify that the readiness future fires.
-        tx.open();
+        tx.open().unwrap();
         assert_ready!(gate.poll_ready()).expect("ok");
     }
 
@@ -368,14 +376,13 @@ mod tests {
         // Start with a shut gate on an available inner service.
         handle.allow(1);
 
-        let sem = Arc::new(Semaphore::new(0));
-        tx.limit(sem.clone());
+        let _sem = tx.limit().unwrap();
 
         // Wait for the gated service to become ready.
         assert_pending!(gate.poll_ready());
 
         // Open the gate and verify that the readiness future fires.
-        tx.open();
+        tx.open().unwrap();
         assert_ready!(gate.poll_ready()).expect("ok");
     }
 
@@ -387,16 +394,15 @@ mod tests {
 
         // Start with a limited gate on an available inner service.
         handle.allow(1);
-        let sem = Arc::new(Semaphore::new(0));
-        tx.limit(sem.clone());
+        let _sem = tx.limit().unwrap();
         assert_pending!(gate.poll_ready());
 
         // Shut it.
-        tx.shut();
+        tx.shut().unwrap();
         assert_pending!(gate.poll_ready());
 
         // Open the gate and verify that the readiness future fires.
-        tx.open();
+        tx.open().unwrap();
         assert_ready!(gate.poll_ready()).expect("ok");
     }
 
@@ -442,8 +448,7 @@ mod tests {
             tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
 
         handle.allow(2);
-        let sem = Arc::new(Semaphore::new(0));
-        tx.limit(sem.clone());
+        let sem = tx.limit().unwrap();
 
         assert_pending!(gate.poll_ready());
         sem.add_permits(1);
