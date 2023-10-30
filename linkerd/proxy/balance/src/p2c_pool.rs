@@ -170,6 +170,9 @@ where
         }
     }
 
+    /// Moves pending endpoints to ready.
+    ///
+    /// This must be called from the same task that invokes Service::poll_ready.
     fn poll_pool(
         &mut self,
         cx: &mut std::task::Context<'_>,
@@ -192,6 +195,14 @@ where
     type Error = Error;
     type Future = futures::future::ErrInto<S::Future, Error>;
 
+    /// Returns ready when at least one endpoint is ready.
+    ///
+    /// If multiple endpoints are ready, the power-of-two-choices algorithm is
+    /// used to select one.
+    ///
+    /// NOTE that this may return `Pending` when there are no endpoints. In such
+    /// cases, the caller must invoke `update_pool` and then wait for new
+    /// endpoints to become ready.
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
             tracing::trace!(pending = self.pool.pending_len(), "Polling pending");
@@ -203,7 +214,6 @@ where
             let idx = match self.next_idx.take().or_else(|| self.p2c_ready_index()) {
                 Some(idx) => idx,
                 None => {
-                    // Above, poll_pending return
                     tracing::debug!("No ready endpoints");
                     return Poll::Pending;
                 }
