@@ -94,7 +94,7 @@ impl Config {
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
-            .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
+            .push(metrics.proxy.http_endpoint.to_layer::<classify::Request, _, Permitted>())
             .push_map_target(|(permit, http)| Permitted { permit, http })
             .push(inbound::policy::NewHttpPolicy::layer(metrics.http_authz.clone()))
             .push(Rescue::layer())

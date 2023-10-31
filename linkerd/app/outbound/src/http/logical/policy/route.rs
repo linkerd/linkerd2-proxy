@@ -123,7 +123,7 @@ where
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 // Sets an optional request timeout.
                 .push(http::NewTimeout::layer())
-                .push(classify::NewClassify::layer())
+                .push(classify::NewInsertClassify::layer())
                 .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();
                     move |source| {

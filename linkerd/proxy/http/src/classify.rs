@@ -5,6 +5,6 @@ mod insert;
 pub use self::{
     channel::{BroadcastClassification, NewBroadcastClassification, Tx},
     gate::{NewClassifyGate, NewClassifyGateSet},
-    insert::{InsertClassifyResponse, NewInsertClassifyResponse},
+    insert::{InsertClassify, NewInsertClassify},
 };
 pub use linkerd_http_classify::*;

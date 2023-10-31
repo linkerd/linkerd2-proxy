@@ -29,7 +29,7 @@ pub use self::{
     balance::NewBalancePeakEwma,
     classify::{
         Classify, ClassifyEos, ClassifyResponse, NewClassifyGate, NewClassifyGateSet,
-        NewInsertClassifyResponse,
+        NewInsertClassify,
     },
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,

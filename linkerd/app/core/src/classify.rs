@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use tonic as grpc;
 use tracing::trace;
 
-pub type NewClassify<N, X = ()> = classify::NewInsertClassifyResponse<Request, X, N>;
+pub type NewInsertClassify<N, X = ()> = classify::NewInsertClassify<Request, X, N>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Request {
@@ -68,21 +68,29 @@ impl classify::Classify for Request {
     type ClassifyEos = Eos;
 
     fn classify<B>(&self, req: &http::Request<B>) -> Self::ClassifyResponse {
+        tracing::trace!(classifier = ?self, "Configuring request classification");
         match self {
             Self::Profile(classes) => Response::Profile(classes.clone()),
 
             Self::ClientPolicy(ClientPolicy::Http(policy)) => {
                 if is_grpc(req.headers()) {
+                    tracing::trace!(classify.grpc = true);
                     return Response::Grpc(Default::default());
                 }
+                tracing::trace!(classify.grpc = false);
                 Response::Http(policy.clone())
             }
-            Self::ClientPolicy(ClientPolicy::Grpc(policy)) => Response::Grpc(policy.clone()),
+            Self::ClientPolicy(ClientPolicy::Grpc(policy)) => {
+                tracing::trace!(classify.grpc = true);
+                Response::Grpc(policy.clone())
+            }
 
             Self::Default => {
                 if is_grpc(req.headers()) {
+                    tracing::trace!(classify.grpc = true);
                     return Response::Grpc(Default::default());
                 }
+                tracing::trace!(classify.grpc = false);
                 Response::default()
             }
         }
@@ -123,7 +131,8 @@ impl classify::ClassifyResponse for Response {
 
     fn start<B>(self, rsp: &http::Response<B>) -> Eos {
         let status = rsp.status();
-        match self {
+        tracing::trace!(classifier = ?self, "Classifying response headers");
+        let eos = match self {
             Self::Http(statuses) => Eos::Class(Class::Http(if statuses.contains(status) {
                 Err(status)
             } else {
@@ -153,14 +162,17 @@ impl classify::ClassifyResponse for Response {
                     });
                     Eos::ProfileUnmatched(http)
                 }),
-        }
+        };
+        tracing::trace!(?eos, "Classified response headers");
+        eos
     }
 
-    fn error(self, err: &Error) -> Self::Class {
-        let msg = if err.is::<ResponseTimeoutError>() {
+    fn error(self, error: &Error) -> Self::Class {
+        tracing::trace!(classifier = ?self, ?error);
+        let msg = if error.is::<ResponseTimeoutError>() {
             "timeout".into()
         } else {
-            h2_error(err).into()
+            h2_error(error).into()
         };
         Class::Error(msg)
     }
@@ -172,6 +184,7 @@ impl classify::ClassifyEos for Eos {
     type Class = Class;
 
     fn eos(self, trailers: Option<&http::HeaderMap>) -> Class {
+        tracing::trace!(classifier = ?self, ?trailers);
         match self {
             Self::Class(class) => class,
             Self::GrpcOpen(codes) => {
@@ -198,8 +211,9 @@ impl classify::ClassifyEos for Eos {
         }
     }
 
-    fn error(self, err: &Error) -> Class {
-        Class::Error(h2_error(err).into())
+    fn error(self, error: &Error) -> Class {
+        tracing::trace!(classifier = ?self, ?error);
+        Class::Error(h2_error(error).into())
     }
 }
 

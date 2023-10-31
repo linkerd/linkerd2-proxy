@@ -297,7 +297,7 @@ impl<T> RouteParams<T> {
                 .push(
                     metrics
                         .http_profile_route_actual
-                        .to_layer::<classify::Response, _, RouteParams<T>>(),
+                        .to_layer::<classify::Request, _, RouteParams<T>>(),
                 )
                 // Depending on whether or not the request can be
                 // retried, it may have one of two `Body` types. This
@@ -311,7 +311,7 @@ impl<T> RouteParams<T> {
                 .push(
                     metrics
                         .http_profile_route
-                        .to_layer::<classify::Response, _, RouteParams<T>>(),
+                        .to_layer::<classify::Request, _, RouteParams<T>>(),
                 )
                 // Add l5d-dst-canonical header to requests.
                 //
@@ -327,7 +327,7 @@ impl<T> RouteParams<T> {
                 )
                 // Sets the per-route response classifier as a request
                 // extension.
-                .push(classify::NewClassify::layer())
+                .push(classify::NewInsertClassify::layer())
                 .push_on_service(http::BoxResponse::layer())
                 .push(svc::ArcNewService::layer())
                 .into_inner()

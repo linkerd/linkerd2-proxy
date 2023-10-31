@@ -2,7 +2,7 @@ use super::{ClassMetrics, Metrics, StatusMetrics};
 use futures::{ready, TryFuture};
 use http_body::Body;
 use linkerd_error::Error;
-use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
+use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_metrics::NewMetrics;
 use linkerd_stack::Proxy;
 use parking_lot::Mutex;
@@ -26,7 +26,7 @@ pub type NewHttpMetrics<N, K, C, Class, S> =
 #[derive(Debug)]
 pub struct HttpMetrics<S, C>
 where
-    C: ClassifyResponse,
+    C: Classify,
     C::Class: Hash + Eq,
 {
     metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
@@ -81,7 +81,7 @@ where
 
 impl<S, C> From<(S, Arc<Mutex<Metrics<C::Class>>>)> for HttpMetrics<S, C>
 where
-    C: ClassifyResponse,
+    C: Classify,
     C::Class: Hash + Eq,
 {
     fn from((inner, metrics): (S, Arc<Mutex<Metrics<C::Class>>>)) -> Self {
@@ -96,7 +96,7 @@ where
 impl<S, C> Clone for HttpMetrics<S, C>
 where
     S: Clone,
-    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    C: Classify + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     fn clone(&self) -> Self {
@@ -112,7 +112,7 @@ impl<C, P, S, A, B> Proxy<http::Request<A>, S> for HttpMetrics<P, C>
 where
     P: Proxy<http::Request<RequestBody<A, C::Class>>, S, Response = http::Response<B>>,
     S: tower::Service<P::Request>,
-    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    C: Classify + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
     A: Body,
     B: Body,
@@ -120,7 +120,7 @@ where
     type Request = P::Request;
     type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
     type Error = Error;
-    type Future = ResponseFuture<P::Future, C>;
+    type Future = ResponseFuture<P::Future, C::ClassifyResponse>;
 
     fn proxy(&self, svc: &mut S, req: http::Request<A>) -> Self::Future {
         let mut req_metrics = self.metrics.clone();
@@ -146,7 +146,7 @@ where
         let classify = req.extensions().get::<C>().cloned().unwrap_or_default();
 
         ResponseFuture {
-            classify: Some(classify),
+            classify: Some(classify.classify(&req)),
             metrics: self.metrics.clone(),
             stream_open_at: Instant::now(),
             inner: self.inner.proxy(svc, req),
@@ -160,13 +160,14 @@ where
     S::Error: Into<Error>,
     A: Body,
     B: Body,
-    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    C: Classify + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
     type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
     type Error = Error;
-    type Future = ResponseFuture<S::Future, C>;
+    type Future = ResponseFuture<S::Future, C::ClassifyResponse>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx).map_err(Into::into)
     }
@@ -183,19 +184,15 @@ where
             }
         }
 
-        let req = {
-            let (head, inner) = req.into_parts();
-            let body = RequestBody {
-                metrics: req_metrics,
-                inner,
-            };
-            http::Request::from_parts(head, body)
-        };
+        let req = req.map(|inner| RequestBody {
+            metrics: req_metrics,
+            inner,
+        });
 
         let classify = req.extensions().get::<C>().cloned().unwrap_or_default();
 
         ResponseFuture {
-            classify: Some(classify),
+            classify: Some(classify.classify(&req)),
             metrics: self.metrics.clone(),
             stream_open_at: Instant::now(),
             inner: self.inner.call(req),

@@ -5,19 +5,19 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
-pub struct NewInsertClassifyResponse<C, X, N> {
+pub struct NewInsertClassify<C, X, N> {
     inner: N,
     extract: X,
     _marker: PhantomData<fn() -> C>,
 }
 
 #[derive(Clone, Debug)]
-pub struct InsertClassifyResponse<C, P> {
+pub struct InsertClassify<C, P> {
     classify: C,
     inner: P,
 }
 
-impl<C, X: Clone, N> NewInsertClassifyResponse<C, X, N> {
+impl<C, X: Clone, N> NewInsertClassify<C, X, N> {
     pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
@@ -27,28 +27,28 @@ impl<C, X: Clone, N> NewInsertClassifyResponse<C, X, N> {
     }
 }
 
-impl<C, N> NewInsertClassifyResponse<C, (), N> {
+impl<C, N> NewInsertClassify<C, (), N> {
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
         Self::layer_via(())
     }
 }
 
-impl<T, C, X, N> NewService<T> for NewInsertClassifyResponse<C, X, N>
+impl<T, C, X, N> NewService<T> for NewInsertClassify<C, X, N>
 where
     C: super::Classify,
     X: ExtractParam<C, T>,
     N: NewService<T>,
 {
-    type Service = InsertClassifyResponse<C, N::Service>;
+    type Service = InsertClassify<C, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let classify = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
-        InsertClassifyResponse { classify, inner }
+        InsertClassify { classify, inner }
     }
 }
 
-impl<C, P, S, B> Proxy<http::Request<B>, S> for InsertClassifyResponse<C, P>
+impl<C, P, S, B> Proxy<http::Request<B>, S> for InsertClassify<C, P>
 where
     C: super::Classify,
     P: Proxy<http::Request<B>, S>,
@@ -67,7 +67,7 @@ where
     }
 }
 
-impl<C, S, B> Service<http::Request<B>> for InsertClassifyResponse<C, S>
+impl<C, S, B> Service<http::Request<B>> for InsertClassify<C, S>
 where
     C: super::Classify,
     S: Service<http::Request<B>>,

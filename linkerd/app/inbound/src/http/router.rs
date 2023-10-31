@@ -129,7 +129,7 @@ impl<C> Inbound<C> {
                     rt.metrics
                         .proxy
                         .http_endpoint
-                        .to_layer::<classify::Response, _, _>(),
+                        .to_layer::<classify::Request, _, _>(),
                 )
                 .push_on_service(
                     svc::layers()
@@ -161,10 +161,10 @@ impl<C> Inbound<C> {
                             rt.metrics
                                 .proxy
                                 .http_profile_route
-                                .to_layer::<classify::Response, _, _>(),
+                                .to_layer::<classify::Request, _, _>(),
                         )
                         .push_on_service(http::BoxResponse::layer())
-                        .push(classify::NewClassify::layer())
+                        .push(classify::NewInsertClassify::layer())
                         .push_http_insert_target::<profiles::http::Route>()
                         .push_map_target(|(route, profile)| ProfileRoute { route, profile })
                         .push_on_service(svc::MapErr::layer(Error::from))
@@ -177,6 +177,7 @@ impl<C> Inbound<C> {
                     |(rx, logical): (Option<profiles::Receiver>, Logical)| -> Result<_, Infallible> {
                         if let Some(rx) = rx {
                             if let Some(addr) = rx.logical_addr() {
+                                tracing::debug!("Using service profile");
                                 return Ok(svc::Either::A(Profile {
                                     addr,
                                     logical,
@@ -187,7 +188,7 @@ impl<C> Inbound<C> {
                         Ok(svc::Either::B(logical))
                     },
                     http.clone()
-                    .push_on_service(svc::MapErr::layer(Error::from))
+                        .push_on_service(svc::MapErr::layer(Error::from))
                         .check_new_service::<Logical, http::Request<_>>()
                         .into_inner(),
                 )

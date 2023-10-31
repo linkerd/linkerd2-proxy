@@ -3,7 +3,7 @@ mod service;
 
 pub use self::service::{NewHttpMetrics, ResponseBody};
 use super::Report;
-use linkerd_http_classify::ClassifyResponse;
+use linkerd_http_classify::Classify;
 use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram, LastUpdate, NewMetrics};
 use linkerd_stack::{self as svc, layer};
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
@@ -61,7 +61,7 @@ impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
         &self,
     ) -> impl layer::Layer<N, Service = NewHttpMetrics<N, T, L, C, N::Service>> + Clone
     where
-        L: ClassifyResponse<Class = C> + Send + Sync + 'static,
+        L: Classify<Class = C> + Send + Sync + 'static,
         N: svc::NewService<Tgt>,
     {
         let reg = self.0.clone();

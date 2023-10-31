@@ -141,7 +141,7 @@ impl<N> Outbound<N> {
                     rt.metrics
                         .proxy
                         .http_endpoint
-                        .to_layer::<classify::Response, _, _>(),
+                        .to_layer::<classify::Request, _, _>(),
                 )
                 .push_on_service(http_tracing::client(
                     rt.span_sink.clone(),
