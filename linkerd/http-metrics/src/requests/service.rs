@@ -96,7 +96,7 @@ where
 impl<S, C> Clone for HttpMetrics<S, C>
 where
     S: Clone,
-    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    C: ClassifyResponse + Clone + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     fn clone(&self) -> Self {
@@ -112,7 +112,7 @@ impl<C, P, S, A, B> Proxy<http::Request<A>, S> for HttpMetrics<P, C>
 where
     P: Proxy<http::Request<RequestBody<A, C::Class>>, S, Response = http::Response<B>>,
     S: tower::Service<P::Request>,
-    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    C: ClassifyResponse + Clone + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
     A: Body,
     B: Body,
@@ -143,7 +143,11 @@ where
             http::Request::from_parts(head, body)
         };
 
-        let classify = req.extensions().get::<C>().cloned().unwrap_or_default();
+        let classify = req
+            .extensions()
+            .get::<C>()
+            .cloned()
+            .expect("request must have response classifier");
 
         ResponseFuture {
             classify: Some(classify),
@@ -160,13 +164,14 @@ where
     S::Error: Into<Error>,
     A: Body,
     B: Body,
-    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    C: ClassifyResponse + Clone + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
     type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
     type Error = Error;
     type Future = ResponseFuture<S::Future, C>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx).map_err(Into::into)
     }
@@ -192,7 +197,11 @@ where
             http::Request::from_parts(head, body)
         };
 
-        let classify = req.extensions().get::<C>().cloned().unwrap_or_default();
+        let classify = req
+            .extensions()
+            .get::<C>()
+            .cloned()
+            .expect("request must have response classifier");
 
         ResponseFuture {
             classify: Some(classify),

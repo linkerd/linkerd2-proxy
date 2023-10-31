@@ -124,6 +124,7 @@ impl Config {
             .lift_new()
             .push(self::balance::layer(dns, resolve_backoff))
             .push(metrics.to_layer::<classify::Response, _, _>())
+            .push(classify::NewClassify::layer_default())
             // This buffer allows a resolver client to be shared across stacks.
             // No load shed is applied here, however, so backpressure may leak
             // into the caller task.

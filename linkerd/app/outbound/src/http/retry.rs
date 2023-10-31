@@ -131,6 +131,10 @@ where
             clone.extensions_mut().insert(client_handle);
         }
 
+        if let Some(classify) = req.extensions().get::<classify::Response>().cloned() {
+            clone.extensions_mut().insert(classify);
+        }
+
         Some(clone)
     }
 }
