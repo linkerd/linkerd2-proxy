@@ -168,7 +168,7 @@ where
     S::Error: Into<Error>,
     A: Body,
     B: Body,
-    C: ClassifyResponse + Default + Clone + Send + Sync + 'static,
+    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
     type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
