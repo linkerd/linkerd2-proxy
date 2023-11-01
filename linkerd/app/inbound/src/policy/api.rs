@@ -109,7 +109,11 @@ impl Recover<tonic::Status> for GrpcRecover {
             return Err(status);
         }
 
-        tracing::trace!(%status, "Recovering");
+        tracing::warn!(
+            grpc.status = %status.code(),
+            grpc.message = status.message(),
+            "Unexpected policy controller response; retrying with a backoff",
+        );
         Ok(self.0.stream())
     }
 }
