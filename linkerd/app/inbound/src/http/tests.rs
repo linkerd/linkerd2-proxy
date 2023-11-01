@@ -475,7 +475,7 @@ async fn grpc_unmeshed_response_error_header() {
 async fn grpc_response_class() {
     let _trace = trace_init();
 
-    // Build a mock connector that returns
+    // Build a mock connector serves a gRPC server that returns errors.
     let connect = {
         let mut server = hyper::server::conn::Http::new();
         server.http2_only(true);
