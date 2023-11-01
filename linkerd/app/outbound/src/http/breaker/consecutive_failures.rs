@@ -94,8 +94,7 @@ impl ConsecutiveFailures {
     /// Wait for a response to determine whether the breaker should be opened.
     async fn probation(&mut self) -> Result<classify::Class, ()> {
         tracing::debug!("Probation");
-        let sem = self.gate.limit().map_err(|_| ())?;
-        sem.add_permits(1);
+        let _sem = self.gate.limit(1).map_err(|_| ())?;
         tokio::select! {
             rsp = self.rsps.recv() => rsp.ok_or(()),
             _ = self.gate.lost() => Err(()),

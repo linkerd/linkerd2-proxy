@@ -33,6 +33,8 @@ pub enum State {
     /// The gate is limited by the provided semaphore. Permits are forgotten as
     /// requests are processed so that this semaphore can specify a limit on the
     /// number of requests to be admitted by the [`Gate`].
+    ///
+    /// The semaphore is closed when the gate state changes.
     Limited(Arc<Semaphore>),
 
     /// The gate is shut and no requests are to be admitted.
@@ -140,12 +142,16 @@ impl Tx {
         Ok(())
     }
 
-    /// Limits the gate with the provided semaphore.
-    pub fn limit(&self) -> Result<Arc<Semaphore>, Closed> {
+    /// Limits the gate, returning a semaphore that can be used to control the
+    /// limit. If the inner state changes, this semaphore will be closed and
+    /// become unusable. When the gate is already in a Limited state, the prior
+    /// semaphore is closed and a new one is created with the provided number of
+    /// permits.
+    pub fn limit(&self, permits: usize) -> Result<Arc<Semaphore>, Closed> {
         if self.0.is_closed() {
             return Err(Closed(()));
         }
-        let sem = Arc::new(Semaphore::new(0));
+        let sem = Arc::new(Semaphore::new(permits));
         match self.0.send_replace(State::Limited(sem.clone())) {
             State::Open => {
                 debug!("Open => Limited");
@@ -376,7 +382,7 @@ mod tests {
         // Start with a shut gate on an available inner service.
         handle.allow(1);
 
-        let _sem = tx.limit().unwrap();
+        let _sem = tx.limit(0).unwrap();
 
         // Wait for the gated service to become ready.
         assert_pending!(gate.poll_ready());
@@ -394,7 +400,7 @@ mod tests {
 
         // Start with a limited gate on an available inner service.
         handle.allow(1);
-        let _sem = tx.limit().unwrap();
+        let _sem = tx.limit(0).unwrap();
         assert_pending!(gate.poll_ready());
 
         // Shut it.
@@ -448,10 +454,7 @@ mod tests {
             tower_test::mock::spawn_with::<(), (), _, _>(move |inner| Gate::new(rx.clone(), inner));
 
         handle.allow(2);
-        let sem = tx.limit().unwrap();
-
-        assert_pending!(gate.poll_ready());
-        sem.add_permits(1);
+        let sem = tx.limit(1).unwrap();
         assert_ready!(gate.poll_ready()).expect("ok");
         assert_eq!(sem.available_permits(), 0);
         let rsp = handle
