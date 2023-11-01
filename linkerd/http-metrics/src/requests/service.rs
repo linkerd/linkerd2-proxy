@@ -108,11 +108,21 @@ where
     }
 }
 
+#[inline]
+fn classify_unwrap_if_debug_else_default<C, B>(req: &http::Request<B>) -> C
+where
+    C: Clone + Default + Send + Sync + 'static,
+{
+    let c = req.extensions().get::<C>().cloned();
+    debug_assert!(c.is_some(), "request must have response classifier");
+    c.unwrap_or_default()
+}
+
 impl<C, P, S, A, B> Proxy<http::Request<A>, S> for HttpMetrics<P, C>
 where
     P: Proxy<http::Request<RequestBody<A, C::Class>>, S, Response = http::Response<B>>,
     S: tower::Service<P::Request>,
-    C: ClassifyResponse + Clone + Send + Sync + 'static,
+    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
     A: Body,
     B: Body,
@@ -143,14 +153,8 @@ where
             http::Request::from_parts(head, body)
         };
 
-        let classify = req
-            .extensions()
-            .get::<C>()
-            .cloned()
-            .expect("request must have response classifier");
-
         ResponseFuture {
-            classify: Some(classify),
+            classify: Some(classify_unwrap_if_debug_else_default(&req)),
             metrics: self.metrics.clone(),
             stream_open_at: Instant::now(),
             inner: self.inner.proxy(svc, req),
@@ -164,7 +168,7 @@ where
     S::Error: Into<Error>,
     A: Body,
     B: Body,
-    C: ClassifyResponse + Clone + Send + Sync + 'static,
+    C: ClassifyResponse + Default + Clone + Send + Sync + 'static,
     C::Class: Hash + Eq + Send + Sync,
 {
     type Response = http::Response<ResponseBody<B, C::ClassifyEos>>;
@@ -197,14 +201,8 @@ where
             http::Request::from_parts(head, body)
         };
 
-        let classify = req
-            .extensions()
-            .get::<C>()
-            .cloned()
-            .expect("request must have response classifier");
-
         ResponseFuture {
-            classify: Some(classify),
+            classify: Some(classify_unwrap_if_debug_else_default(&req)),
             metrics: self.metrics.clone(),
             stream_open_at: Instant::now(),
             inner: self.inner.call(req),

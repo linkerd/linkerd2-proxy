@@ -34,7 +34,7 @@ impl<T: Hash + Eq, C: Hash + Eq> Report<T, requests::Metrics<C>> {
         class: &C,
     ) -> Option<f64> {
         let registry = self.registry.lock();
-        let requests = registry.get(&labels)?.lock();
+        let requests = registry.get(labels)?.lock();
         let status = requests.by_status().get(&status)?;
         let class = status.by_class().get(class)?;
         Some(class.total())

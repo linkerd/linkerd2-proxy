@@ -521,7 +521,7 @@ async fn grpc_response_class() {
     let response_total = metrics
         .get_response_total(
             &metrics::EndpointLabels::Inbound(metrics::InboundEndpointLabels {
-                tls: Target::meshed_h2().1.clone(),
+                tls: Target::meshed_h2().1,
                 authority: Some("foo.svc.cluster.local:5550".parse().unwrap()),
                 target_addr: "127.0.0.1:80".parse().unwrap(),
                 policy: metrics::RouteAuthzLabels {
