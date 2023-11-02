@@ -1011,6 +1011,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-http-access-log",
+ "linkerd-http-metrics",
  "linkerd-idle-cache",
  "linkerd-io",
  "linkerd-meshtls",

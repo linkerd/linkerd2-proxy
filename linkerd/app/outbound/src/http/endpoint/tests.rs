@@ -27,6 +27,8 @@ async fn http11_forward() {
         .with_stack(connect)
         .push_http_tcp_client()
         .push_http_endpoint::<_, http::BoxBody, _>()
+        .into_stack()
+        .push(classify::NewClassify::layer_default())
         .into_inner();
 
     let svc = stack.new_service(Endpoint {
@@ -61,6 +63,8 @@ async fn http2_forward() {
         .with_stack(connect)
         .push_http_tcp_client()
         .push_http_endpoint::<_, http::BoxBody, _>()
+        .into_stack()
+        .push(classify::NewClassify::layer_default())
         .into_inner();
 
     let svc = stack.new_service(Endpoint {
@@ -97,6 +101,8 @@ async fn orig_proto_upgrade() {
         .with_stack(connect)
         .push_http_tcp_client()
         .push_http_endpoint::<_, http::BoxBody, _>()
+        .into_stack()
+        .push(classify::NewClassify::layer_default())
         .into_inner();
 
     let svc = stack.new_service(Endpoint {
@@ -146,6 +152,7 @@ async fn orig_proto_skipped_on_http_upgrade() {
         .push_http_tcp_client()
         .push_http_endpoint::<_, http::BoxBody, _>()
         .into_stack()
+        .push(classify::NewClassify::layer_default())
         .push_on_service(http::BoxRequest::layer())
         // We need the server-side upgrade layer to annotate the request so that the client
         // knows that an HTTP upgrade is in progress.
@@ -192,6 +199,8 @@ async fn orig_proto_http2_noop() {
         .with_stack(connect)
         .push_http_tcp_client()
         .push_http_endpoint::<_, http::BoxBody, _>()
+        .into_stack()
+        .push(classify::NewClassify::layer_default())
         .into_inner();
 
     let svc = stack.new_service(Endpoint {
