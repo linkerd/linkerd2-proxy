@@ -6,7 +6,7 @@ use linkerd_app_core::{
     serve,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
-    transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
+    transport::{addrs::AddrPair, listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
 use std::{collections::HashSet, pin::Pin};
@@ -47,6 +47,7 @@ impl Config {
     where
         B: Bind<ServerConfig>,
         B::Addrs: Param<Remote<ClientAddr>>,
+        B::Addrs: Param<AddrPair>,
     {
         let (registry, server) = tap::new();
         match self {
