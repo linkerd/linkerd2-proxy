@@ -22,7 +22,7 @@ jobs:
   check-all:
     timeout-minutes: 20
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v40-rust
+    container: ghcr.io/linkerd/dev:v42-rust
     steps:
       - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
