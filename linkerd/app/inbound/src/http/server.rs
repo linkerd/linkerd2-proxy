@@ -1,9 +1,6 @@
 use super::set_identity_header::NewSetIdentityHeader;
 use crate::{policy, Inbound};
-pub use linkerd_app_core::proxy::http::{
-    normalize_uri, strip_header, uri, BoxBody, BoxResponse, DetectHttp, Request, Response, Retain,
-    Version,
-};
+pub use linkerd_app_core::proxy::http::{normalize_uri, Version};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     errors, http_tracing, io,

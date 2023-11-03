@@ -47,7 +47,6 @@ use tokio::net::TcpListener;
 pub use tokio::sync::oneshot;
 pub use tonic as grpc;
 pub use tower::Service;
-pub use tracing::*;
 
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &str = "RUST_TEST_PATIENCE_MS";
