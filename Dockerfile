@@ -5,6 +5,11 @@
 
 ARG RUST_IMAGE=ghcr.io/linkerd/dev:v42-rust
 
+# Use an arbitrary ~recent edge release image to get the proxy
+# identity-initializing and linkerd-await wrappers.
+# Currently pinned to a build off of edge-23.11.1 + dev:v42
+ARG LINKERD2_IMAGE=ghcr.io/olix0r/l2-proxy:git-04283611
+
 # Build the proxy.
 FROM --platform=$BUILDPLATFORM $RUST_IMAGE as build
 
@@ -34,10 +39,6 @@ RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
     mkdir -p /out && \
     mv $(just --evaluate profile="$PROFILE" _target_bin) /out/linkerd2-proxy
 
-# Use an arbitrary ~recent edge release image to get the proxy
-# identity-initializing and linkerd-await wrappers.
-# Currently pinned to a build off of edge-23.11.1 + dev:v42
-ARG LINKERD2_IMAGE=ghcr.io/olix0r/l2-proxy:git-04283611
 FROM $LINKERD2_IMAGE as linkerd2
 
 # Install the proxy binary into a base image that we can at least get a shell to
