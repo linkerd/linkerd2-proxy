@@ -57,6 +57,8 @@ _features := if features == "all" {
         "--no-default-features --features=" + features
     } else { "" }
 
+export CXX := 'clang++-14'
+
 #
 # Recipes
 #
