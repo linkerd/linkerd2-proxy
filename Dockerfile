@@ -7,7 +7,8 @@ ARG RUST_IMAGE=ghcr.io/linkerd/dev:v42-rust
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
-ARG RUNTIME_IMAGE=ghcr.io/linkerd/proxy:edge-22.12.1
+# Currently pinned to a build off of edge-23.11.1 + dev:v42
+ARG RUNTIME_IMAGE=ghcr.io/olix0r/l2-proxy:git-04283611
 
 # Build the proxy.
 FROM --platform=$BUILDPLATFORM $RUST_IMAGE as build
