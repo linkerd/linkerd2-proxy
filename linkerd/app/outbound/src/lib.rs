@@ -230,7 +230,7 @@ impl Outbound<()> {
         resolve: R,
     ) where
         // Target describing a server-side connection.
-        T: svc::Param<Remote<ClientAddr>>,
+        T: svc::Param<AddrPair>,
         T: svc::Param<OrigDstAddr>,
         T: Clone + Send + Sync + 'static,
         // Server-side socket.

@@ -5,7 +5,7 @@ use linkerd_app_core::{
     io, profiles,
     proxy::http,
     serve, svc,
-    transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{self, addrs::*},
     Error, Result,
 };
 use std::{fmt::Debug, sync::Arc};
@@ -43,7 +43,10 @@ impl Inbound<()> {
         profiles: P,
         gateway: G,
     ) where
-        A: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        A: svc::Param<Remote<ClientAddr>>,
+        A: svc::Param<OrigDstAddr>,
+        A: svc::Param<AddrPair>,
+        A: Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
         G: svc::NewService<direct::GatewayTransportHeader, Service = GSvc>,

@@ -28,6 +28,10 @@ pub struct Local<T>(pub T);
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Remote<T>(pub T);
 
+/// Describes a connection from a client to a server.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct AddrPair(pub ClientAddr, pub ServerAddr);
+
 // === impl ClientAddr ===
 
 impl std::ops::Deref for ClientAddr {
