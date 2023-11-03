@@ -49,9 +49,7 @@ impl<U, E> Default for Fail<U, E> {
 
 impl<U, E> Clone for Fail<U, E> {
     fn clone(&self) -> Self {
-        Self {
-            _marker: self._marker,
-        }
+        *self
     }
 }
 

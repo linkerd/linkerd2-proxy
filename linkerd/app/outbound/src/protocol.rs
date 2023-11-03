@@ -1,5 +1,4 @@
 use crate::{http, Outbound};
-pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
 use linkerd_app_core::{detect, io, svc, Error, Infallible};
 use std::{fmt::Debug, hash::Hash};
 

@@ -14,7 +14,7 @@ permissions:
 jobs:
   devcontainer:
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v40-rust
+    container: ghcr.io/linkerd/dev:v42-rust
     steps:
       - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
@@ -37,7 +37,7 @@ jobs:
   workflows:
     runs-on: ubuntu-latest
     steps:
-      - uses: linkerd/dev/actions/setup-tools@v40
+      - uses: linkerd/dev/actions/setup-tools@v42
       - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
       - shell: bash
         run: |
