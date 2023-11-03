@@ -387,15 +387,9 @@ fn measure_class<C: Hash + Eq>(
 
     metrics.last_update = now;
 
-    let status_metrics = metrics
-        .by_status
-        .entry(status)
-        .or_default();
+    let status_metrics = metrics.by_status.entry(status).or_default();
 
-    let class_metrics = status_metrics
-        .by_class
-        .entry(class)
-        .or_default();
+    let class_metrics = status_metrics.by_class.entry(class).or_default();
 
     class_metrics.total.incr();
 }

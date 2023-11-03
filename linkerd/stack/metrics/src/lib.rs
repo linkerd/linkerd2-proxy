@@ -37,12 +37,7 @@ where
     L: Hash + Eq,
 {
     pub fn layer(&self, labels: L) -> TrackServiceLayer {
-        let metrics = self
-            .0
-            .lock()
-            .entry(labels)
-            .or_default()
-            .clone();
+        let metrics = self.0.lock().entry(labels).or_default().clone();
         TrackServiceLayer::new(metrics)
     }
 }
