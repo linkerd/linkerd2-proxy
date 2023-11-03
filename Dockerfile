@@ -45,8 +45,6 @@ FROM $LINKERD2_IMAGE as linkerd2
 # debug on.
 FROM docker.io/library/debian:bookworm-slim as runtime
 WORKDIR /linkerd
-COPY --from=linkerd2 /usr/lib/linkerd/linkerd-await /usr/lib/linkerd/linkerd-await
-COPY --from=linkerd2 /usr/lib/linkerd/linkerd2-network-validator /usr/lib/linkerd/linkerd2-network-validator
-COPY --from=linkerd2 /usr/lib/linkerd/linkerd2-proxy-identity /usr/lib/linkerd/linkerd2-proxy-identity
+COPY --from=linkerd2 /usr/lib/linkerd/* /usr/lib/linkerd/
 COPY --from=build /out/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
 ENTRYPOINT ["/usr/lib/linkerd/linkerd2-proxy-identity"]
