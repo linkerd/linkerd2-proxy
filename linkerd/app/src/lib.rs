@@ -226,7 +226,6 @@ impl Config {
         // Build a task that initializes and runs the proxy stacks.
         let start_proxy = {
             let identity_ready = identity.ready();
-            let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
             let resolve = dst.resolve;
 

@@ -41,7 +41,7 @@ where
             .0
             .lock()
             .entry(labels)
-            .or_insert_with(Default::default)
+            .or_default()
             .clone();
         TrackServiceLayer::new(metrics)
     }

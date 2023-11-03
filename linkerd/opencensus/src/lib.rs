@@ -130,7 +130,7 @@ where
                 match tx.reserve().await {
                     Ok(tx) => {
                         let msg = ExportTraceServiceRequest {
-                            spans: accum.drain(..).collect(),
+                            spans: std::mem::take(accum),
                             node: node.take(),
                             ..Default::default()
                         };

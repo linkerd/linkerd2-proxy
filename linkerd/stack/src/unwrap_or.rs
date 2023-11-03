@@ -42,7 +42,7 @@ impl<T, U: Default> Predicate<Option<T>> for UnwrapOr<U> {
 
 impl<U> Clone for UnwrapOr<U> {
     fn clone(&self) -> Self {
-        Self(self.0)
+        *self
     }
 }
 

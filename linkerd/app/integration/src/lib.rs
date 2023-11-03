@@ -37,7 +37,6 @@ use socket2::Socket;
 pub use std::collections::HashMap;
 use std::fmt;
 pub use std::future::Future;
-use std::io;
 pub use std::net::SocketAddr;
 use std::pin::Pin;
 pub use std::sync::Arc;
