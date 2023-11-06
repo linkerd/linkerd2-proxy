@@ -55,8 +55,9 @@ struct NotifyReady {
 
 impl Config {
     pub fn build(self, dns: dns::Resolver, client_metrics: ClientMetrics) -> Result<Identity> {
+        let name = (*self.documents.id).clone();
         let (store, receiver) = Mode::default().watch(
-            (*self.documents.id).clone(),
+            name.clone(),
             &self.documents.trust_anchors_pem,
             &self.documents.key_pkcs8,
             &self.documents.csr_der,
@@ -76,8 +77,9 @@ impl Config {
                 .control
                 .build(dns, client_metrics, receiver.new_client());
 
+            let cred = NotifyReady { store, tx };
             certify
-                .run(NotifyReady { store, tx }, svc)
+                .run(name, cred, svc)
                 .instrument(tracing::debug_span!("identity", server.addr = %addr).or_current())
         });
 
@@ -92,11 +94,6 @@ impl Config {
 }
 
 impl Credentials for NotifyReady {
-    #[inline]
-    fn dns_name(&self) -> &Name {
-        self.store.dns_name()
-    }
-
     #[inline]
     fn gen_certificate_signing_request(&mut self) -> DerX509 {
         self.store.gen_certificate_signing_request()

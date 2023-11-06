@@ -32,18 +32,6 @@ pub enum Receiver {
 // === impl Store ===
 
 impl Credentials for Store {
-    fn dns_name(&self) -> &Name {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(store) => store.dns_name(),
-
-            #[cfg(feature = "rustls")]
-            Self::Rustls(store) => store.dns_name(),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(),
-        }
-    }
-
     fn gen_certificate_signing_request(&mut self) -> DerX509 {
         match self {
             #[cfg(feature = "boring")]

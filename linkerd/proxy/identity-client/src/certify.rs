@@ -2,7 +2,7 @@ use crate::{Metrics, TokenSource};
 use http_body::Body;
 use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient};
 use linkerd_error::{Error, Result};
-use linkerd_identity::{Credentials, DerX509};
+use linkerd_identity::{Credentials, DerX509, Name};
 use linkerd_stack::NewService;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
@@ -44,7 +44,7 @@ impl Certify {
         self.metrics.clone()
     }
 
-    pub async fn run<C, N, S>(self, mut credentials: C, new_client: N)
+    pub async fn run<C, N, S>(self, name: Name, mut credentials: C, new_client: N)
     where
         C: Credentials,
         N: NewService<(), Service = S>,
@@ -57,14 +57,12 @@ impl Certify {
 
         loop {
             debug!("Certifying identity");
-            let crt = certify(
-                &self.config.token,
+            let crt = {
                 // The client is used for infrequent communication with the identity controller;
                 // so clients are instantiated on-demand rather than held.
-                new_client.new_service(()),
-                &mut credentials,
-            )
-            .await;
+                let client = new_client.new_service(());
+                certify(&self.config.token, client, &name, &mut credentials).await
+            };
 
             match crt {
                 Ok(expiry) => {
@@ -86,7 +84,12 @@ impl Certify {
 
 /// Issues a certificate signing request to the identity service with a token loaded from the token
 /// source.
-async fn certify<C, S>(token: &TokenSource, client: S, credentials: &mut C) -> Result<SystemTime>
+async fn certify<C, S>(
+    token: &TokenSource,
+    client: S,
+    name: &Name,
+    credentials: &mut C,
+) -> Result<SystemTime>
 where
     C: Credentials,
     S: GrpcService<BoxBody>,
@@ -95,7 +98,7 @@ where
 {
     let req = tonic::Request::new(api::CertifyRequest {
         token: token.load()?,
-        identity: credentials.dns_name().to_string(),
+        identity: name.to_string(),
         certificate_signing_request: credentials.gen_certificate_signing_request().to_vec(),
     });
 

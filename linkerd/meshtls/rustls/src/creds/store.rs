@@ -126,11 +126,6 @@ impl Store {
 }
 
 impl id::Credentials for Store {
-    /// Returns the proxy's identity.
-    fn dns_name(&self) -> &id::Name {
-        &self.name
-    }
-
     /// Returns the CSR that was configured at proxy startup.
     fn gen_certificate_signing_request(&mut self) -> id::DerX509 {
         id::DerX509(self.csr.to_vec())
