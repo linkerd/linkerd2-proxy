@@ -1,5 +1,5 @@
 use futures::prelude::*;
-use linkerd_identity::{LocalId, Name};
+use linkerd_identity::{LocalName, Name};
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
 use linkerd_tls::{ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls};
@@ -82,9 +82,9 @@ impl Server {
     }
 }
 
-impl Param<LocalId> for Server {
-    fn param(&self) -> LocalId {
-        LocalId(self.name.clone())
+impl Param<LocalName> for Server {
+    fn param(&self) -> LocalName {
+        LocalName(self.name.clone())
     }
 }
 

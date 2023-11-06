@@ -1,5 +1,5 @@
 use linkerd_error::Result;
-use linkerd_identity::LocalId;
+use linkerd_identity::LocalName;
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
 use linkerd_tls::ServerTls;
@@ -57,9 +57,9 @@ pub enum ServerIo<I> {
 
 // === impl Server ===
 
-impl Param<LocalId> for Server {
+impl Param<LocalName> for Server {
     #[inline]
-    fn param(&self) -> LocalId {
+    fn param(&self) -> LocalName {
         match self {
             #[cfg(feature = "boring")]
             Self::Boring(srv) => srv.param(),

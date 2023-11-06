@@ -7,18 +7,23 @@ use std::sync::Arc;
 pub struct Store {
     creds: Arc<BaseCreds>,
     csr: Vec<u8>,
-    name: id::Name,
+    tls_name: id::TlsName,
     tx: CredsTx,
 }
 
 // === impl Store ===
 
 impl Store {
-    pub(super) fn new(creds: Arc<BaseCreds>, csr: &[u8], name: id::Name, tx: CredsTx) -> Self {
+    pub(super) fn new(
+        creds: Arc<BaseCreds>,
+        csr: &[u8],
+        tls_name: id::TlsName,
+        tx: CredsTx,
+    ) -> Self {
         Self {
             creds,
             csr: csr.into(),
-            name,
+            tls_name,
             tx,
         }
     }
@@ -27,7 +32,7 @@ impl Store {
         for san in cert.subject_alt_names().into_iter().flatten() {
             if let Some(n) = san.dnsname() {
                 if let Ok(name) = n.parse::<linkerd_dns_name::Name>() {
-                    if name == *self.name {
+                    if name == *self.tls_name {
                         return true;
                     }
                 }
@@ -40,8 +45,8 @@ impl Store {
 
 impl id::Credentials for Store {
     /// Returns the proxy's identity.
-    fn dns_name(&self) -> &id::Name {
-        &self.name
+    fn tls_name(&self) -> &id::TlsName {
+        &self.tls_name
     }
 
     /// Returns the CSR that was configured at proxy startup.

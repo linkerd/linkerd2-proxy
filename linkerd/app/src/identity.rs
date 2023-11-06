@@ -1,6 +1,6 @@
 pub use linkerd_app_core::identity::{
     client::{certify, TokenSource},
-    InvalidName, LocalId, Name,
+    InvalidName, LocalId, LocalName, Name, TlsName,
 };
 use linkerd_app_core::{
     control, dns,
@@ -25,7 +25,8 @@ pub struct Config {
 
 #[derive(Clone)]
 pub struct Documents {
-    pub id: LocalId,
+    pub name: LocalName,
+    pub tls_name: LocalId,
     pub trust_anchors_pem: String,
     pub key_pkcs8: Vec<u8>,
     pub csr_der: Vec<u8>,
@@ -56,7 +57,8 @@ struct NotifyReady {
 impl Config {
     pub fn build(self, dns: dns::Resolver, client_metrics: ClientMetrics) -> Result<Identity> {
         let (store, receiver) = Mode::default().watch(
-            (*self.documents.id).clone(),
+            (*self.documents.name).clone(),
+            (*self.documents.tls_name).clone(),
             &self.documents.trust_anchors_pem,
             &self.documents.key_pkcs8,
             &self.documents.csr_der,
@@ -93,8 +95,8 @@ impl Config {
 
 impl Credentials for NotifyReady {
     #[inline]
-    fn dns_name(&self) -> &Name {
-        self.store.dns_name()
+    fn tls_name(&self) -> &TlsName {
+        self.store.tls_name()
     }
 
     #[inline]
@@ -119,7 +121,8 @@ impl Credentials for NotifyReady {
 impl std::fmt::Debug for Documents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Documents")
-            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("tls_name", &self.tls_name)
             .field("trust_anchors_pem", &self.trust_anchors_pem)
             .finish()
     }

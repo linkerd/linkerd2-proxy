@@ -4,10 +4,12 @@
 pub mod client;
 pub mod server;
 
-pub use linkerd_identity::LocalId;
+pub use linkerd_identity::{LocalId, LocalName};
 
 pub use self::{
-    client::{Client, ClientTls, ConditionalClientTls, ConnectMeta, NoClientTls, ServerId},
+    client::{
+        Client, ClientTls, ConditionalClientTls, ConnectMeta, NoClientTls, ServerId, ServerName,
+    },
     server::{ClientId, ConditionalServerTls, NewDetectTls, NoServerTls, ServerTls},
 };
 

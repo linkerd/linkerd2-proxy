@@ -154,17 +154,18 @@ mod test {
     struct Endpoint {
         port_override: Option<u16>,
         authority: Option<http::uri::Authority>,
-        server_id: Option<tls::ServerId>,
+        identity: Option<(tls::ServerId, tls::ServerName)>,
         proto: Option<SessionProtocol>,
     }
 
     impl svc::Param<tls::ConditionalClientTls> for Endpoint {
         fn param(&self) -> tls::ConditionalClientTls {
-            self.server_id
+            self.identity
                 .clone()
-                .map(|server_id| {
+                .map(|(server_id, server_name)| {
                     tls::ConditionalClientTls::Some(tls::ClientTls {
                         server_id,
+                        server_name,
                         alpn: Some(tls::client::AlpnProtocols(vec![
                             transport_header::PROTOCOL.into()
                         ])),
@@ -261,8 +262,9 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
+            identity: Some((
+                tls::ServerId(identity::TlsName::from_str("server.id").unwrap()),
+                tls::ServerName(identity::Name::from_str("server.id").unwrap()),
             )),
             authority: None,
             proto: None,
@@ -285,8 +287,9 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
+            identity: Some((
+                tls::ServerId(identity::TlsName::from_str("server.id").unwrap()),
+                tls::ServerName(identity::Name::from_str("server.id").unwrap()),
             )),
             authority: Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
             proto: None,
@@ -309,8 +312,9 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
+            identity: Some((
+                tls::ServerId(identity::TlsName::from_str("server.id").unwrap()),
+                tls::ServerName(identity::Name::from_str("server.id").unwrap()),
             )),
             authority: None,
             proto: None,
@@ -333,8 +337,9 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
+            identity: Some((
+                tls::ServerId(identity::TlsName::from_str("server.id").unwrap()),
+                tls::ServerName(identity::Name::from_str("server.id").unwrap()),
             )),
             authority: None,
             proto: Some(SessionProtocol::Http1),
@@ -357,8 +362,9 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
+            identity: Some((
+                tls::ServerId(identity::TlsName::from_str("server.id").unwrap()),
+                tls::ServerName(identity::Name::from_str("server.id").unwrap()),
             )),
             authority: Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
             proto: Some(SessionProtocol::Http1),
@@ -381,8 +387,9 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
+            identity: Some((
+                tls::ServerId(identity::TlsName::from_str("server.id").unwrap()),
+                tls::ServerName(identity::Name::from_str("server.id").unwrap()),
             )),
             authority: None,
             proto: Some(SessionProtocol::Http1),

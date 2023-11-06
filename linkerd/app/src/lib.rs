@@ -311,8 +311,8 @@ impl App {
         &self.dst
     }
 
-    pub fn local_identity(&self) -> identity::Name {
-        self.identity.receiver().name().clone()
+    pub fn local_identity(&self) -> identity::TlsName {
+        self.identity.receiver().tls_name().clone()
     }
 
     pub fn identity_addr(&self) -> ControlAddr {
@@ -364,7 +364,7 @@ impl App {
 
                         // Kick off the identity so that the process can become ready.
                         let local = identity.receiver();
-                        let local_id = local.name().clone();
+                        let local_id = local.tls_name().clone();
                         let ready = identity.ready();
                         tokio::spawn(
                             identity

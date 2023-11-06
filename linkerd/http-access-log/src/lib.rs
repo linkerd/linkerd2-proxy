@@ -28,7 +28,7 @@ pub struct NewAccessLog<N> {
 pub struct AccessLogContext<S> {
     inner: S,
     client_addr: SocketAddr,
-    client_id: Option<identity::Name>,
+    client_id: Option<identity::TlsName>,
 }
 
 struct ResponseFutureInner {

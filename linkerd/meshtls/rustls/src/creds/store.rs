@@ -12,7 +12,7 @@ pub struct Store {
     server_cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
     key: Arc<EcdsaKeyPair>,
     csr: Arc<[u8]>,
-    name: id::Name,
+    tls_name: id::TlsName,
     client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
     server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
 }
@@ -75,7 +75,7 @@ impl Store {
         server_cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
         key: EcdsaKeyPair,
         csr: &[u8],
-        name: id::Name,
+        tls_name: id::TlsName,
         client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
         server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
     ) -> Self {
@@ -84,7 +84,7 @@ impl Store {
             key: Arc::new(key),
             server_cert_verifier,
             csr: csr.into(),
-            name,
+            tls_name,
             client_tx,
             server_tx,
         }
@@ -105,7 +105,7 @@ impl Store {
     /// Ensures the certificate is valid for the services we terminate for TLS. This assumes that
     /// server cert validation does the same or more validation than client cert validation.
     fn validate(&self, certs: &[rustls::Certificate]) -> Result<()> {
-        let name = rustls::ServerName::try_from(self.name.as_str())
+        let name = rustls::ServerName::try_from(self.tls_name.as_str())
             .expect("server name must be a valid DNS name");
         static NO_OCSP: &[u8] = &[];
         let end_entity = &certs[0];
@@ -120,6 +120,7 @@ impl Store {
             NO_OCSP,
             now,
         )?;
+        //// ... ///
         debug!("Certified");
         Ok(())
     }
@@ -127,8 +128,8 @@ impl Store {
 
 impl id::Credentials for Store {
     /// Returns the proxy's identity.
-    fn dns_name(&self) -> &id::Name {
-        &self.name
+    fn tls_name(&self) -> &id::TlsName {
+        &self.tls_name
     }
 
     /// Returns the CSR that was configured at proxy startup.

@@ -1,11 +1,11 @@
-use crate::Name;
+use crate::TlsName;
 use linkerd_error::Result;
 use std::{ops::Deref, time::SystemTime};
 
 /// Publishes certificates to be used by TLS implementations.
 pub trait Credentials {
-    /// Get the authoritative DNS-like name used in the certificate.
-    fn dns_name(&self) -> &Name;
+    /// Get the tls name used in the certificate's SAN.
+    fn tls_name(&self) -> &TlsName;
 
     /// Generate a CSR to to be sent to the identity service.
     fn gen_certificate_signing_request(&mut self) -> DerX509;

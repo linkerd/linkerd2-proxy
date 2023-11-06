@@ -1,4 +1,4 @@
-use crate::ServerId;
+use crate::client::ServerName;
 use linkerd_identity as id;
 use tracing::trace;
 
@@ -18,7 +18,7 @@ pub struct Incomplete;
 /// This assumes that the ClientHello is small and is sent in a single TLS record, which is what all
 /// reasonable implementations do. (If they were not to, they wouldn't interoperate with picky
 /// servers.)
-pub fn parse_sni(input: &[u8]) -> Result<Option<ServerId>, Incomplete> {
+pub fn parse_sni(input: &[u8]) -> Result<Option<ServerName>, Incomplete> {
     let r = untrusted::Input::from(input).read_all(untrusted::EndOfInput, |input| {
         let r = extract_sni(input);
         input.skip_to_end(); // Ignore anything after what we parsed.
@@ -34,7 +34,7 @@ pub fn parse_sni(input: &[u8]) -> Result<Option<ServerId>, Incomplete> {
                 None => return Ok(None),
             };
             trace!(?sni, "parse_sni: parsed correctly up to SNI");
-            Ok(Some(ServerId(sni)))
+            Ok(Some(ServerName(sni)))
         }
         Ok(None) => {
             trace!("parse_sni: failed to parse up to SNI");
@@ -211,7 +211,10 @@ mod tests {
 
         // The same result will be returned for all longer prefixes.
         for i in i..input.len() {
-            assert_eq!(Ok(Some(ServerId(identity.clone()))), parse_sni(&input[..i]))
+            assert_eq!(
+                Ok(Some(ServerName(identity.clone()))),
+                parse_sni(&input[..i])
+            )
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::{NewClient, Server};
 use linkerd_error::Result;
-use linkerd_identity::{Credentials, DerX509, Name};
+use linkerd_identity::{Credentials, DerX509, TlsName};
 
 #[cfg(feature = "boring")]
 pub use crate::boring;
@@ -32,13 +32,13 @@ pub enum Receiver {
 // === impl Store ===
 
 impl Credentials for Store {
-    fn dns_name(&self) -> &Name {
+    fn tls_name(&self) -> &TlsName {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(store) => store.dns_name(),
+            Self::Boring(store) => store.tls_name(),
 
             #[cfg(feature = "rustls")]
-            Self::Rustls(store) => store.dns_name(),
+            Self::Rustls(store) => store.tls_name(),
             #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(),
         }
@@ -91,13 +91,13 @@ impl From<rustls::creds::Receiver> for Receiver {
 }
 
 impl Receiver {
-    pub fn name(&self) -> &Name {
+    pub fn tls_name(&self) -> &TlsName {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(receiver) => receiver.name(),
+            Self::Boring(receiver) => receiver.tls_name(),
 
             #[cfg(feature = "rustls")]
-            Self::Rustls(receiver) => receiver.name(),
+            Self::Rustls(receiver) => receiver.tls_name(),
             #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(),
         }

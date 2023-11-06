@@ -16,12 +16,17 @@ use tracing::debug;
 
 /// A newtype for target server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ServerId(pub id::Name);
+pub struct ServerId(pub id::TlsName);
+
+/// A newtype for target server names.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ServerName(pub id::Name);
 
 /// A stack parameter that configures a `Client` to establish a TLS connection.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientTls {
     pub server_id: ServerId,
+    pub server_name: ServerName,
     pub alpn: Option<AlpnProtocols>,
 }
 
@@ -71,17 +76,6 @@ pub enum Connect<F, I, H: Service<I>, M> {
 pub struct ConnectMeta<M> {
     pub socket: M,
     pub tls: Conditional<Option<NegotiatedProtocol>, NoClientTls>,
-}
-
-// === impl ClientTls ===
-
-impl From<ServerId> for ClientTls {
-    fn from(server_id: ServerId) -> Self {
-        Self {
-            server_id,
-            alpn: None,
-        }
-    }
 }
 
 // === impl Client ===
@@ -180,22 +174,16 @@ where
 
 // === impl ServerId ===
 
-impl From<id::Name> for ServerId {
-    fn from(n: id::Name) -> Self {
+impl From<id::TlsName> for ServerId {
+    fn from(n: id::TlsName) -> Self {
         Self(n)
     }
 }
 
-impl From<ServerId> for id::Name {
-    fn from(ServerId(name): ServerId) -> id::Name {
-        name
-    }
-}
-
 impl Deref for ServerId {
-    type Target = id::Name;
+    type Target = id::TlsName;
 
-    fn deref(&self) -> &id::Name {
+    fn deref(&self) -> &id::TlsName {
         &self.0
     }
 }
@@ -203,11 +191,40 @@ impl Deref for ServerId {
 impl FromStr for ServerId {
     type Err = id::InvalidName;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        id::Name::from_str(s).map(ServerId)
+        id::TlsName::from_str(s).map(ServerId)
     }
 }
 
 impl fmt::Display for ServerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+// === impl ServerName ===
+
+impl FromStr for ServerName {
+    type Err = id::InvalidName;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        id::Name::from_str(s).map(ServerName)
+    }
+}
+
+impl From<ServerName> for id::Name {
+    fn from(ServerName(name): ServerName) -> id::Name {
+        name
+    }
+}
+
+impl Deref for ServerName {
+    type Target = id::Name;
+
+    fn deref(&self) -> &id::Name {
+        &self.0
+    }
+}
+
+impl fmt::Display for ServerName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }

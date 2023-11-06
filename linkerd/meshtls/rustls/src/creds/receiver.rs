@@ -1,5 +1,5 @@
 use crate::{NewClient, Server};
-use linkerd_identity::Name;
+use linkerd_identity::{Name, TlsName};
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio_rustls::rustls;
@@ -8,6 +8,7 @@ use tokio_rustls::rustls;
 #[derive(Clone)]
 pub struct Receiver {
     name: Name,
+    tls_name: TlsName,
     client_rx: watch::Receiver<Arc<rustls::ClientConfig>>,
     server_rx: watch::Receiver<Arc<rustls::ServerConfig>>,
 }
@@ -17,19 +18,21 @@ pub struct Receiver {
 impl Receiver {
     pub(super) fn new(
         name: Name,
+        tls_name: TlsName,
         client_rx: watch::Receiver<Arc<rustls::ClientConfig>>,
         server_rx: watch::Receiver<Arc<rustls::ServerConfig>>,
     ) -> Self {
         Self {
             name,
+            tls_name,
             client_rx,
             server_rx,
         }
     }
 
     /// Returns the local identity.
-    pub fn name(&self) -> &Name {
-        &self.name
+    pub fn tls_name(&self) -> &TlsName {
+        &self.tls_name
     }
 
     /// Returns a `NewClient` that can be used to establish TLS on client connections.
@@ -47,6 +50,7 @@ impl std::fmt::Debug for Receiver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Receiver")
             .field("name", &self.name)
+            .field("tls_name", &self.name)
             .finish()
     }
 }
@@ -86,6 +90,7 @@ mod tests {
         let (_, client_rx) = watch::channel(Arc::new(empty_client_config()));
         let receiver = Receiver {
             name: "example".parse().unwrap(),
+            tls_name: "example".parse().unwrap(),
             server_rx,
             client_rx,
         };
@@ -109,6 +114,7 @@ mod tests {
         let (_, client_rx) = watch::channel(Arc::new(empty_client_config()));
         let receiver = Receiver {
             name: "example".parse().unwrap(),
+            tls_name: "example".parse().unwrap(),
             server_rx,
             client_rx,
         };

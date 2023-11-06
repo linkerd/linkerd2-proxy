@@ -1,8 +1,8 @@
 use crate::creds::CredsRx;
-use linkerd_identity::Name;
+use linkerd_identity::{Name, TlsName};
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
-use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef, ServerId};
+use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef, ServerId, ServerName};
 use std::{future::Future, pin::Pin, sync::Arc, task::Context};
 use tracing::debug;
 
@@ -13,7 +13,9 @@ pub struct NewClient(CredsRx);
 pub struct Connect {
     rx: CredsRx,
     alpn: Option<Arc<[Vec<u8>]>>,
-    server_id: Name,
+    server_name: Name,
+    // TODO: Use by the client to verify the SANs of the peer's end cert
+    _server_id: TlsName,
 }
 
 pub type ConnectFuture<I> = Pin<Box<dyn Future<Output = io::Result<ClientIo<I>>> + Send>>;
@@ -48,11 +50,14 @@ impl std::fmt::Debug for NewClient {
 impl Connect {
     pub(crate) fn new(client_tls: ClientTls, rx: CredsRx) -> Self {
         let ServerId(server_id) = client_tls.server_id;
+        let ServerName(server_name) = client_tls.server_name;
+
         let alpn = client_tls.alpn.map(|AlpnProtocols(ps)| ps.into());
         Self {
             rx,
             alpn,
-            server_id,
+            server_name,
+            _server_id: server_id,
         }
     }
 }
@@ -70,7 +75,7 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        let id = self.server_id.clone();
+        let server_name = self.server_name.clone();
         let connector = self
             .rx
             .borrow()
@@ -80,7 +85,7 @@ where
             let config = conn
                 .configure()
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            let io = tokio_boring::connect(config, id.as_str(), io)
+            let io = tokio_boring::connect(config, server_name.as_str(), io)
                 .await
                 .map_err(|e| match e.as_io_error() {
                     // TODO(ver) boring should let us take ownership of the error directly.

@@ -57,7 +57,7 @@ type ResponseFuture<F, T, E> =
 
 impl<S> RequireIdentity<S> {
     #[inline]
-    fn extract_id<B>(req: &mut http::Request<B>) -> Option<identity::Name> {
+    fn extract_id<B>(req: &mut http::Request<B>) -> Option<identity::TlsName> {
         let v = req.headers_mut().remove(HEADER_NAME)?;
         v.to_str().ok()?.parse().ok()
     }

@@ -13,7 +13,8 @@ use std::sync::Arc;
 use tokio::sync::watch;
 
 pub fn watch(
-    identity: id::Name,
+    name: id::Name,
+    tls_name: id::TlsName,
     roots_pem: &str,
     key_pkcs8: &[u8],
     csr: &[u8],
@@ -25,8 +26,8 @@ pub fn watch(
     };
 
     let (tx, rx) = watch::channel(Creds::from(creds.clone()));
-    let rx = Receiver::new(identity.clone(), rx);
-    let store = Store::new(creds, csr, identity, tx);
+    let rx = Receiver::new(name, tls_name.clone(), rx);
+    let store = Store::new(creds, csr, tls_name, tx);
 
     Ok((store, rx))
 }

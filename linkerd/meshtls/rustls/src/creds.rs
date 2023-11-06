@@ -20,7 +20,8 @@ pub struct InvalidKey(KeyRejected);
 pub struct InvalidTrustRoots(());
 
 pub fn watch(
-    identity: id::Name,
+    name: id::Name,
+    tls_name: id::TlsName,
     roots_pem: &str,
     key_pkcs8: &[u8],
     csr: &[u8],
@@ -80,13 +81,13 @@ pub fn watch(
         watch::channel(store::server_config(roots.clone(), empty_resolver))
     };
 
-    let rx = Receiver::new(identity.clone(), client_rx, server_rx);
+    let rx = Receiver::new(name, tls_name.clone(), client_rx, server_rx);
     let store = Store::new(
         roots,
         server_cert_verifier,
         key,
         csr,
-        identity,
+        tls_name,
         client_tx,
         server_tx,
     );
@@ -97,6 +98,7 @@ pub fn watch(
 #[cfg(feature = "test-util")]
 pub fn for_test(ent: &linkerd_tls_test_util::Entity) -> (Store, Receiver) {
     watch(
+        ent.name.parse().expect("name must be valid"),
         ent.name.parse().expect("name must be valid"),
         std::str::from_utf8(ent.trust_anchors).expect("roots must be PEM"),
         ent.key,

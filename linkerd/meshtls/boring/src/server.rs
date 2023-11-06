@@ -2,7 +2,7 @@ use crate::creds::CredsRx;
 use linkerd_identity::Name;
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
-use linkerd_tls::{ClientId, LocalId, NegotiatedProtocol, ServerTls};
+use linkerd_tls::{ClientId, LocalName, NegotiatedProtocol, ServerTls};
 use std::{future::Future, pin::Pin, sync::Arc, task::Context};
 use tracing::debug;
 
@@ -41,9 +41,9 @@ impl Server {
     }
 }
 
-impl Param<LocalId> for Server {
-    fn param(&self) -> LocalId {
-        LocalId(self.name.clone())
+impl Param<LocalName> for Server {
+    fn param(&self) -> LocalName {
+        LocalName(self.name.clone())
     }
 }
 

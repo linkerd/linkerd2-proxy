@@ -187,6 +187,7 @@ pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
 pub const ENV_IDENTITY_IDENTITY_LOCAL_NAME: &str = "LINKERD2_PROXY_IDENTITY_LOCAL_NAME";
+pub const ENV_IDENTITY_IDENTITY_LOCAL_SERVER_NAME: &str = "LINKERD2_PROXY_IDENTITY_SERVER_NAME";
 pub const ENV_IDENTITY_TOKEN_FILE: &str = "LINKERD2_PROXY_IDENTITY_TOKEN_FILE";
 pub const ENV_IDENTITY_MIN_REFRESH: &str = "LINKERD2_PROXY_IDENTITY_MIN_REFRESH";
 pub const ENV_IDENTITY_MAX_REFRESH: &str = "LINKERD2_PROXY_IDENTITY_MAX_REFRESH";
@@ -982,9 +983,16 @@ fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
     Ok(set)
 }
 
-pub(super) fn parse_identity(s: &str) -> Result<identity::Name, ParseError> {
-    identity::Name::from_str(s).map_err(|identity::InvalidName| {
+pub(super) fn parse_identity(s: &str) -> Result<identity::TlsName, ParseError> {
+    identity::TlsName::from_str(s).map_err(|identity::InvalidName| {
         error!("Not a valid identity name: {}", s);
+        ParseError::NameError
+    })
+}
+
+pub(super) fn parse_name(s: &str) -> Result<identity::Name, ParseError> {
+    identity::Name::from_str(s).map_err(|identity::InvalidName| {
+        error!("Not a valid DNS name: {}", s);
         ParseError::NameError
     })
 }
@@ -1131,15 +1139,25 @@ pub fn parse_control_addr<S: Strings>(
 ) -> Result<Option<ControlAddr>, EnvError> {
     let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
     let n = parse(strings, &format!("{}_NAME", base), parse_identity)?;
-    match (a, n) {
-        (None, None) => Ok(None),
-        (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
+    let sn = parse(strings, &format!("{}_SERVER_NAME", base), parse_name).or(parse(
+        strings,
+        &format!("{}_NAME", base),
+        parse_name,
+    ))?;
+
+    match (a, n, sn) {
+        (None, None, None) => Ok(None),
+        (Some(ref addr), _, _) if addr.is_loopback() => Ok(Some(ControlAddr {
             addr: addr.clone(),
             identity: Conditional::None(tls::NoClientTls::Loopback),
         })),
-        (Some(addr), Some(name)) => Ok(Some(ControlAddr {
+        (Some(addr), Some(tls_name), Some(server_name)) => Ok(Some(ControlAddr {
             addr,
-            identity: Conditional::Some(tls::ServerId(name).into()),
+            identity: Conditional::Some(tls::ClientTls {
+                server_id: tls::ServerId(tls_name),
+                server_name: tls::ServerName(server_name),
+                alpn: None,
+            }),
         })),
         _ => {
             error!("{}_ADDR and {}_NAME must be specified together", base, base);
@@ -1165,7 +1183,15 @@ pub fn parse_identity_config<S: Strings>(
             ParseError::InvalidTokenSource
         })
     });
-    let li = parse(strings, ENV_IDENTITY_IDENTITY_LOCAL_NAME, parse_identity);
+    let tls_name = parse(strings, ENV_IDENTITY_IDENTITY_LOCAL_NAME, parse_identity);
+
+    let server_name = match strings.get(ENV_IDENTITY_IDENTITY_LOCAL_SERVER_NAME)? {
+        Some(ref sn) => parse_name(sn)
+            .map(Some)
+            .map_err(|_| EnvError::InvalidEnvVar),
+        None => parse(strings, ENV_IDENTITY_IDENTITY_LOCAL_NAME, parse_name),
+    };
+
     let min_refresh = parse(strings, ENV_IDENTITY_MIN_REFRESH, parse_duration);
     let max_refresh = parse(strings, ENV_IDENTITY_MAX_REFRESH, parse_duration);
 
@@ -1181,12 +1207,22 @@ pub fn parse_identity_config<S: Strings>(
         return Err(EnvError::InvalidEnvVar);
     }
 
-    match (control?, ta?, dir?, li?, tok?, min_refresh?, max_refresh?) {
+    match (
+        control?,
+        ta?,
+        dir?,
+        tls_name?,
+        server_name?,
+        tok?,
+        min_refresh?,
+        max_refresh?,
+    ) {
         (
             Some(control),
             Some(trust_anchors_pem),
             Some(dir),
-            Some(local_name),
+            Some(tls_name),
+            Some(server_name),
             Some(token),
             min_refresh,
             max_refresh,
@@ -1235,21 +1271,26 @@ pub fn parse_identity_config<S: Strings>(
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
             };
             let docs = identity::Documents {
-                id: identity::LocalId(local_name),
+                name: identity::LocalName(server_name),
+                tls_name: identity::LocalId(tls_name),
                 trust_anchors_pem,
                 key_pkcs8: key?,
                 csr_der: csr?,
             };
             Ok((control, certify, docs))
         }
-        (addr, trust_anchors, end_entity_dir, local_id, token, _minr, _maxr) => {
+        (addr, trust_anchors, end_entity_dir, tls_name, server_name, token, _minr, _maxr) => {
             let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);
             let svc_env: &str = s.as_str();
             for (unset, name) in &[
                 (addr.is_none(), svc_env),
                 (trust_anchors.is_none(), ENV_IDENTITY_TRUST_ANCHORS),
                 (end_entity_dir.is_none(), ENV_IDENTITY_DIR),
-                (local_id.is_none(), ENV_IDENTITY_IDENTITY_LOCAL_NAME),
+                (tls_name.is_none(), ENV_IDENTITY_IDENTITY_LOCAL_NAME),
+                (
+                    server_name.is_none(),
+                    ENV_IDENTITY_IDENTITY_LOCAL_SERVER_NAME,
+                ),
                 (token.is_none(), ENV_IDENTITY_TOKEN_FILE),
             ] {
                 if *unset {

@@ -15,7 +15,7 @@ pub struct NewClient {
 /// A `Service` that initiates client-side TLS connections.
 #[derive(Clone)]
 pub struct Connect {
-    server_id: rustls::ServerName,
+    server_name: rustls::ServerName,
     config: Arc<ClientConfig>,
 }
 
@@ -68,10 +68,13 @@ impl Connect {
             }
         };
 
-        let server_id = rustls::ServerName::try_from(client_tls.server_id.as_str())
-            .expect("identity must be a valid DNS name");
+        let server_name = rustls::ServerName::try_from(client_tls.server_name.as_str())
+            .expect("server name must be a valid DNS name");
 
-        Self { server_id, config }
+        Self {
+            server_name,
+            config,
+        }
     }
 }
 
@@ -90,7 +93,7 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         tokio_rustls::TlsConnector::from(self.config.clone())
             // XXX(eliza): it's a bummer that the server name has to be cloned here...
-            .connect(self.server_id.clone(), io)
+            .connect(self.server_name.clone(), io)
             .map_ok(ClientIo)
     }
 }

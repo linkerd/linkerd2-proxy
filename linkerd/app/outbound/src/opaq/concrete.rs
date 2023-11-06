@@ -283,9 +283,10 @@ impl<T> svc::Param<tls::ConditionalClientTls> for Endpoint<T> {
         self.metadata
             .identity()
             .cloned()
-            .map(move |server_id| {
+            .map(move |(server_id, server_name)| {
                 tls::ConditionalClientTls::Some(tls::ClientTls {
                     server_id,
+                    server_name,
                     alpn: if use_transport_header {
                         use linkerd_app_core::transport_header::PROTOCOL;
                         Some(tls::client::AlpnProtocols(vec![PROTOCOL.into()]))

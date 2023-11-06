@@ -4,7 +4,7 @@
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_error::Infallible;
-use linkerd_identity::{Credentials, DerX509, Name};
+use linkerd_identity::{Credentials, DerX509, Name, TlsName};
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_meshtls as meshtls;
 use linkerd_proxy_transport::{
@@ -50,9 +50,11 @@ pub async fn proxy_to_proxy_tls_works(mode: meshtls::Mode) {
     let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
     let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
     let server_id = tls::ServerId(test_util::FOO_NS1.name.parse().unwrap());
+    let server_name = tls::ServerName(test_util::FOO_NS1.tls_name.parse().unwrap());
+
     let (client_result, server_result) = run_test(
         client_tls.clone(),
-        Conditional::Some(server_id.clone()),
+        Conditional::Some((server_id.clone(), server_name.clone())),
         |conn| write_then_read(conn, PING),
         server_tls,
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
@@ -62,6 +64,7 @@ pub async fn proxy_to_proxy_tls_works(mode: meshtls::Mode) {
         client_result.tls,
         Some(Conditional::Some(tls::ClientTls {
             server_id,
+            server_name,
             alpn: None,
         }))
     );
@@ -83,10 +86,14 @@ pub async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match(mode: 
     // identity other than `server_tls.server_identity` would work.
     let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
     let sni = test_util::BAR_NS1.name.parse::<Name>().unwrap();
+    let tls_name = test_util::BAR_NS1.tls_name.parse::<TlsName>().unwrap();
 
     let (client_result, server_result) = run_test(
         client_tls,
-        Conditional::Some(tls::ServerId(sni.clone())),
+        Conditional::Some((
+            tls::ServerId(tls_name.clone()),
+            tls::ServerName(sni.clone()),
+        )),
         |conn| write_then_read(conn, PING),
         server_tls,
         |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
@@ -100,7 +107,7 @@ pub async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match(mode: 
     assert_eq!(
         server_result.tls,
         Some(Conditional::Some(tls::ServerTls::Passthru {
-            sni: tls::ServerId(sni)
+            sni: tls::ServerName(sni)
         }))
     );
     assert_eq!(&server_result.result.unwrap()[..], START_OF_TLS);
@@ -119,6 +126,7 @@ fn load(
     let (mut store, rx) = mode
         .watch(
             ent.name.parse().unwrap(),
+            ent.tls_name.parse().unwrap(),
             roots_pem,
             ent.key,
             b"fake CSR data",
@@ -153,7 +161,7 @@ type ClientIo =
 /// side.
 async fn run_test<C, CF, CR, S, SF, SR>(
     client_tls: meshtls::NewClient,
-    client_server_id: Conditional<tls::ServerId, tls::NoClientTls>,
+    client_server_id: Conditional<(tls::ServerId, tls::ServerName), tls::NoClientTls>,
     client: C,
     server_tls: meshtls::Server,
     server: S,
@@ -230,11 +238,26 @@ where
         // parallels the server side.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalClientTls, CR>>();
 
-        let tls = Some(client_server_id.clone().map(Into::into));
+        let tls = Some(
+            client_server_id
+                .clone()
+                .map(|(server_id, server_name)| tls::ClientTls {
+                    server_id,
+                    server_name,
+                    alpn: None,
+                }),
+        );
         let client = async move {
             let conn = tls::Client::layer(client_tls)
                 .layer(ConnectTcp::new(Keepalive(None)))
-                .oneshot(Target(server_addr.into(), client_server_id.map(Into::into)))
+                .oneshot(Target(
+                    server_addr.into(),
+                    client_server_id.map(|(server_id, server_name)| tls::ClientTls {
+                        server_id,
+                        server_name,
+                        alpn: None,
+                    }),
+                ))
                 .await;
             match conn {
                 Err(e) => {

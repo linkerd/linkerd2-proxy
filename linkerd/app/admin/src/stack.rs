@@ -34,7 +34,7 @@ struct NonHttpClient(Remote<ClientAddr>);
 
 #[derive(Debug, Error)]
 #[error("Unexpected TLS connection to {} from {}", self.0, self.1)]
-struct UnexpectedSni(tls::ServerId, Remote<ClientAddr>);
+struct UnexpectedSni(tls::ServerName, Remote<ClientAddr>);
 
 #[derive(Clone, Debug)]
 struct Tcp {
