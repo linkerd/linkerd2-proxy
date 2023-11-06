@@ -492,7 +492,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             Poll::Ready(())
                         });
 
-                        let drain = main.spawn();
+                        let (_, drain) = main.spawn();
 
                         if let Some(mut inbound_calls) = inbound_policy_calls {
                             // Wait for the proxy to have started watches on all inbound default

@@ -32,7 +32,7 @@ mod json;
 mod log;
 mod readiness;
 
-pub use self::readiness::{Latch, Readiness};
+pub use self::readiness::Readiness;
 
 #[derive(Clone)]
 pub struct Admin<M> {
@@ -61,7 +61,7 @@ impl<M> Admin<M> {
     }
 
     fn ready_rsp(&self) -> Response<Body> {
-        if self.ready.is_ready() {
+        if self.ready.get() {
             Response::builder()
                 .status(StatusCode::OK)
                 .header(http::header::CONTENT_TYPE, "text/plain")
@@ -269,32 +269,32 @@ mod tests {
 
     const TIMEOUT: Duration = Duration::from_secs(1);
 
+    macro_rules! call {
+        ($admin:expr) => {{
+            let r = Request::builder()
+                .method(Method::GET)
+                .uri("http://0.0.0.0/ready")
+                .body(Body::empty())
+                .unwrap();
+            let f = $admin.clone().oneshot(r);
+            timeout(TIMEOUT, f).await.expect("timeout").expect("call")
+        }};
+    }
+
     #[tokio::test]
-    async fn ready_when_latches_dropped() {
-        let (r, l0) = Readiness::new();
-        let l1 = l0.clone();
+    async fn readiness() {
+        let readiness = Readiness::new(false);
 
         let (_, t) = trace::Settings::default().build();
         let (s, _) = mpsc::unbounded_channel();
-        let admin = Admin::new((), r, s, t);
-        macro_rules! call {
-            () => {{
-                let r = Request::builder()
-                    .method(Method::GET)
-                    .uri("http://0.0.0.0/ready")
-                    .body(Body::empty())
-                    .unwrap();
-                let f = admin.clone().oneshot(r);
-                timeout(TIMEOUT, f).await.expect("timeout").expect("call")
-            }};
-        }
 
-        assert_eq!(call!().status(), StatusCode::SERVICE_UNAVAILABLE);
+        let admin = Admin::new((), readiness.clone(), s, t);
+        assert_eq!(call!(admin).status(), StatusCode::SERVICE_UNAVAILABLE);
 
-        drop(l0);
-        assert_eq!(call!().status(), StatusCode::SERVICE_UNAVAILABLE);
+        readiness.set(true);
+        assert_eq!(call!(admin).status(), StatusCode::OK);
 
-        drop(l1);
-        assert_eq!(call!().status(), StatusCode::OK);
+        readiness.set(false);
+        assert_eq!(call!(admin).status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }

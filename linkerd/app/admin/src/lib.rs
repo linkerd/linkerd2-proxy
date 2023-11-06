@@ -4,5 +4,5 @@
 mod server;
 mod stack;
 
-pub use self::server::{Admin, Latch, Readiness};
+pub use self::server::{Admin, Readiness};
 pub use self::stack::{Config, Task};

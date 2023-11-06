@@ -331,7 +331,7 @@ impl App {
         }
     }
 
-    pub fn spawn(self) -> drain::Signal {
+    pub fn spawn(self) -> (admin::Readiness, drain::Signal) {
         let App {
             admin,
             drain,
@@ -341,6 +341,7 @@ impl App {
             tap,
             ..
         } = self;
+        let readiness = admin.ready.clone();
 
         // Run a daemon thread for all administrative tasks.
         //
@@ -377,11 +378,11 @@ impl App {
                                 .instrument(info_span!("identity").or_current()),
                         );
 
-                        let latch = admin.latch;
+                        let readiness = admin.ready;
                         tokio::spawn(
                             ready
                                 .map(move |()| {
-                                    latch.release();
+                                    readiness.set(true);
                                     info!(id = %local_id, "Certified identity");
                                 })
                                 .instrument(info_span!("identity").or_current()),
@@ -416,6 +417,6 @@ impl App {
 
         tokio::spawn(start_proxy);
 
-        drain
+        (readiness, drain)
     }
 }
