@@ -6,6 +6,7 @@ fn load(ent: &Entity) -> crate::creds::Store {
     let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
     let (store, _) = crate::creds::watch(
         ent.name.parse().unwrap(),
+        ent.name.parse().unwrap(),
         roots_pem,
         ent.key,
         b"fake CSR data",
