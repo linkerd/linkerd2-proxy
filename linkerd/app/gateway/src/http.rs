@@ -104,7 +104,7 @@ impl Gateway {
             .push_map_target(Target::discard_parent)
             // Add headers to prevent loops.
             .push(NewHttpGateway::layer(
-                self.inbound.identity().server_name().clone().into(),
+                self.inbound.identity().local_id().clone(),
             ))
             .push_on_service(svc::LoadShed::layer())
             .lift_new()

@@ -117,6 +117,7 @@ fn load(
     let (mut store, rx) = mode
         .watch(
             ent.name.parse().unwrap(),
+            ent.name.parse().unwrap(),
             roots_pem,
             ent.key,
             b"fake CSR data",

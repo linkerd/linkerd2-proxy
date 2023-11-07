@@ -22,6 +22,7 @@ pub use self::{
 };
 use linkerd_dns_name as dns;
 use linkerd_error::{Error, Result};
+use linkerd_identity as id;
 use std::str::FromStr;
 
 #[cfg(feature = "boring")]
@@ -82,6 +83,7 @@ impl Default for Mode {
 impl Mode {
     pub fn watch(
         self,
+        local_id: id::Id,
         server_name: dns::Name,
         roots_pem: &str,
         key_pkcs8: &[u8],
@@ -91,7 +93,7 @@ impl Mode {
             #[cfg(feature = "boring")]
             Self::Boring => {
                 let (store, receiver) =
-                    boring::creds::watch(server_name, roots_pem, key_pkcs8, csr)?;
+                    boring::creds::watch(local_id, server_name, roots_pem, key_pkcs8, csr)?;
                 Ok((
                     creds::Store::Boring(store),
                     creds::Receiver::Boring(receiver),
@@ -101,7 +103,7 @@ impl Mode {
             #[cfg(feature = "rustls")]
             Self::Rustls => {
                 let (store, receiver) =
-                    rustls::creds::watch(server_name, roots_pem, key_pkcs8, csr)?;
+                    rustls::creds::watch(local_id, server_name, roots_pem, key_pkcs8, csr)?;
                 Ok((
                     creds::Store::Rustls(store),
                     creds::Receiver::Rustls(receiver),

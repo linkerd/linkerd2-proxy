@@ -57,6 +57,7 @@ impl Config {
     pub fn build(self, dns: dns::Resolver, client_metrics: ClientMetrics) -> Result<Identity> {
         let name = self.documents.server_name.clone();
         let (store, receiver) = Mode::default().watch(
+            name.clone().into(),
             name.clone(),
             &self.documents.trust_anchors_pem,
             &self.documents.key_pkcs8,

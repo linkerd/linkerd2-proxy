@@ -1,7 +1,7 @@
 use crate::{NewClient, Server};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
-use linkerd_identity::{Credentials, DerX509};
+use linkerd_identity::{Credentials, DerX509, Id};
 
 #[cfg(feature = "boring")]
 pub use crate::boring;
@@ -80,6 +80,18 @@ impl From<rustls::creds::Receiver> for Receiver {
 }
 
 impl Receiver {
+    pub fn local_id(&self) -> &Id {
+        match self {
+            #[cfg(feature = "boring")]
+            Self::Boring(receiver) => receiver.local_id(),
+
+            #[cfg(feature = "rustls")]
+            Self::Rustls(receiver) => receiver.local_id(),
+            #[cfg(not(feature = "__has_any_tls_impls"))]
+            _ => crate::no_tls!(),
+        }
+    }
+
     pub fn server_name(&self) -> &dns::Name {
         match self {
             #[cfg(feature = "boring")]
