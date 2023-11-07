@@ -5,7 +5,7 @@ mod credentials;
 
 pub use self::credentials::{Credentials, DerX509};
 
-/// An authenticated endpoint identity descriptor.
+/// An endpoint identity descriptor used for authentication.
 ///
 /// Practically speaking, this is a DNS-like identity string that matches an
 /// x509 DNS SAN. This will in the future be updated to support SPIFFE IDs as
