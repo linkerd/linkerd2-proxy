@@ -3,8 +3,9 @@
 
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
+use linkerd_dns_name as dns;
 use linkerd_error::Infallible;
-use linkerd_identity::{Credentials, DerX509, Name};
+use linkerd_identity::{Credentials, DerX509};
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_meshtls as meshtls;
 use linkerd_proxy_transport::{
@@ -60,10 +61,7 @@ pub async fn proxy_to_proxy_tls_works(mode: meshtls::Mode) {
     .await;
     assert_eq!(
         client_result.tls,
-        Some(Conditional::Some(tls::ClientTls {
-            server_id,
-            alpn: None,
-        }))
+        Some(Conditional::Some(tls::ClientTls::new(server_id, None)))
     );
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
     assert_eq!(
@@ -82,11 +80,11 @@ pub async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match(mode: 
     // Misuse the client's identity instead of the server's identity. Any
     // identity other than `server_tls.server_identity` would work.
     let (_bar, client_tls, _) = load(mode, &test_util::BAR_NS1);
-    let sni = test_util::BAR_NS1.name.parse::<Name>().unwrap();
+    let server_name = test_util::BAR_NS1.name.parse::<dns::Name>().unwrap();
 
     let (client_result, server_result) = run_test(
         client_tls,
-        Conditional::Some(tls::ServerId(sni.clone())),
+        Conditional::Some(tls::ServerId(server_name.clone().into())),
         |conn| write_then_read(conn, PING),
         server_tls,
         |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
@@ -100,7 +98,7 @@ pub async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match(mode: 
     assert_eq!(
         server_result.tls,
         Some(Conditional::Some(tls::ServerTls::Passthru {
-            sni: tls::ServerId(sni)
+            sni: tls::ServerName(server_name)
         }))
     );
     assert_eq!(&server_result.result.unwrap()[..], START_OF_TLS);
@@ -230,11 +228,18 @@ where
         // parallels the server side.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalClientTls, CR>>();
 
-        let tls = Some(client_server_id.clone().map(Into::into));
+        let tls = Some(
+            client_server_id
+                .clone()
+                .map(|s| tls::ClientTls::new(s, None)),
+        );
         let client = async move {
             let conn = tls::Client::layer(client_tls)
                 .layer(ConnectTcp::new(Keepalive(None)))
-                .oneshot(Target(server_addr.into(), client_server_id.map(Into::into)))
+                .oneshot(Target(
+                    server_addr.into(),
+                    client_server_id.map(|s| tls::ClientTls::new(s, None)),
+                ))
                 .await;
             match conn {
                 Err(e) => {

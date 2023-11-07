@@ -1,5 +1,6 @@
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
+    identity as id,
     proxy::http,
     svc::{self, layer},
     tls, Error,
@@ -15,7 +16,7 @@ use std::{
 #[derive(Clone, Debug)]
 pub(crate) struct NewHttpGateway<N> {
     inner: N,
-    local_id: tls::LocalId,
+    local_id: id::Id,
 }
 
 /// A `Service` middleware that fails requests that would loop. It reads and
@@ -25,7 +26,7 @@ pub(crate) struct HttpGateway<S> {
     inner: S,
     host: String,
     client_id: tls::ClientId,
-    local_id: tls::LocalId,
+    local_id: id::Id,
 }
 
 type ResponseFuture<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 'static>>;
@@ -33,11 +34,11 @@ type ResponseFuture<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 
 // === impl NewHttpGateway ===
 
 impl<N> NewHttpGateway<N> {
-    pub fn new(inner: N, local_id: tls::LocalId) -> Self {
+    pub fn new(inner: N, local_id: id::Id) -> Self {
         Self { inner, local_id }
     }
 
-    pub fn layer(local_id: tls::LocalId) -> impl layer::Layer<N, Service = Self> + Clone {
+    pub fn layer(local_id: id::Id) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self::new(inner, local_id.clone()))
     }
 }
@@ -77,7 +78,7 @@ where
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // If the client ID is the same as the gateway's, then we're in a loop.
-        if *self.client_id == *self.local_id {
+        if *self.client_id == self.local_id {
             return Poll::Ready(Err(GatewayLoop.into()));
         }
 
@@ -95,7 +96,7 @@ where
         {
             if let Some(by) = fwd_by(forwarded) {
                 tracing::info!(%forwarded);
-                if by == self.local_id.as_str() {
+                if by == self.local_id.to_str() {
                     return Box::pin(future::err(GatewayLoop.into()));
                 }
             }

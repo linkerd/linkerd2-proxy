@@ -1,5 +1,5 @@
 use futures::{future, TryFutureExt};
-use linkerd_app_core::{identity, svc, tls, Conditional, Error};
+use linkerd_app_core::{dns, identity, svc, tls, Conditional, Error};
 use std::task::{Context, Poll};
 use thiserror::Error;
 use tracing::{debug, trace};
@@ -57,9 +57,10 @@ type ResponseFuture<F, T, E> =
 
 impl<S> RequireIdentity<S> {
     #[inline]
-    fn extract_id<B>(req: &mut http::Request<B>) -> Option<identity::Name> {
+    fn extract_id<B>(req: &mut http::Request<B>) -> Option<identity::Id> {
         let v = req.headers_mut().remove(HEADER_NAME)?;
-        v.to_str().ok()?.parse().ok()
+        let n = v.to_str().ok()?.parse::<dns::Name>().ok()?;
+        Some(n.into())
     }
 }
 

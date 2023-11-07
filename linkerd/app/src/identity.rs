@@ -1,6 +1,6 @@
 pub use linkerd_app_core::identity::{
     client::{certify, TokenSource},
-    InvalidName, LocalId, Name,
+    Id,
 };
 use linkerd_app_core::{
     control, dns,
@@ -25,7 +25,7 @@ pub struct Config {
 
 #[derive(Clone)]
 pub struct Documents {
-    pub id: LocalId,
+    pub server_name: dns::Name,
     pub trust_anchors_pem: String,
     pub key_pkcs8: Vec<u8>,
     pub csr_der: Vec<u8>,
@@ -55,7 +55,7 @@ struct NotifyReady {
 
 impl Config {
     pub fn build(self, dns: dns::Resolver, client_metrics: ClientMetrics) -> Result<Identity> {
-        let name = (*self.documents.id).clone();
+        let name = self.documents.server_name.clone();
         let (store, receiver) = Mode::default().watch(
             name.clone(),
             &self.documents.trust_anchors_pem,
@@ -116,7 +116,7 @@ impl Credentials for NotifyReady {
 impl std::fmt::Debug for Documents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Documents")
-            .field("id", &self.id)
+            .field("server_name", &self.server_name)
             .field("trust_anchors_pem", &self.trust_anchors_pem)
             .finish()
     }

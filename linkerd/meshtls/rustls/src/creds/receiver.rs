@@ -1,5 +1,5 @@
 use crate::{NewClient, Server};
-use linkerd_identity::Name;
+use linkerd_dns_name as dns;
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio_rustls::rustls;
@@ -7,7 +7,7 @@ use tokio_rustls::rustls;
 /// Receives TLS config updates to build `NewClient` and `Server` types.
 #[derive(Clone)]
 pub struct Receiver {
-    name: Name,
+    name: dns::Name,
     client_rx: watch::Receiver<Arc<rustls::ClientConfig>>,
     server_rx: watch::Receiver<Arc<rustls::ServerConfig>>,
 }
@@ -16,7 +16,7 @@ pub struct Receiver {
 
 impl Receiver {
     pub(super) fn new(
-        name: Name,
+        name: dns::Name,
         client_rx: watch::Receiver<Arc<rustls::ClientConfig>>,
         server_rx: watch::Receiver<Arc<rustls::ServerConfig>>,
     ) -> Self {
@@ -27,8 +27,8 @@ impl Receiver {
         }
     }
 
-    /// Returns the local identity.
-    pub fn name(&self) -> &Name {
+    /// Returns the local server name (i.e. used in mTLS).
+    pub fn server_name(&self) -> &dns::Name {
         &self.name
     }
 

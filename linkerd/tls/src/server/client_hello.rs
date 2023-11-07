@@ -1,5 +1,5 @@
-use crate::ServerId;
-use linkerd_identity as id;
+use crate::ServerName;
+use linkerd_dns_name as dns;
 use tracing::trace;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -18,7 +18,7 @@ pub struct Incomplete;
 /// This assumes that the ClientHello is small and is sent in a single TLS record, which is what all
 /// reasonable implementations do. (If they were not to, they wouldn't interoperate with picky
 /// servers.)
-pub fn parse_sni(input: &[u8]) -> Result<Option<ServerId>, Incomplete> {
+pub fn parse_sni(input: &[u8]) -> Result<Option<ServerName>, Incomplete> {
     let r = untrusted::Input::from(input).read_all(untrusted::EndOfInput, |input| {
         let r = extract_sni(input);
         input.skip_to_end(); // Ignore anything after what we parsed.
@@ -28,13 +28,13 @@ pub fn parse_sni(input: &[u8]) -> Result<Option<ServerId>, Incomplete> {
         Ok(Some(sni)) => {
             let sni = match std::str::from_utf8(sni.as_slice_less_safe())
                 .ok()
-                .and_then(|n| n.parse::<id::Name>().ok())
+                .and_then(|n| n.parse::<dns::Name>().ok())
             {
                 Some(sni) => sni,
                 None => return Ok(None),
             };
             trace!(?sni, "parse_sni: parsed correctly up to SNI");
-            Ok(Some(ServerId(sni)))
+            Ok(Some(ServerName(sni)))
         }
         Ok(None) => {
             trace!("parse_sni: failed to parse up to SNI");
@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn check_all_prefixes() {
         let input = include_bytes!("testdata/example-com-client-hello.bin");
-        let identity = id::Name::from_str("example.com").unwrap();
+        let identity = dns::Name::from_str("example.com").unwrap();
 
         let mut i = 0;
         while let Err(Incomplete) = parse_sni(&input[..i]) {
@@ -211,7 +211,10 @@ mod tests {
 
         // The same result will be returned for all longer prefixes.
         for i in i..input.len() {
-            assert_eq!(Ok(Some(ServerId(identity.clone()))), parse_sni(&input[..i]))
+            assert_eq!(
+                Ok(Some(ServerName(identity.clone()))),
+                parse_sni(&input[..i])
+            )
         }
     }
 }

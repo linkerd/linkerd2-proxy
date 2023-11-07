@@ -396,8 +396,8 @@ impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
     }
 }
 
-impl svc::Param<Option<identity::Name>> for Http {
-    fn param(&self) -> Option<identity::Name> {
+impl svc::Param<Option<identity::Id>> for Http {
+    fn param(&self) -> Option<identity::Id> {
         self.tls
             .status
             .value()

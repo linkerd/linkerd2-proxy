@@ -68,7 +68,7 @@ impl Connect {
             }
         };
 
-        let server_id = rustls::ServerName::try_from(client_tls.server_id.as_str())
+        let server_id = rustls::ServerName::try_from(&*client_tls.server_id.to_str())
             .expect("identity must be a valid DNS name");
 
         Self { server_id, config }

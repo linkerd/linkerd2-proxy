@@ -1,6 +1,6 @@
 mod client_hello;
 
-use crate::{NegotiatedProtocol, ServerId};
+use crate::{NegotiatedProtocol, ServerName};
 use bytes::BytesMut;
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
@@ -12,16 +12,15 @@ use std::{
     fmt,
     ops::Deref,
     pin::Pin,
-    str::FromStr,
     task::{Context, Poll},
 };
 use thiserror::Error;
 use tokio::time::{self, Duration};
 use tracing::{debug, trace, warn};
 
-/// A newtype for remote client idenities.
+/// Describes the authenticated identity of a remote client.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ClientId(pub id::Name);
+pub struct ClientId(pub id::Id);
 
 /// Indicates a server-side connection's TLS status.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -31,7 +30,7 @@ pub enum ServerTls {
         negotiated_protocol: Option<NegotiatedProtocol>,
     },
     Passthru {
-        sni: ServerId,
+        sni: ServerName,
     },
 }
 
@@ -134,7 +133,7 @@ where
     T: Clone + Send + 'static,
     P: InsertParam<ConditionalServerTls, T> + Clone + Send + Sync + 'static,
     P::Target: Send + 'static,
-    L: Param<id::LocalId> + Clone + Send + 'static,
+    L: Param<ServerName> + Clone + Send + 'static,
     L: Service<DetectIo<I>, Response = (ServerTls, LIo), Error = io::Error>,
     L::Future: Send,
     LIo: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
@@ -164,10 +163,10 @@ where
         Box::pin(async move {
             let (sni, io) = detect.await.map_err(|_| ServerTlsTimeoutError(()))??;
 
-            let id::LocalId(id) = tls.param();
+            let local_server_name = tls.param();
             let (peer, io) = match sni {
                 // If we detected an SNI matching this proxy, terminate TLS.
-                Some(ServerId(sni)) if sni == id => {
+                Some(sni) if sni == local_server_name => {
                     trace!("Identified local SNI");
                     let (peer, io) = tls.oneshot(io).await?;
                     (Conditional::Some(peer), EitherIo::Left(io))
@@ -193,7 +192,7 @@ where
 }
 
 /// Peek or buffer the provided stream to determine an SNI value.
-async fn detect_sni<I>(mut io: I) -> io::Result<(Option<ServerId>, DetectIo<I>)>
+async fn detect_sni<I>(mut io: I) -> io::Result<(Option<ServerName>, DetectIo<I>)>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin,
 {
@@ -249,22 +248,22 @@ where
 
 // === impl ClientId ===
 
-impl From<id::Name> for ClientId {
-    fn from(n: id::Name) -> Self {
+impl From<id::Id> for ClientId {
+    fn from(n: id::Id) -> Self {
         Self(n)
     }
 }
 
-impl From<ClientId> for id::Name {
-    fn from(ClientId(name): ClientId) -> id::Name {
-        name
+impl From<ClientId> for id::Id {
+    fn from(ClientId(id): ClientId) -> id::Id {
+        id
     }
 }
 
 impl Deref for ClientId {
-    type Target = id::Name;
+    type Target = id::Id;
 
-    fn deref(&self) -> &id::Name {
+    fn deref(&self) -> &id::Id {
         &self.0
     }
 }
@@ -275,10 +274,10 @@ impl fmt::Display for ClientId {
     }
 }
 
-impl FromStr for ClientId {
-    type Err = id::InvalidName;
+impl std::str::FromStr for ClientId {
+    type Err = linkerd_error::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        id::Name::from_str(s).map(Self)
+        id::Id::from_str(s).map(Self)
     }
 }
 
@@ -310,7 +309,6 @@ impl ServerTls {
 mod tests {
     use super::*;
     use linkerd_io::AsyncWriteExt;
-    use std::str::FromStr;
 
     #[tokio::test(flavor = "current_thread")]
     async fn detect_buffered() {
@@ -330,8 +328,7 @@ mod tests {
             .await
             .expect("SNI detection must not fail");
 
-        let identity = id::Name::from_str("example.com").unwrap();
-        assert_eq!(sni, Some(ServerId(identity)));
+        assert_eq!(sni, Some(ServerName("example.com".parse().unwrap())));
 
         match io {
             EitherIo::Left(_) => panic!("Detected IO should be buffered"),

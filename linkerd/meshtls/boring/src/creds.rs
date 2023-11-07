@@ -7,13 +7,13 @@ use boring::{
     ssl,
     x509::{store::X509StoreBuilder, X509},
 };
+use linkerd_dns_name as dns;
 use linkerd_error::Result;
-use linkerd_identity as id;
 use std::sync::Arc;
 use tokio::sync::watch;
 
 pub fn watch(
-    identity: id::Name,
+    identity: dns::Name,
     roots_pem: &str,
     key_pkcs8: &[u8],
     csr: &[u8],

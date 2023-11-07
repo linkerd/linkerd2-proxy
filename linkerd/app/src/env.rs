@@ -982,8 +982,15 @@ fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
     Ok(set)
 }
 
-pub(super) fn parse_identity(s: &str) -> Result<identity::Name, ParseError> {
-    identity::Name::from_str(s).map_err(|identity::InvalidName| {
+pub(super) fn parse_dns_name(s: &str) -> Result<dns::Name, ParseError> {
+    s.parse().map_err(|_| {
+        error!("Not a valid identity name: {}", s);
+        ParseError::NameError
+    })
+}
+
+pub(super) fn parse_identity(s: &str) -> Result<identity::Id, ParseError> {
+    s.parse().map_err(|_| {
         error!("Not a valid identity name: {}", s);
         ParseError::NameError
     })
@@ -1130,7 +1137,7 @@ pub fn parse_control_addr<S: Strings>(
     base: &str,
 ) -> Result<Option<ControlAddr>, EnvError> {
     let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
-    let n = parse(strings, &format!("{}_NAME", base), parse_identity)?;
+    let n = parse(strings, &format!("{}_NAME", base), parse_dns_name)?;
     match (a, n) {
         (None, None) => Ok(None),
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
@@ -1139,7 +1146,7 @@ pub fn parse_control_addr<S: Strings>(
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             addr,
-            identity: Conditional::Some(tls::ServerId(name).into()),
+            identity: Conditional::Some(tls::ClientTls::new(tls::ServerId(name.into()), None)),
         })),
         _ => {
             error!("{}_ADDR and {}_NAME must be specified together", base, base);
@@ -1165,7 +1172,7 @@ pub fn parse_identity_config<S: Strings>(
             ParseError::InvalidTokenSource
         })
     });
-    let li = parse(strings, ENV_IDENTITY_IDENTITY_LOCAL_NAME, parse_identity);
+    let li = parse(strings, ENV_IDENTITY_IDENTITY_LOCAL_NAME, parse_dns_name);
     let min_refresh = parse(strings, ENV_IDENTITY_MIN_REFRESH, parse_duration);
     let max_refresh = parse(strings, ENV_IDENTITY_MAX_REFRESH, parse_duration);
 
@@ -1235,7 +1242,7 @@ pub fn parse_identity_config<S: Strings>(
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
             };
             let docs = identity::Documents {
-                id: identity::LocalId(local_name),
+                server_name: local_name,
                 trust_anchors_pem,
                 key_pkcs8: key?,
                 csr_der: csr?,

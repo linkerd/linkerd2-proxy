@@ -177,7 +177,8 @@ fn is_authorized(
                 client_id: Some(tls::server::ClientId(ref id)),
                 ..
             }) => {
-                identities.contains(id.as_str()) || suffixes.iter().any(|s| s.contains(id.as_str()))
+                identities.contains(&*id.to_str())
+                    || suffixes.iter().any(|s| s.contains(&id.to_str()))
             }
             _ => false,
         },

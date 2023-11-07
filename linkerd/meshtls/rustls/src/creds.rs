@@ -2,8 +2,8 @@ mod receiver;
 mod store;
 
 pub use self::{receiver::Receiver, store::Store};
+use linkerd_dns_name as dns;
 use linkerd_error::Result;
-use linkerd_identity as id;
 use ring::{error::KeyRejected, signature::EcdsaKeyPair};
 use std::sync::Arc;
 use thiserror::Error;
@@ -20,7 +20,7 @@ pub struct InvalidKey(KeyRejected);
 pub struct InvalidTrustRoots(());
 
 pub fn watch(
-    identity: id::Name,
+    server_name: dns::Name,
     roots_pem: &str,
     key_pkcs8: &[u8],
     csr: &[u8],
@@ -80,13 +80,13 @@ pub fn watch(
         watch::channel(store::server_config(roots.clone(), empty_resolver))
     };
 
-    let rx = Receiver::new(identity.clone(), client_rx, server_rx);
+    let rx = Receiver::new(server_name.clone(), client_rx, server_rx);
     let store = Store::new(
         roots,
         server_cert_verifier,
         key,
         csr,
-        identity,
+        server_name,
         client_tx,
         server_tx,
     );

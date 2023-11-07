@@ -219,7 +219,7 @@ impl Test {
 
         let new = NewHttpGateway::new(
             move |_: _| outbound.clone(),
-            tls::LocalId("gateway.id.test".parse().unwrap()),
+            "gateway.id.test".parse().unwrap(),
         );
 
         #[derive(Clone, Debug)]

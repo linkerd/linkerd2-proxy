@@ -1,7 +1,6 @@
 use super::Gateway;
 use inbound::{GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_core::{
-    identity,
     metrics::ServerLabel,
     profiles,
     proxy::{
@@ -104,9 +103,9 @@ impl Gateway {
             // Discard `T` and its associated client-specific metadata.
             .push_map_target(Target::discard_parent)
             // Add headers to prevent loops.
-            .push(NewHttpGateway::layer(identity::LocalId(
-                self.inbound.identity().name().clone(),
-            )))
+            .push(NewHttpGateway::layer(
+                self.inbound.identity().server_name().clone().into(),
+            ))
             .push_on_service(svc::LoadShed::layer())
             .lift_new()
             // After protocol-downgrade, we need to build an inner stack for

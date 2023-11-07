@@ -1,8 +1,9 @@
 use crate::{Metrics, TokenSource};
 use http_body::Body;
 use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient};
+use linkerd_dns_name::Name;
 use linkerd_error::{Error, Result};
-use linkerd_identity::{Credentials, DerX509, Name};
+use linkerd_identity::{Credentials, DerX509};
 use linkerd_stack::NewService;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
