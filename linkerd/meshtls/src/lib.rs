@@ -111,7 +111,7 @@ impl Mode {
             }
 
             #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => no_tls!(server_name, roots_pem, key_pkcs8, csr),
+            _ => no_tls!(local_id, server_name, roots_pem, key_pkcs8, csr),
         }
     }
 }
