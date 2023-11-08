@@ -1,5 +1,6 @@
 mod receiver;
 mod store;
+pub(crate) mod verify;
 
 pub use self::{receiver::Receiver, store::Store};
 use linkerd_dns_name as dns;
@@ -55,10 +56,7 @@ pub fn watch(
     // controlling the set of trusted signature algorithms), but they provide good enough
     // defaults for now.
     // TODO: lock down the verification further.
-    let server_cert_verifier = Arc::new(rustls::client::WebPkiVerifier::new(
-        roots.clone(),
-        None, // no certificate transparency policy
-    ));
+    let server_cert_verifier = Arc::new(verify::AnySANVerifier::new(roots.clone()));
 
     let (client_tx, client_rx) = {
         // Since we don't have a certificate yet, build a client configuration
@@ -82,12 +80,13 @@ pub fn watch(
         watch::channel(store::server_config(roots.clone(), empty_resolver))
     };
 
-    let rx = Receiver::new(local_id, server_name.clone(), client_rx, server_rx);
+    let rx = Receiver::new(local_id.clone(), server_name.clone(), client_rx, server_rx);
     let store = Store::new(
         roots,
         server_cert_verifier,
         key,
         csr,
+        local_id,
         server_name,
         client_tx,
         server_tx,

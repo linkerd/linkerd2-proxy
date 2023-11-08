@@ -1,5 +1,6 @@
 mod receiver;
 mod store;
+pub(crate) mod verify;
 
 pub use self::{receiver::Receiver, store::Store};
 use boring::{
@@ -27,8 +28,8 @@ pub fn watch(
     };
 
     let (tx, rx) = watch::channel(Creds::from(creds.clone()));
-    let rx = Receiver::new(local_id, server_name.clone(), rx);
-    let store = Store::new(creds, csr, server_name, tx);
+    let rx = Receiver::new(local_id.clone(), server_name, rx);
+    let store = Store::new(creds, csr, local_id, tx);
 
     Ok((store, rx))
 }

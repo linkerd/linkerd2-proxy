@@ -1,4 +1,6 @@
+use crate::creds::verify;
 use crate::creds::CredsRx;
+use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef, ServerName};
@@ -12,6 +14,7 @@ pub struct NewClient(CredsRx);
 pub struct Connect {
     rx: CredsRx,
     alpn: Option<Arc<[Vec<u8>]>>,
+    id: id::Id,
     server: ServerName,
 }
 
@@ -50,6 +53,7 @@ impl Connect {
             rx,
             alpn: client_tls.alpn.map(|AlpnProtocols(ps)| ps.into()),
             server: client_tls.server_name,
+            id: client_tls.server_id.into(),
         }
     }
 }
@@ -68,6 +72,7 @@ where
 
     fn call(&mut self, io: I) -> Self::Future {
         let server_name = self.server.clone();
+        let server_id = self.id.clone();
         let connector = self
             .rx
             .borrow()
@@ -76,8 +81,11 @@ where
             let conn = connector.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             let config = conn
                 .configure()
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            let io = tokio_boring::connect(config, server_name.as_str(), io)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+                // Switch off DNS san Verification based on the hostname
+                .verify_hostname(false);
+
+            tokio_boring::connect(config, server_name.as_str(), io)
                 .await
                 .map_err(|e| match e.as_io_error() {
                     // TODO(ver) boring should let us take ownership of the error directly.
@@ -85,16 +93,24 @@ where
                     // XXX(ver) to use the boring error directly here we have to constraint the socket on Sync +
                     // std::fmt::Debug, which is a pain.
                     None => io::Error::new(io::ErrorKind::Other, "unexpected TLS handshake error"),
-                })?;
-
-            debug!(
-                tls = io.ssl().version_str(),
-                client.cert = ?io.ssl().certificate().and_then(super::fingerprint),
-                peer.cert = ?io.ssl().peer_certificate().as_deref().and_then(super::fingerprint),
-                alpn = ?io.ssl().selected_alpn_protocol(),
-                "Initiated TLS connection"
-            );
-            Ok(ClientIo(io))
+                }).and_then(|io| match io.ssl().peer_certificate() {
+                Some(ref cert) => {
+                    verify::verify_id(cert, &server_id)
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                    debug!(
+                        tls = io.ssl().version_str(),
+                        client.cert = ?io.ssl().certificate().and_then(super::fingerprint),
+                        peer.cert = ?io.ssl().peer_certificate().as_deref().and_then(super::fingerprint),
+                        alpn = ?io.ssl().selected_alpn_protocol(),
+                        "Initiated TLS connection"
+                    );
+                    Ok(ClientIo(io))
+                },
+                         None => Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "could not extract peer cert",
+                )),
+                })
         })
     }
 }
