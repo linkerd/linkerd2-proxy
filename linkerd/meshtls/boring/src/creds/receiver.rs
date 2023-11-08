@@ -1,20 +1,27 @@
 use super::CredsRx;
 use crate::{NewClient, Server};
-use linkerd_identity::Name;
+use linkerd_dns_name as dns;
+use linkerd_identity as id;
 
 #[derive(Clone)]
 pub struct Receiver {
-    name: Name,
+    id: id::Id,
+    name: dns::Name,
     rx: CredsRx,
 }
 
 impl Receiver {
-    pub(crate) fn new(name: Name, rx: CredsRx) -> Self {
-        Self { name, rx }
+    pub(crate) fn new(id: id::Id, name: dns::Name, rx: CredsRx) -> Self {
+        Self { id, name, rx }
     }
 
     /// Returns the local identity.
-    pub fn name(&self) -> &Name {
+    pub fn local_id(&self) -> &id::Id {
+        &self.id
+    }
+
+    /// Returns the mTLS Server Name.
+    pub fn server_name(&self) -> &dns::Name {
         &self.name
     }
 

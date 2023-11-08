@@ -142,7 +142,6 @@ mod test {
     use super::*;
     use futures::future;
     use linkerd_app_core::{
-        identity,
         io::{self, AsyncWriteExt},
         tls,
         transport::{ClientAddr, Local},
@@ -163,12 +162,10 @@ mod test {
             self.server_id
                 .clone()
                 .map(|server_id| {
-                    tls::ConditionalClientTls::Some(tls::ClientTls {
-                        server_id,
-                        alpn: Some(tls::client::AlpnProtocols(vec![
-                            transport_header::PROTOCOL.into()
-                        ])),
-                    })
+                    let alpn = Some(tls::client::AlpnProtocols(vec![
+                        transport_header::PROTOCOL.into()
+                    ]));
+                    tls::ConditionalClientTls::Some(tls::ClientTls::new(server_id, alpn))
                 })
                 .unwrap_or(tls::ConditionalClientTls::None(
                     tls::NoClientTls::NotProvidedByServiceDiscovery,
@@ -261,9 +258,7 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
+            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
             authority: None,
             proto: None,
         };
@@ -285,9 +280,7 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
+            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
             authority: Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
             proto: None,
         };
@@ -309,9 +302,7 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
+            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
             authority: None,
             proto: None,
         };
@@ -333,9 +324,7 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
+            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
             authority: None,
             proto: Some(SessionProtocol::Http1),
         };
@@ -357,9 +346,7 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
+            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
             authority: Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
             proto: Some(SessionProtocol::Http1),
         };
@@ -381,9 +368,7 @@ mod test {
 
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId(
-                identity::Name::from_str("server.id").unwrap(),
-            )),
+            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
             authority: None,
             proto: Some(SessionProtocol::Http1),
         };

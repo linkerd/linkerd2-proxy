@@ -28,7 +28,7 @@ pub struct NewAccessLog<N> {
 pub struct AccessLogContext<S> {
     inner: S,
     client_addr: SocketAddr,
-    client_id: Option<identity::Name>,
+    client_id: Option<identity::Id>,
 }
 
 struct ResponseFutureInner {
@@ -118,9 +118,15 @@ where
                 .unwrap_or_default()
         };
 
+        let client_id: std::borrow::Cow<'_, str> = self
+            .client_id
+            .as_ref()
+            .map(|n| n.to_str())
+            .unwrap_or(std::borrow::Cow::Borrowed("-"));
+
         let span = span!(target: TRACE_TARGET, Level::INFO, "http",
             client.addr = %self.client_addr,
-            client.id = self.client_id.as_ref().map(|n| n.as_str()).unwrap_or("-"),
+            client.id = %client_id,
             timestamp = %now(),
             method = request.method().as_str(),
             uri =  %request.uri(),

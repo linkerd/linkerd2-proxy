@@ -1,5 +1,6 @@
 use super::{BaseCreds, Certs, Creds, CredsTx};
 use boring::x509::{X509StoreContext, X509};
+use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
 use std::sync::Arc;
@@ -7,14 +8,14 @@ use std::sync::Arc;
 pub struct Store {
     creds: Arc<BaseCreds>,
     csr: Vec<u8>,
-    name: id::Name,
+    name: dns::Name,
     tx: CredsTx,
 }
 
 // === impl Store ===
 
 impl Store {
-    pub(super) fn new(creds: Arc<BaseCreds>, csr: &[u8], name: id::Name, tx: CredsTx) -> Self {
+    pub(super) fn new(creds: Arc<BaseCreds>, csr: &[u8], name: dns::Name, tx: CredsTx) -> Self {
         Self {
             creds,
             csr: csr.into(),
@@ -26,8 +27,8 @@ impl Store {
     fn cert_matches_name(&self, cert: &X509) -> bool {
         for san in cert.subject_alt_names().into_iter().flatten() {
             if let Some(n) = san.dnsname() {
-                if let Ok(name) = n.parse::<linkerd_dns_name::Name>() {
-                    if name == *self.name {
+                if let Ok(name) = n.parse::<dns::Name>() {
+                    if name == self.name {
                         return true;
                     }
                 }
@@ -39,11 +40,6 @@ impl Store {
 }
 
 impl id::Credentials for Store {
-    /// Returns the proxy's identity.
-    fn dns_name(&self) -> &id::Name {
-        &self.name
-    }
-
     /// Returns the CSR that was configured at proxy startup.
     fn gen_certificate_signing_request(&mut self) -> id::DerX509 {
         id::DerX509(self.csr.to_vec())

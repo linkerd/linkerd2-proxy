@@ -770,8 +770,8 @@ impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
     }
 }
 
-impl svc::Param<Option<identity::Name>> for Target {
-    fn param(&self) -> Option<identity::Name> {
+impl svc::Param<Option<identity::Id>> for Target {
+    fn param(&self) -> Option<identity::Id> {
         None
     }
 }

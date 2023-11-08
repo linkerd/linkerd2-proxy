@@ -316,8 +316,8 @@ impl App {
         &self.dst
     }
 
-    pub fn local_identity(&self) -> identity::Name {
-        self.identity.receiver().name().clone()
+    pub fn local_server_name(&self) -> dns::Name {
+        self.identity.receiver().server_name().clone()
     }
 
     pub fn identity_addr(&self) -> ControlAddr {
@@ -369,7 +369,7 @@ impl App {
 
                         // Kick off the identity so that the process can become ready.
                         let local = identity.receiver();
-                        let local_id = local.name().clone();
+                        let local_name = local.server_name().clone();
                         let ready = identity.ready();
                         tokio::spawn(
                             identity
@@ -382,7 +382,7 @@ impl App {
                             ready
                                 .map(move |()| {
                                     latch.release();
-                                    info!(id = %local_id, "Certified identity");
+                                    info!(id = %local_name, "Certified identity");
                                 })
                                 .instrument(info_span!("identity").or_current()),
                         );

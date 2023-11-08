@@ -1,6 +1,6 @@
 pub use linkerd_app_core::identity::{
     client::{certify, TokenSource},
-    InvalidName, LocalId, Name,
+    Id,
 };
 use linkerd_app_core::{
     control, dns,
@@ -25,7 +25,7 @@ pub struct Config {
 
 #[derive(Clone)]
 pub struct Documents {
-    pub id: LocalId,
+    pub server_name: dns::Name,
     pub trust_anchors_pem: String,
     pub key_pkcs8: Vec<u8>,
     pub csr_der: Vec<u8>,
@@ -55,8 +55,10 @@ struct NotifyReady {
 
 impl Config {
     pub fn build(self, dns: dns::Resolver, client_metrics: ClientMetrics) -> Result<Identity> {
+        let name = self.documents.server_name.clone();
         let (store, receiver) = Mode::default().watch(
-            (*self.documents.id).clone(),
+            name.clone().into(),
+            name.clone(),
             &self.documents.trust_anchors_pem,
             &self.documents.key_pkcs8,
             &self.documents.csr_der,
@@ -76,8 +78,9 @@ impl Config {
                 .control
                 .build(dns, client_metrics, receiver.new_client());
 
+            let cred = NotifyReady { store, tx };
             certify
-                .run(NotifyReady { store, tx }, svc)
+                .run(name, cred, svc)
                 .instrument(tracing::debug_span!("identity", server.addr = %addr).or_current())
         });
 
@@ -92,11 +95,6 @@ impl Config {
 }
 
 impl Credentials for NotifyReady {
-    #[inline]
-    fn dns_name(&self) -> &Name {
-        self.store.dns_name()
-    }
-
     #[inline]
     fn gen_certificate_signing_request(&mut self) -> DerX509 {
         self.store.gen_certificate_signing_request()
@@ -119,7 +117,7 @@ impl Credentials for NotifyReady {
 impl std::fmt::Debug for Documents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Documents")
-            .field("id", &self.id)
+            .field("server_name", &self.server_name)
             .field("trust_anchors_pem", &self.trust_anchors_pem)
             .finish()
     }
