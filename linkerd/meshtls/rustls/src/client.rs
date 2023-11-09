@@ -104,14 +104,12 @@ where
             tokio_rustls::TlsConnector::from(self.config.clone())
                 // XXX(eliza): it's a bummer that the server name has to be cloned here...
                 .connect(self.server_name.clone(), io)
-                .map(move |s| match s {
-                    Ok(s) => {
-                        let (_, conn) = s.get_ref();
-                        let end_cert = extract_cert(conn)?;
-                        verify::verify_id(end_cert, &server_id)?;
-                        Ok(ClientIo(s))
-                    }
-                    Err(err) => Err(err),
+                .map(move |s| {
+                    let s = s?;
+                    let (_, conn) = s.get_ref();
+                    let end_cert = extract_cert(conn)?;
+                    verify::verify_id(end_cert, &server_id)?;
+                    Ok(ClientIo(s))
                 }),
         )
     }

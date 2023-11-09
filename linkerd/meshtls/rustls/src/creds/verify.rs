@@ -10,15 +10,15 @@ use tokio_rustls::rustls::{
 };
 use tracing::trace;
 
-pub(crate) struct AnySANVerifier(Arc<RootCertStore>);
+pub(crate) struct AnySanVerifier(Arc<RootCertStore>);
 
-impl AnySANVerifier {
+impl AnySanVerifier {
     pub(crate) fn new(roots: impl Into<Arc<RootCertStore>>) -> Self {
         Self(roots.into())
     }
 }
 
-impl ServerCertVerifier for AnySANVerifier {
+impl ServerCertVerifier for AnySanVerifier {
     /// Will verify the certificate is valid in the following ways:
     /// - Signed by a  trusted `RootCertStore` CA
     /// - Not Expired
@@ -36,7 +36,7 @@ impl ServerCertVerifier for AnySANVerifier {
         client::verify_server_cert_signed_by_trust_anchor(&cert, &self.0, intermediates, now)?;
 
         if !ocsp_response.is_empty() {
-            trace!("Unvalidated OCSP response: {:?}", ocsp_response.to_vec());
+            trace!("Unvalidated OCSP response: {ocsp_response:?}");
         }
 
         Ok(ServerCertVerified::assertion())

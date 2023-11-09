@@ -82,7 +82,7 @@ where
             let config = conn
                 .configure()
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
-                // Switch off DNS san Verification based on the hostname
+                // Switch off DNS SAN Verification based on the hostname
                 .verify_hostname(false);
 
             tokio_boring::connect(config, server_name.as_str(), io)
@@ -94,22 +94,22 @@ where
                     // std::fmt::Debug, which is a pain.
                     None => io::Error::new(io::ErrorKind::Other, "unexpected TLS handshake error"),
                 }).and_then(|io| match io.ssl().peer_certificate() {
-                Some(ref cert) => {
-                    verify::verify_id(cert, &server_id)
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                    debug!(
-                        tls = io.ssl().version_str(),
-                        client.cert = ?io.ssl().certificate().and_then(super::fingerprint),
-                        peer.cert = ?io.ssl().peer_certificate().as_deref().and_then(super::fingerprint),
-                        alpn = ?io.ssl().selected_alpn_protocol(),
-                        "Initiated TLS connection"
-                    );
-                    Ok(ClientIo(io))
-                },
-                         None => Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "could not extract peer cert",
-                )),
+                    Some(ref cert) => {
+                        verify::verify_id(cert, &server_id)
+                            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                        debug!(
+                            tls = io.ssl().version_str(),
+                            client.cert = ?io.ssl().certificate().and_then(super::fingerprint),
+                            peer.cert = ?io.ssl().peer_certificate().as_deref().and_then(super::fingerprint),
+                            alpn = ?io.ssl().selected_alpn_protocol(),
+                            "Initiated TLS connection"
+                        );
+                        Ok(ClientIo(io))
+                    },
+                    None => Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "could not extract peer cert",
+                    )),
                 })
         })
     }

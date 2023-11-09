@@ -11,11 +11,12 @@ pub(crate) fn verify_id(cert: &X509, id: &id::Id) -> io::Result<()> {
                     return Ok(());
                 }
             }
+            tracing::warn!("DNS SAN name {} could not be parsed", n)
         }
     }
 
     Err(io::Error::new(
         io::ErrorKind::Other,
-        "certificate does not match tls id",
+        "certificate does not match TLS identity",
     ))
 }

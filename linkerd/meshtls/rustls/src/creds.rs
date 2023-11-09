@@ -56,7 +56,7 @@ pub fn watch(
     // controlling the set of trusted signature algorithms), but they provide good enough
     // defaults for now.
     // TODO: lock down the verification further.
-    let server_cert_verifier = Arc::new(verify::AnySANVerifier::new(roots.clone()));
+    let server_cert_verifier = Arc::new(verify::AnySanVerifier::new(roots.clone()));
 
     let (client_tx, client_rx) = {
         // Since we don't have a certificate yet, build a client configuration
