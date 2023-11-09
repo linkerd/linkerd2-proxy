@@ -54,3 +54,59 @@ pub(crate) fn verify_id(end_entity: &Certificate, id: &id::Id) -> io::Result<()>
     rustls::client::verify_server_name(&cert, &server_name)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::verify_id;
+    use linkerd_identity as id;
+    use rcgen::generate_simple_self_signed;
+    use std::str::FromStr;
+    use tokio_rustls::rustls::Certificate;
+
+    fn generate_cert_with_name(name: Option<&str>) -> Certificate {
+        let sans = name.map(|s| vec![s.into()]).unwrap_or(vec![]);
+
+        let cert_data = generate_simple_self_signed(sans)
+            .expect("should generate cert")
+            .serialize_der()
+            .expect("should serialize");
+
+        Certificate(cert_data)
+    }
+
+    #[test]
+    fn cert_with_dns_san_matches_dns_id() {
+        let dns_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let cert = generate_cert_with_name(Some(dns_name));
+        let id = id::Id::from_str(dns_name).expect("should parse DNS id");
+        assert!(verify_id(&cert, &id).is_ok());
+    }
+
+    #[test]
+    fn cert_with_dns_san_does_not_match_dns_id() {
+        let dns_name_cert = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let dns_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+
+        let cert = generate_cert_with_name(Some(dns_name_cert));
+        let id = id::Id::from_str(dns_name).expect("should parse DNS id");
+        assert!(verify_id(&cert, &id).is_err());
+    }
+
+    #[test]
+    fn cert_with_uri_san_does_not_match_dns_id() {
+        let uri_name_cert = "spiffe://some-trust-comain/some-system/some-component";
+        let dns_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+
+        let cert = generate_cert_with_name(Some(uri_name_cert));
+        let id = id::Id::from_str(dns_name).expect("should parse DNS id");
+        assert!(verify_id(&cert, &id).is_err());
+    }
+
+    #[test]
+    fn cert_with_no_san_does_not_verify_for_dns_id() {
+        let dns_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let cert = generate_cert_with_name(None);
+        let id = id::Id::from_str(dns_name).expect("should parse DNS id");
+        assert!(verify_id(&cert, &id).is_err());
+    }
+}

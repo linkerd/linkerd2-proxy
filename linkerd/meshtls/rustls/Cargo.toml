@@ -18,6 +18,7 @@ thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
 tokio-rustls = { version = "0.24", features = ["dangerous_configuration"] }
 tracing = "0.1"
+rcgen = "0.11.3"
 
 linkerd-dns-name = { path = "../../dns/name" }
 linkerd-error = { path = "../../error" }

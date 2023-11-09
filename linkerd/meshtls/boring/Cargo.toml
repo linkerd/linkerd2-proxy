@@ -19,6 +19,7 @@ linkerd-tls = { path = "../../tls" }
 tokio = { version = "1", features = ["macros", "sync"] }
 tokio-boring = "3"
 tracing = "0.1"
+rcgen = "0.11.3"
 
 [features]
 fips = ["boring/fips"]
