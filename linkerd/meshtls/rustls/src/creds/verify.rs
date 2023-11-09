@@ -64,7 +64,7 @@ mod tests {
     use tokio_rustls::rustls::Certificate;
 
     fn generate_cert_with_name(name: Option<&str>) -> Certificate {
-        let sans = name.map(|s| vec![s.into()]).unwrap_or(vec![]);
+        let sans = name.map(|s| vec![s.into()]).unwrap_or_default();
 
         let cert_data = generate_simple_self_signed(sans)
             .expect("should generate cert")

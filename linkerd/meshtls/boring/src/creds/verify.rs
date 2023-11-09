@@ -30,7 +30,7 @@ mod tests {
     use std::str::FromStr;
 
     fn generate_cert_with_name(name: Option<&str>) -> X509 {
-        let sans = name.map(|s| vec![s.into()]).unwrap_or(vec![]);
+        let sans = name.map(|s| vec![s.into()]).unwrap_or_default();
 
         let cert_data = generate_simple_self_signed(sans)
             .expect("should generate cert")
