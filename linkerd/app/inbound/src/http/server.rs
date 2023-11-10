@@ -100,7 +100,8 @@ impl<H> Inbound<H> {
                         ))
                         // Record when an HTTP/1 URI was in absolute form
                         .push(http::normalize_uri::MarkAbsoluteForm::layer())
-                        .push(http::BoxResponse::layer()),
+                        .push(http::BoxResponse::layer())
+                        .push(svc::BoxCloneService::layer()),
                 )
                 .push(NewAccessLog::layer())
                 .check_new_service::<T, http::Request<_>>()

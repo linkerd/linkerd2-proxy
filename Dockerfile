@@ -21,15 +21,16 @@ RUN apt-get update && \
     fi && \
     rm -rf /var/lib/apt/lists/*
 
-ENV CARGO_INCREMENTAL=0
 ENV CARGO_NET_RETRY=10
-ENV RUSTFLAGS="-D warnings -A deprecated"
 ENV RUSTUP_MAX_RETRIES=10
 
 WORKDIR /usr/src/linkerd2-proxy
 COPY . .
 RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
     just fetch
+ENV CARGO_INCREMENTAL=0
+# -C split-debuginfo=unpacked 
+ENV RUSTFLAGS="-D warnings -A deprecated -C debuginfo=2"
 ARG TARGETARCH="amd64"
 ARG PROFILE="release"
 ARG LINKERD2_PROXY_VERSION=""

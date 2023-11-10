@@ -260,6 +260,7 @@ impl<C> Inbound<C> {
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()
+                .push_on_service(svc::BoxCloneService::layer())
                 .push(svc::ArcNewService::layer())
         })
     }
