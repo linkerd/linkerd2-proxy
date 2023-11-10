@@ -42,6 +42,10 @@ pub type BoxTcp<I> = BoxService<I, (), Error>;
 
 pub type ArcNewTcp<T, I> = ArcNewService<T, BoxTcp<I>>;
 
+pub type BoxCloneTcp<I> = BoxCloneService<I, (), Error>;
+
+pub type ArcNewCloneTcp<T, I> = ArcNewService<T, BoxCloneTcp<I>>;
+
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
 

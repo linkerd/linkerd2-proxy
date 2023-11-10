@@ -115,7 +115,9 @@ impl<N> Inbound<N> {
                     rt.metrics.proxy.transport.clone(),
                 ))
                 .push_map_target(Forward::from)
-                .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()));
+                .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()))
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer());
 
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
             detect
@@ -153,6 +155,8 @@ impl<N> Inbound<N> {
                         identity: rt.identity.server(),
                     },
                 ))
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer())
                 .push_switch(
                     // Check the policy for this port and check whether
                     // detection should occur. Policy is enforced on the forward
