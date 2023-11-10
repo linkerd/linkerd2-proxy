@@ -159,14 +159,10 @@ fuzzers:
         echo "fuzzers must be run with nightly" >&2
         exit 1
     fi
-
-    for dir in $(find . -type d -name fuzz); do
-        echo "cd $dir && {{ _cargo }} fuzz build"
-        (
-            cd $dir
-            @{{ _cargo }} fuzz build \
-                {{ if profile == "release" { "--release" } else { "" } }}
-        )
+    for dir in $(find ./linkerd -type d -name fuzz); do
+        echo "cd $dir && cargo +nightly fuzz build"
+        ( cd $dir ; cargo +nightly fuzz build \
+                {{ if profile == "release" { "--release" } else { "" } }} )
     done
 
 export DOCKER_BUILDX_CACHE_DIR := env_var_or_default('DOCKER_BUILDX_CACHE_DIR', '')
