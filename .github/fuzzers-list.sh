@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 ## Lists the fuzzers that should be run given a set of changed files.
 
 # Find the nearest fuzzer crate, or nothing.
 find_fuzz_dir() {
     d=${1%/*}
-    if [ "$d" = . ]; then
+    if ! [[ "$d" =~ / ]]; then
         return
     elif [ -d "$d" ] && [[ "$d" = */fuzz ]]; then
         echo "$d"

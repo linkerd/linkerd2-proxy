@@ -3,8 +3,8 @@
 set -eu
 
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 <changed-files>"
-    exit 1
+    echo '[]'
+    exit 0
 fi
 
 # Find the nearest Cargo.toml (except the root).
