@@ -85,9 +85,7 @@ impl<H> Inbound<H> {
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push_on_service(http::BoxResponse::layer())
                 .push(NewAccessLog::layer())
-                .check_new_service::<T, http::Request<_>>()
-                .push_on_service(svc::BoxCloneService::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_box_new_clone_http()
         })
     }
 
@@ -124,8 +122,7 @@ impl<H> Inbound<H> {
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
                 .check_new_service::<T, I>()
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_box_new_tcp()
         })
     }
 }

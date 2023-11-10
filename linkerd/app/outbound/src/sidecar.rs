@@ -61,8 +61,7 @@ impl Outbound<()> {
             .push_http_server()
             .into_stack()
             .push_map_target(HttpSidecar::from)
-            .push_on_service(svc::BoxCloneService::layer())
-            .push(svc::ArcNewService::layer());
+            .arc_box_new_clone_http();
 
         opaq.push_protocol(http.into_inner())
             // Use a dedicated target type to bind discovery results to the

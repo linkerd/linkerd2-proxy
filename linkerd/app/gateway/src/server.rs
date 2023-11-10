@@ -79,8 +79,7 @@ impl Gateway {
             .with_stack(protocol)
             .push_discover(discover)
             .into_stack()
-            .push_on_service(svc::BoxService::layer())
-            .push(svc::ArcNewService::layer())
+            .arc_box_new_tcp()
     }
 }
 

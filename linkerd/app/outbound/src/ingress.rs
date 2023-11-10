@@ -324,10 +324,7 @@ impl<N> Outbound<N> {
                 )
                 .lift_new_with_target()
                 .push(detect::NewDetectService::layer(detect_http))
-                .check_new_service::<T, I>()
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
-                .check_new_service::<T, I>()
+                .arc_box_new_tcp()
         })
     }
 }

@@ -285,6 +285,58 @@ impl<S> Stack<S> {
         self.push(NewCachedDiscover::layer(discover, idle))
     }
 
+    pub fn arc_box_new<T, Req, Svc>(
+        self,
+    ) -> Stack<ArcNewService<T, BoxService<Req, Svc::Response, Error>>>
+    where
+        T: 'static,
+        Req: 'static,
+        S: NewService<T, Service = Svc> + Send + Sync + 'static,
+        Svc: Service<Req, Error = Error>,
+        Svc: Send + 'static,
+        Svc::Future: Send,
+    {
+        self.push_on_service(BoxService::layer())
+            .push(ArcNewService::layer())
+    }
+
+    pub fn arc_box_new_http<T, B, Svc>(self) -> Stack<ArcNewHttp<T, B>>
+    where
+        T: 'static,
+        B: 'static,
+        S: NewService<T, Service = Svc> + Send + Sync + 'static,
+        Svc: Service<http::Request<B>, Response = http::Response<http::BoxBody>, Error = Error>,
+        Svc: Send + 'static,
+        Svc::Future: Send,
+    {
+        self.arc_box_new()
+    }
+
+    pub fn arc_box_new_clone_http<T, B, Svc>(self) -> Stack<ArcNewCloneHttp<T, B>>
+    where
+        T: 'static,
+        B: 'static,
+        S: NewService<T, Service = Svc> + Send + Sync + 'static,
+        Svc: Service<http::Request<B>, Response = http::Response<http::BoxBody>, Error = Error>,
+        Svc: Clone + Send + 'static,
+        Svc::Future: Send,
+    {
+        self.push_on_service(BoxCloneService::layer())
+            .push(ArcNewService::layer())
+    }
+
+    pub fn arc_box_new_tcp<T, I, Svc>(self) -> Stack<ArcNewTcp<T, I>>
+    where
+        T: 'static,
+        I: 'static,
+        S: NewService<T, Service = Svc> + Send + Sync + 'static,
+        Svc: Service<I, Response = (), Error = Error>,
+        Svc: Send + 'static,
+        Svc::Future: Send,
+    {
+        self.arc_box_new()
+    }
+
     /// Validates that this stack serves T-typed targets.
     pub fn check_new<T>(self) -> Self
     where

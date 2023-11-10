@@ -53,8 +53,7 @@ impl<N> Outbound<N> {
                     config.proxy.server.h2_settings,
                     rt.drain.clone(),
                 ))
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_box_new_tcp()
         });
 
         let detect = http.clone().map_stack(|config, _, http| {
@@ -74,8 +73,7 @@ impl<N> Outbound<N> {
             .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
             .lift_new_with_target::<(detect::Result<http::Version>, T)>()
             .push(detect::NewDetectService::layer(config.proxy.detect_http()))
-            .push_on_service(svc::BoxService::layer())
-            .push(svc::ArcNewService::layer())
+            .arc_box_new_tcp()
         });
 
         http.map_stack(|_, _, http| {
@@ -100,8 +98,7 @@ impl<N> Outbound<N> {
                     },
                     detect.into_inner(),
                 )
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_box_new_tcp()
         })
     }
 }

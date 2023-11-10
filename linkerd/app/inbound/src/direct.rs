@@ -225,9 +225,7 @@ impl<N> Inbound<N> {
                         identity,
                     },
                 ))
-                .check_new_service::<T, I>()
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_box_new_tcp()
         })
     }
 }
