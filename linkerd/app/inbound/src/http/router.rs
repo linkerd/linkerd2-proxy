@@ -67,22 +67,7 @@ struct LogicalError {
 // === impl Inbound ===
 
 impl<C> Inbound<C> {
-    pub(crate) fn push_http_router<T, P>(
-        self,
-        profiles: P,
-    ) -> Inbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone
-                + Send
-                + Unpin,
-        >,
-    >
+    pub(crate) fn push_http_router<T, P>(self, profiles: P) -> Inbound<svc::ArcNewCloneHttp<T>>
     where
         T: Param<http::Version>
             + Param<Remote<ServerAddr>>
@@ -131,15 +116,9 @@ impl<C> Inbound<C> {
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
-                .push_on_service(
-                    svc::layers()
-                        .push(http_tracing::client(
-                            rt.span_sink.clone(),
-                            super::trace_labels(),
-                        ))
-                        .push(http::BoxResponse::layer())
-                        .push(svc::BoxService::layer())
-                )
+                .push_on_service(http_tracing::client(rt.span_sink.clone(), super::trace_labels()))
+                .push_on_service(http::BoxResponse::layer())
+                .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer());
 
             // Attempts to discover a service profile for each logical target (as
@@ -233,11 +212,8 @@ impl<C> Inbound<C> {
                 )
                 .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .push_new_idle_cached(config.discovery_idle_timeout)
-                .push_on_service(
-                    svc::layers()
-                        .push(http::Retain::layer())
-                        .push(http::BoxResponse::layer()),
-                )
+                .push_on_service(http::Retain::layer())
+                .push_on_service(http::BoxResponse::layer())
                 // Configure default response classification early. It may be
                 // overridden by profile routes above.
                 .push(classify::NewClassify::layer_default())

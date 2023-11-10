@@ -146,6 +146,8 @@ impl Gateway {
             // servers.
             .push_http_server()
             .into_stack()
+            .push_on_service(svc::BoxCloneService::layer())
+            .push(svc::ArcNewService::layer())
     }
 }
 

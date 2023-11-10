@@ -44,35 +44,29 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, rt, http| {
             http.check_new_service::<T, _>()
-                .push_on_service(
-                    svc::layers()
-                        // Limit the number of in-flight outbound requests
-                        // (across all targets).
-                        //
-                        // TODO(ver) This concurrency limit applies only to
-                        // requests that do not yet have responses, but ignores
-                        // streaming bodies. We should change this to an
-                        // HTTP-specific imlementation that tracks request and
-                        // response bodies.
-                        .push(svc::ConcurrencyLimitLayer::new(
-                            config.proxy.max_in_flight_requests,
-                        ))
-                        // Shed load by failing requests when the concurrency
-                        // limit is reached or the inner service is otherwise
-                        // not ready for requests.
-                        .push(svc::LoadShed::layer())
-                        .push(rt.metrics.http_errors.to_layer()),
-                )
+                // Limit the number of in-flight outbound requests
+                // (across all targets).
+                //
+                // TODO(ver) This concurrency limit applies only to
+                // requests that do not yet have responses, but ignores
+                // streaming bodies. We should change this to an
+                // HTTP-specific imlementation that tracks request and
+                // response bodies.
+                .push_on_service(svc::ConcurrencyLimitLayer::new(
+                    config.proxy.max_in_flight_requests,
+                ))
+                // Shed load by failing requests when the concurrency
+                // limit is reached or the inner service is otherwise
+                // not ready for requests.
+                .push_on_service(svc::LoadShed::layer())
+                .push_on_service(rt.metrics.http_errors.to_layer())
                 // Synthesizes responses for proxy errors.
                 .check_new_service::<T, http::Request<_>>()
                 .push(ServerRescue::layer(config.emit_headers))
                 .check_new_service::<T, http::Request<_>>()
-                .push_on_service(
-                    svc::layers()
-                        // Initiates OpenCensus tracing.
-                        .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
-                        .push(http::BoxResponse::layer()),
-                )
+                // Initiates OpenCensus tracing.
+                .push_on_service(http_tracing::server(rt.span_sink.clone(), trace_labels()))
+                .push_on_service(http::BoxResponse::layer())
                 // Convert origin form HTTP/1 URIs to absolute form for Hyper's
                 // `Client`.
                 .push(http::NewNormalizeUri::layer())

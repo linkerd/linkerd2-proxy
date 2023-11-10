@@ -33,6 +33,11 @@ pub type BoxHttp<B = http::BoxBody> =
 
 pub type ArcNewHttp<T, B = http::BoxBody> = ArcNewService<T, BoxHttp<B>>;
 
+pub type BoxCloneHttp<B = http::BoxBody> =
+    BoxCloneService<http::Request<B>, http::Response<http::BoxBody>, Error>;
+
+pub type ArcNewCloneHttp<T, B = http::BoxBody> = ArcNewService<T, BoxCloneHttp<B>>;
+
 pub type BoxTcp<I> = BoxService<I, (), Error>;
 
 pub type ArcNewTcp<T, I> = ArcNewService<T, BoxTcp<I>>;
