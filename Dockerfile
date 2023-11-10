@@ -24,7 +24,7 @@ RUN apt-get update && \
 ENV CARGO_NET_RETRY=10
 ENV RUSTUP_MAX_RETRIES=10
 
-WORKDIR /usr/src/linkerd2-proxy
+WORKDIR /src
 COPY . .
 RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
     just fetch
