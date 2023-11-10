@@ -99,7 +99,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                 ))
                 .push_map_target(Forward::from)
                 .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()))
-                .arc_new_box_tcp();
+                .arc_new_tcp();
 
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
             let detect = http
@@ -147,7 +147,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                 )
                 .lift_new_with_target()
                 .push(detect::NewDetectService::layer(ConfigureHttpDetect))
-                .arc_new_box_tcp();
+                .arc_new_tcp();
 
             http.push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push(transport::metrics::NewServer::layer(
@@ -182,7 +182,7 @@ impl Inbound<svc::ArcNewTcp<Http, io::BoxedIo>> {
                     },
                     detect.into_inner(),
                 )
-                .arc_new_box_tcp()
+                .arc_new_tcp()
         })
     }
 }
@@ -210,7 +210,7 @@ impl<I> Inbound<svc::ArcNewTcp<Tls, TlsIo<I>>> {
                 ))
                 .push_map_target(Forward::from)
                 .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()))
-                .arc_new_box_tcp();
+                .arc_new_tcp();
 
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
             detect
@@ -242,14 +242,14 @@ impl<I> Inbound<svc::ArcNewTcp<Tls, TlsIo<I>>> {
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .arc_new_box_tcp()
+                .arc_new_tcp()
                 .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                     TlsParams {
                         timeout: tls::server::Timeout(detect_timeout),
                         identity: rt.identity.server(),
                     },
                 ))
-                .arc_new_box_tcp()
+                .arc_new_tcp()
                 .push_switch(
                     // Check the policy for this port and check whether
                     // detection should occur. Policy is enforced on the forward
@@ -272,7 +272,7 @@ impl<I> Inbound<svc::ArcNewTcp<Tls, TlsIo<I>>> {
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .arc_new_box_tcp()
+                .arc_new_tcp()
         })
     }
 }

@@ -126,7 +126,7 @@ impl Gateway {
             .push(svc::ArcNewService::layer())
             // Authorize requests to the gateway.
             .push(self.inbound.authorize_http())
-            .arc_new_box_clone_http();
+            .arc_new_clone_http();
 
         self.inbound
             .clone()
@@ -137,7 +137,7 @@ impl Gateway {
             // servers.
             .push_http_server()
             .into_stack()
-            .arc_new_box_clone_http()
+            .arc_new_clone_http()
     }
 }
 

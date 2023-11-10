@@ -118,7 +118,7 @@ impl<C> Inbound<C> {
                 )
                 .push_on_service(http_tracing::client(rt.span_sink.clone(), super::trace_labels()))
                 .push_on_service(http::BoxResponse::layer())
-                .arc_new_box_http();
+                .arc_new_http();
 
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
@@ -147,7 +147,7 @@ impl<C> Inbound<C> {
                         .push_on_service(svc::MapErr::layer(Error::from))
                         .into_inner(),
                 ))
-                .arc_new_box_http()
+                .arc_new_http()
                 .push_switch(
                     // If the profile was resolved to a logical (service) address, build a profile
                     // stack to include route-level metrics, etc. Otherwise, skip this stack and use
@@ -199,7 +199,7 @@ impl<C> Inbound<C> {
                 )
                 .check_new_service::<Logical, http::Request<_>>()
                 .instrument(|_: &Logical| debug_span!("profile"))
-                .arc_new_box_http();
+                .arc_new_http();
 
             discover
                 // Skip the profile stack if it takes too long to become ready.
@@ -236,7 +236,7 @@ impl<C> Inbound<C> {
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()
-                .arc_new_box_clone_http()
+                .arc_new_clone_http()
         })
     }
 }
