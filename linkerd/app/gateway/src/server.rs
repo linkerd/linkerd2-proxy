@@ -79,7 +79,7 @@ impl Gateway {
             .with_stack(protocol)
             .push_discover(discover)
             .into_stack()
-            .arc_box_new_tcp()
+            .arc_new_box_tcp()
     }
 }
 

@@ -111,7 +111,7 @@ impl Config {
             ))
             .push(Rescue::layer())
             .push_on_service(http::BoxResponse::layer())
-            .arc_box_new_clone_http();
+            .arc_new_box_clone_http();
 
         let tcp = http
             .unlift_new()
@@ -157,7 +157,7 @@ impl Config {
                     }
                 },
             )
-            .arc_box_new_tcp()
+            .arc_new_box_tcp()
             .lift_new_with_target()
             .push(detect::NewDetectService::layer(svc::stack::CloneParam::from(
                 detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT),
@@ -171,11 +171,11 @@ impl Config {
                     policy: policy.clone(),
                 }
             })
-            .arc_box_new_tcp()
+            .arc_new_box_tcp()
             .push(tls::NewDetectTls::<identity::Server, _, _>::layer(TlsParams {
                 identity,
             }))
-            .arc_box_new_tcp()
+            .arc_new_box_tcp()
             .into_inner();
 
         let serve = Box::pin(serve::serve(listen, tcp, drain.signaled()));

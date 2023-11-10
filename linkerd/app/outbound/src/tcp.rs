@@ -58,7 +58,7 @@ impl<N> Outbound<N> {
                 .push_filter(|t: T| Accept::try_from(t.param()))
                 .push(rt.metrics.tcp_errors.to_layer())
                 .instrument(mk_span)
-                .arc_box_new_tcp()
+                .arc_new_box_tcp()
         })
     }
 }

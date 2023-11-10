@@ -55,7 +55,7 @@ impl<N> Outbound<N> {
             stk.lift_new_with_target()
                 .push_new_cached_discover(discover, config.discovery_idle_timeout)
                 .check_new_service::<T, _>()
-                .arc_box_new()
+                .arc_new_box()
         })
     }
 

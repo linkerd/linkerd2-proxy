@@ -225,7 +225,7 @@ impl<N> Inbound<N> {
                         identity,
                     },
                 ))
-                .arc_box_new_tcp()
+                .arc_new_box_tcp()
         })
     }
 }
