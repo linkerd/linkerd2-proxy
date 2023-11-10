@@ -199,10 +199,10 @@ impl<C> Inbound<C> {
                         .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
                         .into_inner()
                 )
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
                 .check_new_service::<Logical, http::Request<_>>()
-                .instrument(|_: &Logical| debug_span!("profile"));
+                .instrument(|_: &Logical| debug_span!("profile"))
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer());
 
             discover
                 // Skip the profile stack if it takes too long to become ready.
@@ -229,10 +229,12 @@ impl<C> Inbound<C> {
                 .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                 .lift_new()
                 .check_new_new::<(policy::HttpRoutePermit, T), Logical>()
+                .push(svc::ArcNewService::layer())
                 .push(svc::NewOneshotRoute::layer_via(|(permit, t): &(policy::HttpRoutePermit, T)| {
                     LogicalPerRequest::from((permit.clone(), t.clone()))
                 }))
                 .check_new_service::<(policy::HttpRoutePermit, T), http::Request<http::BoxBody>>()
+                .push(svc::ArcNewService::layer())
                 .push(policy::NewHttpPolicy::layer(rt.metrics.http_authz.clone()))
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()

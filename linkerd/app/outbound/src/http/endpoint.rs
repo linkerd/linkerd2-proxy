@@ -38,19 +38,7 @@ struct ClientRescue {
 }
 
 impl<C> Outbound<C> {
-    pub fn push_http_tcp_client<T, B>(
-        self,
-    ) -> Outbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<
-                http::Request<B>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-                Future = impl Send,
-            >,
-        >,
-    >
+    pub fn push_http_tcp_client<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
     where
         // Http endpoint target.
         T: svc::Param<http::client::Settings>,
@@ -81,13 +69,14 @@ impl<C> Outbound<C> {
                 .push_on_service(svc::MapErr::layer_boxed())
                 .check_service::<T>()
                 .into_new_service()
+                .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
     }
 }
 
-impl<N> Outbound<N> {
-    pub fn push_http_endpoint<T, B, NSvc>(self) -> Outbound<svc::ArcNewHttp<T, B>>
+impl<T> Outbound<svc::ArcNewHttp<T, http::BoxBody>> {
+    pub fn push_http_endpoint<B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
     where
         // Http endpoint target.
         T: svc::Param<Remote<ServerAddr>>,
@@ -101,16 +90,6 @@ impl<N> Outbound<N> {
         // Http endpoint body.
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        // HTTP client stack
-        N: svc::NewService<T, Service = NSvc>,
-        N: Clone + Send + Sync + Unpin + 'static,
-        NSvc: svc::Service<
-            http::Request<http::BoxBody>,
-            Response = http::Response<http::BoxBody>,
-            Error = Error,
-        >,
-        NSvc: Send + 'static,
-        NSvc::Future: Send + Unpin + 'static,
     {
         self.map_stack(|config, rt, inner| {
             let config::ConnectConfig { backoff, .. } = config.proxy.connect;

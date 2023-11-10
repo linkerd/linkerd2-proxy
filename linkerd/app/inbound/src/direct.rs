@@ -204,6 +204,7 @@ impl<N> Inbound<N> {
                 )
                 .check_new_service::<(TransportHeader, ClientInfo), _>()
                 // Use ALPN to determine whether a transport header should be read.
+                .push(svc::ArcNewService::layer())
                 .push(NewTransportHeaderServer::layer(detect_timeout))
                 .check_new_service::<ClientInfo, _>()
                 .push_filter(|t: (tls::ConditionalServerTls, T)| -> Result<_> {
@@ -217,7 +218,6 @@ impl<N> Inbound<N> {
                         Err(RefusedNoTarget.into())
                     }
                 })
-                .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
                 .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                     TlsParams {

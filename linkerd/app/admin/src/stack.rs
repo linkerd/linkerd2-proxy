@@ -97,13 +97,24 @@ impl Config {
 
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
-        let admin = svc::stack(move |_| admin.clone())
-            .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
+        let http = svc::stack(move |_| admin.clone())
+            .push(
+                metrics
+                    .proxy
+                    .http_endpoint
+                    .to_layer::<classify::Response, _, Permitted>(),
+            )
             .push(classify::NewClassify::layer_default())
             .push_map_target(|(permit, http)| Permitted { permit, http })
-            .push(inbound::policy::NewHttpPolicy::layer(metrics.http_authz.clone()))
+            .push(inbound::policy::NewHttpPolicy::layer(
+                metrics.http_authz.clone(),
+            ))
             .push(Rescue::layer())
             .push_on_service(http::BoxResponse::layer())
+            .push_on_service(svc::BoxCloneService::layer())
+            .push(svc::ArcNewService::layer());
+
+        let tcp = http
             .unlift_new()
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
             .push_filter(
@@ -147,6 +158,8 @@ impl Config {
                     }
                 },
             )
+            .push_on_service(svc::BoxService::layer())
+            .push(svc::ArcNewService::layer())
             .lift_new_with_target()
             .push(detect::NewDetectService::layer(svc::stack::CloneParam::from(
                 detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT),
@@ -160,12 +173,16 @@ impl Config {
                     policy: policy.clone(),
                 }
             })
+            .push_on_service(svc::BoxService::layer())
+            .push(svc::ArcNewService::layer())
             .push(tls::NewDetectTls::<identity::Server, _, _>::layer(TlsParams {
                 identity,
             }))
+            .push_on_service(svc::BoxService::layer())
+            .push(svc::ArcNewService::layer())
             .into_inner();
 
-        let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
+        let serve = Box::pin(serve::serve(listen, tcp, drain.signaled()));
         Ok(Task {
             listen_addr,
             latch,
