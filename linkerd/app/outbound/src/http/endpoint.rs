@@ -69,7 +69,7 @@ impl<C> Outbound<C> {
                 .push_on_service(svc::MapErr::layer_boxed())
                 .check_service::<T>()
                 .into_new_service()
-                .arc_new_box_http()
+                .arc_new_http()
         })
     }
 }
@@ -103,7 +103,7 @@ impl<T> Outbound<svc::ArcNewHttp<T, http::BoxBody>> {
                 .push_new_reconnect(backoff)
                 .push(svc::NewMapErr::layer_from_target::<EndpointError, _>())
                 .push_on_service(svc::MapErr::layer_boxed())
-                .arc_new_box_http()
+                .arc_new_http()
                 // Tear down server connections when a peer proxy generates a
                 // response with the `l5d-proxy-connection: close` header. This
                 // is only done when the `Closable` parameter is set to true.
@@ -132,7 +132,7 @@ impl<T> Outbound<svc::ArcNewHttp<T, http::BoxBody>> {
                     CANONICAL_DST_HEADER,
                 ]))
                 .push_on_service(http::BoxResponse::layer())
-                .arc_new_box_http()
+                .arc_new_http()
         })
     }
 }

@@ -49,6 +49,6 @@ impl Gateway {
             )
             // Authorize connections to the gateway.
             .push(self.inbound.authorize_tcp())
-            .arc_new_box_tcp()
+            .arc_new_tcp()
     }
 }

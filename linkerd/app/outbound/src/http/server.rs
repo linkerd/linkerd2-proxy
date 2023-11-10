@@ -53,7 +53,7 @@ impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
                 .push(http::NewNormalizeUri::layer())
                 // Record when a HTTP/1 URI originated in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
-                .arc_new_box_clone_http()
+                .arc_new_clone_http()
         })
     }
 }

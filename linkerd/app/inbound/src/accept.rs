@@ -74,7 +74,7 @@ impl<N> Inbound<N> {
                     let OrigDstAddr(addr) = t.param();
                     info_span!("server", port = addr.port())
                 })
-                .arc_new_box_tcp()
+                .arc_new_tcp()
         })
     }
 }

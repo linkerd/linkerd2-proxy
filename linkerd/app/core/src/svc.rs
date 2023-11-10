@@ -285,22 +285,7 @@ impl<S> Stack<S> {
         self.push(NewCachedDiscover::layer(discover, idle))
     }
 
-    pub fn arc_new_box<T, Req, Svc>(
-        self,
-    ) -> Stack<ArcNewService<T, BoxService<Req, Svc::Response, Error>>>
-    where
-        T: 'static,
-        Req: 'static,
-        S: NewService<T, Service = Svc> + Send + Sync + 'static,
-        Svc: Service<Req, Error = Error>,
-        Svc: Send + 'static,
-        Svc::Future: Send,
-    {
-        self.push_on_service(BoxService::layer())
-            .push(ArcNewService::layer())
-    }
-
-    pub fn arc_new_box_http<T, B, Svc>(self) -> Stack<ArcNewHttp<T, B>>
+    pub fn arc_new_http<T, B, Svc>(self) -> Stack<ArcNewHttp<T, B>>
     where
         T: 'static,
         B: 'static,
@@ -312,7 +297,7 @@ impl<S> Stack<S> {
         self.arc_new_box()
     }
 
-    pub fn arc_new_box_clone_http<T, B, Svc>(self) -> Stack<ArcNewCloneHttp<T, B>>
+    pub fn arc_new_clone_http<T, B, Svc>(self) -> Stack<ArcNewCloneHttp<T, B>>
     where
         T: 'static,
         B: 'static,
@@ -325,7 +310,7 @@ impl<S> Stack<S> {
             .push(ArcNewService::layer())
     }
 
-    pub fn arc_new_box_tcp<T, I, Svc>(self) -> Stack<ArcNewTcp<T, I>>
+    pub fn arc_new_tcp<T, I, Svc>(self) -> Stack<ArcNewTcp<T, I>>
     where
         T: 'static,
         I: 'static,

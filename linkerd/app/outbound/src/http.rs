@@ -93,7 +93,7 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
                     .push_map_target(Http)
-                    .arc_new_box_clone_http()
+                    .arc_new_clone_http()
             })
     }
 }
