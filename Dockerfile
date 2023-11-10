@@ -29,7 +29,7 @@ COPY . .
 RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
     just fetch
 ENV CARGO_INCREMENTAL=0
-ENV RUSTFLAGS="-D warnings -A deprecated -C debuginfo=2"
+ENV RUSTFLAGS="-D warnings -A deprecated"
 ARG TARGETARCH="amd64"
 ARG PROFILE="release"
 ARG LINKERD2_PROXY_VERSION=""
