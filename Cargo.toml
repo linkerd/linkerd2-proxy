@@ -71,7 +71,5 @@ members = [
 ]
 
 [profile.release]
-debug = 2
-# split-debuginfo = 'packed'
-# strip = 'symbols'
+debug = 1
 lto = true

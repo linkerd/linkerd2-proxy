@@ -6,6 +6,7 @@ on:
       - .github/actions/package/*
       - .github/workflows/release.yml
       - justfile
+      - Cargo.toml # For release build settings
   push:
     tags:
       - "release/*"
