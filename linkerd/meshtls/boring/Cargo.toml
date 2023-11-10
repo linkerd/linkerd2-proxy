@@ -26,3 +26,5 @@ fips = ["boring/fips"]
 [dev-dependencies]
 linkerd-tls-test-util = { path = "../../tls/test-util" }
 rcgen = "0.11.3"
+linkerd-meshtls = { path = "../../meshtls" }
+

@@ -93,23 +93,23 @@ where
                     // XXX(ver) to use the boring error directly here we have to constraint the socket on Sync +
                     // std::fmt::Debug, which is a pain.
                     None => io::Error::new(io::ErrorKind::Other, "unexpected TLS handshake error"),
-                }).and_then(|io| match io.ssl().peer_certificate() {
-                    Some(ref cert) => {
-                        verify::verify_id(cert, &server_id)
-                            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                        debug!(
-                            tls = io.ssl().version_str(),
-                            client.cert = ?io.ssl().certificate().and_then(super::fingerprint),
-                            peer.cert = ?io.ssl().peer_certificate().as_deref().and_then(super::fingerprint),
-                            alpn = ?io.ssl().selected_alpn_protocol(),
-                            "Initiated TLS connection"
-                        );
-                        Ok(ClientIo(io))
-                    },
-                    None => Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "could not extract peer cert",
-                    )),
+                }).and_then(|io| {
+                    let cert = io.ssl()
+                        .peer_certificate()
+                        .ok_or_else(|| io::Error::new(
+                            io::ErrorKind::Other,
+                            "could not extract peer cert",
+                        ))?;
+                    verify::verify_id(&cert, &server_id)
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                    debug!(
+                        tls = io.ssl().version_str(),
+                        client.cert = ?io.ssl().certificate().and_then(super::fingerprint),
+                        peer.cert = ?io.ssl().peer_certificate().as_deref().and_then(super::fingerprint),
+                        alpn = ?io.ssl().selected_alpn_protocol(),
+                        "Initiated TLS connection"
+                    );
+                    Ok(ClientIo(io))
                 })
         })
     }

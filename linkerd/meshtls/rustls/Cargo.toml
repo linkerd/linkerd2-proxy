@@ -29,4 +29,5 @@ linkerd-tls-test-util = { path = "../../tls/test-util", optional = true }
 
 [dev-dependencies]
 linkerd-tls-test-util = { path = "../../tls/test-util" }
+linkerd-meshtls = { path = "../../meshtls" }
 rcgen = "0.11.3"
