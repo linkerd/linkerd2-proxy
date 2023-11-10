@@ -215,16 +215,18 @@ impl<N> Inbound<N> {
                 // Use ALPN to determine whether a transport header should be read.
                 .push(NewTransportHeaderServer::layer(detect_timeout))
                 .check_new_service::<ClientInfo, _>()
-                .push_filter(|client: ClientInfo| -> Result<_> {
+                .push_filter(|t: (tls::ConditionalServerTls, T)| -> Result<_> {
+                    // Build a ClientInfo target for each accepted connection.
+                    // Refuse the connection if it doesn't include an mTLS
+                    // identity.
+                    let client = ClientInfo::try_from(t)?;
                     if client.header_negotiated() {
                         Ok(client)
                     } else {
                         Err(RefusedNoTarget.into())
                     }
                 })
-                // Build a ClientInfo target for each accepted connection. Refuse the
-                // connection if it doesn't include an mTLS identity.
-                .push_filter(ClientInfo::try_from)
+                .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
                 .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                     TlsParams {
