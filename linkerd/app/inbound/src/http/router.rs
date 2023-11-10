@@ -138,12 +138,9 @@ impl<C> Inbound<C> {
                             super::trace_labels(),
                         ))
                         .push(http::BoxResponse::layer())
-                        // This box is needed to reduce compile times on recent
-                        // (2021-10-17) nightlies, though this may be fixed by
-                        // https://github.com/rust-lang/rust/pull/89831. It should
-                        // be removed when possible.
                         .push(svc::BoxService::layer())
-                );
+                )
+                .push(svc::ArcNewService::layer());
 
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
@@ -172,6 +169,8 @@ impl<C> Inbound<C> {
                         .push_on_service(svc::MapErr::layer(Error::from))
                         .into_inner(),
                 ))
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer())
                 .push_switch(
                     // If the profile was resolved to a logical (service) address, build a profile
                     // stack to include route-level metrics, etc. Otherwise, skip this stack and use
@@ -221,6 +220,8 @@ impl<C> Inbound<C> {
                         .check_new_service::<(Option<profiles::Receiver>, Logical), http::Request<_>>()
                         .into_inner()
                 )
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer())
                 .check_new_service::<Logical, http::Request<_>>()
                 .instrument(|_: &Logical| debug_span!("profile"));
 

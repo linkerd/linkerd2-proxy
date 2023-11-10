@@ -204,7 +204,9 @@ impl<N> Inbound<N> {
                     rt.metrics.proxy.transport.clone(),
                 ))
                 .push_map_target(Forward::from)
-                .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()));
+                .push(policy::NewTcpPolicy::layer(rt.metrics.tcp_authz.clone()))
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer());
 
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
             let detect = http
@@ -251,7 +253,9 @@ impl<N> Inbound<N> {
                     forward.into_inner(),
                 )
                 .lift_new_with_target()
-                .push(detect::NewDetectService::layer(ConfigureHttpDetect));
+                .push(detect::NewDetectService::layer(ConfigureHttpDetect))
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer());
 
             http.push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push(transport::metrics::NewServer::layer(

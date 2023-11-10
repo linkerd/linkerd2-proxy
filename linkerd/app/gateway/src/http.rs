@@ -133,7 +133,9 @@ impl Gateway {
                 })
             })
             // Authorize requests to the gateway.
-            .push(self.inbound.authorize_http());
+            .push(self.inbound.authorize_http())
+            .push_on_service(svc::BoxCloneService::layer())
+            .push(svc::ArcNewService::layer());
 
         self.inbound
             .clone()
