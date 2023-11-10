@@ -2,7 +2,7 @@
 
 set -eu
 
-if [ $# -ne 1 ]; then
+if [ $# -eq 0 ]; then
     echo "Usage: $0 <changed-files>"
     exit 1
 fi
@@ -38,15 +38,9 @@ manifest_expr() {
     echo "$expr"
 }
 
-if [ -z "$1" ]; then
-    echo '[]'
-    exit 0
-fi
-IFS=' ' read -r -a files <<< "$1"
-
 # Get the crate names for all changed manifest directories.
 crates=$(cargo metadata --locked --format-version=1 \
-    | jq -cr "[.packages[] | select(.manifest_path | $(manifest_expr "${files[@]}")) | .name]")
+    | jq -cr "[.packages[] | select(.manifest_path | $(manifest_expr "$@")) | .name]")
 
 echo "crates=$crates" >> "$GITHUB_OUTPUT"
 echo "$crates" | jq .
