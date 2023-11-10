@@ -28,19 +28,7 @@ struct ServerError {
 impl<H> Inbound<H> {
     /// Prepares HTTP requests for inbound processing. Fails requests when the
     /// `HSvc`-typed inner service is not ready.
-    pub fn push_http_server<T, HSvc>(
-        self,
-    ) -> Inbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    >
+    pub fn push_http_server<T, HSvc>(self) -> Inbound<svc::ArcNewCloneHttp<T>>
     where
         // Connection target.
         T: Param<Version>
@@ -96,9 +84,9 @@ impl<H> Inbound<H> {
                 // Record when an HTTP/1 URI was in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push_on_service(http::BoxResponse::layer())
-                .push_on_service(svc::BoxCloneService::layer())
                 .push(NewAccessLog::layer())
                 .check_new_service::<T, http::Request<_>>()
+                .push_on_service(svc::BoxCloneService::layer())
                 .push(svc::ArcNewService::layer())
         })
     }

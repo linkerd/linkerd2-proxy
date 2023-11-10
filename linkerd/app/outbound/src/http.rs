@@ -78,20 +78,7 @@ impl<N> Outbound<N> {
     /// Builds a stack that routes HTTP requests to endpoint stacks.
     ///
     /// Buffered concrete services are cached in and evicted when idle.
-    pub fn push_http_cached<T, R, NSvc>(
-        self,
-        resolve: R,
-    ) -> Outbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    >
+    pub fn push_http_cached<T, R, NSvc>(self, resolve: R) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Logical HTTP target.
         T: svc::Param<http::Version>,
@@ -116,6 +103,7 @@ impl<N> Outbound<N> {
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
                     .push_map_target(Http)
+                    .push_on_service(svc::BoxCloneService::layer())
                     .push(svc::ArcNewService::layer())
             })
     }

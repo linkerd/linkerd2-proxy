@@ -11,7 +11,7 @@ pub(crate) struct ServerRescue {
     emit_headers: bool,
 }
 
-impl<N> Outbound<N> {
+impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
     /// Builds a [`svc::NewService`] stack that prepares HTTP requests to be
     /// proxied.
     ///
@@ -19,45 +19,26 @@ impl<N> Outbound<N> {
     /// HTTP responses.
     ///
     /// Inner services must be available, otherwise load shedding is applied.
-    pub fn push_http_server<T, NSvc>(
-        self,
-    ) -> Outbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    >
+    pub fn push_http_server(self) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Target
-        T: svc::Param<http::normalize_uri::DefaultAuthority>,
-        // HTTP outbound stack
-        N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
-        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
-        NSvc: Clone + Send + 'static,
-        NSvc::Error: Into<Error>,
-        NSvc::Future: Send,
+        T: svc::Param<http::normalize_uri::DefaultAuthority> + 'static,
     {
         self.map_stack(|config, rt, http| {
             http.check_new_service::<T, _>()
-                // Limit the number of in-flight outbound requests
-                // (across all targets).
+                // Limit the number of in-flight outbound requests (across all
+                // targets).
                 //
-                // TODO(ver) This concurrency limit applies only to
-                // requests that do not yet have responses, but ignores
-                // streaming bodies. We should change this to an
-                // HTTP-specific imlementation that tracks request and
-                // response bodies.
+                // TODO(ver) This concurrency limit applies only to requests
+                // that do not yet have responses, but ignores streaming bodies.
+                // We should change this to an HTTP-specific imlementation that
+                // tracks request and response bodies.
                 .push_on_service(svc::ConcurrencyLimitLayer::new(
                     config.proxy.max_in_flight_requests,
                 ))
-                // Shed load by failing requests when the concurrency
-                // limit is reached or the inner service is otherwise
-                // not ready for requests.
+                // Shed load by failing requests when the concurrency limit is
+                // reached or the inner service is otherwise not ready for
+                // requests.
                 .push_on_service(svc::LoadShed::layer())
                 .push_on_service(rt.metrics.http_errors.to_layer())
                 // Synthesizes responses for proxy errors.
@@ -72,10 +53,13 @@ impl<N> Outbound<N> {
                 .push(http::NewNormalizeUri::layer())
                 // Record when a HTTP/1 URI originated in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
+                .push_on_service(svc::BoxCloneService::layer())
                 .push(svc::ArcNewService::layer())
         })
     }
+}
 
+impl<N> Outbound<N> {
     pub fn push_tcp_http_server<T, I, NSvc>(
         self,
     ) -> Outbound<http::NewServeHttp<svc::ArcNewService<T, svc::NewCloneService<NSvc>>>>
