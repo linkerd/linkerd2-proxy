@@ -15,7 +15,7 @@ on:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
-  RUSTFLAGS: "-D warnings -A deprecated -C debuginfo=off"
+  RUSTFLAGS: "-D warnings -A deprecated -C debuginfo=0"
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
