@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
       - name: Install libssl-dev
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+        run: apt-get update && apt-get install -y libssl-dev
       # XXX(ver) AFAICT, Tarpaulin doesn't allow us to compose a report over multiple invocations,
       # so we have to choose between getting coverage from unit tests and integration tests (since
       # integration tests require --no-default-features to avoid flakiness). Currently the
