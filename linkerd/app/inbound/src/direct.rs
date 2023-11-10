@@ -89,11 +89,11 @@ impl<N> Inbound<N> {
     /// 2. TLS is required;
     /// 3. A transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
-    pub(crate) fn push_direct<T, I, NSvc, H, HSvc>(
+    pub(crate) fn push_direct<T, I, NSvc>(
         self,
         policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
         gateway: svc::ArcNewTcp<GatewayTransportHeader, GatewayIo<I>>,
-        http: H,
+        http: svc::ArcNewTcp<LocalHttp, io::PrefixedIo<TlsIo<I>>>,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
@@ -105,10 +105,6 @@ impl<N> Inbound<N> {
         NSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send + Unpin,
-        H: svc::NewService<LocalHttp, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
-        HSvc: svc::Service<io::PrefixedIo<TlsIo<I>>, Response = ()> + Send + 'static,
-        HSvc::Error: Into<Error>,
-        HSvc::Future: Send,
     {
         self.map_stack(|config, rt, inner| {
             let detect_timeout = config.proxy.detect_protocol_timeout;
