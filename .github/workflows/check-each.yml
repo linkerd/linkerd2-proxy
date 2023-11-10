@@ -14,6 +14,7 @@ on:
       - "**/Cargo.toml"
       - "**/*.rs"
       - .github/workflows/check-each.yml
+      - .github/list-crates.sh
       - justfile
 
 env:
@@ -39,7 +40,7 @@ jobs:
             .github/workflows/check-each.yml
       - name: List changed crates
         id: changed-crates
-        run: ./.github/list-crates.sh '${{ steps.changed-files.outputs.all_changed_files }}'
+        run: ./.github/list-crates.sh ${{ steps.changed-files.outputs.all_changed_files }}
     outputs:
       crates: ${{ steps.changed-crates.outputs.crates }}
 
