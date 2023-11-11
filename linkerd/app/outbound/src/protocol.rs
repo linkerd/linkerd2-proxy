@@ -26,7 +26,10 @@ impl<N> Outbound<N> {
     /// The inner stack is built once for each `T` target when the protocol is
     /// known. When `Protocol::Detect` is used, the inner stack is built for
     /// each connection.
-    pub fn push_protocol<T, I, H, HSvc, NSvc>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
+    pub fn push_protocol<T, I, NSvc>(
+        self,
+        http: svc::ArcNewCloneHttp<Http<T>>,
+    ) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type indicating whether detection should be skipped.
         T: svc::Param<Protocol>,
@@ -34,16 +37,6 @@ impl<N> Outbound<N> {
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        // HTTP request stack.
-        H: svc::NewService<Http<T>, Service = HSvc>,
-        H: Clone + Send + Sync + Unpin + 'static,
-        HSvc: svc::Service<
-            http::Request<http::BoxBody>,
-            Response = http::Response<http::BoxBody>,
-            Error = Error,
-        >,
-        HSvc: Clone + Send + Sync + Unpin + 'static,
-        HSvc::Future: Send,
         // Opaque connection stack.
         N: svc::NewService<T, Service = NSvc>,
         N: Clone + Send + Sync + Unpin + 'static,
@@ -60,6 +53,7 @@ impl<N> Outbound<N> {
                     config.proxy.server.h2_settings,
                     rt.drain.clone(),
                 ))
+                .arc_new_tcp()
         });
 
         let detect = http.clone().map_stack(|config, _, http| {
@@ -79,6 +73,7 @@ impl<N> Outbound<N> {
             .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
             .lift_new_with_target::<(detect::Result<http::Version>, T)>()
             .push(detect::NewDetectService::layer(config.proxy.detect_http()))
+            .arc_new_tcp()
         });
 
         http.map_stack(|_, _, http| {
@@ -103,8 +98,7 @@ impl<N> Outbound<N> {
                     },
                     detect.into_inner(),
                 )
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_new_tcp()
         })
     }
 }

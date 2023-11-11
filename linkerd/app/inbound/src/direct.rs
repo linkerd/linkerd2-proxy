@@ -89,11 +89,11 @@ impl<N> Inbound<N> {
     /// 2. TLS is required;
     /// 3. A transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
-    pub(crate) fn push_direct<T, I, NSvc, G, GSvc, H, HSvc>(
+    pub(crate) fn push_direct<T, I, NSvc>(
         self,
         policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
-        gateway: G,
-        http: H,
+        gateway: svc::ArcNewTcp<GatewayTransportHeader, GatewayIo<I>>,
+        http: svc::ArcNewTcp<LocalHttp, io::PrefixedIo<TlsIo<I>>>,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
@@ -105,15 +105,6 @@ impl<N> Inbound<N> {
         NSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send + Unpin,
-        G: svc::NewService<GatewayTransportHeader, Service = GSvc>,
-        G: Clone + Send + Sync + Unpin + 'static,
-        GSvc: svc::Service<GatewayIo<I>, Response = ()> + Send + 'static,
-        GSvc::Error: Into<Error>,
-        GSvc::Future: Send,
-        H: svc::NewService<LocalHttp, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
-        HSvc: svc::Service<io::PrefixedIo<TlsIo<I>>, Response = ()> + Send + 'static,
-        HSvc::Error: Into<Error>,
-        HSvc::Future: Send,
     {
         self.map_stack(|config, rt, inner| {
             let detect_timeout = config.proxy.detect_protocol_timeout;
@@ -213,18 +204,20 @@ impl<N> Inbound<N> {
                 )
                 .check_new_service::<(TransportHeader, ClientInfo), _>()
                 // Use ALPN to determine whether a transport header should be read.
+                .push(svc::ArcNewService::layer())
                 .push(NewTransportHeaderServer::layer(detect_timeout))
                 .check_new_service::<ClientInfo, _>()
-                .push_filter(|client: ClientInfo| -> Result<_> {
+                .push_filter(|t: (tls::ConditionalServerTls, T)| -> Result<_> {
+                    // Build a ClientInfo target for each accepted connection.
+                    // Refuse the connection if it doesn't include an mTLS
+                    // identity.
+                    let client = ClientInfo::try_from(t)?;
                     if client.header_negotiated() {
                         Ok(client)
                     } else {
                         Err(RefusedNoTarget.into())
                     }
                 })
-                // Build a ClientInfo target for each accepted connection. Refuse the
-                // connection if it doesn't include an mTLS identity.
-                .push_filter(ClientInfo::try_from)
                 .push(svc::ArcNewService::layer())
                 .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                     TlsParams {
@@ -232,9 +225,7 @@ impl<N> Inbound<N> {
                         identity,
                     },
                 ))
-                .check_new_service::<T, I>()
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_new_tcp()
         })
     }
 }

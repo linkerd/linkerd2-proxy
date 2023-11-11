@@ -262,11 +262,8 @@ impl<S> Inbound<S> {
                 ))
                 .push(svc::stack::WithoutConnectionMetadata::layer())
                 .push_new_thunk()
-                .push_on_service(
-                    svc::layers()
-                        .push(tcp::Forward::layer())
-                        .push(drain::Retain::layer(rt.drain.clone())),
-                )
+                .push_on_service(tcp::Forward::layer())
+                .push_on_service(drain::Retain::layer(rt.drain.clone()))
                 .instrument(|_: &_| debug_span!("tcp"))
                 .push(svc::NewMapErr::layer_from_target::<ForwardError, _>())
                 .push(svc::ArcNewService::layer())

@@ -74,24 +74,11 @@ pub fn spawn_routes_default(addr: Remote<ServerAddr>) -> watch::Receiver<Routes>
 
 // === impl Outbound ===
 
-impl<N> Outbound<N> {
+impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>> {
     /// Builds a stack that routes HTTP requests to endpoint stacks.
     ///
     /// Buffered concrete services are cached in and evicted when idle.
-    pub fn push_http_cached<T, R, NSvc>(
-        self,
-        resolve: R,
-    ) -> Outbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    >
+    pub fn push_http_cached<R>(self, resolve: R) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Logical HTTP target.
         T: svc::Param<http::Version>,
@@ -99,16 +86,6 @@ impl<N> Outbound<N> {
         T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        // HTTP client stack
-        N: svc::NewService<concrete::Endpoint<logical::Concrete<Http<T>>>, Service = NSvc>,
-        N: Clone + Send + Sync + Unpin + 'static,
-        NSvc: svc::Service<
-            http::Request<http::BoxBody>,
-            Response = http::Response<http::BoxBody>,
-            Error = Error,
-        >,
-        NSvc: Send + 'static,
-        NSvc::Future: Send + Unpin + 'static,
     {
         self.push_http_endpoint()
             .push_http_concrete(resolve)
@@ -116,7 +93,7 @@ impl<N> Outbound<N> {
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
                     .push_map_target(Http)
-                    .push(svc::ArcNewService::layer())
+                    .arc_new_clone_http()
             })
     }
 }

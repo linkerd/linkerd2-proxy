@@ -35,13 +35,13 @@ impl Inbound<()> {
         self.config.policy.clone().build(workload, client, backoff)
     }
 
-    pub async fn serve<A, I, G, GSvc, P>(
+    pub async fn serve<A, I, P>(
         self,
         addr: Local<ServerAddr>,
         listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
         policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
         profiles: P,
-        gateway: G,
+        gateway: svc::ArcNewTcp<direct::GatewayTransportHeader, direct::GatewayIo<io::ScopedIo<I>>>,
     ) where
         A: svc::Param<Remote<ClientAddr>>,
         A: svc::Param<OrigDstAddr>,
@@ -49,11 +49,6 @@ impl Inbound<()> {
         A: Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
-        G: svc::NewService<direct::GatewayTransportHeader, Service = GSvc>,
-        G: Clone + Send + Sync + Unpin + 'static,
-        GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<I>>, Response = ()> + Send + 'static,
-        GSvc::Error: Into<Error>,
-        GSvc::Future: Send,
         P: profiles::GetProfile<Error = Error>,
     {
         let shutdown = self.runtime.drain.clone().signaled();

@@ -21,23 +21,24 @@ RUN apt-get update && \
     fi && \
     rm -rf /var/lib/apt/lists/*
 
-ENV CARGO_INCREMENTAL=0
 ENV CARGO_NET_RETRY=10
-ENV RUSTFLAGS="-D warnings -A deprecated"
 ENV RUSTUP_MAX_RETRIES=10
 
-WORKDIR /usr/src/linkerd2-proxy
+WORKDIR /src
 COPY . .
 RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
     just fetch
+ENV CARGO_INCREMENTAL=0
+ENV RUSTFLAGS="-D warnings -A deprecated"
 ARG TARGETARCH="amd64"
 ARG PROFILE="release"
 ARG LINKERD2_PROXY_VERSION=""
 ARG LINKERD2_PROXY_VENDOR=""
 RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
-    just arch="$TARGETARCH" features="$PROXY_FEATURES" profile="$PROFILE" build && \
-    mkdir -p /out && \
-    mv $(just --evaluate profile="$PROFILE" _target_bin) /out/linkerd2-proxy
+    /usr/bin/time -v just arch="$TARGETARCH" features="$PROXY_FEATURES" profile="$PROFILE" build && \
+    bin=$(just --evaluate profile="$PROFILE" _target_bin) ; \
+    du -sh "$bin" "$bin".dbg && \
+    mkdir -p /out && mv "$bin" /out/linkerd2-proxy
 
 FROM $LINKERD2_IMAGE as linkerd2
 
