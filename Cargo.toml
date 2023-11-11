@@ -71,5 +71,5 @@ members = [
 ]
 
 [profile.release]
-debug = 2
+debug = 1
 lto = true
