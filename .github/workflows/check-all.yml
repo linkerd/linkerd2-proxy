@@ -28,3 +28,4 @@ jobs:
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: just fetch
       - run: just check --exclude=linkerd-meshtls-boring
+      - run: just check --exclude=linkerd-meshtls-boring --features=pprof

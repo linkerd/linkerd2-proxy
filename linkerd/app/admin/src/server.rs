@@ -19,7 +19,7 @@ use hyper::{
 use linkerd_app_core::{
     metrics::{self as metrics, FmtMetrics},
     proxy::http::ClientHandle,
-    trace, Error,
+    trace, Error, Result,
 };
 use std::{
     future::Future,
@@ -40,10 +40,11 @@ pub struct Admin<M> {
     tracing: trace::Handle,
     ready: Readiness,
     shutdown_tx: mpsc::UnboundedSender<()>,
+    #[cfg(feature = "pprof")]
+    pprof: Option<crate::pprof::Pprof>,
 }
 
-pub type ResponseFuture =
-    Pin<Box<dyn Future<Output = Result<Response<Body>, Error>> + Send + 'static>>;
+pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<Response<Body>>> + Send + 'static>>;
 
 impl<M> Admin<M> {
     pub fn new(
@@ -57,7 +58,20 @@ impl<M> Admin<M> {
             ready,
             shutdown_tx,
             tracing,
+
+            #[cfg(feature = "pprof")]
+            pprof: None,
         }
+    }
+
+    #[cfg(feature = "pprof")]
+    pub fn with_profiling(mut self, enabled: bool) -> Self {
+        self.pprof = if enabled {
+            Some(crate::pprof::Pprof)
+        } else {
+            None
+        };
+        self
     }
 
     fn ready_rsp(&self) -> Response<Body> {
@@ -252,6 +266,26 @@ where
                 } else {
                     Box::pin(future::ok(Self::method_not_allowed()))
                 }
+            }
+
+            #[cfg(feature = "pprof")]
+            "/debug/pprof/profile.pb.gz" if self.pprof.is_some() => {
+                let pprof = self.pprof.expect("profiler must be configured");
+
+                if !Self::client_is_localhost(&req) {
+                    return Box::pin(future::ok(Self::forbidden_not_localhost()));
+                }
+
+                if req.method() != http::Method::GET {
+                    return Box::pin(future::ok(Self::method_not_allowed()));
+                }
+
+                Box::pin(async move {
+                    Ok(pprof
+                        .profile(req)
+                        .await
+                        .unwrap_or_else(Self::internal_error_rsp))
+                })
             }
 
             _ => Box::pin(future::ok(Self::not_found())),

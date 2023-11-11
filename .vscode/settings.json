@@ -1,4 +1,6 @@
 {
-    "rust-analyzer.cargo.features": [],
+    "rust-analyzer.cargo.features": [
+        "pprof"
+    ],
     "files.insertFinalNewline": true
 }

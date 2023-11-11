@@ -76,6 +76,15 @@ skip = [
     # `linkerd-trace-context`, `rustls-pemfile` and `tonic` depend on `base64`
     # v0.13.1 while `rcgen` depends on v0.21.5
     { name = "base64" },
+    # https://github.com/hawkw/matchers/pull/4
+    { name = "regex-automata", version = "0.1" },
+    { name = "regex-syntax", version = "0.6" },
+    # linkerd2-proxy-api needs to upgrade tonic to upgrade prost...
+    { name = "prost", version = "0.11" },
+    { name = "prost-build", version = "0.11" },
+    { name = "prost-derive", version = "0.11" },
+    { name = "prost-types", version = "0.11" },
+    { name = "prettyplease", version = "0.1" },
 ]
 skip-tree = [
     # right now we have a mix of versions of this crate in the ecosystem

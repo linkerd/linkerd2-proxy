@@ -717,6 +717,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             keepalive: inbound.proxy.server.keepalive,
             h2_settings,
         },
+
+        // TODO(ver) Currently we always enable profiling when the pprof feature
+        // is enabled. In the future, this should be driven by runtime
+        // configuration.
+        #[cfg(feature = "pprof")]
+        enable_profiling: true,
     };
 
     let dns = dns::Config {
