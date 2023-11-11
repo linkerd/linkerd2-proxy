@@ -55,6 +55,9 @@ impl fmt::Display for ControlAddr {
     }
 }
 
+pub type BoxClient =
+    svc::BoxServiceClone<http::Request<tonic::body::BoxBody>, http::Response<RspBody>, Error>;
+
 pub type RspBody =
     linkerd_http_metrics::requests::ResponseBody<http::balance::Body<hyper::Body>, classify::Eos>;
 
@@ -69,15 +72,7 @@ impl Config {
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: identity::NewClient,
-    ) -> svc::ArcNewService<
-        (),
-        impl svc::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<RspBody>,
-                Error = ControlError,
-                Future = impl Send,
-            > + Clone,
-    > {
+    ) -> svc::ArcNewService<(), BoxClient> {
         let addr = self.addr;
 
         // When a DNS resolution fails, log the error and use the TTL, if there
@@ -135,6 +130,8 @@ impl Config {
             .push(svc::NewMapErr::layer_from_target::<ControlError, _>())
             .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
+            .push_on_service(svc::MapErr::layer_boxed())
+            .push_on_service(svc::BoxServiceClone::layer())
             .push(svc::ArcNewService::layer())
             .into_inner()
     }

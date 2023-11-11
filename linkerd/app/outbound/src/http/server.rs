@@ -11,7 +11,7 @@ pub(crate) struct ServerRescue {
     emit_headers: bool,
 }
 
-impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
+impl<T> Outbound<svc::ArcNewHttpClone<T>> {
     /// Builds a [`svc::NewService`] stack that prepares HTTP requests to be
     /// proxied.
     ///
@@ -19,7 +19,7 @@ impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
     /// HTTP responses.
     ///
     /// Inner services must be available, otherwise load shedding is applied.
-    pub fn push_http_server(self) -> Outbound<svc::ArcNewCloneHttp<T>>
+    pub fn push_http_server(self) -> Outbound<svc::ArcNewHttpClone<T>>
     where
         // Target
         T: svc::Param<http::normalize_uri::DefaultAuthority> + 'static,

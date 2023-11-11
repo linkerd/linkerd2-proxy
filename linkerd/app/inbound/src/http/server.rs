@@ -28,7 +28,7 @@ struct ServerError {
 impl<H> Inbound<H> {
     /// Prepares HTTP requests for inbound processing. Fails requests when the
     /// `HSvc`-typed inner service is not ready.
-    pub fn push_http_server<T, HSvc>(self) -> Inbound<svc::ArcNewCloneHttp<T>>
+    pub fn push_http_server<T, HSvc>(self) -> Inbound<svc::ArcNewHttpClone<T>>
     where
         // Connection target.
         T: Param<Version>
@@ -40,11 +40,8 @@ impl<H> Inbound<H> {
         T: Clone + Send + Sync + Unpin + 'static,
         // Inner HTTP stack.
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
-        HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-            + Clone
-            + Send
-            + Unpin
-            + 'static,
+        HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
+        HSvc: Clone + Send + Sync + Unpin + 'static,
         HSvc::Error: Into<Error>,
         HSvc::Future: Send,
     {

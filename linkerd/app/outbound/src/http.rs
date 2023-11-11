@@ -78,7 +78,7 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
     /// Builds a stack that routes HTTP requests to endpoint stacks.
     ///
     /// Buffered concrete services are cached in and evicted when idle.
-    pub fn push_http_cached<R>(self, resolve: R) -> Outbound<svc::ArcNewCloneHttp<T>>
+    pub fn push_http_cached<R>(self, resolve: R) -> Outbound<svc::ArcNewHttpClone<T>>
     where
         // Logical HTTP target.
         T: svc::Param<http::Version>,

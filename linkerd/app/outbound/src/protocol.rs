@@ -28,7 +28,7 @@ impl<N> Outbound<N> {
     /// each connection.
     pub fn push_protocol<T, I, NSvc>(
         self,
-        http: svc::ArcNewCloneHttp<Http<T>>,
+        http: svc::ArcNewHttpClone<Http<T>>,
     ) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type indicating whether detection should be skipped.

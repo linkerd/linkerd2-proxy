@@ -3,8 +3,8 @@ use linkerd_app_core::{
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     identity, metrics,
     profiles::{self, DiscoveryRejected},
-    proxy::{api_resolve as api, http, resolve::recover},
-    svc::{self, NewService, ServiceExt},
+    proxy::{api_resolve as api, resolve::recover},
+    svc::NewService,
     Error, Recover,
 };
 
@@ -15,15 +15,17 @@ pub struct Config {
 }
 
 /// Handles to destination service clients.
-pub struct Dst<S> {
+pub struct Dst {
     /// The address of the destination service, used for logging.
     pub addr: control::ControlAddr,
 
     /// Resolves profiles.
-    pub profiles: profiles::RecoverDefault<profiles::Client<BackoffUnlessInvalidArgument, S>>,
+    pub profiles: profiles::RecoverDefault<
+        profiles::Client<BackoffUnlessInvalidArgument, control::BoxClient>,
+    >,
 
     /// Resolves endpoints.
-    pub resolve: recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<S>>,
+    pub resolve: recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<control::BoxClient>>,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -37,24 +39,10 @@ impl Config {
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: identity::NewClient,
-    ) -> Result<
-        Dst<
-            impl svc::Service<
-                    http::Request<tonic::body::BoxBody>,
-                    Response = http::Response<control::RspBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-        Error,
-    > {
+    ) -> Result<Dst, Error> {
         let addr = self.control.addr.clone();
         let backoff = BackoffUnlessInvalidArgument(self.control.connect.backoff);
-        let svc = self
-            .control
-            .build(dns, metrics, identity)
-            .new_service(())
-            .map_err(Error::from);
+        let svc = self.control.build(dns, metrics, identity).new_service(());
 
         let profiles =
             profiles::Client::new_recover_default(backoff, svc.clone(), self.context.clone());

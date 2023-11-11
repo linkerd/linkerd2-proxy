@@ -1,10 +1,5 @@
 use linkerd_app_core::{
-    control, dns,
-    exp_backoff::ExponentialBackoff,
-    identity, metrics,
-    proxy::http,
-    svc::{self, NewService, ServiceExt},
-    Error,
+    control, dns, exp_backoff::ExponentialBackoff, identity, metrics, svc::NewService, Error,
 };
 
 use std::sync::Arc;
@@ -16,12 +11,12 @@ pub struct Config {
 }
 
 /// Handles to policy service clients.
-pub struct Policy<S> {
+pub struct Policy {
     /// The address of the policy service, used for logging.
     pub addr: control::ControlAddr,
 
     /// Policy service gRPC client.
-    pub client: S,
+    pub client: control::BoxClient,
 
     /// Workload identifier
     pub workload: Arc<str>,
@@ -37,26 +32,11 @@ impl Config {
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: identity::NewClient,
-    ) -> Result<
-        Policy<
-            impl svc::Service<
-                    http::Request<tonic::body::BoxBody>,
-                    Response = http::Response<control::RspBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-        Error,
-    > {
+    ) -> Result<Policy, Error> {
         let addr = self.control.addr.clone();
         let workload = self.workload.into();
         let backoff = self.control.connect.backoff;
-        let client = self
-            .control
-            .build(dns, metrics, identity)
-            .new_service(())
-            .map_err(Error::from);
-
+        let client = self.control.build(dns, metrics, identity).new_service(());
         Ok(Policy {
             addr,
             client,

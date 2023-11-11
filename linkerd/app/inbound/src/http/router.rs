@@ -67,14 +67,14 @@ struct LogicalError {
 // === impl Inbound ===
 
 impl<C> Inbound<C> {
-    pub(crate) fn push_http_router<T, P>(self, profiles: P) -> Inbound<svc::ArcNewCloneHttp<T>>
+    pub(crate) fn push_http_router<T, P>(self, profiles: P) -> Inbound<svc::ArcNewHttpClone<T>>
     where
         T: Param<http::Version>
             + Param<Remote<ServerAddr>>
             + Param<Remote<ClientAddr>>
             + Param<tls::ConditionalServerTls>
             + Param<policy::AllowPolicy>,
-        T: Clone + Send + Unpin + 'static,
+        T: Clone + Send + Sync + Unpin + 'static,
         P: profiles::GetProfile<Error = Error>,
         C: svc::MakeConnection<Http> + Clone + Send + Sync + Unpin + 'static,
         C::Connection: Send + Unpin,
