@@ -1,6 +1,13 @@
 {
 	"name": "linkerd2-proxy",
-	"dockerFile": "Dockerfile",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"args": {
+			"DEV_VERSION": "v42",
+			"http_proxy": "${localEnv:http_proxy}",
+			"https_proxy": "${localEnv:https_proxy}"
+		}
+	},
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -13,12 +20,6 @@
 				"zxh404.vscode-proto3"
 			],
 			"settings": {}
-		}
-	},
-	"build": {
-		"args": {
-			"http_proxy": "${localEnv:http_proxy}",
-			"https_proxy": "${localEnv:https_proxy}"
 		}
 	},
 	// Support docker + debugger
