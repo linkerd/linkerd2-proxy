@@ -1,6 +1,6 @@
 {
 	"name": "linkerd2-proxy",
-       "dockerFile": "Dockerfile",
+	"dockerFile": "Dockerfile",
 	"customizations": {
 		"vscode": {
 			"extensions": [
