@@ -1,8 +1,8 @@
 use futures::prelude::*;
-use linkerd_identity::{LocalId, Name};
+use linkerd_dns_name as dns;
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
-use linkerd_tls::{ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerTls};
+use linkerd_tls::{ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerName, ServerTls};
 use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
 use thiserror::Error;
 use tokio::sync::watch;
@@ -12,7 +12,7 @@ use tracing::debug;
 /// A Service that terminates TLS connections using a dynamically updated server configuration.
 #[derive(Clone)]
 pub struct Server {
-    name: Name,
+    name: dns::Name,
     rx: watch::Receiver<Arc<ServerConfig>>,
 }
 
@@ -29,7 +29,7 @@ pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
 pub struct LostStore(());
 
 impl Server {
-    pub(crate) fn new(name: Name, rx: watch::Receiver<Arc<ServerConfig>>) -> Self {
+    pub(crate) fn new(name: dns::Name, rx: watch::Receiver<Arc<ServerConfig>>) -> Self {
         Self { name, rx }
     }
 
@@ -82,9 +82,9 @@ impl Server {
     }
 }
 
-impl Param<LocalId> for Server {
-    fn param(&self) -> LocalId {
-        LocalId(self.name.clone())
+impl Param<ServerName> for Server {
+    fn param(&self) -> ServerName {
+        ServerName(self.name.clone())
     }
 }
 
@@ -129,19 +129,30 @@ fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<Client
     let (_io, session) = tls.get_ref();
     let certs = session.peer_certificates()?;
     let c = certs.first().map(Certificate::as_ref)?;
-    let end_cert = webpki::EndEntityCert::try_from(c).ok()?;
-    let dns_names = end_cert.dns_names().ok()?;
-
-    match dns_names.first()? {
-        webpki::GeneralDnsNameRef::DnsName(n) => {
-            let s: &str = (*n).into();
-            s.parse().ok().map(ClientId)
-        }
-        webpki::GeneralDnsNameRef::Wildcard(_) => {
-            // Wildcards can perhaps be handled in a future path...
-            None
-        }
+    let end_cert = webpki::EndEntityCert::try_from(c)
+        .map_err(|error| tracing::warn!(%error, "Failed to parse client end-entity certificate"))
+        .ok()?;
+    let name: &str = end_cert
+        .dns_names()
+        .map_err(
+            |error| tracing::warn!(%error, "Failed to parse DNS names from client certificate"),
+        )
+        .ok()?
+        .next()
+        .map(Into::into)?;
+    if name == "*" {
+        // Wildcards can perhaps be handled in a future path...
+        return None;
     }
+    if name.ends_with('.') {
+        tracing::warn!(%name, "Client DNS SAN must not end with a '.'");
+        return None;
+    }
+    let n = name
+        .parse::<dns::Name>()
+        .map_err(|error| tracing::warn!(%error, "Client certificate contained an invalid DNS name"))
+        .ok()?;
+    Some(ClientId(n.into()))
 }
 
 // === impl ServerIo ===

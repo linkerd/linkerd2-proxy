@@ -7,13 +7,15 @@ use boring::{
     ssl,
     x509::{store::X509StoreBuilder, X509},
 };
+use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
 use std::sync::Arc;
 use tokio::sync::watch;
 
 pub fn watch(
-    identity: id::Name,
+    local_id: id::Id,
+    server_name: dns::Name,
     roots_pem: &str,
     key_pkcs8: &[u8],
     csr: &[u8],
@@ -25,8 +27,8 @@ pub fn watch(
     };
 
     let (tx, rx) = watch::channel(Creds::from(creds.clone()));
-    let rx = Receiver::new(identity.clone(), rx);
-    let store = Store::new(creds, csr, identity, tx);
+    let rx = Receiver::new(local_id, server_name.clone(), rx);
+    let store = Store::new(creds, csr, server_name, tx);
 
     Ok((store, rx))
 }

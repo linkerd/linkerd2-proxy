@@ -14,23 +14,24 @@ on:
       - "**/Cargo.toml"
       - "**/*.rs"
       - .github/workflows/check-each.yml
+      - .github/list-crates.sh
       - justfile
 
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
-  RUSTFLAGS: "-D warnings -A deprecated"
+  RUSTFLAGS: "-D warnings -A deprecated -C debuginfo=0"
 
 jobs:
   list-changed-crates:
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    container: docker://ghcr.io/linkerd/dev:v40-rust
+    container: docker://ghcr.io/linkerd/dev:v42-rust
     steps:
-      - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: tj-actions/changed-files@c9124514c375de5dbb9697afa6f2e36a236ee58c
+      - uses: tj-actions/changed-files@25ef3926d147cd02fc7e931c1ef50772bbb0d25d
         id: changed-files
         with:
           files: |
@@ -39,7 +40,7 @@ jobs:
             .github/workflows/check-each.yml
       - name: List changed crates
         id: changed-crates
-        run: ./.github/list-crates.sh '${{ steps.changed-files.outputs.all_changed_files }}'
+        run: ./.github/list-crates.sh ${{ steps.changed-files.outputs.all_changed_files }}
     outputs:
       crates: ${{ steps.changed-crates.outputs.crates }}
 
@@ -47,12 +48,12 @@ jobs:
     needs: list-changed-crates
     timeout-minutes: 20
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v40-rust
+    container: ghcr.io/linkerd/dev:v42-rust
     strategy:
       matrix:
         crate: ${{ fromJson(needs.list-changed-crates.outputs.crates) }}
     steps:
-      - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: just fetch
       - run: just check-crate ${{ matrix.crate }}

@@ -60,7 +60,8 @@ impl Outbound<()> {
             .push_http_cached(resolve)
             .push_http_server()
             .into_stack()
-            .push_map_target(HttpSidecar::from);
+            .push_map_target(HttpSidecar::from)
+            .arc_new_clone_http();
 
         opaq.push_protocol(http.into_inner())
             // Use a dedicated target type to bind discovery results to the

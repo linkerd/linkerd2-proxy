@@ -6,6 +6,7 @@ on:
       - .github/actions/package/*
       - .github/workflows/release.yml
       - justfile
+      - Cargo.toml # For release build settings
   push:
     tags:
       - "release/*"
@@ -59,18 +60,18 @@ jobs:
     continue-on-error: ${{ !needs.meta.outputs.publish }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    container: docker://ghcr.io/linkerd/dev:v40-rust-musl
+    container: docker://ghcr.io/linkerd/dev:v42-rust-musl
     env:
       LINKERD2_PROXY_VENDOR: ${{ github.repository_owner }}
       LINKERD2_PROXY_VERSION: ${{ needs.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: just fetch
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=release build
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=release package
-      - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce
+      - uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32
         with:
           name: ${{ matrix.arch }}-artifacts
           path: target/package/*

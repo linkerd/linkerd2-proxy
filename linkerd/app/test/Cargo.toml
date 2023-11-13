@@ -24,6 +24,7 @@ linkerd-identity = { path = "../../identity" }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy", optional = true }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 parking_lot = "0.12"
+pin-project = "1"
 regex = "1"
 tokio = { version = "1", features = ["io-util", "net", "rt", "sync"] }
 tokio-test = "0.4"

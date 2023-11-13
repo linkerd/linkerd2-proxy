@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn path_regex() {
-        let m = MatchPath::Regex(r#"/foo/\d+"#.parse().unwrap());
+        let m = MatchPath::Regex(r"/foo/\d+".parse().unwrap());
         assert_eq!(
             m.match_length(&"/foo/4".parse().unwrap()),
             Some(PathMatch::Regex("/foo/4".len()))

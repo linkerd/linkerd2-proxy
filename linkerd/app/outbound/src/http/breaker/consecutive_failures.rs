@@ -1,14 +1,12 @@
 use futures::stream::StreamExt;
 use linkerd_app_core::{classify, exp_backoff::ExponentialBackoff, proxy::http::classify::gate};
-use std::sync::Arc;
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::mpsc;
 
 pub struct ConsecutiveFailures {
     max_failures: usize,
     backoff: ExponentialBackoff,
     gate: gate::Tx,
     rsps: mpsc::Receiver<classify::Class>,
-    semaphore: Arc<Semaphore>,
 }
 
 impl ConsecutiveFailures {
@@ -23,7 +21,6 @@ impl ConsecutiveFailures {
             backoff,
             gate,
             rsps,
-            semaphore: Arc::new(Semaphore::new(0)),
         }
     }
 
@@ -46,7 +43,7 @@ impl ConsecutiveFailures {
     /// observed.
     async fn open(&mut self) -> Result<(), ()> {
         tracing::debug!("Open");
-        self.gate.open();
+        self.gate.open().map_err(|_| ())?;
         let mut failures = 0;
         loop {
             let class = tokio::select! {
@@ -74,7 +71,7 @@ impl ConsecutiveFailures {
         loop {
             // The breaker is shut now. Wait until we can open it again.
             tracing::debug!(backoff = ?backoff.duration(), "Shut");
-            self.gate.shut();
+            self.gate.shut().map_err(|_| ())?;
 
             loop {
                 tokio::select! {
@@ -97,8 +94,7 @@ impl ConsecutiveFailures {
     /// Wait for a response to determine whether the breaker should be opened.
     async fn probation(&mut self) -> Result<classify::Class, ()> {
         tracing::debug!("Probation");
-        self.semaphore.add_permits(1);
-        self.gate.limit(self.semaphore.clone());
+        let _sem = self.gate.limit(1).map_err(|_| ())?;
         tokio::select! {
             rsp = self.rsps.recv() => rsp.ok_or(()),
             _ = self.gate.lost() => Err(()),
@@ -161,7 +157,7 @@ mod tests {
                 assert_eq!(sem.available_permits(), 1);
                 params
                     .gate
-                    .acquire_for_test()
+                    .opened_for_test()
                     .await
                     .expect("permit should be acquired")
                     // The `Gate` service would forget this permit when called, so
@@ -197,7 +193,7 @@ mod tests {
                 assert_eq!(sem.available_permits(), 1);
                 params
                     .gate
-                    .acquire_for_test()
+                    .opened_for_test()
                     .await
                     .expect("permit should be acquired")
                     // The `Gate` service would forget this permit when called, so

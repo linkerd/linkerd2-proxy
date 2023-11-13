@@ -26,7 +26,9 @@ async fn http11_forward() {
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
         .push_http_tcp_client()
-        .push_http_endpoint::<_, http::BoxBody, _>()
+        .push_http_endpoint()
+        .into_stack()
+        .push(classify::NewClassify::layer_default())
         .into_inner();
 
     let svc = stack.new_service(Endpoint {
@@ -60,7 +62,9 @@ async fn http2_forward() {
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
         .push_http_tcp_client()
-        .push_http_endpoint::<_, http::BoxBody, _>()
+        .push_http_endpoint::<http::BoxBody>()
+        .into_stack()
+        .push(classify::NewClassify::layer_default())
         .into_inner();
 
     let svc = stack.new_service(Endpoint {
@@ -96,7 +100,9 @@ async fn orig_proto_upgrade() {
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
         .push_http_tcp_client()
-        .push_http_endpoint::<_, http::BoxBody, _>()
+        .push_http_endpoint::<http::BoxBody>()
+        .into_stack()
+        .push(classify::NewClassify::layer_default())
         .into_inner();
 
     let svc = stack.new_service(Endpoint {
@@ -144,8 +150,9 @@ async fn orig_proto_skipped_on_http_upgrade() {
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
         .push_http_tcp_client()
-        .push_http_endpoint::<_, http::BoxBody, _>()
+        .push_http_endpoint::<http::BoxBody>()
         .into_stack()
+        .push(classify::NewClassify::layer_default())
         .push_on_service(http::BoxRequest::layer())
         // We need the server-side upgrade layer to annotate the request so that the client
         // knows that an HTTP upgrade is in progress.
@@ -191,7 +198,9 @@ async fn orig_proto_http2_noop() {
     let stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
         .push_http_tcp_client()
-        .push_http_endpoint::<_, http::BoxBody, _>()
+        .push_http_endpoint::<http::BoxBody>()
+        .into_stack()
+        .push(classify::NewClassify::layer_default())
         .into_inner();
 
     let svc = stack.new_service(Endpoint {

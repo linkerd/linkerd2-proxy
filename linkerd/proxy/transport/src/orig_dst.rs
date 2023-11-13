@@ -23,6 +23,7 @@ pub struct Addrs<A = listen::Addrs> {
 // === impl Addrs ===
 
 impl<A> Param<OrigDstAddr> for Addrs<A> {
+    #[inline]
     fn param(&self) -> OrigDstAddr {
         self.orig_dst
     }
@@ -32,8 +33,20 @@ impl<A> Param<Remote<ClientAddr>> for Addrs<A>
 where
     A: Param<Remote<ClientAddr>>,
 {
+    #[inline]
     fn param(&self) -> Remote<ClientAddr> {
         self.inner.param()
+    }
+}
+
+impl<A> Param<AddrPair> for Addrs<A>
+where
+    A: Param<Remote<ClientAddr>>,
+{
+    #[inline]
+    fn param(&self) -> AddrPair {
+        let Remote(client) = self.inner.param();
+        AddrPair(client, ServerAddr(self.orig_dst.into()))
     }
 }
 

@@ -7,7 +7,9 @@ use linkerd_app_core::{
     serve,
     svc::{self, ExtractParam, InsertParam, Param},
     tls, trace,
-    transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{
+        self, addrs::AddrPair, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
+    },
     Error, Result,
 };
 use linkerd_app_inbound as inbound;
@@ -34,7 +36,7 @@ struct NonHttpClient(Remote<ClientAddr>);
 
 #[derive(Debug, Error)]
 #[error("Unexpected TLS connection to {} from {}", self.0, self.1)]
-struct UnexpectedSni(tls::ServerId, Remote<ClientAddr>);
+struct UnexpectedSni(tls::ServerName, Remote<ClientAddr>);
 
 #[derive(Clone, Debug)]
 struct Tcp {
@@ -84,7 +86,9 @@ impl Config {
     where
         R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
         B: Bind<ServerConfig>,
-        B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
+        B::Addrs: svc::Param<Remote<ClientAddr>>,
+        B::Addrs: svc::Param<Local<ServerAddr>>,
+        B::Addrs: svc::Param<AddrPair>,
     {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
@@ -93,12 +97,23 @@ impl Config {
 
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
-        let admin = svc::stack(move |_| admin.clone())
-            .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
+        let http = svc::stack(move |_| admin.clone())
+            .push(
+                metrics
+                    .proxy
+                    .http_endpoint
+                    .to_layer::<classify::Response, _, Permitted>(),
+            )
+            .push(classify::NewClassify::layer_default())
             .push_map_target(|(permit, http)| Permitted { permit, http })
-            .push(inbound::policy::NewHttpPolicy::layer(metrics.http_authz.clone()))
+            .push(inbound::policy::NewHttpPolicy::layer(
+                metrics.http_authz.clone(),
+            ))
             .push(Rescue::layer())
             .push_on_service(http::BoxResponse::layer())
+            .arc_new_clone_http();
+
+        let tcp = http
             .unlift_new()
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
             .push_filter(
@@ -142,6 +157,7 @@ impl Config {
                     }
                 },
             )
+            .arc_new_tcp()
             .lift_new_with_target()
             .push(detect::NewDetectService::layer(svc::stack::CloneParam::from(
                 detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT),
@@ -155,12 +171,14 @@ impl Config {
                     policy: policy.clone(),
                 }
             })
+            .arc_new_tcp()
             .push(tls::NewDetectTls::<identity::Server, _, _>::layer(TlsParams {
                 identity,
             }))
+            .arc_new_tcp()
             .into_inner();
 
-        let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
+        let serve = Box::pin(serve::serve(listen, tcp, drain.signaled()));
         Ok(Task {
             listen_addr,
             latch,
@@ -198,6 +216,14 @@ impl Param<OrigDstAddr> for Http {
 impl Param<Remote<ClientAddr>> for Http {
     fn param(&self) -> Remote<ClientAddr> {
         self.tcp.client
+    }
+}
+
+impl Param<AddrPair> for Http {
+    fn param(&self) -> AddrPair {
+        let Remote(client) = self.tcp.client;
+        let Local(server) = self.tcp.addr;
+        AddrPair(client, server)
     }
 }
 

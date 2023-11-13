@@ -2,6 +2,7 @@
 
 #![warn(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
+#![recursion_limit = "256"]
 
 mod test_env;
 
@@ -37,7 +38,6 @@ use socket2::Socket;
 pub use std::collections::HashMap;
 use std::fmt;
 pub use std::future::Future;
-use std::io;
 pub use std::net::SocketAddr;
 use std::pin::Pin;
 pub use std::sync::Arc;
@@ -48,7 +48,6 @@ use tokio::net::TcpListener;
 pub use tokio::sync::oneshot;
 pub use tonic as grpc;
 pub use tower::Service;
-pub use tracing::*;
 
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &str = "RUST_TEST_PATIENCE_MS";

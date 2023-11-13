@@ -49,7 +49,6 @@ impl Gateway {
             )
             // Authorize connections to the gateway.
             .push(self.inbound.authorize_tcp())
-            .push_on_service(svc::BoxService::layer())
-            .push(svc::ArcNewService::layer())
+            .arc_new_tcp()
     }
 }

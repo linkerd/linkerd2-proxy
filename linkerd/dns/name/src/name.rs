@@ -14,7 +14,7 @@
 // ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use std::{fmt, ops::Deref};
+use std::{fmt, ops::Deref, sync::Arc};
 use thiserror::Error;
 
 /// A DNS Name suitable for use in the TLS Server Name Indication (SNI)
@@ -30,7 +30,7 @@ use thiserror::Error;
 ///
 /// [RFC 5280 Section 7.2]: https://tools.ietf.org/html/rfc5280#section-7.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Name(String);
+pub struct Name(Arc<str>);
 
 /// A reference to a DNS Name suitable for use in the TLS Server Name Indication
 /// (SNI) extension and/or for use as the reference hostname for which to verify
@@ -60,12 +60,12 @@ impl Name {
 
     #[inline]
     pub fn as_ref(&self) -> NameRef<'_> {
-        NameRef(self.0.as_str())
+        NameRef(&self.0)
     }
 
     #[inline]
     pub fn as_str(&self) -> &str {
-        self.0.as_str()
+        &self.0
     }
 
     #[inline]
@@ -104,7 +104,7 @@ impl Deref for Name {
 
     #[inline]
     fn deref(&self) -> &str {
-        self.0.as_str()
+        &self.0
     }
 }
 
@@ -130,7 +130,7 @@ impl<'a> NameRef<'a> {
     pub fn to_owned(self) -> Name {
         // NameRef is already guaranteed to be valid ASCII, which is a
         // subset of UTF-8.
-        Name(self.as_str().to_ascii_lowercase())
+        Name(self.as_str().to_ascii_lowercase().into())
     }
 
     #[inline]

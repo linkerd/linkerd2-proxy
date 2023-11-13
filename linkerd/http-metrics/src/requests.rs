@@ -28,7 +28,7 @@ where
 }
 
 #[derive(Debug)]
-struct StatusMetrics<C>
+pub struct StatusMetrics<C>
 where
     C: Hash + Eq,
 {
@@ -87,6 +87,17 @@ impl<C: Hash + Eq> Default for Metrics<C> {
     }
 }
 
+#[cfg(feature = "test-util")]
+impl<C: Hash + Eq> Metrics<C> {
+    pub fn total(&self) -> &Counter {
+        &self.total
+    }
+
+    pub fn by_status(&self) -> &HashMap<Option<http::StatusCode>, StatusMetrics<C>> {
+        &self.by_status
+    }
+}
+
 impl<C: Hash + Eq> LastUpdate for Metrics<C> {
     fn last_update(&self) -> Instant {
         self.last_update
@@ -102,6 +113,20 @@ where
             latency: Histogram::default(),
             by_class: HashMap::default(),
         }
+    }
+}
+
+#[cfg(feature = "test-util")]
+impl<C: Hash + Eq> StatusMetrics<C> {
+    pub fn by_class(&self) -> &HashMap<C, ClassMetrics> {
+        &self.by_class
+    }
+}
+
+#[cfg(feature = "test-util")]
+impl ClassMetrics {
+    pub fn total(&self) -> f64 {
+        self.total.value()
     }
 }
 

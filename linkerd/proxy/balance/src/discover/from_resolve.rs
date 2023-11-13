@@ -30,7 +30,7 @@ pub struct FromResolve<T, R: TryStream> {
 // === impl FromResolve ===
 
 impl<T, R: TryStream> FromResolve<T, R> {
-    pub(super) fn new(resolution: R) -> Self {
+    pub(crate) fn new(resolution: R) -> Self {
         Self {
             resolution,
             active: IndexMap::default(),

@@ -1,5 +1,6 @@
 use crate::{NewClient, Server};
-use linkerd_identity::Name;
+use linkerd_dns_name as dns;
+use linkerd_identity::Id;
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio_rustls::rustls;
@@ -7,7 +8,8 @@ use tokio_rustls::rustls;
 /// Receives TLS config updates to build `NewClient` and `Server` types.
 #[derive(Clone)]
 pub struct Receiver {
-    name: Name,
+    id: Id,
+    name: dns::Name,
     client_rx: watch::Receiver<Arc<rustls::ClientConfig>>,
     server_rx: watch::Receiver<Arc<rustls::ServerConfig>>,
 }
@@ -16,19 +18,26 @@ pub struct Receiver {
 
 impl Receiver {
     pub(super) fn new(
-        name: Name,
+        id: Id,
+        name: dns::Name,
         client_rx: watch::Receiver<Arc<rustls::ClientConfig>>,
         server_rx: watch::Receiver<Arc<rustls::ServerConfig>>,
     ) -> Self {
         Self {
+            id,
             name,
             client_rx,
             server_rx,
         }
     }
 
-    /// Returns the local identity.
-    pub fn name(&self) -> &Name {
+    /// Returns the local server name (i.e. used in mTLS).
+    pub fn local_id(&self) -> &Id {
+        &self.id
+    }
+
+    /// Returns the local server name (i.e. used for SNI).
+    pub fn server_name(&self) -> &dns::Name {
         &self.name
     }
 
@@ -63,7 +72,7 @@ mod tests {
     fn empty_server_config() -> rustls::ServerConfig {
         rustls::ServerConfig::builder()
             .with_safe_defaults()
-            .with_client_cert_verifier(rustls::server::NoClientAuth::new())
+            .with_client_cert_verifier(Arc::new(rustls::server::NoClientAuth))
             .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()))
     }
 
@@ -86,6 +95,7 @@ mod tests {
         let (_, client_rx) = watch::channel(Arc::new(empty_client_config()));
         let receiver = Receiver {
             name: "example".parse().unwrap(),
+            id: "example".parse().unwrap(),
             server_rx,
             client_rx,
         };
@@ -108,6 +118,7 @@ mod tests {
         let (server_tx, server_rx) = watch::channel(init_config.clone());
         let (_, client_rx) = watch::channel(Arc::new(empty_client_config()));
         let receiver = Receiver {
+            id: "example".parse().unwrap(),
             name: "example".parse().unwrap(),
             server_rx,
             client_rx,

@@ -1,4 +1,5 @@
 use super::params::*;
+use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
 use ring::{rand, signature::EcdsaKeyPair};
@@ -12,7 +13,7 @@ pub struct Store {
     server_cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
     key: Arc<EcdsaKeyPair>,
     csr: Arc<[u8]>,
-    name: id::Name,
+    server_name: dns::Name,
     client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
     server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
 }
@@ -54,7 +55,9 @@ pub(super) fn server_config(
     // controlling the set of trusted signature algorithms), but they provide good enough
     // defaults for now.
     // TODO: lock down the verification further.
-    let client_cert_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(roots);
+    let client_cert_verifier = Arc::new(
+        rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(roots),
+    );
     rustls::ServerConfig::builder()
         .with_cipher_suites(TLS_SUPPORTED_CIPHERSUITES)
         .with_safe_default_kx_groups()
@@ -73,7 +76,7 @@ impl Store {
         server_cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
         key: EcdsaKeyPair,
         csr: &[u8],
-        name: id::Name,
+        server_name: dns::Name,
         client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
         server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
     ) -> Self {
@@ -82,7 +85,7 @@ impl Store {
             key: Arc::new(key),
             server_cert_verifier,
             csr: csr.into(),
-            name,
+            server_name,
             client_tx,
             server_tx,
         }
@@ -95,7 +98,7 @@ impl Store {
 
         // Disable session resumption for the time-being until resumption is
         // more tested.
-        cfg.enable_tickets = false;
+        cfg.resumption = rustls::client::Resumption::disabled();
 
         cfg.into()
     }
@@ -103,7 +106,7 @@ impl Store {
     /// Ensures the certificate is valid for the services we terminate for TLS. This assumes that
     /// server cert validation does the same or more validation than client cert validation.
     fn validate(&self, certs: &[rustls::Certificate]) -> Result<()> {
-        let name = rustls::ServerName::try_from(self.name.as_str())
+        let name = rustls::ServerName::try_from(self.server_name.as_str())
             .expect("server name must be a valid DNS name");
         static NO_OCSP: &[u8] = &[];
         let end_entity = &certs[0];
@@ -124,11 +127,6 @@ impl Store {
 }
 
 impl id::Credentials for Store {
-    /// Returns the proxy's identity.
-    fn dns_name(&self) -> &id::Name {
-        &self.name
-    }
-
     /// Returns the CSR that was configured at proxy startup.
     fn gen_certificate_signing_request(&mut self) -> id::DerX509 {
         id::DerX509(self.csr.to_vec())
@@ -183,7 +181,7 @@ impl rustls::sign::SigningKey for Key {
         Some(Box::new(self.clone()))
     }
 
-    fn algorithm(&self) -> rustls::internal::msgs::enums::SignatureAlgorithm {
+    fn algorithm(&self) -> rustls::SignatureAlgorithm {
         SIGNATURE_ALG_RUSTLS_ALGORITHM
     }
 }
@@ -239,9 +237,11 @@ impl rustls::server::ResolvesServerCert for CertResolver {
         hello: rustls::server::ClientHello<'_>,
     ) -> Option<Arc<rustls::sign::CertifiedKey>> {
         let server_name = match hello.server_name() {
-            Some(name) => webpki::DnsNameRef::try_from_ascii_str(name)
-                .expect("server name must be a valid server name"),
-
+            Some(name) => {
+                let name = webpki::DnsNameRef::try_from_ascii_str(name)
+                    .expect("server name must be a valid server name");
+                webpki::SubjectNameRef::DnsName(name)
+            }
             None => {
                 debug!("no SNI -> no certificate");
                 return None;
@@ -251,7 +251,7 @@ impl rustls::server::ResolvesServerCert for CertResolver {
         // Verify that our certificate is valid for the given SNI name.
         let c = self.0.cert.first()?;
         if let Err(error) = webpki::EndEntityCert::try_from(c.as_ref())
-            .and_then(|c| c.verify_is_valid_for_dns_name(server_name))
+            .and_then(|c| c.verify_is_valid_for_subject_name(server_name))
         {
             debug!(%error, "Local certificate is not valid for SNI");
             return None;

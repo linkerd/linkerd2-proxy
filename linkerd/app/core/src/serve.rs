@@ -1,11 +1,11 @@
 use crate::{
     io, is_caused_by,
     svc::{self, Param},
-    transport::{ClientAddr, Remote},
     Result,
 };
 use futures::prelude::*;
 use linkerd_error::Error;
+use linkerd_proxy_transport::AddrPair;
 use tower::util::ServiceExt;
 use tracing::{debug, debug_span, info, instrument::Instrument, warn};
 
@@ -18,7 +18,7 @@ pub async fn serve<M, S, I, A>(
     shutdown: impl Future,
 ) where
     I: Send + 'static,
-    A: Param<Remote<ClientAddr>>,
+    A: Param<AddrPair>,
     M: svc::NewService<A, Service = S>,
     S: tower::Service<io::ScopedIo<I>, Response = ()> + Send + 'static,
     S::Error: Into<Error>,
@@ -40,8 +40,8 @@ pub async fn serve<M, S, I, A>(
                     };
 
                     // The local addr should be instrumented from the listener's context.
-                    let Remote(ClientAddr(client_addr)) = addrs.param();
-                    let span = debug_span!("accept", client.addr = %client_addr).entered();
+                    let AddrPair(client_addr, server_addr) = addrs.param();
+                    let span = debug_span!("accept", client.addr = %client_addr, server.addr = %server_addr).entered();
                     let accept = new_accept.new_service(addrs);
 
                     // Dispatch all of the work for a given connection onto a
@@ -57,10 +57,20 @@ pub async fn serve<M, S, I, A>(
                                     {
                                         Ok(()) => debug!("Connection closed"),
                                         Err(reason) if is_caused_by::<std::io::Error>(&*reason) => {
-                                            debug!(%reason, "Connection closed")
+                                            debug!(
+                                                reason,
+                                                client.addr = %client_addr,
+                                                server.addr = %server_addr,
+                                                "Connection closed"
+                                            );
                                         }
                                         Err(error) => {
-                                            info!(error, client.addr = %client_addr, "Connection closed")
+                                            info!(
+                                                error,
+                                                client.addr = %client_addr,
+                                                server.addr = %server_addr,
+                                                "Connection closed"
+                                            );
                                         }
                                     }
                                     // Hold the service until the connection is complete. This

@@ -161,7 +161,10 @@ async fn upgraded_request_remains_relative_form() {
             Metadata::default(),
         );
         gateway
-            .http(move |_: _| inner.clone(), resolve)
+            .http(
+                svc::ArcNewHttp::new(move |_: _| svc::BoxHttp::new(inner.clone())),
+                resolve,
+            )
             .new_service(Target)
     };
 
@@ -219,7 +222,7 @@ impl Test {
 
         let new = NewHttpGateway::new(
             move |_: _| outbound.clone(),
-            tls::LocalId("gateway.id.test".parse().unwrap()),
+            "gateway.id.test".parse().unwrap(),
         );
 
         #[derive(Clone, Debug)]

@@ -2,6 +2,7 @@ mod receiver;
 mod store;
 
 pub use self::{receiver::Receiver, store::Store};
+use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
 use ring::{error::KeyRejected, signature::EcdsaKeyPair};
@@ -20,7 +21,8 @@ pub struct InvalidKey(KeyRejected);
 pub struct InvalidTrustRoots(());
 
 pub fn watch(
-    identity: id::Name,
+    local_id: id::Id,
+    server_name: dns::Name,
     roots_pem: &str,
     key_pkcs8: &[u8],
     csr: &[u8],
@@ -65,7 +67,11 @@ pub fn watch(
         // client certificate resolver.
         let mut c =
             store::client_config_builder(server_cert_verifier.clone()).with_no_client_auth();
-        c.enable_tickets = false;
+
+        // Disable session resumption for the time-being until resumption is
+        // more tested.
+        c.resumption = rustls::client::Resumption::disabled();
+
         watch::channel(Arc::new(c))
     };
     let (server_tx, server_rx) = {
@@ -76,13 +82,13 @@ pub fn watch(
         watch::channel(store::server_config(roots.clone(), empty_resolver))
     };
 
-    let rx = Receiver::new(identity.clone(), client_rx, server_rx);
+    let rx = Receiver::new(local_id, server_name.clone(), client_rx, server_rx);
     let store = Store::new(
         roots,
         server_cert_verifier,
         key,
         csr,
-        identity,
+        server_name,
         client_tx,
         server_tx,
     );
@@ -93,6 +99,7 @@ pub fn watch(
 #[cfg(feature = "test-util")]
 pub fn for_test(ent: &linkerd_tls_test_util::Entity) -> (Store, Receiver) {
     watch(
+        ent.name.parse().expect("id must be valid"),
         ent.name.parse().expect("name must be valid"),
         std::str::from_utf8(ent.trust_anchors).expect("roots must be PEM"),
         ent.key,
@@ -114,8 +121,8 @@ mod params {
         &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING;
     pub const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
         rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
-    pub const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
-        rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
+    pub const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::SignatureAlgorithm =
+        rustls::SignatureAlgorithm::ECDSA;
     pub static TLS_VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
     pub static TLS_SUPPORTED_CIPHERSUITES: &[rustls::SupportedCipherSuite] =
         &[rustls::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256];

@@ -1,9 +1,6 @@
 use super::set_identity_header::NewSetIdentityHeader;
 use crate::{policy, Inbound};
-pub use linkerd_app_core::proxy::http::{
-    normalize_uri, strip_header, uri, BoxBody, BoxResponse, DetectHttp, Request, Response, Retain,
-    Version,
-};
+pub use linkerd_app_core::proxy::http::{normalize_uri, Version};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     errors, http_tracing, io,
@@ -31,19 +28,7 @@ struct ServerError {
 impl<H> Inbound<H> {
     /// Prepares HTTP requests for inbound processing. Fails requests when the
     /// `HSvc`-typed inner service is not ready.
-    pub fn push_http_server<T, HSvc>(
-        self,
-    ) -> Inbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    >
+    pub fn push_http_server<T, HSvc>(self) -> Inbound<svc::ArcNewCloneHttp<T>>
     where
         // Connection target.
         T: Param<Version>
@@ -75,39 +60,32 @@ impl<H> Inbound<H> {
                 // the request may have been downgraded from a HTTP/2 orig-proto request.
                 .push(http::NewNormalizeUri::layer())
                 .push(NewSetIdentityHeader::layer(()))
-                .push_on_service(
-                    svc::layers()
-                        // Downgrades the protocol if upgraded by an outbound proxy.
-                        .push(http::orig_proto::Downgrade::layer())
-                        // Limit the number of in-flight inbound requests.
-                        //
-                        // TODO(ver) This concurrency limit applies only to
-                        // requests that do not yet have responses, but ignores
-                        // streaming bodies. We should change this to an
-                        // HTTP-specific imlementation that tracks request and
-                        // response bodies.
-                        .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
-                        // Shed load by failing requests when the concurrency
-                        // limit is reached.
-                        .push(svc::LoadShed::layer()),
-                )
+                // Downgrades the protocol if upgraded by an outbound proxy.
+                .push_on_service(http::orig_proto::Downgrade::layer())
+                // Limit the number of in-flight inbound requests.
+                //
+                // TODO(ver) This concurrency limit applies only to
+                // requests that do not yet have responses, but ignores
+                // streaming bodies. We should change this to an
+                // HTTP-specific imlementation that tracks request and
+                // response bodies.
+                .push_on_service(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
+                // Shed load by failing requests when the concurrency
+                // limit is reached.
+                .push_on_service(svc::LoadShed::layer())
                 .push(svc::NewMapErr::layer_from_target::<ServerError, _>())
                 .push_on_service(svc::MapErr::layer_boxed())
                 .push(rt.metrics.http_errors.to_layer())
                 .push(ServerRescue::layer())
-                .push_on_service(
-                    svc::layers()
-                        .push(http_tracing::server(
-                            rt.span_sink.clone(),
-                            super::trace_labels(),
-                        ))
-                        // Record when an HTTP/1 URI was in absolute form
-                        .push(http::normalize_uri::MarkAbsoluteForm::layer())
-                        .push(http::BoxResponse::layer()),
-                )
+                .push_on_service(http_tracing::server(
+                    rt.span_sink.clone(),
+                    super::trace_labels(),
+                ))
+                // Record when an HTTP/1 URI was in absolute form
+                .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
+                .push_on_service(http::BoxResponse::layer())
                 .push(NewAccessLog::layer())
-                .check_new_service::<T, http::Request<_>>()
-                .push(svc::ArcNewService::layer())
+                .arc_new_clone_http()
         })
     }
 
@@ -144,8 +122,7 @@ impl<H> Inbound<H> {
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
                 .check_new_service::<T, I>()
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_new_tcp()
         })
     }
 }

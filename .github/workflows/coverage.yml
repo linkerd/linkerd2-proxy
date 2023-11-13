@@ -14,7 +14,7 @@ on:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
-  RUSTFLAGS: "-D warnings -A deprecated"
+  RUSTFLAGS: "-D warnings -A deprecated -C debuginfo=2"
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
@@ -23,10 +23,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
-      image: docker://ghcr.io/linkerd/dev:v40-rust
+      image: docker://ghcr.io/linkerd/dev:v42-rust
       options: --security-opt seccomp=unconfined # 🤷
     steps:
-      - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+      # XXX(ver) Workaround for a linking problem in the binary we store in the
+      # devcontainer.
+      - run: rm -f /usr/local/bin/cargo-tarpaulin && cargo install cargo-tarpaulin
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       # XXX(ver) AFAICT, Tarpaulin doesn't allow us to compose a report over multiple invocations,
       # so we have to choose between getting coverage from unit tests and integration tests (since
       # integration tests require --no-default-features to avoid flakiness). Currently the
@@ -35,4 +38,5 @@ jobs:
       #- run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-app-integration --skip-clean --ignore-tests --no-fail-fast --out=Xml
       - run: cargo tarpaulin --locked --packages=linkerd-app-integration --no-default-features --skip-clean --no-run
       - run: cargo tarpaulin --locked --packages=linkerd-app-integration --no-default-features --skip-clean --ignore-tests --no-fail-fast --out=Xml
+        continue-on-error: true
       - uses: codecov/codecov-action@d9f34f8cd5cb3b3eb79b3e4b5dae3a16df499a70
