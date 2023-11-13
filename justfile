@@ -196,7 +196,32 @@ action-lint:
     @just-dev lint-actions
 
 action-dev-check:
-    @just-dev check-action-images
+    #!/usr/bin/env bash
+    # TODO(ver) consolidate this again with just-dev
+    #@just-dev check-action-images
+    set -euo pipefail
+    VERSION=$(j5j .devcontainer/devcontainer.json |jq -r '.build.args["DEV_VERSION"]')
+    EX=0
+    while IFS= read filelineimg ; do
+        # Parse lines in the form `file:line img:tag`
+        fileline="${filelineimg%% *}"
+        file="${fileline%%:*}"
+        line="${fileline##*:}"
+        img="${filelineimg##* }"
+        name="${img%%:*}"
+        # Tag may be in the form of `version[-variant]`
+        tag="${img##*:}"
+        version="${tag%%-*}"
+        if [ "$name" = 'ghcr.io/linkerd/dev' ] && [ "$version" != "$VERSION" ]; then
+            if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+                echo "::error file=${file},line=${line}::Expected image 'ghcr.io/linkerd/dev:$VERSION'; found '${img}'" >&2
+            else
+                echo "${file}:${line}: Expected image 'ghcr.io/linkerd/dev:$VERSION'; found '${img}'" >&2
+            fi
+            EX=$(( EX+1 ))
+        fi
+    done < <( /usr/local/bin/action-images )
+    exit $EX
 
 ##
 ## Linkerd
