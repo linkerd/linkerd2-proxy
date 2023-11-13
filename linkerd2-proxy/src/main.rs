@@ -22,9 +22,9 @@ use linkerd_signal as signal;
 use tokio::{sync::mpsc, time};
 pub use tracing::{debug, error, info, warn};
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod rt;
 
