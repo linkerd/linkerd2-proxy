@@ -18,9 +18,11 @@ impl AnySanVerifier {
     }
 }
 
-// Note that this logic is almost identical to the implementation of
-// `rustls::client::WebPkiVerifier`` that cab be found here:
+// This is derived from `rustls::client::WebPkiVerifier`.
+//
+//   Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com>
 // https://github.com/rustls/rustls/blob/ccb79947a4811412ee7dcddcd0f51ea56bccf101/rustls/src/webpki/server_verifier.rs#L239
+//
 // The only difference is that we omit the step that performs
 // DNS SAN validation. The reason for that stems from the fact that
 // SAN validation in rustls is limited to DNS SANs only while we
