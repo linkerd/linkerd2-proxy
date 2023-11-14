@@ -1,4 +1,5 @@
 use super::params::*;
+use super::verify;
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
@@ -13,6 +14,7 @@ pub struct Store {
     server_cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
     key: Arc<EcdsaKeyPair>,
     csr: Arc<[u8]>,
+    server_id: id::Id,
     server_name: dns::Name,
     client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
     server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
@@ -71,11 +73,13 @@ pub(super) fn server_config(
 // === impl Store ===
 
 impl Store {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         roots: rustls::RootCertStore,
         server_cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
         key: EcdsaKeyPair,
         csr: &[u8],
+        server_id: id::Id,
         server_name: dns::Name,
         client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
         server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
@@ -85,6 +89,7 @@ impl Store {
             key: Arc::new(key),
             server_cert_verifier,
             csr: csr.into(),
+            server_id,
             server_name,
             client_tx,
             server_tx,
@@ -121,8 +126,9 @@ impl Store {
             NO_OCSP,
             now,
         )?;
-        debug!("Certified");
-        Ok(())
+
+        // verify the id as the cert verifier does not do that (on purpose)
+        verify::verify_id(end_entity, &self.server_id).map_err(Into::into)
     }
 }
 
@@ -236,27 +242,6 @@ impl rustls::server::ResolvesServerCert for CertResolver {
         &self,
         hello: rustls::server::ClientHello<'_>,
     ) -> Option<Arc<rustls::sign::CertifiedKey>> {
-        let server_name = match hello.server_name() {
-            Some(name) => {
-                let name = webpki::DnsNameRef::try_from_ascii_str(name)
-                    .expect("server name must be a valid server name");
-                webpki::SubjectNameRef::DnsName(name)
-            }
-            None => {
-                debug!("no SNI -> no certificate");
-                return None;
-            }
-        };
-
-        // Verify that our certificate is valid for the given SNI name.
-        let c = self.0.cert.first()?;
-        if let Err(error) = webpki::EndEntityCert::try_from(c.as_ref())
-            .and_then(|c| c.verify_is_valid_for_subject_name(server_name))
-        {
-            debug!(%error, "Local certificate is not valid for SNI");
-            return None;
-        };
-
         self.resolve_(hello.signature_schemes())
     }
 }

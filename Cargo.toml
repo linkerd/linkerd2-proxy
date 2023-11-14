@@ -36,6 +36,7 @@ members = [
     "linkerd/meshtls",
     "linkerd/meshtls/boring",
     "linkerd/meshtls/rustls",
+    "linkerd/meshtls/test-util",
     "linkerd/metrics",
     "linkerd/opencensus",
     "linkerd/proxy/api-resolve",

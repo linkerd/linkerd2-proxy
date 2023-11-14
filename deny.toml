@@ -73,6 +73,9 @@ skip = [
     # `tonic` v0.6 depends on `bitflags` v1.x, while `boring-sys` depends on
     # `bitflags` v2.x. Allow both versions to coexist peacefully for now.
     { name = "bitflags", version = "1" },
+    # `linkerd-trace-context`, `rustls-pemfile` and `tonic` depend on `base64`
+    # v0.13.1 while `rcgen` depends on v0.21.5
+    { name = "base64" },
 ]
 skip-tree = [
     # right now we have a mix of versions of this crate in the ecosystem

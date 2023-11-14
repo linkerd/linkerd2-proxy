@@ -1,9 +1,11 @@
+use crate::creds::verify;
 use crate::creds::CredsRx;
+use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef, ServerName};
 use std::{future::Future, pin::Pin, sync::Arc, task::Context};
-use tracing::debug;
+use tracing::{debug, trace};
 
 #[derive(Clone)]
 pub struct NewClient(CredsRx);
@@ -12,6 +14,7 @@ pub struct NewClient(CredsRx);
 pub struct Connect {
     rx: CredsRx,
     alpn: Option<Arc<[Vec<u8>]>>,
+    id: id::Id,
     server: ServerName,
 }
 
@@ -50,6 +53,7 @@ impl Connect {
             rx,
             alpn: client_tls.alpn.map(|AlpnProtocols(ps)| ps.into()),
             server: client_tls.server_name,
+            id: client_tls.server_id.into(),
         }
     }
 }
@@ -68,24 +72,42 @@ where
 
     fn call(&mut self, io: I) -> Self::Future {
         let server_name = self.server.clone();
+        let server_id = self.id.clone();
         let connector = self
             .rx
             .borrow()
             .connector(self.alpn.as_deref().unwrap_or(&[]));
         Box::pin(async move {
-            let conn = connector.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            let config = conn
+            let config = connector
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
                 .configure()
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            let io = tokio_boring::connect(config, server_name.as_str(), io)
+
+            // Establish a TLS connection to the server using the provided
+            // `server_name` as an SNI value to the server.
+            //
+            // Hostname verification is DISABLED, as we do not require that the
+            // peer's certificate actually matches the `server_name`. Instead,
+            // the `server_id` is used to perform the appropriate form of
+            // verification after the session is established.
+            let io = tokio_boring::connect(config.verify_hostname(false), server_name.as_str(), io)
                 .await
                 .map_err(|e| match e.as_io_error() {
                     // TODO(ver) boring should let us take ownership of the error directly.
                     Some(ioe) => io::Error::new(ioe.kind(), ioe.to_string()),
-                    // XXX(ver) to use the boring error directly here we have to constraint the socket on Sync +
-                    // std::fmt::Debug, which is a pain.
+                    // XXX(ver) to use the boring error directly here we have to
+                    // constrain the socket on Sync + std::fmt::Debug, which is
+                    // a pain.
                     None => io::Error::new(io::ErrorKind::Other, "unexpected TLS handshake error"),
                 })?;
+
+            // Servers must present a peer certificate. We extract the x509 cert
+            // and verify it manually against the `server_id`.
+            let cert = io.ssl().peer_certificate().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::Other, "could not extract peer cert")
+            })?;
+            verify::verify_id(&cert, &server_id)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
             debug!(
                 tls = io.ssl().version_str(),
@@ -94,6 +116,7 @@ where
                 alpn = ?io.ssl().selected_alpn_protocol(),
                 "Initiated TLS connection"
             );
+            trace!(peer.id = %server_id, peer.name = %server_name);
             Ok(ClientIo(io))
         })
     }

@@ -29,3 +29,6 @@ linkerd-tls-test-util = { path = "../../tls/test-util", optional = true }
 
 [dev-dependencies]
 linkerd-tls-test-util = { path = "../../tls/test-util" }
+linkerd-meshtls = { path = "../../meshtls" }
+linkerd-meshtls-test-util = { path = "../test-util" }
+
