@@ -101,6 +101,11 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         let server_id = self.server_id.clone();
         Box::pin(
+            // Connect to the server, sending the `server_name` SNI in the
+            // client handshake. The provided config should use the
+            // `AnySanVerifier` to ignore the server certificate's DNS SANs.
+            // Instead, we extract the server's leaf certificate after the
+            // handshake and verify that it matches the provided `server_id``.
             tokio_rustls::TlsConnector::from(self.config.clone())
                 // XXX(eliza): it's a bummer that the server name has to be cloned here...
                 .connect(self.server_name.clone(), io)

@@ -25,7 +25,6 @@ linkerd-meshtls-boring = { path = "boring", optional = true }
 linkerd-meshtls-rustls = { path = "rustls", optional = true }
 linkerd-stack = { path = "../stack" }
 linkerd-tls = { path = "../tls" }
-rcgen = "0.11.3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }

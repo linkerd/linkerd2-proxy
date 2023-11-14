@@ -18,6 +18,13 @@ impl AnySanVerifier {
     }
 }
 
+// Note that this logic is almost identical to the implementation of
+// `rustls::client::WebPkiVerifier`` that cab be found here:
+// https://github.com/rustls/rustls/blob/ccb79947a4811412ee7dcddcd0f51ea56bccf101/rustls/src/webpki/server_verifier.rs#L239
+// The only difference is that we omit the step that performs
+// DNS SAN validation. The reason for that stems from the fact that
+// SAN validation in rustls is limited to DNS SANs only while we
+// want to support alternative SAN types (e.g. URI).
 impl ServerCertVerifier for AnySanVerifier {
     /// Will verify the certificate is valid in the following ways:
     /// - Signed by a  trusted `RootCertStore` CA
@@ -58,7 +65,7 @@ pub(crate) fn verify_id(end_entity: &Certificate, id: &id::Id) -> io::Result<()>
 #[cfg(test)]
 mod tests {
     use super::verify_id;
-    use linkerd_meshtls::verify_tests;
+    use linkerd_meshtls_test_util as test_util;
     use tokio_rustls::rustls::Certificate;
 
     fn vec_to_cert(data: Vec<u8>) -> Certificate {
@@ -67,31 +74,31 @@ mod tests {
 
     #[test]
     fn cert_with_dns_san_matches_dns_id() {
-        verify_tests::cert_with_dns_san_matches_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_dns_san_matches_dns_id(verify_id, vec_to_cert);
     }
 
     #[test]
     fn cert_with_dns_san_does_not_match_dns_id() {
-        verify_tests::cert_with_dns_san_does_not_match_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_dns_san_does_not_match_dns_id(verify_id, vec_to_cert);
     }
 
     #[test]
     fn cert_with_uri_san_does_not_match_dns_id() {
-        verify_tests::cert_with_uri_san_does_not_match_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_uri_san_does_not_match_dns_id(verify_id, vec_to_cert);
     }
 
     #[test]
     fn cert_with_no_san_does_not_verify_for_dns_id() {
-        verify_tests::cert_with_no_san_does_not_verify_for_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_no_san_does_not_verify_for_dns_id(verify_id, vec_to_cert);
     }
 
     #[test]
     fn cert_with_dns_multiple_sans_one_matches_dns_id() {
-        verify_tests::cert_with_dns_multiple_sans_one_matches_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_dns_multiple_sans_one_matches_dns_id(verify_id, vec_to_cert);
     }
 
     #[test]
     fn cert_with_dns_multiple_sans_none_matches_dns_id() {
-        verify_tests::cert_with_dns_multiple_sans_none_matches_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_dns_multiple_sans_none_matches_dns_id(verify_id, vec_to_cert);
     }
 }

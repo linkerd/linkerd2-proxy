@@ -24,7 +24,7 @@ pub(crate) fn verify_id(cert: &X509, id: &id::Id) -> io::Result<()> {
 mod tests {
     use super::verify_id;
     use boring::x509::X509;
-    use linkerd_meshtls::verify_tests;
+    use linkerd_meshtls_test_util as test_util;
 
     fn vec_to_cert(data: Vec<u8>) -> X509 {
         X509::from_der(data.as_slice()).expect("should parse")
@@ -32,31 +32,31 @@ mod tests {
 
     #[test]
     fn cert_with_dns_san_matches_dns_id() {
-        verify_tests::cert_with_dns_san_matches_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_dns_san_matches_dns_id(verify_id, vec_to_cert);
     }
 
     #[test]
     fn cert_with_dns_san_does_not_match_dns_id() {
-        verify_tests::cert_with_dns_san_does_not_match_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_dns_san_does_not_match_dns_id(verify_id, vec_to_cert);
     }
 
     #[test]
     fn cert_with_uri_san_does_not_match_dns_id() {
-        verify_tests::cert_with_uri_san_does_not_match_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_uri_san_does_not_match_dns_id(verify_id, vec_to_cert);
     }
 
     #[test]
     fn cert_with_no_san_does_not_verify_for_dns_id() {
-        verify_tests::cert_with_no_san_does_not_verify_for_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_no_san_does_not_verify_for_dns_id(verify_id, vec_to_cert);
     }
 
     #[test]
     fn cert_with_dns_multiple_sans_one_matches_dns_id() {
-        verify_tests::cert_with_dns_multiple_sans_one_matches_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_dns_multiple_sans_one_matches_dns_id(verify_id, vec_to_cert);
     }
 
     #[test]
     fn cert_with_dns_multiple_sans_none_matches_dns_id() {
-        verify_tests::cert_with_dns_multiple_sans_none_matches_dns_id(verify_id, vec_to_cert);
+        test_util::cert_with_dns_multiple_sans_none_matches_dns_id(verify_id, vec_to_cert);
     }
 }

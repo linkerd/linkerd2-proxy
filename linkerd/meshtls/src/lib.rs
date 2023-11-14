@@ -15,7 +15,6 @@
 mod client;
 pub mod creds;
 mod server;
-pub mod verify_tests;
 
 pub use self::{
     client::{ClientIo, Connect, ConnectFuture, NewClient},
