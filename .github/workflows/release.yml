@@ -7,6 +7,7 @@ on:
       - .github/workflows/release.yml
       - justfile
       - Cargo.toml # For release build settings
+      - linkerd2-proxy/* # For top-level binary changes
   push:
     tags:
       - "release/*"
