@@ -131,6 +131,7 @@ pub mod fuzz {
             .with_stack(connect)
             .push_http_router(profiles)
             .push_http_server()
+            .push_http_tcp_server()
             .into_inner()
     }
 
@@ -252,8 +253,8 @@ pub mod fuzz {
         }
     }
 
-    impl svc::Param<Option<identity::Name>> for Target {
-        fn param(&self) -> Option<identity::Name> {
+    impl svc::Param<Option<identity::Id>> for Target {
+        fn param(&self) -> Option<identity::Id> {
             None
         }
     }

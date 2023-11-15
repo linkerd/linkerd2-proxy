@@ -1,4 +1,4 @@
-use super::{BaseCreds, Certs, Creds, CredsTx};
+use super::{verify, BaseCreds, Certs, Creds, CredsTx};
 use boring::x509::{X509StoreContext, X509};
 use linkerd_error::Result;
 use linkerd_identity as id;
@@ -7,43 +7,24 @@ use std::sync::Arc;
 pub struct Store {
     creds: Arc<BaseCreds>,
     csr: Vec<u8>,
-    name: id::Name,
+    id: id::Id,
     tx: CredsTx,
 }
 
 // === impl Store ===
 
 impl Store {
-    pub(super) fn new(creds: Arc<BaseCreds>, csr: &[u8], name: id::Name, tx: CredsTx) -> Self {
+    pub(super) fn new(creds: Arc<BaseCreds>, csr: &[u8], id: id::Id, tx: CredsTx) -> Self {
         Self {
             creds,
             csr: csr.into(),
-            name,
+            id,
             tx,
         }
-    }
-
-    fn cert_matches_name(&self, cert: &X509) -> bool {
-        for san in cert.subject_alt_names().into_iter().flatten() {
-            if let Some(n) = san.dnsname() {
-                if let Ok(name) = n.parse::<linkerd_dns_name::Name>() {
-                    if name == *self.name {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        false
     }
 }
 
 impl id::Credentials for Store {
-    /// Returns the proxy's identity.
-    fn dns_name(&self) -> &id::Name {
-        &self.name
-    }
-
     /// Returns the CSR that was configured at proxy startup.
     fn gen_certificate_signing_request(&mut self) -> id::DerX509 {
         id::DerX509(self.csr.to_vec())
@@ -57,9 +38,8 @@ impl id::Credentials for Store {
         _expiry: std::time::SystemTime,
     ) -> Result<()> {
         let leaf = X509::from_der(&leaf)?;
-        if !self.cert_matches_name(&leaf) {
-            return Err("certificate does not have a DNS name SAN for the local identity".into());
-        }
+
+        verify::verify_id(&leaf, &self.id)?;
 
         let intermediates = intermediates
             .into_iter()

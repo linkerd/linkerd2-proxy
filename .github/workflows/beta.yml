@@ -22,12 +22,12 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v40-rust
+    container: ghcr.io/linkerd/dev:v42-rust
     timeout-minutes: 20
     continue-on-error: true
     steps:
       - run: rustup toolchain install --profile=minimal beta
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: just toolchain=beta fetch
       - run: just toolchain=beta build

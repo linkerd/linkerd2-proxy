@@ -38,8 +38,9 @@ macro_rules! new_svc {
             connection: $conn,
             metrics: HttpAuthzMetrics::default(),
             inner: |(permit, _): (HttpRoutePermit, ())| {
+                let f = $rsp;
                 svc::mk(move |req: ::http::Request<hyper::Body>| {
-                    futures::future::ready($rsp(permit.clone(), req))
+                    futures::future::ready((f)(permit.clone(), req))
                 })
             },
         };

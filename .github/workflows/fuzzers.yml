@@ -17,7 +17,7 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUST_BACKTRACE: short
-  RUSTFLAGS: "-D warnings -A deprecated"
+  RUSTFLAGS: "-D warnings -A deprecated -C debuginfo=0"
   RUSTUP_MAX_RETRIES: 10
 
 permissions:
@@ -27,12 +27,12 @@ jobs:
   list-changed:
     timeout-minutes: 3
     runs-on: ubuntu-latest
-    container: docker://rust:1.69.0-bullseye
+    container: docker://rust:1.73.0
     steps:
       - run: apt update && apt install -y jo
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: tj-actions/changed-files@8238a4103220c636f2dad328ead8a7c8dbe316a3
+      - uses: tj-actions/changed-files@25ef3926d147cd02fc7e931c1ef50772bbb0d25d
         id: changed-files
       - name: list changed crates
         id: list-changed
@@ -48,14 +48,14 @@ jobs:
     needs: [list-changed]
     timeout-minutes: 40
     runs-on: ubuntu-latest
-    container: docker://rust:1.69.0-bullseye
+    container: docker://rust:1.73.0
     strategy:
       matrix:
         dir: ${{ fromJson(needs.list-changed.outputs.dirs) }}
     steps:
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - working-directory: ${{matrix.dir}}
         run: cargo +nightly fetch

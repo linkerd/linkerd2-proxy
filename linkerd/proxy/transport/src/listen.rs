@@ -104,3 +104,12 @@ impl Param<Local<ServerAddr>> for Addrs {
         self.server
     }
 }
+
+impl Param<AddrPair> for Addrs {
+    #[inline]
+    fn param(&self) -> AddrPair {
+        let Remote(client) = self.client;
+        let Local(server) = self.server;
+        AddrPair(client, server)
+    }
+}

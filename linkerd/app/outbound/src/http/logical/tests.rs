@@ -29,7 +29,7 @@ async fn routes() {
     let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
-        .with_stack(connect)
+        .with_stack(svc::ArcNewService::new(connect))
         .push_http_cached(resolve)
         .into_inner();
 
@@ -72,7 +72,7 @@ async fn consecutive_failures_accrue() {
     let (rt, _shutdown) = runtime();
     let cfg = default_config();
     let stack = Outbound::new(cfg.clone(), rt)
-        .with_stack(connect)
+        .with_stack(svc::ArcNewService::new(connect))
         .push_http_cached(resolve)
         .into_inner();
 
@@ -235,7 +235,7 @@ async fn balancer_doesnt_select_tripped_breakers() {
     let (rt, _shutdown) = runtime();
     let cfg = default_config();
     let stack = Outbound::new(cfg.clone(), rt)
-        .with_stack(connect)
+        .with_stack(svc::ArcNewService::new(connect))
         .push_http_cached(resolve)
         .into_inner();
 
@@ -323,7 +323,7 @@ async fn route_request_timeout() {
     let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
-        .with_stack(connect)
+        .with_stack(svc::ArcNewService::new(connect))
         .push_http_cached(resolve)
         .into_inner();
 
@@ -386,7 +386,7 @@ async fn backend_request_timeout() {
     let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
-        .with_stack(connect)
+        .with_stack(svc::ArcNewService::new(connect))
         .push_http_cached(resolve)
         .into_inner();
 
@@ -502,14 +502,16 @@ impl HttpConnect {
 }
 
 impl<T: svc::Param<Remote<ServerAddr>>> svc::NewService<T> for HttpConnect {
-    type Service = MockSvc;
+    type Service = svc::BoxHttp;
     fn new_service(&self, target: T) -> Self::Service {
         let Remote(ServerAddr(addr)) = target.param();
-        self.svcs
-            .lock()
-            .get(&addr)
-            .expect("tried to connect to an unexpected address")
-            .clone()
+        svc::BoxHttp::new(
+            self.svcs
+                .lock()
+                .get(&addr)
+                .expect("tried to connect to an unexpected address")
+                .clone(),
+        )
     }
 }
 

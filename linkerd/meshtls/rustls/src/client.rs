@@ -1,4 +1,6 @@
+use super::creds::verify;
 use futures::prelude::*;
+use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef};
@@ -15,14 +17,12 @@ pub struct NewClient {
 /// A `Service` that initiates client-side TLS connections.
 #[derive(Clone)]
 pub struct Connect {
-    server_id: rustls::ServerName,
+    server_id: id::Id,
+    server_name: rustls::ServerName,
     config: Arc<ClientConfig>,
 }
 
-pub type ConnectFuture<I> = futures::future::MapOk<
-    tokio_rustls::Connect<I>,
-    fn(tokio_rustls::client::TlsStream<I>) -> ClientIo<I>,
->;
+pub type ConnectFuture<I> = Pin<Box<dyn Future<Output = io::Result<ClientIo<I>>> + Send>>;
 
 #[derive(Debug)]
 pub struct ClientIo<I>(tokio_rustls::client::TlsStream<I>);
@@ -68,16 +68,27 @@ impl Connect {
             }
         };
 
-        let server_id = rustls::ServerName::try_from(client_tls.server_id.as_str())
+        let server_name = rustls::ServerName::try_from(client_tls.server_name.as_str())
             .expect("identity must be a valid DNS name");
 
-        Self { server_id, config }
+        Self {
+            server_id: client_tls.server_id.into(),
+            server_name,
+            config,
+        }
+    }
+}
+
+fn extract_cert(c: &rustls::ClientConnection) -> io::Result<&rustls::Certificate> {
+    match c.peer_certificates().and_then(|certs| certs.first()) {
+        Some(leaf_cert) => io::Result::Ok(leaf_cert),
+        None => Err(io::Error::new(io::ErrorKind::Other, "missing tls end cert")),
     }
 }
 
 impl<I> Service<I> for Connect
 where
-    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
 {
     type Response = ClientIo<I>;
     type Error = io::Error;
@@ -88,10 +99,24 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        tokio_rustls::TlsConnector::from(self.config.clone())
-            // XXX(eliza): it's a bummer that the server name has to be cloned here...
-            .connect(self.server_id.clone(), io)
-            .map_ok(ClientIo)
+        let server_id = self.server_id.clone();
+        Box::pin(
+            // Connect to the server, sending the `server_name` SNI in the
+            // client handshake. The provided config should use the
+            // `AnySanVerifier` to ignore the server certificate's DNS SANs.
+            // Instead, we extract the server's leaf certificate after the
+            // handshake and verify that it matches the provided `server_id``.
+            tokio_rustls::TlsConnector::from(self.config.clone())
+                // XXX(eliza): it's a bummer that the server name has to be cloned here...
+                .connect(self.server_name.clone(), io)
+                .map(move |s| {
+                    let s = s?;
+                    let (_, conn) = s.get_ref();
+                    let end_cert = extract_cert(conn)?;
+                    verify::verify_id(end_cert, &server_id)?;
+                    Ok(ClientIo(s))
+                }),
+        )
     }
 }
 

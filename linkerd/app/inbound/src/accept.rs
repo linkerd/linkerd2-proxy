@@ -74,8 +74,7 @@ impl<N> Inbound<N> {
                     let OrigDstAddr(addr) = t.param();
                     info_span!("server", port = addr.port())
                 })
-                .push_on_service(svc::BoxService::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_new_tcp()
         })
     }
 }

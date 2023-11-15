@@ -1,7 +1,6 @@
 use super::Gateway;
 use inbound::{GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_core::{
-    identity,
     metrics::ServerLabel,
     profiles,
     proxy::{
@@ -49,9 +48,13 @@ impl Gateway {
     /// Wrap the provided outbound HTTP client with the inbound HTTP server,
     /// inbound authorization, tagged-transport gateway routing, and the
     /// outbound router.
-    pub fn http<T, N, R, NSvc>(
+    pub fn http<T, R>(
         &self,
-        inner: N,
+        inner: svc::ArcNewHttp<
+            outbound::http::concrete::Endpoint<
+                outbound::http::logical::Concrete<outbound::http::Http<Target>>,
+            >,
+        >,
         resolve: R,
     ) -> svc::Stack<
         svc::ArcNewService<
@@ -80,21 +83,6 @@ impl Gateway {
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,
-        // HTTP outbound stack.
-        N: svc::NewService<
-            outbound::http::concrete::Endpoint<
-                outbound::http::logical::Concrete<outbound::http::Http<Target>>,
-            >,
-            Service = NSvc,
-        >,
-        N: Clone + Send + Sync + Unpin + 'static,
-        NSvc: svc::Service<
-            http::Request<http::BoxBody>,
-            Response = http::Response<http::BoxBody>,
-            Error = Error,
-        >,
-        NSvc: Send + Unpin + 'static,
-        NSvc::Future: Send + Unpin + 'static,
     {
         let http = self
             .outbound
@@ -104,12 +92,14 @@ impl Gateway {
             .into_stack()
             // Discard `T` and its associated client-specific metadata.
             .push_map_target(Target::discard_parent)
+            .push(svc::ArcNewService::layer())
             // Add headers to prevent loops.
-            .push(NewHttpGateway::layer(identity::LocalId(
-                self.inbound.identity().name().clone(),
-            )))
+            .push(NewHttpGateway::layer(
+                self.inbound.identity().local_id().clone(),
+            ))
             .push_on_service(svc::LoadShed::layer())
             .lift_new()
+            .push(svc::ArcNewService::layer())
             // After protocol-downgrade, we need to build an inner stack for
             // each request-level HTTP version.
             .push(svc::NewOneshotRoute::layer_via(|t: &Target<T>| {
@@ -134,8 +124,10 @@ impl Gateway {
                     parent,
                 })
             })
+            .push(svc::ArcNewService::layer())
             // Authorize requests to the gateway.
-            .push(self.inbound.authorize_http());
+            .push(self.inbound.authorize_http())
+            .arc_new_clone_http();
 
         self.inbound
             .clone()
@@ -146,6 +138,7 @@ impl Gateway {
             // servers.
             .push_http_server()
             .into_stack()
+            .arc_new_clone_http()
     }
 }
 

@@ -14,9 +14,9 @@ permissions:
 jobs:
   devcontainer:
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v40-rust
+    container: ghcr.io/linkerd/dev:v42-rust
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: |
           VERSION_REGEX='channel = "([0-9]+\.[0-9]+\.[0-9]+)"'
@@ -37,8 +37,8 @@ jobs:
   workflows:
     runs-on: ubuntu-latest
     steps:
-      - uses: linkerd/dev/actions/setup-tools@v40
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      - uses: linkerd/dev/actions/setup-tools@v42
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - shell: bash
         run: |
           VERSION_REGEX='channel = "([0-9]+\.[0-9]+\.[0-9]+)"'

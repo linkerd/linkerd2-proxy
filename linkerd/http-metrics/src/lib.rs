@@ -25,6 +25,22 @@ where
     include_latencies: bool,
 }
 
+#[cfg(feature = "test-util")]
+impl<T: Hash + Eq, C: Hash + Eq> Report<T, requests::Metrics<C>> {
+    pub fn get_response_total(
+        &self,
+        labels: &T,
+        status: Option<http::StatusCode>,
+        class: &C,
+    ) -> Option<f64> {
+        let registry = self.registry.lock();
+        let requests = registry.get(labels)?.lock();
+        let status = requests.by_status().get(&status)?;
+        let class = status.by_class().get(class)?;
+        Some(class.total())
+    }
+}
+
 impl<T: Hash + Eq, M> Clone for Report<T, M> {
     fn clone(&self) -> Self {
         Self {

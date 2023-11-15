@@ -36,6 +36,7 @@ members = [
     "linkerd/meshtls",
     "linkerd/meshtls/boring",
     "linkerd/meshtls/rustls",
+    "linkerd/meshtls/test-util",
     "linkerd/metrics",
     "linkerd/opencensus",
     "linkerd/proxy/api-resolve",
@@ -71,13 +72,6 @@ members = [
     "tools",
 ]
 
-# Debug symbols end up chewing up several GB of disk space, so better to just
-# disable them.
-[profile.dev]
-debug = false
-
-[profile.test]
-debug = false
-
 [profile.release]
+debug = 1
 lto = true

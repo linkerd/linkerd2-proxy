@@ -57,7 +57,6 @@ _features := if features == "all" {
         "--no-default-features --features=" + features
     } else { "" }
 
-# For dev:v40
 export CXX := 'clang++-14'
 
 #
@@ -160,14 +159,10 @@ fuzzers:
         echo "fuzzers must be run with nightly" >&2
         exit 1
     fi
-
-    for dir in $(find . -type d -name fuzz); do
-        echo "cd $dir && {{ _cargo }} fuzz build"
-        (
-            cd $dir
-            @{{ _cargo }} fuzz build \
-                {{ if profile == "release" { "--release" } else { "" } }}
-        )
+    for dir in $(find ./linkerd -type d -name fuzz); do
+        echo "cd $dir && cargo +nightly fuzz build"
+        ( cd $dir ; cargo +nightly fuzz build \
+                {{ if profile == "release" { "--release" } else { "" } }} )
     done
 
 export DOCKER_BUILDX_CACHE_DIR := env_var_or_default('DOCKER_BUILDX_CACHE_DIR', '')
@@ -201,7 +196,32 @@ action-lint:
     @just-dev lint-actions
 
 action-dev-check:
-    @just-dev check-action-images
+    #!/usr/bin/env bash
+    # TODO(ver) consolidate this again with just-dev
+    #@just-dev check-action-images
+    set -euo pipefail
+    VERSION=$(j5j .devcontainer/devcontainer.json |jq -r '.build.args["DEV_VERSION"]')
+    EX=0
+    while IFS= read filelineimg ; do
+        # Parse lines in the form `file:line img:tag`
+        fileline="${filelineimg%% *}"
+        file="${fileline%%:*}"
+        line="${fileline##*:}"
+        img="${filelineimg##* }"
+        name="${img%%:*}"
+        # Tag may be in the form of `version[-variant]`
+        tag="${img##*:}"
+        version="${tag%%-*}"
+        if [ "$name" = 'ghcr.io/linkerd/dev' ] && [ "$version" != "$VERSION" ]; then
+            if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+                echo "::error file=${file},line=${line}::Expected image 'ghcr.io/linkerd/dev:$VERSION'; found '${img}'" >&2
+            else
+                echo "${file}:${line}: Expected image 'ghcr.io/linkerd/dev:$VERSION'; found '${img}'" >&2
+            fi
+            EX=$(( EX+1 ))
+        fi
+    done < <( /usr/local/bin/action-images )
+    exit $EX
 
 ##
 ## Linkerd
@@ -214,6 +234,7 @@ _init-image := 'ghcr.io/linkerd/proxy-init'
 _init-tag := 'v2.2.0'
 
 _kubectl := 'just-k3d kubectl'
+_linkerd := 'linkerd --context=k3d-$(just-k3d --evaluate K3D_CLUSTER_NAME)'
 
 _tag-set:
     #!/usr/bin/env bash
@@ -241,7 +262,7 @@ k3d-load-linkerd: _tag-set _k3d-ready
 
 # Install crds on the test cluster.
 _linkerd-crds-install: _k3d-ready
-    linkerd install --crds \
+    {{ _linkerd }} install --crds \
         | {{ _kubectl }} apply -f -
     {{ _kubectl }} wait crd --for condition=established \
         --selector='linkerd.io/control-plane-ns' \
@@ -249,7 +270,7 @@ _linkerd-crds-install: _k3d-ready
 
 # Install linkerd on the test cluster using test images.
 linkerd-install *args='': _tag-set k3d-load-linkerd _linkerd-crds-install && _linkerd-ready
-    linkerd install \
+    {{ _linkerd }} install \
             --set='imagePullPolicy=Never' \
             --set='controllerImage={{ _controller-image }}' \
             --set='linkerdVersion={{ linkerd-tag }}' \
@@ -264,14 +285,14 @@ linkerd-install *args='': _tag-set k3d-load-linkerd _linkerd-crds-install && _li
         | {{ _kubectl }} apply -f -
 
 linkerd-uninstall:
-    linkerd uninstall \
+    {{ _linkerd }} uninstall \
         | {{ _kubectl }} delete -f -
 
 linkerd-check-contol-plane-proxy:
     #!/usr/bin/env bash
     set -euo pipefail
     check=$(mktemp --tmpdir check-XXXX.json)
-    linkerd check -o json > "$check"
+    {{ _linkerd }} check -o json > "$check"
     result=$(jq -r \
         '.categories[] | select(.categoryName == "linkerd-control-plane-proxy") | .checks[] | select(.description == "control plane proxies are healthy") | .result' \
         "$check")

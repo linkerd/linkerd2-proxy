@@ -1,6 +1,7 @@
-use crate::NegotiatedProtocol;
+use crate::{NegotiatedProtocol, ServerName};
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
+use linkerd_dns_name as dns;
 use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_stack::{layer, MakeConnection, NewService, Oneshot, Param, Service, ServiceExt};
@@ -14,13 +15,14 @@ use std::{
 };
 use tracing::debug;
 
-/// A newtype for target server identities.
+/// Describes the authenticated identity of a remote server.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ServerId(pub id::Name);
+pub struct ServerId(pub id::Id);
 
 /// A stack parameter that configures a `Client` to establish a TLS connection.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientTls {
+    pub server_name: ServerName,
     pub server_id: ServerId,
     pub alpn: Option<AlpnProtocols>,
 }
@@ -75,11 +77,14 @@ pub struct ConnectMeta<M> {
 
 // === impl ClientTls ===
 
-impl From<ServerId> for ClientTls {
-    fn from(server_id: ServerId) -> Self {
+impl ClientTls {
+    // XXX(ver) We'll have to change this when ServerIds are not necessarily DNS names.
+    pub fn new(server_id: ServerId, alpn: Option<AlpnProtocols>) -> Self {
+        let ServerId(linkerd_identity::Id(name)) = server_id.clone();
         Self {
+            server_name: ServerName(name),
             server_id,
-            alpn: None,
+            alpn,
         }
     }
 }
@@ -180,30 +185,37 @@ where
 
 // === impl ServerId ===
 
-impl From<id::Name> for ServerId {
-    fn from(n: id::Name) -> Self {
-        Self(n)
+impl From<id::Id> for ServerId {
+    fn from(id: id::Id) -> Self {
+        Self(id)
     }
 }
 
-impl From<ServerId> for id::Name {
-    fn from(ServerId(name): ServerId) -> id::Name {
-        name
+impl From<ServerId> for id::Id {
+    fn from(ServerId(id): ServerId) -> id::Id {
+        id
+    }
+}
+
+impl ServerId {
+    pub fn to_str(&self) -> std::borrow::Cow<'_, str> {
+        self.0.to_str()
     }
 }
 
 impl Deref for ServerId {
-    type Target = id::Name;
-
-    fn deref(&self) -> &id::Name {
+    type Target = id::Id;
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 impl FromStr for ServerId {
-    type Err = id::InvalidName;
+    type Err = dns::InvalidName;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        id::Name::from_str(s).map(ServerId)
+        // TODO Handle SPIFFE IDs.
+        let n = dns::Name::from_str(s)?;
+        Ok(Self(n.into()))
     }
 }
 

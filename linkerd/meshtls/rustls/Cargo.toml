@@ -11,19 +11,24 @@ test-util = ["linkerd-tls-test-util"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
+ring = { version = "0.16", features = ["std"] }
+rustls-pemfile = "1.0"
+rustls-webpki = { version = "0.101.5", features = ["std"] }
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt", "sync"] }
+tokio-rustls = { version = "0.24", features = ["dangerous_configuration"] }
+tracing = "0.1"
+
+linkerd-dns-name = { path = "../../dns/name" }
 linkerd-error = { path = "../../error" }
 linkerd-io = { path = "../../io" }
 linkerd-identity = { path = "../../identity" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 linkerd-tls-test-util = { path = "../../tls/test-util", optional = true }
-ring = { version = "0.16", features = ["std"] }
-rustls-pemfile = "1.0"
-rustls-webpki = { version = "0.101.5", features = [ "std"] }
-thiserror = "1"
-tokio = { version = "1", features = ["macros", "rt", "sync"] }
-tokio-rustls = { version = "0.24", features = ["dangerous_configuration"] }
-tracing = "0.1"
 
 [dev-dependencies]
 linkerd-tls-test-util = { path = "../../tls/test-util" }
+linkerd-meshtls = { path = "../../meshtls" }
+linkerd-meshtls-test-util = { path = "../test-util" }
+

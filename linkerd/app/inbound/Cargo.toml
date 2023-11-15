@@ -52,6 +52,7 @@ libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 [dev-dependencies]
 hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
+linkerd-http-metrics = { path = "../../http-metrics", features = ["test-util"] }
 linkerd-idle-cache = { path = "../../idle-cache", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }

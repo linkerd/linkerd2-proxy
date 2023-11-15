@@ -1,4 +1,4 @@
-use super::{ClassMetrics, Metrics, StatusMetrics};
+use super::{Metrics, StatusMetrics};
 use futures::{ready, TryFuture};
 use http_body::Body;
 use linkerd_error::Error;
@@ -96,7 +96,7 @@ where
 impl<S, C> Clone for HttpMetrics<S, C>
 where
     S: Clone,
-    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
+    C: ClassifyResponse + Clone + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
     fn clone(&self) -> Self {
@@ -106,6 +106,16 @@ where
             _p: PhantomData,
         }
     }
+}
+
+#[inline]
+fn classify_unwrap_if_debug_else_default<C, B>(req: &http::Request<B>) -> C
+where
+    C: Clone + Default + Send + Sync + 'static,
+{
+    let c = req.extensions().get::<C>().cloned();
+    debug_assert!(c.is_some(), "request must have response classifier");
+    c.unwrap_or_default()
 }
 
 impl<C, P, S, A, B> Proxy<http::Request<A>, S> for HttpMetrics<P, C>
@@ -143,10 +153,8 @@ where
             http::Request::from_parts(head, body)
         };
 
-        let classify = req.extensions().get::<C>().cloned().unwrap_or_default();
-
         ResponseFuture {
-            classify: Some(classify),
+            classify: Some(classify_unwrap_if_debug_else_default(&req)),
             metrics: self.metrics.clone(),
             stream_open_at: Instant::now(),
             inner: self.inner.proxy(svc, req),
@@ -167,6 +175,7 @@ where
     type Error = Error;
     type Future = ResponseFuture<S::Future, C>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx).map_err(Into::into)
     }
@@ -192,10 +201,8 @@ where
             http::Request::from_parts(head, body)
         };
 
-        let classify = req.extensions().get::<C>().cloned().unwrap_or_default();
-
         ResponseFuture {
-            classify: Some(classify),
+            classify: Some(classify_unwrap_if_debug_else_default(&req)),
             metrics: self.metrics.clone(),
             stream_open_at: Instant::now(),
             inner: self.inner.call(req),
@@ -380,15 +387,9 @@ fn measure_class<C: Hash + Eq>(
 
     metrics.last_update = now;
 
-    let status_metrics = metrics
-        .by_status
-        .entry(status)
-        .or_insert_with(StatusMetrics::default);
+    let status_metrics = metrics.by_status.entry(status).or_default();
 
-    let class_metrics = status_metrics
-        .by_class
-        .entry(class)
-        .or_insert_with(ClassMetrics::default);
+    let class_metrics = status_metrics.by_class.entry(class).or_default();
 
     class_metrics.total.incr();
 }

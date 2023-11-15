@@ -1,14 +1,14 @@
 use crate::creds::CredsRx;
-use linkerd_identity::Name;
+use linkerd_dns_name as dns;
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
-use linkerd_tls::{ClientId, LocalId, NegotiatedProtocol, ServerTls};
+use linkerd_tls::{ClientId, NegotiatedProtocol, ServerName, ServerTls};
 use std::{future::Future, pin::Pin, sync::Arc, task::Context};
 use tracing::debug;
 
 #[derive(Clone)]
 pub struct Server {
-    name: Name,
+    name: dns::Name,
     rx: CredsRx,
     alpn: Option<Arc<[Vec<u8>]>>,
 }
@@ -22,7 +22,7 @@ pub struct ServerIo<I>(tokio_boring::SslStream<I>);
 // === impl Server ===
 
 impl Server {
-    pub(crate) fn new(name: Name, rx: CredsRx) -> Self {
+    pub(crate) fn new(name: dns::Name, rx: CredsRx) -> Self {
         Self {
             name,
             rx,
@@ -41,9 +41,9 @@ impl Server {
     }
 }
 
-impl Param<LocalId> for Server {
-    fn param(&self) -> LocalId {
-        LocalId(self.name.clone())
+impl Param<ServerName> for Server {
+    fn param(&self) -> ServerName {
+        ServerName(self.name.clone())
     }
 }
 
@@ -119,7 +119,11 @@ impl<I> ServerIo<I> {
             None
         })?;
         sans.into_iter()
-            .filter_map(|san| san.dnsname()?.parse().ok())
+            .filter_map(|san| {
+                let dns = san.dnsname()?;
+                let name = dns.parse::<dns::Name>().ok()?;
+                Some(ClientId(name.into()))
+            })
             .next()
             .or_else(|| {
                 debug!("Peer certificate missing DNS SANs");

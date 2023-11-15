@@ -22,7 +22,7 @@ use linkerd_app_core::{
     metrics::FmtMetrics,
     svc::Param,
     telemetry,
-    transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{addrs::*, listen::Bind},
     Error, ProxyRuntime,
 };
 use linkerd_app_gateway as gateway;
@@ -102,11 +102,17 @@ impl Config {
     ) -> Result<App, Error>
     where
         BIn: Bind<ServerConfig> + 'static,
-        BIn::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
+        BIn::Addrs: Param<Remote<ClientAddr>>
+            + Param<Local<ServerAddr>>
+            + Param<OrigDstAddr>
+            + Param<AddrPair>,
         BOut: Bind<ServerConfig> + 'static,
-        BOut::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
+        BOut::Addrs: Param<Remote<ClientAddr>>
+            + Param<Local<ServerAddr>>
+            + Param<OrigDstAddr>
+            + Param<AddrPair>,
         BAdmin: Bind<ServerConfig> + Clone + 'static,
-        BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
+        BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<AddrPair>,
     {
         let Config {
             admin,
@@ -226,7 +232,6 @@ impl Config {
         // Build a task that initializes and runs the proxy stacks.
         let start_proxy = {
             let identity_ready = identity.ready();
-            let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
             let resolve = dst.resolve;
 
@@ -311,8 +316,8 @@ impl App {
         &self.dst
     }
 
-    pub fn local_identity(&self) -> identity::Name {
-        self.identity.receiver().name().clone()
+    pub fn local_server_name(&self) -> dns::Name {
+        self.identity.receiver().server_name().clone()
     }
 
     pub fn identity_addr(&self) -> ControlAddr {
@@ -364,7 +369,7 @@ impl App {
 
                         // Kick off the identity so that the process can become ready.
                         let local = identity.receiver();
-                        let local_id = local.name().clone();
+                        let local_name = local.server_name().clone();
                         let ready = identity.ready();
                         tokio::spawn(
                             identity
@@ -377,7 +382,7 @@ impl App {
                             ready
                                 .map(move |()| {
                                     latch.release();
-                                    info!(id = %local_id, "Certified identity");
+                                    info!(id = %local_name, "Certified identity");
                                 })
                                 .instrument(info_span!("identity").or_current()),
                         );

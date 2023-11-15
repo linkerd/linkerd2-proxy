@@ -253,7 +253,7 @@ impl Labels {
     /// the values from `other` overwrite the values in `self`.
     pub fn and(&self, other: Labels) -> Labels {
         let mut new_labels = self.0.clone();
-        new_labels.extend(other.0.into_iter());
+        new_labels.extend(other.0);
         Labels(new_labels)
     }
 
