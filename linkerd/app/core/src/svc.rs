@@ -38,11 +38,6 @@ pub type BoxCloneHttp<B = http::BoxBody> =
 
 pub type ArcNewCloneHttp<T, B = http::BoxBody> = ArcNewService<T, BoxCloneHttp<B>>;
 
-pub type BoxCloneSyncHttp<B = http::BoxBody> =
-    BoxCloneSyncService<http::Request<B>, http::Response<http::BoxBody>>;
-
-pub type ArcNewCloneSyncHttp<T, B = http::BoxBody> = ArcNewService<T, BoxCloneSyncHttp<B>>;
-
 pub type BoxTcp<I> = BoxService<I, (), Error>;
 
 pub type ArcNewTcp<T, I> = ArcNewService<T, BoxTcp<I>>;
@@ -326,20 +321,6 @@ impl<S> Stack<S> {
         Svc::Future: Send,
     {
         self.push_on_service(BoxCloneTcp::layer())
-            .push(ArcNewService::layer())
-    }
-
-    pub fn arc_new_clone_sync_http<T, B, Svc>(self) -> Stack<ArcNewCloneSyncHttp<T, B>>
-    where
-        T: 'static,
-        B: 'static,
-        S: NewService<T, Service = Svc> + Send + Sync + 'static,
-        Svc: Service<http::Request<B>, Response = http::Response<http::BoxBody>>,
-        Svc: Clone + Send + Sync + 'static,
-        Svc::Error: Into<Error>,
-        Svc::Future: Send,
-    {
-        self.push_on_service(BoxCloneSyncService::layer())
             .push(ArcNewService::layer())
     }
 
