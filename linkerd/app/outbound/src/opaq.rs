@@ -26,15 +26,7 @@ impl<C> Outbound<C> {
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.
-    pub fn push_opaq_cached<T, I, R>(
-        self,
-        resolve: R,
-    ) -> Outbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
-        >,
-    >
+    pub fn push_opaq_cached<T, I, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneTcp<T, I>>
     where
         // Opaque target
         T: svc::Param<Logical>,
@@ -58,7 +50,7 @@ impl<C> Outbound<C> {
                     // Use a dedicated target type to configure parameters for
                     // the opaque stack. It also helps narrow the cache key.
                     .push_map_target(|t: T| Opaq(t.param()))
-                    .push(svc::ArcNewService::layer())
+                    .arc_new_clone_tcp()
             })
     }
 }

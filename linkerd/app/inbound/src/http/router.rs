@@ -74,7 +74,7 @@ impl<C> Inbound<C> {
             + Param<Remote<ClientAddr>>
             + Param<tls::ConditionalServerTls>
             + Param<policy::AllowPolicy>,
-        T: Clone + Send + Unpin + 'static,
+        T: Clone + Send + Sync + Unpin + 'static,
         P: profiles::GetProfile<Error = Error>,
         C: svc::MakeConnection<Http> + Clone + Send + Sync + Unpin + 'static,
         C::Connection: Send + Unpin,

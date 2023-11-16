@@ -33,7 +33,7 @@ mod watch;
 pub use self::{
     arc_new_service::ArcNewService,
     box_future::BoxFuture,
-    box_service::{BoxService, BoxServiceLayer},
+    box_service::{BoxCloneSyncService, BoxService},
     connect::{MakeConnection, WithoutConnectionMetadata},
     either::{Either, NewEither},
     fail::Fail,
@@ -57,9 +57,11 @@ pub use self::{
     unwrap_or::UnwrapOr,
     watch::{NewSpawnWatch, SpawnWatch},
 };
+#[cfg(feature = "ready-cache")]
+pub use tower::ready_cache;
 pub use tower::{
     service_fn,
-    util::{self, future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},
+    util::{self, future_service, FutureService, Oneshot, ServiceExt},
     Service,
 };
 

@@ -85,18 +85,7 @@ where
     /// filters.
     pub(crate) fn layer<N, S>(
         metrics: RouteBackendMetrics,
-    ) -> impl svc::Layer<
-        N,
-        Service = svc::ArcNewService<
-            Self,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    > + Clone
+    ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
         N: svc::NewService<Concrete<T>, Service = S>,
@@ -131,7 +120,7 @@ where
                         })
                     }
                 }))
-                .push(svc::ArcNewService::layer())
+                .arc_new_clone_http()
                 .into_inner()
         })
     }

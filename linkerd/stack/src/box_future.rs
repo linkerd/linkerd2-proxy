@@ -17,7 +17,7 @@ impl<T> BoxFuture<T> {
         Self(inner)
     }
 
-    pub fn layer() -> impl tower::Layer<T, Service = Self> {
+    pub fn layer() -> impl tower::Layer<T, Service = Self> + Copy {
         crate::layer::mk(Self::new)
     }
 }

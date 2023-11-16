@@ -79,20 +79,7 @@ impl<N> Outbound<N> {
     /// 'failfast'. While in failfast, buffered requests are failed and the
     /// service becomes unavailable so callers may choose alternate concrete
     /// services.
-    pub fn push_http_concrete<T, NSvc, R>(
-        self,
-        resolve: R,
-    ) -> Outbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    >
+    pub fn push_http_concrete<T, NSvc, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Concrete target type.
         T: svc::Param<ParentRef>,
@@ -157,7 +144,7 @@ impl<N> Outbound<N> {
                 // TODO(ver) Configure this queue from the target (i.e. from
                 // discovery).
                 .push(svc::NewQueue::layer_via(config.http_request_queue))
-                .push(svc::ArcNewService::layer())
+                .arc_new_clone_http()
         })
     }
 }
@@ -182,20 +169,7 @@ where
         config: &crate::Config,
         rt: &crate::Runtime,
         resolve: R,
-    ) -> impl svc::Layer<
-        N,
-        Service = svc::ArcNewService<
-            Self,
-            impl svc::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = BalanceError,
-                Future = impl std::future::Future<
-                    Output = Result<http::Response<http::BoxBody>, BalanceError>,
-                > + Send,
-            >,
-        >,
-    > + Clone
+    ) -> impl svc::Layer<N, Service = svc::ArcNewHttp<Self>> + Clone
     where
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + 'static,
@@ -271,7 +245,8 @@ where
                         port = %meta.port().map(u16::from).unwrap_or(0),
                     )
                 })
-                .push(svc::ArcNewService::layer())
+                .push_on_service(svc::MapErr::layer_boxed())
+                .arc_new_http()
                 .into_inner()
         })
     }

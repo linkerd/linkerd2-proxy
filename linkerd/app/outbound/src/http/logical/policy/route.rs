@@ -84,18 +84,7 @@ where
     /// backends are expected to be cached/shared by the inner stack.
     pub(crate) fn layer<N, S>(
         backend_metrics: backend::RouteBackendMetrics,
-    ) -> impl svc::Layer<
-        N,
-        Service = svc::ArcNewService<
-            Self,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    > + Clone
+    ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
         N: svc::NewService<Concrete<T>, Service = S>,
@@ -126,14 +115,12 @@ where
                 .push(classify::NewClassify::layer())
                 .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();
-                    move |source| {
-                        Error::from(RouteError {
-                            route: route.clone(),
-                            source,
-                        })
+                    move |source| RouteError {
+                        route: route.clone(),
+                        source,
                     }
                 }))
-                .push(svc::ArcNewService::layer())
+                .arc_new_clone_http()
                 .into_inner()
         })
     }
