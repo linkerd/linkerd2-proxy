@@ -1,4 +1,4 @@
-use linkerd_stack::{layer, ExtractParam, NewService, Proxy, Service};
+use linkerd_stack::{layer, CloneParam, ExtractParam, NewService, Proxy, Service};
 use std::{
     marker::PhantomData,
     task::{Context, Poll},
@@ -33,6 +33,12 @@ impl<C, N> NewInsertClassifyResponse<C, (), N> {
     }
 }
 
+impl<C: Clone + Default, N> NewInsertClassifyResponse<C, CloneParam<C>, N> {
+    pub fn layer_default() -> impl layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via(CloneParam::from(C::default()))
+    }
+}
+
 impl<T, C, X, N> NewService<T> for NewInsertClassifyResponse<C, X, N>
 where
     C: super::Classify,
@@ -61,8 +67,9 @@ where
 
     fn proxy(&self, svc: &mut S, mut req: http::Request<B>) -> Self::Future {
         let classify_rsp = self.classify.classify(&req);
-        let prior = req.extensions_mut().insert(classify_rsp);
-        debug_assert!(prior.is_none(), "classification extension already existed");
+        if req.extensions_mut().insert(classify_rsp).is_some() {
+            tracing::debug!("Overrode response classifier");
+        }
         self.inner.proxy(svc, req)
     }
 }
@@ -83,8 +90,9 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         let classify_rsp = self.classify.classify(&req);
-        let prior = req.extensions_mut().insert(classify_rsp);
-        debug_assert!(prior.is_none(), "classification extension already existed");
+        if req.extensions_mut().insert(classify_rsp).is_some() {
+            tracing::debug!("Overrode response classifier");
+        }
         self.inner.call(req)
     }
 }

@@ -22,7 +22,7 @@ use linkerd_app_core::{
     metrics::FmtMetrics,
     svc::Param,
     telemetry,
-    transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{addrs::*, listen::Bind},
     Error, ProxyRuntime,
 };
 use linkerd_app_gateway as gateway;
@@ -102,11 +102,17 @@ impl Config {
     ) -> Result<App, Error>
     where
         BIn: Bind<ServerConfig> + 'static,
-        BIn::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
+        BIn::Addrs: Param<Remote<ClientAddr>>
+            + Param<Local<ServerAddr>>
+            + Param<OrigDstAddr>
+            + Param<AddrPair>,
         BOut: Bind<ServerConfig> + 'static,
-        BOut::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
+        BOut::Addrs: Param<Remote<ClientAddr>>
+            + Param<Local<ServerAddr>>
+            + Param<OrigDstAddr>
+            + Param<AddrPair>,
         BAdmin: Bind<ServerConfig> + Clone + 'static,
-        BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
+        BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<AddrPair>,
     {
         let Config {
             admin,

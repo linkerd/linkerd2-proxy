@@ -7,7 +7,9 @@ use linkerd_app_core::{
     serve,
     svc::{self, ExtractParam, InsertParam, Param},
     tls, trace,
-    transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{
+        self, addrs::AddrPair, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
+    },
     Error, Result,
 };
 use linkerd_app_inbound as inbound;
@@ -84,7 +86,9 @@ impl Config {
     where
         R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
         B: Bind<ServerConfig>,
-        B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
+        B::Addrs: svc::Param<Remote<ClientAddr>>,
+        B::Addrs: svc::Param<Local<ServerAddr>>,
+        B::Addrs: svc::Param<AddrPair>,
     {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
@@ -95,6 +99,7 @@ impl Config {
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
+            .push(classify::NewClassify::layer_default())
             .push_map_target(|(permit, http)| Permitted { permit, http })
             .push(inbound::policy::NewHttpPolicy::layer(metrics.http_authz.clone()))
             .push(Rescue::layer())
@@ -198,6 +203,14 @@ impl Param<OrigDstAddr> for Http {
 impl Param<Remote<ClientAddr>> for Http {
     fn param(&self) -> Remote<ClientAddr> {
         self.tcp.client
+    }
+}
+
+impl Param<AddrPair> for Http {
+    fn param(&self) -> AddrPair {
+        let Remote(client) = self.tcp.client;
+        let Local(server) = self.tcp.addr;
+        AddrPair(client, server)
     }
 }
 
