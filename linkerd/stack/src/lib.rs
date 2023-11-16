@@ -61,7 +61,7 @@ pub use self::{
 pub use tower::ready_cache;
 pub use tower::{
     service_fn,
-    util::{self, future_service, BoxCloneService, FutureService, Oneshot, ServiceExt},
+    util::{self, future_service, FutureService, Oneshot, ServiceExt},
     Service,
 };
 

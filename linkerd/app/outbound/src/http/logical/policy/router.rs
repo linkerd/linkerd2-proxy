@@ -71,18 +71,7 @@ where
     /// set of inner services so that.
     pub(super) fn layer<N, S>(
         route_backend_metrics: RouteBackendMetrics,
-    ) -> impl svc::Layer<
-        N,
-        Service = svc::ArcNewService<
-            Self,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    > + Clone
+    ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
         N: svc::NewService<Concrete<T>, Service = S>,
@@ -105,7 +94,7 @@ where
                 // `SelectRoute` impl.
                 .push_on_service(route::MatchedRoute::layer(route_backend_metrics.clone()))
                 .push(svc::NewOneshotRoute::<Self, (), _>::layer_cached())
-                .push(svc::ArcNewService::layer())
+                .arc_new_clone_http()
                 .into_inner()
         })
     }

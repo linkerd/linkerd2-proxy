@@ -79,7 +79,7 @@ impl<N> Outbound<N> {
     /// 'failfast'. While in failfast, buffered requests are failed and the
     /// service becomes unavailable so callers may choose alternate concrete
     /// services.
-    pub fn push_http_concrete<T, NSvc, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneSyncHttp<T>>
+    pub fn push_http_concrete<T, NSvc, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Concrete target type.
         T: svc::Param<ParentRef>,
@@ -143,10 +143,9 @@ impl<N> Outbound<N> {
                             Dispatch::Fail { message } => svc::Either::B(message),
                         })
                     },
-                    svc::stack(fail).check_new_clone().into_inner(),
+                    fail).check_new_clone().into_inner(),
                 )
-                .push_on_service(svc::BoxCloneSyncService::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_new_clone_http()
         })
     }
 }
@@ -171,7 +170,7 @@ where
         config: &crate::Config,
         rt: &crate::Runtime,
         resolve: R,
-    ) -> impl svc::Layer<N, Service = svc::ArcNewCloneSyncHttp<Self>> + Clone
+    ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + 'static,
@@ -252,7 +251,7 @@ where
                         port = %meta.port().map(u16::from).unwrap_or(0),
                     )
                 })
-                .arc_new_clone_sync_http()
+                .arc_new_clone_http()
                 .into_inner()
         })
     }
