@@ -7,11 +7,11 @@ ARG RUST_IMAGE=ghcr.io/linkerd/dev:v42-rust
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing and linkerd-await wrappers.
-# Currently pinned to a build off of edge-23.11.1 + dev:v42
-ARG LINKERD2_IMAGE=ghcr.io/olix0r/l2-proxy:git-04283611
+ARG LINKERD2_IMAGE=ghcr.io/linkerd/proxy:edge-23.11.2
 
-# Build the proxy.
-FROM --platform=$BUILDPLATFORM $RUST_IMAGE as build
+FROM $LINKERD2_IMAGE as linkerd2
+
+FROM --platform=$BUILDPLATFORM $RUST_IMAGE as fetch
 
 ARG PROXY_FEATURES=""
 RUN apt-get update && \
@@ -28,24 +28,27 @@ WORKDIR /src
 COPY . .
 RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
     just fetch
+
+# Build the proxy.
+FROM fetch as build
 ENV CARGO_INCREMENTAL=0
 ENV RUSTFLAGS="-D warnings -A deprecated"
 ARG TARGETARCH="amd64"
 ARG PROFILE="release"
 ARG LINKERD2_PROXY_VERSION=""
 ARG LINKERD2_PROXY_VENDOR=""
+SHELL ["/bin/bash", "-c"]
 RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
-    /usr/bin/time -v just arch="$TARGETARCH" features="$PROXY_FEATURES" profile="$PROFILE" build && \
-    bin=$(just --evaluate profile="$PROFILE" _target_bin) ; \
-    du -sh "$bin" "$bin".dbg && \
-    mkdir -p /out && mv "$bin" /out/linkerd2-proxy
+    if [[ "$PROXY_FEATURES" =~ .*pprof.* ]] ; then cmd=build-debug ; else cmd=build ; fi ; \
+    /usr/bin/time -v just arch="$TARGETARCH" features="$PROXY_FEATURES" profile="$PROFILE" "$cmd" && \
+    ( mkdir -p /out ; \
+        mv $(just --evaluate profile="$PROFILE" _target_bin) /out/ ; \
+        du -sh /out/* )
 
-FROM $LINKERD2_IMAGE as linkerd2
-
-# Install the proxy binary into a base image that we can at least get a shell to
-# debug on.
+# Install the proxy binary into a base image that we can at least get a shell
+# for debugging.
 FROM docker.io/library/debian:bookworm-slim as runtime
 WORKDIR /linkerd
 COPY --from=linkerd2 /usr/lib/linkerd/* /usr/lib/linkerd/
-COPY --from=build /out/linkerd2-proxy /usr/lib/linkerd/linkerd2-proxy
+COPY --from=build /out/* /usr/lib/linkerd/
 ENTRYPOINT ["/usr/lib/linkerd/linkerd2-proxy-identity"]
