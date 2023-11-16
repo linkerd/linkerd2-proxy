@@ -33,7 +33,7 @@ mod watch;
 pub use self::{
     arc_new_service::ArcNewService,
     box_future::BoxFuture,
-    box_service::{BoxService, BoxServiceLayer},
+    box_service::{BoxCloneSyncService, BoxService},
     connect::{MakeConnection, WithoutConnectionMetadata},
     either::{Either, NewEither},
     fail::Fail,

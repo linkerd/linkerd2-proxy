@@ -15,7 +15,7 @@ use linkerd_app_core::{
     svc::{self, Layer},
     tls,
     transport::{self, addrs::*},
-    Error, Infallible, NameAddr,
+    Error, Infallible, NameAddr, Result,
 };
 use linkerd_proxy_client_policy::FailureAccrual;
 use std::{fmt::Debug, net::SocketAddr, sync::Arc};
@@ -79,20 +79,7 @@ impl<N> Outbound<N> {
     /// 'failfast'. While in failfast, buffered requests are failed and the
     /// service becomes unavailable so callers may choose alternate concrete
     /// services.
-    pub fn push_http_concrete<T, NSvc, R>(
-        self,
-        resolve: R,
-    ) -> Outbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    >
+    pub fn push_http_concrete<T, NSvc, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneSyncHttp<T>>
     where
         // Concrete target type.
         T: svc::Param<ParentRef>,
@@ -158,6 +145,7 @@ impl<N> Outbound<N> {
                     },
                     svc::stack(fail).check_new_clone().into_inner(),
                 )
+                .push_on_service(svc::BoxCloneSyncService::layer())
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -183,20 +171,7 @@ where
         config: &crate::Config,
         rt: &crate::Runtime,
         resolve: R,
-    ) -> impl svc::Layer<
-        N,
-        Service = svc::ArcNewService<
-            Self,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = BalanceError,
-                    Future = impl std::future::Future<
-                        Output = Result<http::Response<http::BoxBody>, BalanceError>,
-                    > + Send,
-                > + Clone,
-        >,
-    > + Clone
+    ) -> impl svc::Layer<N, Service = svc::ArcNewCloneSyncHttp<Self>> + Clone
     where
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + 'static,
@@ -237,9 +212,6 @@ where
                 })
                 .push_on_service(svc::MapErr::layer_boxed())
                 .lift_new_with_target()
-                .push_on_service(svc::NewInstrumentLayer::new(|_: &_| {
-                    tracing::debug_span!("INNR")
-                }))
                 .push(
                     http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
                         // TODO configure channel capacities from target.
@@ -250,9 +222,6 @@ where
                         }
                     }),
                 )
-                .push_on_service(svc::NewInstrumentLayer::new(|_: &_| {
-                    tracing::debug_span!("GATE")
-                }))
                 .push(balance::NewGaugeEndpoints::layer_via({
                     let metrics = metrics.http_balancer.clone();
                     move |target: &Self| {
@@ -264,7 +233,10 @@ where
                 ))
                 .push_on_service(svc::NewInstrumentLayer::new(
                     |(addr, _): &(SocketAddr, _)| info_span!("endpoint", %addr),
-                ));
+                ))
+                .push_on_service(svc::OnServiceLayer::new(svc::BoxService::layer()))
+                .push_on_service(svc::ArcNewService::layer())
+                .push(svc::ArcNewService::layer());
 
             endpoint
                 .push(http::NewBalancePeakEwma::layer(resolve.clone()))
@@ -280,7 +252,7 @@ where
                         port = %meta.port().map(u16::from).unwrap_or(0),
                     )
                 })
-                .push(svc::ArcNewService::layer())
+                .arc_new_clone_sync_http()
                 .into_inner()
         })
     }
