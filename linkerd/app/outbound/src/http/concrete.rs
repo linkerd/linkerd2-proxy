@@ -143,7 +143,7 @@ impl<N> Outbound<N> {
                             Dispatch::Fail { message } => svc::Either::B(message),
                         })
                     },
-                    fail).check_new_clone().into_inner(),
+                    svc::stack(fail).check_new_clone().into_inner(),
                 )
                 .arc_new_clone_http()
         })
