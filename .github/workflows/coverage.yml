@@ -26,18 +26,16 @@ jobs:
     container:
       image: docker://ghcr.io/linkerd/dev:v42-rust
       options: --security-opt seccomp=unconfined # 🤷
+    env:
+      CXX: "/usr/bin/clang++-14"
     steps:
       # XXX(ver) Workaround for a linking problem in the binary we store in the
       # devcontainer.
       - run: rm -f /usr/local/bin/cargo-tarpaulin && cargo install cargo-tarpaulin
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-      # XXX(ver) AFAICT, Tarpaulin doesn't allow us to compose a report over multiple invocations,
-      # so we have to choose between getting coverage from unit tests and integration tests (since
-      # integration tests require --no-default-features to avoid flakiness). Currently the
-      # integration tests seem to cover more code, so we skip the unit tests for now :(.
-      #- run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-app-integration --no-run
-      #- run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-app-integration --skip-clean --ignore-tests --no-fail-fast --out=Xml
-      - run: cargo tarpaulin --locked --packages=linkerd-app-integration --no-default-features --skip-clean --no-run
-      - run: cargo tarpaulin --locked --packages=linkerd-app-integration --no-default-features --skip-clean --ignore-tests --no-fail-fast --out=Xml
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --no-run
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --skip-clean --ignore-tests --no-fail-fast --out=Xml
+        # Some tests are especially flakey in coverage tests. That's fine. We
+        # only really care to measure how much of our codebase is covered.
         continue-on-error: true
       - uses: codecov/codecov-action@d9f34f8cd5cb3b3eb79b3e4b5dae3a16df499a70
