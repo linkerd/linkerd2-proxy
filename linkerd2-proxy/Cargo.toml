@@ -14,6 +14,7 @@ meshtls-boring = ["linkerd-meshtls/boring"]
 meshtls-boring-fips = ["linkerd-meshtls/boring-fips"]
 meshtls-rustls = ["linkerd-meshtls/rustls"]
 log-streaming = ["linkerd-app/log-streaming"]
+pprof = ["linkerd-app/pprof"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }

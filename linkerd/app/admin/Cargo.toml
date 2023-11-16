@@ -10,15 +10,19 @@ The linkerd proxy's admin server.
 """
 
 [features]
+default = []
+pprof = ["deflate", "dep:pprof"]
 log-streaming = ["linkerd-tracing/stream"]
 
 [dependencies]
+deflate = { version = "1", optional = true, features = ["gzip"] }
 http = "0.2"
 hyper = { version = "0.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-app-inbound = { path = "../inbound" }
 linkerd-tracing = { path = "../../tracing" }
+pprof = { version = "0.13", optional = true, features = ["prost-codec"] }
 serde = "1"
 serde_json = "1"
 thiserror = "1"

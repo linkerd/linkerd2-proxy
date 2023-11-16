@@ -22,6 +22,8 @@ use tracing::debug;
 pub struct Config {
     pub server: ServerConfig,
     pub metrics_retain_idle: Duration,
+    #[cfg(feature = "pprof")]
+    pub enable_profiling: bool,
 }
 
 pub struct Task {
@@ -96,7 +98,13 @@ impl Config {
         let policy = policy.get_policy(OrigDstAddr(listen_addr.into()));
 
         let (ready, latch) = crate::server::Readiness::new();
+
+        #[cfg_attr(not(feature = "pprof"), allow(unused_mut))]
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
+
+        #[cfg(feature = "pprof")]
+        let admin = admin.with_profiling(self.enable_profiling);
+
         let http = svc::stack(move |_| admin.clone())
             .push(
                 metrics
