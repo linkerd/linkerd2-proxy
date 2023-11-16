@@ -71,12 +71,7 @@ impl Config {
         identity: identity::NewClient,
     ) -> svc::ArcNewService<
         (),
-        impl svc::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<RspBody>,
-                Error = ControlError,
-                Future = impl Send,
-            > + Clone,
+        svc::BoxCloneSyncService<http::Request<tonic::body::BoxBody>, http::Response<RspBody>>,
     > {
         let addr = self.addr;
 
@@ -135,6 +130,7 @@ impl Config {
             .push(svc::NewMapErr::layer_from_target::<ControlError, _>())
             .instrument(|c: &ControlAddr| info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
+            .push_on_service(svc::BoxCloneSyncService::layer())
             .push(svc::ArcNewService::layer())
             .into_inner()
     }
