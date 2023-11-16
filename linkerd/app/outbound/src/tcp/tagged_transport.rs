@@ -153,19 +153,23 @@ mod test {
     struct Endpoint {
         port_override: Option<u16>,
         authority: Option<http::uri::Authority>,
-        server_id: Option<tls::ServerId>,
+        identity: Option<(tls::ServerId, tls::ServerName)>,
         proto: Option<SessionProtocol>,
     }
 
     impl svc::Param<tls::ConditionalClientTls> for Endpoint {
         fn param(&self) -> tls::ConditionalClientTls {
-            self.server_id
+            self.identity
                 .clone()
-                .map(|server_id| {
+                .map(|(server_id, server_name)| {
                     let alpn = Some(tls::client::AlpnProtocols(vec![
                         transport_header::PROTOCOL.into()
                     ]));
-                    tls::ConditionalClientTls::Some(tls::ClientTls::new(server_id, alpn))
+                    tls::ConditionalClientTls::Some(tls::ClientTls::new(
+                        server_id,
+                        server_name,
+                        alpn,
+                    ))
                 })
                 .unwrap_or(tls::ConditionalClientTls::None(
                     tls::NoClientTls::NotProvidedByServiceDiscovery,
@@ -256,9 +260,12 @@ mod test {
             })),
         };
 
+        let server_id = tls::ServerId("server.id".parse().unwrap());
+        let server_name = tls::ServerName("server.name".parse().unwrap());
+
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
+            identity: Some((server_id, server_name)),
             authority: None,
             proto: None,
         };
@@ -278,9 +285,12 @@ mod test {
             })),
         };
 
+        let server_id = tls::ServerId("server.id".parse().unwrap());
+        let server_name = tls::ServerName("server.name".parse().unwrap());
+
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
+            identity: Some((server_id, server_name)),
             authority: Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
             proto: None,
         };
@@ -300,9 +310,12 @@ mod test {
             })),
         };
 
+        let server_id = tls::ServerId("server.id".parse().unwrap());
+        let server_name = tls::ServerName("server.name".parse().unwrap());
+
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
+            identity: Some((server_id, server_name)),
             authority: None,
             proto: None,
         };
@@ -322,9 +335,12 @@ mod test {
             })),
         };
 
+        let server_id = tls::ServerId("server.id".parse().unwrap());
+        let server_name = tls::ServerName("server.name".parse().unwrap());
+
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
+            identity: Some((server_id, server_name)),
             authority: None,
             proto: Some(SessionProtocol::Http1),
         };
@@ -344,9 +360,12 @@ mod test {
             })),
         };
 
+        let server_id = tls::ServerId("server.id".parse().unwrap());
+        let server_name = tls::ServerName("server.name".parse().unwrap());
+
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
+            identity: Some((server_id, server_name)),
             authority: Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
             proto: Some(SessionProtocol::Http1),
         };
@@ -366,9 +385,12 @@ mod test {
             })),
         };
 
+        let server_id = tls::ServerId("server.id".parse().unwrap());
+        let server_name = tls::ServerName("server.name".parse().unwrap());
+
         let e = Endpoint {
             port_override: Some(4143),
-            server_id: Some(tls::ServerId("server.id".parse().unwrap())),
+            identity: Some((server_id, server_name)),
             authority: None,
             proto: Some(SessionProtocol::Http1),
         };

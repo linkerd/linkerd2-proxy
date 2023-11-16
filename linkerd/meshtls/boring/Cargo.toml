@@ -16,6 +16,8 @@ linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
+linkerd-meshtls-util = { path = "../util" }
+
 tokio = { version = "1", features = ["macros", "sync"] }
 tokio-boring = "3"
 tracing = "0.1"
@@ -26,5 +28,4 @@ fips = ["boring/fips"]
 [dev-dependencies]
 linkerd-tls-test-util = { path = "../../tls/test-util" }
 linkerd-meshtls = { path = "../../meshtls" }
-linkerd-meshtls-test-util = { path = "../test-util" }
 

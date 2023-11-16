@@ -1,7 +1,7 @@
-use crate::creds::verify;
 use crate::creds::CredsRx;
 use linkerd_identity as id;
 use linkerd_io as io;
+use linkerd_meshtls_util as util;
 use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef, ServerName};
 use std::{future::Future, pin::Pin, sync::Arc, task::Context};
@@ -106,8 +106,8 @@ where
             let cert = io.ssl().peer_certificate().ok_or_else(|| {
                 io::Error::new(io::ErrorKind::Other, "could not extract peer cert")
             })?;
-            verify::verify_id(&cert, &server_id)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            let cert_der = id::DerX509(cert.to_der()?);
+            util::verify_id(&cert_der, &server_id)?;
 
             debug!(
                 tls = io.ssl().version_str(),

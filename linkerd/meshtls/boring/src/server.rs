@@ -1,6 +1,7 @@
 use crate::creds::CredsRx;
 use linkerd_dns_name as dns;
 use linkerd_io as io;
+use linkerd_meshtls_util as util;
 use linkerd_stack::{Param, Service};
 use linkerd_tls::{ClientId, NegotiatedProtocol, ServerName, ServerTls};
 use std::{future::Future, pin::Pin, sync::Arc, task::Context};
@@ -110,25 +111,22 @@ impl<I> ServerIo<I> {
     }
 
     fn client_identity(&self) -> Option<ClientId> {
-        let cert = self.0.ssl().peer_certificate().or_else(|| {
-            debug!("Connection missing peer certificate");
-            None
-        })?;
-        let sans = cert.subject_alt_names().or_else(|| {
-            debug!("Peer certificate missing SANs");
-            None
-        })?;
-        sans.into_iter()
-            .filter_map(|san| {
-                let dns = san.dnsname()?;
-                let name = dns.parse::<dns::Name>().ok()?;
-                Some(ClientId(name.into()))
-            })
-            .next()
-            .or_else(|| {
-                debug!("Peer certificate missing DNS SANs");
+        match self.0.ssl().peer_certificate() {
+            Some(cert) => {
+                let der = cert
+                    .to_der()
+                    .map_err(
+                        |error| tracing::warn!(%error, "Failed to encode client end cert to der"),
+                    )
+                    .ok()?;
+
+                util::client_identity(&der).map(ClientId)
+            }
+            None => {
+                debug!("Connection missing peer certificate");
                 None
-            })
+            }
+        }
     }
 }
 

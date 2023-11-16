@@ -26,9 +26,9 @@ linkerd-identity = { path = "../../identity" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 linkerd-tls-test-util = { path = "../../tls/test-util", optional = true }
+linkerd-meshtls-util = { path = "../util" }
 
 [dev-dependencies]
 linkerd-tls-test-util = { path = "../../tls/test-util" }
 linkerd-meshtls = { path = "../../meshtls" }
-linkerd-meshtls-test-util = { path = "../test-util" }
 
