@@ -11,11 +11,7 @@ impl Pprof {
             let params = req.uri().path_and_query()?.query()?.split('&');
             params
                 .filter_map(|p| {
-                    if p.starts_with(name) && p[name.len()..].starts_with('=') {
-                        Some(&p[name.len() + 1..])
-                    } else {
-                        None
-                    }
+                    p.strip_prefix(name)?.strip_prefix('=')
                 })
                 .next()
         }
@@ -62,7 +58,7 @@ impl Pprof {
         };
 
         Ok(http::Response::builder()
-            .header("Content-Type", "application/octet-stream")
+            .header(http::header::CONTENT_TYPE, "application/octet-stream")
             .body(hyper::Body::from(pb_gz))
             .expect("response must be valid"))
     }

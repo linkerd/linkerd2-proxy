@@ -66,11 +66,7 @@ impl<M> Admin<M> {
 
     #[cfg(feature = "pprof")]
     pub fn with_profiling(mut self, enabled: bool) -> Self {
-        self.pprof = if enabled {
-            Some(crate::pprof::Pprof)
-        } else {
-            None
-        };
+        self.pprof = enabled.then_some(crate::pprof::Pprof);
         self
     }
 
