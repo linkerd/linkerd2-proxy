@@ -17,9 +17,17 @@ slab = { version = "0.4", optional = true }
 thingbuf = { version = "0.1.2", features = ["std"], optional = true }
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
-tracing-log = "0.1"
+tracing-log = "0.2"
 
 [dependencies.tracing-subscriber]
 version = "0.3.16"
 default-features = false
-features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot", "registry"]
+features = [
+    "env-filter",
+    "fmt",
+    "smallvec",
+    "tracing-log",
+    "json",
+    "parking_lot",
+    "registry",
+]

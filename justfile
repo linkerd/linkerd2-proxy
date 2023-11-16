@@ -116,7 +116,12 @@ test-dir dir *flags:
     cd {{ dir }} && {{ _cargo }} test --frozen {{ _features }} {{ flags }}
 
 # Build the proxy
-build: && checksec _strip
+build: _build checksec _strip
+
+# Build the proxy without stripping debug symbols
+build-debug: _build
+
+_build:
     @rm -f {{ _target_bin }} {{ _target_bin }}.dbg
     @{{ _cargo }} build --frozen --package=linkerd2-proxy {{ _features }}
 
