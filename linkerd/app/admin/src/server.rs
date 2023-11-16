@@ -266,7 +266,7 @@ where
 
             #[cfg(feature = "pprof")]
             "/debug/pprof/profile.pb.gz" if self.pprof.is_some() => {
-                let pprof = self.pprof.expect("profiler must be configured");
+                let pprof = self.pprof.expect("unreachable");
 
                 if !Self::client_is_localhost(&req) {
                     return Box::pin(future::ok(Self::forbidden_not_localhost()));

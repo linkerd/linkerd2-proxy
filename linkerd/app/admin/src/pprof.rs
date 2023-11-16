@@ -14,33 +14,32 @@ impl Pprof {
                 .next()
         }
 
-        let profile = {
-            let duration = std::time::Duration::from_secs_f64(
-                query_param(&req, "seconds")
-                    .map(|s| s.parse::<f64>())
-                    .transpose()?
-                    .unwrap_or(30.0),
-            );
-            let frequency = query_param(&req, "frequency")
-                .map(|s| s.parse::<i32>())
+        // TODO(ver) Pretty-up error handling if we ever expose this outside of
+        // development.
+        let duration = std::time::Duration::from_secs_f64(
+            query_param(&req, "seconds")
+                .map(|s| s.parse::<f64>())
                 .transpose()?
-                // Go's default.
-                .unwrap_or(100);
-            tracing::info!(?duration, frequency, "Collecting");
+                .unwrap_or(30.0),
+        );
+        let frequency = query_param(&req, "frequency")
+            .map(|s| s.parse::<i32>())
+            .transpose()?
+            // Go's default.
+            .unwrap_or(100);
+        tracing::info!(?duration, frequency, "Collecting");
 
+        let report = {
             let guard = pprof::ProfilerGuard::new(frequency)?;
             tokio::time::sleep(duration).await;
-
-            let report = guard.report().build()?;
-            tracing::info!(
-                ?duration,
-                frequency,
-                frames = report.data.len(),
-                "Collected"
-            );
-
-            report.pprof()?
+            guard.report().build()?
         };
+        tracing::info!(
+            ?duration,
+            frequency,
+            frames = report.data.len(),
+            "Collected"
+        );
 
         let pb_gz = {
             let mut gz = deflate::write::GzEncoder::new(
@@ -49,7 +48,7 @@ impl Pprof {
             );
             std::io::Write::write_all(&mut gz, &{
                 let mut buf = Vec::new();
-                profile.encode(&mut buf)?;
+                report.pprof()?.encode(&mut buf)?;
                 buf
             })?;
             gz.finish()?
