@@ -10,9 +10,7 @@ impl Pprof {
         fn query_param<'r, B>(req: &'r http::Request<B>, name: &'static str) -> Option<&'r str> {
             let params = req.uri().path_and_query()?.query()?.split('&');
             params
-                .filter_map(|p| {
-                    p.strip_prefix(name)?.strip_prefix('=')
-                })
+                .filter_map(|p| p.strip_prefix(name)?.strip_prefix('='))
                 .next()
         }
 
