@@ -16,7 +16,6 @@ env:
   CARGO_NET_RETRY: 10
   RUSTFLAGS: "-D warnings -A deprecated -C debuginfo=2"
   RUSTUP_MAX_RETRIES: 10
-  CXX: "clang+-14"
 
 jobs:
   test:
@@ -26,6 +25,8 @@ jobs:
     container:
       image: docker://ghcr.io/linkerd/dev:v42-rust
       options: --security-opt seccomp=unconfined # 🤷
+    env:
+      CXX: "/usr/bin/clang++-14"
     steps:
       # XXX(ver) Workaround for a linking problem in the binary we store in the
       # devcontainer.
