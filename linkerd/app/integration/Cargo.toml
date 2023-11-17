@@ -13,9 +13,8 @@ a dedicated crate to help the compiler cache dependencies properly.
 """
 
 [features]
-default = ["flakey-in-ci"]
-flakey-in-ci = ["flakey-in-coverage"]
-flakey-in-coverage = []
+default = []
+flakey = []
 
 [dependencies]
 bytes = "1"

@@ -1937,7 +1937,9 @@ dependencies = [
  "linkerd-metrics",
  "parking_lot",
  "tokio",
+ "tokio-test",
  "tower",
+ "tower-test",
 ]
 
 [[package]]

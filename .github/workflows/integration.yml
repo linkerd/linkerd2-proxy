@@ -45,9 +45,6 @@ jobs:
             --package=linkerd-app-inbound \
             --package=linkerd-app-outbound \
             --package=linkerd-app-test
-      - run: |
-          just test-crate linkerd-app-integration --no-run \
-            --no-default-features --features=flakey-in-coverage
-      - run: |
-          just test-crate linkerd-app-integration \
-            --no-default-features --features=flakey-in-coverage
+      - run: just test-crate linkerd-app-integration --no-default-features --no-run
+      - run: just test-crate linkerd-app-integration --no-default-features
+

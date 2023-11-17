@@ -508,7 +508,7 @@ where
 // Eventually, we can add some kind of mock timer system for simulating latency
 // more reliably, and re-enable this test.
 #[tokio::test]
-#[cfg_attr(not(feature = "flakey-in-ci"), ignore)]
+#[cfg_attr(not(feature = "flakey"), ignore)]
 async fn inbound_response_latency() {
     test_response_latency(Fixture::inbound_with_server).await
 }
@@ -518,7 +518,7 @@ async fn inbound_response_latency() {
 // Eventually, we can add some kind of mock timer system for simulating latency
 // more reliably, and re-enable this test.
 #[tokio::test]
-#[cfg_attr(not(feature = "flakey-in-ci"), ignore)]
+#[cfg_attr(not(feature = "flakey"), ignore)]
 async fn outbound_response_latency() {
     test_response_latency(Fixture::outbound_with_server).await
 }
@@ -1203,7 +1203,6 @@ mod transport {
         test_tcp_connect(TcpFixture::outbound()).await;
     }
 
-    #[cfg_attr(not(feature = "flakey-in-coverage"), ignore)]
     #[tokio::test]
     async fn outbound_tcp_accept() {
         test_tcp_accept(TcpFixture::outbound()).await;
@@ -1229,7 +1228,6 @@ mod transport {
         test_read_bytes_total(TcpFixture::outbound()).await
     }
 
-    #[cfg_attr(not(feature = "flakey-in-coverage"), ignore)]
     #[tokio::test]
     async fn outbound_tcp_open_connections() {
         test_tcp_open_conns(TcpFixture::outbound()).await
