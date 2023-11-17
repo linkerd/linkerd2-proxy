@@ -187,8 +187,9 @@ where
         let inbound_ips = config.inbound_ips.clone();
         let metrics = rt.metrics.clone();
 
-        let resolve = svc::MapTargetLayer::new(|t: Self| -> ConcreteAddr { ConcreteAddr(t.addr) })
-            .layer(resolve.into_service());
+        let resolve = svc::stack(resolve.into_service())
+            .push_map_target(|t: Self| ConcreteAddr(t.addr))
+            .into_inner();
 
         svc::layer::mk(move |inner: N| {
             let endpoint = svc::stack(inner)
