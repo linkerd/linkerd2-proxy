@@ -16,6 +16,7 @@ env:
   CARGO_NET_RETRY: 10
   RUSTFLAGS: "-D warnings -A deprecated -C debuginfo=2"
   RUSTUP_MAX_RETRIES: 10
+  CXX: "clang+-14"
 
 jobs:
   test:
