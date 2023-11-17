@@ -7,7 +7,7 @@ use linkerd_app_core::{
 use linkerd_proxy_client_policy as client_policy;
 use parking_lot::Mutex;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::sync::watch;
+use tokio::{sync::watch, task, time};
 use tracing::Instrument;
 
 const AUTHORITY: &str = "logical.test.svc.cluster.local";
@@ -110,13 +110,15 @@ async fn consecutive_failures_accrue() {
     };
     let svc = stack.new_service(target);
 
+    tracing::info!("Sending good request");
     handle.allow(1);
     let rsp = send_req(svc.clone(), http::Request::get("/"));
     serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
     assert_rsp(rsp, StatusCode::OK, "good").await;
 
     // fail 3 requests so that we hit the consecutive failures accrual limit
-    for _ in 0..3 {
+    for i in 1..=3 {
+        tracing::info!("Sending bad request {i}/3");
         handle.allow(1);
         let rsp = send_req(svc.clone(), http::Request::get("/"));
         serve_req(
@@ -129,6 +131,7 @@ async fn consecutive_failures_accrue() {
 
     // Ensure that the error is because of the breaker, and not because the
     // underlying service doesn't poll ready.
+    tracing::info!("Sending request while in failfast");
     handle.allow(1);
     // We are now in failfast.
     let error = send_req(svc.clone(), http::Request::get("/"))
@@ -139,6 +142,7 @@ async fn consecutive_failures_accrue() {
         "service should be in failfast"
     );
 
+    tracing::info!("Sending request while in loadshed");
     let error = send_req(svc.clone(), http::Request::get("/"))
         .await
         .expect_err("service should be in failfast");
@@ -149,19 +153,28 @@ async fn consecutive_failures_accrue() {
 
     // After the probation period, a subsequent request should be failed by
     // hitting the service.
+    tracing::info!("Waiting for probation");
     backoffs.next().await;
-    tracing::info!("After probation");
-    tokio::task::yield_now().await;
+    task::yield_now().await;
 
+    tracing::info!("Sending a bad request while in probation");
+    handle.allow(1);
     let rsp = send_req(svc.clone(), http::Request::get("/"));
-    serve_req(
-        &mut handle,
-        mk_rsp(StatusCode::INTERNAL_SERVER_ERROR, "bad"),
+    tracing::info!("Serving response");
+    tokio::time::timeout(
+        time::Duration::from_secs(10),
+        serve_req(
+            &mut handle,
+            mk_rsp(StatusCode::INTERNAL_SERVER_ERROR, "bad"),
+        ),
     )
-    .await;
+    .await
+    .expect("no timeouts");
     assert_rsp(rsp, StatusCode::INTERNAL_SERVER_ERROR, "bad").await;
 
     // We are now in failfast.
+    tracing::info!("Sending a failfast request while the circuit is broken");
+    handle.allow(1);
     let error = send_req(svc.clone(), http::Request::get("/"))
         .await
         .expect_err("service should be in failfast");
@@ -171,19 +184,32 @@ async fn consecutive_failures_accrue() {
     );
 
     // Wait out the probation period again
-    handle.allow(1);
+    tracing::info!("Waiting for probation again");
     backoffs.next().await;
-    tracing::info!("After second probation");
+    task::yield_now().await;
 
     // The probe request succeeds
+    tracing::info!("Sending a good request while in probation");
+    handle.allow(1);
     let rsp = send_req(svc.clone(), http::Request::get("/"));
-    serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
+    tokio::time::timeout(
+        time::Duration::from_secs(10),
+        serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")),
+    )
+    .await
+    .expect("no timeouts");
     assert_rsp(rsp, StatusCode::OK, "good").await;
 
     // The gate is now open again
+    tracing::info!("Sending a final good request");
     handle.allow(1);
     let rsp = send_req(svc.clone(), http::Request::get("/"));
-    serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
+    tokio::time::timeout(
+        time::Duration::from_secs(10),
+        serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")),
+    )
+    .await
+    .expect("no timeouts");
     assert_rsp(rsp, StatusCode::OK, "good").await;
 }
 
@@ -265,7 +291,7 @@ async fn balancer_doesnt_select_tripped_breakers() {
             }
         };
         assert_rsp(rsp, expected_status, expected_body).await;
-        tokio::task::yield_now().await;
+        task::yield_now().await;
     }
 
     handle1.allow(1);
@@ -509,13 +535,13 @@ fn send_req(
     );
     let rsp = tokio::spawn(
         async move {
-            tracing::info!("sending request...");
             // the HTTP stack will panic if a request is missing a client handle
             let (client_handle, _) =
                 http::ClientHandle::new(SocketAddr::new([10, 0, 0, 42].into(), 42069));
             req.extensions_mut().insert(client_handle);
+            tracing::debug!("Sending");
             let rsp = svc.oneshot(req).await;
-            tracing::info!(?rsp);
+            tracing::debug!(?rsp, "Response");
             rsp
         }
         .instrument(span),
@@ -546,13 +572,14 @@ async fn assert_rsp<T: std::fmt::Debug>(
 }
 
 async fn serve_req(handle: &mut tower_test::mock::Handle<Request, Response>, rsp: Response) {
+    tracing::debug!("Awaiting request");
     let (req, send_rsp) = handle
         .next_request()
         .await
         .expect("service must receive request");
-    tracing::info!(?req, "received request");
+    tracing::debug!(?req, "Received request");
     send_rsp.send_response(rsp);
-    tracing::info!(?req, "response sent");
+    tracing::debug!(?req, "Response sent");
 }
 
 fn default_backend(path: impl ToString) -> client_policy::Backend {
