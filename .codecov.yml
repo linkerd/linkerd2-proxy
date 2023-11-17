@@ -1,6 +1,5 @@
 coverage:
-  # Disable the codecov status check until we start running it more regularly
-  # (so the comparisons are useful).
   status:
-    project:
+    project: default
+    patch:
       default: false
