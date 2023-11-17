@@ -31,7 +31,7 @@ jobs:
     steps:
       # XXX(ver) Workaround for a linking problem in the binary we store in the
       # devcontainer.
-      - run: rm -f /usr/local/bin/cargo-tarpaulin && cargo install cargo-tarpaulin
+      - run: scurl https://github.com/xd009642/tarpaulin/releases/download/0.27.1/cargo-tarpaulin-x86_64-unknown-linux-musl.tar.gz | tar -C /usr/local/bin -zxvf -
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       # linkerd-transport-header and opencencus-proto tests only check codegen.
       - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --no-run
