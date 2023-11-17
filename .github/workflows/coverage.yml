@@ -33,8 +33,9 @@ jobs:
       # devcontainer.
       - run: rm -f /usr/local/bin/cargo-tarpaulin && cargo install cargo-tarpaulin
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --no-run
-      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --skip-clean --ignore-tests --no-fail-fast --out=Xml
+      # linkerd-transport-header and opencencus-proto tests only check codegen.
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --no-run
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --skip-clean --ignore-tests --no-fail-fast --out=Xml
         # Some tests are especially flakey in coverage tests. That's fine. We
         # only really care to measure how much of our codebase is covered.
         continue-on-error: true
