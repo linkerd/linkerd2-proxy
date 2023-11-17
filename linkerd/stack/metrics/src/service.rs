@@ -14,11 +14,12 @@ pub struct TrackService<S> {
     inner: S,
     metrics: Arc<Metrics>,
     blocked_since: Option<time::Instant>,
+    // Metrics is shared across all distinct services, so we use a separate
+    // tracker.
     _tracker: Arc<()>,
 }
 
 impl<S> TrackService<S> {
-    ///
     pub(crate) fn new(inner: S, metrics: Arc<Metrics>) -> Self {
         Self {
             inner,
@@ -100,78 +101,83 @@ impl<S> Drop for TrackService<S> {
 }
 
 #[cfg(test)]
-#[tokio::test(flavor = "current_thread")]
-async fn clone_drop() {
-    let metrics = Arc::new(Metrics::default());
+mod tests {
+    use super::*;
 
-    let (a, _a) = tower_test::mock::pair::<(), ()>();
-    let a0 = TrackService::new(a, metrics.clone());
-    let a1 = a0.clone();
+    #[tokio::test(flavor = "current_thread")]
+    async fn clone_drop() {
+        let metrics = Arc::new(Metrics::default());
 
-    let (b, _b) = tower_test::mock::pair::<(), ()>();
-    let b0 = TrackService::new(b, metrics.clone());
+        let (a, _a) = tower_test::mock::pair::<(), ()>();
+        let a0 = TrackService::new(a, metrics.clone());
+        let a1 = a0.clone();
 
-    drop(a1);
-    assert_eq!(metrics.drop_total.value(), 0.0, "Not dropped yet");
+        let (b, _b) = tower_test::mock::pair::<(), ()>();
+        let b0 = TrackService::new(b, metrics.clone());
 
-    drop(b0);
-    assert_eq!(
-        metrics.drop_total.value(),
-        1.0,
-        "Dropping distinct service is counted"
-    );
+        drop(a1);
+        assert_eq!(metrics.drop_total.value(), 0.0, "Not dropped yet");
 
-    drop(a0);
-    assert_eq!(
-        metrics.drop_total.value(),
-        2.0,
-        "Dropping last service clone counted"
-    );
+        drop(b0);
+        assert_eq!(
+            metrics.drop_total.value(),
+            1.0,
+            "Dropping distinct service is counted"
+        );
 
-    assert_eq!(
-        metrics.create_total.value(),
-        0.0,
-        "No creates by the service"
-    );
-}
+        drop(a0);
+        assert_eq!(
+            metrics.drop_total.value(),
+            2.0,
+            "Dropping last service clone counted"
+        );
 
-#[cfg(test)]
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn clone_poll_ready() {
-    let metrics = Arc::new(Metrics::default());
-    let (mut svc0, mut handle) =
-        tower_test::mock::spawn_with::<(), (), _, _>(|svc| TrackService::new(svc, metrics.clone()));
+        assert_eq!(
+            metrics.create_total.value(),
+            0.0,
+            "No creates by the service"
+        );
+    }
 
-    handle.allow(0);
-    tokio_test::assert_pending!(svc0.poll_ready());
-    let mut svc1 = svc0.clone();
-    assert!(svc0.get_ref().blocked_since.is_some());
-    assert!(svc1.get_ref().blocked_since.is_none());
+    #[cfg(test)]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn clone_poll_ready() {
+        let metrics = Arc::new(Metrics::default());
+        let (mut svc0, mut handle) = tower_test::mock::spawn_with::<(), (), _, _>(|svc| {
+            TrackService::new(svc, metrics.clone())
+        });
 
-    tokio_test::assert_pending!(svc1.poll_ready());
-    assert!(svc0.get_ref().blocked_since.is_some());
-    assert!(svc1.get_ref().blocked_since.is_some());
+        handle.allow(0);
+        tokio_test::assert_pending!(svc0.poll_ready());
+        let mut svc1 = svc0.clone();
+        assert!(svc0.get_ref().blocked_since.is_some());
+        assert!(svc1.get_ref().blocked_since.is_none());
 
-    time::sleep(time::Duration::from_secs(1)).await;
-    handle.allow(2);
-    tokio_test::assert_ready_ok!(svc0.poll_ready());
-    tokio_test::assert_ready_ok!(svc1.poll_ready());
-    assert!(svc0.get_ref().blocked_since.is_none());
-    assert!(svc1.get_ref().blocked_since.is_none());
+        tokio_test::assert_pending!(svc1.poll_ready());
+        assert!(svc0.get_ref().blocked_since.is_some());
+        assert!(svc1.get_ref().blocked_since.is_some());
 
-    assert_eq!(
-        metrics.ready_total.value(),
-        2.0,
-        "Both clones should be counted discretely"
-    );
-    assert_eq!(
-        metrics.not_ready_total.value(),
-        2.0,
-        "Both clones should be counted discretely"
-    );
-    assert_eq!(
-        metrics.poll_millis.value(),
-        2000.0,
-        "Both clones should be counted discretely"
-    );
+        time::sleep(time::Duration::from_secs(1)).await;
+        handle.allow(2);
+        tokio_test::assert_ready_ok!(svc0.poll_ready());
+        tokio_test::assert_ready_ok!(svc1.poll_ready());
+        assert!(svc0.get_ref().blocked_since.is_none());
+        assert!(svc1.get_ref().blocked_since.is_none());
+
+        assert_eq!(
+            metrics.ready_total.value(),
+            2.0,
+            "Both clones should be counted discretely"
+        );
+        assert_eq!(
+            metrics.not_ready_total.value(),
+            2.0,
+            "Both clones should be counted discretely"
+        );
+        assert_eq!(
+            metrics.poll_millis.value(),
+            2000.0,
+            "Both clones should be counted discretely"
+        );
+    }
 }
