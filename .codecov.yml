@@ -1,0 +1,6 @@
+coverage:
+  status:
+    # Disable patch statuses until we sort out coverage more broadly. This is
+    # noisy as it is.
+    patch:
+      default: false

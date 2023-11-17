@@ -6,6 +6,7 @@ permissions:
 on:
   pull_request:
     paths:
+      - .codecov.yml
       - .github/workflows/coverage.yml
   schedule:
     # Run daily at 11AM UTC (3AM PST).
