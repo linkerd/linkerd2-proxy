@@ -12,8 +12,7 @@ use linkerd_app_core::{
         core::Resolve,
         tap,
     },
-    svc::{self, Layer},
-    tls,
+    svc, tls,
     transport::{self, addrs::*},
     Error, Infallible, NameAddr, Result,
 };
