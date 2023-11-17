@@ -1,0 +1,8 @@
+coverage:
+  # Disable statuses until we sort out coverage more broadly. This is noisy as
+  # it is.
+  status:
+    project:
+      default: false
+    patch:
+      default: false
