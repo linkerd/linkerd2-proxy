@@ -43,6 +43,7 @@ impl<H> Inbound<H> {
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Clone
             + Send
+            + Sync
             + Unpin
             + 'static,
         HSvc::Error: Into<Error>,

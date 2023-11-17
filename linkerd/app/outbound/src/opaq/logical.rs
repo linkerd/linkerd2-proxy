@@ -74,14 +74,7 @@ impl<N> Outbound<N> {
     /// services. Only available inner services are used for routing. When
     /// there are no available backends, requests are failed with a
     /// [`svc::stack::LoadShedError`].
-    pub fn push_opaq_logical<T, I, NSvc>(
-        self,
-    ) -> Outbound<
-        svc::ArcNewService<
-            T,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
-        >,
-    >
+    pub fn push_opaq_logical<T, I, NSvc>(self) -> Outbound<svc::ArcNewCloneTcp<T, I>>
     where
         // Opaque logical target.
         T: svc::Param<Logical>,
@@ -142,7 +135,7 @@ impl<N> Outbound<N> {
                     },
                     concrete.into_inner(),
                 )
-                .push(svc::ArcNewService::layer())
+                .arc_new_clone_tcp()
         })
     }
 }

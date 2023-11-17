@@ -69,18 +69,7 @@ where
     /// we can reuse inner services.
     pub(super) fn layer<N, S>(
         metrics: metrics::Proxy,
-    ) -> impl svc::Layer<
-        N,
-        Service = svc::ArcNewService<
-            Self,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    > + Clone
+    ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         N: svc::NewService<Concrete<T>, Service = S> + Clone + Send + Sync + 'static,
         S: svc::Service<
@@ -101,7 +90,7 @@ where
                 // returned from the `SelectRoute` impl.
                 .push_on_service(RouteParams::layer(metrics.clone()))
                 .push(svc::NewOneshotRoute::<Params<T>, _, _>::layer_cached())
-                .push(svc::ArcNewService::layer())
+                .arc_new_clone_http()
                 .into_inner()
         })
     }
@@ -257,18 +246,7 @@ where
 impl<T> RouteParams<T> {
     fn layer<N, S>(
         metrics: metrics::Proxy,
-    ) -> impl svc::Layer<
-        N,
-        Service = svc::ArcNewService<
-            Self,
-            impl svc::Service<
-                    http::Request<http::BoxBody>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                > + Clone,
-        >,
-    > + Clone
+    ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
         N: svc::NewService<Concrete<T>, Service = S> + Clone + Send + Sync + 'static,
@@ -329,7 +307,7 @@ impl<T> RouteParams<T> {
                 // extension.
                 .push(classify::NewClassify::layer())
                 .push_on_service(http::BoxResponse::layer())
-                .push(svc::ArcNewService::layer())
+                .arc_new_clone_http()
                 .into_inner()
         })
     }
