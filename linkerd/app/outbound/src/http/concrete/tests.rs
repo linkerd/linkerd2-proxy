@@ -7,7 +7,7 @@ use linkerd_app_core::{
 };
 use linkerd_proxy_client_policy as policy;
 use std::{net::SocketAddr, num::NonZeroU16, sync::Arc};
-use tokio::time;
+use tokio::{task, time};
 
 #[tokio::test(flavor = "current_thread")]
 async fn gauges_endpoints() {
@@ -49,6 +49,12 @@ async fn gauges_endpoints() {
             },
         });
 
+    // Run a background task that drives requests through the balancer as it is notified.
+    //
+    // XXX(ver) Discovery updates are only processed when the buffer is actively
+    // processing requests, so we need to drive requests through this test to
+    // update the gauge metrics. If the discovery processing logic changes, we
+    // can update this to test updates without processing requests.
     let ready = Arc::new(tokio::sync::Notify::new());
     let _task = tokio::spawn({
         let ready = ready.clone();
@@ -76,7 +82,7 @@ async fn gauges_endpoints() {
     // gauge is accurate.
     resolve_tx.add(vec![(ep0, Metadata::default())]).unwrap();
     handle0.allow(1);
-    tokio::task::yield_now().await;
+    task::yield_now().await;
     assert_eq!(
         (gauge.pending.value(), gauge.ready.value()),
         (0, 1),
@@ -90,7 +96,7 @@ async fn gauges_endpoints() {
     resolve_tx.add(vec![(ep1, Metadata::default())]).unwrap();
     handle0.allow(0);
     handle1.allow(1);
-    tokio::task::yield_now().await;
+    task::yield_now().await;
     assert_eq!(
         (gauge.pending.value(), gauge.ready.value()),
         (1, 1),
@@ -105,7 +111,7 @@ async fn gauges_endpoints() {
     handle1.allow(2);
 
     // The inner endpoint isn't actually dropped until the balancer's subsequent poll.
-    tokio::task::yield_now().await;
+    task::yield_now().await;
     assert_eq!(
         (gauge.pending.value(), gauge.ready.value()),
         (0, 1),
@@ -117,7 +123,7 @@ async fn gauges_endpoints() {
 
     // Dropping the remaining endpoint, the gauge is updated.
     resolve_tx.remove(vec![ep1]).unwrap();
-    tokio::task::yield_now().await;
+    task::yield_now().await;
     ready.notify_one();
     assert_eq!(
         (gauge.pending.value(), gauge.ready.value()),

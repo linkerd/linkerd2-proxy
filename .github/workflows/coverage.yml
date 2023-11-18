@@ -4,13 +4,18 @@ permissions:
   contents: read
 
 on:
+  # We run coverage on main so that PRs can have a meaninful comparison that
+  # doesn't lag a whole day.
+  push:
+    branches:
+      - main
+
+  # Coverage runs on all code changes (as well as changes to the workflow).
   pull_request:
     paths:
       - .codecov.yml
       - .github/workflows/coverage.yml
-  schedule:
-    # Run daily at 11AM UTC (3AM PST).
-    - cron: '0 11 * * *'
+      - '**/*.rs'
 
 env:
   CARGO_INCREMENTAL: 0
@@ -19,6 +24,18 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
+  # Cancel any previous runs of this workflow so coverage runs don't back up,
+  # especially on main (i.e. after merging several PRs).
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: styfle/cancel-workflow-action@01ce38bf961b4e243a6342cbade0dbc8ba3f0432
+        with:
+          all_but_latest: true
+          access_token: ${{ github.token }}
+
   test:
     name: codecov
     runs-on: ubuntu-latest
@@ -31,7 +48,7 @@ jobs:
     steps:
       # XXX(ver) Workaround for a linking problem in the binary we store in the
       # devcontainer.
-      - run: rm -f /usr/local/bin/cargo-tarpaulin && cargo install cargo-tarpaulin
+      - run: scurl https://github.com/xd009642/tarpaulin/releases/download/0.27.1/cargo-tarpaulin-x86_64-unknown-linux-musl.tar.gz | tar -C /usr/local/bin -zxvf -
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       # linkerd-transport-header and opencencus-proto tests only check codegen.
       - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --no-run

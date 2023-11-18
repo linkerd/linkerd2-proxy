@@ -7,7 +7,7 @@ use linkerd_app_core::{
 use linkerd_proxy_client_policy as client_policy;
 use parking_lot::Mutex;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::{sync::watch, time};
+use tokio::{sync::watch, task, time};
 use tracing::Instrument;
 
 const AUTHORITY: &str = "logical.test.svc.cluster.local";
@@ -152,7 +152,7 @@ async fn consecutive_failures_accrue() {
     // hitting the service.
     tracing::info!("Waiting for probation");
     backoffs.next().await;
-    tokio::task::yield_now().await;
+    task::yield_now().await;
 
     tracing::info!("Sending a bad request while in probation");
     handle.allow(1);
@@ -183,7 +183,7 @@ async fn consecutive_failures_accrue() {
     // Wait out the probation period again
     tracing::info!("Waiting for probation again");
     backoffs.next().await;
-    tokio::task::yield_now().await;
+    task::yield_now().await;
 
     // The probe request succeeds
     tracing::info!("Sending a good request while in probation");
@@ -288,7 +288,7 @@ async fn balancer_doesnt_select_tripped_breakers() {
             }
         };
         assert_rsp(rsp, expected_status, expected_body).await;
-        tokio::task::yield_now().await;
+        task::yield_now().await;
     }
 
     handle1.allow(1);
