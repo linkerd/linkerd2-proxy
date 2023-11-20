@@ -1,6 +1,6 @@
 use crate::*;
 use linkerd2_proxy_api as pb;
-use tokio::time;
+use tokio::time::sleep;
 
 const HOST: &str = "disco.test.svc.cluster.local";
 
@@ -295,7 +295,7 @@ mod cross_version {
         dst_tx1.send(up);
 
         // Wait for the reconnect to happen. TODO: Replace this flaky logic.
-        tokio::time::sleep(Duration::from_millis(1000)).await;
+        sleep(Duration::from_secs(1)).await;
 
         let rsp = initially_exists
             .request(initially_exists.request_builder("/"))
@@ -364,12 +364,12 @@ mod cross_version {
             .await;
 
         // Allow the control client to notice a connection error
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        sleep(Duration::from_millis(500)).await;
 
         // Allow our controller to start accepting connections,
         // and then wait a little bit so the client tries again.
         drop(tx);
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        sleep(Duration::from_millis(500)).await;
 
         let client = (test.mk_client)(&proxy, HOST);
 
@@ -426,9 +426,9 @@ mod http2 {
         outbound_error_reconnects_after_backoff
     }
 
-    #[tokio::test]
+    /// See https://github.com/linkerd/linkerd2/issues/2550
+    #[tokio::test(flavor = "current_thread")]
     async fn outbound_balancer_waits_for_ready_endpoint() {
-        // See https://github.com/linkerd/linkerd2/issues/2550
         let _t = trace_init();
 
         let svc_addr = SocketAddr::from(([127, 0, 0, 1], 8080));
@@ -466,8 +466,6 @@ mod http2 {
             .assert_in(&metrics)
             .await;
         tracing::info!("Connection closed");
-
-        time::sleep(time::Duration::from_secs(1)).await;
 
         // Start a new request to the destination, now that the server is dead.
         // This request should be waiting at the balancer for a ready endpoint.
