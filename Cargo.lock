@@ -1198,6 +1198,7 @@ dependencies = [
  "linkerd-app-test",
  "linkerd-http-access-log",
  "linkerd-http-metrics",
+ "linkerd-identity",
  "linkerd-idle-cache",
  "linkerd-io",
  "linkerd-meshtls",
@@ -1512,8 +1513,10 @@ dependencies = [
 name = "linkerd-identity"
 version = "0.1.0"
 dependencies = [
+ "http",
  "linkerd-dns-name",
  "linkerd-error",
+ "thiserror",
 ]
 
 [[package]]

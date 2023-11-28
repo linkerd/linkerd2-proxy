@@ -1,5 +1,5 @@
 use http::uri::Authority;
-use linkerd_tls::client::ServerId;
+use linkerd_tls::client::ClientTls;
 use std::collections::BTreeMap;
 
 /// Endpoint labels are lexigraphically ordered by key.
@@ -18,7 +18,7 @@ pub struct Metadata {
     tagged_transport_port: Option<u16>,
 
     /// How to verify TLS for the endpoint.
-    identity: Option<ServerId>,
+    identity: Option<ClientTls>,
 
     /// Used to override the the authority if needed
     authority_override: Option<Authority>,
@@ -55,7 +55,7 @@ impl Metadata {
         labels: impl IntoIterator<Item = (String, String)>,
         protocol_hint: ProtocolHint,
         tagged_transport_port: Option<u16>,
-        identity: Option<ServerId>,
+        identity: Option<ClientTls>,
         authority_override: Option<Authority>,
     ) -> Self {
         Self {
@@ -76,7 +76,7 @@ impl Metadata {
         self.protocol_hint
     }
 
-    pub fn identity(&self) -> Option<&ServerId> {
+    pub fn identity(&self) -> Option<&ClientTls> {
         self.identity.as_ref()
     }
 
