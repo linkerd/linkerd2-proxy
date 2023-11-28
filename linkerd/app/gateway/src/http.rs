@@ -82,6 +82,7 @@ impl Gateway {
         T: Clone + Send + Sync + Unpin + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
         let http = self
             .outbound

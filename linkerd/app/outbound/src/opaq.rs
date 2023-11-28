@@ -36,6 +36,7 @@ impl<C> Outbound<C> {
         I: Debug + Send + Sync + Unpin + 'static,
         // Endpoint discovery
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
         // TCP endpoint stack.
         C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
         C: Clone + Send + Sync + Unpin + 'static,

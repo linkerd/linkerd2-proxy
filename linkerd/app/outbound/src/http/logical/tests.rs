@@ -60,10 +60,7 @@ async fn routes() {
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn consecutive_failures_accrue() {
-    let _trace = trace::test::with_default_filter(format!(
-        "{},linkerd_app_outbound=trace,linkerd_stack=trace",
-        trace::test::DEFAULT_LOG
-    ));
+    let _trace = trace::test::with_default_filter(format!("{},trace", trace::test::DEFAULT_LOG));
 
     let addr = SocketAddr::new([192, 0, 2, 41].into(), PORT);
     let dest: NameAddr = format!("{AUTHORITY}:{PORT}")

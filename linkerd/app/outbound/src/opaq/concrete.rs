@@ -1,5 +1,6 @@
 use crate::{stack_labels, Outbound};
 use linkerd_app_core::{
+    config::QueueConfig,
     drain, io, metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
@@ -46,6 +47,7 @@ pub struct Endpoint<T> {
 struct Balance<T> {
     addr: NameAddr,
     ewma: balance::EwmaConfig,
+    queue: QueueConfig,
     parent: T,
 }
 
@@ -78,6 +80,7 @@ impl<C> Outbound<C> {
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
         // Endpoint connector.
         C: svc::MakeConnection<Endpoint<T>> + Clone + Send + 'static,
         C::Connection: Send + Unpin,
@@ -90,10 +93,7 @@ impl<C> Outbound<C> {
                 .layer(resolve.into_service());
 
         self.map_stack(|config, rt, inner| {
-            let crate::Config {
-                tcp_connection_queue,
-                ..
-            } = config;
+            let queue = config.tcp_connection_queue;
 
             let connect = inner
                 .push(svc::stack::WithoutConnectionMetadata::layer())
@@ -134,6 +134,7 @@ impl<C> Outbound<C> {
                 )
                 .lift_new_with_target()
                 .push(tcp::NewBalancePeakEwma::layer(resolve))
+                .check_new_clone::<Balance<T>>()
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(
                     rt.metrics
@@ -147,9 +148,12 @@ impl<C> Outbound<C> {
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Dispatch::Balance(addr, ewma) => {
-                                svc::Either::A(Balance { addr, ewma, parent })
-                            }
+                            Dispatch::Balance(addr, ewma) => svc::Either::A(Balance {
+                                addr,
+                                ewma,
+                                queue,
+                                parent,
+                            }),
                             Dispatch::Forward(addr, meta) => svc::Either::B(Endpoint {
                                 addr,
                                 is_local: false,
@@ -162,7 +166,6 @@ impl<C> Outbound<C> {
                 )
                 .push_on_service(tcp::Forward::layer())
                 .push_on_service(drain::Retain::layer(rt.drain.clone()))
-                .push(svc::NewQueue::layer_via(*tcp_connection_queue))
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -192,6 +195,18 @@ impl<T> std::ops::Deref for Balance<T> {
 impl<T> svc::Param<balance::EwmaConfig> for Balance<T> {
     fn param(&self) -> balance::EwmaConfig {
         self.ewma
+    }
+}
+
+impl<T> svc::Param<svc::queue::Capacity> for Balance<T> {
+    fn param(&self) -> svc::queue::Capacity {
+        svc::queue::Capacity(self.queue.capacity)
+    }
+}
+
+impl<T> svc::Param<svc::queue::Timeout> for Balance<T> {
+    fn param(&self) -> svc::queue::Timeout {
+        svc::queue::Timeout(self.queue.failfast_timeout)
     }
 }
 

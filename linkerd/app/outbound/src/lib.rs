@@ -238,6 +238,7 @@ impl Outbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
         let profiles = profiles::WithAllowlist::new(profiles, self.config.allow_discovery.clone());
         if self.config.ingress_mode {

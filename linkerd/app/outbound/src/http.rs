@@ -86,6 +86,7 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
         T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
         self.push_http_endpoint()
             .push_http_concrete(resolve)

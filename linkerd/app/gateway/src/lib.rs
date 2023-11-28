@@ -67,6 +67,7 @@ impl Gateway {
         I: Debug + Send + Sync + Unpin + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
         let opaq = {
             let resolve = resolve.clone();

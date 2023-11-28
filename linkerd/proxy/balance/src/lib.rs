@@ -1,13 +1,13 @@
+#![allow(warnings)]
+
 use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_proxy_core::Resolve;
-use linkerd_stack::{layer, NewService, Param, Service};
-use rand::thread_rng;
-use std::{fmt::Debug, hash::Hash, marker::PhantomData, net::SocketAddr, time::Duration};
-use tower::{
-    balance::p2c,
-    load::{self, PeakEwma},
-};
+use linkerd_proxy_pool::PoolQueue;
+use linkerd_stack::{layer, queue, Gate, NewService, Param, Service};
+use std::{fmt::Debug, hash::Hash, marker::PhantomData, net::SocketAddr};
+use tokio::time;
+use tower::load::{self, PeakEwma};
 
 mod discover;
 mod gauge_endpoints;
@@ -16,28 +16,26 @@ mod pool;
 pub use self::{
     discover::DiscoveryStreamOverflow,
     gauge_endpoints::{EndpointsGauges, NewGaugeEndpoints},
-    pool::P2cPool,
+    pool::{P2cPool, Pool, Update},
 };
 pub use tower::load::peak_ewma::Handle;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EwmaConfig {
-    pub default_rtt: Duration,
-    pub decay: Duration,
+    pub default_rtt: time::Duration,
+    pub decay: time::Duration,
 }
 
 /// Configures a stack to resolve targets to balance requests over `N`-typed
 /// endpoint stacks.
 #[derive(Debug)]
 pub struct NewBalancePeakEwma<C, Req, R, N> {
-    update_queue_capacity: usize,
     resolve: R,
     inner: N,
     _marker: PhantomData<fn(Req) -> C>,
 }
 
-pub type Balance<T, C, Req, N> =
-    p2c::Balance<discover::NewServices<T, NewPeakEwma<C, Req, N>>, Req>;
+pub type Balance<Req, F> = Gate<PoolQueue<Req, F>>;
 
 /// Wraps the inner services in [`PeakEwma`] services so their load is tracked
 /// for the p2c balancer.
@@ -51,31 +49,18 @@ pub struct NewPeakEwma<C, Req, N> {
 // === impl NewBalancePeakEwma ===
 
 impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
-    /// Limits the number of endpoint updates that can be buffered by a
-    /// discovery stream (i.e., for a specific service resolution).
-    ///
-    /// The buffering task ensures that discovery updates are processed (i.e.,
-    /// from the controller client) even when the balancer is not processing new
-    /// requests. If the buffer fills up, we'll stop polling the discovery
-    /// stream. When the stream represents an gRPC streaming response, the
-    /// server may become unable to write further updates when the buffer is
-    /// full.
-    ///
-    /// 1K updates should be more than enough for most load balancers.
-    const UPDATE_QUEUE_CAPACITY: usize = 1_000;
-
     pub fn new(inner: N, resolve: R) -> Self {
         Self {
-            update_queue_capacity: Self::UPDATE_QUEUE_CAPACITY,
             resolve,
             inner,
             _marker: PhantomData,
         }
     }
 
-    pub fn layer(resolve: R) -> impl layer::Layer<N, Service = Self> + Clone
+    pub fn layer<T>(resolve: R) -> impl layer::Layer<N, Service = Self> + Clone
     where
         R: Clone,
+        Self: NewService<T>,
     {
         layer::mk(move |inner| Self::new(inner, resolve.clone()))
     }
@@ -83,40 +68,55 @@ impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
 
 impl<C, T, Req, R, M, N, S> NewService<T> for NewBalancePeakEwma<C, Req, R, M>
 where
-    T: Param<EwmaConfig> + Clone + Send,
+    T: Param<EwmaConfig> + Param<queue::Capacity> + Param<queue::Timeout> + Clone + Send,
     R: Resolve<T>,
+    R::Resolution: Unpin,
     R::Error: Send,
     M: NewService<T, Service = N> + Clone,
     N: NewService<(SocketAddr, R::Endpoint), Service = S> + Send + 'static,
-    S: Service<Req> + Send,
+    S: Service<Req> + Send + 'static,
+    S::Future: Send + 'static,
     S::Error: Into<Error>,
     C: load::TrackCompletion<load::peak_ewma::Handle, S::Response> + Default + Send + 'static,
-    Req: 'static,
-    Balance<R::Endpoint, C, Req, N>: Service<Req>,
+    Req: Send + 'static,
+    Balance<Req, future::ErrInto<<PeakEwma<S, C> as Service<Req>>::Future, Error>>: Service<Req>,
 {
-    type Service = Balance<R::Endpoint, C, Req, N>;
+    type Service = Balance<Req, future::ErrInto<<PeakEwma<S, C> as Service<Req>>::Future, Error>>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let new_endpoint = NewPeakEwma {
-            config: target.param(),
-            inner: self.inner.new_service(target.clone()),
-            _marker: PhantomData,
+        // Initialize a resolution stream to discover endpoint updates. This
+        // stream should be effectively inifite (and, i.e., handle errors
+        // gracefully).
+        //
+        // If the resolution stream ends, the balancer will simply stop
+        // processing endpoint updates.
+        //
+        // If the resolution stream fails, the balancer will return an error.
+        let disco = self.resolve.resolve(target.clone()).try_flatten_stream();
+
+        let queue::Capacity(capacity) = target.param();
+        let queue::Timeout(failfast) = target.param();
+
+        // The pool wraps the inner endpoint stack so that its inner ready cache
+        // can be updated without requiring the service to process requests.
+        let pool = {
+            let ewma = target.param();
+            let new_endpoint = self.inner.new_service(target);
+            P2cPool::new(NewPeakEwma::new(ewma, new_endpoint))
         };
 
-        let disco = {
-            let r = discover::FromResolve::new(self.resolve.resolve(target).try_flatten_stream());
-            let d = discover::buffer::spawn(self.update_queue_capacity, r);
-            discover::NewServices::new(d, new_endpoint)
-        };
-
-        Balance::from_rng(disco, &mut thread_rng()).expect("RNG must be valid")
+        // The queue runs on a dedicated task, owning the resolution stream and
+        // all of the inner endpoint services. A cloneable Service is returned
+        // that allows passing requests to the service. When all clones of the
+        // service are dropped, the queue task completes, dropping the
+        // resolution and all inner services.
+        PoolQueue::spawn(capacity, failfast, disco, pool)
     }
 }
 
 impl<C, Req, R: Clone, N: Clone> Clone for NewBalancePeakEwma<C, Req, R, N> {
     fn clone(&self) -> Self {
         Self {
-            update_queue_capacity: self.update_queue_capacity,
             resolve: self.resolve.clone(),
             inner: self.inner.clone(),
             _marker: self._marker,
@@ -125,6 +125,16 @@ impl<C, Req, R: Clone, N: Clone> Clone for NewBalancePeakEwma<C, Req, R, N> {
 }
 
 // === impl NewPeakEwma ===
+
+impl<C, Req, N> NewPeakEwma<C, Req, N> {
+    fn new(config: EwmaConfig, inner: N) -> Self {
+        Self {
+            config,
+            inner,
+            _marker: PhantomData,
+        }
+    }
+}
 
 impl<C, T, N, Req, S> NewService<T> for NewPeakEwma<C, Req, N>
 where
@@ -140,7 +150,7 @@ where
         // Due to a lossy transformation, the maximum value that can be
         // represented is ~585 years, which, I hope, is more than enough to
         // represent request latencies.
-        fn nanos(d: Duration) -> f64 {
+        fn nanos(d: time::Duration) -> f64 {
             const NANOS_PER_SEC: u64 = 1_000_000_000;
             let n = f64::from(d.subsec_nanos());
             let s = d.as_secs().saturating_mul(NANOS_PER_SEC) as f64;

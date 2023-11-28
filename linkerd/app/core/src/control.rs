@@ -43,6 +43,19 @@ impl svc::Param<Addr> for ControlAddr {
     }
 }
 
+impl svc::Param<svc::queue::Capacity> for ControlAddr {
+    fn param(&self) -> svc::queue::Capacity {
+        svc::queue::Capacity(1_000)
+    }
+}
+
+impl svc::Param<svc::queue::Timeout> for ControlAddr {
+    fn param(&self) -> svc::queue::Timeout {
+        const FAILFAST: time::Duration = time::Duration::from_secs(30);
+        svc::queue::Timeout(FAILFAST)
+    }
+}
+
 impl svc::Param<http::balance::EwmaConfig> for ControlAddr {
     fn param(&self) -> http::balance::EwmaConfig {
         EWMA_CONFIG
@@ -157,7 +170,7 @@ impl From<(&self::client::Target, Error)> for EndpointError {
 /// Sets the request's URI from `Config`.
 mod add_origin {
     use super::ControlAddr;
-    use linkerd_stack::{layer, NewService};
+    use crate::svc::{self, layer, NewService};
     use std::task::{Context, Poll};
 
     pub fn layer<M>() -> impl layer::Layer<M, Service = NewAddOrigin<M>> + Clone {
@@ -190,7 +203,7 @@ mod add_origin {
 
     // === AddOrigin ===
 
-    impl<B, S: tower::Service<http::Request<B>>> tower::Service<http::Request<B>> for AddOrigin<S> {
+    impl<B, S: svc::Service<http::Request<B>>> svc::Service<http::Request<B>> for AddOrigin<S> {
         type Response = S::Response;
         type Error = S::Error;
         type Future = S::Future;
@@ -325,7 +338,7 @@ mod client {
 
     pub fn layer<C, B>() -> impl svc::Layer<C, Service = Client<C, B>> + Copy
     where
-        http::h2::Connect<C, B>: tower::Service<Target>,
+        http::h2::Connect<C, B>: svc::Service<Target>,
     {
         svc::layer::mk(|mk_conn| {
             let inner = http::h2::Connect::new(mk_conn, H2Settings::default());
@@ -335,13 +348,13 @@ mod client {
 
     // === impl Client ===
 
-    impl<C, B> tower::Service<Target> for Client<C, B>
+    impl<C, B> svc::Service<Target> for Client<C, B>
     where
-        http::h2::Connect<C, B>: tower::Service<Target>,
+        http::h2::Connect<C, B>: svc::Service<Target>,
     {
-        type Response = <http::h2::Connect<C, B> as tower::Service<Target>>::Response;
-        type Error = <http::h2::Connect<C, B> as tower::Service<Target>>::Error;
-        type Future = <http::h2::Connect<C, B> as tower::Service<Target>>::Future;
+        type Response = <http::h2::Connect<C, B> as svc::Service<Target>>::Response;
+        type Error = <http::h2::Connect<C, B> as svc::Service<Target>>::Error;
+        type Future = <http::h2::Connect<C, B> as svc::Service<Target>>::Future;
 
         #[inline]
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
