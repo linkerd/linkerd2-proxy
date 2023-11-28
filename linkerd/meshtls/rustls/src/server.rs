@@ -1,9 +1,10 @@
 use futures::prelude::*;
 use linkerd_dns_name as dns;
 use linkerd_io as io;
+use linkerd_meshtls_verifier as verifier;
 use linkerd_stack::{Param, Service};
 use linkerd_tls::{ClientId, NegotiatedProtocol, NegotiatedProtocolRef, ServerName, ServerTls};
-use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
+use std::{pin::Pin, sync::Arc, task::Context};
 use thiserror::Error;
 use tokio::sync::watch;
 use tokio_rustls::rustls::{Certificate, ServerConfig};
@@ -129,30 +130,8 @@ fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<Client
     let (_io, session) = tls.get_ref();
     let certs = session.peer_certificates()?;
     let c = certs.first().map(Certificate::as_ref)?;
-    let end_cert = webpki::EndEntityCert::try_from(c)
-        .map_err(|error| tracing::warn!(%error, "Failed to parse client end-entity certificate"))
-        .ok()?;
-    let name: &str = end_cert
-        .dns_names()
-        .map_err(
-            |error| tracing::warn!(%error, "Failed to parse DNS names from client certificate"),
-        )
-        .ok()?
-        .next()
-        .map(Into::into)?;
-    if name == "*" {
-        // Wildcards can perhaps be handled in a future path...
-        return None;
-    }
-    if name.ends_with('.') {
-        tracing::warn!(%name, "Client DNS SAN must not end with a '.'");
-        return None;
-    }
-    let n = name
-        .parse::<dns::Name>()
-        .map_err(|error| tracing::warn!(%error, "Client certificate contained an invalid DNS name"))
-        .ok()?;
-    Some(ClientId(n.into()))
+
+    verifier::client_identity(c).map(ClientId)
 }
 
 // === impl ServerIo ===

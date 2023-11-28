@@ -1,6 +1,5 @@
 mod receiver;
 mod store;
-pub(crate) mod verify;
 
 pub use self::{receiver::Receiver, store::Store};
 use boring::{
