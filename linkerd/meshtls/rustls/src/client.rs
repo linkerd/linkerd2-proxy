@@ -1,7 +1,7 @@
-use super::creds::verify;
 use futures::prelude::*;
 use linkerd_identity as id;
 use linkerd_io as io;
+use linkerd_meshtls_verifier as verifier;
 use linkerd_stack::{NewService, Service};
 use linkerd_tls::{client::AlpnProtocols, ClientTls, NegotiatedProtocolRef};
 use std::{convert::TryFrom, pin::Pin, sync::Arc, task::Context};
@@ -113,7 +113,7 @@ where
                     let s = s?;
                     let (_, conn) = s.get_ref();
                     let end_cert = extract_cert(conn)?;
-                    verify::verify_id(end_cert, &server_id)?;
+                    verifier::verify_id(&end_cert.0, &server_id)?;
                     Ok(ClientIo(s))
                 }),
         )

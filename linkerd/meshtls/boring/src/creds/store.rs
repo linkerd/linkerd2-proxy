@@ -1,7 +1,8 @@
-use super::{verify, BaseCreds, Certs, Creds, CredsTx};
+use super::{BaseCreds, Certs, Creds, CredsTx};
 use boring::x509::{X509StoreContext, X509};
 use linkerd_error::Result;
 use linkerd_identity as id;
+use linkerd_meshtls_verifier as verifier;
 use std::sync::Arc;
 
 pub struct Store {
@@ -33,13 +34,13 @@ impl id::Credentials for Store {
     /// Publishes TLS client and server configurations using
     fn set_certificate(
         &mut self,
-        id::DerX509(leaf): id::DerX509,
+        id::DerX509(leaf_der): id::DerX509,
         intermediates: Vec<id::DerX509>,
         _expiry: std::time::SystemTime,
     ) -> Result<()> {
-        let leaf = X509::from_der(&leaf)?;
+        let leaf = X509::from_der(&leaf_der)?;
 
-        verify::verify_id(&leaf, &self.id)?;
+        verifier::verify_id(&leaf_der, &self.id)?;
 
         let intermediates = intermediates
             .into_iter()

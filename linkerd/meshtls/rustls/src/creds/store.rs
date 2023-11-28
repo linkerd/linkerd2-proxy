@@ -1,8 +1,8 @@
 use super::params::*;
-use super::verify;
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
+use linkerd_meshtls_verifier as verifier;
 use ring::{rand, signature::EcdsaKeyPair};
 use std::{convert::TryFrom, sync::Arc};
 use tokio::sync::watch;
@@ -128,7 +128,7 @@ impl Store {
         )?;
 
         // verify the id as the cert verifier does not do that (on purpose)
-        verify::verify_id(end_entity, &self.server_id).map_err(Into::into)
+        verifier::verify_id(&end_entity.0, &self.server_id).map_err(Into::into)
     }
 }
 
