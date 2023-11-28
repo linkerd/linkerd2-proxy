@@ -12,10 +12,9 @@ use linkerd_app_core::{
         core::Resolve,
         tap,
     },
-    svc::{self, Layer},
-    tls,
+    svc, tls,
     transport::{self, addrs::*},
-    Error, Infallible, NameAddr,
+    Error, Infallible, NameAddr, Result,
 };
 use linkerd_proxy_client_policy::FailureAccrual;
 use std::{fmt::Debug, net::SocketAddr, sync::Arc};
@@ -108,6 +107,9 @@ impl<N> Outbound<N> {
                         .stack
                         .layer(stack_labels("http", "forward")),
                 )
+                // TODO(ver) Configure this queue from the target (i.e. from
+                // discovery).
+                .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .instrument(|e: &Endpoint<T>| info_span!("forward", addr = %e.addr));
 
             let fail = svc::ArcNewService::new(|message: Arc<str>| {
@@ -141,9 +143,6 @@ impl<N> Outbound<N> {
                     },
                     fail,
                 )
-                // TODO(ver) Configure this queue from the target (i.e. from
-                // discovery).
-                .push(svc::NewQueue::layer_via(config.http_request_queue))
                 .arc_new_clone_http()
         })
     }
@@ -169,7 +168,7 @@ where
         config: &crate::Config,
         rt: &crate::Runtime,
         resolve: R,
-    ) -> impl svc::Layer<N, Service = svc::ArcNewHttp<Self>> + Clone
+    ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + 'static,
@@ -181,12 +180,14 @@ where
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
     {
-        let classify_channel_capacity = config.http_request_queue.capacity;
+        // TODO(ver) Configure queues from the target (i.e. from discovery).
+        let http_queue = config.http_request_queue;
         let inbound_ips = config.inbound_ips.clone();
         let metrics = rt.metrics.clone();
 
-        let resolve = svc::MapTargetLayer::new(|t: Self| -> ConcreteAddr { ConcreteAddr(t.addr) })
-            .layer(resolve.into_service());
+        let resolve = svc::stack(resolve.into_service())
+            .push_map_target(|t: Self| ConcreteAddr(t.addr))
+            .into_inner();
 
         svc::layer::mk(move |inner: N| {
             let endpoint = svc::stack(inner)
@@ -211,10 +212,10 @@ where
                 .lift_new_with_target()
                 .push(
                     http::NewClassifyGateSet::<classify::Response, _, _, _>::layer_via({
+                        let channel_capacity = http_queue.capacity;
                         move |target: &Self| breaker::Params {
                             accrual: target.parent.param(),
-                            // TODO configure channel capacities from target.
-                            channel_capacity: classify_channel_capacity,
+                            channel_capacity,
                         }
                     }),
                 )
@@ -229,12 +230,16 @@ where
                 ))
                 .push_on_service(svc::NewInstrumentLayer::new(
                     |(addr, _): &(SocketAddr, _)| info_span!("endpoint", %addr),
-                ));
+                ))
+                .push_on_service(svc::OnServiceLayer::new(svc::BoxService::layer()))
+                .push_on_service(svc::ArcNewService::layer())
+                .push(svc::ArcNewService::layer());
 
             endpoint
                 .push(http::NewBalancePeakEwma::layer(resolve.clone()))
                 .push(svc::NewMapErr::layer_from_target::<BalanceError, _>())
                 .push_on_service(http::BoxResponse::layer())
+                .push(svc::NewQueue::layer_via(http_queue))
                 .push_on_service(metrics.proxy.stack.layer(stack_labels("http", "balance")))
                 .instrument(|t: &Self| {
                     let BackendRef(meta) = t.parent.param();
@@ -245,8 +250,7 @@ where
                         port = %meta.port().map(u16::from).unwrap_or(0),
                     )
                 })
-                .push_on_service(svc::MapErr::layer_boxed())
-                .arc_new_http()
+                .arc_new_clone_http()
                 .into_inner()
         })
     }
