@@ -151,7 +151,7 @@ impl AllowPolicy {
     }
 }
 
-pub(crate) fn is_tls_authorized(tls: &tls::ConditionalServerTls, authz: &Authorization) -> bool {
+fn is_tls_authorized(tls: &tls::ConditionalServerTls, authz: &Authorization) -> bool {
     match authz.authentication {
         Authentication::Unauthenticated => true,
 
@@ -181,7 +181,7 @@ pub(crate) fn is_tls_authorized(tls: &tls::ConditionalServerTls, authz: &Authori
     }
 }
 
-pub(crate) fn is_authorized(
+fn is_authorized(
     authz: &Authorization,
     client_addr: Remote<ClientAddr>,
     tls: &tls::ConditionalServerTls,
