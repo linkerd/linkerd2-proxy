@@ -1,20 +1,12 @@
 use linkerd_error::Result;
-use std::{ops::Deref, time::SystemTime};
+use std::ops::Deref;
 
 /// Publishes certificates to be used by TLS implementations.
 pub trait Credentials {
-    /// Generate a CSR to to be sent to the identity service.
-    fn gen_certificate_signing_request(&mut self) -> DerX509;
-
     /// Set the certificate returned by the identity service.
     ///
     /// Fails if the certificate is not valid.
-    fn set_certificate(
-        &mut self,
-        leaf: DerX509,
-        chain: Vec<DerX509>,
-        expiry: SystemTime,
-    ) -> Result<()>;
+    fn set_certificate(&mut self, leaf: DerX509, chain: Vec<DerX509>, key: Vec<u8>) -> Result<()>;
 }
 
 /// DER-formatted X.509 data.

@@ -17,6 +17,8 @@ pub struct Config {
     pub token: TokenSource,
     pub min_refresh: Duration,
     pub max_refresh: Duration,
+    pub key_pkcs8: Vec<u8>,
+    pub csr_der: Vec<u8>,
 }
 
 #[derive(Copy, Clone, Debug, Error)]
@@ -62,7 +64,15 @@ impl Certify {
                 // The client is used for infrequent communication with the identity controller;
                 // so clients are instantiated on-demand rather than held.
                 let client = new_client.new_service(());
-                certify(&self.config.token, client, &name, &mut credentials).await
+                certify(
+                    &self.config.token,
+                    &self.config.key_pkcs8,
+                    &self.config.csr_der,
+                    client,
+                    &name,
+                    &mut credentials,
+                )
+                .await
             };
 
             match crt {
@@ -87,6 +97,8 @@ impl Certify {
 /// source.
 async fn certify<C, S>(
     token: &TokenSource,
+    key: &[u8],
+    csr: &[u8],
     client: S,
     name: &Name,
     credentials: &mut C,
@@ -100,7 +112,7 @@ where
     let req = tonic::Request::new(api::CertifyRequest {
         token: token.load()?,
         identity: name.to_string(),
-        certificate_signing_request: credentials.gen_certificate_signing_request().to_vec(),
+        certificate_signing_request: csr.to_vec(),
     });
 
     let api::CertifyResponse {
@@ -117,7 +129,7 @@ where
     credentials.set_certificate(
         DerX509(leaf_certificate),
         intermediate_certificates.into_iter().map(DerX509).collect(),
-        expiry,
+        key.to_vec(),
     )?;
 
     Ok(expiry)

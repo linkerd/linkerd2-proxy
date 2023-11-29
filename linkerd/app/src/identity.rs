@@ -25,10 +25,9 @@ pub struct Config {
 
 #[derive(Clone)]
 pub struct Documents {
+    pub server_id: Id,
     pub server_name: dns::Name,
     pub trust_anchors_pem: String,
-    pub key_pkcs8: Vec<u8>,
-    pub csr_der: Vec<u8>,
 }
 
 pub struct Identity {
@@ -60,8 +59,6 @@ impl Config {
             name.clone().into(),
             name.clone(),
             &self.documents.trust_anchors_pem,
-            &self.documents.key_pkcs8,
-            &self.documents.csr_der,
         )?;
 
         let certify = Certify::from(self.certify);
@@ -95,18 +92,8 @@ impl Config {
 }
 
 impl Credentials for NotifyReady {
-    #[inline]
-    fn gen_certificate_signing_request(&mut self) -> DerX509 {
-        self.store.gen_certificate_signing_request()
-    }
-
-    fn set_certificate(
-        &mut self,
-        leaf: DerX509,
-        chain: Vec<DerX509>,
-        expiry: std::time::SystemTime,
-    ) -> Result<()> {
-        self.store.set_certificate(leaf, chain, expiry)?;
+    fn set_certificate(&mut self, leaf: DerX509, chain: Vec<DerX509>, key: Vec<u8>) -> Result<()> {
+        self.store.set_certificate(leaf, chain, key)?;
         let _ = self.tx.send(true);
         Ok(())
     }

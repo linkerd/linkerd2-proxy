@@ -1249,12 +1249,13 @@ pub fn parse_identity_config<S: Strings>(
                 token,
                 min_refresh: min_refresh.unwrap_or(DEFAULT_IDENTITY_MIN_REFRESH),
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
-            };
-            let docs = identity::Documents {
-                server_name: local_name,
-                trust_anchors_pem,
                 key_pkcs8: key?,
                 csr_der: csr?,
+            };
+            let docs = identity::Documents {
+                server_id: identity::Id::Dns(local_name.clone()),
+                server_name: local_name,
+                trust_anchors_pem,
             };
             Ok((control, certify, docs))
         }

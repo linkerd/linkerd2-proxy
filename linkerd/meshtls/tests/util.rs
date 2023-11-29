@@ -123,14 +123,11 @@ fn load(
             ent.name.parse().unwrap(),
             ent.name.parse().unwrap(),
             roots_pem,
-            ent.key,
-            b"fake CSR data",
         )
         .expect("credentials must be readable");
 
-    let expiry = std::time::SystemTime::now() + Duration::from_secs(600);
     store
-        .set_certificate(DerX509(ent.crt.to_vec()), vec![], expiry)
+        .set_certificate(DerX509(ent.crt.to_vec()), vec![], ent.key.to_vec())
         .expect("certificate must be valid");
 
     (store, rx.new_client(), rx.server())
