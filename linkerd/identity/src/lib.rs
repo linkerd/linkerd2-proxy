@@ -4,10 +4,9 @@
 mod credentials;
 
 pub use self::credentials::{Credentials, DerX509};
-use linkerd_error::Result;
-use thiserror::Error;
-
-const SPIFFE_URI_SCHEME: &str = "spiffe://";
+use linkerd_error::{Error, Result};
+use std::convert::From;
+use std::str::FromStr;
 
 /// An endpoint identity descriptor used for authentication.
 ///
@@ -23,9 +22,9 @@ pub enum Id {
     Uri(http::Uri),
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Error)]
-#[error("invalid TLS id")]
-pub struct InvalidId;
+#[derive(Debug, thiserror::Error)]
+#[error("invalid TLS id: {0}")]
+pub struct InvalidId(#[source] Error);
 
 // === impl Id ===
 
@@ -33,23 +32,31 @@ impl std::str::FromStr for Id {
     type Err = linkerd_error::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with(SPIFFE_URI_SCHEME) {
-            // TODO: we need to ensure the SPIFFE id is valid
-            // according to requirements otlined in:
-            // https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE-ID.md#2-spiffe-identity
-            return http::Uri::try_from(s).map(Self::Uri).map_err(Into::into);
-        }
-
-        // if id does not start with a SPIFFE prefix, assume it is in DNS form
-        let n = linkerd_dns_name::Name::from_str(s)?;
-        if n.ends_with('.') {
-            return Err(InvalidId.into());
-        }
-        Ok(Self::Dns(n))
+        Self::parse_dns_name(s)
+            .or_else(|_| Self::parse_uri(s))
+            .map_err(Into::into)
     }
 }
 
 impl Id {
+    pub fn parse_dns_name(s: &str) -> Result<Self, InvalidId> {
+        linkerd_dns_name::Name::from_str(s)
+            .map_err(|e| InvalidId(e.into()))
+            .and_then(|n| {
+                if n.ends_with('.') {
+                    Err(InvalidId(linkerd_dns_name::InvalidName.into()))
+                } else {
+                    Ok(Self::Dns(n))
+                }
+            })
+    }
+
+    pub fn parse_uri(s: &str) -> Result<Self, InvalidId> {
+        http::Uri::try_from(s)
+            .map(Self::Uri)
+            .map_err(|e| InvalidId(e.into()))
+    }
+
     pub fn to_str(&self) -> std::borrow::Cow<'_, str> {
         match self {
             Self::Dns(dns) => dns.as_str().into(),
