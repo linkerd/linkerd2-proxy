@@ -1,3 +1,5 @@
+#![allow(clippy::ok_expect)]
+
 use crate::PoolQueue;
 use futures::prelude::*;
 use linkerd_proxy_core::Update;
@@ -299,7 +301,10 @@ async fn failfast() {
     let call = poolq.call(());
     time::sleep(time::Duration::from_secs(1)).await;
     assert!(call.await.is_err(), "call should failfast");
-    if let Ok(_) = time::timeout(time::Duration::from_secs(1), poolq.ready()).await {
+    if time::timeout(time::Duration::from_secs(1), poolq.ready())
+        .await
+        .is_ok()
+    {
         panic!("queue should not be ready while in failfast");
     }
 
