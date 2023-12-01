@@ -1798,6 +1798,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-proxy-pool"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-proxy-core",
+ "linkerd-stack",
+ "linkerd-tracing",
+ "parking_lot",
+ "pin-project",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-test",
+ "tokio-util",
+ "tower-test",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-proxy-resolve"
 version = "0.1.0"
 dependencies = [
