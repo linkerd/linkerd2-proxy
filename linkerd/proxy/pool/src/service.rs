@@ -3,7 +3,7 @@ use futures::TryStream;
 use linkerd_error::{Error, Result};
 use linkerd_proxy_core::Update;
 use linkerd_stack::{gate, Service};
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use std::{
     future::Future,
     sync::Arc,
@@ -16,20 +16,20 @@ use tokio_util::sync::PollSender;
 #[derive(Debug)]
 pub struct PoolQueue<Req, F> {
     tx: PollSender<Message<Req, F>>,
-    terminal: Arc<Mutex<Option<error::TerminalFailure>>>,
+    terminal: Arc<RwLock<Option<error::TerminalFailure>>>,
 }
 
 /// Provides a copy of the terminal failure error to all handles.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Terminate {
-    inner: Arc<Mutex<Option<error::TerminalFailure>>>,
+    inner: Arc<RwLock<Option<error::TerminalFailure>>>,
 }
 
-// === impl SharedTerminalFailure ===
+// === impl Terminate ===
 
 impl Terminate {
     pub(crate) fn send(self, error: error::TerminalFailure) {
-        *self.inner.lock() = Some(error);
+        *self.inner.write() = Some(error);
     }
 }
 
@@ -71,7 +71,7 @@ where
 
     #[inline]
     fn error_or_closed(&self) -> Error {
-        (*self.terminal.lock())
+        (*self.terminal.read())
             .clone()
             .map(Into::into)
             .unwrap_or_else(|| error::Closed::new().into())
