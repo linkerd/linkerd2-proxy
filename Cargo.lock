@@ -1680,13 +1680,16 @@ dependencies = [
 name = "linkerd-proxy-balance"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "futures",
  "futures-util",
  "indexmap",
  "linkerd-error",
  "linkerd-metrics",
  "linkerd-proxy-core",
+ "linkerd-proxy-pool",
  "linkerd-stack",
+ "parking_lot",
  "pin-project",
  "rand",
  "thiserror",
@@ -1694,6 +1697,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tower",
+ "tower-test",
  "tracing",
 ]
 
