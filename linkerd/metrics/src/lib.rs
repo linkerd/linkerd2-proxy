@@ -10,22 +10,16 @@ pub mod latency;
 #[cfg(feature = "linkerd-stack")]
 mod new_metrics;
 mod prom;
-mod scopes;
 mod serve;
 mod store;
-#[cfg(feature = "summary")]
-mod summary;
 
 #[cfg(feature = "linkerd-stack")]
 pub use self::new_metrics::NewMetrics;
-#[cfg(feature = "summary")]
-pub use self::summary::Summary;
 pub use self::{
     counter::Counter,
     gauge::Gauge,
     histogram::Histogram,
     prom::{FmtLabels, FmtMetric, FmtMetrics, Metric},
-    scopes::Scopes,
     serve::Serve,
     store::{LastUpdate, SharedStore, Store},
 };
