@@ -14,23 +14,16 @@ pub struct TerminalFailure {
 }
 
 /// An error produced when the a buffer's worker closes unexpectedly.
-pub struct Closed {
-    _p: (),
-}
+#[derive(Debug, thiserror::Error)]
+#[error("buffer worker closed unexpectedly")]
+pub struct Closed(());
 
-// ===== impl ServiceError =====
+// === impl ServiceError ===
 
 impl TerminalFailure {
     pub(crate) fn new(inner: Error) -> TerminalFailure {
         let inner = Arc::new(inner);
         TerminalFailure { inner }
-    }
-
-    // Private to avoid exposing `Clone` trait as part of the public API
-    pub(crate) fn clone(&self) -> TerminalFailure {
-        TerminalFailure {
-            inner: self.inner.clone(),
-        }
     }
 }
 
@@ -46,24 +39,10 @@ impl std::error::Error for TerminalFailure {
     }
 }
 
-// ===== impl Closed =====
+// === impl Closed ====
 
 impl Closed {
     pub(crate) fn new() -> Self {
-        Closed { _p: () }
+        Closed(())
     }
 }
-
-impl fmt::Debug for Closed {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_tuple("Closed").finish()
-    }
-}
-
-impl fmt::Display for Closed {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.write_str("buffer's worker closed unexpectedly")
-    }
-}
-
-impl std::error::Error for Closed {}
