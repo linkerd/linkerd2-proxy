@@ -1,13 +1,10 @@
-//! Error types for the `Buffer` middleware.
+//! Error types for the `PoolQueue` middleware.
 
 use linkerd_error::Error;
 use std::{fmt, sync::Arc};
 
 /// A shareable, terminal error produced by either a service or discovery
 /// resolution.
-///
-/// [`Service`]: crate::Service
-/// [`Buffer`]: crate::buffer::Buffer
 #[derive(Clone, Debug)]
 pub struct TerminalFailure {
     inner: Arc<Error>,
@@ -18,7 +15,7 @@ pub struct TerminalFailure {
 #[error("buffer worker closed unexpectedly")]
 pub struct Closed(());
 
-// === impl ServiceError ===
+// === impl TerminalFailure ===
 
 impl TerminalFailure {
     pub(crate) fn new(inner: Error) -> TerminalFailure {
