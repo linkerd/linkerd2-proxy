@@ -1,7 +1,3 @@
-//! Future types for the [`Buffer`] middleware.
-//!
-//! [`Buffer`]: crate::buffer::Buffer
-
 use super::{error::Closed, message};
 use futures::ready;
 use linkerd_error::Error;

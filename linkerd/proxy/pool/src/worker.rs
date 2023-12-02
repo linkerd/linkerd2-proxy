@@ -99,9 +99,6 @@ where
                     },
                 };
 
-                // Preserve the original request's tracing context.
-                let _enter = span.enter();
-
                 // Wait for the pool to have at least one ready endpoint.
                 if terminal_failure.is_none() {
                     tracing::trace!("Waiting for pool");
@@ -121,17 +118,24 @@ where
 
                 // Process requests, either by dispatching them to the pool or
                 // by serving errors directly.
-                let _ = if let Some(e) = terminal_failure.clone() {
-                    tx.send(Err(e.into()))
-                } else {
-                    tx.send(worker.pool.call(req))
+                let call = match terminal_failure.clone() {
+                    Some(e) => Err(e.into()),
+                    None => {
+                        // Preserve the original request's tracing context.
+                        let _enter = span.enter();
+                        worker.pool.call(req)
+                    }
                 };
 
-                // TODO(ver) track histogram from t0 until the request is dispatched.
-                tracing::debug!(
-                    latency = (time::Instant::now() - t0).as_secs_f64(),
-                    "Dispatched"
-                );
+                if tx.send(call).is_ok() {
+                    // TODO(ver) track histogram from t0 until the request is dispatched.
+                    tracing::debug!(
+                        latency = (time::Instant::now() - t0).as_secs_f64(),
+                        "Dispatched"
+                    );
+                } else {
+                    tracing::debug!("Caller dropped");
+                }
             }
         }
         .instrument(debug_span!("pool")),

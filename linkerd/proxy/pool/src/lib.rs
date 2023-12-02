@@ -26,12 +26,12 @@ pub trait Pool<T, Req>: Service<Req> {
     /// Updates the pool's endpoints.
     fn update_pool(&mut self, update: Update<T>);
 
-    /// Polls pending endpoints to ready.
+    /// Polls to update the pool while the Service is ready.
     ///
-    /// This is complementary to [`Service::poll_ready`], which may also handle
-    /// driving endpoints to ready. Unlike [`Service::poll_ready`], which
-    /// returns ready when *at least one* inner endpoint is ready,
-    /// [`Pool::poll_pool`] returns ready when *all* inner endpoints are ready.
+    /// [`Service::poll_ready`] should do the same work, but will return ready
+    /// as soon as there at least one ready endpoint. This method will continue
+    /// to drive the pool until ready is returned (indicating that the pool need
+    /// not be updated before another request is processed).
     fn poll_pool(
         &mut self,
         cx: &mut std::task::Context<'_>,
