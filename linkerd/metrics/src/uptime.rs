@@ -30,3 +30,23 @@ impl prom::core::Collector for Uptime {
         self.metric.collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prom::core::Collector;
+    use tokio::time;
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_uptime() {
+        let uptime = Uptime::default();
+
+        time::sleep(time::Duration::from_secs(10)).await;
+
+        assert_eq!(
+            uptime.collect()[0].get_metric()[0].get_gauge().get_value(),
+            10.0,
+            "Uptime should increase over time"
+        );
+    }
+}
