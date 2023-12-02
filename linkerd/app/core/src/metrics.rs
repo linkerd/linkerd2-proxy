@@ -11,7 +11,7 @@ use crate::{
     classify::Class,
     control, http_metrics, http_metrics as metrics, opencensus, profiles, stack_metrics,
     svc::Param,
-    telemetry, tls,
+    tls,
     transport::{self, labels::TlsConnect},
 };
 use linkerd_addr::Addr;
@@ -143,14 +143,7 @@ where
 // === impl Metrics ===
 
 impl Metrics {
-    pub fn new(
-        retain_idle: Duration,
-        start_time: telemetry::StartTime,
-    ) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
-        let process = telemetry::process::Report::new(start_time);
-
-        let build_info = telemetry::build_info::Report::default();
-
+    pub fn new(retain_idle: Duration) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
         let (control, control_report) = {
             let m = metrics::Requests::<ControlLabels, Class>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("control");
@@ -212,9 +205,7 @@ impl Metrics {
             .and_report(control_report)
             .and_report(transport_report)
             .and_report(opencensus_report)
-            .and_report(stack)
-            .and_report(process)
-            .and_report(build_info);
+            .and_report(stack);
 
         (metrics, report)
     }

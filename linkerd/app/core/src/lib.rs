@@ -24,7 +24,6 @@ pub mod metrics;
 pub mod proxy;
 pub mod serve;
 pub mod svc;
-pub mod telemetry;
 pub mod transport;
 
 pub use drain;

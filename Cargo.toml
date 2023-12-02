@@ -60,7 +60,6 @@ members = [
     "linkerd/stack",
     "linkerd/stack/metrics",
     "linkerd/stack/tracing",
-    "linkerd/system",
     "linkerd/tonic-watch",
     "linkerd/tls",
     "linkerd/tls/test-util",

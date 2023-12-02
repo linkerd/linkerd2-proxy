@@ -18,14 +18,19 @@ pprof = ["linkerd-app/pprof"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
+lazy_static = "1"
 num_cpus = { version = "1", optional = true }
+tokio = { version = "1", features = ["rt", "time", "net"] }
+tracing = "0.1"
+
 linkerd-app = { path = "../linkerd/app" }
 # We don't actually use code from this crate in `main`; it's here only so we can
 # control its feature flags.
 linkerd-meshtls = { path = "../linkerd/meshtls" }
 linkerd-signal = { path = "../linkerd/signal" }
-tokio = { version = "1", features = ["rt", "time", "net"] }
-tracing = "0.1"
 
 [target.x86_64-unknown-linux-gnu.dependencies]
 jemallocator = { version = "0.5" }
+
+[build-dependencies]
+semver = "1"

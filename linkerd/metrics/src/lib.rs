@@ -4,25 +4,36 @@
 //! Utilities for exposing metrics to Prometheus.
 
 mod counter;
+mod fmt;
 mod gauge;
 mod histogram;
 pub mod latency;
 #[cfg(feature = "linkerd-stack")]
 mod new_metrics;
-mod prom;
 mod serve;
 mod store;
+#[cfg(feature = "process")]
+mod uptime;
 
 #[cfg(feature = "linkerd-stack")]
 pub use self::new_metrics::NewMetrics;
 pub use self::{
     counter::Counter,
+    fmt::{FmtLabels, FmtMetric, FmtMetrics, Metric},
     gauge::Gauge,
     histogram::Histogram,
-    prom::{FmtLabels, FmtMetric, FmtMetrics, Metric},
     serve::Serve,
     store::{LastUpdate, SharedStore, Store},
 };
+
+pub mod prom {
+    pub use prometheus::*;
+
+    #[cfg(feature = "process")]
+    pub fn register_uptime_collector() -> Result<()> {
+        register(Box::<crate::uptime::Uptime>::default())
+    }
+}
 
 #[macro_export]
 macro_rules! metrics {

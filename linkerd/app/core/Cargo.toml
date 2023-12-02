@@ -73,11 +73,5 @@ version = "0.4"
 default-features = false
 features = ["make", "spawn-ready", "timeout", "util", "limit"]
 
-[target.'cfg(target_os = "linux")'.dependencies]
-linkerd-system = { path = "../../system" }
-
-[build-dependencies]
-semver = "1"
-
 [dev-dependencies]
 quickcheck = { version = "1", default-features = false }

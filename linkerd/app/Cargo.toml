@@ -24,6 +24,7 @@ linkerd-app-gateway = { path = "./gateway" }
 linkerd-app-inbound = { path = "./inbound" }
 linkerd-app-outbound = { path = "./outbound" }
 linkerd-error = { path = "../error" }
+linkerd-metrics = { path = "../metrics", features = ["process"] }
 linkerd-opencensus = { path = "../opencensus" }
 rangemap = "1"
 regex = "1"

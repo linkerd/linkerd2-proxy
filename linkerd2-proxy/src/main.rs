@@ -12,10 +12,7 @@ compile_error!(
 );
 
 use linkerd_app::{
-    core::{
-        telemetry::{build_info, StartTime},
-        transport::BindTcp,
-    },
+    core::{metrics::prom, transport::BindTcp},
     trace, Config,
 };
 use linkerd_signal as signal;
@@ -30,9 +27,17 @@ mod rt;
 
 const EX_USAGE: i32 = 64;
 
+const VERSION: &str = env!("LINKERD2_PROXY_VERSION");
+const DATE: &str = env!("LINKERD2_PROXY_BUILD_DATE");
+const VENDOR: &str = env!("LINKERD2_PROXY_VENDOR");
+const GIT_SHA: &str = env!("GIT_SHA");
+const PROFILE: &str = env!("PROFILE");
+
 fn main() {
-    let start_time = StartTime::now();
-    let trace = match trace::Settings::from_env(start_time.into()).init() {
+    PROXY_BUILD_INFO.set(1.0);
+    prom::register_uptime_collector().expect("uptime collector must be valid");
+
+    let trace = match trace::Settings::from_env(time::Instant::now()).init() {
         Ok(t) => t,
         Err(e) => {
             eprintln!("Invalid logging configuration: {}", e);
@@ -40,14 +45,7 @@ fn main() {
         }
     };
 
-    info!(
-        "{profile} {version} ({sha}) by {vendor} on {date}",
-        date = build_info::DATE,
-        sha = build_info::GIT_SHA,
-        version = build_info::VERSION,
-        profile = build_info::PROFILE,
-        vendor = build_info::VENDOR,
-    );
+    info!("{PROFILE} {VERSION} ({GIT_SHA}) by {VENDOR} on {DATE}",);
 
     // Load configuration from the environment without binding ports.
     let config = match Config::try_from_env() {
@@ -67,14 +65,7 @@ fn main() {
 
         let bind = BindTcp::with_orig_dst();
         let app = match config
-            .build(
-                bind,
-                bind,
-                BindTcp::default(),
-                shutdown_tx,
-                trace,
-                start_time,
-            )
+            .build(bind, bind, BindTcp::default(), shutdown_tx, trace)
             .await
         {
             Ok(app) => app,
@@ -140,4 +131,19 @@ fn main() {
             ),
         }
     });
+}
+
+lazy_static::lazy_static! {
+    static ref PROXY_BUILD_INFO: prom::Gauge = prom::register_gauge!(prom::opts!(
+        "proxy_build_info",
+        "Proxy build info",
+        prom::labels! {
+            "version" => VERSION,
+            "git_sha" => GIT_SHA,
+            "profile" => PROFILE,
+            "date" => DATE,
+            "vendor" => VENDOR,
+        }
+    ))
+    .unwrap();
 }
