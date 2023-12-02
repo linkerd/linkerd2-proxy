@@ -89,7 +89,7 @@ async fn limits_request_capacity() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn waits_for_endpoints() {
+async fn updates_while_pending() {
     let _trace = linkerd_tracing::test::with_default_filter("linkerd=trace");
 
     let (pool, mut handle) = mock::pool::<(), (), ()>();
@@ -104,6 +104,7 @@ async fn waits_for_endpoints() {
     handle.svc.allow(0);
     assert!(poolq.ready().await.is_ok(), "poolq must be ready");
     let call = poolq.call(());
+    tokio::task::yield_now().await;
 
     updates
         .try_send(Ok(Update::Reset(vec![(
@@ -171,6 +172,8 @@ async fn complete_resolution() {
     handle.svc.allow(1);
     assert!(poolq.ready().await.is_ok(), "poolq must be ready");
     drop(updates);
+    tokio::task::yield_now().await;
+
     let call = poolq.call(());
     let ((), respond) = handle.svc.next_request().await.expect("request");
     respond.send_response(());

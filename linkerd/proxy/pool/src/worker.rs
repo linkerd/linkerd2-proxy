@@ -296,6 +296,9 @@ impl<P> PoolDriver<P> {
                         );
                     }
                     Some(failfast::State::Failfast { since }) => {
+                        // Note: It is exceptionally unlikely that we will exit
+                        // failfast here, since the below `failfaast.entered()`
+                        // will return immediately when in the failfast state.
                         tracing::info!(
                             elapsed = (time::Instant::now() - since).as_secs_f64(),
                             "Available; exiting failfast"
@@ -307,7 +310,7 @@ impl<P> PoolDriver<P> {
                 }
             }
 
-            () = self.failfast.enter() => {
+            () = self.failfast.entered() => {
                 tracing::info!(
                     timeout = self.failfast.duration().as_secs_f64(), "Unavailable; entering failfast",
                 );

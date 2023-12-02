@@ -49,7 +49,7 @@ impl Failfast {
     }
 
     /// Waits for the failfast timeout to expire and enters the failfast state.
-    pub(super) async fn enter(&mut self) {
+    pub(super) async fn entered(&mut self) {
         let since = match self.state {
             // If we're already in failfast, then we don't need to wait.
             Some(State::Failfast { .. }) => {
@@ -96,12 +96,12 @@ mod tests {
         // request is received.
         assert!(!failfast.is_active(), "failfast should be active");
 
-        failfast.enter().await;
+        failfast.entered().await;
         assert!(failfast.is_active(), "failfast should be active");
         assert!(gate_rx.is_shut(), "gate should be shut");
 
         failfast
-            .enter()
+            .entered()
             .now_or_never()
             .expect("timeout must return immediately when in failfast");
         assert!(failfast.is_active(), "failfast should be active");
@@ -113,7 +113,7 @@ mod tests {
 
         tokio::select! {
             _ = time::sleep(time::Duration::from_millis(10)) => {}
-            _ = failfast.enter() => unreachable!("timed out too quick"),
+            _ = failfast.entered() => unreachable!("timed out too quick"),
         }
         assert!(!failfast.is_active(), "failfast should be inactive");
         assert!(gate_rx.is_open(), "gate should be open");
@@ -123,7 +123,7 @@ mod tests {
             "failfast should be waiting"
         );
 
-        failfast.enter().await;
+        failfast.entered().await;
         assert!(failfast.is_active(), "failfast should be active");
         assert!(gate_rx.is_shut(), "gate should be shut");
     }
