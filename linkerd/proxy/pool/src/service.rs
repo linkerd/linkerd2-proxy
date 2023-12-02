@@ -64,10 +64,11 @@ where
     type Future = ResponseFuture<F>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let poll = self
-            .tx
-            .poll_reserve(cx)
-            .map_err(|_| self.terminal.error_or_closed());
+        let poll = self.tx.poll_reserve(cx).map_err(|_| {
+            self.terminal
+                .failure()
+                .expect("worker must set a failure if it exits prematurely")
+        });
         tracing::trace!(?poll);
         poll
     }
@@ -78,7 +79,11 @@ where
         if self.tx.send_item(msg).is_err() {
             // The channel closed since poll_ready was called, so propagate the
             // failure in the response future.
-            return ResponseFuture::failed(self.terminal.error_or_closed());
+            return ResponseFuture::failed(
+                self.terminal
+                    .failure()
+                    .expect("worker must set a failure if it exits prematurely"),
+            );
         }
         ResponseFuture::new(rx)
     }

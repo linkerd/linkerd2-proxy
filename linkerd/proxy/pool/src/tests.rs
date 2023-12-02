@@ -212,6 +212,12 @@ async fn error_resolution() {
         poolq.ready().await.is_err(),
         "poolq must error after failed resolution"
     );
+
+    poolq
+        .ready()
+        .await
+        .err()
+        .expect("poolq must error after failed resolution");
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -234,6 +240,12 @@ async fn error_pool_while_pending() {
     let call = poolq.call(());
     handle.set_poll(std::task::Poll::Ready(Err(mock::PoolError)));
     call.await.expect_err("response should fail");
+
+    poolq
+        .ready()
+        .await
+        .err()
+        .expect("poolq must error after pool error");
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -257,6 +269,12 @@ async fn error_after_ready() {
         .expect("send update");
     tokio::task::yield_now().await;
     poolq.call(()).await.expect_err("response should fail");
+
+    poolq
+        .ready()
+        .await
+        .err()
+        .expect("poolq must error after pool error");
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]

@@ -347,11 +347,8 @@ impl<P> PoolDriver<P> {
 
 impl Terminate {
     #[inline]
-    pub(super) fn error_or_closed(&self) -> Error {
-        (*self.inner.read())
-            .clone()
-            .map(Into::into)
-            .unwrap_or_else(|| error::Closed::new().into())
+    pub(super) fn failure(&self) -> Option<Error> {
+        (*self.inner.read()).clone().map(Into::into)
     }
 
     async fn close<Req, F>(self, mut reqs_rx: mpsc::Receiver<Message<Req, F>>, error: Error) {
