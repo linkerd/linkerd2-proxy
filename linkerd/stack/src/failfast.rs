@@ -44,7 +44,7 @@ pub struct FailFast<S> {
 }
 
 /// An error representing that an operation timed out.
-#[derive(Debug, Error)]
+#[derive(Debug, Default, Error)]
 #[error("service in fail-fast")]
 pub struct FailFastError(());
 
