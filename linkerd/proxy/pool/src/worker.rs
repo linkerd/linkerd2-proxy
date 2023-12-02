@@ -1,18 +1,25 @@
 use std::future::poll_fn;
 
 use crate::{
-    error::TerminalFailure,
+    error,
     failfast::{self, Failfast},
     message::Message,
-    service::Terminate,
     Pool,
 };
 use futures::{future, TryStream, TryStreamExt};
 use linkerd_error::{Error, Result};
 use linkerd_proxy_core::Update;
 use linkerd_stack::{gate, FailFastError, ServiceExt};
+use parking_lot::RwLock;
+use std::sync::Arc;
 use tokio::{sync::mpsc, task::JoinHandle, time};
 use tracing::{debug_span, Instrument};
+
+/// Provides a copy of the terminal failure error to all handles.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Terminate {
+    inner: Arc<RwLock<Option<error::TerminalFailure>>>,
+}
 
 #[derive(Debug)]
 struct Worker<R, P> {
@@ -45,7 +52,7 @@ pub(crate) fn spawn<T, Req, R, P>(
     mut reqs_rx: mpsc::Receiver<Message<Req, P::Future>>,
     failfast: time::Duration,
     gate: gate::Tx,
-    terminate: Terminate,
+    terminal: Terminate,
     updates_rx: R,
     pool: P,
 ) -> JoinHandle<Result<()>>
@@ -58,8 +65,6 @@ where
     P::Future: Send + 'static,
     P::Error: Into<Error> + Send,
 {
-    let mut terminate = Some(terminate);
-    let mut terminal_failure = None;
     tokio::spawn(
         async move {
             let mut worker = Worker {
@@ -81,55 +86,40 @@ where
 
                     // If either the discovery stream or the pool fail, close
                     // the request stream and process any remaining requests.
-                    e = worker.discover_while_awaiting_requests(), if terminal_failure.is_none() => {
-                        let err = TerminalFailure::new(e);
-                        terminate.take().expect("must not fail twice").send(err.clone());
-                        reqs_rx.close();
-                        tracing::trace!("Closed");
-                        terminal_failure = Some(err);
-                        continue;
+                    e = worker.discover_while_awaiting_requests() => {
+                        terminal.close(reqs_rx, e).await;
+                        return Ok(());
                     }
 
                     msg = reqs_rx.recv() => match msg {
                         Some(msg) => msg,
                         None => {
-                            tracing::debug!("Requests channel closed");
+                            tracing::debug!("Callers dropped");
                             return Ok(());
                         }
                     },
                 };
 
-                // Wait for the pool to have at least one ready endpoint.
-                if terminal_failure.is_none() {
-                    tracing::trace!("Waiting for pool");
-                    if let Err(e) = worker.ready_pool().await {
-                        let error = TerminalFailure::new(e);
-                        tracing::debug!(%error, "Pool failed");
-                        terminate
-                            .take()
-                            .expect("must not fail twice")
-                            .send(error.clone());
-                        reqs_rx.close();
-                        terminal_failure = Some(error);
-                    } else {
-                        tracing::trace!("Pool ready");
-                    }
+                // Wait for the pool to be ready to process a request. If this fails, we enter
+                tracing::trace!("Waiting for pool");
+                if let Err(e) = worker.ready_pool().await {
+                    terminal.close(reqs_rx, e).await;
+                    return Ok(());
                 }
+                tracing::trace!("Pool ready");
 
                 // Process requests, either by dispatching them to the pool or
                 // by serving errors directly.
-                let call = match terminal_failure.clone() {
-                    Some(e) => Err(e.into()),
-                    None => {
-                        // Preserve the original request's tracing context.
-                        let _enter = span.enter();
-                        worker.pool.call(req)
-                    }
+                let call = {
+                    // Preserve the original request's tracing context in
+                    // the inner call.
+                    let _enter = span.enter();
+                    worker.pool.call(req)
                 };
 
                 if tx.send(call).is_ok() {
                     // TODO(ver) track histogram from t0 until the request is dispatched.
-                    tracing::debug!(
+                    tracing::trace!(
                         latency = (time::Instant::now() - t0).as_secs_f64(),
                         "Dispatched"
                     );
@@ -350,5 +340,38 @@ impl<P> PoolDriver<P> {
 
         // Otherwise dispatch the request to the pool.
         Ok(self.pool.call(req))
+    }
+}
+
+// === impl Terminate ===
+
+impl Terminate {
+    #[inline]
+    pub(super) fn error_or_closed(&self) -> Error {
+        (*self.inner.read())
+            .clone()
+            .map(Into::into)
+            .unwrap_or_else(|| error::Closed::new().into())
+    }
+
+    async fn close<Req, F>(self, mut reqs_rx: mpsc::Receiver<Message<Req, F>>, error: Error) {
+        tracing::debug!(%error, "Closing pool");
+        reqs_rx.close();
+
+        let error = error::TerminalFailure::new(error);
+        *self.inner.write() = Some(error.clone());
+
+        while let Some(Message { tx, t0, .. }) = reqs_rx.recv().await {
+            if tx.send(Err(error.clone().into())).is_ok() {
+                tracing::debug!(
+                    latency = (time::Instant::now() - t0).as_secs_f64(),
+                    "Failed due to pool error"
+                );
+            } else {
+                tracing::debug!("Caller dropped");
+            }
+        }
+
+        tracing::debug!("Closed");
     }
 }
