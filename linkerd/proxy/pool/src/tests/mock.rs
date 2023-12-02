@@ -71,8 +71,12 @@ impl<T, Req, Rsp> linkerd_stack::Service<Req> for MockPool<T, Req, Rsp> {
     type Future = mock::future::ResponseFuture<Rsp>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        futures::ready!(crate::Pool::poll_pool(self, cx))?;
-        self.svc.poll_ready(cx)
+        if let Poll::Ready(res) = self.svc.poll_ready(cx) {
+            return Poll::Ready(res);
+        }
+        // Drive the pool when the service isn't ready.
+        let _ = crate::Pool::poll_pool(self, cx)?;
+        Poll::Pending
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
