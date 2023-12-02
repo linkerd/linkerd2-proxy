@@ -71,6 +71,7 @@ impl<T, Req, Rsp> linkerd_stack::Service<Req> for MockPool<T, Req, Rsp> {
     type Future = mock::future::ResponseFuture<Rsp>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        futures::ready!(crate::Pool::poll_pool(self, cx))?;
         self.svc.poll_ready(cx)
     }
 
@@ -84,7 +85,10 @@ impl<T, Req, Rsp> PoolHandle<T, Req, Rsp> {
         let mut s = self.state.lock();
         s.poll = poll;
         if let Some(w) = s.waker.take() {
+            tracing::trace!("Wake");
             w.wake();
+        } else {
+            tracing::trace!("No waker");
         }
     }
 }

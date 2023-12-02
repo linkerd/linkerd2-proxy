@@ -6,6 +6,7 @@ use linkerd_proxy_core::Update;
 use linkerd_stack::{Service, ServiceExt};
 use tokio::{sync::mpsc, time};
 use tokio_stream::wrappers::ReceiverStream;
+use tokio_test::{assert_pending, assert_ready};
 
 mod mock;
 
@@ -238,12 +239,20 @@ async fn error_pool_while_pending() {
 
     assert!(poolq.ready().await.is_ok(), "poolq must be ready");
     let call = poolq.call(());
-    handle.set_poll(std::task::Poll::Ready(Err(mock::PoolError)));
-    call.await.expect_err("response should fail");
+    tokio::task::yield_now().await;
 
+    handle.set_poll(std::task::Poll::Ready(Err(mock::PoolError)));
+    tokio::task::yield_now().await;
+    call.now_or_never()
+        .expect("response should fail immediately")
+        .expect_err("response should fail");
+
+    tracing::info!("Awaiting readiness failure");
+    tokio::task::yield_now().await;
     poolq
         .ready()
-        .await
+        .now_or_never()
+        .expect("poolq readiness fail immediately")
         .err()
         .expect("poolq must error after pool error");
 }
@@ -293,12 +302,19 @@ async fn terminates() {
     handle.svc.allow(0);
     assert!(poolq.ready().await.is_ok(), "poolq must be ready");
     let call = poolq.call(());
+    assert_pending!(handle.svc.poll_request());
+
     drop(poolq);
+
     assert!(
         call.await.is_err(),
         "call should fail when queue is dropped"
     );
     assert!(updates.is_closed());
+    assert!(
+        assert_ready!(handle.svc.poll_request(), "poll_request should be ready").is_none(),
+        "poll_request should return None"
+    );
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]

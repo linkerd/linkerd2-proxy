@@ -81,13 +81,13 @@ where
                 // queue supports capacity + 1 items. This behavior is
                 // inherrited from tower::buffer. Correcting this is not worth
                 // the complexity.
-                let Message { req, tx, span, t0 } = tokio::select! {
+                let msg = tokio::select! {
                     biased;
 
                     // If either the discovery stream or the pool fail, close
                     // the request stream and process any remaining requests.
-                    e = worker.discover_while_awaiting_requests() => {
-                        terminal.close(reqs_rx, e).await;
+                    e = worker.drive_pool() => {
+                        terminal.close(reqs_rx, error::TerminalFailure::new(e)).await;
                         return Ok(());
                     }
 
@@ -101,15 +101,18 @@ where
                 };
 
                 // Wait for the pool to be ready to process a request. If this fails, we enter
-                tracing::trace!("Waiting for pool");
-                if let Err(e) = worker.ready_pool().await {
-                    terminal.close(reqs_rx, e).await;
+                tracing::trace!("Waiting for inner service readiness");
+                if let Err(e) = worker.ready_pool_for_request().await {
+                    let error = error::TerminalFailure::new(e);
+                    msg.fail(error.clone());
+                    terminal.close(reqs_rx, error).await;
                     return Ok(());
                 }
                 tracing::trace!("Pool ready");
 
                 // Process requests, either by dispatching them to the pool or
                 // by serving errors directly.
+                let Message { req, tx, span, t0 } = msg;
                 let call = {
                     // Preserve the original request's tracing context in
                     // the inner call.
@@ -140,14 +143,10 @@ where
     R: TryStream<Ok = Update<T>> + Unpin,
     R::Error: Into<Error>,
 {
-    /// Attempts to update the pool with discovery updates.
+    /// Drives the pool, processing discovery updates.
     ///
-    /// Additionally, this attempts to drive the pool to ready if it is
-    /// currently in failfast.
-    ///
-    /// If the discovery stream is closed, this never returns. This only returns
-    /// errors.
-    async fn discover_while_awaiting_requests<Req>(&mut self) -> Error
+    /// This never returns unless the pool or discovery stream fails.
+    async fn drive_pool<Req>(&mut self) -> Error
     where
         P: Pool<T, Req>,
         P::Error: Into<Error>,
@@ -168,35 +167,24 @@ where
         }
     }
 
-    /// Wait for the pool to have at least one ready endpoint, while also
-    /// processing service discovery updates (e.g. to provide new available
-    /// endpoints).
-    async fn ready_pool<Req>(&mut self) -> Result<(), Error>
+    /// Waits for [`Service::poll_ready`], while also processing service
+    /// discovery updates (e.g. to provide new available endpoints).
+    async fn ready_pool_for_request<Req>(&mut self) -> Result<(), Error>
     where
         P: Pool<T, Req>,
         P::Error: Into<Error>,
     {
         loop {
-            tokio::select! {
+            let update = tokio::select! {
                 // Tests, especially, depend on discovery updates being
                 // processed before ready returning.
                 biased;
+                res = self.discovery.discover() => res?,
+                res = self.pool.ready_or_failfast() => return res,
+            };
 
-                // If the pool updated, continue waiting for the pool to be
-                // ready.
-                res = self.discovery.discover() => {
-                    let update = res?;
-                    tracing::debug!(?update, "Discovered");
-                    self.pool.pool.update_pool(update);
-                }
-
-                // When the pool is ready, clear any failfast state we may have
-                // set before returning.
-                res = self.pool.ready() => {
-                    tracing::trace!(ready.ok = res.is_ok());
-                    return res;
-                }
-            }
+            tracing::debug!(?update, "Discovered");
+            self.pool.pool.update_pool(update);
         }
     }
 }
@@ -252,12 +240,12 @@ impl<P> PoolDriver<P> {
         Self { pool, failfast }
     }
 
-    /// Drives all current endpoints to ready.
+    /// Drives the inner pool, ensuring that the failfast state is cleared if appropriate.
+    /// [`Pool::poll_pool``]. This allows the pool to
     ///
     /// If the service is in failfast, this clears the failfast state on readiness.
     ///
-    /// If any endpoint fails, the error
-    /// is returned.
+    /// This only returns if the pool fails.
     async fn drive<T, Req>(&mut self) -> Error
     where
         P: Pool<T, Req>,
@@ -280,16 +268,17 @@ impl<P> PoolDriver<P> {
             }
         }
 
-        tracing::trace!("Driving pending endpoints");
+        tracing::trace!("Driving pool");
         if let Err(e) = poll_fn(|cx| self.pool.poll_pool(cx)).await {
             return e.into();
         }
 
-        tracing::trace!("Driven");
+        tracing::trace!("Pool driven");
         future::pending().await
     }
 
-    async fn ready<T, Req>(&mut self) -> Result<(), Error>
+    /// Waits for the inner pool's [`Service::poll_ready`] to be ready, while
+    async fn ready_or_failfast<T, Req>(&mut self) -> Result<(), Error>
     where
         P: Pool<T, Req>,
         P::Error: Into<Error>,
@@ -301,7 +290,7 @@ impl<P> PoolDriver<P> {
                 match self.failfast.set_ready() {
                     None => tracing::trace!("Ready"),
                     Some(failfast::State::Waiting { since }) => {
-                        tracing::debug!(
+                        tracing::trace!(
                             elapsed = (time::Instant::now() - since).as_secs_f64(),
                             "Available"
                         );
@@ -309,7 +298,7 @@ impl<P> PoolDriver<P> {
                     Some(failfast::State::Failfast { since }) => {
                         tracing::info!(
                             elapsed = (time::Instant::now() - since).as_secs_f64(),
-                            "Available; exited failfast"
+                            "Available; exiting failfast"
                         );
                     }
                 }
@@ -318,7 +307,7 @@ impl<P> PoolDriver<P> {
                 }
             }
 
-            () = self.failfast.timeout() => {
+            () = self.failfast.enter() => {
                 tracing::info!(
                     timeout = self.failfast.duration().as_secs_f64(), "Unavailable; entering failfast",
                 );
@@ -351,22 +340,17 @@ impl Terminate {
         (*self.inner.read()).clone().map(Into::into)
     }
 
-    async fn close<Req, F>(self, mut reqs_rx: mpsc::Receiver<Message<Req, F>>, error: Error) {
+    async fn close<Req, F>(
+        self,
+        mut reqs_rx: mpsc::Receiver<Message<Req, F>>,
+        error: error::TerminalFailure,
+    ) {
         tracing::debug!(%error, "Closing pool");
+        *self.inner.write() = Some(error.clone());
         reqs_rx.close();
 
-        let error = error::TerminalFailure::new(error);
-        *self.inner.write() = Some(error.clone());
-
-        while let Some(Message { tx, t0, .. }) = reqs_rx.recv().await {
-            if tx.send(Err(error.clone().into())).is_ok() {
-                tracing::debug!(
-                    latency = (time::Instant::now() - t0).as_secs_f64(),
-                    "Failed due to pool error"
-                );
-            } else {
-                tracing::debug!("Caller dropped");
-            }
+        while let Some(msg) = reqs_rx.recv().await {
+            msg.fail(error.clone());
         }
 
         tracing::debug!("Closed");
