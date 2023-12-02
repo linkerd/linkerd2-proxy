@@ -155,7 +155,8 @@ where
     /// Additionally, this attempts to drive the pool to ready if it is
     /// currently in failfast.
     ///
-    /// If the discovery stream is closed, this never returns.
+    /// If the discovery stream is closed, this never returns. This only returns
+    /// errors.
     async fn discover_while_awaiting_requests<Req>(&mut self) -> Error
     where
         P: Pool<T, Req>,
