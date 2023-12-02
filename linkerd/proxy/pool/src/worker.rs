@@ -103,14 +103,14 @@ where
                 if terminal_failure.is_none() {
                     tracing::trace!("Waiting for pool");
                     if let Err(e) = worker.ready_pool().await {
-                        let err = TerminalFailure::new(e);
+                        let error = TerminalFailure::new(e);
+                        tracing::debug!(%error, "Pool failed");
                         terminate
                             .take()
                             .expect("must not fail twice")
-                            .send(err.clone());
+                            .send(error.clone());
                         reqs_rx.close();
-                        terminal_failure = Some(err);
-                        tracing::trace!("Closed");
+                        terminal_failure = Some(error);
                     } else {
                         tracing::trace!("Pool ready");
                     }
