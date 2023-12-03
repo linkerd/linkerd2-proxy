@@ -1,10 +1,9 @@
-codecov:
+coverage:
   ignore:
     - "linkerd/app/integration/src/**"
     - "**/src/gen/**"
     - "tools/**"
 
-coverage:
   precision: 2
   round: down
   range: "70...100"
