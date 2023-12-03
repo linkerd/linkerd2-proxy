@@ -18,7 +18,7 @@ proto = [
 ahash = "0.8"
 ipnet = "2"
 http = "0.2"
-linkerd2-proxy-api = { version = "0.11", optional = true, features = [
+linkerd2-proxy-api = { version = "0.12", optional = true, features = [
     "outbound",
 ] }
 linkerd-error = { path = "../../error" }
@@ -27,8 +27,8 @@ linkerd-http-route = { path = "../../http-route" }
 linkerd-proxy-api-resolve = { path = "../api-resolve" }
 linkerd-proxy-core = { path = "../core" }
 once_cell = { version = "1" }
-prost-types = { version = "0.11", optional = true }
-tonic = { version = "0.8", default-features = false }
+prost-types = { version = "0.12", optional = true }
+tonic = { version = "0.10", default-features = false }
 thiserror = { version = "1", optional = true }
 
 [dev-dependencies]
