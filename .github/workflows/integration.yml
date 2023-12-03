@@ -23,6 +23,16 @@ env:
 # types) and have the potential to be flakey as they depend on opening sockets and may have timing
 # sensitivity.
 jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: styfle/cancel-workflow-action@01ce38bf961b4e243a6342cbade0dbc8ba3f0432
+        with:
+          all_but_latest: true
+          access_token: ${{ github.token }}
+
   test:
     timeout-minutes: 20
     runs-on: ubuntu-latest
