@@ -34,9 +34,6 @@ const GIT_SHA: &str = env!("GIT_SHA");
 const PROFILE: &str = env!("PROFILE");
 
 fn main() {
-    PROXY_BUILD_INFO.set(1.0);
-    prom::register_uptime_collector().expect("uptime collector must be valid");
-
     let trace = match trace::Settings::from_env(time::Instant::now()).init() {
         Ok(t) => t,
         Err(e) => {
@@ -45,7 +42,8 @@ fn main() {
         }
     };
 
-    info!("{PROFILE} {VERSION} ({GIT_SHA}) by {VENDOR} on {DATE}",);
+    info!("{PROFILE} {VERSION} ({GIT_SHA}) by {VENDOR} on {DATE}");
+    PROXY_BUILD_INFO.set(1.0);
 
     // Load configuration from the environment without binding ports.
     let config = match Config::try_from_env() {
@@ -55,6 +53,8 @@ fn main() {
             std::process::exit(EX_USAGE);
         }
     };
+
+    prom::register_uptime_collector().expect("uptime collector must be valid");
 
     // Builds a runtime with the appropriate number of cores:
     // `LINKERD2_PROXY_CORES` env or the number of available CPUs (as provided
@@ -138,11 +138,11 @@ lazy_static::lazy_static! {
         "proxy_build_info",
         "Proxy build info",
         prom::labels! {
-            "version" => VERSION,
+            "date" => DATE,
             "git_sha" => GIT_SHA,
             "profile" => PROFILE,
-            "date" => DATE,
             "vendor" => VENDOR,
+            "version" => VERSION,
         }
     ))
     .unwrap();
