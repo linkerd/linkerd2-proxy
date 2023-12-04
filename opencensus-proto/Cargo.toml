@@ -13,16 +13,16 @@ Vendored from https://github.com/census-instrumentation/opencensus-proto/.
 
 [dependencies]
 bytes = "1"
-prost = "0.11"
-prost-types = "0.11"
+prost = "0.12"
+prost-types = "0.12"
 
 [dependencies.tonic]
-version = "0.8"
+version = "0.10"
 default-features = false
 features = ["prost", "codegen"]
 
 [dev-dependencies.tonic-build]
-version = "0.8"
+version = "0.10"
 default-features = false
 features = ["prost"]
 

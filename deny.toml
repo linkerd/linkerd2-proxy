@@ -79,20 +79,19 @@ skip = [
     # https://github.com/hawkw/matchers/pull/4
     { name = "regex-automata", version = "0.1" },
     { name = "regex-syntax", version = "0.6" },
-    # linkerd2-proxy-api needs to upgrade tonic to upgrade prost...
-    { name = "prost", version = "0.11" },
-    { name = "prost-build", version = "0.11" },
-    { name = "prost-derive", version = "0.11" },
-    { name = "prost-types", version = "0.11" },
-    { name = "prettyplease", version = "0.1" },
 ]
 skip-tree = [
     # right now we have a mix of versions of this crate in the ecosystem
     # procfs uses 0.36.14, tempfile uses 0.37.4
     { name = "rustix" },
+    # Hyper v0.14 depends on an older socket2 version.
+    { name = "socket2" },
 ]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+[sources.allow-org]
+github = ["linkerd"]

@@ -6,6 +6,6 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies.tonic-build]
-version = "0.8"
+version = "0.10"
 default-features = false
 features = ["prost"]

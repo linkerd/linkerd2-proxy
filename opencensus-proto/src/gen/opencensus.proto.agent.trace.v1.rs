@@ -105,6 +105,22 @@ pub mod trace_service_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         /// After initialization, this RPC must be kept alive for the entire life of
         /// the application. The agent pushes configs down to applications via a
         /// stream.
@@ -113,7 +129,7 @@ pub mod trace_service_client {
             request: impl tonic::IntoStreamingRequest<
                 Message = super::CurrentLibraryConfig,
             >,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::UpdatedLibraryConfig>>,
             tonic::Status,
         > {
@@ -130,7 +146,15 @@ pub mod trace_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/opencensus.proto.agent.trace.v1.TraceService/Config",
             );
-            self.inner.streaming(request.into_streaming_request(), path, codec).await
+            let mut req = request.into_streaming_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "opencensus.proto.agent.trace.v1.TraceService",
+                        "Config",
+                    ),
+                );
+            self.inner.streaming(req, path, codec).await
         }
         /// For performance reasons, it is recommended to keep this RPC
         /// alive for the entire life of the application.
@@ -139,7 +163,7 @@ pub mod trace_service_client {
             request: impl tonic::IntoStreamingRequest<
                 Message = super::ExportTraceServiceRequest,
             >,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::ExportTraceServiceResponse>>,
             tonic::Status,
         > {
@@ -156,7 +180,15 @@ pub mod trace_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/opencensus.proto.agent.trace.v1.TraceService/Export",
             );
-            self.inner.streaming(request.into_streaming_request(), path, codec).await
+            let mut req = request.into_streaming_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "opencensus.proto.agent.trace.v1.TraceService",
+                        "Export",
+                    ),
+                );
+            self.inner.streaming(req, path, codec).await
         }
     }
 }
