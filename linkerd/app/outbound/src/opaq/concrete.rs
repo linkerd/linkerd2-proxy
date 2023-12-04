@@ -246,16 +246,9 @@ where
     T: svc::Param<Option<profiles::LogicalAddr>>,
 {
     fn param(&self) -> metrics::OutboundEndpointLabels {
-        let authority = self
-            .parent
-            .param()
-            .as_ref()
-            .map(|profiles::LogicalAddr(a)| a.as_http_authority());
         metrics::OutboundEndpointLabels {
-            authority,
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.param(),
-            target_addr: self.addr.into(),
         }
     }
 }

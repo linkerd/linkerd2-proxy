@@ -18,7 +18,7 @@ env:
   CARGO_NET_RETRY: 10
   CHECKSEC_VERSION: 2.5.0
   RUSTFLAGS: "-D warnings -A deprecated"
-  RUSTUP_MAX_RETRIES: 10
+  RUSTUP_MAX_RETRIES: 11
 
 jobs:
   meta:

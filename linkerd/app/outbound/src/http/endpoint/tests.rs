@@ -289,10 +289,8 @@ impl svc::Param<transport::labels::Key> for Endpoint {
 impl svc::Param<metrics::OutboundEndpointLabels> for Endpoint {
     fn param(&self) -> metrics::OutboundEndpointLabels {
         metrics::OutboundEndpointLabels {
-            authority: None,
             labels: None,
             server_id: self.param(),
-            target_addr: self.addr.into(),
         }
     }
 }

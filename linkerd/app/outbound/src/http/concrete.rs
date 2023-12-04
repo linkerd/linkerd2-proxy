@@ -5,7 +5,7 @@ use super::{balance, breaker, client, handle_proxy_error_headers};
 use crate::{http, stack_labels, BackendRef, Outbound, ParentRef};
 use linkerd_app_core::{
     classify,
-    metrics::{prefix_labels, EndpointLabels, OutboundEndpointLabels},
+    metrics::{prefix_outbound_endpoint_labels, EndpointLabels, OutboundEndpointLabels},
     profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
@@ -343,10 +343,8 @@ where
 {
     fn param(&self) -> OutboundEndpointLabels {
         OutboundEndpointLabels {
-            authority: self.parent.param(),
-            labels: prefix_labels("dst", self.metadata.labels().iter()),
+            labels: prefix_outbound_endpoint_labels("dst", self.metadata.labels().iter()),
             server_id: self.param(),
-            target_addr: self.addr.into(),
         }
     }
 }

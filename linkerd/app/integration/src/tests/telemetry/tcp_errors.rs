@@ -103,8 +103,8 @@ impl Test {
     }
 }
 
-fn metric(proxy: &proxy::Listening) -> metrics::MetricMatch {
-    metrics::metric(METRIC).label("target_addr", proxy.inbound_server.as_ref().unwrap().addr)
+fn metric(_proxy: &proxy::Listening) -> metrics::MetricMatch {
+    metrics::metric(METRIC)
 }
 
 /// Tests that the detect metric is labeled and incremented on timeout.
@@ -247,7 +247,7 @@ async fn inbound_direct_multi() {
     let (proxy, metrics) = Test::new(proxy).run().await;
     let client = client::tcp(proxy.inbound);
 
-    let metric = metrics::metric(METRIC).label("target_addr", proxy.inbound);
+    let metric = metrics::metric(METRIC);
     let timeout_metric = metric.clone().label("error", "tls detection timeout");
     let no_tls_metric = metric.clone().label("error", "unexpected");
 
@@ -293,9 +293,7 @@ async fn inbound_invalid_ip() {
         .await;
 
     let client = client::tcp(proxy.inbound);
-    let metric = metric(&proxy)
-        .label("error", "unexpected")
-        .label("target_addr", fake_ip);
+    let metric = metric(&proxy).label("error", "unexpected");
 
     let tcp_client = client.connect().await;
     tcp_client.write(TcpFixture::HELLO_MSG).await;
@@ -359,7 +357,6 @@ async fn inbound_direct_success() {
     let no_tls_client = client::tcp(proxy1.inbound);
 
     let metric = metrics::metric(METRIC)
-        .label("target_addr", proxy1.inbound)
         .label("error", "tls detection timeout")
         .value(1u64);
 

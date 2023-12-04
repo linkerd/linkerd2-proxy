@@ -438,7 +438,6 @@ mod http2 {
             .route("/bye", "bye")
             .run()
             .await;
-        let srv1_addr = srv1.addr;
 
         // Start with the first server.
         let dstctl = controller::new();
@@ -465,7 +464,6 @@ mod http2 {
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("target_addr", srv1_addr.to_string())
             .value(1u64)
             .assert_in(&metrics)
             .await;
