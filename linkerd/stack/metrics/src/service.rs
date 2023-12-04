@@ -116,27 +116,23 @@ mod tests {
         let b0 = TrackService::new(b, metrics.clone());
 
         drop(a1);
-        assert_eq!(metrics.drop_total.value(), 0.0, "Not dropped yet");
+        assert_eq!(metrics.drop_total.value(), 0, "Not dropped yet");
 
         drop(b0);
         assert_eq!(
             metrics.drop_total.value(),
-            1.0,
+            1,
             "Dropping distinct service is counted"
         );
 
         drop(a0);
         assert_eq!(
             metrics.drop_total.value(),
-            2.0,
+            2,
             "Dropping last service clone counted"
         );
 
-        assert_eq!(
-            metrics.create_total.value(),
-            0.0,
-            "No creates by the service"
-        );
+        assert_eq!(metrics.create_total.value(), 0, "No creates by the service");
     }
 
     #[cfg(test)]
@@ -166,17 +162,17 @@ mod tests {
 
         assert_eq!(
             metrics.ready_total.value(),
-            2.0,
+            2,
             "Both clones should be counted discretely"
         );
         assert_eq!(
             metrics.not_ready_total.value(),
-            2.0,
+            2,
             "Both clones should be counted discretely"
         );
         assert_eq!(
             metrics.poll_millis.value(),
-            2000.0,
+            2000,
             "Both clones should be counted discretely"
         );
     }

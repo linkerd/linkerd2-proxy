@@ -1,46 +1,63 @@
-use super::prom::{FmtLabels, FmtMetric};
-use std::fmt::{self, Display};
-use std::sync::atomic::{AtomicU64, Ordering};
+use crate::{
+    prom::{FmtLabels, FmtMetric},
+    value::{PromValue, Value},
+};
+use std::fmt;
 
 /// An instaneous metric value.
 #[derive(Debug, Default)]
-pub struct Gauge(AtomicU64);
+pub struct Gauge<T = u64>(Value<T>);
 
-impl Gauge {
-    /// Increment the gauge by one.
+// === impl Gauge ===
+
+impl From<u64> for Gauge<u64> {
+    fn from(n: u64) -> Self {
+        Self(n.into())
+    }
+}
+
+impl From<f64> for Gauge<f64> {
+    fn from(n: f64) -> Self {
+        Self(n.into())
+    }
+}
+
+impl Gauge<u64> {
     pub fn incr(&self) {
-        self.0.fetch_add(1, Ordering::Release);
+        self.0.add(1);
     }
 
-    /// Decrement the gauge by one.
     pub fn decr(&self) {
-        self.0.fetch_sub(1, Ordering::Release);
+        self.0.sub(1);
+    }
+
+    pub fn set(&self, v: u64) {
+        self.0.set(v)
     }
 
     pub fn value(&self) -> u64 {
-        self.0
-            .load(Ordering::Acquire)
-            .wrapping_rem(crate::MAX_PRECISE_UINT64 + 1)
+        self.0.value()
     }
 }
 
-impl From<u64> for Gauge {
-    fn from(n: u64) -> Self {
-        Gauge(n.into())
+impl Gauge<f64> {
+    pub fn set(&self, v: f64) {
+        self.0.set(v)
+    }
+
+    pub fn value(&self) -> f64 {
+        self.0.value()
     }
 }
 
-impl From<Gauge> for u64 {
-    fn from(gauge: Gauge) -> u64 {
-        gauge.value()
-    }
-}
-
-impl FmtMetric for Gauge {
+impl<T> FmtMetric for Gauge<T>
+where
+    Value<T>: PromValue,
+{
     const KIND: &'static str = "gauge";
 
-    fn fmt_metric<N: Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        writeln!(f, "{} {}", name, self.value())
+    fn fmt_metric<N: fmt::Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
+        writeln!(f, "{} {}", name, self.0.prom_value())
     }
 
     fn fmt_metric_labeled<N, L>(
@@ -51,10 +68,10 @@ impl FmtMetric for Gauge {
     ) -> fmt::Result
     where
         L: FmtLabels,
-        N: Display,
+        N: fmt::Display,
     {
         write!(f, "{}{{", name)?;
         labels.fmt_labels(f)?;
-        writeln!(f, "}} {}", self.value())
+        writeln!(f, "}} {}", self.0.prom_value())
     }
 }

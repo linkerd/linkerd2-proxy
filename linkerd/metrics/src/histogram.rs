@@ -1,14 +1,14 @@
-use std::fmt;
-use std::marker::PhantomData;
-use std::{cmp, iter, slice};
-
-use super::{Counter, Factor, FmtLabels, FmtMetric};
+use crate::{
+    value::{self, PromValue, Value},
+    Counter, FmtLabels, FmtMetric,
+};
+use std::{fmt, iter, slice};
 
 /// A series of latency values and counts.
 #[derive(Debug)]
-pub struct Histogram<V: Into<u64>, F = ()> {
-    bounds: &'static Bounds,
-    buckets: Box<[Counter<F>]>,
+pub struct Histogram<T = u64> {
+    bounds: &'static [f64],
+    buckets: Box<[Counter]>,
 
     /// The total sum of all observed latency values.
     ///
@@ -27,60 +27,61 @@ pub struct Histogram<V: Into<u64>, F = ()> {
     /// [`irate()`]: https://prometheus.io/docs/prometheus/latest/querying/functions/#irate()
     /// [`resets()`]: https://prometheus.io/docs/prometheus/latest/querying/functions/#resets
     ///
-    // TODO: Implement Prometheus reset semantics correctly, taking into consideration
-    //       that Prometheus represents this as `f64` and so there are only 52 significant
-    //       bits.
-    sum: Counter,
-
-    _p: PhantomData<V>,
+    // TODO: Implement Prometheus reset semantics correctly.
+    sum: Counter<T>,
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug)]
 pub enum Bucket {
     Le(f64),
     Inf,
 }
-
-/// A series of increasing Buckets values.
-#[derive(Debug)]
-pub struct Bounds(pub &'static [Bucket]);
 
 /// Helper that lazily formats an `{K}="{V}"`" label.
 struct Label<K: fmt::Display, V: fmt::Display>(K, V);
 
 // === impl Histogram ===
 
-impl<V: Into<u64>, F: Factor> Histogram<V, F> {
-    pub fn new(bounds: &'static Bounds) -> Self {
-        let mut buckets = Vec::with_capacity(bounds.0.len());
-        let mut prior = &Bucket::Le(0.0);
-        for bound in bounds.0.iter() {
-            assert!(prior < bound);
+impl<T> Histogram<T> {
+    pub fn new(bounds: &'static [f64]) -> Self {
+        let mut buckets = Vec::new();
+        let mut prior = 0.0;
+        for bound in bounds.iter() {
+            assert!(prior < *bound);
             buckets.push(Counter::new());
-            prior = bound;
+            prior = *bound;
         }
+        buckets.push(Counter::new());
 
         Self {
             bounds,
             buckets: buckets.into_boxed_slice(),
             sum: Counter::default(),
-            _p: PhantomData,
         }
     }
+}
 
-    pub fn add<U: Into<V>>(&self, u: U) {
-        let v: V = u.into();
-        let value: u64 = v.into();
-
+impl Histogram<u64> {
+    pub fn add(&self, value: u64) {
+        let wrapped = value::u64_to_f64(value);
         let idx = self
             .bounds
-            .0
             .iter()
-            .position(|b| match *b {
-                Bucket::Le(ceiling) => F::factor(value) <= ceiling,
-                Bucket::Inf => true,
-            })
-            .expect("all values must fit into a bucket");
+            .position(|b| wrapped <= *b)
+            .unwrap_or(self.bounds.len());
+
+        self.buckets[idx].incr();
+        self.sum.add(value);
+    }
+}
+
+impl Histogram<f64> {
+    pub fn add(&self, value: f64) {
+        let idx = self
+            .bounds
+            .iter()
+            .position(|b| value <= *b)
+            .unwrap_or(self.bounds.len());
 
         self.buckets[idx].incr();
         self.sum.add(value);
@@ -89,11 +90,11 @@ impl<V: Into<u64>, F: Factor> Histogram<V, F> {
 
 #[cfg(any(test, feature = "test_util"))]
 #[allow(clippy::float_cmp)]
-impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
+impl<T> Histogram<T> {
     /// Assert the bucket containing `le` has a count of at least `at_least`.
-    pub fn assert_bucket_at_least(&self, le: f64, at_least: f64) {
-        for (&bucket, count) in self {
-            if bucket >= le {
+    pub fn assert_bucket_at_least(&self, le: f64, at_least: u64) {
+        for (bucket, count) in self {
+            if bucket >= Bucket::Le(le) {
                 let count = count.value();
                 assert!(count >= at_least, "le={:?}; bucket={:?};", le, bucket);
                 break;
@@ -102,9 +103,9 @@ impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
     }
 
     /// Assert the bucket containing `le` has a count of exactly `exactly`.
-    pub fn assert_bucket_exactly(&self, le: f64, exactly: f64) -> &Self {
-        for (&bucket, count) in self {
-            if bucket >= le {
+    pub fn assert_bucket_exactly(&self, le: f64, exactly: u64) -> &Self {
+        for (bucket, count) in self {
+            if bucket >= Bucket::Le(le) {
                 let count = count.value();
                 assert_eq!(
                     count, exactly,
@@ -119,42 +120,40 @@ impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
 
     /// Assert all buckets less than the one containing `value` have
     /// counts of exactly `exactly`.
-    pub fn assert_lt_exactly(&self, value: f64, exactly: f64) -> &Self {
-        for (i, &bucket) in self.bounds.0.iter().enumerate() {
-            let ceiling = match bucket {
-                Bucket::Le(c) => c,
-                Bucket::Inf => break,
-            };
+    pub fn assert_lt_exactly(&self, value: f64, exactly: u64) -> &Self {
+        for (i, bucket) in self.bounds.iter().enumerate() {
             let next = self
                 .bounds
-                .0
                 .get(i + 1)
-                .expect("Bucket::Le may not be the last in `bounds`!");
+                .map(|b| Bucket::Le(*b))
+                .unwrap_or(Bucket::Inf);
 
-            if value <= ceiling || next >= &value {
+            if value <= *bucket || next >= value {
                 break;
             }
 
-            let count: f64 = self.buckets[i].value();
-            assert_eq!(count, exactly, "bucket={:?}; value={:?};", bucket, value,);
+            let count = self.buckets[i].value();
+            assert_eq!(count, exactly, "bucket={:?}; value={:?};", bucket, value);
         }
         self
     }
 
     /// Assert all buckets greater than the one containing `value` have
     /// counts of exactly `exactly`.
-    pub fn assert_gt_exactly(&self, value: f64, exactly: f64) -> &Self {
+    pub fn assert_gt_exactly(&self, value: f64, exactly: u64) -> &Self {
         // We set this to true after we've iterated past the first bucket
         // whose upper bound is >= `value`.
         let mut past_le = false;
-        for (&bucket, count) in self {
-            if bucket < value {
-                continue;
-            }
+        for (bucket, count) in self {
+            if let Bucket::Le(b) = bucket {
+                if b < value {
+                    continue;
+                }
 
-            if bucket >= value && !past_le {
-                past_le = true;
-                continue;
+                if b >= value && !past_le {
+                    past_le = true;
+                    continue;
+                }
             }
 
             if past_le {
@@ -171,22 +170,35 @@ impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
     }
 }
 
-impl<'a, V: Into<u64>, F> IntoIterator for &'a Histogram<V, F> {
-    type Item = (&'a Bucket, &'a Counter<F>);
-    type IntoIter = iter::Zip<slice::Iter<'a, Bucket>, slice::Iter<'a, Counter<F>>>;
+impl<'a, T> IntoIterator for &'a Histogram<T> {
+    type Item = (Bucket, &'a Counter);
+    type IntoIter = iter::Zip<
+        iter::Chain<
+            std::iter::Map<slice::Iter<'a, f64>, fn(&f64) -> Bucket>,
+            std::iter::Once<Bucket>,
+        >,
+        slice::Iter<'a, Counter>,
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.bounds.0.iter().zip(self.buckets.iter())
+        self.bounds
+            .iter()
+            .map::<_, fn(&f64) -> Bucket>(|n| Bucket::Le(*n))
+            .chain(std::iter::once(Bucket::Inf))
+            .zip(self.buckets.iter())
     }
 }
 
-impl<V: Into<u64>, F: Factor> FmtMetric for Histogram<V, F> {
+impl<T> FmtMetric for Histogram<T>
+where
+    Value<T>: PromValue,
+{
     const KIND: &'static str = "histogram";
 
     fn fmt_metric<N: fmt::Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        let total = Counter::<F>::new();
+        let total = Counter::<u64>::new();
         for (le, count) in self {
-            total.add(count.into());
+            total.add(count.value());
             total.fmt_metric_labeled(f, format_args!("{}_bucket", &name), Label("le", le))?;
         }
         total.fmt_metric(f, format_args!("{}_count", &name))?;
@@ -204,9 +216,9 @@ impl<V: Into<u64>, F: Factor> FmtMetric for Histogram<V, F> {
         N: fmt::Display,
         L: FmtLabels,
     {
-        let total = Counter::<F>::new();
+        let total = Counter::<f64>::new();
         for (le, count) in self {
-            total.add(count.into());
+            total.add(count.prom_value());
             total.fmt_metric_labeled(
                 f,
                 format_args!("{}_bucket", &name),
@@ -230,46 +242,50 @@ impl<K: fmt::Display, V: fmt::Display> FmtLabels for Label<K, V> {
 
 // === impl Bucket ===
 
-impl fmt::Display for Bucket {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Bucket::Le(v) => write!(f, "{}", v),
-            Bucket::Inf => write!(f, "+Inf"),
+impl std::cmp::PartialEq<Bucket> for Bucket {
+    fn eq(&self, other: &Bucket) -> bool {
+        match (self, other) {
+            (Self::Le(a), Self::Le(b)) => a.eq(b),
+            (Self::Inf, Self::Inf) => true,
+            _ => false,
         }
     }
 }
 
-impl cmp::PartialOrd<Bucket> for Bucket {
-    fn partial_cmp(&self, rhs: &Bucket) -> Option<cmp::Ordering> {
-        match (self, rhs) {
-            (Bucket::Inf, Bucket::Inf) => None,
-            (Bucket::Le(s), _) if s.is_nan() => None,
-            (_, Bucket::Le(r)) if r.is_nan() => None,
-            (Bucket::Le(_), Bucket::Inf) => Some(cmp::Ordering::Less),
-            (Bucket::Inf, Bucket::Le(_)) => Some(cmp::Ordering::Greater),
-            (Bucket::Le(s), Bucket::Le(r)) => s.partial_cmp(r),
+impl std::cmp::PartialOrd<Bucket> for Bucket {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Self::Le(a), Self::Le(b)) => a.partial_cmp(b),
+            (Self::Le(_), Self::Inf) => Some(std::cmp::Ordering::Less),
+            (Self::Inf, Self::Le(_)) => Some(std::cmp::Ordering::Greater),
+            (Self::Inf, Self::Inf) => Some(std::cmp::Ordering::Equal),
         }
     }
 }
 
-impl cmp::PartialEq<f64> for Bucket {
-    fn eq(&self, rhs: &f64) -> bool {
-        if let Bucket::Le(ref ceiling) = *self {
-            ceiling == rhs
-        } else {
-            // `self` is `Bucket::Inf`.
-            false
+impl std::cmp::PartialEq<f64> for Bucket {
+    fn eq(&self, other: &f64) -> bool {
+        match (self, other) {
+            (Self::Le(a), b) => a.eq(b),
+            _ => false,
         }
     }
 }
 
-impl cmp::PartialOrd<f64> for Bucket {
-    fn partial_cmp(&self, rhs: &f64) -> Option<cmp::Ordering> {
-        if let Bucket::Le(ref ceiling) = *self {
-            ceiling.partial_cmp(rhs)
-        } else {
-            // `self` is `Bucket::Inf`.
-            Some(cmp::Ordering::Greater)
+impl std::cmp::PartialOrd<f64> for Bucket {
+    fn partial_cmp(&self, other: &f64) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Self::Le(a), b) => a.partial_cmp(b),
+            (Self::Inf, _) => Some(std::cmp::Ordering::Greater),
+        }
+    }
+}
+
+impl std::fmt::Display for Bucket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Le(le) => write!(f, "{le}"),
+            Self::Inf => write!(f, "+Inf"),
         }
     }
 }
@@ -278,79 +294,48 @@ impl cmp::PartialOrd<f64> for Bucket {
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
-
     use quickcheck::quickcheck;
     use std::collections::HashMap;
 
-    static BOUNDS: &Bounds = &Bounds(&[
-        Bucket::Le(0.010),
-        Bucket::Le(0.020),
-        Bucket::Le(0.030),
-        Bucket::Le(0.040),
-        Bucket::Le(0.050),
-        Bucket::Le(0.060),
-        Bucket::Le(0.070),
-        Bucket::Le(0.080),
-        Bucket::Le(0.090),
-        Bucket::Le(0.100),
-        Bucket::Le(0.200),
-        Bucket::Le(0.300),
-        Bucket::Le(0.400),
-        Bucket::Le(0.500),
-        Bucket::Le(0.600),
-        Bucket::Le(0.700),
-        Bucket::Le(0.800),
-        Bucket::Le(0.900),
-        Bucket::Le(1.000),
-        Bucket::Le(2.000),
-        Bucket::Le(3.000),
-        Bucket::Le(4.000),
-        Bucket::Le(5.000),
-        Bucket::Le(6.000),
-        Bucket::Le(7.000),
-        Bucket::Le(8.000),
-        Bucket::Le(9.000),
-        Bucket::Le(10.000),
-        Bucket::Le(20.000),
-        Bucket::Le(30.000),
-        Bucket::Le(40.000),
-        Bucket::Le(50.000),
-        Bucket::Le(60.000),
-        Bucket::Le(70.000),
-        Bucket::Le(80.000),
-        Bucket::Le(90.000),
-        Bucket::Le(100.000),
-        Bucket::Le(200.000),
-        Bucket::Le(300.000),
-        Bucket::Le(400.000),
-        Bucket::Le(500.000),
-        Bucket::Le(600.000),
-        Bucket::Le(700.000),
-        Bucket::Le(800.000),
-        Bucket::Le(900.000),
-        Bucket::Le(1_000.000),
-        Bucket::Inf,
-    ]);
+    static BOUNDS: &[f64] = &[
+        0.010, 0.020, 0.030, 0.040, 0.050, 0.060, 0.070, 0.080, 0.090, 0.100, 0.200, 0.300, 0.400,
+        0.500, 0.600, 0.700, 0.800, 0.900, 1.000, 2.000, 3.000, 4.000, 5.000, 6.000, 7.000, 8.000,
+        9.000, 10.000, 20.000, 30.000, 40.000, 50.000, 60.000, 70.000, 80.000, 90.000, 100.000,
+        200.000, 300.000, 400.000, 500.000, 600.000, 700.000, 800.000, 900.000, 1_000.000,
+    ];
 
     quickcheck! {
         fn bucket_incremented(obs: u64) -> bool {
             let hist = Histogram::<u64>::new(BOUNDS);
             hist.add(obs);
             // The bucket containing `obs` must have count 1.
-            hist.assert_bucket_exactly(obs as f64, 1.0)
+            hist.assert_bucket_exactly(obs as f64, 1)
                 // All buckets less than the one containing `obs` must have
                 // counts of exactly 0.
-                .assert_lt_exactly(obs as f64, 0.0)
+                .assert_lt_exactly(obs as f64, 0)
                 // All buckets greater than the one containing `obs` must
                 // have counts of exactly 0.
-                .assert_gt_exactly(obs as f64, 0.0);
+                .assert_gt_exactly(obs as f64, 0);
             true
         }
 
         fn sum_equals_total_of_observations(observations: Vec<u64>) -> bool {
             let hist = Histogram::<u64>::new(BOUNDS);
 
-            let expected_sum = Counter::<()>::default();
+            let expected_sum = Counter::<u64>::default();
+            for obs in observations {
+                expected_sum.add(obs);
+                hist.add(obs);
+            }
+
+            hist.sum.value() == expected_sum.value()
+        }
+
+
+        fn sum_equals_total_of_observations_f64(observations: Vec<f64>) -> bool {
+            let hist = Histogram::<f64>::new(BOUNDS);
+
+            let expected_sum = Counter::<f64>::default();
             for obs in observations {
                 expected_sum.add(obs);
                 hist.add(obs);
@@ -366,8 +351,8 @@ mod tests {
                 hist.add(*obs);
             }
 
-            let count = hist.buckets.iter().map(|c| c.value()).sum::<f64>();
-            count == observations.len() as f64
+            let count = hist.buckets.iter().map(|c| c.value()).sum::<u64>();
+            count == observations.len() as u64
         }
 
         fn multiple_observations_increment_buckets(observations: Vec<u64>) -> bool {
@@ -375,12 +360,9 @@ mod tests {
             let hist = Histogram::<u64>::new(BOUNDS);
 
             for obs in observations {
-                let incremented_bucket = &BOUNDS.0.iter()
-                    .position(|bucket| match *bucket {
-                        Bucket::Le(ceiling) => obs as f64 <= ceiling,
-                        Bucket::Inf => true,
-                    })
-                    .unwrap();
+                let incremented_bucket = &BOUNDS.iter()
+                    .position(|bucket| obs as f64 <= *bucket)
+                    .unwrap_or(BOUNDS.len());
                 *buckets_and_counts
                     .entry(*incremented_bucket)
                     .or_insert(0.0) += 1.0;
@@ -389,10 +371,27 @@ mod tests {
             }
 
             for (i, count) in hist.buckets.iter().enumerate() {
-                let count = count.value();
+                let count = count.value() as f64;
                 assert_eq!(buckets_and_counts.get(&i).unwrap_or(&0.0), &count);
             }
             true
         }
+    }
+
+    #[test]
+    fn test_values_larger_than_largest_bound() {
+        let hist = Histogram::<f64>::new(&[0.5]);
+        assert_eq!(hist.bounds.len(), 1);
+        assert_eq!(hist.buckets.len(), 2);
+        assert_eq!(hist.buckets[0].value(), 0);
+        assert_eq!(hist.buckets[1].value(), 0);
+
+        hist.add(0.4);
+        assert_eq!(hist.buckets[0].value(), 1);
+        assert_eq!(hist.buckets[1].value(), 0);
+
+        hist.add(0.6);
+        assert_eq!(hist.buckets[0].value(), 1);
+        assert_eq!(hist.buckets[1].value(), 1);
     }
 }

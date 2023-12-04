@@ -544,7 +544,7 @@ async fn grpc_response_class() {
             &classify::Class::Grpc(Err(tonic::Code::Unknown)),
         )
         .expect("response_total not found");
-    assert_eq!(response_total, 1.0);
+    assert_eq!(response_total, 1);
 
     drop((client, bg));
 }

@@ -3,7 +3,7 @@ use futures::{ready, TryFuture};
 use http_body::Body;
 use linkerd_error::Error;
 use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
-use linkerd_metrics::NewMetrics;
+use linkerd_metrics::{latency, NewMetrics};
 use linkerd_stack::Proxy;
 use parking_lot::Mutex;
 use pin_project::{pin_project, pinned_drop};
@@ -351,7 +351,7 @@ where
             .or_insert_with(StatusMetrics::default);
 
         let elapsed = now.saturating_duration_since(*this.stream_open_at);
-        status_metrics.latency.add(elapsed);
+        status_metrics.latency.add(latency::millis_u64(elapsed));
 
         *this.latency_recorded = true;
     }

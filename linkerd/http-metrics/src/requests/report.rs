@@ -1,8 +1,6 @@
 use super::{ClassMetrics, Metrics, StatusMetrics};
 use crate::{Prefixed, Report};
-use linkerd_metrics::{
-    latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric, Store,
-};
+use linkerd_metrics::{Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric, Store};
 use parking_lot::Mutex;
 use std::{fmt, hash::Hash};
 use tokio::time::Instant;
@@ -30,9 +28,7 @@ where
         )
     }
 
-    fn response_latency_ms(
-        &self,
-    ) -> Metric<'_, Prefixed<'_, &'static str>, Histogram<latency::Ms>> {
+    fn response_latency_ms(&self) -> Metric<'_, Prefixed<'_, &'static str>, Histogram<u64>> {
         Metric::new(
             self.prefix_key("response_latency_ms"),
             "Elapsed times between a request's headers being received \

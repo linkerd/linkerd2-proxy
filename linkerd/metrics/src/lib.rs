@@ -39,35 +39,132 @@ macro_rules! metrics {
     }
 }
 
-pub trait Factor {
-    fn factor(n: u64) -> f64;
-}
+mod value {
+    use std::{
+        marker::PhantomData,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
-pub struct MicrosAsSeconds;
+    /// Largest `u64` that can fit without loss of precision in `f64` (2^53).
+    ///
+    /// Wrapping is based on the fact that Prometheus models values as f64 (52-bits
+    /// mantissa), thus integer values over 2^53 are not guaranteed to be correctly
+    /// exposed.
+    pub const MAX_PRECISE_UINT64: u64 = 0x20_0000_0000_0000;
 
-pub struct MillisAsSeconds;
-
-/// Largest `u64` that can fit without loss of precision in `f64` (2^53).
-///
-/// Wrapping is based on the fact that Prometheus models values as f64 (52-bits
-/// mantissa), thus integer values over 2^53 are not guaranteed to be correctly
-/// exposed.
-const MAX_PRECISE_UINT64: u64 = 0x20_0000_0000_0000;
-
-impl Factor for () {
-    fn factor(n: u64) -> f64 {
+    #[inline]
+    pub fn u64_to_f64(n: u64) -> f64 {
         n.wrapping_rem(MAX_PRECISE_UINT64 + 1) as f64
     }
-}
 
-impl Factor for MillisAsSeconds {
-    fn factor(n: u64) -> f64 {
-        n.wrapping_rem((MAX_PRECISE_UINT64 + 1) * 1000) as f64 * 0.001
+    #[inline]
+    pub fn u128_to_u64(n: u128) -> u64 {
+        n.wrapping_rem(MAX_PRECISE_UINT64 as u128 + 1) as u64
     }
-}
 
-impl Factor for MicrosAsSeconds {
-    fn factor(n: u64) -> f64 {
-        n.wrapping_rem((MAX_PRECISE_UINT64 + 1) * 1_000) as f64 * 0.000_001
+    /// A sealed trait for Value types that can be exposed as Prometheus
+    /// metrics. This is satisfied for Value<u64> and Value<f64>.
+    pub trait PromValue {
+        fn prom_value(&self) -> f64;
+    }
+
+    /// A metric value that handles Prometheus wrapping semantics.
+    #[derive(Debug)]
+    pub struct Value<T>(AtomicU64, PhantomData<T>);
+
+    impl<V> Default for Value<V> {
+        fn default() -> Self {
+            Self(AtomicU64::default(), PhantomData)
+        }
+    }
+
+    impl From<u64> for Value<u64> {
+        fn from(n: u64) -> Self {
+            Self(n.into(), PhantomData)
+        }
+    }
+
+    impl From<f64> for Value<f64> {
+        fn from(n: f64) -> Self {
+            Self(n.to_bits().into(), PhantomData)
+        }
+    }
+
+    impl Value<u64> {
+        #[inline]
+        pub fn add(&self, value: u64) {
+            self.0.fetch_add(value, Ordering::Release);
+        }
+
+        #[inline]
+        pub fn sub(&self, value: u64) {
+            self.0.fetch_sub(value, Ordering::Release);
+        }
+
+        #[inline]
+        pub fn set(&self, v: u64) {
+            self.0.store(v, Ordering::Release)
+        }
+
+        #[inline]
+        pub fn value(&self) -> u64 {
+            self.0.load(Ordering::Acquire)
+        }
+    }
+
+    impl PromValue for Value<u64> {
+        fn prom_value(&self) -> f64 {
+            u64_to_f64(self.value())
+        }
+    }
+
+    impl Value<f64> {
+        #[inline]
+        pub fn set(&self, v: f64) {
+            self.0.store(v.to_bits(), Ordering::Release)
+        }
+
+        #[inline]
+        pub fn incr(&self) {
+            self.add(1.0)
+        }
+
+        #[inline]
+        pub fn decr(&self) {
+            self.add(-1.0)
+        }
+
+        #[inline]
+        pub fn add(&self, value: f64) {
+            loop {
+                let result = self
+                    .0
+                    .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |curr| {
+                        let input = f64::from_bits(curr);
+                        let output = input + value;
+                        // On overflow, explicitly wrap to zero.
+                        if output.is_infinite() || output.is_nan() {
+                            Some(0)
+                        } else {
+                            Some(output.to_bits())
+                        }
+                    });
+
+                if result.is_ok() {
+                    break;
+                }
+            }
+        }
+
+        #[inline]
+        pub fn value(&self) -> f64 {
+            f64::from_bits(self.0.load(Ordering::Acquire))
+        }
+    }
+
+    impl PromValue for Value<f64> {
+        fn prom_value(&self) -> f64 {
+            self.value()
+        }
     }
 }

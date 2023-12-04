@@ -32,7 +32,7 @@ pub struct StatusMetrics<C>
 where
     C: Hash + Eq,
 {
-    latency: Histogram<latency::Ms>,
+    latency: Histogram<u64>,
     by_class: HashMap<C, ClassMetrics>,
 }
 
@@ -110,7 +110,7 @@ where
 {
     fn default() -> Self {
         Self {
-            latency: Histogram::default(),
+            latency: Histogram::new(latency::MILLIS_BOUNDS),
             by_class: HashMap::default(),
         }
     }
@@ -125,7 +125,7 @@ impl<C: Hash + Eq> StatusMetrics<C> {
 
 #[cfg(feature = "test-util")]
 impl ClassMetrics {
-    pub fn total(&self) -> f64 {
+    pub fn total(&self) -> u64 {
         self.total.value()
     }
 }

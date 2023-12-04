@@ -1,4 +1,4 @@
-use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge, MillisAsSeconds};
+use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge};
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::Instant;
@@ -8,7 +8,7 @@ metrics! {
         "Time that the process started (in seconds since the UNIX epoch)"
     },
 
-    process_uptime_seconds_total: Counter<MillisAsSeconds> {
+    process_uptime_seconds_total: Counter<f64> {
         "Total time since the process started (in seconds)"
     }
 }
@@ -68,9 +68,8 @@ impl FmtMetrics for Report {
         //  Use `staturating_duration_since` rather than `elapsed` to avoid
         //  possible panics in the event of clock non-monotonicity.
         let uptime = Instant::now().saturating_duration_since(self.start_instant);
-        let uptime_millis = uptime.as_millis();
         process_uptime_seconds_total.fmt_help(f)?;
-        process_uptime_seconds_total.fmt_metric(f, &Counter::from(uptime_millis as u64))?;
+        process_uptime_seconds_total.fmt_metric(f, &Counter::from(uptime.as_secs_f64()))?;
 
         #[cfg(target_os = "linux")]
         self.system.fmt_metrics(f)?;
@@ -102,13 +101,14 @@ impl Default for StartTime {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge, MillisAsSeconds};
+    use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge};
     use linkerd_system as sys;
     use std::fmt;
+    use tokio::time::Duration;
     use tracing::warn;
 
     metrics! {
-        process_cpu_seconds_total: Counter<MillisAsSeconds> {
+        process_cpu_seconds_total: Counter<f64> {
             "Total user and system CPU time spent in seconds."
         },
         process_open_fds: Gauge { "Number of open file descriptors." },
@@ -162,9 +162,9 @@ mod linux {
 
             if let Some(mpt) = self.ms_per_tick {
                 let clock_ticks = stat.utime + stat.stime;
-                let cpu_ms = clock_ticks * mpt;
+                let cpu = Duration::from_millis(clock_ticks * mpt);
                 process_cpu_seconds_total.fmt_help(f)?;
-                process_cpu_seconds_total.fmt_metric(f, &Counter::from(cpu_ms))?;
+                process_cpu_seconds_total.fmt_metric(f, &Counter::from(cpu.as_secs_f64()))?;
             } else {
                 warn!("Could not determine process_cpu_seconds_total");
             }

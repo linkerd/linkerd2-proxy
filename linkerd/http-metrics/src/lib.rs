@@ -32,7 +32,7 @@ impl<T: Hash + Eq, C: Hash + Eq> Report<T, requests::Metrics<C>> {
         labels: &T,
         status: Option<http::StatusCode>,
         class: &C,
-    ) -> Option<f64> {
+    ) -> Option<u64> {
         let registry = self.registry.lock();
         let requests = registry.get(labels)?.lock();
         let status = requests.by_status().get(&status)?;
