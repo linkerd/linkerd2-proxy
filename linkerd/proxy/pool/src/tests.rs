@@ -6,6 +6,7 @@ use linkerd_proxy_core::Update;
 use linkerd_stack::{Service, ServiceExt};
 use tokio::{sync::mpsc, time};
 use tokio_stream::wrappers::ReceiverStream;
+use tokio_test::{assert_pending, assert_ready};
 
 mod mock;
 
@@ -88,7 +89,7 @@ async fn limits_request_capacity() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn waits_for_endpoints() {
+async fn updates_while_pending() {
     let _trace = linkerd_tracing::test::with_default_filter("linkerd=trace");
 
     let (pool, mut handle) = mock::pool::<(), (), ()>();
@@ -103,6 +104,7 @@ async fn waits_for_endpoints() {
     handle.svc.allow(0);
     assert!(poolq.ready().await.is_ok(), "poolq must be ready");
     let call = poolq.call(());
+    tokio::task::yield_now().await;
 
     updates
         .try_send(Ok(Update::Reset(vec![(
@@ -170,6 +172,8 @@ async fn complete_resolution() {
     handle.svc.allow(1);
     assert!(poolq.ready().await.is_ok(), "poolq must be ready");
     drop(updates);
+    tokio::task::yield_now().await;
+
     let call = poolq.call(());
     let ((), respond) = handle.svc.next_request().await.expect("request");
     respond.send_response(());
@@ -212,6 +216,12 @@ async fn error_resolution() {
         poolq.ready().await.is_err(),
         "poolq must error after failed resolution"
     );
+
+    poolq
+        .ready()
+        .await
+        .err()
+        .expect("poolq must error after failed resolution");
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -232,8 +242,22 @@ async fn error_pool_while_pending() {
 
     assert!(poolq.ready().await.is_ok(), "poolq must be ready");
     let call = poolq.call(());
+    tokio::task::yield_now().await;
+
     handle.set_poll(std::task::Poll::Ready(Err(mock::PoolError)));
-    call.await.expect_err("response should fail");
+    tokio::task::yield_now().await;
+    call.now_or_never()
+        .expect("response should fail immediately")
+        .expect_err("response should fail");
+
+    tracing::info!("Awaiting readiness failure");
+    tokio::task::yield_now().await;
+    poolq
+        .ready()
+        .now_or_never()
+        .expect("poolq readiness fail immediately")
+        .err()
+        .expect("poolq must error after pool error");
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -257,6 +281,12 @@ async fn error_after_ready() {
         .expect("send update");
     tokio::task::yield_now().await;
     poolq.call(()).await.expect_err("response should fail");
+
+    poolq
+        .ready()
+        .await
+        .err()
+        .expect("poolq must error after pool error");
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -275,12 +305,19 @@ async fn terminates() {
     handle.svc.allow(0);
     assert!(poolq.ready().await.is_ok(), "poolq must be ready");
     let call = poolq.call(());
+    assert_pending!(handle.svc.poll_request());
+
     drop(poolq);
+
     assert!(
         call.await.is_err(),
         "call should fail when queue is dropped"
     );
     assert!(updates.is_closed());
+    assert!(
+        assert_ready!(handle.svc.poll_request(), "poll_request should be ready").is_none(),
+        "poll_request should return None"
+    );
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]

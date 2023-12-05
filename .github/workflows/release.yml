@@ -22,6 +22,16 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: styfle/cancel-workflow-action@01ce38bf961b4e243a6342cbade0dbc8ba3f0432
+        with:
+          all_but_latest: true
+          access_token: ${{ github.token }}
+
   meta:
     timeout-minutes: 5
     runs-on: ubuntu-latest
@@ -39,12 +49,16 @@ jobs:
             fi
             ( echo publish=true
               echo version="${ver#v}"
+              echo archs='["amd64", "arm64", "arm"]'
             ) >> "$GITHUB_OUTPUT"
           else
             sha="${{ github.sha }}"
-            echo version="0.0.0-test.${sha:0:7}" >> "$GITHUB_OUTPUT"
+            ( echo version="0.0.0-test.${sha:0:7}"
+              echo archs='["amd64"]'
+            ) >> "$GITHUB_OUTPUT"
           fi
     outputs:
+      archs: ${{ steps.meta.outputs.archs }}
       publish: ${{ steps.meta.outputs.publish }}
       version: ${{ steps.meta.outputs.version }}
 
@@ -52,7 +66,7 @@ jobs:
     needs: [meta]
     strategy:
       matrix:
-        arch: [amd64, arm64, arm]
+        arch: ${{ fromJson(needs.meta.outputs.archs) }}
         libc: [gnu] # musl
 
     # If we're not actually building on a release tag, don't short-circuit on

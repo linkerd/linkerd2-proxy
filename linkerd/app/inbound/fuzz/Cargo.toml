@@ -36,3 +36,6 @@ name = "fuzz_target_1"
 path = "fuzz_targets/fuzz_target_1.rs"
 test = true
 doc = false
+
+# [patch.crates-io]
+# linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/deps" }

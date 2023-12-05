@@ -1,8 +1,4 @@
-//! Future types for the [`Buffer`] middleware.
-//!
-//! [`Buffer`]: crate::buffer::Buffer
-
-use super::{error::Closed, message};
+use super::message;
 use futures::ready;
 use linkerd_error::Error;
 use pin_project::pin_project;
@@ -65,11 +61,11 @@ where
                 ResponseStateProj::Failed { error } => {
                     return Poll::Ready(Err(error.take().expect("polled after error")));
                 }
-                ResponseStateProj::Rx { rx } => match ready!(rx.poll(cx)) {
-                    Ok(Ok(fut)) => this.state.set(ResponseState::Poll { fut }),
-                    Ok(Err(e)) => return Poll::Ready(Err(e)),
-                    Err(_) => return Poll::Ready(Err(Closed::new().into())),
-                },
+                ResponseStateProj::Rx { rx } => {
+                    let fut = ready!(rx.poll(cx))
+                        .expect("worker must set a failure if it exits prematurely")?;
+                    this.state.set(ResponseState::Poll { fut });
+                }
                 ResponseStateProj::Poll { fut } => return fut.poll(cx).map_err(Into::into),
             }
         }

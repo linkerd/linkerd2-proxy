@@ -24,6 +24,16 @@ env:
   RUSTFLAGS: "-D warnings -A deprecated -C debuginfo=0"
 
 jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: styfle/cancel-workflow-action@01ce38bf961b4e243a6342cbade0dbc8ba3f0432
+        with:
+          all_but_latest: true
+          access_token: ${{ github.token }}
+
   list-changed-crates:
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -31,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: tj-actions/changed-files@da093c1609db0edd0a037ce9664e135f74bf30d9
+      - uses: tj-actions/changed-files@1c938490c880156b746568a518594309cfb3f66b
         id: changed-files
         with:
           files: |

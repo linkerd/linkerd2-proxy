@@ -427,8 +427,8 @@ pub mod span {
 /// The `Status` type defines a logical error model that is suitable for different
 /// programming environments, including REST APIs and RPC APIs. This proto's fields
 /// are a subset of those of
-/// \[google.rpc.Status\](<https://github.com/googleapis/googleapis/blob/master/google/rpc/status.proto>),
-/// which is used by \[gRPC\](<https://github.com/grpc>).
+/// [google.rpc.Status](<https://github.com/googleapis/googleapis/blob/master/google/rpc/status.proto>),
+/// which is used by [gRPC](<https://github.com/grpc>).
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Status {
@@ -501,7 +501,7 @@ pub mod stack_trace {
         #[prost(message, optional, tag = "1")]
         pub function_name: ::core::option::Option<super::TruncatableString>,
         /// An un-mangled function name, if `function_name` is
-        /// \[mangled\](<http://www.avabodh.com/cxxin/namemangling.html>). The name can
+        /// [mangled](<http://www.avabodh.com/cxxin/namemangling.html>). The name can
         /// be fully qualified.
         #[prost(message, optional, tag = "2")]
         pub original_function_name: ::core::option::Option<super::TruncatableString>,
@@ -607,7 +607,7 @@ pub mod trace_config {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProbabilitySampler {
-    /// The desired probability of sampling. Must be within [0.0, 1.0].
+    /// The desired probability of sampling. Must be within \[0.0, 1.0\].
     #[prost(double, tag = "1")]
     pub sampling_probability: f64,
 }

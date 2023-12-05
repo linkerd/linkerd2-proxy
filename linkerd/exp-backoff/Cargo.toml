@@ -6,7 +6,6 @@ license = "Apache-2.0"
 edition = "2021"
 publish = false
 
-
 [dependencies]
 futures = { version = "0.3", default-features = false }
 rand = { version = "0.8", features = ["small_rng"] }
