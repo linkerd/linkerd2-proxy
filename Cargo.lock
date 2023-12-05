@@ -1678,6 +1678,7 @@ dependencies = [
  "linkerd-proxy-core",
  "linkerd-proxy-pool",
  "linkerd-stack",
+ "linkerd-tracing",
  "parking_lot",
  "pin-project",
  "rand",

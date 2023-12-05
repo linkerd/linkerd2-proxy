@@ -264,6 +264,8 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn update_pool() {
+        let _trace = linkerd_tracing::test::with_default_filter("trace");
+
         let addr0 = "192.168.10.10:80".parse().unwrap();
         let addr1 = "192.168.10.11:80".parse().unwrap();
 
@@ -294,6 +296,10 @@ mod tests {
         assert_eq!(pool.endpoints.len(), 2);
         assert_eq!(pool.endpoints.get(&addr1), Some(&1));
 
+        pool.update_pool(Update::Add(vec![(addr1, 1)]));
+        assert_eq!(pool.endpoints.len(), 2);
+        assert_eq!(pool.endpoints.get(&addr1), Some(&1));
+
         pool.update_pool(Update::Remove(vec![addr0]));
         assert_eq!(pool.endpoints.len(), 1);
 
@@ -302,12 +308,22 @@ mod tests {
         assert_eq!(pool.endpoints.get(&addr0), Some(&2));
         assert_eq!(pool.endpoints.get(&addr1), Some(&2));
 
+        pool.update_pool(Update::Reset(vec![(addr0, 2)]));
+        assert_eq!(pool.endpoints.len(), 1);
+        assert_eq!(pool.endpoints.get(&addr0), Some(&2));
+
+        pool.update_pool(Update::Reset(vec![(addr0, 3)]));
+        assert_eq!(pool.endpoints.len(), 1);
+        assert_eq!(pool.endpoints.get(&addr0), Some(&3));
+
         pool.update_pool(Update::DoesNotExist);
         assert_eq!(pool.endpoints.len(), 0);
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn p2c_ready_index() {
+        let _trace = linkerd_tracing::test::with_default_filter("trace");
+
         let addr0 = "192.168.10.10:80".parse().unwrap();
         let (svc0, mut h0) = tower_test::mock::pair::<(), ()>();
         h0.allow(0);
