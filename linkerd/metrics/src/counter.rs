@@ -1,5 +1,5 @@
 use super::{
-    prom::{FmtLabels, FmtMetric},
+    fmt::{FmtLabels, FmtMetric},
     Factor,
 };
 use std::fmt::{self, Display};

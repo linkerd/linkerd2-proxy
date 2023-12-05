@@ -12,10 +12,7 @@ compile_error!(
 );
 
 use linkerd_app::{
-    core::{
-        telemetry::{build_info, StartTime},
-        transport::BindTcp,
-    },
+    core::{telemetry::StartTime, transport::BindTcp, BUILD_INFO},
     trace, Config,
 };
 use linkerd_signal as signal;
@@ -42,11 +39,11 @@ fn main() {
 
     info!(
         "{profile} {version} ({sha}) by {vendor} on {date}",
-        date = build_info::DATE,
-        sha = build_info::GIT_SHA,
-        version = build_info::VERSION,
-        profile = build_info::PROFILE,
-        vendor = build_info::VENDOR,
+        date = BUILD_INFO.date,
+        sha = BUILD_INFO.git_sha,
+        version = BUILD_INFO.version,
+        profile = BUILD_INFO.profile,
+        vendor = BUILD_INFO.vendor,
     );
 
     // Load configuration from the environment without binding ports.

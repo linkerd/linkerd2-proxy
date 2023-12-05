@@ -13,6 +13,7 @@
 
 use thiserror::Error;
 
+mod build_info;
 pub mod classify;
 pub mod config;
 pub mod control;
@@ -27,6 +28,7 @@ pub mod svc;
 pub mod telemetry;
 pub mod transport;
 
+pub use self::build_info::{BuildInfo, BUILD_INFO};
 pub use drain;
 pub use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 pub use linkerd_addr::{self as addr, Addr, AddrMatch, IpMatch, NameAddr, NameMatch};

@@ -58,6 +58,7 @@ linkerd-transport-header = { path = "../../transport-header" }
 linkerd-transport-metrics = { path = "../../transport-metrics" }
 linkerd-tls = { path = "../../tls" }
 linkerd-trace-context = { path = "../../trace-context" }
+prometheus-client = "0.22"
 regex = "1"
 serde_json = "1"
 thiserror = "1"
