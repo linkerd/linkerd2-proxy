@@ -56,15 +56,18 @@ where
         let mut changed = false;
         let mut remaining = std::mem::take(&mut self.endpoints);
         for (addr, target) in targets.into_iter() {
-            self.endpoints.insert(addr, target.clone());
             if remaining.remove(&addr).as_ref() == Some(&target) {
-                continue;
+                tracing::debug!(?addr, "Endpoint unchanged");
+            } else {
+                tracing::debug!(?addr, "Creating endpoint");
+                let svc = self.new_endpoint.new_service((addr, target.clone()));
+                self.pool.push(addr, svc);
+                changed = true;
             }
-            let svc = self.new_endpoint.new_service((addr, target));
-            self.pool.push(addr, svc);
-            changed = true;
+            self.endpoints.insert(addr, target);
         }
         for (addr, _) in remaining.drain() {
+            tracing::debug!(?addr, "Removing endpoint");
             let evict = self.pool.evict(&addr);
             changed = evict || changed;
         }
@@ -79,16 +82,18 @@ where
         let mut changed = false;
         for (addr, target) in targets.into_iter() {
             match self.endpoints.entry(addr) {
+                Entry::Occupied(e) if e.get() == &target => {
+                    tracing::debug!(?addr, "Endpoint unchanged");
+                    continue;
+                }
                 Entry::Occupied(mut e) => {
-                    if e.get() == &target {
-                        continue;
-                    }
                     e.insert(target.clone());
                 }
                 Entry::Vacant(e) => {
                     e.insert(target.clone());
                 }
             }
+            tracing::debug!(?addr, "Creating endpoint");
             let svc = self.new_endpoint.new_service((addr, target));
             self.pool.push(addr, svc);
             changed = true;
@@ -103,8 +108,11 @@ where
         let mut changed = false;
         for addr in addrs.into_iter() {
             if self.endpoints.remove(&addr).is_some() {
+                tracing::debug!(?addr, "Removing endpoint");
                 let evict = self.pool.evict(&addr);
                 changed = evict || changed;
+            } else {
+                tracing::debug!(?addr, "Unknown endpoint");
             }
         }
         changed
@@ -116,6 +124,7 @@ where
     fn clear(&mut self) -> bool {
         let mut changed = false;
         for (addr, _) in self.endpoints.drain() {
+            tracing::debug!(?addr, "Clearing endpoint");
             let evict = self.pool.evict(&addr);
             changed = evict || changed;
         }
@@ -127,7 +136,7 @@ where
             0 => None,
             1 => Some(0),
             len => {
-                let (aidx, bidx) = select_pair(&mut self.rng, len);
+                let (aidx, bidx) = gen_pair(&mut self.rng, len);
                 let aload = self.ready_index_load(aidx);
                 let bload = self.ready_index_load(bidx);
                 let chosen = if aload <= bload { aidx } else { bidx };
@@ -151,7 +160,8 @@ where
     }
 }
 
-fn select_pair(rng: &mut SmallRng, len: usize) -> (usize, usize) {
+fn gen_pair(rng: &mut SmallRng, len: usize) -> (usize, usize) {
+    debug_assert!(len >= 2, "must have at least two endpoints");
     // Get two distinct random indexes (in a random order) and
     // compare the loads of the service at each index.
     let aidx = rng.gen_range(0..len);
@@ -264,12 +274,12 @@ mod tests {
     use tower::load::{CompleteOnResponse, PeakEwma};
 
     quickcheck::quickcheck! {
-        fn select_pair_distinct_pairs(len: usize) -> quickcheck::TestResult {
+        fn gen_pair_distinct(len: usize) -> quickcheck::TestResult {
             if len < 2 {
                 return quickcheck::TestResult::discard();
             }
             let mut rng = SmallRng::from_rng(rand::thread_rng()).expect("rng");
-            let (aidx, bidx) = select_pair(&mut rng, len);
+            let (aidx, bidx) = gen_pair(&mut rng, len);
             quickcheck::TestResult::from_bool(aidx != bidx)
         }
     }
