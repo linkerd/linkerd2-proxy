@@ -412,14 +412,14 @@ mod tests {
         assert_eq!(pool.pool.ready_len(), 2);
         assert_eq!(pool.pool.pending_len(), 1);
 
-        let mut ctx = &mut Context::from_waker(futures_util::task::noop_waker_ref());
-        assert_pending!(pool.poll_pool(&mut ctx));
+        let ctx = &mut Context::from_waker(futures_util::task::noop_waker_ref());
+        assert_pending!(pool.poll_pool(ctx));
 
         h0.allow(1);
         h1.allow(1);
         h2.allow(1);
 
-        assert_ready_ok!(pool.poll_pool(&mut ctx));
+        assert_ready_ok!(pool.poll_pool(ctx));
 
         assert!(pool.next_idx.is_some());
         assert_eq!(pool.pool.ready_len(), 3);
