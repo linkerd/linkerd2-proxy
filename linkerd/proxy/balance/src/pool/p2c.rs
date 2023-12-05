@@ -56,24 +56,17 @@ where
         let mut changed = false;
         let mut remaining = std::mem::take(&mut self.endpoints);
         for (addr, target) in targets.into_iter() {
-            remaining.remove(&addr);
-            match self.endpoints.entry(addr) {
-                Entry::Occupied(mut e) => {
-                    if e.get() == &target {
-                        continue;
-                    }
-                    e.insert(target.clone());
-                }
-                Entry::Vacant(e) => {
-                    e.insert(target.clone());
-                }
+            self.endpoints.insert(addr, target.clone());
+            if remaining.remove(&addr).as_ref() == Some(&target) {
+                continue;
             }
             let svc = self.new_endpoint.new_service((addr, target));
             self.pool.push(addr, svc);
             changed = true;
         }
         for (addr, _) in remaining.drain() {
-            changed = self.pool.evict(&addr) || changed;
+            let evict = self.pool.evict(&addr);
+            changed = evict || changed;
         }
         changed
     }
@@ -110,7 +103,8 @@ where
         let mut changed = false;
         for addr in addrs.into_iter() {
             if self.endpoints.remove(&addr).is_some() {
-                changed = self.pool.evict(&addr) || changed;
+                let evict = self.pool.evict(&addr);
+                changed = evict || changed;
             }
         }
         changed
@@ -122,7 +116,8 @@ where
     fn clear(&mut self) -> bool {
         let mut changed = false;
         for (addr, _) in self.endpoints.drain() {
-            changed = self.pool.evict(&addr) || changed;
+            let evict = self.pool.evict(&addr);
+            changed = evict || changed;
         }
         changed
     }
@@ -257,8 +252,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ahash::HashSet;
     use futures::prelude::*;
     use linkerd_stack::ServiceExt;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
     use tokio::time;
     use tower::load::{CompleteOnResponse, PeakEwma};
 
@@ -269,7 +267,9 @@ mod tests {
         let addr0 = "192.168.10.10:80".parse().unwrap();
         let addr1 = "192.168.10.11:80".parse().unwrap();
 
-        let mut pool = P2cPool::new(|(_addr, _n)| {
+        let seen = Arc::new(Mutex::new(HashSet::<(SocketAddr, usize)>::default()));
+        let mut pool = P2cPool::new(|(addr, n): (SocketAddr, usize)| {
+            assert!(seen.lock().insert((addr, n)));
             PeakEwma::new(
                 linkerd_stack::service_fn(|()| {
                     std::future::ready(Ok::<_, std::convert::Infallible>(()))
