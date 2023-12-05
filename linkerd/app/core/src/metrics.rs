@@ -9,7 +9,7 @@
 pub use crate::transport::labels::{TargetAddr, TlsAccept};
 use crate::{
     classify::Class,
-    control, http_metrics, http_metrics as metrics, opencensus, profiles, stack_metrics,
+    control, http_metrics, opencensus, profiles, stack_metrics,
     svc::Param,
     telemetry, tls,
     transport::{self, labels::TlsConnect},
@@ -39,6 +39,9 @@ pub struct Metrics {
     pub proxy: Proxy,
     pub control: ControlHttp,
     pub opencensus: opencensus::metrics::Registry,
+
+    // Global prometheus registry for new metrics.
+    pub registry: prom::Registry,
 }
 
 #[derive(Clone, Debug)]
@@ -147,36 +150,42 @@ impl Metrics {
         retain_idle: Duration,
         start_time: telemetry::StartTime,
     ) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
+        let registry = prom::Registry::default();
+
         let process = telemetry::process::Report::new(start_time);
 
-        let build_info = telemetry::build_info::Report::default();
+        registry.write().register(
+            "proxy_build_info",
+            "Proxy build info",
+            crate::BUILD_INFO.metric(),
+        );
 
         let (control, control_report) = {
-            let m = metrics::Requests::<ControlLabels, Class>::default();
+            let m = http_metrics::Requests::<ControlLabels, Class>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("control");
             (m, r)
         };
 
         let (http_endpoint, endpoint_report) = {
-            let m = metrics::Requests::<EndpointLabels, Class>::default();
+            let m = http_metrics::Requests::<EndpointLabels, Class>::default();
             let r = m.clone().into_report(retain_idle);
             (m, r)
         };
 
         let (http_profile_route, profile_route_report) = {
-            let m = metrics::Requests::<ProfileRouteLabels, Class>::default();
+            let m = http_metrics::Requests::<ProfileRouteLabels, Class>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("route");
             (m, r)
         };
 
         let (http_profile_route_retry, retry_report) = {
-            let m = metrics::Retries::<ProfileRouteLabels>::default();
+            let m = http_metrics::Retries::<ProfileRouteLabels>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("route");
             (m, r)
         };
 
         let (http_profile_route_actual, actual_report) = {
-            let m = metrics::Requests::<ProfileRouteLabels, Class>::default();
+            let m = http_metrics::Requests::<ProfileRouteLabels, Class>::default();
             let r = m
                 .clone()
                 .into_report(retain_idle)
@@ -203,6 +212,7 @@ impl Metrics {
             proxy,
             control,
             opencensus,
+            registry: registry.clone(),
         };
 
         let report = endpoint_report
@@ -214,7 +224,9 @@ impl Metrics {
             .and_report(opencensus_report)
             .and_report(stack)
             .and_report(process)
-            .and_report(build_info);
+            // The prom registry reports an "# EOF" at the end of its export, so
+            // it should be emitted last.
+            .and_report(registry);
 
         (metrics, report)
     }

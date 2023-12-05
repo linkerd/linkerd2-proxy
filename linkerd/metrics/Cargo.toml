@@ -16,6 +16,7 @@ http = "0.2"
 hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-stack = { path = "../stack", optional = true }
 parking_lot = "0.12"
+prometheus-client = "0.22"
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 

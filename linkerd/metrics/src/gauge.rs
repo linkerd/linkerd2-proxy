@@ -1,4 +1,4 @@
-use super::prom::{FmtLabels, FmtMetric};
+use super::fmt::{FmtLabels, FmtMetric};
 use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicU64, Ordering};
 

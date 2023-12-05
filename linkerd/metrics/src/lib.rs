@@ -4,12 +4,12 @@
 //! Utilities for exposing metrics to Prometheus.
 
 mod counter;
+mod fmt;
 mod gauge;
 mod histogram;
 pub mod latency;
 #[cfg(feature = "linkerd-stack")]
 mod new_metrics;
-mod prom;
 mod serve;
 mod store;
 
@@ -17,12 +17,32 @@ mod store;
 pub use self::new_metrics::NewMetrics;
 pub use self::{
     counter::Counter,
+    fmt::{FmtLabels, FmtMetric, FmtMetrics, Metric},
     gauge::Gauge,
     histogram::Histogram,
-    prom::{FmtLabels, FmtMetric, FmtMetrics, Metric},
     serve::Serve,
     store::{LastUpdate, SharedStore, Store},
 };
+
+/// Integration with the [`prometheus_client`]` crate.
+///
+/// This should be used for all new metrics.
+pub mod prom {
+    use parking_lot::RwLock;
+    use std::sync::Arc;
+
+    pub use prometheus_client::*;
+
+    /// New metrics should use the prometheus-client Registry.
+    pub type Registry = Arc<RwLock<registry::Registry>>;
+
+    impl crate::FmtMetrics for Registry {
+        #[inline]
+        fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            encoding::text::encode(f, &self.read())
+        }
+    }
+}
 
 #[macro_export]
 macro_rules! metrics {
