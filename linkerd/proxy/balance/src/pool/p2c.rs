@@ -286,6 +286,10 @@ mod tests {
         assert_eq!(pool.endpoints.len(), 1);
         assert_eq!(pool.endpoints.get(&addr0), Some(&1));
 
+        pool.update_pool(Update::Reset(vec![(addr0, 1)]));
+        assert_eq!(pool.endpoints.len(), 1);
+        assert_eq!(pool.endpoints.get(&addr0), Some(&1));
+
         pool.update_pool(Update::Add(vec![(addr1, 1)]));
         assert_eq!(pool.endpoints.len(), 2);
         assert_eq!(pool.endpoints.get(&addr1), Some(&1));
@@ -347,5 +351,16 @@ mod tests {
         assert!(pool.next_idx.is_none());
         assert!(pool.ready().now_or_never().is_some());
         assert!(pool.next_idx.is_some());
+
+        let call = pool.call(());
+        let ((), respond) = tokio::select! {
+            r = h0.next_request() => r.unwrap(),
+            r = h1.next_request() => r.unwrap(),
+            r = h2.next_request() => r.unwrap(),
+        };
+        respond.send_response(());
+        call.now_or_never()
+            .expect("call should be satisfied")
+            .expect("call should succeed");
     }
 }
