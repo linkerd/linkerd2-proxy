@@ -32,3 +32,4 @@ features = ["balance", "load", "ready-cache"]
 [dev-dependencies]
 linkerd-tracing = { path = "../../tracing" }
 tower-test = "0.4"
+quickcheck = { version = "1", default-features = false }

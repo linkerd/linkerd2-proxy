@@ -127,19 +127,10 @@ where
             0 => None,
             1 => Some(0),
             len => {
-                // Get two distinct random indexes (in a random order) and
-                // compare the loads of the service at each index.
-                let aidx = self.rng.gen_range(0..len);
-                let mut bidx = self.rng.gen_range(0..(len - 1));
-                if bidx >= aidx {
-                    bidx += 1;
-                }
-                debug_assert_ne!(aidx, bidx, "random indices must be distinct");
-
+                let (aidx, bidx) = select_pair(&mut self.rng, len);
                 let aload = self.ready_index_load(aidx);
                 let bload = self.ready_index_load(bidx);
                 let chosen = if aload <= bload { aidx } else { bidx };
-
                 tracing::trace!(
                     a.index = aidx,
                     a.load = ?aload,
@@ -158,6 +149,18 @@ where
         let (_, svc) = self.pool.get_ready_index(index).expect("invalid index");
         svc.load()
     }
+}
+
+fn select_pair(rng: &mut SmallRng, len: usize) -> (usize, usize) {
+    // Get two distinct random indexes (in a random order) and
+    // compare the loads of the service at each index.
+    let aidx = rng.gen_range(0..len);
+    let mut bidx = rng.gen_range(0..(len - 1));
+    if bidx >= aidx {
+        bidx += 1;
+    }
+    debug_assert_ne!(aidx, bidx, "random indices must be distinct");
+    (aidx, bidx)
 }
 
 impl<T, N, Req, S> Pool<T, Req> for P2cPool<T, N, Req, S>
@@ -259,6 +262,17 @@ mod tests {
     use std::sync::Arc;
     use tokio::time;
     use tower::load::{CompleteOnResponse, PeakEwma};
+
+    quickcheck::quickcheck! {
+        fn select_pair_distinct_pairs(len: usize) -> quickcheck::TestResult {
+            if len < 2 {
+                return quickcheck::TestResult::discard();
+            }
+            let mut rng = SmallRng::from_rng(rand::thread_rng()).expect("rng");
+            let (aidx, bidx) = select_pair(&mut rng, len);
+            quickcheck::TestResult::from_bool(aidx != bidx)
+        }
+    }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn update_pool() {
