@@ -94,7 +94,7 @@ impl<T> Histogram<T> {
     /// Assert the bucket containing `le` has a count of at least `at_least`.
     pub fn assert_bucket_at_least(&self, le: f64, at_least: u64) {
         for (bucket, count) in self {
-            if bucket >= Bucket::Le(le) {
+            if bucket >= le {
                 let count = count.value();
                 assert!(count >= at_least, "le={:?}; bucket={:?};", le, bucket);
                 break;
@@ -105,7 +105,7 @@ impl<T> Histogram<T> {
     /// Assert the bucket containing `le` has a count of exactly `exactly`.
     pub fn assert_bucket_exactly(&self, le: f64, exactly: u64) -> &Self {
         for (bucket, count) in self {
-            if bucket >= Bucket::Le(le) {
+            if bucket >= le {
                 let count = count.value();
                 assert_eq!(
                     count, exactly,
@@ -145,15 +145,13 @@ impl<T> Histogram<T> {
         // whose upper bound is >= `value`.
         let mut past_le = false;
         for (bucket, count) in self {
-            if let Bucket::Le(b) = bucket {
-                if b < value {
-                    continue;
-                }
+            if bucket < value {
+                continue;
+            }
 
-                if b >= value && !past_le {
-                    past_le = true;
-                    continue;
-                }
+            if bucket >= value && !past_le {
+                past_le = true;
+                continue;
             }
 
             if past_le {
