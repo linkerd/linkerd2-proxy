@@ -18,13 +18,8 @@ pub struct BuildInfo {
 }
 
 impl BuildInfo {
-    pub fn metric(
-        &self,
-    ) -> prom::metrics::family::Family<BuildInfo, prom::metrics::gauge::ConstGauge> {
-        let fam = prom::metrics::family::Family::<
-            Self,
-            prom::metrics::gauge::ConstGauge,
-        >::new_with_constructor(|| prom::metrics::gauge::ConstGauge::new(1));
+    pub fn metric(&self) -> prom::Family<BuildInfo, prom::ConstGauge> {
+        let fam = prom::Family::<Self, prom::ConstGauge>::default();
         let _ = fam.get_or_create(self);
         fam
     }

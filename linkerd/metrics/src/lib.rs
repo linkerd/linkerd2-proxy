@@ -31,7 +31,16 @@ pub mod prom {
     use parking_lot::RwLock;
     use std::sync::Arc;
 
-    pub use prometheus_client::*;
+    pub use prometheus_client::{
+        metrics::{
+            counter::{ConstCounter, Counter},
+            family::Family,
+            gauge::{ConstGauge, Gauge},
+            histogram::Histogram,
+            info::Info,
+        },
+        *,
+    };
 
     /// New metrics should use the prometheus-client Registry.
     pub type Registry = Arc<RwLock<registry::Registry>>;
