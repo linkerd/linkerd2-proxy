@@ -12,7 +12,7 @@ compile_error!(
 );
 
 use linkerd_app::{
-    core::{telemetry::StartTime, transport::BindTcp, BUILD_INFO},
+    core::{transport::BindTcp, BUILD_INFO},
     trace, Config,
 };
 use linkerd_signal as signal;
@@ -28,8 +28,7 @@ mod rt;
 const EX_USAGE: i32 = 64;
 
 fn main() {
-    let start_time = StartTime::now();
-    let trace = match trace::Settings::from_env(start_time.into()).init() {
+    let trace = match trace::Settings::from_env().init() {
         Ok(t) => t,
         Err(e) => {
             eprintln!("Invalid logging configuration: {}", e);
@@ -64,14 +63,7 @@ fn main() {
 
         let bind = BindTcp::with_orig_dst();
         let app = match config
-            .build(
-                bind,
-                bind,
-                BindTcp::default(),
-                shutdown_tx,
-                trace,
-                start_time,
-            )
+            .build(bind, bind, BindTcp::default(), shutdown_tx, trace)
             .await
         {
             Ok(app) => app,

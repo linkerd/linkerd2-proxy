@@ -10,6 +10,8 @@ mod histogram;
 pub mod latency;
 #[cfg(feature = "linkerd-stack")]
 mod new_metrics;
+#[cfg(feature = "process")]
+mod process;
 mod serve;
 mod store;
 
@@ -45,6 +47,16 @@ pub mod prom {
     /// New metrics should use the prometheus-client Registry.
     pub type Registry = Arc<RwLock<registry::Registry>>;
 
+    pub fn registry() -> Registry {
+        #[cfg_attr(not(feature = "process"), allow(unused_mut))]
+        let mut reg = registry::Registry::default();
+
+        #[cfg(feature = "process")]
+        crate::process::register(reg.sub_registry_with_prefix("process"));
+
+        Arc::new(RwLock::new(reg))
+    }
+
     impl crate::FmtMetrics for Registry {
         #[inline]
         fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -72,10 +84,6 @@ pub trait Factor {
     fn factor(n: u64) -> f64;
 }
 
-pub struct MicrosAsSeconds;
-
-pub struct MillisAsSeconds;
-
 /// Largest `u64` that can fit without loss of precision in `f64` (2^53).
 ///
 /// Wrapping is based on the fact that Prometheus models values as f64 (52-bits
@@ -86,17 +94,5 @@ const MAX_PRECISE_UINT64: u64 = 0x20_0000_0000_0000;
 impl Factor for () {
     fn factor(n: u64) -> f64 {
         n.wrapping_rem(MAX_PRECISE_UINT64 + 1) as f64
-    }
-}
-
-impl Factor for MillisAsSeconds {
-    fn factor(n: u64) -> f64 {
-        n.wrapping_rem((MAX_PRECISE_UINT64 + 1) * 1000) as f64 * 0.001
-    }
-}
-
-impl Factor for MicrosAsSeconds {
-    fn factor(n: u64) -> f64 {
-        n.wrapping_rem((MAX_PRECISE_UINT64 + 1) * 1_000) as f64 * 0.000_001
     }
 }
