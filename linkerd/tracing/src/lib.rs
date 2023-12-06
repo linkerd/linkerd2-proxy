@@ -11,7 +11,7 @@ mod uptime;
 use self::uptime::Uptime;
 use linkerd_error::Error;
 use std::str;
-use tokio::time::Instant;
+use tokio::time;
 use tracing::Dispatch;
 use tracing_subscriber::{
     filter::LevelFilter, fmt::format, prelude::*, registry::LookupSpan, reload, Layer,
@@ -34,7 +34,7 @@ const DEFAULT_LOG_FORMAT: &str = "PLAIN";
 pub struct Settings {
     filter: String,
     format: String,
-    start_time: Option<Instant>,
+    start_time: Option<time::Instant>,
     access_log: Option<access_log::Format>,
     is_test: bool,
 }
@@ -62,7 +62,8 @@ pub fn init_log_compat() -> Result<(), Error> {
 // === impl Settings ===
 
 impl Settings {
-    pub fn from_env(start_time: Instant) -> Self {
+    pub fn from_env() -> Self {
+        let now = time::Instant::now();
         Self {
             filter: std::env::var(ENV_LOG_LEVEL)
                 .ok()
@@ -71,7 +72,7 @@ impl Settings {
                 .ok()
                 .unwrap_or_else(|| DEFAULT_LOG_FORMAT.to_string()),
             access_log: Self::access_log_format(),
-            start_time: Some(start_time),
+            start_time: Some(now),
             is_test: false,
         }
     }

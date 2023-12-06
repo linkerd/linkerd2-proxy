@@ -1629,6 +1629,7 @@ dependencies = [
  "http",
  "hyper",
  "linkerd-stack",
+ "linkerd-system",
  "parking_lot",
  "prometheus-client",
  "quickcheck",

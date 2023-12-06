@@ -11,7 +11,7 @@ use crate::{
     classify::Class,
     control, http_metrics, opencensus, profiles, stack_metrics,
     svc::Param,
-    telemetry, tls,
+    tls,
     transport::{self, labels::TlsConnect},
 };
 use linkerd_addr::Addr;
@@ -146,13 +146,8 @@ where
 // === impl Metrics ===
 
 impl Metrics {
-    pub fn new(
-        retain_idle: Duration,
-        start_time: telemetry::StartTime,
-    ) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
-        let registry = prom::Registry::default();
-
-        let process = telemetry::process::Report::new(start_time);
+    pub fn new(retain_idle: Duration) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
+        let registry = prom::registry();
 
         registry.write().register(
             "proxy_build_info",
@@ -223,7 +218,6 @@ impl Metrics {
             .and_report(transport_report)
             .and_report(opencensus_report)
             .and_report(stack)
-            .and_report(process)
             // The prom registry reports an "# EOF" at the end of its export, so
             // it should be emitted last.
             .and_report(registry);
