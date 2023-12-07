@@ -266,18 +266,6 @@ mod balance {
     #[derive(Clone, Debug)]
     pub struct Params(http::balance::MetricFamilies<Labels, UpdateLabels>);
 
-    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-    pub struct Labels {
-        api: &'static str,
-    }
-
-    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-    pub struct UpdateLabels {
-        op: BalancerUpdateOp,
-        #[prometheus(flatten)]
-        labels: Labels,
-    }
-
     #[derive(Clone, Debug)]
     pub struct NewIntoTarget<N> {
         inner: N,
@@ -287,6 +275,18 @@ mod balance {
     pub struct IntoTarget<N> {
         inner: N,
         server_id: tls::ConditionalClientTls,
+    }
+
+    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+    struct Labels {
+        api: &'static str,
+    }
+
+    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+    struct UpdateLabels {
+        op: BalancerUpdateOp,
+        #[prometheus(flatten)]
+        labels: Labels,
     }
 
     // === impl NewIntoTarget ===

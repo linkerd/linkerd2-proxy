@@ -52,6 +52,9 @@ pub struct Proxy {
     pub http_endpoint: HttpEndpoint,
     pub transport: transport::Metrics,
     pub stack: Stack,
+
+    // Global prometheus registry for new metrics.
+    pub registry: prom::Registry,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -207,6 +210,7 @@ impl Metrics {
             http_profile_route_actual,
             stack: stack.clone(),
             transport,
+            registry: registry.clone(),
         };
 
         let (opencensus, opencensus_report) = opencensus::metrics::new();

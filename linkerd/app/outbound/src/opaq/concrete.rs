@@ -1,7 +1,12 @@
-use crate::{stack_labels, Outbound};
+use crate::{
+    metrics::BalancerMetricsParams,
+    stack_labels, Outbound,
+};
 use linkerd_app_core::{
     config::QueueConfig,
-    drain, io, metrics, profiles,
+    drain, io,
+    metrics::{self, prom},
+    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -51,6 +56,9 @@ struct Balance<T> {
     parent: T,
 }
 
+#[derive(Clone, Debug)]
+struct MetricsParams(balance::MetricFamilies<ConcreteLabels, BalancerUpdateLabels>);
+
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
@@ -65,6 +73,7 @@ impl<C> Outbound<C> {
     /// services.
     pub fn push_opaq_concrete<T, I, R>(
         self,
+        registry: &mut prom::registry::Registry,
         resolve: R,
     ) -> Outbound<
         svc::ArcNewService<
@@ -91,6 +100,8 @@ impl<C> Outbound<C> {
         let resolve =
             svc::MapTargetLayer::new(|t: Balance<T>| -> ConcreteAddr { ConcreteAddr(t.addr) })
                 .layer(resolve.into_service());
+
+        let metrics_params = BalancerMetricsParams::register(registry);
 
         self.map_stack(|config, rt, inner| {
             let queue = config.tcp_connection_queue;
@@ -133,7 +144,7 @@ impl<C> Outbound<C> {
                     },
                 )
                 .lift_new_with_target()
-                .push(tcp::NewBalancePeakEwma::layer(resolve))
+                .push(tcp::NewBalancePeakEwma::layer(resolve, metrics_params))
                 .check_new_clone::<Balance<T>>()
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(

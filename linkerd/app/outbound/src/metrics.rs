@@ -8,13 +8,19 @@
 //! to be updated frequently or in a performance-critical area. We should probably look to use
 //! `DashMap` as we migrate other metrics registries.
 
+use std::fmt::Write;
+
 use crate::{
     http::{concrete::BalancerMetrics, policy::RouteBackendMetrics},
-    policy,
+    policy, BackendRef, ParentRef,
 };
 
 pub(crate) mod error;
-pub use linkerd_app_core::metrics::*;
+use linkerd_app_core::svc::{self, http::HyperServerSvc};
+pub use linkerd_app_core::{
+    metrics::{prom::encoding::*, *},
+    proxy::balance,
+};
 
 /// Holds outbound proxy metrics.
 #[derive(Clone, Debug)]
@@ -29,6 +35,41 @@ pub struct OutboundMetrics {
     /// reported separately
     pub(crate) proxy: Proxy,
 }
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct ConcreteLabels(pub ParentRef, pub BackendRef);
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct BalancerUpdateLabels(pub ConcreteLabels, pub BalancerUpdateOp);
+
+#[derive(Clone, Debug)]
+pub struct BalancerMetricsParams(balance::MetricFamilies<ConcreteLabels, BalancerUpdateLabels>);
+
+struct ScopedKey<'a, 'b>(&'a str, &'b str);
+
+// === impl BalancerMetricsPaarams ===
+
+impl BalancerMetricsParams {
+    pub fn register(reg: &mut prom::registry::Registry) -> Self {
+        Self(balance::MetricFamilies::register(reg))
+    }
+
+    pub fn metrics(&self, labels: &ConcreteLabels) -> balance::Metrics {
+        self.0.metrics(labels)
+    }
+}
+
+impl<T> svc::ExtractParam<balance::Metrics, T> for BalancerMetricsParams
+where
+    T: svc::Param<ParentRef> + svc::Param<BackendRef>,
+{
+    fn extract_param(&self, target: &T) -> balance::Metrics {
+        self.0
+            .metrics(&ConcreteLabels(target.param(), target.param()))
+    }
+}
+
+// === impl OutboundMetrics ===
 
 impl OutboundMetrics {
     pub(crate) fn new(proxy: Proxy) -> Self {
@@ -79,4 +120,116 @@ pub(crate) fn write_service_meta_labels(
     }
     write!(f, ",{scope}_section_name=\"{}\"", meta.section())?;
     Ok(())
+}
+
+impl EncodeLabelKey for ScopedKey<'_, '_> {
+    fn encode(&self, enc: &mut LabelKeyEncoder<'_>) -> std::fmt::Result {
+        write!(enc, "{}_{}", self.0, self.1)
+    }
+}
+
+fn prom_encode_meta_labels(
+    scope: &str,
+    meta: &policy::Meta,
+    enc: &mut LabelSetEncoder<'_>,
+) -> std::fmt::Result {
+    (ScopedKey(scope, "group"), meta.group()).encode(enc.encode_label())?;
+    (ScopedKey(scope, "kind"), meta.kind()).encode(enc.encode_label())?;
+    (ScopedKey(scope, "namespace"), meta.namespace()).encode(enc.encode_label())?;
+    (ScopedKey(scope, "name"), meta.name()).encode(enc.encode_label())?;
+    Ok(())
+}
+
+fn prom_encode_service_labels(
+    scope: &str,
+    meta: &policy::Meta,
+    enc: &mut LabelSetEncoder<'_>,
+) -> std::fmt::Result {
+    prom_encode_meta_labels(scope, meta, enc)?;
+    match meta.port() {
+        Some(port) => (ScopedKey(scope, "port"), port.to_string()).encode(enc.encode_label())?,
+        None => (ScopedKey(scope, "port"), "").encode(enc.encode_label())?,
+    }
+    (ScopedKey(scope, "section_name"), meta.section()).encode(enc.encode_label())?;
+    Ok(())
+}
+
+// === impl ParentRef ===
+
+impl ParentRef {
+    pub fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        prom_encode_service_labels("parent", &self.0, enc)
+    }
+}
+
+impl EncodeLabelSet for ParentRef {
+    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl BackendRef ===
+
+impl BackendRef {
+    pub fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        prom_encode_service_labels("backend", &self.0, enc)
+    }
+}
+
+impl EncodeLabelSet for BackendRef {
+    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl ConcreteLabels ===
+
+impl FmtLabels for ConcreteLabels {
+    fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ConcreteLabels(parent, backend) = self;
+
+        write_service_meta_labels("parent", parent, f)?;
+        f.write_char(',')?;
+        write_service_meta_labels("backend", backend, f)?;
+
+        Ok(())
+    }
+}
+
+impl ConcreteLabels {
+    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        let Self(parent, backend) = self;
+        parent.encode_label_set(enc)?;
+        backend.encode_label_set(enc)?;
+        Ok(())
+    }
+}
+
+impl EncodeLabelSet for ConcreteLabels {
+    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl BalancerUpdateLabels ===
+
+impl From<(balance::Update<()>, &ConcreteLabels)> for BalancerUpdateLabels {
+    fn from((op, concrete): (balance::Update<()>, &ConcreteLabels)) -> Self {
+        Self(concrete.clone(), (&op).into())
+    }
+}
+
+impl BalancerUpdateLabels {
+    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        let Self(concrete, op) = self;
+        concrete.encode_label_set(enc)?;
+        ("op", *op).encode(enc.encode_label())?;
+        Ok(())
+    }
+}
+
+impl EncodeLabelSet for BalancerUpdateLabels {
+    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
 }

@@ -1,4 +1,4 @@
-use super::*;
+use super::{balance::*, *};
 use crate::test_util::*;
 use linkerd_app_core::{proxy::http::balance::EwmaConfig, svc::NewService, trace};
 use linkerd_proxy_client_policy as policy;
@@ -34,7 +34,12 @@ async fn gauges_endpoints() {
     };
 
     let _svc = svc::stack(stk)
-        .push(Balance::layer(&outbound.config, &outbound.runtime, resolve))
+        .push(Balance::layer(
+            &outbound.config,
+            &outbound.runtime,
+            &mut Default::default(),
+            resolve,
+        ))
         .into_inner()
         .new_service(Balance {
             addr,
