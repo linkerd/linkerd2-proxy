@@ -381,11 +381,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let oc_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
 
-    let trace_collector_addr = parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
+    let trace_collector_addr = parse_control_addr("tracing", strings, ENV_TRACE_COLLECTOR_SVC_BASE);
 
     let gateway_suffixes = parse(strings, ENV_INBOUND_GATEWAY_SUFFIXES, parse_dns_suffixes);
 
-    let dst_addr = parse_control_addr(strings, ENV_DESTINATION_SVC_BASE);
+    let dst_addr = parse_control_addr("destination", strings, ENV_DESTINATION_SVC_BASE);
     let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
     let dst_profile_skip_timeout = parse(
         strings,
@@ -680,8 +680,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     };
 
     let policy = {
-        let addr =
-            parse_control_addr(strings, ENV_POLICY_SVC_BASE)?.ok_or(EnvError::NoPolicyAddress)?;
+        let addr = parse_control_addr("policy", strings, ENV_POLICY_SVC_BASE)?
+            .ok_or(EnvError::NoPolicyAddress)?;
         // The workload, which is opaque from the proxy's point-of-view, is sent to the
         // policy controller to support policy discovery.
         let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
@@ -1139,6 +1139,7 @@ pub fn parse_backoff<S: Strings>(
 }
 
 pub fn parse_control_addr<S: Strings>(
+    client: &'static str,
     strings: &S,
     base: &str,
 ) -> Result<Option<ControlAddr>, EnvError> {
@@ -1147,15 +1148,17 @@ pub fn parse_control_addr<S: Strings>(
     match (a, n) {
         (None, None) => Ok(None),
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
+            client,
             addr: addr.clone(),
             identity: Conditional::None(tls::NoClientTls::Loopback),
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
+            client,
             addr,
             identity: Conditional::Some(tls::ClientTls::new(tls::ServerId(name.into()), None)),
         })),
         _ => {
-            error!("{}_ADDR and {}_NAME must be specified together", base, base);
+            error!("{client} {base}_ADDR and {base}_NAME must be specified together);
             Err(EnvError::InvalidEnvVar)
         }
     }

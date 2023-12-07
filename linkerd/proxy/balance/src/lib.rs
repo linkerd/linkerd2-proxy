@@ -18,7 +18,7 @@ pub use self::{
     discover::DiscoveryStreamOverflow,
     gauge_endpoints::{EndpointsGauges, NewGaugeEndpoints},
     pool::{
-        MetricFamilies, P2cMetricFamilies, P2cMetrics, P2cPool, Pool, QueueMetricFamilies,
+        MetricFamilies, Metrics, P2cMetricFamilies, P2cMetrics, P2cPool, Pool, QueueMetricFamilies,
         QueueMetrics, Update,
     },
 };
