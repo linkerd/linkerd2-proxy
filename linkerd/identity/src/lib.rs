@@ -19,7 +19,7 @@ use std::str::FromStr;
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Id {
     Dns(linkerd_dns_name::Name),
-    Uri(http::Uri),
+    Uri(url::Url),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -52,7 +52,7 @@ impl Id {
     }
 
     pub fn parse_uri(s: &str) -> Result<Self, InvalidId> {
-        http::Uri::try_from(s)
+        url::Url::parse(s)
             .map(Self::Uri)
             .map_err(|e| InvalidId(e.into()))
     }
@@ -60,7 +60,7 @@ impl Id {
     pub fn to_str(&self) -> std::borrow::Cow<'_, str> {
         match self {
             Self::Dns(dns) => dns.as_str().into(),
-            Self::Uri(uri) => uri.to_string().into(),
+            Self::Uri(uri) => uri.as_str().into(),
         }
     }
 }
@@ -77,5 +77,38 @@ impl std::fmt::Display for Id {
             Self::Dns(dns) => dns.without_trailing_dot().fmt(f),
             Self::Uri(uri) => uri.fmt(f),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Id;
+
+    #[test]
+    fn roundtrip_uri_id_parsing_spiffe() {
+        let id: Id = "spiffe://host:1234/path".parse().unwrap();
+        assert_eq!(id, id.to_string().parse().unwrap());
+    }
+
+    #[test]
+    fn roundtrip_uri_id_parsing_non_spiffe() {
+        let id: Id = "http://host:1234/path".parse().unwrap();
+        assert_eq!(id, id.to_string().parse().unwrap());
+    }
+
+    #[test]
+    fn roundtrip_uri_dns_parsing() {
+        let id: Id = "some-svc.svc.cluster.local".parse().unwrap();
+        assert_eq!(id, id.to_string().parse().unwrap());
+    }
+
+    #[test]
+    fn cannot_parse_uri_as_dns() {
+        assert!(Id::parse_dns_name("uri://host:1234/path").is_err());
+    }
+
+    #[test]
+    fn cannot_parse_dns_name_as_uri() {
+        assert!(Id::parse_uri("some-svc.svc.cluster.local").is_err());
     }
 }

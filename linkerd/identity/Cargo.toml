@@ -9,5 +9,5 @@ publish = false
 [dependencies]
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
-http = "0.2"
+url = "2.5.0"
 thiserror = "1"
