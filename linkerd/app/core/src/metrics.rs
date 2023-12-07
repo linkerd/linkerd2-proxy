@@ -127,6 +127,14 @@ pub enum Direction {
     Out,
 }
 
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, prom::encoding::EncodeLabelValue)]
+pub enum BalancerUpdateOp {
+    Reset,
+    Add,
+    Remove,
+    DoesNotExist,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Authority<'a>(&'a http::uri::Authority);
 
@@ -465,5 +473,18 @@ impl FmtLabels for StackLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.direction.fmt_labels(f)?;
         write!(f, ",protocol=\"{}\",name=\"{}\"", self.protocol, self.name)
+    }
+}
+
+// === impl BalancerUpdateOp ===
+
+impl<T> From<&linkerd_proxy_core::Update<T>> for BalancerUpdateOp {
+    fn from(update: &linkerd_proxy_core::Update<T>) -> Self {
+        match update {
+            linkerd_proxy_core::Update::Reset(..) => BalancerUpdateOp::Reset,
+            linkerd_proxy_core::Update::Add(..) => BalancerUpdateOp::Add,
+            linkerd_proxy_core::Update::Remove(..) => BalancerUpdateOp::Remove,
+            linkerd_proxy_core::Update::DoesNotExist => BalancerUpdateOp::DoesNotExist,
+        }
     }
 }

@@ -230,16 +230,17 @@ mod add_origin {
 }
 
 mod balance {
-    use linkerd_stack::ExtractParam;
-    use prometheus_client::encoding::EncodeLabelValue;
-
     use super::{client::Target, ControlAddr};
     use crate::{
         dns,
-        metrics::prom::{self, encoding::EncodeLabelSet},
+        metrics::{
+            prom::{self, encoding::EncodeLabelSet},
+            BalancerUpdateOp,
+        },
         proxy::{dns_resolve::DnsResolve, http, resolve::recover},
         svc, tls,
     };
+    use linkerd_stack::ExtractParam;
     use std::net::SocketAddr;
 
     pub fn layer<B, R: Clone, N>(
@@ -272,17 +273,9 @@ mod balance {
 
     #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
     pub struct UpdateLabels {
-        op: UpdateOp,
+        op: BalancerUpdateOp,
         #[prometheus(flatten)]
         labels: Labels,
-    }
-
-    #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, EncodeLabelValue)]
-    enum UpdateOp {
-        Reset,
-        Add,
-        Remove,
-        DoesNotExist,
     }
 
     #[derive(Clone, Debug)]
@@ -330,14 +323,8 @@ mod balance {
 
     impl From<(http::balance::Update<()>, &Labels)> for UpdateLabels {
         fn from((update, labels): (http::balance::Update<()>, &Labels)) -> Self {
-            let op = match update {
-                http::balance::Update::Reset(..) => UpdateOp::Reset,
-                http::balance::Update::Add(..) => UpdateOp::Add,
-                http::balance::Update::Remove(..) => UpdateOp::Remove,
-                http::balance::Update::DoesNotExist => UpdateOp::DoesNotExist,
-            };
             Self {
-                op,
+                op: (&update).into(),
                 labels: labels.clone(),
             }
         }
