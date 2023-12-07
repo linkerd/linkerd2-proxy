@@ -2,9 +2,10 @@
 
 use futures::prelude::*;
 use linkerd_error::Error;
+use linkerd_metrics::prom;
 use linkerd_proxy_core::Resolve;
 use linkerd_proxy_pool::PoolQueue;
-use linkerd_stack::{layer, queue, Gate, NewService, Param, Service};
+use linkerd_stack::{layer, queue, ExtractParam, Gate, NewService, Param, Service};
 use std::{fmt::Debug, hash::Hash, marker::PhantomData, net::SocketAddr};
 use tokio::time;
 use tower::load::{self, PeakEwma};
@@ -16,7 +17,10 @@ mod pool;
 pub use self::{
     discover::DiscoveryStreamOverflow,
     gauge_endpoints::{EndpointsGauges, NewGaugeEndpoints},
-    pool::{P2cPool, Pool, Update},
+    pool::{
+        MetricFamilies, P2cMetricFamilies, P2cMetrics, P2cPool, Pool, QueueMetricFamilies,
+        QueueMetrics, Update,
+    },
 };
 pub use tower::load::peak_ewma::Handle;
 
@@ -29,9 +33,10 @@ pub struct EwmaConfig {
 /// Configures a stack to resolve targets to balance requests over `N`-typed
 /// endpoint stacks.
 #[derive(Debug)]
-pub struct NewBalancePeakEwma<C, Req, R, N> {
+pub struct NewBalancePeakEwma<C, Req, X, R, N> {
     resolve: R,
     inner: N,
+    params: X,
     _marker: PhantomData<fn(Req) -> C>,
 }
 
@@ -48,27 +53,30 @@ pub struct NewPeakEwma<C, Req, N> {
 
 // === impl NewBalancePeakEwma ===
 
-impl<C, Req, R, N> NewBalancePeakEwma<C, Req, R, N> {
-    pub fn new(inner: N, resolve: R) -> Self {
+impl<C, Req, X, R, N> NewBalancePeakEwma<C, Req, X, R, N> {
+    pub fn new(inner: N, resolve: R, params: X) -> Self {
         Self {
             resolve,
             inner,
+            params,
             _marker: PhantomData,
         }
     }
 
-    pub fn layer<T>(resolve: R) -> impl layer::Layer<N, Service = Self> + Clone
+    pub fn layer<T>(resolve: R, params: X) -> impl layer::Layer<N, Service = Self> + Clone
     where
         R: Clone,
+        X: Clone,
         Self: NewService<T>,
     {
-        layer::mk(move |inner| Self::new(inner, resolve.clone()))
+        layer::mk(move |inner| Self::new(inner, resolve.clone(), params.clone()))
     }
 }
 
-impl<C, T, Req, R, M, N, S> NewService<T> for NewBalancePeakEwma<C, Req, R, M>
+impl<C, T, Req, X, R, M, N, S> NewService<T> for NewBalancePeakEwma<C, Req, X, R, M>
 where
     T: Param<EwmaConfig> + Param<queue::Capacity> + Param<queue::Timeout> + Clone + Send,
+    X: ExtractParam<pool::Metrics, T>,
     R: Resolve<T>,
     R::Resolution: Unpin,
     R::Error: Send,
@@ -96,6 +104,7 @@ where
 
         let queue::Capacity(capacity) = target.param();
         let queue::Timeout(failfast) = target.param();
+        let metrics = self.params.extract_param(&target);
 
         // The pool wraps the inner endpoint stack so that its inner ready cache
         // can be updated without requiring the service to process requests.
@@ -110,15 +119,16 @@ where
         // that allows passing requests to the service. When all clones of the
         // service are dropped, the queue task completes, dropping the
         // resolution and all inner services.
-        PoolQueue::spawn(capacity, failfast, disco, pool)
+        PoolQueue::spawn(capacity, failfast, metrics.queue, disco, pool)
     }
 }
 
-impl<C, Req, R: Clone, N: Clone> Clone for NewBalancePeakEwma<C, Req, R, N> {
+impl<C, Req, X: Clone, R: Clone, N: Clone> Clone for NewBalancePeakEwma<C, Req, X, R, N> {
     fn clone(&self) -> Self {
         Self {
             resolve: self.resolve.clone(),
             inner: self.inner.clone(),
+            params: self.params.clone(),
             _marker: self._marker,
         }
     }

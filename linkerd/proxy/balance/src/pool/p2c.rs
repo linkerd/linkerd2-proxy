@@ -6,6 +6,7 @@ use super::{Pool, Update};
 use ahash::AHashMap;
 use futures_util::TryFutureExt;
 use linkerd_error::Error;
+use linkerd_metrics::prom;
 use linkerd_stack::{NewService, Service};
 use rand::{rngs::SmallRng, thread_rng, Rng, SeedableRng};
 use std::{
@@ -27,6 +28,30 @@ pub struct P2cPool<T, N, Req, S> {
     pool: ReadyCache<SocketAddr, S, Req>,
     rng: SmallRng,
     next_idx: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub struct P2cMetricFamilies<L, U> {
+    endpoints: prom::Family<L, prom::Gauge>,
+    updates: prom::Family<U, prom::Counter>,
+}
+
+#[derive(Clone, Debug)]
+pub struct P2cMetrics {
+    endpoints: prom::Gauge,
+
+    /// Measures the number of Reset updates received from service discovery.
+    updates_reset: prom::Counter,
+
+    /// Measures the number of Add updates received from service discovery.
+    updates_add: prom::Counter,
+
+    /// Measures the number of Remove updates received from service discovery.
+    updates_rm: prom::Counter,
+
+    /// Measures the number of DoesNotExist updates received from service
+    /// discovery.
+    updates_dne: prom::Counter,
 }
 
 impl<T, N, Req, S> P2cPool<T, N, Req, S>
@@ -259,6 +284,71 @@ where
     fn call(&mut self, req: Req) -> Self::Future {
         let idx = self.next_idx.take().expect("call before ready");
         self.pool.call_ready_index(idx, req).err_into()
+    }
+}
+
+impl<L, U> P2cMetricFamilies<L, U>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone + Send + Sync + 'static,
+    U: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    U: Eq + Clone + Send + Sync + 'static,
+{
+    pub fn register(reg: &mut prom::registry::Registry) -> Self {
+        let endpoints = prom::Family::default();
+        reg.register(
+            "endpoints",
+            "The number of endpoints currently in the balancer",
+            endpoints.clone(),
+        );
+
+        let updates = prom::Family::default();
+        reg.register(
+            "updates",
+            "The total number of service discovery updates received by a balancer",
+            updates.clone(),
+        );
+
+        Self { endpoints, updates }
+    }
+
+    pub fn metrics<'l>(&self, labels: &'l L) -> P2cMetrics
+    where
+        U: From<(Update<()>, &'l L)>,
+    {
+        P2cMetrics {
+            endpoints: self.endpoints.get_or_create(labels).clone(),
+            updates_reset: self
+                .updates
+                .get_or_create(&(Update::Reset(vec![]), labels).into())
+                .clone(),
+            updates_add: self
+                .updates
+                .get_or_create(&(Update::Add(vec![]), labels).into())
+                .clone(),
+            updates_rm: self
+                .updates
+                .get_or_create(&(Update::Remove(vec![]), labels).into())
+                .clone(),
+            updates_dne: self
+                .updates
+                .get_or_create(&(Update::DoesNotExist, labels).into())
+                .clone(),
+        }
+    }
+}
+
+// === impl P2cMetrics ===
+
+impl P2cMetrics {
+    fn inc<T>(&self, up: &crate::Update<T>) {
+        match up {
+            Update::Reset(..) => &self.updates_reset,
+            Update::Add(..) => &self.updates_add,
+            Update::Remove(..) => &self.updates_rm,
+            Update::DoesNotExist { .. } => &self.updates_dne,
+        }
+        .inc();
     }
 }
 

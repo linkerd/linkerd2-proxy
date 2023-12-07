@@ -3,4 +3,5 @@ use tower::load::CompleteOnResponse;
 
 pub type EwmaConfig = balance::EwmaConfig;
 
-pub type NewBalancePeakEwma<Req, R, N> = balance::NewBalancePeakEwma<CompleteOnResponse, Req, R, N>;
+pub type NewBalancePeakEwma<Req, X, R, N> =
+    balance::NewBalancePeakEwma<CompleteOnResponse, Req, X, R, N>;

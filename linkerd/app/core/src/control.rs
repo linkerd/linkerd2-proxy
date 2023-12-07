@@ -230,22 +230,41 @@ mod balance {
     use super::{client::Target, ControlAddr};
     use crate::{
         dns,
+        metrics::prom,
         proxy::{dns_resolve::DnsResolve, http, resolve::recover},
         svc, tls,
     };
     use std::net::SocketAddr;
 
     pub fn layer<B, R: Clone, N>(
+        registry: &mut prom::registry::Registry,
         dns: dns::Resolver,
         recover: R,
     ) -> impl svc::Layer<
         N,
-        Service = http::NewBalancePeakEwma<B, recover::Resolve<R, DnsResolve>, NewIntoTarget<N>>,
+        Service = http::NewBalancePeakEwma<
+            B,
+            Metrics,
+            recover::Resolve<R, DnsResolve>,
+            NewIntoTarget<N>,
+        >,
     > {
         let resolve = recover::Resolve::new(recover, DnsResolve::new(dns));
         svc::layer::mk(move |inner| {
             http::NewBalancePeakEwma::new(NewIntoTarget { inner }, resolve.clone())
         })
+    }
+
+    #[derive(Clone)]
+    pub struct Metrics(http::balance::MetricFamilies<Labels, UpdateLabels>);
+
+    #[derive(prometheus_client::encoding::EncodeLabelSet)]
+    pub struct Labels {}
+
+    #[derive(prometheus_client::encoding::EncodeLabelSet)]
+    pub struct UpdateLabels {
+        #[prometheus(flatten)]
+        labels: Labels,
     }
 
     #[derive(Clone, Debug)]
@@ -258,6 +277,9 @@ mod balance {
         inner: N,
         server_id: tls::ConditionalClientTls,
     }
+
+    #[derive()]
+    pub struct ExtractMetrics(http::balance::MetricFamilies);
 
     // === impl NewIntoTarget ===
 

@@ -1690,6 +1690,7 @@ dependencies = [
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
+ "prometheus-client",
  "quickcheck",
  "rand",
  "thiserror",
@@ -1808,6 +1809,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-error",
+ "linkerd-metrics",
  "linkerd-proxy-core",
  "linkerd-stack",
  "linkerd-tracing",

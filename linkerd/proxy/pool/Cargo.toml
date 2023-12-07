@@ -9,15 +9,13 @@ publish = false
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
-# linkerd-metrics = { path = "../../metrics" }
+linkerd-metrics = { path = "../../metrics" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 parking_lot = "0.12"
 pin-project = "1"
-# rand = "0.8"
 thiserror = "1"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
-# tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = "0.7"
 tracing = "0.1"
 
