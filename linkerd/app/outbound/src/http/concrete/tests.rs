@@ -38,11 +38,19 @@ async fn gauges_endpoints() {
     };
 
     let mut svc = svc::stack(stk)
-        .push(Balance::layer(&outbound.config, &outbound.runtime, resolve))
+        .push(balance::Balance::layer(
+            &outbound.config,
+            &outbound.runtime,
+            resolve,
+        ))
         .into_inner()
-        .new_service(Balance {
+        .new_service(balance::Balance {
             addr,
             parent: Target,
+            queue: QueueConfig {
+                capacity: 10,
+                failfast_timeout: time::Duration::from_secs(1),
+            },
             ewma: EwmaConfig {
                 default_rtt: time::Duration::from_millis(100),
                 decay: time::Duration::from_secs(10),
