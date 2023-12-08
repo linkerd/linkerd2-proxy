@@ -82,10 +82,6 @@ impl OutboundMetrics {
             http_balancer: BalancerMetrics::default(),
         }
     }
-
-    pub fn registry(&self) -> &prom::Registry {
-        &self.proxy.registry
-    }
 }
 
 impl FmtMetrics for OutboundMetrics {

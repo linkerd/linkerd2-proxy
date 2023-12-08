@@ -1,7 +1,9 @@
 use crate::{http, opaq, policy, Config, Discovery, Outbound, ParentRef};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, errors, io, profiles,
+    detect, errors, io,
+    metrics::prom,
+    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -68,6 +70,7 @@ impl Outbound<()> {
     /// fails, we revert to using the normal IP-based discovery
     pub fn mk_ingress<T, I, R>(
         &self,
+        registry: &mut prom::registry::Registry,
         profiles: impl profiles::GetProfile<Error = Error>,
         policies: impl policy::GetPolicy,
         resolve: R,
@@ -83,7 +86,6 @@ impl Outbound<()> {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,
     {
-        let mut registry = self.runtime.metrics.proxy.registry.write();
         let registry = registry.sub_registry_with_prefix("outbound");
 
         let discover = self.ingress_resolver(profiles, policies);

@@ -90,6 +90,7 @@ impl Config {
         svc::BoxCloneSyncService<http::Request<tonic::body::BoxBody>, http::Response<RspBody>>,
     > {
         let addr = self.addr;
+        tracing::trace!(%addr, "Building");
 
         // When a DNS resolution fails, log the error and use the TTL, if there
         // is one, to drive re-resolution attempts.
@@ -135,11 +136,7 @@ impl Config {
             .lift_new()
             .push(self::balance::layer(registry, dns, resolve_backoff))
             .push(metrics.to_layer::<classify::Response, _, _>())
-            .push(classify::NewClassify::layer_default())
-            // This buffer allows a resolver client to be shared across stacks.
-            // No load shed is applied here, however, so backpressure may leak
-            // into the caller task.
-            .push(svc::NewQueue::layer_via(self.buffer));
+            .push(classify::NewClassify::layer_default());
 
         balance
             .push(self::add_origin::layer())
@@ -256,9 +253,10 @@ mod balance {
             NewIntoTarget<N>,
         >,
     > {
-        let metrics = Params(http::balance::MetricFamilies::register(registry));
         let resolve = recover::Resolve::new(recover, DnsResolve::new(dns));
+        let metrics = Params(http::balance::MetricFamilies::register(registry));
         svc::layer::mk(move |inner| {
+            tracing::trace!("Building balancer");
             http::NewBalancePeakEwma::new(NewIntoTarget { inner }, resolve.clone(), metrics.clone())
         })
     }

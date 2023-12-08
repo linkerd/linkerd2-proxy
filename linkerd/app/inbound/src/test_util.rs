@@ -5,7 +5,7 @@ use linkerd_app_core::{
     dns::Suffix,
     drain, exp_backoff,
     identity::rustls,
-    metrics,
+    metrics::{self, prom},
     proxy::{
         http::{h1, h2},
         tap,
@@ -97,6 +97,7 @@ pub fn runtime() -> (ProxyRuntime, drain::Signal) {
         identity: rustls::creds::default_for_test().1.into(),
         metrics: metrics.proxy,
         tap,
+        registry: prom::registry(),
         span_sink: None,
         drain,
     };

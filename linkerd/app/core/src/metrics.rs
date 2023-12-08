@@ -39,9 +39,6 @@ pub struct Metrics {
     pub proxy: Proxy,
     pub control: ControlHttp,
     pub opencensus: opencensus::metrics::Registry,
-
-    // Global prometheus registry for new metrics.
-    pub registry: prom::Registry,
 }
 
 #[derive(Clone, Debug)]
@@ -52,9 +49,6 @@ pub struct Proxy {
     pub http_endpoint: HttpEndpoint,
     pub transport: transport::Metrics,
     pub stack: Stack,
-
-    // Global prometheus registry for new metrics.
-    pub registry: prom::Registry,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -158,14 +152,6 @@ where
 
 impl Metrics {
     pub fn new(retain_idle: Duration) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
-        let registry = prom::registry();
-
-        registry.write().register(
-            "proxy_build_info",
-            "Proxy build info",
-            crate::BUILD_INFO.metric(),
-        );
-
         let (control, control_report) = {
             let m = http_metrics::Requests::<ControlLabels, Class>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("control");
@@ -210,7 +196,6 @@ impl Metrics {
             http_profile_route_actual,
             stack: stack.clone(),
             transport,
-            registry: registry.clone(),
         };
 
         let (opencensus, opencensus_report) = opencensus::metrics::new();
@@ -219,7 +204,6 @@ impl Metrics {
             proxy,
             control,
             opencensus,
-            registry: registry.clone(),
         };
 
         let report = endpoint_report
@@ -229,10 +213,7 @@ impl Metrics {
             .and_report(control_report)
             .and_report(transport_report)
             .and_report(opencensus_report)
-            .and_report(stack)
-            // The prom registry reports an "# EOF" at the end of its export, so
-            // it should be emitted last.
-            .and_report(registry);
+            .and_report(stack);
 
         (metrics, report)
     }

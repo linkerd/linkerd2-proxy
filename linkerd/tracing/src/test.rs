@@ -26,5 +26,5 @@ pub fn with_default_filter(
 }
 
 pub fn trace_init() -> (tracing::dispatcher::DefaultGuard, crate::Handle) {
-    with_default_filter(DEFAULT_LOG)
+    with_default_filter("trace")
 }
