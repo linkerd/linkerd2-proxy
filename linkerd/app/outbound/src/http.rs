@@ -1,6 +1,7 @@
 use self::require_id_header::NewRequireIdentity;
 use crate::Outbound;
 use linkerd_app_core::{
+    metrics::prom,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -78,7 +79,11 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
     /// Builds a stack that routes HTTP requests to endpoint stacks.
     ///
     /// Buffered concrete services are cached in and evicted when idle.
-    pub fn push_http_cached<R>(self, resolve: R) -> Outbound<svc::ArcNewCloneHttp<T>>
+    pub fn push_http_cached<R>(
+        self,
+        registry: &mut prom::Registry,
+        resolve: R,
+    ) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Logical HTTP target.
         T: svc::Param<http::Version>,
@@ -86,9 +91,10 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
         T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
         self.push_http_endpoint()
-            .push_http_concrete(resolve)
+            .push_http_concrete(registry, resolve)
             .push_http_logical()
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)

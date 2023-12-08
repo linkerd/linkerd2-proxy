@@ -5,7 +5,7 @@ use super::{balance::EwmaConfig, client, handle_proxy_error_headers};
 use crate::{http, stack_labels, BackendRef, Outbound, ParentRef};
 use linkerd_app_core::{
     config::QueueConfig,
-    metrics::{prefix_labels, EndpointLabels, OutboundEndpointLabels},
+    metrics::{prefix_labels, prom, EndpointLabels, OutboundEndpointLabels},
     profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
@@ -63,7 +63,11 @@ impl<N> Outbound<N> {
     /// 'failfast'. While in failfast, buffered requests are failed and the
     /// service becomes unavailable so callers may choose alternate concrete
     /// services.
-    pub fn push_http_concrete<T, NSvc, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneHttp<T>>
+    pub fn push_http_concrete<T, NSvc, R>(
+        self,
+        registry: &mut prom::Registry,
+        resolve: R,
+    ) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Concrete target type.
         T: svc::Param<ParentRef>,
@@ -73,6 +77,7 @@ impl<N> Outbound<N> {
         T: Clone + Debug + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
+        R::Resolution: Unpin,
         // Endpoint stack.
         N: svc::NewService<Endpoint<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -103,7 +108,12 @@ impl<N> Outbound<N> {
             });
 
             inner
-                .push(balance::Balance::layer(config, rt, resolve))
+                .push(balance::Balance::layer(
+                    config,
+                    rt,
+                    registry.sub_registry_with_prefix("balancer"),
+                    resolve,
+                ))
                 .check_new_clone()
                 .push_switch(Ok::<_, Infallible>, forward.into_inner())
                 .push_switch(

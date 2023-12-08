@@ -9,7 +9,7 @@ use linkerd_app_core::{
         client::{Certify, Metrics as IdentityMetrics},
         creds, Credentials, DerX509, Mode,
     },
-    metrics::ControlHttp as ClientMetrics,
+    metrics::{prom, ControlHttp as ClientMetrics},
     Error, Result,
 };
 use std::{future::Future, pin::Pin};
@@ -54,7 +54,12 @@ struct NotifyReady {
 // === impl Config ===
 
 impl Config {
-    pub fn build(self, dns: dns::Resolver, client_metrics: ClientMetrics) -> Result<Identity> {
+    pub fn build(
+        self,
+        dns: dns::Resolver,
+        client_metrics: ClientMetrics,
+        registry: &mut prom::Registry,
+    ) -> Result<Identity> {
         let name = self.documents.server_name.clone();
         let (store, receiver) = Mode::default().watch(
             name.clone().into(),
@@ -76,7 +81,7 @@ impl Config {
             let addr = addr.clone();
             let svc = self
                 .control
-                .build(dns, client_metrics, receiver.new_client());
+                .build(dns, client_metrics, registry, receiver.new_client());
 
             let cred = NotifyReady { store, tx };
             certify

@@ -30,7 +30,7 @@ pub struct ProxyConfig {
     pub detect_protocol_timeout: Duration,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct QueueConfig {
     /// The number of requests (or connections, depending on the context) that
     /// may be buffered

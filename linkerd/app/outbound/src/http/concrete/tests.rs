@@ -41,6 +41,7 @@ async fn gauges_endpoints() {
         .push(balance::Balance::layer(
             &outbound.config,
             &outbound.runtime,
+            &mut Default::default(),
             resolve,
         ))
         .into_inner()

@@ -3,6 +3,7 @@ use crate::{
     Error,
 };
 use futures::future::Either;
+use linkerd_metrics::prom;
 use std::fmt;
 use tokio::time;
 use tokio_stream::{wrappers::IntervalStream, StreamExt};
@@ -68,6 +69,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
+        registry: &mut prom::Registry,
         identity: identity::NewClient,
     ) -> svc::ArcNewService<
         (),
@@ -117,7 +119,7 @@ impl Config {
 
         let balance = endpoint
             .lift_new()
-            .push(self::balance::layer(dns, resolve_backoff))
+            .push(self::balance::layer(registry, dns, resolve_backoff))
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(classify::NewClassify::layer_default())
             // This buffer allows a resolver client to be shared across stacks.
@@ -220,9 +222,11 @@ mod balance {
         proxy::{dns_resolve::DnsResolve, http, resolve::recover},
         svc, tls,
     };
+    use linkerd_metrics::prom;
     use std::net::SocketAddr;
 
     pub fn layer<B, R: Clone, N>(
+        _registry: &mut prom::Registry,
         dns: dns::Resolver,
         recover: R,
     ) -> impl svc::Layer<

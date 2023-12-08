@@ -11,13 +11,10 @@ compile_error!(
     "at least one of the following TLS implementations must be enabled: 'meshtls-boring', 'meshtls-rustls'"
 );
 
-use linkerd_app::{
-    core::{transport::BindTcp, BUILD_INFO},
-    trace, Config,
-};
+use linkerd_app::{trace, BindTcp, Config, BUILD_INFO};
 use linkerd_signal as signal;
 use tokio::{sync::mpsc, time};
-pub use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[global_allocator]

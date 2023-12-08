@@ -6,24 +6,24 @@
 #![allow(opaque_hidden_inferred_bound)]
 #![forbid(unsafe_code)]
 
-use futures::Stream;
 use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
     drain,
     exp_backoff::ExponentialBackoff,
     http_tracing::OpenCensusSink,
-    identity, io, profiles,
+    identity, io,
+    metrics::prom,
+    profiles,
     proxy::{
         self,
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
         tap,
     },
-    serve,
     svc::{self, ServiceExt},
     tls,
     transport::addrs::*,
-    AddrMatch, Error, ProxyRuntime, Result,
+    AddrMatch, Error, ProxyRuntime,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -222,15 +222,15 @@ impl<S> Outbound<S> {
 }
 
 impl Outbound<()> {
-    pub async fn serve<T, I, R>(
+    pub fn mk<T, I, R>(
         self,
-        listen: impl Stream<Item = Result<(T, I)>> + Send + Sync + 'static,
+        registry: &mut prom::Registry,
         profiles: impl profiles::GetProfile<Error = Error>,
         policies: impl policy::GetPolicy,
         resolve: R,
-    ) where
+    ) -> svc::ArcNewTcp<T, I>
+    where
         // Target describing a server-side connection.
-        T: svc::Param<AddrPair>,
         T: svc::Param<OrigDstAddr>,
         T: Clone + Send + Sync + 'static,
         // Server-side socket.
@@ -238,17 +238,14 @@ impl Outbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
         let profiles = profiles::WithAllowlist::new(profiles, self.config.allow_discovery.clone());
         if self.config.ingress_mode {
             tracing::info!("Outbound routing in ingress-mode");
-            let server = self.mk_ingress(profiles, policies, resolve);
-            let shutdown = self.runtime.drain.signaled();
-            serve::serve(listen, server, shutdown).await;
+            self.mk_ingress(registry, profiles, policies, resolve)
         } else {
-            let proxy = self.mk_sidecar(profiles, policies, resolve);
-            let shutdown = self.runtime.drain.signaled();
-            serve::serve(listen, proxy, shutdown).await;
+            self.mk_sidecar(registry, profiles, policies, resolve)
         }
     }
 }
