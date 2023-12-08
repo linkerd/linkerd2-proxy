@@ -1,5 +1,8 @@
 use linkerd_app_core::{
-    control, dns, identity, metrics::ControlHttp as HttpMetrics, svc::NewService, Error,
+    control, dns, identity,
+    metrics::{prom, ControlHttp as HttpMetrics},
+    svc::NewService,
+    Error,
 };
 use linkerd_opencensus::{self as opencensus, metrics, proto};
 use std::{collections::HashMap, future::Future, pin::Pin, time::SystemTime};
@@ -44,6 +47,7 @@ impl Config {
         identity: identity::NewClient,
         dns: dns::Resolver,
         metrics: metrics::Registry,
+        registry: &mut prom::Registry,
         client_metrics: HttpMetrics,
     ) -> Result<OcCollector, Error> {
         match self {
@@ -52,7 +56,7 @@ impl Config {
                 let addr = inner.control.addr.clone();
                 let svc = inner
                     .control
-                    .build(dns, client_metrics, identity)
+                    .build(dns, client_metrics, registry, identity)
                     .new_service(());
 
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);

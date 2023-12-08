@@ -1,7 +1,9 @@
 use crate::{http, opaq, policy, Config, Discovery, Outbound, ParentRef};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, errors, io, profiles,
+    detect, errors, io,
+    metrics::prom,
+    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -68,6 +70,7 @@ impl Outbound<()> {
     /// fails, we revert to using the normal IP-based discovery
     pub fn mk_ingress<T, I, R>(
         &self,
+        registry: &mut prom::registry::Registry,
         profiles: impl profiles::GetProfile<Error = Error>,
         policies: impl policy::GetPolicy,
         resolve: R,
@@ -81,7 +84,10 @@ impl Outbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
+        let registry = registry.sub_registry_with_prefix("outbound");
+
         let discover = self.ingress_resolver(profiles, policies);
 
         // The fallback stack is the same thing as the normal proxy stack, but
@@ -90,7 +96,7 @@ impl Outbound<()> {
         let opaque = {
             let discover = discover.clone();
             self.to_tcp_connect()
-                .push_opaq_cached(resolve.clone())
+                .push_opaq_cached(registry, resolve.clone())
                 .map_stack(|_, _, stk| stk.push_map_target(Opaq))
                 .push_discover(svc::mk(move |OrigDstAddr(addr)| {
                     discover.clone().oneshot(DiscoverAddr(addr.into()))
@@ -102,7 +108,7 @@ impl Outbound<()> {
             .to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_tcp_client()
-            .push_http_cached(resolve)
+            .push_http_cached(registry, resolve)
             .push_http_server()
             .map_stack(|_, _, stk| {
                 stk.check_new_service::<Http<Logical>, _>()

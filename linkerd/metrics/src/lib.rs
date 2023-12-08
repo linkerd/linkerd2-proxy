@@ -11,7 +11,7 @@ pub mod latency;
 #[cfg(feature = "linkerd-stack")]
 mod new_metrics;
 #[cfg(feature = "process")]
-mod process;
+pub mod process;
 mod serve;
 mod store;
 
@@ -30,7 +30,6 @@ pub use self::{
 ///
 /// This should be used for all new metrics.
 pub mod prom {
-    use parking_lot::RwLock;
     use std::sync::Arc;
 
     pub use prometheus_client::{
@@ -41,26 +40,20 @@ pub mod prom {
             histogram::Histogram,
             info::Info,
         },
+        registry::{Registry, Unit},
         *,
     };
 
-    /// New metrics should use the prometheus-client Registry.
-    pub type Registry = Arc<RwLock<registry::Registry>>;
-
-    pub fn registry() -> Registry {
-        #[cfg_attr(not(feature = "process"), allow(unused_mut))]
-        let mut reg = registry::Registry::default();
-
-        #[cfg(feature = "process")]
-        crate::process::register(reg.sub_registry_with_prefix("process"));
-
-        Arc::new(RwLock::new(reg))
+    pub trait EncodeLabelSetMut: encoding::EncodeLabelSet {
+        fn encode_label_set(&self, dst: &mut encoding::LabelSetEncoder<'_>) -> std::fmt::Result;
     }
 
-    impl crate::FmtMetrics for Registry {
+    pub type Report = Arc<Registry>;
+
+    impl crate::FmtMetrics for Report {
         #[inline]
         fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            encoding::text::encode(f, &self.read())
+            encoding::text::encode(f, self)
         }
     }
 }

@@ -6,6 +6,7 @@ use crate::{
 use linkerd_app_core::{
     classify,
     config::QueueConfig,
+    metrics::prom,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -67,11 +68,13 @@ where
     pub(super) fn layer<N, NSvc, R>(
         config: &crate::Config,
         rt: &crate::Runtime,
+        _registry: &mut prom::Registry,
         resolve: R,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + 'static,
+        R::Resolution: Unpin,
         // Endpoint stack.
         N: svc::NewService<Endpoint<T>, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>

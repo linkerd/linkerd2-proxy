@@ -28,10 +28,8 @@ pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 pub use futures::stream::{Stream, StreamExt};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
-pub use linkerd_app::{
-    self as app,
-    core::{drain, Addr},
-};
+pub use linkerd_app as app;
+pub use linkerd_app_core::{drain, Addr};
 pub use linkerd_app_test::*;
 pub use linkerd_tracing::test::*;
 use socket2::Socket;
