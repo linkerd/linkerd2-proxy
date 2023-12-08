@@ -44,6 +44,10 @@ pub mod prom {
         *,
     };
 
+    pub trait EncodeLabelSetMut: encoding::EncodeLabelSet {
+        fn encode_label_set(&self, dst: &mut encoding::LabelSetEncoder<'_>) -> std::fmt::Result;
+    }
+
     /// New metrics should use the prometheus-client Registry.
     pub type Registry = Arc<RwLock<registry::Registry>>;
 

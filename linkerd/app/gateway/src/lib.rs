@@ -69,19 +69,28 @@ impl Gateway {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,
     {
+        let metrics = self.outbound.metrics();
+        let mut registry = metrics.registry().write();
+        let registry = registry.sub_registry_with_prefix("outbound");
+
         let opaq = {
+            let registry = registry.sub_registry_with_prefix("tcp");
             let resolve = resolve.clone();
-            let opaq = self.outbound.to_tcp_connect().push_opaq_cached(resolve);
+            let opaq = self
+                .outbound
+                .to_tcp_connect()
+                .push_opaq_cached(registry, resolve);
             self.opaq(opaq.into_inner()).into_inner()
         };
 
         let http = {
+            let registry = registry.sub_registry_with_prefix("http");
             let http = self
                 .outbound
                 .to_tcp_connect()
                 .push_tcp_endpoint()
                 .push_http_tcp_client();
-            let http = self.http(http.into_inner(), resolve);
+            let http = self.http(registry, http.into_inner(), resolve);
             self.inbound
                 .clone()
                 .with_stack(http.into_inner())

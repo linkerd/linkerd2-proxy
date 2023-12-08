@@ -1,11 +1,11 @@
-use crate::{BackendRef, ParentRef};
+use crate::{metrics::ConcreteLabels, BackendRef, ParentRef};
 use ahash::AHashMap;
 use linkerd_app_core::{
-    metrics::{metrics, prom::encoding::*, BalancerUpdateOp, FmtLabels, FmtMetrics, Gauge},
+    metrics::{metrics, FmtLabels, FmtMetrics, Gauge},
     svc::http::balance,
 };
 use parking_lot::Mutex;
-use std::{fmt::Write, sync::Arc};
+use std::sync::Arc;
 
 metrics! {
     outbound_http_balancer_endpoints: Gauge {

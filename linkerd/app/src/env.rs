@@ -1158,7 +1158,7 @@ pub fn parse_control_addr<S: Strings>(
             identity: Conditional::Some(tls::ClientTls::new(tls::ServerId(name.into()), None)),
         })),
         _ => {
-            error!("{client} {base}_ADDR and {base}_NAME must be specified together);
+            error!("{client} {base}_ADDR and {base}_NAME must be specified together");
             Err(EnvError::InvalidEnvVar)
         }
     }
@@ -1167,7 +1167,7 @@ pub fn parse_control_addr<S: Strings>(
 pub fn parse_identity_config<S: Strings>(
     strings: &S,
 ) -> Result<(ControlAddr, identity::certify::Config, identity::Documents), EnvError> {
-    let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
+    let control = parse_control_addr("identity", strings, ENV_IDENTITY_SVC_BASE);
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         if s.is_empty() {
             return Err(ParseError::InvalidTrustAnchors);

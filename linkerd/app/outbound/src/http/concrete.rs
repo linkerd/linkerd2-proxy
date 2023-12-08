@@ -65,8 +65,8 @@ impl<N> Outbound<N> {
     /// services.
     pub fn push_http_concrete<T, NSvc, R>(
         self,
-        resolve: R,
         registry: &mut prom::registry::Registry,
+        resolve: R,
     ) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Concrete target type.

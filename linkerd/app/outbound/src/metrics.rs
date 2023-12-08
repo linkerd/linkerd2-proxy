@@ -8,19 +8,18 @@
 //! to be updated frequently or in a performance-critical area. We should probably look to use
 //! `DashMap` as we migrate other metrics registries.
 
-use std::fmt::Write;
-
 use crate::{
     http::{concrete::BalancerMetrics, policy::RouteBackendMetrics},
     policy, BackendRef, ParentRef,
 };
+use linkerd_app_core::{
+    metrics::prom::{encoding::*, EncodeLabelSetMut},
+    svc,
+};
+use std::fmt::Write;
 
 pub(crate) mod error;
-use linkerd_app_core::svc::{self, http::HyperServerSvc};
-pub use linkerd_app_core::{
-    metrics::{prom::encoding::*, *},
-    proxy::balance,
-};
+pub use linkerd_app_core::{metrics::*, proxy::balance};
 
 /// Holds outbound proxy metrics.
 #[derive(Clone, Debug)]
@@ -40,32 +39,34 @@ pub struct OutboundMetrics {
 pub struct ConcreteLabels(pub ParentRef, pub BackendRef);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct BalancerUpdateLabels(pub ConcreteLabels, pub BalancerUpdateOp);
+pub struct BalancerUpdateLabels<K>(pub K, pub BalancerUpdateOp);
 
 #[derive(Clone, Debug)]
-pub struct BalancerMetricsParams(balance::MetricFamilies<ConcreteLabels, BalancerUpdateLabels>);
+pub struct BalancerMetricsParams<K>(balance::MetricFamilies<K, BalancerUpdateLabels<K>>);
 
 struct ScopedKey<'a, 'b>(&'a str, &'b str);
 
 // === impl BalancerMetricsPaarams ===
 
-impl BalancerMetricsParams {
+impl<K> BalancerMetricsParams<K>
+where
+    K: EncodeLabelSetMut + Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static,
+{
     pub fn register(reg: &mut prom::registry::Registry) -> Self {
         Self(balance::MetricFamilies::register(reg))
     }
 
-    pub fn metrics(&self, labels: &ConcreteLabels) -> balance::Metrics {
+    pub fn metrics(&self, labels: &K) -> balance::Metrics {
         self.0.metrics(labels)
     }
 }
 
-impl<T> svc::ExtractParam<balance::Metrics, T> for BalancerMetricsParams
+impl<T> svc::ExtractParam<balance::Metrics, T> for BalancerMetricsParams<ConcreteLabels>
 where
     T: svc::Param<ParentRef> + svc::Param<BackendRef>,
 {
     fn extract_param(&self, target: &T) -> balance::Metrics {
-        self.0
-            .metrics(&ConcreteLabels(target.param(), target.param()))
+        self.metrics(&ConcreteLabels(target.param(), target.param()))
     }
 }
 
@@ -80,6 +81,10 @@ impl OutboundMetrics {
             http_route_backends: RouteBackendMetrics::default(),
             http_balancer: BalancerMetrics::default(),
         }
+    }
+
+    pub fn registry(&self) -> &prom::Registry {
+        &self.proxy.registry
     }
 }
 
@@ -196,7 +201,7 @@ impl FmtLabels for ConcreteLabels {
     }
 }
 
-impl ConcreteLabels {
+impl EncodeLabelSetMut for ConcreteLabels {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         let Self(parent, backend) = self;
         parent.encode_label_set(enc)?;
@@ -213,13 +218,13 @@ impl EncodeLabelSet for ConcreteLabels {
 
 // === impl BalancerUpdateLabels ===
 
-impl From<(balance::Update<()>, &ConcreteLabels)> for BalancerUpdateLabels {
-    fn from((op, concrete): (balance::Update<()>, &ConcreteLabels)) -> Self {
+impl<K: Clone> From<(balance::Update<()>, &K)> for BalancerUpdateLabels<K> {
+    fn from((op, concrete): (balance::Update<()>, &K)) -> Self {
         Self(concrete.clone(), (&op).into())
     }
 }
 
-impl BalancerUpdateLabels {
+impl<K: EncodeLabelSetMut> BalancerUpdateLabels<K> {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         let Self(concrete, op) = self;
         concrete.encode_label_set(enc)?;
@@ -228,7 +233,7 @@ impl BalancerUpdateLabels {
     }
 }
 
-impl EncodeLabelSet for BalancerUpdateLabels {
+impl<K: EncodeLabelSetMut> EncodeLabelSet for BalancerUpdateLabels<K> {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
     }

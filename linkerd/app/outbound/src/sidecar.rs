@@ -52,13 +52,18 @@ impl Outbound<()> {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,
     {
-        let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
+        let mut registry = self.runtime.metrics.proxy.registry.write();
+        let registry = registry.sub_registry_with_prefix("outbound");
+
+        let opaq = self
+            .to_tcp_connect()
+            .push_opaq_cached(registry, resolve.clone());
 
         let http = self
             .to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_tcp_client()
-            .push_http_cached(resolve)
+            .push_http_cached(registry, resolve)
             .push_http_server()
             .into_stack()
             .push_map_target(HttpSidecar::from)
