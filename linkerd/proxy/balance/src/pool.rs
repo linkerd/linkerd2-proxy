@@ -34,6 +34,7 @@ where
     where
         U: From<(Update<()>, &'l L)>,
     {
+        tracing::trace!(?labels, "Budilding metrics");
         Metrics {
             p2c: self.p2c.metrics(&labels),
             queue: self.queue.metrics(&labels),

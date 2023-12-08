@@ -316,24 +316,29 @@ where
     where
         U: From<(Update<()>, &'l L)>,
     {
+        let endpoints: prom::Gauge = self.endpoints.get_or_create(labels).clone();
+        let updates_reset: prom::Counter = self
+            .updates
+            .get_or_create(&(Update::Reset(vec![]), labels).into())
+            .clone();
+        let updates_add: prom::Counter = self
+            .updates
+            .get_or_create(&(Update::Add(vec![]), labels).into())
+            .clone();
+        let updates_rm: prom::Counter = self
+            .updates
+            .get_or_create(&(Update::Remove(vec![]), labels).into())
+            .clone();
+        let updates_dne: prom::Counter = self
+            .updates
+            .get_or_create(&(Update::DoesNotExist, labels).into())
+            .clone();
         P2cMetrics {
-            endpoints: self.endpoints.get_or_create(labels).clone(),
-            updates_reset: self
-                .updates
-                .get_or_create(&(Update::Reset(vec![]), labels).into())
-                .clone(),
-            updates_add: self
-                .updates
-                .get_or_create(&(Update::Add(vec![]), labels).into())
-                .clone(),
-            updates_rm: self
-                .updates
-                .get_or_create(&(Update::Remove(vec![]), labels).into())
-                .clone(),
-            updates_dne: self
-                .updates
-                .get_or_create(&(Update::DoesNotExist, labels).into())
-                .clone(),
+            endpoints,
+            updates_reset,
+            updates_add,
+            updates_rm,
+            updates_dne,
         }
     }
 }

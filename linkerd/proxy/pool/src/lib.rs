@@ -106,10 +106,13 @@ where
     }
 
     pub fn metrics(&self, labels: &L) -> QueueMetrics {
+        let length = self.length.get_or_create(labels).clone();
+        let request = self.request.get_or_create(labels).clone();
+        let latency = self.latency.get_or_create(labels).clone();
         QueueMetrics {
-            length: self.length.get_or_create(labels).clone(),
-            request: self.request.get_or_create(labels).clone(),
-            latency: self.latency.get_or_create(labels).clone(),
+            length,
+            request,
+            latency,
         }
     }
 }

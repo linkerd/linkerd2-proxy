@@ -101,6 +101,7 @@ where
         //
         // If the resolution stream fails, the balancer will return an error.
         let disco = self.resolve.resolve(target.clone()).try_flatten_stream();
+        tracing::debug!("Resolving");
 
         let queue::Capacity(capacity) = target.param();
         let queue::Timeout(failfast) = target.param();
@@ -110,6 +111,7 @@ where
         // can be updated without requiring the service to process requests.
         let pool = {
             let ewma = target.param();
+            tracing::debug!(?ewma);
             let new_endpoint = self.inner.new_service(target);
             P2cPool::new(NewPeakEwma::new(ewma, new_endpoint))
         };
@@ -119,6 +121,7 @@ where
         // that allows passing requests to the service. When all clones of the
         // service are dropped, the queue task completes, dropping the
         // resolution and all inner services.
+        tracing::debug!(capacity, ?failfast, "Spawning p2c pool queue");
         PoolQueue::spawn(capacity, failfast, metrics.queue, disco, pool)
     }
 }
