@@ -2,7 +2,7 @@ use crate::prom::{self, encoding::EncodeMetric};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::Instant;
 
-pub fn register(reg: &mut prom::registry::Registry) {
+pub fn register(reg: &mut prom::Registry) {
     let start_time = Instant::now();
     let start_time_from_epoch = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -11,7 +11,7 @@ pub fn register(reg: &mut prom::registry::Registry) {
     reg.register_with_unit(
         "start_time",
         "Time that the process started (in seconds since the UNIX epoch)",
-        prom::registry::Unit::Seconds,
+        prom::Unit::Seconds,
         prom::ConstGauge::new(start_time_from_epoch.as_secs_f64()),
     );
 
@@ -44,7 +44,7 @@ impl prom::collector::Collector for ProcessCollector {
         let ue = encoder.encode_descriptor(
             "uptime",
             "Total time since the process started (in seconds)",
-            Some(&prom::registry::Unit::Seconds),
+            Some(&prom::Unit::Seconds),
             prom::metrics::MetricType::Counter,
         )?;
         uptime.encode(ue)?;
@@ -109,7 +109,7 @@ mod linux {
                 let cpue = encoder.encode_descriptor(
                     "cpu",
                     "Total user and system CPU time spent in seconds",
-                    Some(&prom::registry::Unit::Seconds),
+                    Some(&prom::Unit::Seconds),
                     prom::metrics::MetricType::Counter,
                 )?;
                 cpu.encode(cpue)?;
@@ -121,7 +121,7 @@ mod linux {
             let vme = encoder.encode_descriptor(
                 "virtual_memory",
                 "Virtual memory size in bytes",
-                Some(&prom::registry::Unit::Bytes),
+                Some(&prom::Unit::Bytes),
                 prom::metrics::MetricType::Gauge,
             )?;
             vm_bytes.encode(vme)?;
@@ -131,7 +131,7 @@ mod linux {
                 let rsse = encoder.encode_descriptor(
                     "resident_memory",
                     "Resident memory size in bytes",
-                    Some(&prom::registry::Unit::Bytes),
+                    Some(&prom::Unit::Bytes),
                     prom::metrics::MetricType::Gauge,
                 )?;
                 rss_bytes.encode(rsse)?;

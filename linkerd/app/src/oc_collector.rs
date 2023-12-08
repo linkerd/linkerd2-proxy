@@ -47,7 +47,7 @@ impl Config {
         identity: identity::NewClient,
         dns: dns::Resolver,
         metrics: metrics::Registry,
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
         client_metrics: HttpMetrics,
     ) -> Result<OcCollector, Error> {
         match self {

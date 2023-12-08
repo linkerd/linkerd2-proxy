@@ -41,7 +41,7 @@ async fn gauges_endpoints() {
             resolve,
         ))
         .into_inner()
-        .new_service(Balance {
+        .new_service(balance::Balance {
             addr,
             parent: Target,
             queue: QueueConfig {

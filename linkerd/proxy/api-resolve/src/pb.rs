@@ -7,7 +7,7 @@ use crate::{
     metadata::{Metadata, ProtocolHint},
 };
 use http::uri::Authority;
-use linkerd_tls::client::ServerId;
+use linkerd_tls::{client::ServerId, ClientTls, ServerName};
 use std::{collections::HashMap, net::SocketAddr, str::FromStr};
 
 /// Construct a new labeled `SocketAddr `from a protobuf `WeightedAddr`.
@@ -39,7 +39,7 @@ pub fn to_addr_meta(
         }
     }
 
-    let tls_id = pb.tls_identity.and_then(to_id);
+    let tls_id = pb.tls_identity.and_then(to_identity);
     let meta = Metadata::new(
         labels,
         proto_hint,
@@ -50,13 +50,15 @@ pub fn to_addr_meta(
     Some((addr, meta))
 }
 
-fn to_id(pb: TlsIdentity) -> Option<ServerId> {
+fn to_identity(pb: TlsIdentity) -> Option<ClientTls> {
+    // TODO: differenciate between id and name, once this is
+    // available in the API
     use crate::api::destination::tls_identity::Strategy;
 
     let Strategy::DnsLikeIdentity(i) = pb.strategy?;
-    match ServerId::from_str(&i.name) {
-        Ok(i) => Some(i),
-        Err(_) => {
+    match (ServerId::from_str(&i.name), ServerName::from_str(&i.name)) {
+        (Ok(i), Ok(n)) => Some(ClientTls::new(i, n)),
+        (_, _) => {
             tracing::warn!("Ignoring invalid identity: {}", i.name);
             None
         }

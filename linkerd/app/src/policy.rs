@@ -37,7 +37,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
         identity: identity::NewClient,
     ) -> Result<
         Policy<

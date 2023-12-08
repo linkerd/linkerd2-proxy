@@ -50,7 +50,7 @@ impl Gateway {
     /// outbound router.
     pub fn http<T, R>(
         &self,
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
         inner: svc::ArcNewHttp<
             outbound::http::concrete::Endpoint<
                 outbound::http::logical::Concrete<outbound::http::Http<Target>>,

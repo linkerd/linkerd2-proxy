@@ -12,10 +12,8 @@ pub mod policy;
 pub mod tap;
 
 pub use self::metrics::Metrics;
-use core::BUILD_INFO;
 use futures::{future, Future, FutureExt};
 use linkerd_app_admin as admin;
-pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
     config::ServerConfig,
     control::ControlAddr,
@@ -27,6 +25,7 @@ use linkerd_app_core::{
     transport::{addrs::*, listen::Bind},
     Error, ProxyRuntime,
 };
+pub use linkerd_app_core::{metrics, trace, transport::BindTcp, BUILD_INFO};
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
@@ -131,7 +130,7 @@ impl Config {
         debug!("Building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
-        let mut registry = prom::registry::Registry::default();
+        let mut registry = prom::Registry::default();
         registry.register("proxy_build_info", "Proxy build info", BUILD_INFO.metric());
         metrics::process::register(registry.sub_registry_with_prefix("process"));
 

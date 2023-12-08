@@ -65,7 +65,7 @@ impl<N> Outbound<N> {
     /// services.
     pub fn push_http_concrete<T, NSvc, R>(
         self,
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
         resolve: R,
     ) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
@@ -245,14 +245,15 @@ impl<T> svc::Param<tls::ConditionalClientTls> for Endpoint<T> {
         self.metadata
             .identity()
             .cloned()
-            .map(move |server_id| {
-                let alpn = if use_transport_header {
+            .map(move |mut client_tls| {
+                client_tls.alpn = if use_transport_header {
                     use linkerd_app_core::transport_header::PROTOCOL;
                     Some(tls::client::AlpnProtocols(vec![PROTOCOL.into()]))
                 } else {
                     None
                 };
-                tls::ConditionalClientTls::Some(tls::ClientTls::new(server_id, alpn))
+
+                tls::ConditionalClientTls::Some(client_tls)
             })
             .unwrap_or(tls::ConditionalClientTls::None(
                 tls::NoClientTls::NotProvidedByServiceDiscovery,

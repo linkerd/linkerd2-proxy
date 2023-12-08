@@ -58,7 +58,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         client_metrics: ClientMetrics,
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
     ) -> Result<Identity> {
         let name = self.documents.server_name.clone();
         let (store, receiver) = Mode::default().watch(

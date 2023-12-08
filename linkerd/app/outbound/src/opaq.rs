@@ -30,7 +30,7 @@ impl<C> Outbound<C> {
     /// across multiple connections.
     pub fn push_opaq_cached<T, I, R>(
         self,
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
         resolve: R,
     ) -> Outbound<svc::ArcNewCloneTcp<T, I>>
     where

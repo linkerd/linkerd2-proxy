@@ -81,7 +81,7 @@ where
     pub(super) fn layer<N, NSvc, R>(
         config: &crate::Config,
         rt: &crate::Runtime,
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
         resolve: R,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where

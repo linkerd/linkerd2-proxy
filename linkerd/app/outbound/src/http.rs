@@ -81,7 +81,7 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
     /// Buffered concrete services are cached in and evicted when idle.
     pub fn push_http_cached<R>(
         self,
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
         resolve: R,
     ) -> Outbound<svc::ArcNewCloneHttp<T>>
     where

@@ -40,6 +40,7 @@ pub mod prom {
             histogram::Histogram,
             info::Info,
         },
+        registry::{Registry, Unit},
         *,
     };
 

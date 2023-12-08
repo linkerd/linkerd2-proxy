@@ -1,4 +1,5 @@
-use crate::core::{
+use crate::{dns, gateway, identity, inbound, oc_collector, outbound, policy};
+use linkerd_app_core::{
     addr,
     config::*,
     control::{Config as ControlConfig, ControlAddr},
@@ -7,7 +8,6 @@ use crate::core::{
     transport::{Keepalive, ListenAddr},
     Addr, AddrMatch, Conditional, IpNet,
 };
-use crate::{dns, gateway, identity, inbound, oc_collector, outbound, policy};
 use rangemap::RangeInclusiveSet;
 use std::{
     collections::{HashMap, HashSet},
@@ -1155,10 +1155,13 @@ pub fn parse_control_addr<S: Strings>(
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             client,
             addr,
-            identity: Conditional::Some(tls::ClientTls::new(tls::ServerId(name.into()), None)),
+            identity: Conditional::Some(tls::ClientTls::new(
+                tls::ServerId(name.clone().into()),
+                tls::ServerName(name),
+            )),
         })),
         _ => {
-            error!("{client} {base}_ADDR and {base}_NAME must be specified together");
+            error!("{base}_ADDR and {base}_NAME must be specified together");
             Err(EnvError::InvalidEnvVar)
         }
     }

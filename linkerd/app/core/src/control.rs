@@ -3,6 +3,7 @@ use crate::{
     Error,
 };
 use futures::future::Either;
+use linkerd_metrics::prom;
 use std::fmt;
 use tokio::time;
 use tokio_stream::{wrappers::IntervalStream, StreamExt};
@@ -83,7 +84,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        registry: &mut metrics::prom::registry::Registry,
+        registry: &mut prom::Registry,
         identity: identity::NewClient,
     ) -> svc::ArcNewService<
         (),
@@ -241,7 +242,7 @@ mod balance {
     use std::net::SocketAddr;
 
     pub fn layer<B, R: Clone, N>(
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
         dns: dns::Resolver,
         recover: R,
     ) -> impl svc::Layer<

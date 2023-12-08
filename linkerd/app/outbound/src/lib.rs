@@ -6,7 +6,6 @@
 #![allow(opaque_hidden_inferred_bound)]
 #![forbid(unsafe_code)]
 
-use futures::Stream;
 use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
     drain,
@@ -21,11 +20,10 @@ use linkerd_app_core::{
         core::Resolve,
         tap,
     },
-    serve,
     svc::{self, ServiceExt},
     tls,
     transport::addrs::*,
-    AddrMatch, Error, ProxyRuntime, Result,
+    AddrMatch, Error, ProxyRuntime,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -226,7 +224,7 @@ impl<S> Outbound<S> {
 impl Outbound<()> {
     pub fn mk<T, I, R>(
         self,
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
         profiles: impl profiles::GetProfile<Error = Error>,
         policies: impl policy::GetPolicy,
         resolve: R,
@@ -249,26 +247,6 @@ impl Outbound<()> {
         } else {
             self.mk_sidecar(registry, profiles, policies, resolve)
         }
-    }
-
-    pub async fn serve<T, I, R>(
-        self,
-        listen: impl Stream<Item = Result<(T, I)>> + Send + Sync + 'static,
-        server: svc::ArcNewTcp<T, io::ScopedIo<I>>,
-    ) where
-        // Target describing a server-side connection.
-        T: svc::Param<AddrPair>,
-        T: svc::Param<OrigDstAddr>,
-        T: Clone + Send + Sync + 'static,
-        // Server-side socket.
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
-        I: Debug + Unpin + Send + Sync + 'static,
-        // Endpoint resolution.
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R::Resolution: Unpin,
-    {
-        let shutdown = self.runtime.drain.signaled();
-        serve::serve(listen, server, shutdown).await;
     }
 }
 

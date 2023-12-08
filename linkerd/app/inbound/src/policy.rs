@@ -17,6 +17,7 @@ pub use self::{
 
 pub use linkerd_app_core::metrics::ServerLabel;
 use linkerd_app_core::{
+    identity as id,
     metrics::{RouteAuthzLabels, ServerAuthzLabels},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
@@ -150,15 +151,7 @@ impl AllowPolicy {
     }
 }
 
-fn is_authorized(
-    authz: &Authorization,
-    client_addr: Remote<ClientAddr>,
-    tls: &tls::ConditionalServerTls,
-) -> bool {
-    if !authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
-        return false;
-    }
-
+fn is_tls_authorized(tls: &tls::ConditionalServerTls, authz: &Authorization) -> bool {
     match authz.authentication {
         Authentication::Unauthenticated => true,
 
@@ -176,13 +169,28 @@ fn is_authorized(
             tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                 client_id: Some(tls::server::ClientId(ref id)),
                 ..
-            }) => {
-                identities.contains(&*id.to_str())
-                    || suffixes.iter().any(|s| s.contains(&id.to_str()))
-            }
+            }) => match id {
+                id::Id::Uri(_) => identities.contains(&*id.to_str()),
+                id::Id::Dns(_) => {
+                    identities.contains(&*id.to_str())
+                        || suffixes.iter().any(|s| s.contains(&id.to_str()))
+                }
+            },
             _ => false,
         },
     }
+}
+
+fn is_authorized(
+    authz: &Authorization,
+    client_addr: Remote<ClientAddr>,
+    tls: &tls::ConditionalServerTls,
+) -> bool {
+    if !authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
+        return false;
+    }
+
+    is_tls_authorized(tls, authz)
 }
 
 // === impl Permit ===
@@ -197,5 +205,121 @@ impl ServerPermit {
                 server: ServerLabel(server.meta.clone()),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_tls_authorized;
+    use super::Meta;
+    use super::Suffix;
+    use super::{Authentication, Authorization};
+    use linkerd_app_core::tls;
+    use std::collections::BTreeSet;
+    use std::str::FromStr;
+    use std::sync::Arc;
+
+    fn authorization(identities: BTreeSet<String>, suffixes: Vec<Suffix>) -> Authorization {
+        Authorization {
+            networks: vec![],
+            meta: Arc::new(Meta::Default {
+                name: "name".into(),
+            }),
+            authentication: Authentication::TlsAuthenticated {
+                identities,
+                suffixes,
+            },
+        }
+    }
+
+    fn server_tls(identity: &str) -> tls::ConditionalServerTls {
+        let client_id = tls::ClientId::from_str(identity).expect("should parse id");
+        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(client_id),
+            negotiated_protocol: None,
+        })
+    }
+
+    #[test]
+    fn is_authorized_for_matching_spiffe_ids() {
+        let tls = server_tls("spiffe://some-root/some-workload");
+        let authz = authorization(
+            BTreeSet::from(["spiffe://some-root/some-workload".into()]),
+            vec![],
+        );
+        assert!(is_tls_authorized(&tls, &authz))
+    }
+
+    #[test]
+    fn is_not_authorized_for_non_matching_spiffe_ids() {
+        let tls = server_tls("spiffe://some-root/some-workload-1");
+        let authz = authorization(
+            BTreeSet::from(["spiffe://some-root/some-workload-2".into()]),
+            vec![],
+        );
+        assert!(!is_tls_authorized(&tls, &authz))
+    }
+
+    #[test]
+    fn is_authorized_for_matching_dns_ids() {
+        let tls = server_tls("some.id.local");
+        let authz = authorization(BTreeSet::from(["some.id.local".into()]), vec![]);
+        assert!(is_tls_authorized(&tls, &authz))
+    }
+
+    #[test]
+    fn is_not_authorized_for_non_matching_dns_ids() {
+        let tls = server_tls("some.id.local.one");
+        let authz = authorization(BTreeSet::from(["some.id.local.two".into()]), vec![]);
+        assert!(!is_tls_authorized(&tls, &authz))
+    }
+
+    #[test]
+    fn is_authorized_for_matching_dns_suffixes_ids() {
+        let tls = server_tls("some.id.local");
+        let authz = authorization(BTreeSet::new(), vec![Suffix::new("id.local")]);
+        assert!(is_tls_authorized(&tls, &authz))
+    }
+
+    #[test]
+    fn is_not_authorized_for_non_matching_suffixes_ids() {
+        let tls = server_tls("some.id.local");
+        let authz = authorization(BTreeSet::new(), vec![Suffix::new("another-id.local")]);
+        assert!(!is_tls_authorized(&tls, &authz))
+    }
+
+    #[test]
+    fn is_not_authorized_for_suffixes_and_spiffe_id() {
+        let tls = server_tls("spiffe://some-root/some-workload-1");
+        let authz = authorization(BTreeSet::new(), vec![Suffix::new("some-workload-1")]);
+        assert!(!is_tls_authorized(&tls, &authz))
+    }
+
+    #[test]
+    fn is_authorized_for_one_matching_spiffe_id() {
+        let tls = server_tls("spiffe://some-root/some-workload-1");
+        let authz = authorization(
+            BTreeSet::from([
+                "spiffe://some-root/some-workload-1".into(),
+                "some.workload.one".into(),
+                "some.workload.two".into(),
+            ]),
+            vec![],
+        );
+        assert!(is_tls_authorized(&tls, &authz))
+    }
+
+    #[test]
+    fn is_authorized_for_one_matching_dns_id() {
+        let tls = server_tls("some.workload.one");
+        let authz = authorization(
+            BTreeSet::from([
+                "spiffe://some-root/some-workload-1".into(),
+                "some.workload.one".into(),
+                "some.workload.two".into(),
+            ]),
+            vec![],
+        );
+        assert!(is_tls_authorized(&tls, &authz))
     }
 }
