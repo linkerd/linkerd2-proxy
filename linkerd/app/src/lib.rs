@@ -131,8 +131,16 @@ impl Config {
         let dns = dns.build();
 
         // Ensure that we've obtained a valid identity before binding any servers.
-        let identity = info_span!("identity")
-            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
+        let identity = {
+            let mut registry = metrics.registry.write();
+            info_span!("identity").in_scope(|| {
+                identity.build(
+                    dns.resolver.clone(),
+                    metrics.control.clone(),
+                    registry.sub_registry_with_prefix("control_id"),
+                )
+            })?
+        };
 
         let report = identity.metrics().and_report(report);
 
@@ -145,25 +153,48 @@ impl Config {
         };
 
         let dst = {
+            let mut registry = metrics.registry.write();
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.receiver().new_client()))
+            info_span!("dst").in_scope(|| {
+                dst.build(
+                    dns,
+                    metrics,
+                    registry.sub_registry_with_prefix("control_dst"),
+                    identity.receiver().new_client(),
+                )
+            })
         }?;
 
         let policies = {
+            let mut registry = metrics.registry.write();
             let dns = dns.resolver.clone();
             let metrics = metrics.control.clone();
-            info_span!("policy")
-                .in_scope(|| policy.build(dns, metrics, identity.receiver().new_client()))
+            info_span!("policy").in_scope(|| {
+                policy.build(
+                    dns,
+                    metrics,
+                    registry.sub_registry_with_prefix("control_policy"),
+                    identity.receiver().new_client(),
+                )
+            })
         }?;
 
         let oc_collector = {
+            let mut registry = metrics.registry.write();
             let identity = identity.receiver().new_client();
             let dns = dns.resolver;
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
-            info_span!("opencensus")
-                .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
+            info_span!("opencensus").in_scope(|| {
+                oc_collector.build(
+                    identity,
+                    dns,
+                    metrics,
+                    registry.sub_registry_with_prefix("opencensus"),
+                    client_metrics,
+                )
+            })
         }?;
 
         let runtime = ProxyRuntime {
