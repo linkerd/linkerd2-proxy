@@ -25,7 +25,7 @@ pub use linkerd_proxy_core::Update;
 /// The buckets used to measure in-queue latency. We mostly want to get a
 /// broad sense of overhead and not incur the costs of higher fidelity
 /// histograms.
-pub const LATENCY_BUCKETS: &[f64] = &[0.00025, 0.0025, 0.025, 0.25, 2.5, 10.0];
+pub const LATENCY_BUCKETS: &[f64] = &[0.05, 0.1, 0.5, 1.0, 3.0, 10.0];
 
 /// A collection of services updated from a resolution.
 pub trait Pool<T, Req>: Service<Req> {
