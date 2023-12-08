@@ -41,6 +41,12 @@ impl From<Vec<String>> for Suffix {
 }
 
 impl Suffix {
+    pub fn new(ends_with: &str) -> Self {
+        Self {
+            ends_with: ends_with.to_string(),
+        }
+    }
+
     #[inline]
     pub fn contains(&self, name: &str) -> bool {
         name.ends_with(&self.ends_with)

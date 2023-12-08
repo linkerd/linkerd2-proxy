@@ -1152,7 +1152,10 @@ pub fn parse_control_addr<S: Strings>(
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             addr,
-            identity: Conditional::Some(tls::ClientTls::new(tls::ServerId(name.into()), None)),
+            identity: Conditional::Some(tls::ClientTls::new(
+                tls::ServerId(name.clone().into()),
+                tls::ServerName(name),
+            )),
         })),
         _ => {
             error!("{}_ADDR and {}_NAME must be specified together", base, base);
