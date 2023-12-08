@@ -79,11 +79,11 @@ pub struct ConnectMeta<M> {
 
 impl ClientTls {
     // XXX(ver) We'll have to change this when ServerIds are not necessarily DNS names.
-    pub fn new(server_id: ServerId, server_name: ServerName, alpn: Option<AlpnProtocols>) -> Self {
+    pub fn new(server_id: ServerId, server_name: ServerName) -> Self {
         Self {
             server_name,
             server_id,
-            alpn,
+            alpn: None,
         }
     }
 }

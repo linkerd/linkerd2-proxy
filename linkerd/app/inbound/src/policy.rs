@@ -17,11 +17,11 @@ pub use self::{
 
 pub use linkerd_app_core::metrics::ServerLabel;
 use linkerd_app_core::{
+    identity as id,
     metrics::{RouteAuthzLabels, ServerAuthzLabels},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
 };
-use linkerd_identity as id;
 use linkerd_idle_cache::Cached;
 pub use linkerd_proxy_server_policy::{
     authz::Suffix,

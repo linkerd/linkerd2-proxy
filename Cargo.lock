@@ -1208,7 +1208,6 @@ dependencies = [
  "linkerd-app-test",
  "linkerd-http-access-log",
  "linkerd-http-metrics",
- "linkerd-identity",
  "linkerd-idle-cache",
  "linkerd-io",
  "linkerd-meshtls",

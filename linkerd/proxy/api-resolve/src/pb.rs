@@ -57,7 +57,7 @@ fn to_identity(pb: TlsIdentity) -> Option<ClientTls> {
 
     let Strategy::DnsLikeIdentity(i) = pb.strategy?;
     match (ServerId::from_str(&i.name), ServerName::from_str(&i.name)) {
-        (Ok(i), Ok(n)) => Some(ClientTls::new(i, n, None)),
+        (Ok(i), Ok(n)) => Some(ClientTls::new(i, n)),
         (_, _) => {
             tracing::warn!("Ignoring invalid identity: {}", i.name);
             None
