@@ -59,7 +59,7 @@ impl<S> RequireIdentity<S> {
     #[inline]
     fn extract_id<B>(req: &mut http::Request<B>) -> Option<identity::Id> {
         let v = req.headers_mut().remove(HEADER_NAME)?;
-        v.to_str().ok()?.parse::<identity::Id>().ok()
+        v.to_str().ok()?.parse().ok()
     }
 }
 

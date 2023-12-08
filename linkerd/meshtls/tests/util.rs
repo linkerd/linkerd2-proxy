@@ -53,11 +53,7 @@ pub async fn proxy_to_proxy_tls_works(mode: meshtls::Mode) {
     let server_name = tls::ServerName(test_util::FOO_NS1.name.parse().unwrap());
     let (client_result, server_result) = run_test(
         client_tls.clone(),
-        Conditional::Some(tls::ClientTls::new(
-            server_id.clone(),
-            server_name.clone(),
-            None,
-        )),
+        Conditional::Some(tls::ClientTls::new(server_id.clone(), server_name.clone())),
         |conn| write_then_read(conn, PING),
         server_tls,
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
@@ -68,7 +64,6 @@ pub async fn proxy_to_proxy_tls_works(mode: meshtls::Mode) {
         Some(Conditional::Some(tls::ClientTls::new(
             server_id,
             server_name,
-            None
         )))
     );
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
@@ -93,11 +88,7 @@ pub async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match(mode: 
 
     let (client_result, server_result) = run_test(
         client_tls,
-        Conditional::Some(tls::ClientTls::new(
-            server_id.clone(),
-            server_name.clone(),
-            None,
-        )),
+        Conditional::Some(tls::ClientTls::new(server_id.clone(), server_name.clone())),
         |conn| write_then_read(conn, PING),
         server_tls,
         |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),

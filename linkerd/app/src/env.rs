@@ -1155,7 +1155,6 @@ pub fn parse_control_addr<S: Strings>(
             identity: Conditional::Some(tls::ClientTls::new(
                 tls::ServerId(name.clone().into()),
                 tls::ServerName(name),
-                None,
             )),
         })),
         _ => {
