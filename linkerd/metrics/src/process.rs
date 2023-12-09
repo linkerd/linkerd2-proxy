@@ -42,9 +42,9 @@ impl prom::collector::Collector for ProcessCollector {
                 .as_secs_f64(),
         );
         let ue = encoder.encode_descriptor(
-            "uptime_seconds_total",
+            "uptime",
             "Total time since the process started (in seconds)",
-            None,
+            Some(&prom::Unit::Seconds),
             prom::metrics::MetricType::Counter,
         )?;
         uptime.encode(ue)?;
@@ -107,9 +107,9 @@ mod linux {
                 let cpu =
                     prom::ConstCounter::new(Duration::from_millis(clock_ticks * mpt).as_secs_f64());
                 let cpue = encoder.encode_descriptor(
-                    "cpu_seconds_total",
+                    "cpu",
                     "Total user and system CPU time spent in seconds",
-                    None,
+                    Some(&prom::Unit::Seconds),
                     prom::metrics::MetricType::Counter,
                 )?;
                 cpu.encode(cpue)?;
