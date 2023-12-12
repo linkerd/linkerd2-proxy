@@ -3,3 +3,4 @@ target
 **/corpus
 **/artifacts
 **/fuzz/Cargo.lock
+.vscode/settings.json
