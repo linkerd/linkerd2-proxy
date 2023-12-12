@@ -17,6 +17,11 @@ pub struct Config {
     pub token: TokenSource,
     pub min_refresh: Duration,
     pub max_refresh: Duration,
+    pub documents: Documents,
+}
+
+#[derive(Clone)]
+pub struct Documents {
     pub key_pkcs8: Vec<u8>,
     pub csr_der: Vec<u8>,
 }
@@ -66,8 +71,8 @@ impl Certify {
                 let client = new_client.new_service(());
                 certify(
                     &self.config.token,
-                    &self.config.key_pkcs8,
-                    &self.config.csr_der,
+                    &self.config.documents.key_pkcs8,
+                    &self.config.documents.csr_der,
                     client,
                     &name,
                     &mut credentials,
@@ -90,6 +95,14 @@ impl Certify {
             debug!(?sleep, "Waiting to refresh identity");
             time::sleep(sleep).await;
         }
+    }
+}
+
+// === impl Documents ===
+
+impl std::fmt::Debug for Documents {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Documents")
     }
 }
 

@@ -780,7 +780,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .unwrap_or(super::tap::Config::Disabled);
 
     let identity = {
-        let (addr, certify, documents) = identity_config?;
+        let (addr, certify, params) = identity_config?;
         // If the address doesn't have a server identity, then we're on localhost.
         let connect = if addr.addr.is_loopback() {
             inbound.proxy.connect.clone()
@@ -802,7 +802,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     failfast_timeout,
                 },
             },
-            documents,
+            params,
         }
     };
 
@@ -1166,7 +1166,7 @@ pub fn parse_control_addr<S: Strings>(
 
 pub fn parse_identity_config<S: Strings>(
     strings: &S,
-) -> Result<(ControlAddr, identity::certify::Config, identity::Documents), EnvError> {
+) -> Result<(ControlAddr, identity::certify::Config, identity::TlsParams), EnvError> {
     let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         if s.is_empty() {
@@ -1249,10 +1249,12 @@ pub fn parse_identity_config<S: Strings>(
                 token,
                 min_refresh: min_refresh.unwrap_or(DEFAULT_IDENTITY_MIN_REFRESH),
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
-                key_pkcs8: key?,
-                csr_der: csr?,
+                documents: identity::certify::Documents {
+                    key_pkcs8: key?,
+                    csr_der: csr?,
+                },
             };
-            let docs = identity::Documents {
+            let docs = identity::TlsParams {
                 server_id: identity::Id::Dns(local_name.clone()),
                 server_name: local_name,
                 trust_anchors_pem,

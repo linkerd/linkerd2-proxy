@@ -20,11 +20,11 @@ use tracing::Instrument;
 pub struct Config {
     pub control: control::Config,
     pub certify: certify::Config,
-    pub documents: Documents,
+    pub params: TlsParams,
 }
 
 #[derive(Clone)]
-pub struct Documents {
+pub struct TlsParams {
     pub server_id: Id,
     pub server_name: dns::Name,
     pub trust_anchors_pem: String,
@@ -54,11 +54,11 @@ struct NotifyReady {
 
 impl Config {
     pub fn build(self, dns: dns::Resolver, client_metrics: ClientMetrics) -> Result<Identity> {
-        let name = self.documents.server_name.clone();
+        let name = self.params.server_name.clone();
         let (store, receiver) = Mode::default().watch(
             name.clone().into(),
             name.clone(),
-            &self.documents.trust_anchors_pem,
+            &self.params.trust_anchors_pem,
         )?;
 
         let certify = Certify::from(self.certify);
@@ -99,11 +99,12 @@ impl Credentials for NotifyReady {
     }
 }
 
-// === impl Documents ===
+// === impl TlsParams ===
 
-impl std::fmt::Debug for Documents {
+impl std::fmt::Debug for TlsParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Documents")
+        f.debug_struct("TlsParams")
+            .field("server_id", &self.server_name)
             .field("server_name", &self.server_name)
             .field("trust_anchors_pem", &self.trust_anchors_pem)
             .finish()
