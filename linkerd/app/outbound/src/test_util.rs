@@ -2,8 +2,7 @@ use crate::Config;
 pub use futures::prelude::*;
 use linkerd_app_core::{
     config::{self, QueueConfig},
-    drain, exp_backoff,
-    metrics::{self, prom},
+    drain, exp_backoff, metrics,
     proxy::{
         http::{h1, h2},
         tap,
@@ -62,7 +61,6 @@ pub(crate) fn runtime() -> (ProxyRuntime, drain::Signal) {
         identity: linkerd_meshtls_rustls::creds::default_for_test().1.into(),
         metrics: metrics.proxy,
         tap,
-        registry: prom::registry(),
         span_sink: None,
         drain,
     };
