@@ -14,16 +14,18 @@ pub mod tap;
 pub use self::metrics::Metrics;
 use futures::{future, Future, FutureExt};
 use linkerd_app_admin as admin;
-pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
     config::ServerConfig,
     control::ControlAddr,
     dns, drain,
+    metrics::prom,
     metrics::FmtMetrics,
+    serve,
     svc::Param,
     transport::{addrs::*, listen::Bind},
     Error, ProxyRuntime,
 };
+pub use linkerd_app_core::{metrics, trace, transport::BindTcp, BUILD_INFO};
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
@@ -125,45 +127,63 @@ impl Config {
             tap,
             ..
         } = self;
-        debug!("building app");
+        debug!("Building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
+        let mut registry = prom::Registry::default();
+        registry.register("proxy_build_info", "Proxy build info", BUILD_INFO.metric());
+        metrics::process::register(registry.sub_registry_with_prefix("process"));
+
+        debug!("Building DNS client");
         let dns = dns.build();
 
         // Ensure that we've obtained a valid identity before binding any servers.
-        let identity = info_span!("identity")
-            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
+        debug!("Building Identity client");
+        let identity = {
+            let registry = registry.sub_registry_with_prefix("control_id");
+            info_span!("identity").in_scope(|| {
+                identity.build(dns.resolver.clone(), metrics.control.clone(), registry)
+            })?
+        };
 
         let report = identity.metrics().and_report(report);
 
         let (drain_tx, drain_rx) = drain::channel();
 
+        debug!(config = ?tap, "Building Tap server");
         let tap = {
             let bind = bind_admin.clone();
             info_span!("tap")
                 .in_scope(|| tap.build(bind, identity.receiver().server(), drain_rx.clone()))?
         };
 
+        debug!("Building Destination client");
         let dst = {
+            let registry = registry.sub_registry_with_prefix("control_dst");
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.receiver().new_client()))
+            info_span!("dst")
+                .in_scope(|| dst.build(dns, metrics, registry, identity.receiver().new_client()))
         }?;
 
+        debug!("Building Policy client");
         let policies = {
+            let registry = registry.sub_registry_with_prefix("control_policy");
             let dns = dns.resolver.clone();
             let metrics = metrics.control.clone();
             info_span!("policy")
-                .in_scope(|| policy.build(dns, metrics, identity.receiver().new_client()))
+                .in_scope(|| policy.build(dns, metrics, registry, identity.receiver().new_client()))
         }?;
 
+        debug!(config = ?oc_collector, "Building client");
         let oc_collector = {
+            let registry = registry.sub_registry_with_prefix("opencensus");
             let identity = identity.receiver().new_client();
             let dns = dns.resolver;
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
             info_span!("opencensus")
-                .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
+                .in_scope(|| oc_collector.build(identity, dns, metrics, registry, client_metrics))
         }?;
 
         let runtime = ProxyRuntime {
@@ -188,30 +208,9 @@ impl Config {
             policies.backoff,
         );
 
-        let admin = {
-            let identity = identity.receiver().server();
-            let metrics = inbound.metrics();
-            let policy = inbound_policies.clone();
-            let report = inbound
-                .metrics()
-                .and_report(outbound.metrics())
-                .and_report(report);
-            info_span!("admin").in_scope(move || {
-                admin.build(
-                    bind_admin,
-                    policy,
-                    identity,
-                    report,
-                    metrics,
-                    log_level,
-                    drain_rx,
-                    shutdown_tx,
-                )
-            })?
-        };
-
         let dst_addr = dst.addr.clone();
         let gateway = gateway::Gateway::new(gateway, inbound.clone(), outbound.clone()).stack(
+            registry.sub_registry_with_prefix("outbound"),
             dst.resolve.clone(),
             dst.profiles.clone(),
             outbound_policies.clone(),
@@ -222,43 +221,66 @@ impl Config {
         let (inbound_addr, inbound_listen) = bind_in
             .bind(&inbound.config().proxy.server)
             .expect("Failed to bind inbound listener");
+        let inbound_metrics = inbound.metrics();
+        let inbound = inbound.mk(
+            inbound_addr,
+            inbound_policies.clone(),
+            dst.profiles.clone(),
+            gateway.into_inner(),
+        );
 
         let (outbound_addr, outbound_listen) = bind_out
             .bind(&outbound.config().proxy.server)
             .expect("Failed to bind outbound listener");
+        let outbound_metrics = outbound.metrics();
+        let outbound = outbound.mk(
+            registry.sub_registry_with_prefix("outbound"),
+            dst.profiles.clone(),
+            outbound_policies,
+            dst.resolve.clone(),
+        );
 
         // Build a task that initializes and runs the proxy stacks.
         let start_proxy = {
+            let drain_rx = drain_rx.clone();
             let identity_ready = identity.ready();
-            let profiles = dst.profiles;
-            let resolve = dst.resolve;
 
             Box::pin(async move {
                 Self::await_identity(identity_ready).await;
 
                 tokio::spawn(
-                    outbound
-                        .serve(
-                            outbound_listen,
-                            profiles.clone(),
-                            outbound_policies,
-                            resolve,
-                        )
+                    serve::serve(outbound_listen, outbound, drain_rx.clone().signaled())
                         .instrument(info_span!("outbound").or_current()),
                 );
 
                 tokio::spawn(
-                    inbound
-                        .serve(
-                            inbound_addr,
-                            inbound_listen,
-                            inbound_policies,
-                            profiles,
-                            gateway.into_inner(),
-                        )
+                    serve::serve(inbound_listen, inbound, drain_rx.signaled())
                         .instrument(info_span!("inbound").or_current()),
                 );
             })
+        };
+
+        let admin = {
+            let identity = identity.receiver().server();
+            let metrics = inbound_metrics.clone();
+            let report = inbound_metrics
+                .and_report(outbound_metrics)
+                .and_report(report)
+                // The prom registry reports an "# EOF" at the end of its export, so
+                // it should be emitted last.
+                .and_report(prom::Report::from(registry));
+            info_span!("admin").in_scope(move || {
+                admin.build(
+                    bind_admin,
+                    inbound_policies,
+                    identity,
+                    report,
+                    metrics,
+                    log_level,
+                    drain_rx,
+                    shutdown_tx,
+                )
+            })?
         };
 
         Ok(App {

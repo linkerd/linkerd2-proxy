@@ -1,12 +1,11 @@
 use crate::{direct, policy, Inbound};
-use futures::Stream;
 use linkerd_app_core::{
     exp_backoff::ExponentialBackoff,
     io, profiles,
     proxy::http,
-    serve, svc,
+    svc,
     transport::{self, addrs::*},
-    Error, Result,
+    Error,
 };
 use std::{fmt::Debug, sync::Arc};
 use tracing::debug_span;
@@ -35,14 +34,14 @@ impl Inbound<()> {
         self.config.policy.clone().build(workload, client, backoff)
     }
 
-    pub async fn serve<A, I, P>(
+    pub fn mk<A, I, P>(
         self,
         addr: Local<ServerAddr>,
-        listen: impl Stream<Item = Result<(A, I)>> + Send + Sync + 'static,
         policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
         profiles: P,
-        gateway: svc::ArcNewTcp<direct::GatewayTransportHeader, direct::GatewayIo<io::ScopedIo<I>>>,
-    ) where
+        gateway: svc::ArcNewTcp<direct::GatewayTransportHeader, direct::GatewayIo<I>>,
+    ) -> svc::ArcNewTcp<A, I>
+    where
         A: svc::Param<Remote<ClientAddr>>,
         A: svc::Param<OrigDstAddr>,
         A: svc::Param<AddrPair>,
@@ -51,8 +50,6 @@ impl Inbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         P: profiles::GetProfile<Error = Error>,
     {
-        let shutdown = self.runtime.drain.clone().signaled();
-
         // Handles connections to ports that can't be determined to be HTTP.
         let forward = self
             .clone()
@@ -94,13 +91,10 @@ impl Inbound<()> {
 
         // Determines how to handle an inbound connection, dispatching it to the appropriate
         // stack.
-        let server = http
-            .push_http_tcp_server()
+        http.push_http_tcp_server()
             .push_detect(forward)
             .push_accept(addr.port(), policies, direct)
-            .into_inner();
-
-        serve::serve(listen, server, shutdown).await;
+            .into_inner()
     }
 }
 

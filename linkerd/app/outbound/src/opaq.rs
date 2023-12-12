@@ -1,6 +1,8 @@
 use crate::{tcp, Outbound};
 use linkerd_app_core::{
-    io, profiles,
+    io,
+    metrics::prom,
+    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -26,7 +28,11 @@ impl<C> Outbound<C> {
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.
-    pub fn push_opaq_cached<T, I, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneTcp<T, I>>
+    pub fn push_opaq_cached<T, I, R>(
+        self,
+        registry: &mut prom::Registry,
+        resolve: R,
+    ) -> Outbound<svc::ArcNewCloneTcp<T, I>>
     where
         // Opaque target
         T: svc::Param<Logical>,
@@ -36,6 +42,7 @@ impl<C> Outbound<C> {
         I: Debug + Send + Sync + Unpin + 'static,
         // Endpoint discovery
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
         // TCP endpoint stack.
         C: svc::MakeConnection<tcp::Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
         C: Clone + Send + Sync + Unpin + 'static,
@@ -43,7 +50,7 @@ impl<C> Outbound<C> {
         C::Future: Send + Unpin,
     {
         self.push_tcp_endpoint()
-            .push_opaq_concrete(resolve)
+            .push_opaq_concrete(registry, resolve)
             .push_opaq_logical()
             .map_stack(|config, _rt, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)

@@ -30,7 +30,7 @@ async fn routes() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(resolve)
+        .push_http_cached(&mut Default::default(), resolve)
         .into_inner();
 
     let backend = default_backend(&dest);
@@ -60,10 +60,7 @@ async fn routes() {
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn consecutive_failures_accrue() {
-    let _trace = trace::test::with_default_filter(format!(
-        "{},linkerd_app_outbound=trace,linkerd_stack=trace",
-        trace::test::DEFAULT_LOG
-    ));
+    let _trace = trace::test::with_default_filter(format!("{},trace", trace::test::DEFAULT_LOG));
 
     let addr = SocketAddr::new([192, 0, 2, 41].into(), PORT);
     let dest: NameAddr = format!("{AUTHORITY}:{PORT}")
@@ -76,7 +73,7 @@ async fn consecutive_failures_accrue() {
     let cfg = default_config();
     let stack = Outbound::new(cfg.clone(), rt)
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(resolve)
+        .push_http_cached(&mut Default::default(), resolve)
         .into_inner();
 
     let backend = default_backend(&dest);
@@ -239,7 +236,7 @@ async fn balancer_doesnt_select_tripped_breakers() {
     let cfg = default_config();
     let stack = Outbound::new(cfg.clone(), rt)
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(resolve)
+        .push_http_cached(&mut Default::default(), resolve)
         .into_inner();
 
     let backend = default_backend(&dest);
@@ -327,7 +324,7 @@ async fn route_request_timeout() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(resolve)
+        .push_http_cached(&mut Default::default(), resolve)
         .into_inner();
 
     let (_route_tx, routes) = {
@@ -390,7 +387,7 @@ async fn backend_request_timeout() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(resolve)
+        .push_http_cached(&mut Default::default(), resolve)
         .into_inner();
 
     let (_route_tx, routes) = {

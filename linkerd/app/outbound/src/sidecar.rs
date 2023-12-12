@@ -4,7 +4,9 @@ use crate::{
     Discovery, Outbound, ParentRef,
 };
 use linkerd_app_core::{
-    io, profiles,
+    io,
+    metrics::prom,
+    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -37,6 +39,7 @@ struct HttpSidecar {
 impl Outbound<()> {
     pub fn mk_sidecar<T, I, R>(
         &self,
+        registry: &mut prom::registry::Registry,
         profiles: impl profiles::GetProfile<Error = Error>,
         policies: impl policy::GetPolicy,
         resolve: R,
@@ -50,14 +53,17 @@ impl Outbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         // Endpoint resolver.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
-        let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
+        let opaq = self
+            .to_tcp_connect()
+            .push_opaq_cached(registry, resolve.clone());
 
         let http = self
             .to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_tcp_client()
-            .push_http_cached(resolve)
+            .push_http_cached(registry, resolve)
             .push_http_server()
             .into_stack()
             .push_map_target(HttpSidecar::from)

@@ -3,7 +3,9 @@
 #![forbid(unsafe_code)]
 
 use linkerd_app_core::{
-    io, profiles,
+    io,
+    metrics::prom,
+    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -48,6 +50,7 @@ impl Gateway {
     /// stack.
     pub fn stack<T, I, R>(
         self,
+        registry: &mut prom::Registry,
         resolve: R,
         profiles: impl profiles::GetProfile<Error = Error>,
         policies: impl outbound::policy::GetPolicy,
@@ -67,20 +70,26 @@ impl Gateway {
         I: Debug + Send + Sync + Unpin + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Unpin,
     {
         let opaq = {
+            let registry = registry.sub_registry_with_prefix("tcp");
             let resolve = resolve.clone();
-            let opaq = self.outbound.to_tcp_connect().push_opaq_cached(resolve);
+            let opaq = self
+                .outbound
+                .to_tcp_connect()
+                .push_opaq_cached(registry, resolve);
             self.opaq(opaq.into_inner()).into_inner()
         };
 
         let http = {
+            let registry = registry.sub_registry_with_prefix("http");
             let http = self
                 .outbound
                 .to_tcp_connect()
                 .push_tcp_endpoint()
                 .push_http_tcp_client();
-            let http = self.http(http.into_inner(), resolve);
+            let http = self.http(registry, http.into_inner(), resolve);
             self.inbound
                 .clone()
                 .with_stack(http.into_inner())

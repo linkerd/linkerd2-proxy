@@ -1,7 +1,8 @@
 use linkerd_app_core::{
     control, dns,
     exp_backoff::ExponentialBackoff,
-    identity, metrics,
+    identity,
+    metrics::{self, prom},
     proxy::http,
     svc::{self, NewService, ServiceExt},
     Error,
@@ -36,6 +37,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
+        registry: &mut prom::Registry,
         identity: identity::NewClient,
     ) -> Result<
         Policy<
@@ -53,7 +55,7 @@ impl Config {
         let backoff = self.control.connect.backoff;
         let client = self
             .control
-            .build(dns, metrics, identity)
+            .build(dns, metrics, registry, identity)
             .new_service(())
             .map_err(Error::from);
 
