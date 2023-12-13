@@ -57,13 +57,13 @@ impl Outbound<()> {
     {
         let opaq = self
             .to_tcp_connect()
-            .push_opaq_cached(registry, resolve.clone());
+            .push_opaq_cached(registry.sub_registry_with_prefix("tcp"), resolve.clone());
 
         let http = self
             .to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_tcp_client()
-            .push_http_cached(registry, resolve)
+            .push_http_cached(registry.sub_registry_with_prefix("http"), resolve)
             .push_http_server()
             .into_stack()
             .push_map_target(HttpSidecar::from)

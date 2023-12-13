@@ -1,6 +1,6 @@
 use crate::*;
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn h2_hinted() {
     let _trace = trace_init();
 
@@ -44,7 +44,7 @@ async fn h2_hinted() {
 /// `INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION` env var.
 /// TODO(eliza): add a similar test where the policy on the opaque port is
 /// discovered from the policy controller.
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn opaque_hinted() {
     let _trace = trace_init();
 

@@ -1,10 +1,11 @@
+use crate::EwmaConfig;
 use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_metrics::prom;
 use linkerd_proxy_core::Resolve;
 use linkerd_proxy_pool::PoolQueue;
 use linkerd_stack::{layer, queue, ExtractParam, Gate, NewService, Param, Service};
-use std::{fmt::Debug, hash::Hash, marker::PhantomData, net::SocketAddr};
+use std::{fmt::Debug, marker::PhantomData, net::SocketAddr};
 use tokio::time;
 use tower::load::{self, PeakEwma};
 
@@ -14,21 +15,15 @@ pub use self::p2c::{P2cMetricFamilies, P2cMetrics, P2cPool};
 pub use linkerd_proxy_pool::{Pool, QueueMetricFamilies, QueueMetrics, Update};
 
 #[derive(Clone, Debug)]
-pub struct MetricFamilies<L, U> {
+pub struct MetricFamilies<L> {
     queue: QueueMetricFamilies<L>,
-    p2c: P2cMetricFamilies<L, U>,
+    p2c: P2cMetricFamilies<L>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Metrics {
     queue: QueueMetrics,
     p2c: P2cMetrics,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct EwmaConfig {
-    pub default_rtt: time::Duration,
-    pub decay: time::Duration,
 }
 
 /// Configures a stack to resolve targets to balance requests over `N`-typed
@@ -182,12 +177,10 @@ where
 
 // === impl MetricFamilies ===
 
-impl<L, U> MetricFamilies<L, U>
+impl<L> MetricFamilies<L>
 where
     L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
     L: Eq + Clone + Send + Sync + 'static,
-    U: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
-    U: Eq + Clone + Send + Sync + 'static,
 {
     pub fn register(reg: &mut prom::registry::Registry) -> Self {
         let p2c = P2cMetricFamilies::register(reg.sub_registry_with_prefix("p2c"));
@@ -195,10 +188,7 @@ where
         Self { p2c, queue }
     }
 
-    pub fn metrics<'l>(&self, labels: &'l L) -> Metrics
-    where
-        U: From<(Update<()>, &'l L)>,
-    {
+    pub fn metrics(&self, labels: &L) -> Metrics {
         tracing::trace!(?labels, "Budilding metrics");
         Metrics {
             p2c: self.p2c.metrics(labels),

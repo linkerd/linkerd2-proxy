@@ -1,11 +1,11 @@
-use crate::{BackendRef, ParentRef};
+use crate::{metrics::ConcreteLabels, BackendRef, ParentRef};
 use ahash::AHashMap;
 use linkerd_app_core::{
     metrics::{metrics, FmtLabels, FmtMetrics, Gauge},
     svc::http::balance,
 };
 use parking_lot::Mutex;
-use std::{fmt::Write, sync::Arc};
+use std::sync::Arc;
 
 metrics! {
     outbound_http_balancer_endpoints: Gauge {
@@ -15,14 +15,11 @@ metrics! {
 
 #[derive(Clone, Debug, Default)]
 pub struct BalancerMetrics {
-    balancers: Arc<Mutex<AHashMap<Labels, balance::EndpointsGauges>>>,
+    balancers: Arc<Mutex<AHashMap<ConcreteLabels, balance::EndpointsGauges>>>,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-struct Labels(ParentRef, BackendRef);
-
-struct Ready<'l>(&'l Labels);
-struct Pending<'l>(&'l Labels);
+struct Ready<'l>(&'l ConcreteLabels);
+struct Pending<'l>(&'l ConcreteLabels);
 
 // === impl RouteBackendMetrics ===
 
@@ -30,7 +27,7 @@ impl BalancerMetrics {
     pub(super) fn http_endpoints(&self, pr: ParentRef, br: BackendRef) -> balance::EndpointsGauges {
         self.balancers
             .lock()
-            .entry(Labels(pr, br))
+            .entry(ConcreteLabels(pr, br))
             .or_default()
             .clone()
     }
@@ -58,17 +55,7 @@ impl FmtMetrics for BalancerMetrics {
     }
 }
 
-impl FmtLabels for Labels {
-    fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Labels(parent, backend) = self;
-
-        crate::metrics::write_service_meta_labels("parent", parent, f)?;
-        f.write_char(',')?;
-        crate::metrics::write_service_meta_labels("backend", backend, f)?;
-
-        Ok(())
-    }
-}
+// === impl Ready ===
 
 impl<'l> FmtLabels for Ready<'l> {
     fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -76,6 +63,8 @@ impl<'l> FmtLabels for Ready<'l> {
         write!(f, ",endpoint_state=\"ready\"")
     }
 }
+
+// === impl Pending ===
 
 impl<'l> FmtLabels for Pending<'l> {
     fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -53,6 +53,7 @@ enum GateState {
 
 impl Failfast {
     pub(super) fn new(timeout: time::Duration, gate: gate::Tx, metrics: GateMetrics) -> Self {
+        metrics.open();
         Self {
             timeout,
             sleep: Box::pin(time::sleep(time::Duration::MAX)),
@@ -77,14 +78,7 @@ impl Failfast {
         if matches!(state, State::Failfast { .. }) {
             tracing::trace!("Exiting failfast");
             let _ = self.gate.open();
-            self.metrics.open.inc();
-            self.metrics.opened_time.set(
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_else(|_| Default::default())
-                    .as_secs_f64(),
-            );
-            self.metrics.closed_time.set(0.0);
+            self.metrics.open();
         }
         Some(state)
     }
@@ -116,14 +110,7 @@ impl Failfast {
         // advertise backpressure past the queue.
         self.state = Some(State::Failfast { since });
         let _ = self.gate.shut();
-        self.metrics.close.inc();
-        self.metrics.closed_time.set(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_else(|_| Default::default())
-                .as_secs_f64(),
-        );
-        self.metrics.opened_time.set(0.0);
+        self.metrics.close();
     }
 }
 
@@ -141,9 +128,10 @@ where
         );
 
         let changed_time = prom::Family::default();
-        reg.register(
+        reg.register_with_unit(
             "changed_time",
             "Indicates the time of the last state change for the current gate state",
+            prom::Unit::Seconds,
             changed_time.clone(),
         );
 
@@ -191,6 +179,30 @@ where
     }
 }
 
+impl GateMetrics {
+    fn open(&self) {
+        self.open.inc();
+        self.opened_time.set(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Default::default())
+                .as_secs_f64(),
+        );
+        self.closed_time.set(0.0);
+    }
+
+    fn close(&self) {
+        self.close.inc();
+        self.closed_time.set(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Default::default())
+                .as_secs_f64(),
+        );
+        self.opened_time.set(0.0);
+    }
+}
+
 impl<L: prom::encoding::EncodeLabelSet> prom::encoding::EncodeLabelSet for GateLabel<L> {
     fn encode(&self, mut enc: prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
         use prom::encoding::EncodeLabel;
@@ -227,16 +239,16 @@ mod tests {
         // request is received.
         assert!(!failfast.is_active(), "failfast should be active");
 
-        assert_eq!(metrics.open.get(), 0);
+        assert_eq!(metrics.open.get(), 1);
         assert_eq!(metrics.close.get(), 0);
-        assert_eq!(metrics.opened_time.get(), 0.0);
+        assert_ne!(metrics.opened_time.get(), 0.0);
         assert_eq!(metrics.closed_time.get(), 0.0);
 
         failfast.entered().await;
         assert!(failfast.is_active(), "failfast should be active");
         assert!(gate_rx.is_shut(), "gate should be shut");
 
-        assert_eq!(metrics.open.get(), 0);
+        assert_eq!(metrics.open.get(), 1);
         assert_eq!(metrics.close.get(), 1);
         assert_eq!(metrics.opened_time.get(), 0.0);
         assert_ne!(metrics.closed_time.get(), 0.0);
@@ -248,7 +260,7 @@ mod tests {
         assert!(failfast.is_active(), "failfast should be active");
         assert!(gate_rx.is_shut(), "gate should be shut");
 
-        assert_eq!(metrics.open.get(), 0);
+        assert_eq!(metrics.open.get(), 1);
         assert_eq!(metrics.close.get(), 1);
         assert_eq!(metrics.opened_time.get(), 0.0);
         assert_ne!(metrics.closed_time.get(), 0.0);
@@ -257,7 +269,7 @@ mod tests {
         assert!(!failfast.is_active(), "failfast should be inactive");
         assert!(gate_rx.is_open(), "gate should be open");
 
-        assert_eq!(metrics.open.get(), 1);
+        assert_eq!(metrics.open.get(), 2);
         assert_eq!(metrics.close.get(), 1);
         assert_ne!(metrics.opened_time.get(), 0.0);
         assert_eq!(metrics.closed_time.get(), 0.0);
@@ -274,7 +286,7 @@ mod tests {
             "failfast should be waiting"
         );
 
-        assert_eq!(metrics.open.get(), 1);
+        assert_eq!(metrics.open.get(), 2);
         assert_eq!(metrics.close.get(), 1);
         assert_ne!(metrics.opened_time.get(), 0.0);
         assert_eq!(metrics.closed_time.get(), 0.0);
@@ -283,7 +295,7 @@ mod tests {
         assert!(failfast.is_active(), "failfast should be active");
         assert!(gate_rx.is_shut(), "gate should be shut");
 
-        assert_eq!(metrics.open.get(), 1);
+        assert_eq!(metrics.open.get(), 2);
         assert_eq!(metrics.close.get(), 2);
         assert_eq!(metrics.opened_time.get(), 0.0);
         assert_ne!(metrics.closed_time.get(), 0.0);
