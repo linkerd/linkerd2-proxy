@@ -19,6 +19,7 @@ async fn processes_requests() {
     let mut poolq = PoolQueue::spawn(
         1,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -40,6 +41,7 @@ async fn processes_requests_cloned() {
     let mut poolq0 = PoolQueue::spawn(
         10,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -69,6 +71,7 @@ async fn limits_request_capacity() {
     let mut poolq0 = PoolQueue::spawn(
         1,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -97,6 +100,7 @@ async fn updates_while_pending() {
     let mut poolq = PoolQueue::spawn(
         1,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -134,6 +138,7 @@ async fn updates_while_idle() {
     let mut _poolq = PoolQueue::spawn(
         1,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -163,6 +168,7 @@ async fn complete_resolution() {
     let mut poolq = PoolQueue::spawn(
         1,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -196,6 +202,7 @@ async fn error_resolution() {
     let mut poolq = PoolQueue::spawn(
         10,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -233,6 +240,7 @@ async fn error_pool_while_pending() {
     let mut poolq = PoolQueue::spawn(
         10,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -269,6 +277,7 @@ async fn error_after_ready() {
     let mut poolq = PoolQueue::spawn(
         10,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -298,6 +307,7 @@ async fn terminates() {
     let mut poolq = PoolQueue::spawn(
         10,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -329,6 +339,7 @@ async fn failfast() {
     let mut poolq = PoolQueue::spawn(
         10,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );
@@ -367,6 +378,7 @@ async fn failfast_interrupted() {
     let mut poolq = PoolQueue::spawn(
         10,
         time::Duration::from_secs(1),
+        Default::default(),
         ReceiverStream::from(u),
         pool,
     );

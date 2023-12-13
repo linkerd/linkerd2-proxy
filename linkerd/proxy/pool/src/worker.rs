@@ -4,7 +4,7 @@ use crate::{
     error,
     failfast::{self, Failfast},
     message::Message,
-    Pool,
+    Pool, QueueMetrics,
 };
 use futures::{future, TryStream, TryStreamExt};
 use linkerd_error::{Error, Result};
@@ -53,6 +53,7 @@ pub(crate) fn spawn<T, Req, R, P>(
     failfast: time::Duration,
     gate: gate::Tx,
     terminal: Terminate,
+    metrics: QueueMetrics,
     updates_rx: R,
     pool: P,
 ) -> JoinHandle<Result<()>>
@@ -68,7 +69,7 @@ where
     tokio::spawn(
         async move {
             let mut worker = Worker {
-                pool: PoolDriver::new(pool, Failfast::new(failfast, gate)),
+                pool: PoolDriver::new(pool, Failfast::new(failfast, gate, metrics.gate.clone())),
                 discovery: Discovery::new(updates_rx),
             };
 
@@ -87,7 +88,7 @@ where
                     // If either the discovery stream or the pool fail, close
                     // the request stream and process any remaining requests.
                     e = worker.drive_pool() => {
-                        terminal.close(reqs_rx, error::TerminalFailure::new(e)).await;
+                        terminal.close(reqs_rx, metrics, error::TerminalFailure::new(e)).await;
                         return Ok(());
                     }
 
@@ -99,13 +100,14 @@ where
                         }
                     },
                 };
+                metrics.length.dec();
 
                 // Wait for the pool to be ready to process a request. If this fails, we enter
                 tracing::trace!("Waiting for inner service readiness");
                 if let Err(e) = worker.ready_pool_for_request().await {
                     let error = error::TerminalFailure::new(e);
                     msg.fail(error.clone());
-                    terminal.close(reqs_rx, error).await;
+                    terminal.close(reqs_rx, metrics, error).await;
                     return Ok(());
                 }
                 tracing::trace!("Pool ready");
@@ -113,6 +115,9 @@ where
                 // Process requests, either by dispatching them to the pool or
                 // by serving errors directly.
                 let Message { req, tx, span, t0 } = msg;
+                let latency = time::Instant::now() - t0;
+                metrics.latency.observe(latency.as_secs_f64());
+
                 let call = {
                     // Preserve the original request's tracing context in
                     // the inner call.
@@ -121,13 +126,9 @@ where
                 };
 
                 if tx.send(call).is_ok() {
-                    // TODO(ver) track histogram from t0 until the request is dispatched.
-                    tracing::trace!(
-                        latency = (time::Instant::now() - t0).as_secs_f64(),
-                        "Dispatched"
-                    );
+                    tracing::trace!(?latency, "Dispatched");
                 } else {
-                    tracing::debug!("Caller dropped");
+                    tracing::debug!(?latency, "Caller dropped");
                 }
             }
         }
@@ -346,6 +347,7 @@ impl Terminate {
     async fn close<Req, F>(
         self,
         mut reqs_rx: mpsc::Receiver<Message<Req, F>>,
+        metrics: QueueMetrics,
         error: error::TerminalFailure,
     ) {
         tracing::debug!(%error, "Closing pool");
@@ -353,6 +355,10 @@ impl Terminate {
         reqs_rx.close();
 
         while let Some(msg) = reqs_rx.recv().await {
+            metrics
+                .latency
+                .observe((time::Instant::now() - msg.t0).as_secs_f64());
+            metrics.length.dec();
             msg.fail(error.clone());
         }
 
