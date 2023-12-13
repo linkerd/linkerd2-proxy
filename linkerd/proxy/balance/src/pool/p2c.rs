@@ -6,6 +6,7 @@ use super::{Pool, Update};
 use ahash::AHashMap;
 use futures_util::TryFutureExt;
 use linkerd_error::Error;
+use linkerd_metrics::prom;
 use linkerd_stack::{NewService, Service};
 use rand::{rngs::SmallRng, thread_rng, Rng, SeedableRng};
 use std::{
@@ -26,7 +27,32 @@ pub struct P2cPool<T, N, Req, S> {
     endpoints: AHashMap<SocketAddr, T>,
     pool: ReadyCache<SocketAddr, S, Req>,
     rng: SmallRng,
+    metrics: P2cMetrics,
     next_idx: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub struct P2cMetricFamilies<L, U> {
+    endpoints: prom::Family<L, prom::Gauge>,
+    updates: prom::Family<U, prom::Counter>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct P2cMetrics {
+    endpoints: prom::Gauge,
+
+    /// Measures the number of Reset updates received from service discovery.
+    updates_reset: prom::Counter,
+
+    /// Measures the number of Add updates received from service discovery.
+    updates_add: prom::Counter,
+
+    /// Measures the number of Remove updates received from service discovery.
+    updates_rm: prom::Counter,
+
+    /// Measures the number of DoesNotExist updates received from service
+    /// discovery.
+    updates_dne: prom::Counter,
 }
 
 impl<T, N, Req, S> P2cPool<T, N, Req, S>
@@ -37,10 +63,11 @@ where
     S::Error: Into<Error>,
     S::Metric: std::fmt::Debug,
 {
-    pub fn new(new_endpoint: N) -> Self {
+    pub fn new(metrics: P2cMetrics, new_endpoint: N) -> Self {
         let rng = SmallRng::from_rng(&mut thread_rng()).expect("RNG must be seeded");
         Self {
             rng,
+            metrics,
             new_endpoint,
             next_idx: None,
             pool: ReadyCache::default(),
@@ -56,21 +83,32 @@ where
         let mut changed = false;
         let mut remaining = std::mem::take(&mut self.endpoints);
         for (addr, target) in targets.into_iter() {
-            if remaining.remove(&addr).as_ref() == Some(&target) {
+            let t = remaining.remove(&addr);
+            if t.as_ref() == Some(&target) {
                 tracing::debug!(?addr, "Endpoint unchanged");
             } else {
-                tracing::debug!(?addr, "Creating endpoint");
+                if t.is_none() {
+                    tracing::debug!(?addr, "Creating endpoint");
+                    self.metrics.endpoints.inc();
+                } else {
+                    tracing::debug!(?addr, "Updating endpoint");
+                }
+
                 let svc = self.new_endpoint.new_service((addr, target.clone()));
                 self.pool.push(addr, svc);
                 changed = true;
             }
+
             self.endpoints.insert(addr, target);
         }
+
         for (addr, _) in remaining.drain() {
             tracing::debug!(?addr, "Removing endpoint");
-            let evict = self.pool.evict(&addr);
-            changed = evict || changed;
+            self.pool.evict(&addr);
+            self.metrics.endpoints.dec();
+            changed = true;
         }
+
         changed
     }
 
@@ -91,6 +129,7 @@ where
                 }
                 Entry::Vacant(e) => {
                     e.insert(target.clone());
+                    self.metrics.endpoints.inc();
                 }
             }
             tracing::debug!(?addr, "Creating endpoint");
@@ -109,8 +148,9 @@ where
         for addr in addrs.into_iter() {
             if self.endpoints.remove(&addr).is_some() {
                 tracing::debug!(?addr, "Removing endpoint");
-                let evict = self.pool.evict(&addr);
-                changed = evict || changed;
+                self.pool.evict(&addr);
+                self.metrics.endpoints.dec();
+                changed = true;
             } else {
                 tracing::debug!(?addr, "Unknown endpoint");
             }
@@ -122,11 +162,11 @@ where
     ///
     /// Returns true if the pool was changed.
     fn clear(&mut self) -> bool {
-        let mut changed = false;
+        let changed = !self.endpoints.is_empty();
         for (addr, _) in self.endpoints.drain() {
             tracing::debug!(?addr, "Clearing endpoint");
-            let evict = self.pool.evict(&addr);
-            changed = evict || changed;
+            self.pool.evict(&addr);
+            self.metrics.endpoints.dec();
         }
         changed
     }
@@ -184,6 +224,7 @@ where
 {
     fn update_pool(&mut self, update: Update<T>) {
         tracing::trace!(?update);
+        self.metrics.inc(&update);
         let changed = match update {
             Update::Reset(targets) => self.reset(targets),
             Update::Add(targets) => self.add(targets),
@@ -262,6 +303,78 @@ where
     }
 }
 
+// === impl P2cMetricFamilies ===
+
+impl<L, U> P2cMetricFamilies<L, U>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone + Send + Sync + 'static,
+    U: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    U: Eq + Clone + Send + Sync + 'static,
+{
+    pub fn register(reg: &mut prom::registry::Registry) -> Self {
+        let endpoints = prom::Family::default();
+        reg.register(
+            "endpoints",
+            "The number of endpoints currently in the balancer",
+            endpoints.clone(),
+        );
+
+        let updates = prom::Family::default();
+        reg.register(
+            "updates",
+            "The total number of service discovery updates received by a balancer",
+            updates.clone(),
+        );
+
+        Self { endpoints, updates }
+    }
+
+    pub fn metrics<'l>(&self, labels: &'l L) -> P2cMetrics
+    where
+        U: From<(Update<()>, &'l L)>,
+    {
+        let endpoints: prom::Gauge = self.endpoints.get_or_create(labels).clone();
+        let updates_reset: prom::Counter = self
+            .updates
+            .get_or_create(&(Update::Reset(vec![]), labels).into())
+            .clone();
+        let updates_add: prom::Counter = self
+            .updates
+            .get_or_create(&(Update::Add(vec![]), labels).into())
+            .clone();
+        let updates_rm: prom::Counter = self
+            .updates
+            .get_or_create(&(Update::Remove(vec![]), labels).into())
+            .clone();
+        let updates_dne: prom::Counter = self
+            .updates
+            .get_or_create(&(Update::DoesNotExist, labels).into())
+            .clone();
+        P2cMetrics {
+            endpoints,
+            updates_reset,
+            updates_add,
+            updates_rm,
+            updates_dne,
+        }
+    }
+}
+
+// === impl P2cMetrics ===
+
+impl P2cMetrics {
+    fn inc<T>(&self, up: &Update<T>) {
+        match up {
+            Update::Reset(..) => &self.updates_reset,
+            Update::Add(..) => &self.updates_add,
+            Update::Remove(..) => &self.updates_rm,
+            Update::DoesNotExist { .. } => &self.updates_dne,
+        }
+        .inc();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,7 +406,8 @@ mod tests {
         let addr1 = "192.168.10.11:80".parse().unwrap();
 
         let seen = Arc::new(Mutex::new(HashSet::<(SocketAddr, usize)>::default()));
-        let mut pool = P2cPool::new(|(addr, n): (SocketAddr, usize)| {
+        let metrics = P2cMetrics::default();
+        let mut pool = P2cPool::new(metrics.clone(), |(addr, n): (SocketAddr, usize)| {
             assert!(seen.lock().insert((addr, n)));
             PeakEwma::new(
                 linkerd_stack::service_fn(|()| {
@@ -307,42 +421,65 @@ mod tests {
 
         pool.update_pool(Update::Reset(vec![(addr0, 0)]));
         assert_eq!(pool.endpoints.len(), 1);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&0));
 
         pool.update_pool(Update::Add(vec![(addr0, 1)]));
         assert_eq!(pool.endpoints.len(), 1);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&1));
 
         pool.update_pool(Update::Reset(vec![(addr0, 1)]));
         assert_eq!(pool.endpoints.len(), 1);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&1));
 
         pool.update_pool(Update::Add(vec![(addr1, 1)]));
         assert_eq!(pool.endpoints.len(), 2);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr1), Some(&1));
 
         pool.update_pool(Update::Add(vec![(addr1, 1)]));
         assert_eq!(pool.endpoints.len(), 2);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr1), Some(&1));
 
         pool.update_pool(Update::Remove(vec![addr0]));
         assert_eq!(pool.endpoints.len(), 1);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
+
+        pool.update_pool(Update::Remove(vec![addr0]));
+        assert_eq!(pool.endpoints.len(), 1);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
 
         pool.update_pool(Update::Reset(vec![(addr0, 2), (addr1, 2)]));
         assert_eq!(pool.endpoints.len(), 2);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&2));
         assert_eq!(pool.endpoints.get(&addr1), Some(&2));
 
         pool.update_pool(Update::Reset(vec![(addr0, 2)]));
         assert_eq!(pool.endpoints.len(), 1);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&2));
 
         pool.update_pool(Update::Reset(vec![(addr0, 3)]));
         assert_eq!(pool.endpoints.len(), 1);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&3));
 
         pool.update_pool(Update::DoesNotExist);
         assert_eq!(pool.endpoints.len(), 0);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
+
+        pool.update_pool(Update::DoesNotExist);
+        assert_eq!(pool.endpoints.len(), 0);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
+
+        assert_eq!(metrics.updates_reset.get(), 5);
+        assert_eq!(metrics.updates_add.get(), 3);
+        assert_eq!(metrics.updates_rm.get(), 2);
+        assert_eq!(metrics.updates_dne.get(), 2);
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -361,7 +498,8 @@ mod tests {
         let (svc2, mut h2) = tower_test::mock::pair::<(), ()>();
         h2.allow(0);
 
-        let mut pool = P2cPool::new(|(a, ())| {
+        let metrics = P2cMetrics::default();
+        let mut pool = P2cPool::new(metrics, |(a, ())| {
             PeakEwma::new(
                 if a == addr0 {
                     svc0.clone()

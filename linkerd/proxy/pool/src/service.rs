@@ -2,7 +2,7 @@ use crate::{
     future::ResponseFuture,
     message::Message,
     worker::{self, Terminate},
-    Pool,
+    Pool, QueueMetrics,
 };
 use futures::TryStream;
 use linkerd_error::{Error, Result};
@@ -19,6 +19,7 @@ use tokio_util::sync::PollSender;
 #[derive(Debug)]
 pub struct PoolQueue<Req, F> {
     tx: PollSender<Message<Req, F>>,
+    metrics: QueueMetrics,
     terminal: Terminate,
 }
 
@@ -30,6 +31,7 @@ where
     pub fn spawn<T, R, P>(
         capacity: usize,
         failfast: time::Duration,
+        metrics: QueueMetrics,
         resolution: R,
         pool: P,
     ) -> gate::Gate<Self>
@@ -47,8 +49,9 @@ where
         let inner = Self {
             tx: PollSender::new(tx),
             terminal: terminal.clone(),
+            metrics: metrics.clone(),
         };
-        worker::spawn(rx, failfast, gate_tx, terminal, resolution, pool);
+        worker::spawn(rx, failfast, gate_tx, terminal, metrics, resolution, pool);
         gate::Gate::new(gate_rx, inner)
     }
 }
@@ -85,6 +88,8 @@ where
                     .expect("worker must set a failure if it exits prematurely"),
             );
         }
+        self.metrics.length.inc();
+        self.metrics.requests.inc();
         ResponseFuture::new(rx)
     }
 }
@@ -98,6 +103,7 @@ where
         Self {
             terminal: self.terminal.clone(),
             tx: self.tx.clone(),
+            metrics: self.metrics.clone(),
         }
     }
 }
