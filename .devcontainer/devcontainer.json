@@ -19,7 +19,9 @@
 				"tamasfe.even-better-toml",
 				"zxh404.vscode-proto3"
 			],
-			"settings": {}
+			"settings": {
+				"files.insertFinalNewline": true
+			}
 		}
 	},
 	// Support docker + debugger

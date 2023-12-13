@@ -11,12 +11,11 @@ use tower::{
 
 mod discover;
 mod gauge_endpoints;
-mod pool;
+pub mod pool;
 
 pub use self::{
     discover::DiscoveryStreamOverflow,
     gauge_endpoints::{EndpointsGauges, NewGaugeEndpoints},
-    pool::P2cPool,
 };
 pub use tower::load::peak_ewma::Handle;
 
