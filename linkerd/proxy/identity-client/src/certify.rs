@@ -5,7 +5,11 @@ use linkerd_dns_name::Name;
 use linkerd_error::{Error, Result};
 use linkerd_identity::{Credentials, DerX509};
 use linkerd_stack::NewService;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use thiserror::Error;
 use tokio::time;
 use tonic::{body::BoxBody, client::GrpcService};
@@ -17,13 +21,12 @@ pub struct Config {
     pub token: TokenSource,
     pub min_refresh: Duration,
     pub max_refresh: Duration,
-    pub documents: Documents,
+    pub documents: Arc<Documents>,
 }
 
-#[derive(Clone)]
 pub struct Documents {
-    pub key_pkcs8: Vec<u8>,
-    pub csr_der: Vec<u8>,
+    key_pkcs8: Vec<u8>,
+    csr_der: Vec<u8>,
 }
 
 #[derive(Copy, Clone, Debug, Error)]
@@ -34,6 +37,47 @@ pub struct LostDaemon(());
 pub struct Certify {
     config: Config,
     metrics: Metrics,
+}
+
+impl Documents {
+    /// Loads a csr.der and key.p8 from the given directory.
+    ///
+    /// Note that this uses blocking I/O.
+    pub fn load(dir: PathBuf) -> std::io::Result<Arc<Self>> {
+        let csrp = {
+            let mut p = dir.clone();
+            p.push("csr");
+            p.set_extension("der");
+            p
+        };
+        let csr_der = std::fs::read(csrp).and_then(|b| {
+            if b.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "empty CSR",
+                ));
+            }
+            Ok(b)
+        })?;
+
+        let keyp = {
+            let mut p = dir;
+            p.push("key");
+            p.set_extension("p8");
+            p
+        };
+        let key_pkcs8 = std::fs::read(keyp).and_then(|b| {
+            if b.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "empty key",
+                ));
+            }
+            Ok(b)
+        })?;
+
+        Ok(Arc::new(Self { key_pkcs8, csr_der }))
+    }
 }
 
 // === impl Certify ===
@@ -71,8 +115,7 @@ impl Certify {
                 let client = new_client.new_service(());
                 certify(
                     &self.config.token,
-                    &self.config.documents.key_pkcs8,
-                    &self.config.documents.csr_der,
+                    &self.config.documents,
                     client,
                     &name,
                     &mut credentials,
@@ -102,7 +145,10 @@ impl Certify {
 
 impl std::fmt::Debug for Documents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Documents")
+        f.debug_struct("Documents")
+            .field("key_pkcs8", &"...")
+            .field("csr_der", &"...")
+            .finish()
     }
 }
 
@@ -110,8 +156,7 @@ impl std::fmt::Debug for Documents {
 /// source.
 async fn certify<C, S>(
     token: &TokenSource,
-    key: &[u8],
-    csr: &[u8],
+    docs: &Documents,
     client: S,
     name: &Name,
     credentials: &mut C,
@@ -125,7 +170,7 @@ where
     let req = tonic::Request::new(api::CertifyRequest {
         token: token.load()?,
         identity: name.to_string(),
-        certificate_signing_request: csr.to_vec(),
+        certificate_signing_request: docs.csr_der.clone(),
     });
 
     let api::CertifyResponse {
@@ -142,7 +187,7 @@ where
     credentials.set_certificate(
         DerX509(leaf_certificate),
         intermediate_certificates.into_iter().map(DerX509).collect(),
-        key.to_vec(),
+        docs.key_pkcs8.clone(),
     )?;
 
     Ok(expiry)

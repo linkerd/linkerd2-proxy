@@ -1207,59 +1207,21 @@ pub fn parse_identity_config<S: Strings>(
             min_refresh,
             max_refresh,
         ) => {
-            let key = {
-                let mut p = dir.clone();
-                p.push("key");
-                p.set_extension("p8");
-
-                fs::read(p)
-                    .map_err(|e| {
-                        error!("Failed to read key: {}", e);
-                        EnvError::InvalidEnvVar
-                    })
-                    .and_then(|b| {
-                        if b.is_empty() {
-                            error!("No CSR found");
-                            return Err(EnvError::InvalidEnvVar);
-                        }
-                        Ok(b)
-                    })
-            };
-
-            let csr = {
-                let mut p = dir;
-                p.push("csr");
-                p.set_extension("der");
-
-                fs::read(p)
-                    .map_err(|e| {
-                        error!("Failed to read Csr: {}", e);
-                        EnvError::InvalidEnvVar
-                    })
-                    .and_then(|b| {
-                        if b.is_empty() {
-                            error!("No CSR found");
-                            return Err(EnvError::InvalidEnvVar);
-                        }
-                        Ok(b)
-                    })
-            };
-
             let certify = identity::certify::Config {
                 token,
                 min_refresh: min_refresh.unwrap_or(DEFAULT_IDENTITY_MIN_REFRESH),
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
-                documents: identity::certify::Documents {
-                    key_pkcs8: key?,
-                    csr_der: csr?,
-                },
+                documents: identity::certify::Documents::load(dir).map_err(|error| {
+                    error!(%error, "Failed to read identity documents");
+                    EnvError::InvalidEnvVar
+                })?,
             };
-            let docs = identity::TlsParams {
+            let params = identity::TlsParams {
                 server_id: identity::Id::Dns(local_name.clone()),
                 server_name: local_name,
                 trust_anchors_pem,
             };
-            Ok((control, certify, docs))
+            Ok((control, certify, params))
         }
         (addr, trust_anchors, end_entity_dir, local_id, token, _minr, _maxr) => {
             let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);
