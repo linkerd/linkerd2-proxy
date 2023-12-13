@@ -122,10 +122,9 @@ where
         );
 
         let shut = prom::Family::default();
-        reg.register_with_unit(
+        reg.register(
             "shut",
             "The total number of gate state changes from open to shut",
-            prom::Unit::Seconds,
             shut.clone(),
         );
 
