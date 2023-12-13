@@ -27,6 +27,7 @@ pub(super) enum State {
 pub(crate) struct GateMetricFamilies<L> {
     changed_time: prom::Family<GateLabel<L>, prom::Gauge<f64, AtomicU64>>,
     changes: prom::Family<GateLabel<L>, prom::Counter>,
+    timeout: prom::Family<L, prom::Gauge<f64, AtomicU64>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -35,6 +36,7 @@ pub(crate) struct GateMetrics {
     close: prom::Counter,
     opened_time: prom::Gauge<f64, AtomicU64>,
     closed_time: prom::Gauge<f64, AtomicU64>,
+    timeout: prom::Gauge<f64, AtomicU64>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -53,7 +55,9 @@ enum GateState {
 
 impl Failfast {
     pub(super) fn new(timeout: time::Duration, gate: gate::Tx, metrics: GateMetrics) -> Self {
+        metrics.timeout.set(timeout.as_secs_f64());
         metrics.open();
+
         Self {
             timeout,
             sleep: Box::pin(time::sleep(time::Duration::MAX)),
@@ -135,9 +139,18 @@ where
             changed_time.clone(),
         );
 
+        let timeout = prom::Family::default();
+        reg.register_with_unit(
+            "failfast_timeout",
+            "Indicates the time of failfast timeout",
+            prom::Unit::Seconds,
+            timeout.clone(),
+        );
+
         Self {
             changes,
             changed_time,
+            timeout,
         }
     }
 
@@ -170,11 +183,13 @@ where
                 parent: labels.clone(),
             })
             .clone();
+        let timeout = self.timeout.get_or_create(labels).clone();
         GateMetrics {
             open,
             close,
             opened_time,
             closed_time,
+            timeout,
         }
     }
 }
