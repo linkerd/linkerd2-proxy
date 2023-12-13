@@ -1,6 +1,7 @@
 use super::Endpoint;
 use crate::{
     http::{self, balance, breaker},
+    metrics::BalancerMetricsParams,
     stack_labels, BackendRef, ParentRef,
 };
 use linkerd_app_core::{
@@ -57,6 +58,18 @@ impl<T> svc::Param<svc::queue::Timeout> for Balance<T> {
     }
 }
 
+impl<T: svc::Param<ParentRef>> svc::Param<ParentRef> for Balance<T> {
+    fn param(&self) -> ParentRef {
+        self.parent.param()
+    }
+}
+
+impl<T: svc::Param<BackendRef>> svc::Param<BackendRef> for Balance<T> {
+    fn param(&self) -> BackendRef {
+        self.parent.param()
+    }
+}
+
 impl<T> Balance<T>
 where
     // Parent target.
@@ -68,7 +81,7 @@ where
     pub(super) fn layer<N, NSvc, R>(
         config: &crate::Config,
         rt: &crate::Runtime,
-        _registry: &mut prom::Registry,
+        registry: &mut prom::Registry,
         resolve: R,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
@@ -91,6 +104,8 @@ where
         let resolve = svc::stack(resolve.into_service())
             .push_map_target(|t: Self| ConcreteAddr(t.addr))
             .into_inner();
+
+        let metrics_params = BalancerMetricsParams::register(registry);
 
         svc::layer::mk(move |inner: N| {
             let endpoint = svc::stack(inner)
@@ -140,11 +155,13 @@ where
                 .push(svc::ArcNewService::layer());
 
             endpoint
-                .push(http::NewBalancePeakEwma::layer(resolve.clone()))
+                .push(http::NewBalancePeakEwma::layer(
+                    resolve.clone(),
+                    metrics_params.clone(),
+                ))
                 .push_on_service(http::BoxResponse::layer())
                 .push_on_service(metrics.proxy.stack.layer(stack_labels("http", "balance")))
                 .push(svc::NewMapErr::layer_from_target::<BalanceError, _>())
-                .push(svc::NewQueue::layer())
                 .instrument(|t: &Self| {
                     let BackendRef(meta) = t.parent.param();
                     info_span!(

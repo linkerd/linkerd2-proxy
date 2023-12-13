@@ -32,9 +32,9 @@ pub struct P2cPool<T, N, Req, S> {
 }
 
 #[derive(Clone, Debug)]
-pub struct P2cMetricFamilies<L, U> {
+pub struct P2cMetricFamilies<L> {
     endpoints: prom::Family<L, prom::Gauge>,
-    updates: prom::Family<U, prom::Counter>,
+    updates: prom::Family<UpdateLabels<L>, prom::Counter>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -53,6 +53,20 @@ pub struct P2cMetrics {
     /// Measures the number of DoesNotExist updates received from service
     /// discovery.
     updates_dne: prom::Counter,
+}
+
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub struct UpdateLabels<L> {
+    op: UpdateOp,
+    labels: L,
+}
+
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, prom::encoding::EncodeLabelValue)]
+pub enum UpdateOp {
+    Reset,
+    Add,
+    Remove,
+    DoesNotExist,
 }
 
 impl<T, N, Req, S> P2cPool<T, N, Req, S>
@@ -305,12 +319,10 @@ where
 
 // === impl P2cMetricFamilies ===
 
-impl<L, U> P2cMetricFamilies<L, U>
+impl<L> P2cMetricFamilies<L>
 where
     L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
     L: Eq + Clone + Send + Sync + 'static,
-    U: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
-    U: Eq + Clone + Send + Sync + 'static,
 {
     pub fn register(reg: &mut prom::registry::Registry) -> Self {
         let endpoints = prom::Family::default();
@@ -330,26 +342,35 @@ where
         Self { endpoints, updates }
     }
 
-    pub fn metrics<'l>(&self, labels: &'l L) -> P2cMetrics
-    where
-        U: From<(Update<()>, &'l L)>,
-    {
+    pub fn metrics(&self, labels: &L) -> P2cMetrics {
         let endpoints: prom::Gauge = self.endpoints.get_or_create(labels).clone();
         let updates_reset: prom::Counter = self
             .updates
-            .get_or_create(&(Update::Reset(vec![]), labels).into())
+            .get_or_create(&UpdateLabels {
+                op: UpdateOp::Reset,
+                labels: labels.clone(),
+            })
             .clone();
         let updates_add: prom::Counter = self
             .updates
-            .get_or_create(&(Update::Add(vec![]), labels).into())
+            .get_or_create(&UpdateLabels {
+                op: UpdateOp::Add,
+                labels: labels.clone(),
+            })
             .clone();
         let updates_rm: prom::Counter = self
             .updates
-            .get_or_create(&(Update::Remove(vec![]), labels).into())
+            .get_or_create(&UpdateLabels {
+                op: UpdateOp::Remove,
+                labels: labels.clone(),
+            })
             .clone();
         let updates_dne: prom::Counter = self
             .updates
-            .get_or_create(&(Update::DoesNotExist, labels).into())
+            .get_or_create(&UpdateLabels {
+                op: UpdateOp::DoesNotExist,
+                labels: labels.clone(),
+            })
             .clone();
         P2cMetrics {
             endpoints,
@@ -372,6 +393,14 @@ impl P2cMetrics {
             Update::DoesNotExist { .. } => &self.updates_dne,
         }
         .inc();
+    }
+}
+
+impl<L: prom::encoding::EncodeLabelSet> prom::encoding::EncodeLabelSet for UpdateLabels<L> {
+    fn encode(&self, mut enc: prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+        use prom::encoding::EncodeLabel;
+        ("op", self.op).encode(enc.encode_label())?;
+        self.labels.encode(enc)
     }
 }
 

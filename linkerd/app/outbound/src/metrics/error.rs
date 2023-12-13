@@ -6,7 +6,7 @@ use crate::http::IdentityRequired;
 use linkerd_app_core::{
     errors::{FailFastError, LoadShedError},
     metrics::FmtLabels,
-    proxy::http::{balance::DiscoveryStreamOverflow, ResponseTimeoutError},
+    proxy::http::ResponseTimeoutError,
 };
 use std::fmt;
 
@@ -19,7 +19,6 @@ enum ErrorKind {
     ResponseTimeout,
     Unexpected,
     LoadShed,
-    DiscoveryStreamOverflow,
 }
 
 // === impl ErrorKind ===
@@ -36,8 +35,6 @@ impl ErrorKind {
             ErrorKind::ResponseTimeout
         } else if err.is::<LoadShedError>() {
             ErrorKind::LoadShed
-        } else if err.is::<DiscoveryStreamOverflow>() {
-            ErrorKind::DiscoveryStreamOverflow
         } else if let Some(e) = err.source() {
             Self::mk(e)
         } else {
@@ -57,7 +54,6 @@ impl FmtLabels for ErrorKind {
                 ErrorKind::IdentityRequired => "identity required",
                 ErrorKind::Io => "i/o",
                 ErrorKind::ResponseTimeout => "response timeout",
-                ErrorKind::DiscoveryStreamOverflow => "discovery stream overflow",
                 ErrorKind::Unexpected => "unexpected",
             }
         )

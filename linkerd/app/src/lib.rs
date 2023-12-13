@@ -131,8 +131,6 @@ impl Config {
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
         let mut registry = prom::Registry::default();
-        registry.register("proxy_build_info", "Proxy build info", BUILD_INFO.metric());
-        metrics::process::register(registry.sub_registry_with_prefix("process"));
 
         debug!("Building DNS client");
         let dns = dns.build();
@@ -140,7 +138,7 @@ impl Config {
         // Ensure that we've obtained a valid identity before binding any servers.
         debug!("Building Identity client");
         let identity = {
-            let registry = registry.sub_registry_with_prefix("control_id");
+            let registry = registry.sub_registry_with_prefix("control_identity");
             info_span!("identity").in_scope(|| {
                 identity.build(dns.resolver.clone(), metrics.control.clone(), registry)
             })?
@@ -159,7 +157,7 @@ impl Config {
 
         debug!("Building Destination client");
         let dst = {
-            let registry = registry.sub_registry_with_prefix("control_dst");
+            let registry = registry.sub_registry_with_prefix("control_destination");
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
             info_span!("dst")
@@ -210,7 +208,7 @@ impl Config {
 
         let dst_addr = dst.addr.clone();
         let gateway = gateway::Gateway::new(gateway, inbound.clone(), outbound.clone()).stack(
-            registry.sub_registry_with_prefix("outbound"),
+            registry.sub_registry_with_prefix("gateway"),
             dst.resolve.clone(),
             dst.profiles.clone(),
             outbound_policies.clone(),
@@ -259,6 +257,9 @@ impl Config {
                 );
             })
         };
+
+        metrics::process::register(registry.sub_registry_with_prefix("process"));
+        registry.register("proxy_build_info", "Proxy build info", BUILD_INFO.metric());
 
         let admin = {
             let identity = identity.receiver().server();

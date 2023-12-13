@@ -44,6 +44,19 @@ impl svc::Param<Addr> for ControlAddr {
     }
 }
 
+impl svc::Param<svc::queue::Capacity> for ControlAddr {
+    fn param(&self) -> svc::queue::Capacity {
+        svc::queue::Capacity(1_000)
+    }
+}
+
+impl svc::Param<svc::queue::Timeout> for ControlAddr {
+    fn param(&self) -> svc::queue::Timeout {
+        const FAILFAST: time::Duration = time::Duration::from_secs(30);
+        svc::queue::Timeout(FAILFAST)
+    }
+}
+
 impl svc::Param<http::balance::EwmaConfig> for ControlAddr {
     fn param(&self) -> http::balance::EwmaConfig {
         EWMA_CONFIG
@@ -76,6 +89,7 @@ impl Config {
         svc::BoxCloneSyncService<http::Request<tonic::body::BoxBody>, http::Response<RspBody>>,
     > {
         let addr = self.addr;
+        tracing::trace!(%addr, "Building");
 
         // When a DNS resolution fails, log the error and use the TTL, if there
         // is one, to drive re-resolution attempts.
@@ -121,11 +135,7 @@ impl Config {
             .lift_new()
             .push(self::balance::layer(registry, dns, resolve_backoff))
             .push(metrics.to_layer::<classify::Response, _, _>())
-            .push(classify::NewClassify::layer_default())
-            // This buffer allows a resolver client to be shared across stacks.
-            // No load shed is applied here, however, so backpressure may leak
-            // into the caller task.
-            .push(svc::NewQueue::layer_via(self.buffer));
+            .push(classify::NewClassify::layer_default());
 
         balance
             .push(self::add_origin::layer())
@@ -159,7 +169,7 @@ impl From<(&self::client::Target, Error)> for EndpointError {
 /// Sets the request's URI from `Config`.
 mod add_origin {
     use super::ControlAddr;
-    use linkerd_stack::{layer, NewService};
+    use crate::svc::{layer, NewService};
     use std::task::{Context, Poll};
 
     pub fn layer<M>() -> impl layer::Layer<M, Service = NewAddOrigin<M>> + Clone {
@@ -219,25 +229,35 @@ mod balance {
     use super::{client::Target, ControlAddr};
     use crate::{
         dns,
+        metrics::prom::{self, encoding::EncodeLabelSet},
         proxy::{dns_resolve::DnsResolve, http, resolve::recover},
         svc, tls,
     };
-    use linkerd_metrics::prom;
+    use linkerd_stack::ExtractParam;
     use std::net::SocketAddr;
 
     pub fn layer<B, R: Clone, N>(
-        _registry: &mut prom::Registry,
+        registry: &mut prom::Registry,
         dns: dns::Resolver,
         recover: R,
     ) -> impl svc::Layer<
         N,
-        Service = http::NewBalancePeakEwma<B, recover::Resolve<R, DnsResolve>, NewIntoTarget<N>>,
+        Service = http::NewBalancePeakEwma<
+            B,
+            Params,
+            recover::Resolve<R, DnsResolve>,
+            NewIntoTarget<N>,
+        >,
     > {
         let resolve = recover::Resolve::new(recover, DnsResolve::new(dns));
+        let metrics = Params(http::balance::MetricFamilies::register(registry));
         svc::layer::mk(move |inner| {
-            http::NewBalancePeakEwma::new(NewIntoTarget { inner }, resolve.clone())
+            http::NewBalancePeakEwma::new(NewIntoTarget { inner }, resolve.clone(), metrics.clone())
         })
     }
+
+    #[derive(Clone, Debug)]
+    pub struct Params(http::balance::MetricFamilies<Labels>);
 
     #[derive(Clone, Debug)]
     pub struct NewIntoTarget<N> {
@@ -248,6 +268,11 @@ mod balance {
     pub struct IntoTarget<N> {
         inner: N,
         server_id: tls::ConditionalClientTls,
+    }
+
+    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+    struct Labels {
+        addr: String,
     }
 
     // === impl NewIntoTarget ===
@@ -271,6 +296,16 @@ mod balance {
         fn new_service(&self, (addr, ()): (SocketAddr, ())) -> Self::Service {
             self.inner
                 .new_service(Target::new(addr, self.server_id.clone()))
+        }
+    }
+
+    // === impl Metrics ===
+
+    impl ExtractParam<http::balance::Metrics, ControlAddr> for Params {
+        fn extract_param(&self, tgt: &ControlAddr) -> http::balance::Metrics {
+            self.0.metrics(&Labels {
+                addr: tgt.addr.to_string(),
+            })
         }
     }
 }

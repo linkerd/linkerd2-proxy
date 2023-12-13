@@ -163,7 +163,7 @@ where
         // Create concrete targets for all of the profile's routes.
         let (backends, distribution) = if profile.targets.is_empty() {
             let concrete = Concrete {
-                target: concrete::Dispatch::Balance(routable.addr, EWMA),
+                target: concrete::Dispatch::Balance(routable.addr.clone(), routable.addr, EWMA),
                 parent: routable.parent.clone(),
             };
             let backends = std::iter::once(concrete.clone()).collect();
@@ -174,14 +174,18 @@ where
                 .targets
                 .iter()
                 .map(|t| Concrete {
-                    target: concrete::Dispatch::Balance(t.addr.clone(), EWMA),
+                    target: concrete::Dispatch::Balance(
+                        routable.addr.clone(),
+                        t.addr.clone(),
+                        EWMA,
+                    ),
                     parent: routable.parent.clone(),
                 })
                 .collect();
             let distribution = Distribution::random_available(profile.targets.iter().cloned().map(
                 |profiles::Target { addr, weight }| {
                     let concrete = Concrete {
-                        target: concrete::Dispatch::Balance(addr, EWMA),
+                        target: concrete::Dispatch::Balance(routable.addr.clone(), addr, EWMA),
                         parent: routable.parent.clone(),
                     };
                     (concrete, weight)

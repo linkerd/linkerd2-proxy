@@ -1,8 +1,11 @@
-use crate::{stack_labels, BackendRef, Outbound, ParentRef};
+use crate::{metrics::BalancerMetricsParams, stack_labels, BackendRef, Outbound, ParentRef};
 use linkerd_app_core::{
     config::QueueConfig,
     drain, io,
-    metrics::{self, prom},
+    metrics::{
+        self,
+        prom::{self, EncodeLabelSetMut},
+    },
     profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
@@ -16,13 +19,13 @@ use linkerd_app_core::{
     transport_header::SessionProtocol,
     Error, Infallible, NameAddr,
 };
-use std::{fmt::Debug, net::SocketAddr};
+use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tracing::info_span;
 
 /// Parameter configuring dispatcher behavior.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Dispatch {
-    Balance(NameAddr, balance::EwmaConfig),
+    Balance(NameAddr, NameAddr, balance::EwmaConfig),
     Forward(Remote<ServerAddr>, Metadata),
 }
 
@@ -47,10 +50,42 @@ pub struct Endpoint<T> {
 /// A target configuring a load balancer stack.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Balance<T> {
-    addr: NameAddr,
+    logical: NameAddr,
+    concrete: NameAddr,
     ewma: balance::EwmaConfig,
     queue: QueueConfig,
     parent: T,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct ConcreteLabels {
+    logical: Arc<str>,
+    concrete: Arc<str>,
+}
+
+impl prom::EncodeLabelSetMut for ConcreteLabels {
+    fn encode_label_set(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+        use prom::encoding::EncodeLabel;
+
+        ("logical", &*self.logical).encode(enc.encode_label())?;
+        ("concrete", &*self.concrete).encode(enc.encode_label())?;
+        Ok(())
+    }
+}
+
+impl prom::encoding::EncodeLabelSet for ConcreteLabels {
+    fn encode(&self, mut enc: prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
+}
+
+impl<T> svc::ExtractParam<balance::Metrics, Balance<T>> for BalancerMetricsParams<ConcreteLabels> {
+    fn extract_param(&self, bal: &Balance<T>) -> balance::Metrics {
+        self.metrics(&ConcreteLabels {
+            logical: bal.logical.to_string().into(),
+            concrete: bal.concrete.to_string().into(),
+        })
+    }
 }
 
 // === impl Outbound ===
@@ -67,7 +102,7 @@ impl<C> Outbound<C> {
     /// services.
     pub fn push_opaq_concrete<T, I, R>(
         self,
-        _registry: &mut prom::Registry,
+        registry: &mut prom::Registry,
         resolve: R,
     ) -> Outbound<
         svc::ArcNewService<
@@ -92,8 +127,11 @@ impl<C> Outbound<C> {
         C: Send + Sync + 'static,
     {
         let resolve =
-            svc::MapTargetLayer::new(|t: Balance<T>| -> ConcreteAddr { ConcreteAddr(t.addr) })
+            svc::MapTargetLayer::new(|t: Balance<T>| -> ConcreteAddr { ConcreteAddr(t.concrete) })
                 .layer(resolve.into_service());
+
+        let metrics_params =
+            BalancerMetricsParams::register(registry.sub_registry_with_prefix("balancer"));
 
         self.map_stack(|config, rt, inner| {
             let queue = config.tcp_connection_queue;
@@ -136,7 +174,7 @@ impl<C> Outbound<C> {
                     },
                 )
                 .lift_new_with_target()
-                .push(tcp::NewBalancePeakEwma::layer(resolve))
+                .push(tcp::NewBalancePeakEwma::layer(resolve, metrics_params))
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(
                     rt.metrics
@@ -144,14 +182,15 @@ impl<C> Outbound<C> {
                         .stack
                         .layer(stack_labels("opaq", "balance")),
                 )
-                .instrument(|t: &Balance<T>| info_span!("balance", addr = %t.addr));
+                .instrument(|t: &Balance<T>| info_span!("balance", addr = %t.concrete));
 
             balance
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Dispatch::Balance(addr, ewma) => svc::Either::A(Balance {
-                                addr,
+                            Dispatch::Balance(logical, concrete, ewma) => svc::Either::A(Balance {
+                                logical,
+                                concrete,
                                 ewma,
                                 queue,
                                 parent,
@@ -168,7 +207,6 @@ impl<C> Outbound<C> {
                 )
                 .push_on_service(tcp::Forward::layer())
                 .push_on_service(drain::Retain::layer(rt.drain.clone()))
-                .push(svc::NewQueue::layer_via(queue))
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -179,7 +217,7 @@ impl<C> Outbound<C> {
 impl<T> From<(&Balance<T>, Error)> for ConcreteError {
     fn from((target, source): (&Balance<T>, Error)) -> Self {
         Self {
-            addr: target.addr.clone(),
+            addr: target.concrete.clone(),
             source,
         }
     }
