@@ -79,8 +79,8 @@ fn main() {
             Some(addr) => info!("Tap interface on {}", addr),
         }
 
-        // TODO distinguish ServerName and Identity.
-        info!("Local identity is {}", app.local_server_name());
+        info!("Local TLS id is {}", app.local_id());
+        info!("Local server name is {}", app.local_server_name());
         let addr = app.identity_addr();
         match addr.identity.value() {
             None => info!("Identity verified via {}", addr.addr),

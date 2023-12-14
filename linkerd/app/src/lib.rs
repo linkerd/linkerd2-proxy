@@ -340,6 +340,10 @@ impl App {
         self.identity.receiver().server_name().clone()
     }
 
+    pub fn local_id(&self) -> identity::Id {
+        self.identity.receiver().local_id().clone()
+    }
+
     pub fn identity_addr(&self) -> ControlAddr {
         self.identity.addr()
     }
