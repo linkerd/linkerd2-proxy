@@ -780,7 +780,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .unwrap_or(super::tap::Config::Disabled);
 
     let identity = {
-        let (addr, certify, documents) = identity_config?;
+        let (addr, certify, params) = identity_config?;
         // If the address doesn't have a server identity, then we're on localhost.
         let connect = if addr.addr.is_loopback() {
             inbound.proxy.connect.clone()
@@ -802,7 +802,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     failfast_timeout,
                 },
             },
-            documents,
+            params,
         }
     };
 
@@ -1166,7 +1166,7 @@ pub fn parse_control_addr<S: Strings>(
 
 pub fn parse_identity_config<S: Strings>(
     strings: &S,
-) -> Result<(ControlAddr, identity::certify::Config, identity::Documents), EnvError> {
+) -> Result<(ControlAddr, identity::certify::Config, identity::TlsParams), EnvError> {
     let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         if s.is_empty() {
@@ -1207,56 +1207,21 @@ pub fn parse_identity_config<S: Strings>(
             min_refresh,
             max_refresh,
         ) => {
-            let key = {
-                let mut p = dir.clone();
-                p.push("key");
-                p.set_extension("p8");
-
-                fs::read(p)
-                    .map_err(|e| {
-                        error!("Failed to read key: {}", e);
-                        EnvError::InvalidEnvVar
-                    })
-                    .and_then(|b| {
-                        if b.is_empty() {
-                            error!("No CSR found");
-                            return Err(EnvError::InvalidEnvVar);
-                        }
-                        Ok(b)
-                    })
-            };
-
-            let csr = {
-                let mut p = dir;
-                p.push("csr");
-                p.set_extension("der");
-
-                fs::read(p)
-                    .map_err(|e| {
-                        error!("Failed to read Csr: {}", e);
-                        EnvError::InvalidEnvVar
-                    })
-                    .and_then(|b| {
-                        if b.is_empty() {
-                            error!("No CSR found");
-                            return Err(EnvError::InvalidEnvVar);
-                        }
-                        Ok(b)
-                    })
-            };
-
             let certify = identity::certify::Config {
                 token,
                 min_refresh: min_refresh.unwrap_or(DEFAULT_IDENTITY_MIN_REFRESH),
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
+                documents: identity::certify::Documents::load(dir).map_err(|error| {
+                    error!(%error, "Failed to read identity documents");
+                    EnvError::InvalidEnvVar
+                })?,
             };
-            let docs = identity::Documents {
+            let params = identity::TlsParams {
+                server_id: identity::Id::Dns(local_name.clone()),
                 server_name: local_name,
                 trust_anchors_pem,
-                key_pkcs8: key?,
-                csr_der: csr?,
             };
-            Ok((control, certify, docs))
+            Ok((control, certify, params))
         }
         (addr, trust_anchors, end_entity_dir, local_id, token, _minr, _maxr) => {
             let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);

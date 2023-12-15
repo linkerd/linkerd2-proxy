@@ -17,18 +17,15 @@ pub fn watch(
     local_id: id::Id,
     server_name: dns::Name,
     roots_pem: &str,
-    key_pkcs8: &[u8],
-    csr: &[u8],
 ) -> Result<(Store, Receiver)> {
     let creds = {
         let roots = X509::stack_from_pem(roots_pem.as_bytes())?;
-        let key = PKey::private_key_from_pkcs8(key_pkcs8)?;
-        Arc::new(BaseCreds { roots, key })
+        Arc::new(BaseCreds { roots })
     };
 
     let (tx, rx) = watch::channel(Creds::from(creds.clone()));
     let rx = Receiver::new(local_id.clone(), server_name, rx);
-    let store = Store::new(creds, csr, local_id, tx);
+    let store = Store::new(creds, local_id, tx);
 
     Ok((store, rx))
 }
@@ -40,12 +37,12 @@ pub(crate) struct Creds {
 
 struct BaseCreds {
     roots: Vec<X509>,
-    key: PKey<Private>,
 }
 
 struct Certs {
     leaf: X509,
     intermediates: Vec<X509>,
+    key: PKey<Private>,
 }
 
 pub(crate) type CredsRx = watch::Receiver<Creds>;
@@ -90,7 +87,7 @@ impl Creds {
                 cert = ?super::fingerprint(&certs.leaf),
                 "Configuring acceptor certificate",
             );
-            conn.set_private_key(&self.base.key)?;
+            conn.set_private_key(&certs.key)?;
             conn.set_certificate(&certs.leaf)?;
             conn.check_private_key()?;
             for c in &certs.intermediates {
@@ -138,7 +135,7 @@ impl Creds {
                 intermediates = %certs.intermediates.len(),
                 "Configuring connector certificate",
             );
-            conn.set_private_key(&self.base.key)?;
+            conn.set_private_key(&certs.key)?;
             conn.set_certificate(&certs.leaf)?;
             conn.check_private_key()?;
             for c in &certs.intermediates {

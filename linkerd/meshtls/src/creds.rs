@@ -33,32 +33,15 @@ pub enum Receiver {
 // === impl Store ===
 
 impl Credentials for Store {
-    fn gen_certificate_signing_request(&mut self) -> DerX509 {
+    fn set_certificate(&mut self, leaf: DerX509, chain: Vec<DerX509>, key: Vec<u8>) -> Result<()> {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(store) => store.gen_certificate_signing_request(),
+            Self::Boring(store) => store.set_certificate(leaf, chain, key),
 
             #[cfg(feature = "rustls")]
-            Self::Rustls(store) => store.gen_certificate_signing_request(),
+            Self::Rustls(store) => store.set_certificate(leaf, chain, key),
             #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(),
-        }
-    }
-
-    fn set_certificate(
-        &mut self,
-        leaf: DerX509,
-        chain: Vec<DerX509>,
-        expiry: std::time::SystemTime,
-    ) -> Result<()> {
-        match self {
-            #[cfg(feature = "boring")]
-            Self::Boring(store) => store.set_certificate(leaf, chain, expiry),
-
-            #[cfg(feature = "rustls")]
-            Self::Rustls(store) => store.set_certificate(leaf, chain, expiry),
-            #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(leaf, chain, expiry),
+            _ => crate::no_tls!(leaf, chain, key),
         }
     }
 }

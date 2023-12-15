@@ -6,7 +6,7 @@ pub use self::{receiver::Receiver, store::Store};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
-use ring::{error::KeyRejected, signature::EcdsaKeyPair};
+use ring::error::KeyRejected;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::watch;
@@ -25,8 +25,6 @@ pub fn watch(
     local_id: id::Id,
     server_name: dns::Name,
     roots_pem: &str,
-    key_pkcs8: &[u8],
-    csr: &[u8],
 ) -> Result<(Store, Receiver)> {
     let mut roots = rustls::RootCertStore::empty();
     let certs = match rustls_pemfile::certs(&mut std::io::Cursor::new(roots_pem)) {
@@ -48,9 +46,6 @@ pub fn watch(
     if added == 0 {
         return Err("no trust roots loaded".into());
     }
-
-    let key = EcdsaKeyPair::from_pkcs8(params::SIGNATURE_ALG_RING_SIGNING, key_pkcs8)
-        .map_err(InvalidKey)?;
 
     // XXX: Rustls's built-in verifiers don't let us tweak things as fully as we'd like (e.g.
     // controlling the set of trusted signature algorithms), but they provide good enough
@@ -84,8 +79,6 @@ pub fn watch(
     let store = Store::new(
         roots,
         server_cert_verifier,
-        key,
-        csr,
         local_id,
         server_name,
         client_tx,
@@ -101,8 +94,6 @@ pub fn for_test(ent: &linkerd_tls_test_util::Entity) -> (Store, Receiver) {
         ent.name.parse().expect("id must be valid"),
         ent.name.parse().expect("name must be valid"),
         std::str::from_utf8(ent.trust_anchors).expect("roots must be PEM"),
-        ent.key,
-        b"fake CSR",
     )
     .expect("credentials must be valid")
 }

@@ -1,4 +1,5 @@
 use super::{BaseCreds, Certs, Creds, CredsTx};
+use boring::pkey::PKey;
 use boring::x509::{X509StoreContext, X509};
 use linkerd_error::Result;
 use linkerd_identity as id;
@@ -7,7 +8,6 @@ use std::sync::Arc;
 
 pub struct Store {
     creds: Arc<BaseCreds>,
-    csr: Vec<u8>,
     id: id::Id,
     tx: CredsTx,
 }
@@ -15,28 +15,18 @@ pub struct Store {
 // === impl Store ===
 
 impl Store {
-    pub(super) fn new(creds: Arc<BaseCreds>, csr: &[u8], id: id::Id, tx: CredsTx) -> Self {
-        Self {
-            creds,
-            csr: csr.into(),
-            id,
-            tx,
-        }
+    pub(super) fn new(creds: Arc<BaseCreds>, id: id::Id, tx: CredsTx) -> Self {
+        Self { creds, id, tx }
     }
 }
 
 impl id::Credentials for Store {
-    /// Returns the CSR that was configured at proxy startup.
-    fn gen_certificate_signing_request(&mut self) -> id::DerX509 {
-        id::DerX509(self.csr.to_vec())
-    }
-
     /// Publishes TLS client and server configurations using
     fn set_certificate(
         &mut self,
         id::DerX509(leaf_der): id::DerX509,
         intermediates: Vec<id::DerX509>,
-        _expiry: std::time::SystemTime,
+        key_pkcs8: Vec<u8>,
     ) -> Result<()> {
         let leaf = X509::from_der(&leaf_der)?;
 
@@ -47,11 +37,13 @@ impl id::Credentials for Store {
             .map(|id::DerX509(der)| X509::from_der(&der).map_err(Into::into))
             .collect::<Result<Vec<_>>>()?;
 
+        let key = PKey::private_key_from_pkcs8(&key_pkcs8)?;
         let creds = Creds {
             base: self.creds.clone(),
             certs: Some(Certs {
                 leaf,
                 intermediates,
+                key,
             }),
         };
 

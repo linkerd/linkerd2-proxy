@@ -1,4 +1,5 @@
 use super::params::*;
+use super::InvalidKey;
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
@@ -12,8 +13,6 @@ use tracing::debug;
 pub struct Store {
     roots: rustls::RootCertStore,
     server_cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
-    key: Arc<EcdsaKeyPair>,
-    csr: Arc<[u8]>,
     server_id: id::Id,
     server_name: dns::Name,
     client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
@@ -77,8 +76,6 @@ impl Store {
     pub(super) fn new(
         roots: rustls::RootCertStore,
         server_cert_verifier: Arc<dyn rustls::client::ServerCertVerifier>,
-        key: EcdsaKeyPair,
-        csr: &[u8],
         server_id: id::Id,
         server_name: dns::Name,
         client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
@@ -86,9 +83,7 @@ impl Store {
     ) -> Self {
         Self {
             roots,
-            key: Arc::new(key),
             server_cert_verifier,
-            csr: csr.into(),
             server_id,
             server_name,
             client_tx,
@@ -131,19 +126,13 @@ impl Store {
         verifier::verify_id(&end_entity.0, &self.server_id).map_err(Into::into)
     }
 }
-
 impl id::Credentials for Store {
-    /// Returns the CSR that was configured at proxy startup.
-    fn gen_certificate_signing_request(&mut self) -> id::DerX509 {
-        id::DerX509(self.csr.to_vec())
-    }
-
     /// Publishes TLS client and server configurations using
     fn set_certificate(
         &mut self,
         id::DerX509(leaf): id::DerX509,
         intermediates: Vec<id::DerX509>,
-        _expiry: std::time::SystemTime,
+        key: Vec<u8>,
     ) -> Result<()> {
         let mut chain = Vec::with_capacity(intermediates.len() + 1);
         chain.push(rustls::Certificate(leaf));
@@ -156,9 +145,11 @@ impl id::Credentials for Store {
         // Use the client's verifier to validate the certificate for our local name.
         self.validate(&chain)?;
 
+        let key = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, &key).map_err(InvalidKey)?;
+
         let resolver = Arc::new(CertResolver(Arc::new(rustls::sign::CertifiedKey::new(
             chain,
-            Arc::new(Key(self.key.clone())),
+            Arc::new(Key(Arc::new(key))),
         ))));
 
         // Build new client and server TLS configs.
