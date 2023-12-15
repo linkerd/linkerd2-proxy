@@ -339,6 +339,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "const-oid"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28c122c3980598d243d63d9a704629a2d748d101f278052ff068be5a4423ab6f"
+
+[[package]]
 name = "cpp_demangle"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -398,6 +404,15 @@ checksum = "c86f7e25f518f4b81808a2cf1c50996a61f5c2eb394b2393bd87f2a4780a432f"
 dependencies = [
  "adler32",
  "gzip-header",
+]
+
+[[package]]
+name = "der"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fffa369a668c8af7dbf8b5e56c9f744fbd399949ed171606040001947de40b1c"
+dependencies = [
+ "const-oid",
 ]
 
 [[package]]
@@ -1011,6 +1026,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonwebkey"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c57c852b14147e2bd58c14fde40398864453403ef632b1101db130282ee6e2cc"
+dependencies = [
+ "base64 0.13.1",
+ "bitflags 1.3.2",
+ "generic-array",
+ "jsonwebtoken",
+ "num-bigint",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "yasna 0.4.0",
+ "zeroize",
+]
+
+[[package]]
+name = "jsonwebtoken"
+version = "8.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6971da4d9c3aa03c3d8f3ff0f4155b534aad021292003895a469716b2a230378"
+dependencies = [
+ "base64 0.21.5",
+ "pem 1.1.1",
+ "ring",
+ "serde",
+ "serde_json",
+ "simple_asn1",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1082,7 +1129,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.10.2",
  "tower",
  "tracing",
 ]
@@ -1168,7 +1215,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.10.2",
  "tower",
  "tracing",
 ]
@@ -1189,7 +1236,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tonic",
+ "tonic 0.10.2",
  "tower",
  "tower-test",
  "tracing",
@@ -1224,7 +1271,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tonic",
+ "tonic 0.10.2",
  "tower",
  "tracing",
 ]
@@ -1258,7 +1305,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-stream",
- "tonic",
+ "tonic 0.10.2",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -1296,7 +1343,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tonic",
+ "tonic 0.10.2",
  "tower",
  "tower-test",
  "tracing",
@@ -1323,7 +1370,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-test",
- "tonic",
+ "tonic 0.10.2",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -1663,7 +1710,7 @@ dependencies = [
  "opencensus-proto",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.10.2",
  "tracing",
 ]
 
@@ -1682,8 +1729,8 @@ dependencies = [
  "linkerd-tls",
  "linkerd2-proxy-api",
  "pin-project",
- "prost",
- "tonic",
+ "prost 0.12.1",
+ "tonic 0.10.2",
  "tower",
  "tracing",
 ]
@@ -1732,10 +1779,10 @@ dependencies = [
  "linkerd2-proxy-api",
  "maplit",
  "once_cell",
- "prost-types",
+ "prost-types 0.12.1",
  "quickcheck",
  "thiserror",
- "tonic",
+ "tonic 0.10.2",
 ]
 
 [[package]]
@@ -1813,7 +1860,7 @@ dependencies = [
  "pin-project",
  "thiserror",
  "tokio",
- "tonic",
+ "tonic 0.10.2",
  "tracing",
 ]
 
@@ -1861,9 +1908,22 @@ dependencies = [
  "linkerd-http-route",
  "linkerd2-proxy-api",
  "maplit",
- "prost-types",
+ "prost-types 0.12.1",
  "quickcheck",
  "thiserror",
+]
+
+[[package]]
+name = "linkerd-proxy-spire-client"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-identity",
+ "spiffe",
+ "tokio",
+ "tracing",
+ "x509-parser",
 ]
 
 [[package]]
@@ -1884,12 +1944,12 @@ dependencies = [
  "linkerd2-proxy-api",
  "parking_lot",
  "pin-project",
- "prost-types",
+ "prost-types 0.12.1",
  "quickcheck",
  "rand",
  "thiserror",
  "tokio",
- "tonic",
+ "tonic 0.10.2",
  "tower",
  "tracing",
 ]
@@ -1983,13 +2043,13 @@ dependencies = [
  "linkerd-tonic-watch",
  "linkerd2-proxy-api",
  "once_cell",
- "prost-types",
+ "prost-types 0.12.1",
  "quickcheck",
  "regex",
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.10.2",
  "tower",
  "tracing",
 ]
@@ -2089,7 +2149,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-test",
- "tonic",
+ "tonic 0.10.2",
  "tower-test",
  "tracing",
 ]
@@ -2137,8 +2197,8 @@ dependencies = [
  "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
- "prost",
- "prost-build",
+ "prost 0.12.1",
+ "prost-build 0.12.1",
  "tokio",
  "tokio-test",
  "tracing",
@@ -2182,11 +2242,11 @@ dependencies = [
  "h2",
  "http",
  "ipnet",
- "prost",
- "prost-types",
+ "prost 0.12.1",
+ "prost-types 0.12.1",
  "quickcheck",
  "thiserror",
- "tonic",
+ "tonic 0.10.2",
 ]
 
 [[package]]
@@ -2416,10 +2476,10 @@ name = "opencensus-proto"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "prost",
- "prost-types",
- "tonic",
- "tonic-build",
+ "prost 0.12.1",
+ "prost-types 0.12.1",
+ "tonic 0.10.2",
+ "tonic-build 0.10.2",
 ]
 
 [[package]]
@@ -2456,6 +2516,15 @@ name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b17cddbe7ec3f8bc800887bab5e717348c95ea2ca0b1bf0837fb964dc67099"
+
+[[package]]
+name = "pem"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8835c273a76a90455d7344889b0964598e3316e2a79ede8e36f16bdcf2228b8"
+dependencies = [
+ "base64 0.13.1",
+]
 
 [[package]]
 name = "pem"
@@ -2516,6 +2585,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
+name = "pkcs8"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f950b2377845cebe5cf8b5165cb3cc1a5e0fa5cfa3e1f7f55707d8fd82e0a7b7"
+dependencies = [
+ "der",
+ "spki",
+]
+
+[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2535,9 +2614,9 @@ dependencies = [
  "nix",
  "once_cell",
  "parking_lot",
- "prost",
- "prost-build",
- "prost-derive",
+ "prost 0.12.1",
+ "prost-build 0.12.1",
+ "prost-derive 0.12.1",
  "sha2",
  "smallvec",
  "symbolic-demangle",
@@ -2550,6 +2629,16 @@ name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
+
+[[package]]
+name = "prettyplease"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c8646e95016a7a6c4adea95bafa8a16baab64b583356217f2c85db4a39d9a86"
+dependencies = [
+ "proc-macro2",
+ "syn 1.0.109",
+]
 
 [[package]]
 name = "prettyplease"
@@ -2608,12 +2697,44 @@ dependencies = [
 
 [[package]]
 name = "prost"
+version = "0.11.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b82eaa1d779e9a4bc1c3217db8ffbeabaae1dca241bf70183242128d48681cd"
+dependencies = [
+ "bytes",
+ "prost-derive 0.11.9",
+]
+
+[[package]]
+name = "prost"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4fdd22f3b9c31b53c060df4a0613a1c7f062d4115a2b984dd15b1858f7e340d"
 dependencies = [
  "bytes",
- "prost-derive",
+ "prost-derive 0.12.1",
+]
+
+[[package]]
+name = "prost-build"
+version = "0.11.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "119533552c9a7ffacc21e099c24a0ac8bb19c2a2a3f363de84cd9b844feab270"
+dependencies = [
+ "bytes",
+ "heck",
+ "itertools",
+ "lazy_static",
+ "log",
+ "multimap",
+ "petgraph",
+ "prettyplease 0.1.25",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
+ "regex",
+ "syn 1.0.109",
+ "tempfile",
+ "which",
 ]
 
 [[package]]
@@ -2629,13 +2750,26 @@ dependencies = [
  "multimap",
  "once_cell",
  "petgraph",
- "prettyplease",
- "prost",
- "prost-types",
+ "prettyplease 0.2.15",
+ "prost 0.12.1",
+ "prost-types 0.12.1",
  "regex",
  "syn 2.0.39",
  "tempfile",
  "which",
+]
+
+[[package]]
+name = "prost-derive"
+version = "0.11.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5d2d8d10f3c6ded6da8b05b5fb3b8a5082514344d56c9f871412d29b4e075b4"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -2653,11 +2787,20 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
+version = "0.11.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "213622a1460818959ac1181aaeb2dc9c7f63df720db7d788b3e24eacd1983e13"
+dependencies = [
+ "prost 0.11.9",
+]
+
+[[package]]
+name = "prost-types"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e081b29f63d83a4bc75cfc9f3fe424f9156cf92d8a4f0c9407cce9a1b67327cf"
 dependencies = [
- "prost",
+ "prost 0.12.1",
 ]
 
 [[package]]
@@ -2726,10 +2869,10 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c4f3084aa3bc7dfbba4eff4fab2a54db4324965d8872ab933565e6fbd83bc6"
 dependencies = [
- "pem",
+ "pem 3.0.2",
  "ring",
  "time",
- "yasna",
+ "yasna 0.5.2",
 ]
 
 [[package]]
@@ -2938,6 +3081,20 @@ name = "serde"
 version = "1.0.185"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be9b6f69f1dfd54c3b568ffa45c310d6973a5e5148fd40cf515acaf38cf5bc31"
+dependencies = [
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.185"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc59dfdcbad1437773485e0367fea4b090a2e0a16d9ffc46af47764536a298ec"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.39",
+]
 
 [[package]]
 name = "serde_json"
@@ -2986,6 +3143,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "simple_asn1"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adc4e5204eb1910f40f9cfa375f6f05b68c3abac4b6fd879c8ff5e7ae8a0a085"
+dependencies = [
+ "num-bigint",
+ "num-traits",
+ "thiserror",
+ "time",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3021,10 +3190,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "spiffe"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7080fbb75202c07ab5ff0cd0fd01ccdd37d10df0cce82bf88decb6c93e031e16"
+dependencies = [
+ "anyhow",
+ "jsonwebkey",
+ "jsonwebtoken",
+ "log",
+ "pkcs8",
+ "prost 0.11.9",
+ "prost-build 0.11.9",
+ "prost-types 0.11.9",
+ "serde",
+ "serde_json",
+ "simple_asn1",
+ "thiserror",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tonic 0.9.2",
+ "tonic-build 0.9.2",
+ "tower",
+ "url",
+ "x509-parser",
+ "zeroize",
+]
+
+[[package]]
 name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "spki"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
+dependencies = [
+ "der",
+]
 
 [[package]]
 name = "stable_deref_trait"
@@ -3294,6 +3502,34 @@ dependencies = [
 
 [[package]]
 name = "tonic"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3082666a3a6433f7f511c7192923fa1fe07c69332d3c6a2e6bb040b569199d5a"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.21.5",
+ "bytes",
+ "futures-core",
+ "futures-util",
+ "h2",
+ "http",
+ "http-body",
+ "hyper",
+ "hyper-timeout",
+ "percent-encoding",
+ "pin-project",
+ "prost 0.11.9",
+ "tokio",
+ "tokio-stream",
+ "tower",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
+name = "tonic"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d560933a0de61cf715926b9cac824d4c883c2c43142f787595e48280c40a1d0e"
@@ -3310,7 +3546,7 @@ dependencies = [
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
- "prost",
+ "prost 0.12.1",
  "tokio",
  "tokio-stream",
  "tower",
@@ -3321,13 +3557,26 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6fdaae4c2c638bb70fe42803a26fbd6fc6ac8c72f5c59f67ecc2a2dcabf4b07"
+dependencies = [
+ "prettyplease 0.1.25",
+ "proc-macro2",
+ "prost-build 0.11.9",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "tonic-build"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d021fc044c18582b9a2408cd0dd05b1596e3ecdb5c4df822bb0183545683889"
 dependencies = [
- "prettyplease",
+ "prettyplease 0.2.15",
  "proc-macro2",
- "prost-build",
+ "prost-build 0.12.1",
  "quote",
  "syn 2.0.39",
 ]
@@ -3336,7 +3585,7 @@ dependencies = [
 name = "tools"
 version = "0.1.0"
 dependencies = [
- "tonic-build",
+ "tonic-build 0.10.2",
 ]
 
 [[package]]
@@ -3875,6 +4124,15 @@ dependencies = [
 
 [[package]]
 name = "yasna"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e262a29d0e61ccf2b6190d7050d4b237535fc76ce4c1210d9caa316f71dffa75"
+dependencies = [
+ "num-bigint",
+]
+
+[[package]]
+name = "yasna"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
@@ -3896,6 +4154,26 @@ name = "zerocopy-derive"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9731702e2f0617ad526794ae28fbc6f6ca8849b5ba729666c2a5bc4b6ddee2cd"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.39",
+]
+
+[[package]]
+name = "zeroize"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525b4ec142c6b68a2d10f01f7bbf6755599ca3f81ea53b8431b7dd348f5fdb2d"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce36e65b0d2999d2aafac989fb249189a141aee1f53c612c1f37d72631959f69"
 dependencies = [
  "proc-macro2",
  "quote",

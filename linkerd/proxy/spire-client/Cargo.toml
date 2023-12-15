@@ -1,0 +1,18 @@
+[package]
+name = "linkerd-proxy-spire-client"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+linkerd-error = { path = "../../error" }
+linkerd-identity = { path = "../../identity" }
+
+tokio = { version = "1", features = ["time", "sync"] }
+tracing = "0.1"
+spiffe = "0.4.0"
+x509-parser = "0.15.1"
+
