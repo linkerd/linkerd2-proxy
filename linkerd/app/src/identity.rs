@@ -23,7 +23,7 @@ pub struct Config {
     pub params: TlsParams,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TlsParams {
     pub server_id: Id,
     pub server_name: dns::Name,
@@ -101,18 +101,6 @@ impl Credentials for NotifyReady {
         self.store.set_certificate(leaf, chain, key)?;
         let _ = self.tx.send(true);
         Ok(())
-    }
-}
-
-// === impl TlsParams ===
-
-impl std::fmt::Debug for TlsParams {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TlsParams")
-            .field("server_id", &self.server_name)
-            .field("server_name", &self.server_name)
-            .field("trust_anchors_pem", &self.trust_anchors_pem)
-            .finish()
     }
 }
 
