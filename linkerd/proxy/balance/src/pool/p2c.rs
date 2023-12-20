@@ -102,10 +102,10 @@ where
                 tracing::debug!(?addr, "Endpoint unchanged");
             } else {
                 if t.is_none() {
-                    tracing::debug!(?addr, "Creating endpoint");
+                    tracing::info!(?addr, "Adding endpoint");
                     self.metrics.endpoints.inc();
                 } else {
-                    tracing::debug!(?addr, "Updating endpoint");
+                    tracing::info!(?addr, "Updating endpoint");
                 }
 
                 let svc = self.new_endpoint.new_service((addr, target.clone()));
@@ -117,7 +117,7 @@ where
         }
 
         for (addr, _) in remaining.drain() {
-            tracing::debug!(?addr, "Removing endpoint");
+            tracing::info!(?addr, "Removing endpoint");
             self.pool.evict(&addr);
             self.metrics.endpoints.dec();
             changed = true;
@@ -146,7 +146,7 @@ where
                     self.metrics.endpoints.inc();
                 }
             }
-            tracing::debug!(?addr, "Creating endpoint");
+            tracing::info!(?addr, "Adding endpoint");
             let svc = self.new_endpoint.new_service((addr, target));
             self.pool.push(addr, svc);
             changed = true;
@@ -161,7 +161,7 @@ where
         let mut changed = false;
         for addr in addrs.into_iter() {
             if self.endpoints.remove(&addr).is_some() {
-                tracing::debug!(?addr, "Removing endpoint");
+                tracing::info!(?addr, "Removing endpoint");
                 self.pool.evict(&addr);
                 self.metrics.endpoints.dec();
                 changed = true;
@@ -178,7 +178,7 @@ where
     fn clear(&mut self) -> bool {
         let changed = !self.endpoints.is_empty();
         for (addr, _) in self.endpoints.drain() {
-            tracing::debug!(?addr, "Clearing endpoint");
+            tracing::info!(?addr, "Removing endpoint");
             self.pool.evict(&addr);
             self.metrics.endpoints.dec();
         }
