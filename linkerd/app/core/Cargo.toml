@@ -43,6 +43,8 @@ linkerd-proxy-client-policy = { path = "../../proxy/client-policy" }
 linkerd-proxy-dns-resolve = { path = "../../proxy/dns-resolve" }
 linkerd-proxy-http = { path = "../../proxy/http" }
 linkerd-proxy-identity-client = { path = "../../proxy/identity-client" }
+linkerd-proxy-identity-client-metrics = { path = "../../proxy/identity-client-metrics" }
+linkerd-proxy-spire-client = { path = "../../proxy/spire-client" }
 linkerd-proxy-resolve = { path = "../../proxy/resolve" }
 linkerd-proxy-server-policy = { path = "../../proxy/server-policy" }
 linkerd-proxy-tap = { path = "../../proxy/tap" }

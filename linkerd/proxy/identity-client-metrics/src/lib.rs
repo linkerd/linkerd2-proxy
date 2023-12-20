@@ -1,3 +1,6 @@
+#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
+#![forbid(unsafe_code)]
+
 use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge};
 use parking_lot::Mutex;
 use std::{
@@ -12,7 +15,7 @@ metrics! {
     },
 
     identity_cert_refresh_count: Counter {
-        "The total number of times this proxy's mTLS identity certificate has been refreshed by the Identity service."
+        "The total number of times this proxy's mTLS identity certificate has been refreshed by the Identity provider."
     }
 }
 
@@ -32,7 +35,7 @@ impl Default for Metrics {
 }
 
 impl Metrics {
-    pub(crate) fn refresh(&self, expiry: SystemTime) {
+    pub fn refresh(&self, expiry: SystemTime) {
         self.refreshes.incr();
         *self.expiry.lock() = expiry;
     }

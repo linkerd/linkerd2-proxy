@@ -1,5 +1,5 @@
 [package]
-name = "linkerd-proxy-identity-client"
+name = "linkerd-proxy-spire-client"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -8,17 +8,20 @@ publish = false
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-linkerd2-proxy-api = { version = "0.12", features = ["identity"] }
-linkerd-dns-name = { path = "../../dns/name" }
 linkerd-error = { path = "../../error" }
+linkerd-proxy-http = { path = "../../proxy/http" }
 linkerd-identity = { path = "../../identity" }
+spiffe-proto = { path = "../../../spiffe-proto" }
+linkerd-tonic-watch = { path = "../../tonic-watch" }
+linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-proxy-identity-client-metrics = { path = "../identity-client-metrics" }
-linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
-parking_lot = "0.12"
-pin-project = "1"
-thiserror = "1"
 tokio = { version = "1", features = ["time", "sync"] }
-tonic = { version = "0.10", default-features = false }
+tonic = "0.10"
+tower = "0.4"
 tracing = "0.1"
-http-body = "0.4"
+x509-parser = "0.15.1"
+asn1 = { version = "0.6", package = "simple_asn1" }
+
+[dev-dependencies]
+rcgen = "0.11.3"

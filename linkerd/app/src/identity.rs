@@ -6,8 +6,8 @@ use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     identity::{
-        client::{Certify, Metrics as IdentityMetrics},
-        creds, Credentials, DerX509, Mode,
+        client::Certify, client_metrics::Metrics as IdentityMetrics, creds, Credentials, DerX509,
+        Mode,
     },
     metrics::{prom, ControlHttp as ClientMetrics},
     Error, Result,

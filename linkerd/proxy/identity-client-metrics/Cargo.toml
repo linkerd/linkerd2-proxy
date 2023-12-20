@@ -1,0 +1,11 @@
+[package]
+name = "linkerd-proxy-identity-client-metrics"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+linkerd-metrics = { path = "../../metrics" }
+parking_lot = "0.12"

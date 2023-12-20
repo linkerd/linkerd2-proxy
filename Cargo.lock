@@ -1141,8 +1141,10 @@ dependencies = [
  "linkerd-proxy-dns-resolve",
  "linkerd-proxy-http",
  "linkerd-proxy-identity-client",
+ "linkerd-proxy-identity-client-metrics",
  "linkerd-proxy-resolve",
  "linkerd-proxy-server-policy",
+ "linkerd-proxy-spire-client",
  "linkerd-proxy-tap",
  "linkerd-proxy-tcp",
  "linkerd-proxy-transport",
@@ -1807,6 +1809,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-identity",
  "linkerd-metrics",
+ "linkerd-proxy-identity-client-metrics",
  "linkerd-stack",
  "linkerd2-proxy-api",
  "parking_lot",
@@ -1815,6 +1818,14 @@ dependencies = [
  "tokio",
  "tonic",
  "tracing",
+]
+
+[[package]]
+name = "linkerd-proxy-identity-client-metrics"
+version = "0.1.0"
+dependencies = [
+ "linkerd-metrics",
+ "parking_lot",
 ]
 
 [[package]]
@@ -1864,6 +1875,28 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "thiserror",
+]
+
+[[package]]
+name = "linkerd-proxy-spire-client"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-exp-backoff",
+ "linkerd-identity",
+ "linkerd-proxy-http",
+ "linkerd-proxy-identity-client-metrics",
+ "linkerd-stack",
+ "linkerd-tonic-watch",
+ "rcgen",
+ "simple_asn1",
+ "spiffe-proto",
+ "tokio",
+ "tonic",
+ "tower",
+ "tracing",
+ "x509-parser",
 ]
 
 [[package]]
@@ -2985,6 +3018,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "simple_asn1"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adc4e5204eb1910f40f9cfa375f6f05b68c3abac4b6fd879c8ff5e7ae8a0a085"
+dependencies = [
+ "num-bigint",
+ "num-traits",
+ "thiserror",
+ "time",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3017,6 +3062,17 @@ checksum = "7b5fac59a5cb5dd637972e5fca70daf0523c9067fcdc4842f053dae04a18f8e9"
 dependencies = [
  "libc",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "spiffe-proto"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]

@@ -51,6 +51,7 @@ pub mod identity {
     pub use linkerd_identity::*;
     pub use linkerd_meshtls::*;
     pub use linkerd_proxy_identity_client as client;
+    pub use linkerd_proxy_identity_client_metrics as client_metrics;
 }
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";

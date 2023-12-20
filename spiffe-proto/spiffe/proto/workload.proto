@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package spiffe.workloadapi;
+
+service SpiffeWorkloadAPI {
+    // Fetch X.509-SVIDs for all SPIFFE identities the workload is entitled to,
+    // as well as related information like trust bundles and CRLs. As this
+    // information changes, subsequent messages will be streamed from the
+    // server.
+    rpc FetchX509SVID(X509SVIDRequest) returns (stream X509SVIDResponse);
+}
+
+// The X509SVIDRequest message conveys parameters for requesting an X.509-SVID.
+// There are currently no request parameters.
+message X509SVIDRequest {  }
+
+// The X509SVIDResponse message carries X.509-SVIDs and related information,
+// including a set of global CRLs and a list of bundles the workload may use
+// for federating with foreign trust domains.
+message X509SVIDResponse {
+    // Required. A list of X509SVID messages, each of which includes a single
+    // X.509-SVID, its private key, and the bundle for the trust domain.
+    repeated X509SVID svids = 1;
+
+    // Optional. ASN.1 DER encoded certificate revocation lists.
+    repeated bytes crl = 2;
+
+    // Optional. CA certificate bundles belonging to foreign trust domains that
+    // the workload should trust, keyed by the SPIFFE ID of the foreign trust
+    // domain. Bundles are ASN.1 DER encoded.
+    map<string, bytes> federated_bundles = 3;
+}
+
+// The X509SVID message carries a single SVID and all associated information,
+// including the X.509 bundle for the trust domain.
+message X509SVID {
+    // Required. The SPIFFE ID of the SVID in this entry
+    string spiffe_id = 1;
+
+    // Required. ASN.1 DER encoded certificate chain. MAY include
+    // intermediates, the leaf certificate (or SVID itself) MUST come first.
+    bytes x509_svid = 2;
+
+    // Required. ASN.1 DER encoded PKCS#8 private key. MUST be unencrypted.
+    bytes x509_svid_key = 3;
+
+    // Required. ASN.1 DER encoded X.509 bundle for the trust domain.
+    bytes bundle = 4;
+
+    // Optional. An operator-specified string used to provide guidance on how this
+    // identity should be used by a workload when more than one SVID is returned.
+    // For example, `internal` and `external` to indicate an SVID for internal or
+    // external use, respectively.
+    string hint = 5;
+}
