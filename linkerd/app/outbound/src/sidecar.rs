@@ -15,6 +15,7 @@ use linkerd_app_core::{
     transport::addrs::*,
     Error,
 };
+use linkerd_proxy_client_policy::BackendDispatcher;
 use std::fmt::Debug;
 use tokio::sync::watch;
 use tracing::info_span;
@@ -149,13 +150,39 @@ impl svc::Param<opaq::Logical> for Sidecar {
                 return opaq::Logical::Route(addr, profile);
             }
 
-            if let Some((addr, metadata)) = profile.endpoint() {
+            if let Some((addr, metadata)) = should_override_policy(profile) {
                 return opaq::Logical::Forward(Remote(ServerAddr(addr)), metadata);
             }
         }
 
+        // If no profile has been used, see if client policy configuration
+        // contains an endpoint
+        let dispatcher = &self
+            .policy
+            .borrow()
+            .backends
+            .into_iter()
+            .find(|backend| matches!(backend.dispatcher, BackendDispatcher::Forward(..)))
+            .map(|backend| backend.dispatcher.clone());
+
+        if let Some(BackendDispatcher::Forward(addr, metadata)) = dispatcher.clone() {
+            return opaq::Logical::Forward(Remote(ServerAddr(addr)), metadata);
+        }
+
         let OrigDstAddr(addr) = self.orig_dst;
         opaq::Logical::Forward(Remote(ServerAddr(addr)), Default::default())
+    }
+}
+
+// Returns an endpoint address and metadata if the profile provides
+// configuration that should override client policy configuration; in this case,
+// an endpoint with additional metadata.
+fn should_override_policy(profile: profiles::Receiver) -> Option<(std::net::SocketAddr, Metadata)> {
+    let (addr, metadata) = profile.endpoint()?;
+    if metadata != Default::default() {
+        Some((addr, metadata))
+    } else {
+        None
     }
 }
 
