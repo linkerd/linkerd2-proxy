@@ -499,6 +499,228 @@ async fn path_based_routing() {
     proxy.join_servers().await;
 }
 
+//#[tokio::test] -- commenting for now until I wire the test up
+async fn outbound_policy_http_forward() {
+    let _trace = trace_init();
+
+    let in_svc_acct = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let in_identity = identity::Identity::new("foo-ns1", in_svc_acct.to_string());
+
+    let out_svc_acct = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let out_identity = identity::Identity::new("bar-ns1", out_svc_acct.to_string());
+    let srv = server::http1().route("/hello", "hello world!").run().await;
+    let ctrl = controller::new();
+    let srv_addr = srv.addr.clone();
+
+    let profile_tx = ctrl.profile_tx(srv.addr.clone());
+    profile_tx.send_err(grpc::Status::invalid_argument(
+        "we're pretending this is an external endpoint",
+    ));
+
+    let (inbound, _profile_in) = {
+        let id_svc = in_identity.service();
+        let ctrl = controller::new();
+        let mut env = in_identity.env;
+        env.put(
+            app::env::ENV_INBOUND_DEFAULT_POLICY,
+            "all-authenticated".into(),
+        );
+        let profile_tx = ctrl.profile_tx(srv_addr.clone());
+        // Under normal conditions, profile would return an endpoint. Since we
+        // cannot test TLS & opaque port remap without a dedicated inbound proxy,
+        // assume no target is found instead to assert the address is served by the
+        // policy controller.
+        profile_tx.send_err(grpc::Status::invalid_argument(
+            "we're pretending this is outside of the cluster",
+        ));
+        let ctrl = ctrl
+            .run()
+            .instrument(tracing::info_span!("ctrl", "inbound"))
+            .await;
+        let proxy = proxy::new()
+            .controller(ctrl)
+            .identity(id_svc.run().await)
+            .inbound(srv_addr.clone())
+            .inbound_direct();
+        let proxy = proxy.run_with_test_env(env).await;
+        (proxy, profile_tx)
+    };
+
+    let (outbound, _profile_out) = {
+        let ctrl = controller::new();
+        let profile_tx = ctrl.profile_tx(srv_addr.clone());
+        // Under normal conditions, profile would return an endpoint. Since we
+        // cannot test TLS & opaque port remap without a dedicated inbound proxy,
+        // assume no target is found instead to assert the address is served by the
+        // policy controller.
+        profile_tx.send_err(grpc::Status::invalid_argument(
+            "we're pretending this is outside of the cluster",
+        ));
+
+        let policy = controller::policy()
+            .with_inbound_default(policy::all_unauthenticated())
+            .outbound(
+                srv_addr,
+                outbound::OutboundPolicy {
+                    metadata: Some(api::meta::Metadata {
+                        kind: Some(api::meta::metadata::Kind::Default("test".to_string())),
+                    }),
+                    protocol: Some(outbound::ProxyProtocol {
+                        kind: Some(proxy_protocol::Kind::Opaque(proxy_protocol::Opaque {
+                            routes: vec![policy::outbound_forward_opaque_route(
+                                srv_addr,
+                                inbound.inbound.port(),
+                                in_svc_acct.to_string(),
+                            )],
+                        })),
+                    }),
+                },
+            );
+
+        let ctrl = ctrl
+            .run()
+            .instrument(tracing::info_span!("ctrl", "outbound"))
+            .await;
+        let proxy = proxy::new()
+            .controller(ctrl)
+            .policy(policy.run().await)
+            .identity(out_identity.service().run().await)
+            .outbound_ip(srv_addr)
+            .run_with_test_env(out_identity.env)
+            .await;
+        (proxy, profile_tx)
+    };
+    let policy = controller::policy()
+        .with_inbound_default(policy::all_unauthenticated())
+        .outbound(
+            srv.addr.clone(),
+            outbound::OutboundPolicy {
+                metadata: Some(api::meta::Metadata {
+                    kind: Some(api::meta::metadata::Kind::Default("test".to_string())),
+                }),
+                protocol: Some(outbound::ProxyProtocol {
+                    kind: Some(proxy_protocol::Kind::Opaque(proxy_protocol::Opaque {
+                        routes: vec![policy::outbound_forward_opaque_route(
+                            srv.addr.clone(),
+                            inbound.inbound.port(),
+                            in_svc_acct.to_string(),
+                        )],
+                    })),
+                }),
+            },
+        );
+}
+
+/// Assumes discovery is performed on an endpoint that exists in cluster but
+/// whose address is outside of the cluster networks CIDR. As a result, it is
+/// expected that GetProfile will return a default profile with an endpoint and
+/// that the policy API will serve an opaque route with a 'Forward' distributor.
+#[tokio::test]
+async fn outbound_policy_opaque_forward() {
+    let _trace = trace_init();
+
+    let in_svc_acct = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let in_identity = identity::Identity::new("foo-ns1", in_svc_acct.to_string());
+
+    let out_svc_acct = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let out_identity = identity::Identity::new("bar-ns1", out_svc_acct.to_string());
+
+    // empty / fwd profile
+    let msg1 = "custom tcp hello\n";
+    let msg2 = "custom tcp bye";
+    let srv = server::tcp()
+        .accept(move |read| {
+            assert_eq!(read, msg1.as_bytes());
+            msg2
+        })
+        .run()
+        .await;
+    let srv_addr = srv.addr;
+
+    let (inbound, _profile_in) = {
+        let id_svc = in_identity.service();
+        let ctrl = controller::new();
+        let mut env = in_identity.env;
+        env.put(
+            app::env::ENV_INBOUND_DEFAULT_POLICY,
+            "all-authenticated".into(),
+        );
+        let profile_tx = ctrl.profile_tx(srv_addr.clone());
+        // Under normal conditions, profile would return an endpoint. Since we
+        // cannot test TLS & opaque port remap without a dedicated inbound proxy,
+        // assume no target is found instead to assert the address is served by the
+        // policy controller.
+        profile_tx.send_err(grpc::Status::invalid_argument(
+            "we're pretending this is outside of the cluster",
+        ));
+        let ctrl = ctrl
+            .run()
+            .instrument(tracing::info_span!("ctrl", "inbound"))
+            .await;
+        let proxy = proxy::new()
+            .controller(ctrl)
+            .identity(id_svc.run().await)
+            .inbound(srv)
+            .inbound_direct();
+        let proxy = proxy.run_with_test_env(env).await;
+        (proxy, profile_tx)
+    };
+
+    let (outbound, _profile_out) = {
+        let ctrl = controller::new();
+        let profile_tx = ctrl.profile_tx(srv_addr.clone());
+        // Under normal conditions, profile would return an endpoint. Since we
+        // cannot test TLS & opaque port remap without a dedicated inbound proxy,
+        // assume no target is found instead to assert the address is served by the
+        // policy controller.
+        profile_tx.send_err(grpc::Status::invalid_argument(
+            "we're pretending this is outside of the cluster",
+        ));
+
+        let policy = controller::policy()
+            .with_inbound_default(policy::all_unauthenticated())
+            .outbound(
+                srv_addr,
+                outbound::OutboundPolicy {
+                    metadata: Some(api::meta::Metadata {
+                        kind: Some(api::meta::metadata::Kind::Default("test".to_string())),
+                    }),
+                    protocol: Some(outbound::ProxyProtocol {
+                        kind: Some(proxy_protocol::Kind::Opaque(proxy_protocol::Opaque {
+                            routes: vec![policy::outbound_forward_opaque_route(
+                                srv_addr,
+                                inbound.inbound.port(),
+                                in_svc_acct.to_string(),
+                            )],
+                        })),
+                    }),
+                },
+            );
+
+        let ctrl = ctrl
+            .run()
+            .instrument(tracing::info_span!("ctrl", "outbound"))
+            .await;
+        let proxy = proxy::new()
+            .controller(ctrl)
+            .policy(policy.run().await)
+            .identity(out_identity.service().run().await)
+            .outbound_ip(srv_addr)
+            .run_with_test_env(out_identity.env)
+            .await;
+        (proxy, profile_tx)
+    };
+
+    let client = client::tcp(outbound.outbound);
+
+    let tcp_client = client.connect().await;
+    tcp_client.write(msg1).await;
+    assert_eq!(tcp_client.read().await, msg2.as_bytes());
+
+    tcp_client.shutdown().await;
+    outbound.join_servers().await;
+}
+
 fn httproute_meta(name: impl ToString) -> api::meta::Metadata {
     api::meta::Metadata {
         kind: Some(api::meta::metadata::Kind::Resource(api::meta::Resource {

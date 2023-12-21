@@ -176,6 +176,49 @@ pub fn outbound_default_opaque_route(dst: impl ToString) -> outbound::OpaqueRout
     }
 }
 
+pub fn outbound_forward_opaque_route(
+    addr: SocketAddr,
+    tagged_port: u16,
+    identity: String,
+) -> outbound::OpaqueRoute {
+    use outbound::opaque_route::{self, distribution};
+
+    let dst = controller::DestinationBuilder::new(addr)
+        .hint(controller::Hint::Opaque)
+        .opaque_port(tagged_port)
+        .identity(identity);
+
+    outbound::OpaqueRoute {
+        metadata: Some(api::meta::Metadata {
+            kind: Some(api::meta::metadata::Kind::Default("default".to_string())),
+        }),
+        rules: vec![outbound::opaque_route::Rule {
+            backends: Some(opaque_route::Distribution {
+                kind: Some(distribution::Kind::FirstAvailable(
+                    distribution::FirstAvailable {
+                        backends: vec![opaque_route::RouteBackend {
+                            backend: Some(outbound::Backend {
+                                metadata: Some(api::meta::Metadata {
+                                    kind: Some(api::meta::metadata::Kind::Default(
+                                        "default".to_string(),
+                                    )),
+                                }),
+                                queue: Some(outbound::Queue {
+                                    capacity: 100,
+                                    failfast_timeout: Some(
+                                        Duration::from_secs(3).try_into().unwrap(),
+                                    ),
+                                }),
+                                kind: Some(outbound::backend::Kind::Forward(dst.into())),
+                            }),
+                        }],
+                    },
+                )),
+            }),
+        }],
+    }
+}
+
 pub fn backend(dst: impl ToString) -> outbound::Backend {
     use outbound::backend::{self, balance_p2c, endpoint_discovery, EndpointDiscovery};
 

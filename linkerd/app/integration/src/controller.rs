@@ -475,6 +475,63 @@ impl DestinationBuilder {
     }
 }
 
+impl From<DestinationBuilder> for pb::WeightedAddr {
+    fn from(
+        DestinationBuilder {
+            addr,
+            hint,
+            opaque_port,
+            addr_labels,
+            identity,
+            ..
+        }: DestinationBuilder,
+    ) -> Self {
+        let protocol_hint = match (hint, opaque_port) {
+            (Hint::Unknown, None) => None,
+            (Hint::Unknown, Some(port)) => Some(pb::ProtocolHint {
+                protocol: None,
+                opaque_transport: Some(pb::protocol_hint::OpaqueTransport {
+                    inbound_port: port as u32,
+                }),
+            }),
+            (hint, port) => {
+                let protocol = match hint {
+                    Hint::Unknown => None,
+                    Hint::H2 => Some(pb::protocol_hint::Protocol::H2(pb::protocol_hint::H2 {})),
+                    Hint::Opaque => Some(pb::protocol_hint::Protocol::Opaque(
+                        pb::protocol_hint::Opaque {},
+                    )),
+                };
+                let opaque_transport = port.map(|port| pb::protocol_hint::OpaqueTransport {
+                    inbound_port: port as u32,
+                });
+
+                Some(pb::ProtocolHint {
+                    protocol,
+                    opaque_transport,
+                })
+            }
+        };
+
+        let tls_identity = identity.map(|name| pb::TlsIdentity {
+            strategy: Some(pb::tls_identity::Strategy::DnsLikeIdentity(
+                pb::tls_identity::DnsLikeIdentity { name },
+            )),
+        });
+        pb::WeightedAddr {
+            addr: Some(net::TcpAddress {
+                ip: Some(ip_conv(addr.ip())),
+                port: u32::from(addr.port()),
+            }),
+            metric_labels: addr_labels,
+            weight: 1,
+            tls_identity,
+            protocol_hint,
+            authority_override: None,
+        }
+    }
+}
+
 impl From<DestinationBuilder> for pb::Update {
     fn from(
         DestinationBuilder {
