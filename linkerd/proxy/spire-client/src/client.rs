@@ -39,7 +39,6 @@ impl tower::Service<()> for Client {
         let socket = self.socket.clone();
         let backoff = self.backoff;
         Box::pin(async move {
-            //spiffe::workload_api::client::WorkloadApiClient
             // Strip the 'unix:' prefix for tonic compatibility.
             let stripped_path = socket
                 .strip_prefix(UNIX_PREFIX)

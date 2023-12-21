@@ -25,3 +25,4 @@ asn1 = { version = "0.6", package = "simple_asn1" }
 
 [dev-dependencies]
 rcgen = "0.11.3"
+tokio-test = "0.4"

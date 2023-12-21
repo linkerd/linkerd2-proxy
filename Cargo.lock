@@ -1893,6 +1893,7 @@ dependencies = [
  "simple_asn1",
  "spiffe-proto",
  "tokio",
+ "tokio-test",
  "tonic",
  "tower",
  "tracing",
