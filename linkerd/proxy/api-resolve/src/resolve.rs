@@ -1,15 +1,10 @@
-use crate::{
-    api::destination as api,
-    core::resolve::{self, Update},
-    metadata::Metadata,
-    pb, ConcreteAddr,
-};
+use crate::{api::destination as api, core::resolve::Update, metadata::Metadata, pb, ConcreteAddr};
 use api::destination_client::DestinationClient;
-use async_stream::try_stream;
 use futures::prelude::*;
 use http_body::Body;
 use linkerd_error::Error;
 use linkerd_stack::Param;
+use linkerd_tonic_stream::{LimitReceiveFuture, ReceiveLimits};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
@@ -18,8 +13,9 @@ use tracing::{debug, info, trace};
 
 #[derive(Clone)]
 pub struct Resolve<S> {
-    service: DestinationClient<S>,
+    client: DestinationClient<S>,
     context_token: String,
+    limits: ReceiveLimits,
 }
 
 // === impl Resolve ===
@@ -32,10 +28,11 @@ where
     <S::ResponseBody as Body>::Error: Into<Error> + Send,
     S::Future: Send,
 {
-    pub fn new(svc: S, context_token: String) -> Self {
+    pub fn new(svc: S, context_token: String, limits: ReceiveLimits) -> Self {
         Self {
-            service: DestinationClient::new(svc),
+            client: DestinationClient::new(svc),
             context_token,
+            limits,
         }
     }
 }
@@ -72,61 +69,56 @@ where
             context_token: self.context_token.clone(),
             ..Default::default()
         };
-        let mut client = self.service.clone();
+
+        let limits = self.limits;
+        let mut client = self.client.clone();
         Box::pin(async move {
-            // Wait for the server to respond once before returning a stream. This let's us eagerly
-            // detect errors (like InvalidArgument).
-            let rsp = client.get(grpc::Request::new(req)).await?;
+            let rsp = LimitReceiveFuture::new(limits, client.get(grpc::Request::new(req))).await?;
             trace!(metadata = ?rsp.metadata());
-            let stream: UpdatesStream = Box::pin(resolution(rsp.into_inner()));
-            Ok(stream)
+            Ok(rsp
+                .into_inner()
+                .try_filter_map(|up| futures::future::ok::<_, _>(mk_update(up)))
+                .boxed())
         })
     }
 }
 
-fn resolution(
-    mut stream: tonic::Streaming<api::Update>,
-) -> impl Stream<Item = Result<resolve::Update<Metadata>, grpc::Status>> {
-    try_stream! {
-        while let Some(update) = stream.next().await {
-            match update?.update {
-                Some(api::update::Update::Add(api::WeightedAddrSet {
-                    addrs,
-                    metric_labels,
-                })) => {
-                    let addr_metas = addrs
-                        .into_iter()
-                        .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels))
-                        .collect::<Vec<_>>();
-                    if !addr_metas.is_empty() {
-                        debug!(endpoints = %addr_metas.len(), "Add");
-                        yield Update::Add(addr_metas);
-                    }
-                }
-
-                Some(api::update::Update::Remove(api::AddrSet { addrs })) => {
-                    let sock_addrs = addrs
-                        .into_iter()
-                        .filter_map(pb::to_sock_addr)
-                        .collect::<Vec<_>>();
-                    if !sock_addrs.is_empty() {
-                        debug!(endpoints = %sock_addrs.len(), "Remove");
-                        yield Update::Remove(sock_addrs);
-                    }
-                }
-
-                Some(api::update::Update::NoEndpoints(api::NoEndpoints { exists })) => {
-                    info!("No endpoints");
-                    let update = if exists {
-                        Update::Reset(Vec::new())
-                    } else {
-                        Update::DoesNotExist
-                    };
-                    yield update;
-                }
-
-                None => {} // continue
+fn mk_update(up: api::Update) -> Option<Update<Metadata>> {
+    match up.update? {
+        api::update::Update::Add(api::WeightedAddrSet {
+            addrs,
+            metric_labels,
+        }) => {
+            let addr_metas = addrs
+                .into_iter()
+                .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels))
+                .collect::<Vec<_>>();
+            if !addr_metas.is_empty() {
+                debug!(endpoints = %addr_metas.len(), "Add");
+                return Some(Update::Add(addr_metas));
             }
         }
+
+        api::update::Update::Remove(api::AddrSet { addrs }) => {
+            let sock_addrs = addrs
+                .into_iter()
+                .filter_map(pb::to_sock_addr)
+                .collect::<Vec<_>>();
+            if !sock_addrs.is_empty() {
+                debug!(endpoints = %sock_addrs.len(), "Remove");
+                return Some(Update::Remove(sock_addrs));
+            }
+        }
+
+        api::update::Update::NoEndpoints(api::NoEndpoints { exists }) => {
+            info!("No endpoints");
+            return Some(if exists {
+                Update::Reset(Vec::new())
+            } else {
+                Update::DoesNotExist
+            });
+        }
     }
+
+    None
 }

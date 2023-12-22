@@ -7,6 +7,7 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     Error,
 };
+use linkerd_tonic_stream::ReceiveLimits;
 use std::{fmt::Debug, sync::Arc};
 use tracing::debug_span;
 
@@ -23,6 +24,7 @@ impl Inbound<()> {
         workload: Arc<str>,
         client: C,
         backoff: ExponentialBackoff,
+        limits: ReceiveLimits,
     ) -> impl policy::GetPolicy + Clone + Send + Sync + 'static
     where
         C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
@@ -31,7 +33,10 @@ impl Inbound<()> {
         C::ResponseBody: Default + Send + 'static,
         C::Future: Send,
     {
-        self.config.policy.clone().build(workload, client, backoff)
+        self.config
+            .policy
+            .clone()
+            .build(workload, client, backoff, limits)
     }
 
     pub fn mk<A, I, P>(

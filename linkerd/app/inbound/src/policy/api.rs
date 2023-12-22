@@ -9,13 +9,16 @@ use linkerd_app_core::{
     Error, Recover, Result,
 };
 use linkerd_proxy_server_policy::ServerPolicy;
+use linkerd_tonic_stream::{LimitReceiveFuture, ReceiveLimits};
 use linkerd_tonic_watch::StreamWatch;
-use std::{sync::Arc, time};
+use std::sync::Arc;
+use tokio::time;
 
 #[derive(Clone, Debug)]
 pub(super) struct Api<S> {
     workload: Arc<str>,
-    detect_timeout: time::Duration,
+    limits: ReceiveLimits,
+    default_detect_timeout: time::Duration,
     client: Client<S>,
 }
 
@@ -34,10 +37,16 @@ where
     S::ResponseBody:
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
-    pub(super) fn new(workload: Arc<str>, detect_timeout: time::Duration, client: S) -> Self {
+    pub(super) fn new(
+        workload: Arc<str>,
+        limits: ReceiveLimits,
+        default_detect_timeout: time::Duration,
+        client: S,
+    ) -> Self {
         Self {
             workload,
-            detect_timeout,
+            limits,
+            default_detect_timeout,
             client: Client::new(client),
         }
     }
@@ -72,26 +81,28 @@ where
             port: port.into(),
             workload: self.workload.as_ref().to_owned(),
         };
-        let detect_timeout = self.detect_timeout;
+
+        let detect_timeout = self.default_detect_timeout;
+        let limits = self.limits;
         let mut client = self.client.clone();
         Box::pin(async move {
-            let rsp = client.watch_port(tonic::Request::new(req)).await?;
-            Ok(rsp.map(|updates| {
-                updates
-                    .map_ok(move |up| {
-                        // If the server returned an invalid server policy, we
-                        // default to using an invalid policy that causes all
-                        // requests to report an internal error.
-                        let policy = ServerPolicy::try_from(up).unwrap_or_else(|error| {
-                            tracing::warn!(%error, "Server misconfigured");
-                            INVALID_POLICY
-                                .get_or_init(|| ServerPolicy::invalid(detect_timeout))
-                                .clone()
-                        });
-                        tracing::debug!(?policy);
-                        policy
-                    })
-                    .boxed()
+            let rsp = LimitReceiveFuture::new(limits, client.watch_port(tonic::Request::new(req)))
+                .await?;
+            Ok(rsp.map(move |s| {
+                s.map_ok(move |up| {
+                    // If the server returned an invalid server policy, we
+                    // default to using an invalid policy that causes all
+                    // requests to report an internal error.
+                    let policy = ServerPolicy::try_from(up).unwrap_or_else(|error| {
+                        tracing::warn!(%error, "Server misconfigured");
+                        INVALID_POLICY
+                            .get_or_init(|| ServerPolicy::invalid(detect_timeout))
+                            .clone()
+                    });
+                    tracing::debug!(?policy);
+                    policy
+                })
+                .boxed()
             }))
         })
     }
