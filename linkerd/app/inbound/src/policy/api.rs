@@ -114,17 +114,23 @@ impl Recover<tonic::Status> for GrpcRecover {
     type Backoff = ExponentialBackoffStream;
 
     fn recover(&self, status: tonic::Status) -> Result<Self::Backoff, tonic::Status> {
-        if status.code() == tonic::Code::InvalidArgument
-            || status.code() == tonic::Code::FailedPrecondition
-        {
-            return Err(status);
+        match status.code() {
+            tonic::Code::InvalidArgument | tonic::Code::FailedPrecondition => Err(status),
+            tonic::Code::Ok => {
+                tracing::debug!(
+                    grpc.message = status.message(),
+                    "Completed; retrying with a backoff",
+                );
+                Ok(self.0.stream())
+            }
+            code => {
+                tracing::warn!(
+                    grpc.status = %code,
+                    grpc.message = status.message(),
+                    "Unexpected policy controller response; retrying with a backoff",
+                );
+                Ok(self.0.stream())
+            }
         }
-
-        tracing::warn!(
-            grpc.status = %status.code(),
-            grpc.message = status.message(),
-            "Unexpected policy controller response; retrying with a backoff",
-        );
-        Ok(self.0.stream())
     }
 }
