@@ -7,6 +7,7 @@ use linkerd_app_core::{
     svc::{self, NewService, ServiceExt},
     Error,
 };
+use linkerd_tonic_stream::ReceiveLimits;
 
 use std::sync::Arc;
 
@@ -14,6 +15,7 @@ use std::sync::Arc;
 pub struct Config {
     pub control: control::Config,
     pub workload: String,
+    pub limits: ReceiveLimits,
 }
 
 /// Handles to policy service clients.
@@ -28,6 +30,8 @@ pub struct Policy<S> {
     pub workload: Arc<str>,
 
     pub backoff: ExponentialBackoff,
+
+    pub limits: ReceiveLimits,
 }
 
 // === impl Config ===
@@ -64,6 +68,7 @@ impl Config {
             client,
             workload,
             backoff,
+            limits: self.limits,
         })
     }
 }

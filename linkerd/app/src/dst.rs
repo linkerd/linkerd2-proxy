@@ -8,11 +8,13 @@ use linkerd_app_core::{
     svc::{self, NewService, ServiceExt},
     Error, Recover,
 };
+use linkerd_tonic_stream::ReceiveLimits;
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub control: control::Config,
     pub context: String,
+    pub limits: ReceiveLimits,
 }
 
 /// Handles to destination service clients.
@@ -58,13 +60,20 @@ impl Config {
             .new_service(())
             .map_err(Error::from);
 
-        let profiles =
-            profiles::Client::new_recover_default(backoff, svc.clone(), self.context.clone());
+        let profiles = profiles::Client::new_recover_default(
+            backoff,
+            svc.clone(),
+            self.context.clone(),
+            self.limits,
+        );
 
         Ok(Dst {
             addr,
             profiles,
-            resolve: recover::Resolve::new(backoff, api::Resolve::new(svc, self.context)),
+            resolve: recover::Resolve::new(
+                backoff,
+                api::Resolve::new(svc, self.context, self.limits),
+            ),
         })
     }
 }

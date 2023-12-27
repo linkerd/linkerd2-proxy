@@ -1,0 +1,21 @@
+[package]
+name = "linkerd-tonic-stream"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+linkerd-stack = { path = "../stack" }
+pin-project = "1"
+tonic = { version = "0.10", default-features = false }
+tokio = { version = "1", features = ["time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros"] }
+tokio-test = "0.4"
+tokio-stream = { version = "0.1", features = ["sync"] }
+linkerd-tracing = { path = "../tracing" }

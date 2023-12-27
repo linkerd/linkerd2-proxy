@@ -1077,6 +1077,7 @@ dependencies = [
  "linkerd-app-outbound",
  "linkerd-error",
  "linkerd-opencensus",
+ "linkerd-tonic-stream",
  "rangemap",
  "regex",
  "thiserror",
@@ -1215,6 +1216,7 @@ dependencies = [
  "linkerd-meshtls-rustls",
  "linkerd-proxy-client-policy",
  "linkerd-proxy-server-policy",
+ "linkerd-tonic-stream",
  "linkerd-tonic-watch",
  "linkerd-tracing",
  "linkerd2-proxy-api",
@@ -1286,6 +1288,7 @@ dependencies = [
  "linkerd-proxy-client-policy",
  "linkerd-retry",
  "linkerd-stack",
+ "linkerd-tonic-stream",
  "linkerd-tonic-watch",
  "linkerd-tracing",
  "linkerd2-proxy-api",
@@ -1671,7 +1674,6 @@ dependencies = [
 name = "linkerd-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
- "async-stream",
  "futures",
  "http",
  "http-body",
@@ -1680,6 +1682,7 @@ dependencies = [
  "linkerd-proxy-core",
  "linkerd-stack",
  "linkerd-tls",
+ "linkerd-tonic-stream",
  "linkerd2-proxy-api",
  "pin-project",
  "prost",
@@ -1980,6 +1983,7 @@ dependencies = [
  "linkerd-http-box",
  "linkerd-proxy-api-resolve",
  "linkerd-stack",
+ "linkerd-tonic-stream",
  "linkerd-tonic-watch",
  "linkerd2-proxy-api",
  "once_cell",
@@ -2077,6 +2081,21 @@ dependencies = [
 [[package]]
 name = "linkerd-tls-test-util"
 version = "0.1.0"
+
+[[package]]
+name = "linkerd-tonic-stream"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-stack",
+ "linkerd-tracing",
+ "pin-project",
+ "tokio",
+ "tokio-stream",
+ "tokio-test",
+ "tonic",
+ "tracing",
+]
 
 [[package]]
 name = "linkerd-tonic-watch"

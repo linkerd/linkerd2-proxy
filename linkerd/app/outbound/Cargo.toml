@@ -33,6 +33,7 @@ linkerd-proxy-client-policy = { path = "../../proxy/client-policy", features = [
     "proto",
 ] }
 linkerd-retry = { path = "../../retry" }
+linkerd-tonic-stream = { path = "../../tonic-stream" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 once_cell = "1"
 parking_lot = "0.12"

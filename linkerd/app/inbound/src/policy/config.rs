@@ -1,5 +1,6 @@
 use super::{api::Api, DefaultPolicy, GetPolicy, Protocol, ServerPolicy, Store};
 use linkerd_app_core::{exp_backoff::ExponentialBackoff, proxy::http, Error};
+use linkerd_tonic_stream::ReceiveLimits;
 use rangemap::RangeInclusiveSet;
 use std::{
     collections::{HashMap, HashSet},
@@ -36,6 +37,7 @@ impl Config {
         workload: Arc<str>,
         client: C,
         backoff: ExponentialBackoff,
+        limits: ReceiveLimits,
     ) -> impl GetPolicy + Clone + Send + Sync + 'static
     where
         C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
@@ -66,7 +68,7 @@ impl Config {
                         }) => timeout,
                         _ => Duration::from_secs(10),
                     };
-                    Api::new(workload, detect_timeout, client).into_watch(backoff)
+                    Api::new(workload, limits, detect_timeout, client).into_watch(backoff)
                 };
                 Store::spawn_discover(default, cache_max_idle_age, watch, ports, opaque_ports)
             }
