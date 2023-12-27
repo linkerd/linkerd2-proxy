@@ -132,7 +132,7 @@ where
                 }
             }
         }
-        .instrument(debug_span!("pool")),
+        .instrument(debug_span!("pool").or_current()),
     )
 }
 
