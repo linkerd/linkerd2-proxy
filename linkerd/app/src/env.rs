@@ -870,7 +870,7 @@ fn convert_attributes_string_to_map(attributes: String) -> HashMap<String, Strin
 
 fn mk_control_receive_limits(env: &dyn Strings) -> Result<ReceiveLimits, EnvError> {
     const ENV_INIT: &str = "LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT";
-    const ENV_IDLE: &str = "LINKERD2_PROXY_CONTROL_STREAM_IDLEL_TIMEOUT";
+    const ENV_IDLE: &str = "LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT";
     const ENV_LIFE: &str = "LINKERD2_PROXY_CONTROL_STREAM_LIFETIME";
 
     let initial = parse(env, ENV_INIT, parse_duration_opt)?.flatten();
