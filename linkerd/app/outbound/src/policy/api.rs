@@ -124,6 +124,13 @@ impl Recover<tonic::Status> for GrpcRecover {
             tonic::Code::InvalidArgument | tonic::Code::FailedPrecondition => Err(status),
             // Indicates no policy for this target
             tonic::Code::NotFound | tonic::Code::Unimplemented => Err(status),
+            tonic::Code::Ok => {
+                tracing::debug!(
+                    grpc.message = status.message(),
+                    "Completed; retrying with a backoff",
+                );
+                Ok(self.0.stream())
+            }
             code => {
                 tracing::warn!(
                     grpc.status = %code,
