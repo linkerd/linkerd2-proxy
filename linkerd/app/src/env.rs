@@ -1535,4 +1535,45 @@ mod tests {
         assert!(dbg!(parse_port_range_set("69420")).is_err());
         assert!(dbg!(parse_port_range_set("1-69420")).is_err());
     }
+
+    #[test]
+    fn control_stream_limits() {
+        impl Strings for HashMap<&'static str, &'static str> {
+            fn get(&self, key: &str) -> Result<Option<String>, EnvError> {
+                Ok(self.get(key).map(ToString::to_string))
+            }
+        }
+
+        let mut env = HashMap::default();
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "1s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "2s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "3s");
+        let limits = mk_control_receive_limits(&env).unwrap();
+        assert_eq!(limits.initial, Some(Duration::from_secs(1)));
+        assert_eq!(limits.idle, Some(Duration::from_secs(2)));
+        assert_eq!(limits.lifetime, Some(Duration::from_secs(3)));
+
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "");
+        let limits = mk_control_receive_limits(&env).unwrap();
+        assert_eq!(limits.initial, None);
+        assert_eq!(limits.idle, None);
+        assert_eq!(limits.lifetime, None);
+
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "3s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "1s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "");
+        assert!(mk_control_receive_limits(&env).is_err());
+
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "3s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "1s");
+        assert!(mk_control_receive_limits(&env).is_err());
+
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "3s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "1s");
+        assert!(mk_control_receive_limits(&env).is_err());
+    }
 }
