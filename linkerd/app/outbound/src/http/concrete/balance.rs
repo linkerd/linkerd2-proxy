@@ -155,7 +155,7 @@ where
                 .push(svc::ArcNewService::layer());
 
             endpoint
-                .push(http::NewBalancePeakEwma::layer(
+                .push(http::NewBalance::layer(
                     resolve.clone(),
                     metrics_params.clone(),
                 ))

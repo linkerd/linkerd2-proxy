@@ -242,17 +242,12 @@ mod balance {
         recover: R,
     ) -> impl svc::Layer<
         N,
-        Service = http::NewBalancePeakEwma<
-            B,
-            Params,
-            recover::Resolve<R, DnsResolve>,
-            NewIntoTarget<N>,
-        >,
+        Service = http::NewBalance<B, Params, recover::Resolve<R, DnsResolve>, NewIntoTarget<N>>,
     > {
         let resolve = recover::Resolve::new(recover, DnsResolve::new(dns));
         let metrics = Params(http::balance::MetricFamilies::register(registry));
         svc::layer::mk(move |inner| {
-            http::NewBalancePeakEwma::new(NewIntoTarget { inner }, resolve.clone(), metrics.clone())
+            http::NewBalance::new(NewIntoTarget { inner }, resolve.clone(), metrics.clone())
         })
     }
 

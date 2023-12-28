@@ -26,7 +26,7 @@ pub mod upgrade;
 pub mod version;
 
 pub use self::{
-    balance::NewBalancePeakEwma,
+    balance::NewBalance,
     classify::{
         Classify, ClassifyEos, ClassifyResponse, NewClassifyGate, NewClassifyGateSet,
         NewInsertClassifyResponse,

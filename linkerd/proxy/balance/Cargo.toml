@@ -8,30 +8,20 @@ publish = false
 [dependencies]
 ahash = "0.8"
 futures = { version = "0.3", default-features = false }
-futures-util = "0.3"
 indexmap = "1"
-linkerd-error = { path = "../../error" }
-linkerd-metrics = { path = "../../metrics" }
-linkerd-proxy-core = { path = "../core" }
-linkerd-proxy-pool = { path = "../pool" }
-linkerd-stack = { path = "../../stack" }
-parking_lot = "0.12"
-pin-project = "1"
 prometheus-client = "0.22"
 rand = "0.8"
-thiserror = "1"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-util = "0.7"
 tracing = "0.1"
+
+linkerd-error = { path = "../../error" }
+linkerd-metrics = { path = "../../metrics" }
+linkerd-pool-p2c = { path = "../../pool/p2c" }
+linkerd-proxy-core = { path = "../core" }
+linkerd-proxy-balance-queue = { path = "queue" }
+linkerd-stack = { path = "../../stack" }
 
 [dependencies.tower]
 version = "0.4.13"
 default-features = false
-features = ["balance", "load", "ready-cache"]
-
-[dev-dependencies]
-linkerd-tracing = { path = "../../tracing" }
-tokio-test = "0.4"
-tower-test = "0.4"
-quickcheck = { version = "1", default-features = false }
+features = ["load"]
