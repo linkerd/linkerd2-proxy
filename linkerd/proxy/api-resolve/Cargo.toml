@@ -18,7 +18,7 @@ linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 linkerd-tonic-stream = { path = "../../tonic-stream" }
 linkerd-tls = { path = "../../tls" }
-http = "0.2"
+http = "1.0"
 http-body = "0.4"
 pin-project = "1"
 prost = "0.12"
