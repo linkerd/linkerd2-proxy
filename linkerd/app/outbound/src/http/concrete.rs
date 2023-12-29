@@ -21,11 +21,6 @@ use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tracing::info_span;
 
 mod balance;
-mod metrics;
-#[cfg(test)]
-mod tests;
-
-pub use self::metrics::BalancerMetrics;
 
 /// Parameter configuring dispatcher behavior.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

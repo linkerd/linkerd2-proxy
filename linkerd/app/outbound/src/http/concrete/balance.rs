@@ -138,12 +138,6 @@ where
                         }
                     }),
                 )
-                .push(balance::NewGaugeEndpoints::layer_via({
-                    let metrics = metrics.http_balancer.clone();
-                    move |target: &Self| {
-                        metrics.http_endpoints(target.parent.param(), target.parent.param())
-                    }
-                }))
                 .push_on_service(svc::OnServiceLayer::new(
                     metrics.proxy.stack.layer(stack_labels("http", "endpoint")),
                 ))

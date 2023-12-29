@@ -9,7 +9,6 @@ publish = false
 ahash = "0.8"
 futures = { version = "0.3", default-features = false }
 indexmap = "1"
-prometheus-client = "0.22"
 rand = "0.8"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 tracing = "0.1"
@@ -18,6 +17,7 @@ linkerd-error = { path = "../../error" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-pool-p2c = { path = "../../pool/p2c" }
 linkerd-proxy-core = { path = "../core" }
+linkerd-proxy-balance-gauge-endpoints = { path = "gauge-endpoints" }
 linkerd-proxy-balance-queue = { path = "queue" }
 linkerd-stack = { path = "../../stack" }
 
