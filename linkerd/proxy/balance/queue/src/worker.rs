@@ -164,7 +164,24 @@ where
             };
 
             tracing::debug!(?update, "Discovered");
-            self.pool.pool.update_pool(update);
+            match update {
+                Update::Reset(eps) => {
+                    self.pool.pool.reset_pool(eps);
+                }
+                Update::Add(eps) => {
+                    for (addr, ep) in eps.into_iter() {
+                        self.pool.pool.add_endpoint(addr, ep);
+                    }
+                }
+                Update::Remove(addrs) => {
+                    for addr in addrs.into_iter() {
+                        self.pool.pool.remove_endpoint(addr);
+                    }
+                }
+                Update::DoesNotExist => {
+                    self.pool.pool.reset_pool(vec![]);
+                }
+            }
         }
     }
 
@@ -185,7 +202,24 @@ where
             };
 
             tracing::debug!(?update, "Discovered");
-            self.pool.pool.update_pool(update);
+            match update {
+                Update::Reset(eps) => {
+                    self.pool.pool.reset_pool(eps);
+                }
+                Update::Add(eps) => {
+                    for (addr, ep) in eps.into_iter() {
+                        self.pool.pool.add_endpoint(addr, ep);
+                    }
+                }
+                Update::Remove(addrs) => {
+                    for addr in addrs.into_iter() {
+                        self.pool.pool.remove_endpoint(addr);
+                    }
+                }
+                Update::DoesNotExist => {
+                    self.pool.pool.reset_pool(vec![]);
+                }
+            }
         }
     }
 }

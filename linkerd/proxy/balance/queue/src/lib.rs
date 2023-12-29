@@ -8,7 +8,6 @@
 #![forbid(unsafe_code)]
 
 use linkerd_metrics::prom;
-use linkerd_stack::Service;
 
 mod error;
 mod failfast;
@@ -20,26 +19,10 @@ mod tests;
 mod worker;
 
 pub use self::service::PoolQueue;
+pub use linkerd_pool::Pool;
 pub use linkerd_proxy_core::Update;
 
 use self::failfast::{GateMetricFamilies, GateMetrics};
-
-/// A collection of services updated from a resolution.
-pub trait Pool<T, Req>: Service<Req> {
-    /// Updates the pool's endpoints.
-    fn update_pool(&mut self, update: Update<T>);
-
-    /// Polls to update the pool while the Service is ready.
-    ///
-    /// [`Service::poll_ready`] should do the same work, but will return ready
-    /// as soon as there at least one ready endpoint. This method will continue
-    /// to drive the pool until ready is returned (indicating that the pool need
-    /// not be updated before another request is processed).
-    fn poll_pool(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>>;
-}
 
 #[derive(Clone, Debug)]
 pub struct QueueMetricFamilies<L> {

@@ -654,17 +654,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fff74096e71ed47f8e023204cfd0aa1289cd54ae5430a9523be060cdb849964"
 
 [[package]]
-name = "futures-macro"
-version = "0.3.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89ca545a94061b6365f2c7355b4b32bd20df3ff95f02da9329b34ccc3bd6ee72"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.39",
-]
-
-[[package]]
 name = "futures-sink"
 version = "0.3.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -685,7 +674,6 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-io",
- "futures-macro",
  "futures-sink",
  "futures-task",
  "memchr",
@@ -1671,6 +1659,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-pool"
+version = "0.1.0"
+dependencies = [
+ "tower-service",
+]
+
+[[package]]
+name = "linkerd-pool-p2c"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "futures",
+ "futures-util",
+ "indexmap",
+ "linkerd-error",
+ "linkerd-metrics",
+ "linkerd-pool",
+ "linkerd-stack",
+ "linkerd-tracing",
+ "parking_lot",
+ "prometheus-client",
+ "quickcheck",
+ "rand",
+ "tokio",
+ "tokio-test",
+ "tower",
+ "tower-test",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
@@ -1697,25 +1716,39 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "futures",
- "futures-util",
  "indexmap",
  "linkerd-error",
  "linkerd-metrics",
+ "linkerd-pool-p2c",
+ "linkerd-proxy-balance-queue",
  "linkerd-proxy-core",
- "linkerd-proxy-pool",
+ "linkerd-stack",
+ "prometheus-client",
+ "rand",
+ "tokio",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-proxy-balance-queue"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-metrics",
+ "linkerd-pool",
+ "linkerd-proxy-core",
  "linkerd-stack",
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
  "prometheus-client",
- "quickcheck",
- "rand",
  "thiserror",
  "tokio",
  "tokio-stream",
  "tokio-test",
  "tokio-util",
- "tower",
  "tower-test",
  "tracing",
 ]
@@ -1817,28 +1850,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
- "tracing",
-]
-
-[[package]]
-name = "linkerd-proxy-pool"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-error",
- "linkerd-metrics",
- "linkerd-proxy-core",
- "linkerd-stack",
- "linkerd-tracing",
- "parking_lot",
- "pin-project",
- "prometheus-client",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tokio-test",
- "tokio-util",
- "tower-test",
  "tracing",
 ]
 

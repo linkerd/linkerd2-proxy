@@ -1,0 +1,34 @@
+[package]
+name = "linkerd-pool-p2c"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+ahash = "0.8"
+futures = { version = "0.3", default-features = false }
+indexmap = "1"
+prometheus-client = "0.22"
+rand = { version = "0.8", features = ["small_rng"] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+tracing = "0.1"
+
+linkerd-error = { path = "../../error" }
+linkerd-metrics = { path = "../../metrics" }
+linkerd-pool = { path = ".." }
+linkerd-stack = { path = "../../stack" }
+
+[dependencies.tower]
+version = "0.4.13"
+default-features = false
+features = ["load", "ready-cache"]
+
+[dev-dependencies]
+futures-util = { version = "0.3", default-features = false }
+linkerd-tracing = { path = "../../tracing" }
+parking_lot = "0.12"
+quickcheck = { version = "1", default-features = false }
+tokio-test = "0.4"
+tower-test = "0.4"

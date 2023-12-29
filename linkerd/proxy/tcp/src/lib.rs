@@ -4,4 +4,4 @@
 pub mod balance;
 pub mod forward;
 
-pub use self::{balance::NewBalancePeakEwma, forward::Forward};
+pub use self::{balance::NewBalance, forward::Forward};
