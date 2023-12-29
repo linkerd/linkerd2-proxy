@@ -5,6 +5,9 @@ use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_metrics::prom;
 use linkerd_pool_p2c::{P2cMetricFamilies, P2cMetrics, P2cPool};
+use linkerd_proxy_balance_gauge_endpoints::{
+    EndpointsGauges, EndpointsGaugesFamilies, NewGaugeBalancerEndpoint,
+};
 use linkerd_proxy_balance_queue::PoolQueue;
 use linkerd_proxy_core::Resolve;
 use linkerd_stack::{layer, queue, ExtractParam, Gate, NewService, Param, Service};
@@ -12,11 +15,6 @@ use std::{fmt::Debug, marker::PhantomData, net::SocketAddr};
 use tokio::time;
 use tower::load::{self, PeakEwma};
 
-// TODO(ver) Endpoint gauges should be pulled up into this module once it's
-// updated to use the new prometheus registry.
-mod gauge_endpoints;
-
-pub use self::gauge_endpoints::{EndpointsGauges, NewGaugeEndpoints};
 pub use linkerd_proxy_balance_queue::{Pool, QueueMetricFamilies, QueueMetrics, Update};
 pub use tower::load::peak_ewma;
 
@@ -30,12 +28,14 @@ pub struct EwmaConfig {
 pub struct MetricFamilies<L> {
     queue: QueueMetricFamilies<L>,
     p2c: P2cMetricFamilies<L>,
+    endpoints: EndpointsGaugesFamilies<L>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Metrics {
     queue: QueueMetrics,
     p2c: P2cMetrics,
+    endpoints: EndpointsGauges,
 }
 
 /// Configures a stack to resolve targets to balance requests over `N`-typed
@@ -117,12 +117,11 @@ where
 
         // The pool wraps the inner endpoint stack so that its inner ready cache
         // can be updated without requiring the service to process requests.
-        let pool = {
-            let ewma = target.param();
-            tracing::debug!(?ewma);
-            let new_endpoint = self.inner.new_service(target);
-            P2cPool::new(metrics.p2c, NewPeakEwma::new(ewma, new_endpoint))
-        };
+        let new_endpoint = NewPeakEwma::new(
+            target.param(),
+            NewGaugeBalancerEndpoint::new(metrics.endpoints, self.inner.new_service(target)),
+        );
+        let pool = P2cPool::new(metrics.p2c, new_endpoint);
 
         // The queue runs on a dedicated task, owning the resolution stream and
         // all of the inner endpoint services. A cloneable Service is returned
@@ -197,7 +196,12 @@ where
     pub fn register(reg: &mut prom::registry::Registry) -> Self {
         let p2c = P2cMetricFamilies::register(reg.sub_registry_with_prefix("p2c"));
         let queue = QueueMetricFamilies::register(reg.sub_registry_with_prefix("queue"));
-        Self { p2c, queue }
+        let endpoints = EndpointsGaugesFamilies::register(reg);
+        Self {
+            p2c,
+            queue,
+            endpoints,
+        }
     }
 
     pub fn metrics(&self, labels: &L) -> Metrics {
@@ -205,6 +209,7 @@ where
         Metrics {
             p2c: self.p2c.metrics(labels),
             queue: self.queue.metrics(labels),
+            endpoints: self.endpoints.metrics(labels),
         }
     }
 }

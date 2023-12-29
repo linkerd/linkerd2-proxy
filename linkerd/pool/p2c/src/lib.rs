@@ -55,7 +55,7 @@ pub struct P2cMetrics {
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-pub struct UpdateLabels<L> {
+struct UpdateLabels<L> {
     op: UpdateOp,
     labels: L,
 }

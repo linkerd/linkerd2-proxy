@@ -1,0 +1,11 @@
+[package]
+name = "linkerd-proxy-balance-gauge-endpoints"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+prometheus-client = "0.22"
+
+linkerd-stack = { path = "../../../stack" }

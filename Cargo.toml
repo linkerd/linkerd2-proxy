@@ -43,6 +43,7 @@ members = [
     "linkerd/pool/p2c",
     "linkerd/proxy/api-resolve",
     "linkerd/proxy/balance",
+    "linkerd/proxy/balance/gauge-endpoints",
     "linkerd/proxy/balance/queue",
     "linkerd/proxy/client-policy",
     "linkerd/proxy/core",

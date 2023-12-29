@@ -1720,14 +1720,22 @@ dependencies = [
  "linkerd-error",
  "linkerd-metrics",
  "linkerd-pool-p2c",
+ "linkerd-proxy-balance-gauge-endpoints",
  "linkerd-proxy-balance-queue",
  "linkerd-proxy-core",
  "linkerd-stack",
- "prometheus-client",
  "rand",
  "tokio",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "linkerd-proxy-balance-gauge-endpoints"
+version = "0.1.0"
+dependencies = [
+ "linkerd-stack",
+ "prometheus-client",
 ]
 
 [[package]]

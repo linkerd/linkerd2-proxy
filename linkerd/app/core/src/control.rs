@@ -133,7 +133,11 @@ impl Config {
 
         let balance = endpoint
             .lift_new()
-            .push(self::balance::layer(registry, dns, resolve_backoff))
+            .push(self::balance::layer(
+                registry.sub_registry_with_prefix("balancer"),
+                dns,
+                resolve_backoff,
+            ))
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(classify::NewClassify::layer_default());
 

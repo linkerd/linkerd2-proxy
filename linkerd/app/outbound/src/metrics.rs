@@ -8,10 +8,7 @@
 //! to be updated frequently or in a performance-critical area. We should probably look to use
 //! `DashMap` as we migrate other metrics registries.
 
-use crate::{
-    http::{concrete::BalancerMetrics, policy::RouteBackendMetrics},
-    policy, BackendRef, ParentRef,
-};
+use crate::{http::policy::RouteBackendMetrics, policy, BackendRef, ParentRef};
 use linkerd_app_core::{
     metrics::prom::{encoding::*, EncodeLabelSetMut},
     svc,
@@ -28,7 +25,6 @@ pub struct OutboundMetrics {
     pub(crate) tcp_errors: error::Tcp,
 
     pub(crate) http_route_backends: RouteBackendMetrics,
-    pub(crate) http_balancer: BalancerMetrics,
 
     /// Holds metrics that are common to both inbound and outbound proxies. These metrics are
     /// reported separately
@@ -76,7 +72,6 @@ impl OutboundMetrics {
             http_errors: error::Http::default(),
             tcp_errors: error::Tcp::default(),
             http_route_backends: RouteBackendMetrics::default(),
-            http_balancer: BalancerMetrics::default(),
         }
     }
 }
@@ -84,7 +79,6 @@ impl OutboundMetrics {
 impl FmtMetrics for OutboundMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.http_route_backends.fmt_metrics(f)?;
-        self.http_balancer.fmt_metrics(f)?;
         self.http_errors.fmt_metrics(f)?;
         self.tcp_errors.fmt_metrics(f)?;
 
