@@ -1601,7 +1601,6 @@ dependencies = [
  "linkerd-error",
  "linkerd-identity",
  "linkerd-io",
- "linkerd-meshtls",
  "linkerd-meshtls-verifier",
  "linkerd-stack",
  "linkerd-tls",
