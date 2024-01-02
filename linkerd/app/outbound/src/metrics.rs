@@ -8,7 +8,7 @@
 //! to be updated frequently or in a performance-critical area. We should probably look to use
 //! `DashMap` as we migrate other metrics registries.
 
-use crate::{http::policy::RouteBackendMetrics, policy, BackendRef, ParentRef};
+use crate::{policy, BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{
     metrics::prom::{encoding::*, EncodeLabelSetMut},
     svc,
@@ -24,8 +24,8 @@ pub struct OutboundMetrics {
     pub(crate) http_errors: error::Http,
     pub(crate) tcp_errors: error::Tcp,
 
-    pub(crate) http_route_backends: RouteBackendMetrics,
-
+    // pub(crate) http_route_backends: RouteBackendMetrics,
+    // pub(crate) grpc_route_backends: RouteBackendMetrics,
     /// Holds metrics that are common to both inbound and outbound proxies. These metrics are
     /// reported separately
     pub(crate) proxy: Proxy,
@@ -63,6 +63,16 @@ where
     }
 }
 
+impl<L> Default for BalancerMetricsParams<L>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone,
+{
+    fn default() -> Self {
+        Self(balance::MetricFamilies::default())
+    }
+}
+
 // === impl OutboundMetrics ===
 
 impl OutboundMetrics {
@@ -71,18 +81,16 @@ impl OutboundMetrics {
             proxy,
             http_errors: error::Http::default(),
             tcp_errors: error::Tcp::default(),
-            http_route_backends: RouteBackendMetrics::default(),
         }
     }
 }
 
 impl FmtMetrics for OutboundMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.http_route_backends.fmt_metrics(f)?;
         self.http_errors.fmt_metrics(f)?;
         self.tcp_errors.fmt_metrics(f)?;
 
-        // XXX: Proxy metrics are reported elsewhere.
+        // XXX: Proxy and Route Backend metrics are reported elsewhere.
 
         Ok(())
     }
@@ -169,6 +177,20 @@ impl BackendRef {
 }
 
 impl EncodeLabelSet for BackendRef {
+    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl RouteRef ===
+
+impl RouteRef {
+    pub fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        prom_encode_meta_labels("route", &self.0, enc)
+    }
+}
+
+impl EncodeLabelSet for RouteRef {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
     }

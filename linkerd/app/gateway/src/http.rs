@@ -89,7 +89,7 @@ impl Gateway {
             .outbound
             .clone()
             .with_stack(inner)
-            .push_http_cached(registry, resolve)
+            .push_http_cached(outbound::http::HttpMetrics::register(registry), resolve)
             .into_stack()
             // Discard `T` and its associated client-specific metadata.
             .push_map_target(Target::discard_parent)

@@ -63,7 +63,7 @@ impl Outbound<()> {
             .to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_tcp_client()
-            .push_http_cached(registry.sub_registry_with_prefix("http"), resolve)
+            .push_http_cached(http::HttpMetrics::register(registry), resolve)
             .push_http_server()
             .into_stack()
             .push_map_target(HttpSidecar::from)

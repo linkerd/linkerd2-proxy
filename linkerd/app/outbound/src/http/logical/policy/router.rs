@@ -1,6 +1,6 @@
 use super::{
     super::{concrete, Concrete, LogicalAddr, NoRoute},
-    route, RouteBackendMetrics,
+    route,
 };
 use crate::{BackendRef, EndpointRef, ParentRef, RouteRef};
 use linkerd_app_core::{
@@ -64,13 +64,13 @@ where
     >,
     route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply + svc::Param<classify::Request>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
-    route::backend::ExtractMetrics:
+    route::backend::RouteBackendMetrics:
         svc::ExtractParam<route::backend::RequestCount, route::MatchedBackend<T, M::Summary, F>>,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.
     pub(super) fn layer<N, S>(
-        route_backend_metrics: RouteBackendMetrics,
+        metrics: route::RouteMetrics,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
@@ -92,7 +92,7 @@ where
                 .push(NewBackendCache::layer())
                 // Lazily cache a service for each `RouteParams` returned from the
                 // `SelectRoute` impl.
-                .push_on_service(route::MatchedRoute::layer(route_backend_metrics.clone()))
+                .push_on_service(route::MatchedRoute::layer(metrics.clone()))
                 .push(svc::NewOneshotRoute::<Self, (), _>::layer_cached())
                 .arc_new_clone_http()
                 .into_inner()

@@ -77,48 +77,71 @@ async fn header_based_route() {
         panic!("unexpected target: {:?}", concrete.target);
     };
 
+    let parent_ref = ParentRef(Arc::new(policy::Meta::Resource {
+        group: "core".into(),
+        kind: "Service".into(),
+        namespace: "ns".into(),
+        name: "papa".into(),
+        port: NonZeroU16::new(7979),
+        section: None,
+    }));
+
+    let default_backend = mk_backend("default");
+    let default_backend_ref = crate::BackendRef(default_backend.meta.clone());
+    let default_policy = mk_policy("default", default_backend.clone());
+    let default_route_ref = crate::RouteRef(default_policy.meta.clone());
+
+    let special_backend = mk_backend("special");
+    let special_policy = mk_policy("special", special_backend.clone());
+    let special_route_ref = crate::RouteRef(special_policy.meta.clone());
+    let special_backend_ref = crate::BackendRef(special_backend.meta.clone());
+
     // Routes that configure a special header-based route and a default route.
-    let routes = Params::Http({
-        let default = mk_backend("default");
-        let special = mk_backend("special");
-        router::HttpParams {
-            addr: Addr::Socket(([127, 0, 0, 1], 8080).into()),
-            meta: ParentRef(Arc::new(policy::Meta::Resource {
-                group: "core".into(),
-                kind: "Service".into(),
-                namespace: "ns".into(),
-                name: "papa".into(),
-                port: NonZeroU16::new(7979),
-                section: None,
-            })),
-            routes: Arc::new([policy::http::Route {
-                hosts: Default::default(),
-                rules: vec![
-                    policy::http::Rule {
-                        matches: vec![route::http::MatchRequest {
-                            headers: vec![route::http::r#match::MatchHeader::Exact(
-                                "x-special".parse().unwrap(),
-                                "true".parse().unwrap(),
-                            )],
-                            ..Default::default()
-                        }],
-                        policy: mk_policy("special", special.clone()),
-                    },
-                    policy::http::Rule {
-                        matches: vec![route::http::MatchRequest::default()],
-                        policy: mk_policy("default", default.clone()),
-                    },
-                ],
-            }]),
-            backends: std::iter::once(default).chain(Some(special)).collect(),
-            failure_accrual: Default::default(),
-        }
+    let routes = Params::Http(router::HttpParams {
+        addr: Addr::Socket(([127, 0, 0, 1], 8080).into()),
+        meta: parent_ref.clone(),
+        routes: Arc::new([policy::http::Route {
+            hosts: Default::default(),
+            rules: vec![
+                policy::http::Rule {
+                    matches: vec![route::http::MatchRequest {
+                        headers: vec![route::http::r#match::MatchHeader::Exact(
+                            "x-special".parse().unwrap(),
+                            "true".parse().unwrap(),
+                        )],
+                        ..Default::default()
+                    }],
+                    policy: special_policy.clone(),
+                },
+                policy::http::Rule {
+                    matches: vec![route::http::MatchRequest::default()],
+                    policy: default_policy.clone(),
+                },
+            ],
+        }]),
+        backends: std::iter::once(default_backend.clone())
+            .chain(Some(special_backend.clone()))
+            .collect(),
+        failure_accrual: Default::default(),
     });
 
-    let metrics = RouteBackendMetrics::default();
-    let router = Policy::layer(metrics.clone())
+    let metrics = RouteMetrics::default();
+    let router = Policy::layer(metrics.clone(), Default::default())
         .layer(inner)
         .new_service(Policy::from((routes, ())));
+
+    let default_reqs = metrics.request_count(
+        parent_ref.clone(),
+        default_route_ref.clone(),
+        default_backend_ref.clone(),
+    );
+    let special_reqs = metrics.request_count(
+        parent_ref.clone(),
+        special_route_ref.clone(),
+        special_backend_ref.clone(),
+    );
+    assert_eq!(default_reqs.get(), 0);
+    assert_eq!(special_reqs.get(), 0);
 
     default.allow(1);
     special.allow(1);
@@ -132,6 +155,8 @@ async fn header_based_route() {
         _ = time::sleep(time::Duration::from_secs(1)) => panic!("timed out"),
         reqrsp = default.next_request() => reqrsp.expect("request"),
     };
+    assert_eq!(default_reqs.get(), 1);
+    assert_eq!(special_reqs.get(), 0);
 
     default.allow(1);
     special.allow(1);
@@ -146,23 +171,11 @@ async fn header_based_route() {
         _ = time::sleep(time::Duration::from_secs(1)) => panic!("timed out"),
         reqrsp = special.next_request() => reqrsp.expect("request"),
     };
+    assert_eq!(default_reqs.get(), 1);
+    assert_eq!(special_reqs.get(), 1);
 
     // Hold the router to prevent inner services from being dropped.
     drop(router);
-
-    let report = linkerd_app_core::metrics::FmtMetrics::as_display(&metrics).to_string();
-    let mut lines = report
-        .lines()
-        .filter(|l| !l.starts_with('#'))
-        .collect::<Vec<_>>();
-    lines.sort();
-    assert_eq!(
-        lines,
-        vec![
-            r#"outbound_http_route_backend_requests_total{parent_group="core",parent_kind="Service",parent_namespace="ns",parent_name="papa",parent_port="7979",parent_section_name="",route_group="policy.linkerd.io",route_kind="HTTPRoute",route_namespace="ns",route_name="default",backend_group="core",backend_kind="Service",backend_namespace="ns",backend_name="default",backend_port="8080",backend_section_name=""} 1"#,
-            r#"outbound_http_route_backend_requests_total{parent_group="core",parent_kind="Service",parent_namespace="ns",parent_name="papa",parent_port="7979",parent_section_name="",route_group="policy.linkerd.io",route_kind="HTTPRoute",route_namespace="ns",route_name="special",backend_group="core",backend_kind="Service",backend_namespace="ns",backend_name="special",backend_port="8080",backend_section_name=""} 1"#,
-        ]
-    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -226,7 +239,7 @@ async fn http_filter_request_headers() {
         }
     });
 
-    let router = Policy::layer(Default::default())
+    let router = Policy::layer(Default::default(), Default::default())
         .layer(inner)
         .new_service(Policy::from((routes, ())));
 

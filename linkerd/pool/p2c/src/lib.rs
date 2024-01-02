@@ -277,6 +277,19 @@ where
 
 // === impl P2cMetricFamilies ===
 
+impl<L> Default for P2cMetricFamilies<L>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone,
+{
+    fn default() -> Self {
+        Self {
+            endpoints: prom::Family::default(),
+            updates: prom::Family::default(),
+        }
+    }
+}
+
 impl<L> P2cMetricFamilies<L>
 where
     L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,

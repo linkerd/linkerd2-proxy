@@ -1,11 +1,11 @@
-use linkerd_app_core::{metrics::Counter, svc};
-use std::{
-    sync::Arc,
-    task::{Context, Poll},
-};
+use linkerd_app_core::{metrics::prom, svc};
+use std::task::{Context, Poll};
 
-#[derive(Clone, Debug, Default)]
-pub struct RequestCount(pub Arc<Counter>);
+#[derive(Clone, Debug)]
+pub struct RequestCountFamilies<L: Clone>(prom::Family<L, prom::Counter>);
+
+#[derive(Clone, Debug)]
+pub struct RequestCount(prom::Counter);
 
 #[derive(Clone, Debug)]
 pub struct NewCountRequests<X, N> {
@@ -16,7 +16,27 @@ pub struct NewCountRequests<X, N> {
 #[derive(Clone, Debug)]
 pub struct CountRequests<S> {
     inner: S,
-    requests: Arc<Counter>,
+    requests: prom::Counter,
+}
+
+impl<L> RequestCountFamilies<L>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone + Send + Sync + 'static,
+{
+    pub fn register(registry: &mut prom::Registry) -> Self {
+        let requests = prom::Family::default();
+        registry.register(
+            "requests",
+            "The total number of requests dispatched",
+            requests.clone(),
+        );
+        Self(requests)
+    }
+
+    pub fn metrics(&self, labels: &L) -> RequestCount {
+        RequestCount(self.0.get_or_create(labels).clone())
+    }
 }
 
 // === impl NewCountRequests ===
@@ -48,7 +68,7 @@ where
 // === impl CountRequests ===
 
 impl<S> CountRequests<S> {
-    fn new(requests: Arc<Counter>, inner: S) -> Self {
+    fn new(requests: prom::Counter, inner: S) -> Self {
         Self { requests, inner }
     }
 }
@@ -67,7 +87,24 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        self.requests.incr();
+        self.requests.inc();
         self.inner.call(req)
+    }
+}
+
+impl<L> Default for RequestCountFamilies<L>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self(prom::Family::default())
+    }
+}
+
+impl RequestCount {
+    #[cfg(test)]
+    pub fn get(&self) -> u64 {
+        self.0.get()
     }
 }

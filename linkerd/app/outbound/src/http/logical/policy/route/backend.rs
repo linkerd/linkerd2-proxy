@@ -1,5 +1,5 @@
 use super::{super::Concrete, filters};
-use crate::{BackendRef, RouteRef};
+use crate::{BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{proxy::http, svc, Error, Result};
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -24,11 +24,6 @@ pub(crate) type Http<T> =
     MatchedBackend<T, http_route::http::r#match::RequestMatch, policy::http::Filter>;
 pub(crate) type Grpc<T> =
     MatchedBackend<T, http_route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
-
-#[derive(Clone, Debug)]
-pub struct ExtractMetrics {
-    metrics: RouteBackendMetrics,
-}
 
 /// Wraps errors with backend metadata.
 #[derive(Debug, thiserror::Error)]
@@ -76,7 +71,7 @@ where
     F: Clone + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
-    ExtractMetrics: svc::ExtractParam<RequestCount, Self>,
+    RouteBackendMetrics: svc::ExtractParam<RequestCount, Self>,
 {
     /// Builds a stack that applies per-route-backend policy filters over an
     /// inner [`Concrete`] stack.
@@ -108,9 +103,7 @@ where
                 )
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 .push(http::NewTimeout::layer())
-                .push(count_reqs::NewCountRequests::layer_via(ExtractMetrics {
-                    metrics: metrics.clone(),
-                }))
+                .push(count_reqs::NewCountRequests::layer_via(metrics.clone()))
                 .push(svc::NewMapErr::layer_with(|t: &Self| {
                     let backend = t.params.concrete.backend_ref.clone();
                     move |source| {
@@ -129,6 +122,24 @@ where
 impl<T, M, F> svc::Param<http::ResponseTimeout> for MatchedBackend<T, M, F> {
     fn param(&self) -> http::ResponseTimeout {
         http::ResponseTimeout(self.params.request_timeout)
+    }
+}
+
+impl<T, M, F> svc::Param<ParentRef> for MatchedBackend<T, M, F> {
+    fn param(&self) -> ParentRef {
+        self.params.concrete.parent_ref.clone()
+    }
+}
+
+impl<T, M, F> svc::Param<RouteRef> for MatchedBackend<T, M, F> {
+    fn param(&self) -> RouteRef {
+        self.params.route_ref.clone()
+    }
+}
+
+impl<T, M, F> svc::Param<BackendRef> for MatchedBackend<T, M, F> {
+    fn param(&self) -> BackendRef {
+        self.params.concrete.backend_ref.clone()
     }
 }
 
@@ -152,25 +163,5 @@ impl<T> filters::Apply for Grpc<T> {
 
     fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()> {
         filters::apply_grpc_response(&self.params.filters, rsp)
-    }
-}
-
-impl<T> svc::ExtractParam<RequestCount, Http<T>> for ExtractMetrics {
-    fn extract_param(&self, params: &Http<T>) -> RequestCount {
-        RequestCount(self.metrics.http_requests_total(
-            params.params.concrete.parent_ref.clone(),
-            params.params.route_ref.clone(),
-            params.params.concrete.backend_ref.clone(),
-        ))
-    }
-}
-
-impl<T> svc::ExtractParam<RequestCount, Grpc<T>> for ExtractMetrics {
-    fn extract_param(&self, params: &Grpc<T>) -> RequestCount {
-        RequestCount(self.metrics.grpc_requests_total(
-            params.params.concrete.parent_ref.clone(),
-            params.params.route_ref.clone(),
-            params.params.concrete.backend_ref.clone(),
-        ))
     }
 }
