@@ -81,6 +81,9 @@ skip = [
     { name = "regex-syntax", version = "0.6" },
     # `trust-dns-proto`, depends on `idna` v0.2.3 while `url` depends on v0.5.0
     { name = "idna" },
+    # Some dependencies still use indexmap v1.
+    { name = "indexmap", version = "1" },
+    { name = "hashbrown", version = "0.12" },
 ]
 skip-tree = [
     # right now we have a mix of versions of this crate in the ecosystem

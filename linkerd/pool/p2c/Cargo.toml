@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 ahash = "0.8"
 futures = { version = "0.3", default-features = false }
-indexmap = "1"
+indexmap = "2"
 prometheus-client = "0.22"
 rand = { version = "0.8", features = ["small_rng"] }
 tokio = { version = "1", features = ["rt", "sync", "time"] }
