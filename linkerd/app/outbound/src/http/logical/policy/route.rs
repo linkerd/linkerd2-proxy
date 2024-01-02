@@ -1,6 +1,6 @@
 use super::super::Concrete;
 use crate::RouteRef;
-use linkerd_app_core::{classify, proxy::http, svc, Addr, Error, Result};
+use linkerd_app_core::{classify, metrics::prom, proxy::http, svc, Addr, Error, Result};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -11,6 +11,11 @@ pub(crate) mod filters;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
+
+#[derive(Clone, Debug, Default)]
+pub struct RouteMetrics {
+    backend: backend::RouteBackendMetrics,
+}
 
 /// A target type that includes a summary of exactly how a request was matched.
 /// This match state is required to apply route filters.
@@ -59,6 +64,28 @@ struct RouteError {
     source: Error,
 }
 
+// === impl RouteMetrics ===
+
+impl RouteMetrics {
+    pub fn register(reg: &mut prom::Registry) -> Self {
+        Self {
+            backend: backend::RouteBackendMetrics::register(
+                reg.sub_registry_with_prefix("backend"),
+            ),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn request_count(
+        &self,
+        p: crate::ParentRef,
+        r: RouteRef,
+        b: crate::BackendRef,
+    ) -> backend::RequestCount {
+        self.backend.request_count(p, r, b)
+    }
+}
+
 // === impl MatchedRoute ===
 
 impl<T, M, F, E> MatchedRoute<T, M, F, E>
@@ -77,13 +104,12 @@ where
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
     MatchedBackend<T, M, F>: filters::Apply,
-    backend::ExtractMetrics: svc::ExtractParam<backend::RequestCount, MatchedBackend<T, M, F>>,
 {
     /// Builds a route stack that applies policy filters to requests and
     /// distributes requests over each route's backends. These [`Concrete`]
     /// backends are expected to be cached/shared by the inner stack.
     pub(crate) fn layer<N, S>(
-        backend_metrics: backend::RouteBackendMetrics,
+        metrics: RouteMetrics,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
@@ -101,7 +127,7 @@ where
             svc::stack(inner)
                 // Distribute requests across route backends, applying policies
                 // and filters for each of the route-backends.
-                .push(MatchedBackend::layer(backend_metrics.clone()))
+                .push(MatchedBackend::layer(metrics.backend.clone()))
                 .lift_new_with_target()
                 .push(NewDistribute::layer())
                 // The router does not take the backend's availability into

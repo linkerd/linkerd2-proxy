@@ -8,7 +8,7 @@ mod router;
 mod tests;
 
 pub use self::{
-    route::{backend::RouteBackendMetrics, errors},
+    route::{errors, RouteMetrics},
     router::{GrpcParams, HttpParams},
 };
 pub use linkerd_proxy_client_policy::{ClientPolicy, FailureAccrual};
@@ -50,7 +50,8 @@ where
     /// routing configurations to route requests over cached inner backend
     /// services.
     pub(super) fn layer<N, S>(
-        route_backend_metrics: RouteBackendMetrics,
+        http_metrics: route::RouteMetrics,
+        grpc_metrics: route::RouteMetrics,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
@@ -65,9 +66,8 @@ where
         S::Future: Send,
     {
         svc::layer::mk(move |inner: N| {
-            let http =
-                svc::stack(inner.clone()).push(router::Http::layer(route_backend_metrics.clone()));
-            let grpc = svc::stack(inner).push(router::Grpc::layer(route_backend_metrics.clone()));
+            let http = svc::stack(inner.clone()).push(router::Http::layer(http_metrics.clone()));
+            let grpc = svc::stack(inner).push(router::Grpc::layer(grpc_metrics.clone()));
 
             http.push_switch(
                 |pp: Policy<T>| {

@@ -46,6 +46,16 @@ enum StateLabel {
     pending,
 }
 
+impl<L> Default for EndpointsGaugesFamilies<L>
+where
+    L: prometheus_client::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone,
+{
+    fn default() -> Self {
+        Self(Family::default())
+    }
+}
+
 impl<L> EndpointsGaugesFamilies<L>
 where
     L: prometheus_client::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,

@@ -213,3 +213,17 @@ where
         }
     }
 }
+
+impl<L> Default for MetricFamilies<L>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone,
+{
+    fn default() -> Self {
+        Self {
+            p2c: P2cMetricFamilies::default(),
+            queue: QueueMetricFamilies::default(),
+            endpoints: EndpointsGaugesFamilies::default(),
+        }
+    }
+}

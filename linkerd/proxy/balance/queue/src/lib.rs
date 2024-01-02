@@ -43,6 +43,26 @@ pub struct QueueMetrics {
 
 // === impl QueueMetricsFamilies ===
 
+impl<L> Default for QueueMetricFamilies<L>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone,
+{
+    fn default() -> Self {
+        Self {
+            length: prom::Family::default(),
+            requests: prom::Family::default(),
+            latency: prom::Family::new_with_constructor(|| {
+                // We mostly want to get a broad sense of overhead and not incur the
+                // costs of higher fidelity histograms, so we use a constrained set
+                // of buckets.
+                prom::Histogram::new([0.0005, 0.005, 0.05, 0.5, 1.0, 3.0].iter().copied())
+            }),
+            gate: GateMetricFamilies::default(),
+        }
+    }
+}
+
 impl<L> QueueMetricFamilies<L>
 where
     L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
