@@ -62,7 +62,7 @@ impl Inbound<()> {
             .push_tcp_forward()
             .into_stack()
             .push_map_target(TcpEndpoint::from_param)
-            .instrument(|_: &_| debug_span!("tcp"))
+            .instrument(|_: &_| debug_span!("tcp").or_current())
             .into_inner();
 
         // Handles connections that target the inbound proxy port.
@@ -84,7 +84,7 @@ impl Inbound<()> {
                 .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
                 .push_direct(policies.clone(), gateway, http)
                 .into_stack()
-                .instrument(|_: &_| debug_span!("direct"))
+                .instrument(|_: &_| debug_span!("direct").or_current())
                 .into_inner()
         };
 

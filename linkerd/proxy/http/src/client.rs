@@ -178,6 +178,6 @@ where
                 ) as RspFuture,
             }
         })
-        .instrument(span)
+        .instrument(span.or_current())
     }
 }

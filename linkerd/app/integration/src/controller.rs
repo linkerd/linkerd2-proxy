@@ -379,7 +379,7 @@ where
             http.http2_only(true);
             loop {
                 let (sock, addr) = listener.accept().await?;
-                let span = tracing::debug_span!("conn", %addr);
+                let span = tracing::debug_span!("conn", %addr).or_current();
                 let serve = http.serve_connection(sock, svc.clone());
                 let f = async move {
                     serve.await.map_err(|error| {

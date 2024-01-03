@@ -264,7 +264,7 @@ impl<S> Inbound<S> {
                 .push_new_thunk()
                 .push_on_service(tcp::Forward::layer())
                 .push_on_service(drain::Retain::layer(rt.drain.clone()))
-                .instrument(|_: &_| debug_span!("tcp"))
+                .instrument(|_: &_| debug_span!("tcp").or_current())
                 .push(svc::NewMapErr::layer_from_target::<ForwardError, _>())
                 .push(svc::ArcNewService::layer())
                 .check_new::<T>()

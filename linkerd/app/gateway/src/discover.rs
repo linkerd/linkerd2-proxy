@@ -45,11 +45,11 @@ impl Gateway {
             let profile = profiles
                 .clone()
                 .get_profile(profiles::LookupAddr(addr.clone().into()))
-                .instrument(tracing::debug_span!("profiles"));
+                .instrument(tracing::debug_span!("profiles").or_current());
 
             let policy = policies
                 .get_policy(addr.into())
-                .instrument(tracing::debug_span!("policy"));
+                .instrument(tracing::debug_span!("policy").or_current());
 
             let discovery = future::join(profile, policy).map(move |(profile, policy)| {
                 tracing::debug!("Discovered");
