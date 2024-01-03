@@ -70,7 +70,7 @@ impl MetricMatch {
         let num_expected_labels = self.labels.len();
 
         for &metric in &metrics {
-            let span = tracing::debug_span!("checking", ?metric);
+            let span = tracing::debug_span!("checking", ?metric).or_current();
             let _e = span.enter();
             // Count the number of expected labels matched in this metric, so
             // that we can ensure all expected labels were found.

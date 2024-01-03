@@ -174,7 +174,7 @@ where
                 }
                 Ok(())
             }
-            .instrument(tracing::debug_span!("http")),
+            .instrument(tracing::debug_span!("http").or_current()),
         )
     }
 }

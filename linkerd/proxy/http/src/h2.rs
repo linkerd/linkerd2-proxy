@@ -89,7 +89,7 @@ where
         let connect = self
             .connect
             .connect((crate::Version::H2, target))
-            .instrument(trace_span!("connect"));
+            .instrument(trace_span!("connect").or_current());
 
         Box::pin(
             async move {
@@ -114,7 +114,7 @@ where
 
                 let (tx, conn) = builder
                     .handshake(io)
-                    .instrument(trace_span!("handshake"))
+                    .instrument(trace_span!("handshake").or_current())
                     .await?;
 
                 tokio::spawn(
@@ -124,7 +124,7 @@ where
 
                 Ok(Connection { tx })
             }
-            .instrument(debug_span!("h2")),
+            .instrument(debug_span!("h2").or_current()),
         )
     }
 }

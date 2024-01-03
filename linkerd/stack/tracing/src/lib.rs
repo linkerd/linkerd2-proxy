@@ -141,7 +141,7 @@ where
         let target = &self.target;
         let _enter = self
             .current_span
-            .get_or_insert_with(|| get_span.get_span(target))
+            .get_or_insert_with(|| get_span.get_span(target).or_current())
             .enter();
 
         let ready = self.inner.poll_ready(cx);
