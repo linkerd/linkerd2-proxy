@@ -131,7 +131,7 @@ impl<T> Outbound<svc::ArcNewHttp<T, http::BoxBody>> {
                     "host",
                     CANONICAL_DST_HEADER,
                 ]))
-                .instrument(|_: &_| tracing::debug_span!("http.endpoint").or_current())
+                .instrument(|_: &_| tracing::debug_span!("http.endpoint"))
                 .push_on_service(http::BoxResponse::layer())
                 .arc_new_http()
         })

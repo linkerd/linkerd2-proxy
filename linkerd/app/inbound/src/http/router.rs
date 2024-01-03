@@ -198,7 +198,7 @@ impl<C> Inbound<C> {
                         .into_inner()
                 )
                 .check_new_service::<Logical, http::Request<_>>()
-                .instrument(|_: &Logical| debug_span!("profile").or_current())
+                .instrument(|_: &Logical| debug_span!("profile"))
                 .arc_new_http();
 
             discover
@@ -217,7 +217,7 @@ impl<C> Inbound<C> {
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .instrument(|t: &Logical| {
                     let name = t.logical.as_ref().map(tracing::field::display);
-                    debug_span!("http", name).or_current()
+                    debug_span!("http", name)
                 })
                 // Routes each request to a target, obtains a service for that target, and
                 // dispatches the request.
