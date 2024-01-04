@@ -9,13 +9,16 @@ use linkerd_app_core::{
     Error, Recover, Result,
 };
 use linkerd_proxy_server_policy::ServerPolicy;
+use linkerd_tonic_stream::{LimitReceiveFuture, ReceiveLimits};
 use linkerd_tonic_watch::StreamWatch;
-use std::{sync::Arc, time};
+use std::sync::Arc;
+use tokio::time;
 
 #[derive(Clone, Debug)]
 pub(super) struct Api<S> {
     workload: Arc<str>,
-    detect_timeout: time::Duration,
+    limits: ReceiveLimits,
+    default_detect_timeout: time::Duration,
     client: Client<S>,
 }
 
@@ -34,10 +37,16 @@ where
     S::ResponseBody:
         http::HttpBody<Data = tonic::codegen::Bytes, Error = Error> + Default + Send + 'static,
 {
-    pub(super) fn new(workload: Arc<str>, detect_timeout: time::Duration, client: S) -> Self {
+    pub(super) fn new(
+        workload: Arc<str>,
+        limits: ReceiveLimits,
+        default_detect_timeout: time::Duration,
+        client: S,
+    ) -> Self {
         Self {
             workload,
-            detect_timeout,
+            limits,
+            default_detect_timeout,
             client: Client::new(client),
         }
     }
@@ -72,26 +81,28 @@ where
             port: port.into(),
             workload: self.workload.as_ref().to_owned(),
         };
-        let detect_timeout = self.detect_timeout;
+
+        let detect_timeout = self.default_detect_timeout;
+        let limits = self.limits;
         let mut client = self.client.clone();
         Box::pin(async move {
-            let rsp = client.watch_port(tonic::Request::new(req)).await?;
-            Ok(rsp.map(|updates| {
-                updates
-                    .map_ok(move |up| {
-                        // If the server returned an invalid server policy, we
-                        // default to using an invalid policy that causes all
-                        // requests to report an internal error.
-                        let policy = ServerPolicy::try_from(up).unwrap_or_else(|error| {
-                            tracing::warn!(%error, "Server misconfigured");
-                            INVALID_POLICY
-                                .get_or_init(|| ServerPolicy::invalid(detect_timeout))
-                                .clone()
-                        });
-                        tracing::debug!(?policy);
-                        policy
-                    })
-                    .boxed()
+            let rsp = LimitReceiveFuture::new(limits, client.watch_port(tonic::Request::new(req)))
+                .await?;
+            Ok(rsp.map(move |s| {
+                s.map_ok(move |up| {
+                    // If the server returned an invalid server policy, we
+                    // default to using an invalid policy that causes all
+                    // requests to report an internal error.
+                    let policy = ServerPolicy::try_from(up).unwrap_or_else(|error| {
+                        tracing::warn!(%error, "Server misconfigured");
+                        INVALID_POLICY
+                            .get_or_init(|| ServerPolicy::invalid(detect_timeout))
+                            .clone()
+                    });
+                    tracing::debug!(?policy);
+                    policy
+                })
+                .boxed()
             }))
         })
     }
@@ -103,17 +114,23 @@ impl Recover<tonic::Status> for GrpcRecover {
     type Backoff = ExponentialBackoffStream;
 
     fn recover(&self, status: tonic::Status) -> Result<Self::Backoff, tonic::Status> {
-        if status.code() == tonic::Code::InvalidArgument
-            || status.code() == tonic::Code::FailedPrecondition
-        {
-            return Err(status);
+        match status.code() {
+            tonic::Code::InvalidArgument | tonic::Code::FailedPrecondition => Err(status),
+            tonic::Code::Ok => {
+                tracing::debug!(
+                    grpc.message = status.message(),
+                    "Completed; retrying with a backoff",
+                );
+                Ok(self.0.stream())
+            }
+            code => {
+                tracing::warn!(
+                    grpc.status = %code,
+                    grpc.message = status.message(),
+                    "Unexpected policy controller response; retrying with a backoff",
+                );
+                Ok(self.0.stream())
+            }
         }
-
-        tracing::warn!(
-            grpc.status = %status.code(),
-            grpc.message = status.message(),
-            "Unexpected policy controller response; retrying with a backoff",
-        );
-        Ok(self.0.stream())
     }
 }

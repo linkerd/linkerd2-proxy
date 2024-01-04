@@ -81,7 +81,11 @@ impl<N> Outbound<N> {
     /// support per-request routing over a set of concrete inner services.
     /// Only available inner services are used for routing. When there are no
     /// available backends, requests are failed with a [`svc::stack::LoadShedError`].
-    pub fn push_http_logical<T, NSvc>(self) -> Outbound<svc::ArcNewCloneHttp<T>>
+    pub fn push_http_logical<T, NSvc>(
+        self,
+        http_metrics: policy::RouteMetrics,
+        grpc_metrics: policy::RouteMetrics,
+    ) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Logical target.
         T: svc::Param<watch::Receiver<Routes>>,
@@ -102,7 +106,11 @@ impl<N> Outbound<N> {
             concrete
                 // Share the concrete stack with each router stack.
                 .lift_new()
-                .push_on_service(RouterParams::layer(rt.metrics.clone()))
+                .push_on_service(RouterParams::layer(
+                    rt.metrics.clone(),
+                    http_metrics,
+                    grpc_metrics,
+                ))
                 // Rebuild the inner router stack every time the watch changes.
                 .push(svc::NewSpawnWatch::<Routes, _>::layer_into::<RouterParams<T>>())
                 .arc_new_clone_http()
@@ -118,6 +126,8 @@ where
 {
     fn layer<N, S>(
         metrics: OutboundMetrics,
+        http_metrics: policy::RouteMetrics,
+        grpc_metrics: policy::RouteMetrics,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<RouterParams<T>>> + Clone
     where
         N: svc::NewService<Concrete<T>, Service = S>,
@@ -131,8 +141,10 @@ where
         S::Future: Send,
     {
         svc::layer::mk(move |concrete: N| {
-            let policy = svc::stack(concrete.clone())
-                .push(policy::Policy::layer(metrics.http_route_backends.clone()));
+            let policy = svc::stack(concrete.clone()).push(policy::Policy::layer(
+                http_metrics.clone(),
+                grpc_metrics.clone(),
+            ));
             let profile =
                 svc::stack(concrete.clone()).push(profile::Params::layer(metrics.proxy.clone()));
             svc::stack(concrete)

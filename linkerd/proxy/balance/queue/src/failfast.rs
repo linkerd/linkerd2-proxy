@@ -108,6 +108,24 @@ impl Failfast {
     }
 }
 
+// === impl GateMetricFamilies ===
+
+impl<L> Default for GateMetricFamilies<L>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone,
+{
+    fn default() -> Self {
+        Self {
+            open: prom::Family::default(),
+            shut: prom::Family::default(),
+            open_time: prom::Family::default(),
+            shut_time: prom::Family::default(),
+            timeout: prom::Family::default(),
+        }
+    }
+}
+
 impl<L> GateMetricFamilies<L>
 where
     L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,

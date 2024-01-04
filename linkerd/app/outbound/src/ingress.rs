@@ -70,7 +70,7 @@ impl Outbound<()> {
     /// fails, we revert to using the normal IP-based discovery
     pub fn mk_ingress<T, I, R>(
         &self,
-        registry: &mut prom::registry::Registry,
+        registry: &mut prom::Registry,
         profiles: impl profiles::GetProfile<Error = Error>,
         policies: impl policy::GetPolicy,
         resolve: R,
@@ -108,7 +108,7 @@ impl Outbound<()> {
             .to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_tcp_client()
-            .push_http_cached(registry, resolve)
+            .push_http_cached(http::HttpMetrics::register(registry), resolve)
             .push_http_server()
             .map_stack(|_, _, stk| {
                 stk.check_new_service::<Http<Logical>, _>()
@@ -153,10 +153,10 @@ impl Outbound<()> {
             let profile = profiles
                 .clone()
                 .get_profile(profiles::LookupAddr(addr.clone()))
-                .instrument(tracing::debug_span!("profiles"));
+                .instrument(tracing::debug_span!("profiles").or_current());
             let policy = policies
                 .get_policy(addr)
-                .instrument(tracing::debug_span!("policy"));
+                .instrument(tracing::debug_span!("policy").or_current());
 
             Box::pin(async move {
                 let (profile, policy) = tokio::join!(profile, policy);

@@ -86,10 +86,10 @@ impl<N> Outbound<N> {
             let profile = profiles
                 .clone()
                 .get_profile(profiles::LookupAddr(orig_dst.into()))
-                .instrument(tracing::debug_span!("profiles"));
+                .instrument(tracing::debug_span!("profiles").or_current());
             let policy = policies
                 .get_policy(orig_dst.into())
-                .instrument(tracing::debug_span!("policy"));
+                .instrument(tracing::debug_span!("policy").or_current());
 
             Box::pin(async move {
                 let (profile, policy) = tokio::join!(profile, policy);

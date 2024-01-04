@@ -1,6 +1,6 @@
 use linkerd_error::Error;
-use linkerd_proxy_core::Update;
 use parking_lot::Mutex;
+use std::net::SocketAddr;
 use std::{
     sync::Arc,
     task::{Context, Poll, Waker},
@@ -29,15 +29,22 @@ pub fn pool<T, Req, Rsp>() -> (MockPool<T, Req, Rsp>, PoolHandle<T, Req, Rsp>) {
 }
 
 pub struct MockPool<T, Req, Rsp> {
-    tx: mpsc::UnboundedSender<Update<T>>,
+    tx: mpsc::UnboundedSender<Change<T>>,
     state: Arc<Mutex<State>>,
     svc: mock::Mock<Req, Rsp>,
 }
 
 pub struct PoolHandle<T, Req, Rsp> {
     state: Arc<Mutex<State>>,
-    pub rx: mpsc::UnboundedReceiver<Update<T>>,
+    pub rx: mpsc::UnboundedReceiver<Change<T>>,
     pub svc: mock::Handle<Req, Rsp>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Change<T> {
+    Add(SocketAddr, T),
+    Remove(SocketAddr),
+    Reset(Vec<(SocketAddr, T)>),
 }
 
 struct State {
@@ -54,8 +61,16 @@ pub struct PoolError;
 pub struct ResolutionError;
 
 impl<T, Req, Rsp> crate::Pool<T, Req> for MockPool<T, Req, Rsp> {
-    fn update_pool(&mut self, update: Update<T>) {
-        self.tx.send(update).ok().unwrap();
+    fn reset_pool(&mut self, update: Vec<(SocketAddr, T)>) {
+        let _ = self.tx.send(Change::Reset(update));
+    }
+
+    fn add_endpoint(&mut self, addr: SocketAddr, endpoint: T) {
+        let _ = self.tx.send(Change::Add(addr, endpoint));
+    }
+
+    fn remove_endpoint(&mut self, addr: SocketAddr) {
+        let _ = self.tx.send(Change::Remove(addr));
     }
 
     fn poll_pool(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {

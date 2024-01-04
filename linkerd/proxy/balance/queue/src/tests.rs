@@ -155,7 +155,7 @@ async fn updates_while_idle() {
     tokio::task::yield_now().await;
     assert_eq!(
         handle.rx.try_recv().expect("must receive update"),
-        Update::Reset(vec![("192.168.1.44:80".parse().unwrap(), (),)])
+        mock::Change::Reset(vec![("192.168.1.44:80".parse().unwrap(), (),)])
     );
 }
 

@@ -5,7 +5,7 @@ use super::{balance::EwmaConfig, client, handle_proxy_error_headers};
 use crate::{http, stack_labels, BackendRef, Outbound, ParentRef};
 use linkerd_app_core::{
     config::QueueConfig,
-    metrics::{prefix_labels, prom, EndpointLabels, OutboundEndpointLabels},
+    metrics::{prefix_labels, EndpointLabels, OutboundEndpointLabels},
     profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
@@ -21,11 +21,8 @@ use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tracing::info_span;
 
 mod balance;
-mod metrics;
-#[cfg(test)]
-mod tests;
 
-pub use self::metrics::BalancerMetrics;
+pub use self::balance::BalancerMetrics;
 
 /// Parameter configuring dispatcher behavior.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -65,7 +62,7 @@ impl<N> Outbound<N> {
     /// services.
     pub fn push_http_concrete<T, NSvc, R>(
         self,
-        registry: &mut prom::Registry,
+        balancer_metrics: balance::BalancerMetrics,
         resolve: R,
     ) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
@@ -111,7 +108,7 @@ impl<N> Outbound<N> {
                 .push(balance::Balance::layer(
                     config,
                     rt,
-                    registry.sub_registry_with_prefix("balancer"),
+                    balancer_metrics,
                     resolve,
                 ))
                 .check_new_clone()

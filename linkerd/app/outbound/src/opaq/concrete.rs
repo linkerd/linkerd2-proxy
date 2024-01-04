@@ -174,7 +174,7 @@ impl<C> Outbound<C> {
                     },
                 )
                 .lift_new_with_target()
-                .push(tcp::NewBalancePeakEwma::layer(resolve, metrics_params))
+                .push(tcp::NewBalance::layer(resolve, metrics_params))
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(
                     rt.metrics

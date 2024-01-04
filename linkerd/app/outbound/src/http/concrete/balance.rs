@@ -1,13 +1,12 @@
 use super::Endpoint;
 use crate::{
     http::{self, balance, breaker},
-    metrics::BalancerMetricsParams,
+    metrics::{BalancerMetricsParams, ConcreteLabels},
     stack_labels, BackendRef, ParentRef,
 };
 use linkerd_app_core::{
     classify,
     config::QueueConfig,
-    metrics::prom,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -37,6 +36,8 @@ pub struct BalanceError {
     #[source]
     source: Error,
 }
+
+pub type BalancerMetrics = BalancerMetricsParams<ConcreteLabels>;
 
 // === impl Balance ===
 
@@ -81,7 +82,7 @@ where
     pub(super) fn layer<N, NSvc, R>(
         config: &crate::Config,
         rt: &crate::Runtime,
-        registry: &mut prom::Registry,
+        metrics: BalancerMetrics,
         resolve: R,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
@@ -99,13 +100,11 @@ where
         // TODO(ver) Configure queues from the target (i.e. from discovery).
         let http_queue = config.http_request_queue;
         let inbound_ips = config.inbound_ips.clone();
-        let metrics = rt.metrics.clone();
+        let stack_metrics = rt.metrics.proxy.stack.clone();
 
         let resolve = svc::stack(resolve.into_service())
             .push_map_target(|t: Self| ConcreteAddr(t.addr))
             .into_inner();
-
-        let metrics_params = BalancerMetricsParams::register(registry);
 
         svc::layer::mk(move |inner: N| {
             let endpoint = svc::stack(inner)
@@ -138,14 +137,8 @@ where
                         }
                     }),
                 )
-                .push(balance::NewGaugeEndpoints::layer_via({
-                    let metrics = metrics.http_balancer.clone();
-                    move |target: &Self| {
-                        metrics.http_endpoints(target.parent.param(), target.parent.param())
-                    }
-                }))
                 .push_on_service(svc::OnServiceLayer::new(
-                    metrics.proxy.stack.layer(stack_labels("http", "endpoint")),
+                    stack_metrics.layer(stack_labels("http", "endpoint")),
                 ))
                 .push_on_service(svc::NewInstrumentLayer::new(
                     |(addr, _): &(SocketAddr, _)| info_span!("endpoint", %addr),
@@ -155,12 +148,9 @@ where
                 .push(svc::ArcNewService::layer());
 
             endpoint
-                .push(http::NewBalancePeakEwma::layer(
-                    resolve.clone(),
-                    metrics_params.clone(),
-                ))
+                .push(http::NewBalance::layer(resolve.clone(), metrics.clone()))
                 .push_on_service(http::BoxResponse::layer())
-                .push_on_service(metrics.proxy.stack.layer(stack_labels("http", "balance")))
+                .push_on_service(stack_metrics.layer(stack_labels("http", "balance")))
                 .push(svc::NewMapErr::layer_from_target::<BalanceError, _>())
                 .instrument(|t: &Self| {
                     let BackendRef(meta) = t.parent.param();

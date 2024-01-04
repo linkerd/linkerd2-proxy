@@ -30,5 +30,3 @@ linkerd-meshtls-verifier = { path = "../verifier" }
 
 [dev-dependencies]
 linkerd-tls-test-util = { path = "../../tls/test-util" }
-linkerd-meshtls = { path = "../../meshtls" }
-

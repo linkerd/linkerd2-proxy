@@ -30,7 +30,7 @@ async fn routes() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(&mut Default::default(), resolve)
+        .push_http_cached(Default::default(), resolve)
         .into_inner();
 
     let backend = default_backend(&dest);
@@ -73,7 +73,7 @@ async fn consecutive_failures_accrue() {
     let cfg = default_config();
     let stack = Outbound::new(cfg.clone(), rt)
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(&mut Default::default(), resolve)
+        .push_http_cached(Default::default(), resolve)
         .into_inner();
 
     let backend = default_backend(&dest);
@@ -236,7 +236,7 @@ async fn balancer_doesnt_select_tripped_breakers() {
     let cfg = default_config();
     let stack = Outbound::new(cfg.clone(), rt)
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(&mut Default::default(), resolve)
+        .push_http_cached(Default::default(), resolve)
         .into_inner();
 
     let backend = default_backend(&dest);
@@ -324,7 +324,7 @@ async fn route_request_timeout() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(&mut Default::default(), resolve)
+        .push_http_cached(Default::default(), resolve)
         .into_inner();
 
     let (_route_tx, routes) = {
@@ -387,7 +387,7 @@ async fn backend_request_timeout() {
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt)
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(&mut Default::default(), resolve)
+        .push_http_cached(Default::default(), resolve)
         .into_inner();
 
     let (_route_tx, routes) = {

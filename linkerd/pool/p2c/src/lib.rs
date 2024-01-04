@@ -2,11 +2,14 @@
 //!
 // Based on tower::p2c::Balance. Copyright (c) 2019 Tower Contributors
 
-use super::{Pool, Update};
+#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
+#![forbid(unsafe_code)]
+
 use ahash::AHashMap;
-use futures_util::TryFutureExt;
+use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_metrics::prom;
+use linkerd_pool::Pool;
 use linkerd_stack::{NewService, Service};
 use rand::{rngs::SmallRng, thread_rng, Rng, SeedableRng};
 use std::{
@@ -49,24 +52,19 @@ pub struct P2cMetrics {
 
     /// Measures the number of Remove updates received from service discovery.
     updates_rm: prom::Counter,
-
-    /// Measures the number of DoesNotExist updates received from service
-    /// discovery.
-    updates_dne: prom::Counter,
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-pub struct UpdateLabels<L> {
+struct UpdateLabels<L> {
     op: UpdateOp,
     labels: L,
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, prom::encoding::EncodeLabelValue)]
-pub enum UpdateOp {
+enum UpdateOp {
     Reset,
     Add,
     Remove,
-    DoesNotExist,
 }
 
 impl<T, N, Req, S> P2cPool<T, N, Req, S>
@@ -87,102 +85,6 @@ where
             pool: ReadyCache::default(),
             endpoints: Default::default(),
         }
-    }
-
-    /// Resets the pool to include the given targets without unnecessarily
-    /// rebuilding inner services.
-    ///
-    /// Returns true if the pool was changed.
-    fn reset(&mut self, targets: Vec<(SocketAddr, T)>) -> bool {
-        let mut changed = false;
-        let mut remaining = std::mem::take(&mut self.endpoints);
-        for (addr, target) in targets.into_iter() {
-            let t = remaining.remove(&addr);
-            if t.as_ref() == Some(&target) {
-                tracing::debug!(?addr, "Endpoint unchanged");
-            } else {
-                if t.is_none() {
-                    tracing::info!(?addr, "Adding endpoint");
-                    self.metrics.endpoints.inc();
-                } else {
-                    tracing::info!(?addr, "Updating endpoint");
-                }
-
-                let svc = self.new_endpoint.new_service((addr, target.clone()));
-                self.pool.push(addr, svc);
-                changed = true;
-            }
-
-            self.endpoints.insert(addr, target);
-        }
-
-        for (addr, _) in remaining.drain() {
-            tracing::info!(?addr, "Removing endpoint");
-            self.pool.evict(&addr);
-            self.metrics.endpoints.dec();
-            changed = true;
-        }
-
-        changed
-    }
-
-    /// Adds endpoints to the pool without unnecessarily rebuilding inner
-    /// services.
-    ///
-    /// Returns true if the pool was changed.
-    fn add(&mut self, targets: Vec<(SocketAddr, T)>) -> bool {
-        let mut changed = false;
-        for (addr, target) in targets.into_iter() {
-            match self.endpoints.entry(addr) {
-                Entry::Occupied(e) if e.get() == &target => {
-                    tracing::debug!(?addr, "Endpoint unchanged");
-                    continue;
-                }
-                Entry::Occupied(mut e) => {
-                    e.insert(target.clone());
-                }
-                Entry::Vacant(e) => {
-                    e.insert(target.clone());
-                    self.metrics.endpoints.inc();
-                }
-            }
-            tracing::info!(?addr, "Adding endpoint");
-            let svc = self.new_endpoint.new_service((addr, target));
-            self.pool.push(addr, svc);
-            changed = true;
-        }
-        changed
-    }
-
-    /// Removes endpoint services.
-    ///
-    /// Returns true if the pool was changed.
-    fn remove(&mut self, addrs: Vec<SocketAddr>) -> bool {
-        let mut changed = false;
-        for addr in addrs.into_iter() {
-            if self.endpoints.remove(&addr).is_some() {
-                tracing::info!(?addr, "Removing endpoint");
-                self.pool.evict(&addr);
-                self.metrics.endpoints.dec();
-                changed = true;
-            } else {
-                tracing::debug!(?addr, "Unknown endpoint");
-            }
-        }
-        changed
-    }
-
-    /// Clear all endpoints from the pool.
-    ///
-    /// Returns true if the pool was changed.
-    fn clear(&mut self) -> bool {
-        let changed = !self.endpoints.is_empty();
-        for (addr, _) in self.endpoints.drain() {
-            tracing::info!(?addr, "Removing endpoint");
-            self.pool.evict(&addr);
-            self.metrics.endpoints.dec();
-        }
-        changed
     }
 
     fn p2c_ready_index(&mut self) -> Option<usize> {
@@ -236,18 +138,74 @@ where
     S::Future: Send + 'static,
     S::Metric: std::fmt::Debug,
 {
-    fn update_pool(&mut self, update: Update<T>) {
-        tracing::trace!(?update);
-        self.metrics.inc(&update);
-        let changed = match update {
-            Update::Reset(targets) => self.reset(targets),
-            Update::Add(targets) => self.add(targets),
-            Update::Remove(addrs) => self.remove(addrs),
-            Update::DoesNotExist => self.clear(),
-        };
+    fn reset_pool(&mut self, update: Vec<(SocketAddr, T)>) {
+        let mut changed = false;
+        let mut remaining = std::mem::take(&mut self.endpoints);
+        for (addr, target) in update.into_iter() {
+            let t = remaining.remove(&addr);
+            if t.as_ref() == Some(&target) {
+                tracing::debug!(?addr, "Endpoint unchanged");
+            } else {
+                if t.is_none() {
+                    tracing::info!(?addr, "Adding endpoint");
+                    self.metrics.endpoints.inc();
+                } else {
+                    tracing::info!(?addr, "Updating endpoint");
+                }
+
+                let svc = self.new_endpoint.new_service((addr, target.clone()));
+                self.pool.push(addr, svc);
+                changed = true;
+            }
+
+            self.endpoints.insert(addr, target);
+        }
+
+        for (addr, _) in remaining.drain() {
+            tracing::info!(?addr, "Removing endpoint");
+            self.pool.evict(&addr);
+            self.metrics.endpoints.dec();
+            changed = true;
+        }
+
         if changed {
+            self.metrics.updates_reset.inc();
             self.next_idx = None;
         }
+    }
+
+    fn add_endpoint(&mut self, addr: SocketAddr, target: T) {
+        match self.endpoints.entry(addr) {
+            Entry::Occupied(e) if e.get() == &target => {
+                tracing::debug!(?addr, "Endpoint unchanged");
+                return;
+            }
+            Entry::Occupied(mut e) => {
+                e.insert(target.clone());
+            }
+            Entry::Vacant(e) => {
+                e.insert(target.clone());
+                self.metrics.endpoints.inc();
+            }
+        }
+
+        tracing::info!(?addr, "Adding endpoint");
+        let svc = self.new_endpoint.new_service((addr, target));
+        self.pool.push(addr, svc);
+        self.metrics.updates_add.inc();
+    }
+
+    fn remove_endpoint(&mut self, addr: SocketAddr) {
+        if self.endpoints.remove(&addr).is_none() {
+            tracing::debug!(?addr, "Unknown endpoint");
+            return;
+        }
+
+        tracing::info!(?addr, "Removing endpoint");
+        self.pool.evict(&addr);
+        self.metrics.endpoints.dec();
+        self.metrics.updates_rm.inc();
+        self.next_idx = None;
     }
 
     /// Moves pending endpoints to ready.
@@ -281,8 +239,8 @@ where
     /// used to select one.
     ///
     /// NOTE that this may return `Pending` when there are no endpoints. In such
-    /// cases, the caller must invoke `update_pool` and then wait for new
-    /// endpoints to become ready.
+    /// cases, the caller must add endpoints and then wait for new endpoints to
+    /// become ready.
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
             tracing::trace!(pending = self.pool.pending_len(), "Polling pending");
@@ -318,6 +276,19 @@ where
 }
 
 // === impl P2cMetricFamilies ===
+
+impl<L> Default for P2cMetricFamilies<L>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone,
+{
+    fn default() -> Self {
+        Self {
+            endpoints: prom::Family::default(),
+            updates: prom::Family::default(),
+        }
+    }
+}
 
 impl<L> P2cMetricFamilies<L>
 where
@@ -365,36 +336,16 @@ where
                 labels: labels.clone(),
             })
             .clone();
-        let updates_dne: prom::Counter = self
-            .updates
-            .get_or_create(&UpdateLabels {
-                op: UpdateOp::DoesNotExist,
-                labels: labels.clone(),
-            })
-            .clone();
         P2cMetrics {
             endpoints,
             updates_reset,
             updates_add,
             updates_rm,
-            updates_dne,
         }
     }
 }
 
 // === impl P2cMetrics ===
-
-impl P2cMetrics {
-    fn inc<T>(&self, up: &Update<T>) {
-        match up {
-            Update::Reset(..) => &self.updates_reset,
-            Update::Add(..) => &self.updates_add,
-            Update::Remove(..) => &self.updates_rm,
-            Update::DoesNotExist { .. } => &self.updates_dne,
-        }
-        .inc();
-    }
-}
 
 impl<L: prom::encoding::EncodeLabelSet> prom::encoding::EncodeLabelSet for UpdateLabels<L> {
     fn encode(&self, mut enc: prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
@@ -408,7 +359,6 @@ impl<L: prom::encoding::EncodeLabelSet> prom::encoding::EncodeLabelSet for Updat
 mod tests {
     use super::*;
     use ahash::HashSet;
-    use futures::prelude::*;
     use linkerd_stack::ServiceExt;
     use parking_lot::Mutex;
     use std::sync::Arc;
@@ -448,67 +398,66 @@ mod tests {
             )
         });
 
-        pool.update_pool(Update::Reset(vec![(addr0, 0)]));
+        pool.reset_pool(vec![(addr0, 0)]);
         assert_eq!(pool.endpoints.len(), 1);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&0));
 
-        pool.update_pool(Update::Add(vec![(addr0, 1)]));
+        pool.add_endpoint(addr0, 1);
         assert_eq!(pool.endpoints.len(), 1);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&1));
 
-        pool.update_pool(Update::Reset(vec![(addr0, 1)]));
+        pool.reset_pool(vec![(addr0, 1)]);
         assert_eq!(pool.endpoints.len(), 1);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&1));
 
-        pool.update_pool(Update::Add(vec![(addr1, 1)]));
+        pool.add_endpoint(addr1, 1);
         assert_eq!(pool.endpoints.len(), 2);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr1), Some(&1));
 
-        pool.update_pool(Update::Add(vec![(addr1, 1)]));
+        pool.add_endpoint(addr1, 1);
         assert_eq!(pool.endpoints.len(), 2);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr1), Some(&1));
 
-        pool.update_pool(Update::Remove(vec![addr0]));
+        pool.remove_endpoint(addr0);
         assert_eq!(pool.endpoints.len(), 1);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
 
-        pool.update_pool(Update::Remove(vec![addr0]));
+        pool.remove_endpoint(addr0);
         assert_eq!(pool.endpoints.len(), 1);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
 
-        pool.update_pool(Update::Reset(vec![(addr0, 2), (addr1, 2)]));
+        pool.reset_pool(vec![(addr0, 2), (addr1, 2)]);
         assert_eq!(pool.endpoints.len(), 2);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&2));
         assert_eq!(pool.endpoints.get(&addr1), Some(&2));
 
-        pool.update_pool(Update::Reset(vec![(addr0, 2)]));
+        pool.reset_pool(vec![(addr0, 2)]);
         assert_eq!(pool.endpoints.len(), 1);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&2));
 
-        pool.update_pool(Update::Reset(vec![(addr0, 3)]));
+        pool.reset_pool(vec![(addr0, 3)]);
         assert_eq!(pool.endpoints.len(), 1);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
         assert_eq!(pool.endpoints.get(&addr0), Some(&3));
 
-        pool.update_pool(Update::DoesNotExist);
+        pool.reset_pool(vec![]);
         assert_eq!(pool.endpoints.len(), 0);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
 
-        pool.update_pool(Update::DoesNotExist);
+        pool.reset_pool(vec![]);
         assert_eq!(pool.endpoints.len(), 0);
         assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
 
         assert_eq!(metrics.updates_reset.get(), 5);
-        assert_eq!(metrics.updates_add.get(), 3);
-        assert_eq!(metrics.updates_rm.get(), 2);
-        assert_eq!(metrics.updates_dne.get(), 2);
+        assert_eq!(metrics.updates_add.get(), 2);
+        assert_eq!(metrics.updates_rm.get(), 1);
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -548,7 +497,7 @@ mod tests {
         assert!(pool.ready().now_or_never().is_none());
         assert!(pool.next_idx.is_none());
 
-        pool.update_pool(Update::Reset(vec![(addr0, ())]));
+        pool.reset_pool(vec![(addr0, ())]);
         assert!(pool.ready().now_or_never().is_none());
         assert!(pool.next_idx.is_none());
 
@@ -558,7 +507,7 @@ mod tests {
 
         h1.allow(1);
         h2.allow(1);
-        pool.update_pool(Update::Reset(vec![(addr0, ()), (addr1, ()), (addr2, ())]));
+        pool.reset_pool(vec![(addr0, ()), (addr1, ()), (addr2, ())]);
         assert!(pool.next_idx.is_none());
         assert!(pool.ready().now_or_never().is_some());
         assert!(pool.next_idx.is_some());

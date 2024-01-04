@@ -29,6 +29,13 @@ pub use linkerd_app_core::proxy::http::{self as http, *};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http<T>(T);
 
+#[derive(Clone, Debug, Default)]
+pub struct HttpMetrics {
+    balancer: concrete::BalancerMetrics,
+    http_route: policy::RouteMetrics,
+    grpc_route: policy::RouteMetrics,
+}
+
 pub fn spawn_routes<T>(
     mut route_rx: watch::Receiver<T>,
     init: Routes,
@@ -81,7 +88,7 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
     /// Buffered concrete services are cached in and evicted when idle.
     pub fn push_http_cached<R>(
         self,
-        registry: &mut prom::Registry,
+        metrics: HttpMetrics,
         resolve: R,
     ) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
@@ -94,8 +101,8 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
         R::Resolution: Unpin,
     {
         self.push_http_endpoint()
-            .push_http_concrete(registry, resolve)
-            .push_http_logical()
+            .push_http_concrete(metrics.balancer, resolve)
+            .push_http_logical(metrics.http_route, metrics.grpc_route)
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
                     .push_map_target(Http)
@@ -121,5 +128,25 @@ where
 {
     fn param(&self) -> watch::Receiver<Routes> {
         self.0.param()
+    }
+}
+
+// === impl HttpMetrics ===
+
+impl HttpMetrics {
+    pub fn register(registry: &mut prom::Registry) -> Self {
+        let http = registry.sub_registry_with_prefix("http");
+        let http_route = policy::RouteMetrics::register(http.sub_registry_with_prefix("route"));
+        let balancer =
+            concrete::BalancerMetrics::register(http.sub_registry_with_prefix("balancer"));
+
+        let grpc = registry.sub_registry_with_prefix("grpc");
+        let grpc_route = policy::RouteMetrics::register(grpc.sub_registry_with_prefix("route"));
+
+        Self {
+            balancer,
+            http_route,
+            grpc_route,
+        }
     }
 }

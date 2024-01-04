@@ -8,6 +8,7 @@ use linkerd_app_core::{
     transport::{Keepalive, ListenAddr},
     Addr, AddrMatch, Conditional, IpNet,
 };
+use linkerd_tonic_stream::ReceiveLimits;
 use rangemap::RangeInclusiveSet;
 use std::{
     collections::{HashMap, HashSet},
@@ -368,6 +369,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let metrics_retain_idle = parse(strings, ENV_METRICS_RETAIN_IDLE, parse_duration);
 
+    let control_receive_limits = mk_control_receive_limits(strings)?;
+
     // DNS
 
     let resolv_conf_path = strings.get(ENV_RESOLV_CONF);
@@ -666,6 +669,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         } else {
             outbound.http_request_queue.failfast_timeout
         };
+        let limits = addr
+            .addr
+            .is_loopback()
+            .then(ReceiveLimits::default)
+            .unwrap_or(control_receive_limits);
         super::dst::Config {
             context: dst_token?.unwrap_or_default(),
             control: ControlConfig {
@@ -676,6 +684,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     failfast_timeout,
                 },
             },
+            limits,
         }
     };
 
@@ -692,6 +701,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             EnvError::InvalidEnvVar
         })?;
 
+        let limits = addr
+            .addr
+            .is_loopback()
+            .then(ReceiveLimits::default)
+            .unwrap_or(control_receive_limits);
+
         let control = {
             let connect = if addr.addr.is_loopback() {
                 inbound.proxy.connect.clone()
@@ -707,7 +722,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 },
             }
         };
-        policy::Config { control, workload }
+
+        policy::Config {
+            control,
+            workload,
+            limits,
+        }
     };
 
     let admin = super::admin::Config {
@@ -850,6 +870,35 @@ fn convert_attributes_string_to_map(attributes: String) -> HashMap<String, Strin
         .collect()
 }
 
+fn mk_control_receive_limits(env: &dyn Strings) -> Result<ReceiveLimits, EnvError> {
+    const ENV_INIT: &str = "LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT";
+    const ENV_IDLE: &str = "LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT";
+    const ENV_LIFE: &str = "LINKERD2_PROXY_CONTROL_STREAM_LIFETIME";
+
+    let initial = parse(env, ENV_INIT, parse_duration_opt)?.flatten();
+    let idle = parse(env, ENV_IDLE, parse_duration_opt)?.flatten();
+    let lifetime = parse(env, ENV_LIFE, parse_duration_opt)?.flatten();
+
+    if initial.unwrap_or(Duration::ZERO) > idle.unwrap_or(Duration::MAX) {
+        error!("{ENV_INIT} must be less than {ENV_IDLE}");
+        return Err(EnvError::InvalidEnvVar);
+    }
+    if initial.unwrap_or(Duration::ZERO) > lifetime.unwrap_or(Duration::MAX) {
+        error!("{ENV_INIT} must be less than {ENV_LIFE}");
+        return Err(EnvError::InvalidEnvVar);
+    }
+    if idle.unwrap_or(Duration::ZERO) > lifetime.unwrap_or(Duration::MAX) {
+        error!("{ENV_IDLE} must be less than {ENV_LIFE}");
+        return Err(EnvError::InvalidEnvVar);
+    }
+
+    Ok(ReceiveLimits {
+        initial,
+        idle,
+        lifetime,
+    })
+}
+
 // === impl Env ===
 
 impl Strings for Env {
@@ -908,6 +957,13 @@ where
     ParseError: From<T::Err>,
 {
     s.parse().map_err(Into::into)
+}
+
+fn parse_duration_opt(s: &str) -> Result<Option<Duration>, ParseError> {
+    if s.is_empty() {
+        return Ok(None);
+    }
+    parse_duration(s).map(Some)
 }
 
 fn parse_duration(s: &str) -> Result<Duration, ParseError> {
@@ -1480,5 +1536,46 @@ mod tests {
         // not a u16
         assert!(dbg!(parse_port_range_set("69420")).is_err());
         assert!(dbg!(parse_port_range_set("1-69420")).is_err());
+    }
+
+    #[test]
+    fn control_stream_limits() {
+        impl Strings for HashMap<&'static str, &'static str> {
+            fn get(&self, key: &str) -> Result<Option<String>, EnvError> {
+                Ok(self.get(key).map(ToString::to_string))
+            }
+        }
+
+        let mut env = HashMap::default();
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "1s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "2s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "3s");
+        let limits = mk_control_receive_limits(&env).unwrap();
+        assert_eq!(limits.initial, Some(Duration::from_secs(1)));
+        assert_eq!(limits.idle, Some(Duration::from_secs(2)));
+        assert_eq!(limits.lifetime, Some(Duration::from_secs(3)));
+
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "");
+        let limits = mk_control_receive_limits(&env).unwrap();
+        assert_eq!(limits.initial, None);
+        assert_eq!(limits.idle, None);
+        assert_eq!(limits.lifetime, None);
+
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "3s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "1s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "");
+        assert!(mk_control_receive_limits(&env).is_err());
+
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "3s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "1s");
+        assert!(mk_control_receive_limits(&env).is_err());
+
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "3s");
+        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "1s");
+        assert!(mk_control_receive_limits(&env).is_err());
     }
 }

@@ -25,6 +25,7 @@ use linkerd_app_core::{
     transport::addrs::*,
     AddrMatch, Error, ProxyRuntime,
 };
+use linkerd_tonic_stream::ReceiveLimits;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -141,6 +142,7 @@ impl Outbound<()> {
         workload: Arc<str>,
         client: C,
         backoff: ExponentialBackoff,
+        limits: ReceiveLimits,
     ) -> impl policy::GetPolicy
     where
         C: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
@@ -149,7 +151,7 @@ impl Outbound<()> {
         C::ResponseBody: Default + Send + 'static,
         C::Future: Send,
     {
-        policy::Api::new(workload, Duration::from_secs(10), client)
+        policy::Api::new(workload, limits, Duration::from_secs(10), client)
             .into_watch(backoff)
             .map_result(|response| match response {
                 Err(e) => Err(e.into()),

@@ -1,5 +1,5 @@
 [package]
-name = "linkerd-proxy-pool"
+name = "linkerd-proxy-balance-queue"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -8,10 +8,6 @@ publish = false
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-linkerd-error = { path = "../../error" }
-linkerd-metrics = { path = "../../metrics" }
-linkerd-proxy-core = { path = "../core" }
-linkerd-stack = { path = "../../stack" }
 parking_lot = "0.12"
 pin-project = "1"
 prometheus-client = "0.22"
@@ -20,8 +16,14 @@ tokio = { version = "1", features = ["rt", "sync", "time"] }
 tokio-util = "0.7"
 tracing = "0.1"
 
+linkerd-error = { path = "../../../error" }
+linkerd-metrics = { path = "../../../metrics" }
+linkerd-proxy-core = { path = "../../core" }
+linkerd-pool = { path = "../../../pool" }
+linkerd-stack = { path = "../../../stack" }
+
 [dev-dependencies]
-linkerd-tracing = { path = "../../tracing" }
+linkerd-tracing = { path = "../../../tracing" }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-test = "0.4"
 tower-test = "0.4"

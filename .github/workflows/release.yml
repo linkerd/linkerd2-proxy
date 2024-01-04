@@ -85,7 +85,7 @@ jobs:
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=release build
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=release package
-      - uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32
+      - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392
         with:
           name: ${{ matrix.arch }}-artifacts
           path: target/package/*
@@ -95,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a
+      - uses: actions/download-artifact@f44cd7b40bfd40b6aa1cc1b9b5b7bf03d3c67110
         with:
           path: artifacts
       - run: du -h artifacts/**/*

@@ -152,7 +152,7 @@ impl Server {
         let Self { f, settings } = self;
         let f = Arc::new(Mutex::new(f));
         move |endpoint| {
-            let span = tracing::debug_span!("server::run", ?endpoint);
+            let span = tracing::debug_span!("server::run", ?endpoint).or_current();
             let _e = span.enter();
             let f = f.clone();
             let (client_io, server_io) = crate::io::duplex(4096);

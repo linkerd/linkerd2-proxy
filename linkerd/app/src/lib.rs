@@ -199,12 +199,14 @@ impl Config {
             policies.workload.clone(),
             policies.client.clone(),
             policies.backoff,
+            policies.limits,
         );
 
         let outbound_policies = outbound.build_policies(
             policies.workload.clone(),
             policies.client.clone(),
             policies.backoff,
+            policies.limits,
         );
 
         let dst_addr = dst.addr.clone();

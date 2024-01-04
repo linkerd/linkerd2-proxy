@@ -221,7 +221,7 @@ impl Server {
                 tracing::info!("listening!");
                 loop {
                     let (sock, addr) = listener.accept().await?;
-                    let span = tracing::debug_span!("conn", %addr);
+                    let span = tracing::debug_span!("conn", %addr).or_current();
                     let sock = accept_connection(sock, tls_config.clone())
                         .instrument(span.clone())
                         .await?;
