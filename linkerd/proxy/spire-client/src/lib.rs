@@ -2,11 +2,8 @@
 #![forbid(unsafe_code)]
 
 mod api;
-mod client;
 
-pub use self::client::Client;
-
-use api::SvidUpdate;
+pub use api::{Api, SvidUpdate};
 use linkerd_error::{Error, Result};
 use linkerd_identity::Credentials;
 use linkerd_identity::Id;
@@ -28,14 +25,16 @@ impl Spire {
         Self { id, metrics }
     }
 
-    pub async fn run<C, N>(self, credentials: C, mut new_client: N)
+    pub async fn run<C, S>(self, credentials: C, mut client: S)
     where
         C: Credentials,
-        N: Service<(), Response = watch::Receiver<SvidUpdate>>,
-        N::Error: Into<Error>,
+        S: Service<(), Response = tonic::Response<watch::Receiver<SvidUpdate>>>,
+        S::Error: Into<Error>,
     {
-        match new_client.call(()).await {
-            Ok(rx) => consume_updates(&self.id, rx, credentials, &self.metrics).await,
+        match client.call(()).await {
+            Ok(rsp) => {
+                consume_updates(&self.id, rsp.into_inner(), credentials, &self.metrics).await
+            }
             Err(error) => error!("could not establish SVID stream: {}", error.into()),
         }
     }
@@ -118,20 +117,19 @@ mod tests {
         SvidUpdate { svids: svids_map }
     }
 
-    // TODO: use a service_fn for this mock
-    struct MockNewClient {
+    struct MockClient {
         rx: watch::Receiver<SvidUpdate>,
     }
 
-    impl MockNewClient {
+    impl MockClient {
         fn new(init: SvidUpdate) -> (Self, watch::Sender<SvidUpdate>) {
             let (tx, rx) = watch::channel(init);
             (Self { rx }, tx)
         }
     }
 
-    impl tower::Service<()> for MockNewClient {
-        type Response = watch::Receiver<SvidUpdate>;
+    impl tower::Service<()> for MockClient {
+        type Response = tonic::Response<watch::Receiver<SvidUpdate>>;
         type Error = Error;
         // type Future = futures::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
         type Future = futures::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
@@ -144,7 +142,8 @@ mod tests {
         }
 
         fn call(&mut self, _req: ()) -> Self::Future {
-            Box::pin(futures::future::ready(Ok(self.rx.clone())))
+            let rsp = tonic::Response::new(self.rx.clone());
+            Box::pin(futures::future::ready(Ok(rsp)))
         }
     }
 
@@ -184,7 +183,7 @@ mod tests {
             serial_1.clone(),
         )]);
 
-        let (client, svid_tx) = MockNewClient::new(update_1);
+        let (client, svid_tx) = MockClient::new(update_1);
         tokio::spawn(spire.run(creds, client));
 
         creds_rx.changed().await.unwrap();
@@ -204,7 +203,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn invalid_update() {
+    async fn invalid_update_empty_cert() {
         let spiffe_san = "spiffe://some-domain/some-workload";
         let spiffe_id = Id::parse_uri("spiffe://some-domain/some-workload").expect("should parse");
 
@@ -219,7 +218,7 @@ mod tests {
             serial_1.clone(),
         )]);
 
-        let (client, svid_tx) = MockNewClient::new(update_1);
+        let (client, svid_tx) = MockClient::new(update_1);
         tokio::spawn(spire.run(creds, client));
 
         creds_rx.changed().await.unwrap();
@@ -234,6 +233,47 @@ mod tests {
 
         let mut update_sent = svid_tx.subscribe();
         let update_2 = svid_update(vec![invalid_svid]);
+        svid_tx.send(update_2).expect("should send");
+
+        update_sent.changed().await.unwrap();
+
+        assert!(!creds_rx.has_changed().unwrap());
+        assert!(*creds_rx.borrow_and_update() == Some(serial_1));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn invalid_valid_update_non_matching_id() {
+        let spiffe_san = "spiffe://some-domain/some-workload";
+        let spiffe_san_wrong = "spiffe://some-domain/wrong";
+
+        let spiffe_id = Id::parse_uri("spiffe://some-domain/some-workload").expect("should parse");
+        let spiffe_id_wrong = Id::parse_uri("spiffe://some-domain/wrong").expect("should parse");
+
+        let (creds, mut creds_rx) = MockCredentials::new();
+
+        let spire = Spire::new(spiffe_id.clone(), Metrics::default());
+
+        let serial_1 = SerialNumber::from_slice("some-serial-1".as_bytes());
+        let update_1 = svid_update(vec![gen_svid(
+            spiffe_id.clone(),
+            vec![SanType::URI(spiffe_san.into())],
+            serial_1.clone(),
+        )]);
+
+        let (client, svid_tx) = MockClient::new(update_1);
+        tokio::spawn(spire.run(creds, client));
+
+        creds_rx.changed().await.unwrap();
+        assert!(*creds_rx.borrow_and_update() == Some(serial_1.clone()));
+
+        let serial_2 = SerialNumber::from_slice("some-serial-2".as_bytes());
+        let mut update_sent = svid_tx.subscribe();
+        let update_2 = svid_update(vec![gen_svid(
+            spiffe_id_wrong,
+            vec![SanType::URI(spiffe_san_wrong.into())],
+            serial_2.clone(),
+        )]);
+
         svid_tx.send(update_2).expect("should send");
 
         update_sent.changed().await.unwrap();

@@ -52,6 +52,7 @@ pub mod identity {
     pub use linkerd_meshtls::*;
     pub use linkerd_proxy_identity_client as client;
     pub use linkerd_proxy_identity_client_metrics as client_metrics;
+    pub use linkerd_proxy_spire_client as spire_client;
 }
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";

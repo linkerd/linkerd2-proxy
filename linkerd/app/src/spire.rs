@@ -1,6 +1,5 @@
-use crate::api::{Api, SvidUpdate};
-use linkerd_error::Error;
-use linkerd_exp_backoff::ExponentialBackoff;
+pub use linkerd_app_core::identity::spire_client;
+use linkerd_app_core::{exp_backoff::ExponentialBackoff, Error};
 use std::sync::Arc;
 use tokio::net::UnixStream;
 use tokio::sync::watch;
@@ -10,21 +9,26 @@ const UNIX_PREFIX: &str = "unix:";
 const TONIC_DEFAULT_URI: &str = "http://[::]:50051";
 
 #[derive(Clone, Debug)]
-pub struct Client {
-    socket: Arc<String>,
-    backoff: ExponentialBackoff,
+pub struct Config {
+    pub(crate) socket_addr: Arc<String>,
+    pub(crate) backoff: ExponentialBackoff,
 }
 
-impl Client {
-    pub fn new(socket: Arc<String>, backoff: ExponentialBackoff) -> Self {
-        Self { socket, backoff }
-    }
+// Connects to SPIRE workload API via Unix Domain Socket
+pub struct Client {
+    config: Config,
 }
 
 // === impl Client ===
 
+impl From<Config> for Client {
+    fn from(config: Config) -> Self {
+        Self { config }
+    }
+}
+
 impl tower::Service<()> for Client {
-    type Response = watch::Receiver<SvidUpdate>;
+    type Response = tonic::Response<watch::Receiver<spire_client::SvidUpdate>>;
     type Error = Error;
     type Future = futures::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
@@ -36,8 +40,8 @@ impl tower::Service<()> for Client {
     }
 
     fn call(&mut self, _req: ()) -> Self::Future {
-        let socket = self.socket.clone();
-        let backoff = self.backoff;
+        let socket = self.config.socket_addr.clone();
+        let backoff = self.config.backoff;
         Box::pin(async move {
             // Strip the 'unix:' prefix for tonic compatibility.
             let stripped_path = socket
@@ -54,8 +58,8 @@ impl tower::Service<()> for Client {
                 }))
                 .await?;
 
-            let api = Api::watch(chan, backoff);
-            let receiver = api.spawn_watch(()).await?.into_inner();
+            let api = spire_client::Api::watch(chan, backoff);
+            let receiver = api.spawn_watch(()).await?;
 
             Ok(receiver)
         })

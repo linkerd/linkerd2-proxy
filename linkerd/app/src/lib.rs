@@ -9,6 +9,7 @@ pub mod env;
 pub mod identity;
 pub mod oc_collector;
 pub mod policy;
+pub mod spire;
 pub mod tap;
 
 pub use self::metrics::Metrics;
@@ -341,7 +342,11 @@ impl App {
         self.identity.receiver().server_name().clone()
     }
 
-    pub fn identity_addr(&self) -> ControlAddr {
+    pub fn local_tls_id(&self) -> identity::Id {
+        self.identity.receiver().local_id().clone()
+    }
+
+    pub fn identity_addr(&self) -> identity::Addr {
         self.identity.addr()
     }
 

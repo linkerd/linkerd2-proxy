@@ -43,12 +43,6 @@ pub struct X509svid {
     /// Required. ASN.1 DER encoded X.509 bundle for the trust domain.
     #[prost(bytes = "vec", tag = "4")]
     pub bundle: ::prost::alloc::vec::Vec<u8>,
-    /// Optional. An operator-specified string used to provide guidance on how this
-    /// identity should be used by a workload when more than one SVID is returned.
-    /// For example, `internal` and `external` to indicate an SVID for internal or
-    /// external use, respectively.
-    #[prost(string, tag = "5")]
-    pub hint: ::prost::alloc::string::String,
 }
 /// Generated client implementations.
 pub mod spiffe_workload_api_client {

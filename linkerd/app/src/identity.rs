@@ -1,5 +1,7 @@
+use crate::spire;
 pub use linkerd_app_core::identity::{
     client::{certify, TokenSource},
+    spire_client::Spire,
     Id,
 };
 use linkerd_app_core::{
@@ -12,14 +14,23 @@ use linkerd_app_core::{
     metrics::{prom, ControlHttp as ClientMetrics},
     Error, Result,
 };
-use std::{future::Future, pin::Pin};
+use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::sync::watch;
 use tracing::Instrument;
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
+pub enum Provider {
+    ControlPlane {
+        control: control::Config,
+        certify: certify::Config,
+    },
+    Spire(spire::Config),
+}
+
+#[derive(Clone, Debug)]
 pub struct Config {
-    pub control: control::Config,
-    pub certify: certify::Config,
+    pub provider: Provider,
     pub params: TlsParams,
 }
 
@@ -30,8 +41,14 @@ pub struct TlsParams {
     pub trust_anchors_pem: String,
 }
 
+#[derive(Clone)]
+pub enum Addr {
+    Spire(Arc<String>),
+    Linkerd(control::ControlAddr),
+}
+
 pub struct Identity {
-    addr: control::ControlAddr,
+    addr: Addr,
     receiver: creds::Receiver,
     ready: watch::Receiver<bool>,
     metrics: IdentityMetrics,
@@ -66,33 +83,52 @@ impl Config {
             &self.params.trust_anchors_pem,
         )?;
 
-        let certify = Certify::from(self.certify);
-        let metrics = certify.metrics();
-
-        let addr = self.control.addr.clone();
-
+        let metrics = IdentityMetrics::default();
         let (tx, ready) = watch::channel(false);
+        let cred = NotifyReady { store, tx };
 
-        // Save to be spawned on an auxiliary runtime.
-        let task = Box::pin({
-            let addr = addr.clone();
-            let svc = self
-                .control
-                .build(dns, client_metrics, registry, receiver.new_client());
+        let identity = match self.provider {
+            Provider::ControlPlane { control, certify } => {
+                let certify = Certify::new(certify, metrics.clone());
+                let addr = control.addr.clone();
 
-            let cred = NotifyReady { store, tx };
-            certify
-                .run(name, cred, svc)
-                .instrument(tracing::debug_span!("identity", server.addr = %addr).or_current())
-        });
+                let task = Box::pin({
+                    let addr = addr.clone();
+                    let svc = control.build(dns, client_metrics, registry, receiver.new_client());
 
-        Ok(Identity {
-            addr,
-            receiver,
-            metrics,
-            ready,
-            task,
-        })
+                    certify.run(name, cred, svc).instrument(
+                        tracing::debug_span!("identity", server.addr = %addr).or_current(),
+                    )
+                });
+                Identity {
+                    addr: Addr::Linkerd(addr),
+                    receiver,
+                    metrics,
+                    ready,
+                    task,
+                }
+            }
+            Provider::Spire(cfg) => {
+                let addr = cfg.socket_addr.clone();
+                let spire = Spire::new(self.params.server_id.clone(), metrics.clone());
+                let task = Box::pin({
+                    let client = spire::Client::from(cfg);
+                    spire.run(cred, client).instrument(
+                        tracing::debug_span!("spire identity", server.addr = %addr).or_current(),
+                    )
+                });
+
+                Identity {
+                    addr: Addr::Spire(addr),
+                    receiver,
+                    metrics,
+                    ready,
+                    task,
+                }
+            }
+        };
+
+        Ok(identity)
     }
 }
 
@@ -107,7 +143,7 @@ impl Credentials for NotifyReady {
 // === impl Identity ===
 
 impl Identity {
-    pub fn addr(&self) -> control::ControlAddr {
+    pub fn addr(&self) -> Addr {
         self.addr.clone()
     }
 

@@ -11,7 +11,7 @@ compile_error!(
     "at least one of the following TLS implementations must be enabled: 'meshtls-boring', 'meshtls-rustls'"
 );
 
-use linkerd_app::{trace, BindTcp, Config, BUILD_INFO};
+use linkerd_app::{identity, trace, BindTcp, Config, BUILD_INFO};
 use linkerd_signal as signal;
 use tokio::{sync::mpsc, time};
 use tracing::{debug, info, warn};
@@ -80,12 +80,21 @@ fn main() {
         }
 
         // TODO distinguish ServerName and Identity.
-        info!("Local identity is {}", app.local_server_name());
-        let addr = app.identity_addr();
-        match addr.identity.value() {
-            None => info!("Identity verified via {}", addr.addr),
-            Some(tls) => {
-                info!("Identity verified via {} ({})", addr.addr, tls.server_id);
+        info!("SNI is {}", app.local_server_name());
+        info!("Local identity is {}", app.local_tls_id());
+
+        match app.identity_addr() {
+            identity::Addr::Linkerd(cp_addr) => match cp_addr.identity.value() {
+                None => info!("Identity verified via {}", cp_addr.addr),
+                Some(tls) => {
+                    info!(
+                        "Identity verified via Control Plane {} ({})",
+                        cp_addr.addr, tls.server_id
+                    );
+                }
+            },
+            identity::Addr::Spire(spire_addr) => {
+                info!("Identity obtained via Spire {}", spire_addr);
             }
         }
 

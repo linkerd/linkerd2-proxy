@@ -12,34 +12,41 @@ use std::collections::HashMap;
 use tower::Service;
 use tracing::error;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Svid {
-    pub spiffe_id: Id,
-    pub leaf: DerX509,
-    pub private_key: Vec<u8>,
-    pub intermediates: Vec<DerX509>,
+    pub(super) spiffe_id: Id,
+    pub(super) leaf: DerX509,
+    pub(super) private_key: Vec<u8>,
+    pub(super) intermediates: Vec<DerX509>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SvidUpdate {
-    pub svids: HashMap<Id, Svid>,
+    pub(super) svids: HashMap<Id, Svid>,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Api<S> {
+pub struct Api<S> {
     client: Client<S>,
 }
 
 #[derive(Clone)]
-pub(crate) struct GrpcRecover(ExponentialBackoff);
+pub struct GrpcRecover(ExponentialBackoff);
 
-pub(crate) type Watch<S> = StreamWatch<GrpcRecover, Api<S>>;
+pub type Watch<S> = StreamWatch<GrpcRecover, Api<S>>;
 
 // === impl Svid ===
 
 impl TryFrom<api::X509svid> for Svid {
+    // TODO: Use bundles from response to compare against
+    // what is provided at bootstrap time
+
     type Error = Error;
     fn try_from(proto: api::X509svid) -> Result<Self, Self::Error> {
+        if proto.x509_svid_key.is_empty() {
+            return Err("empty private key".into());
+        }
+
         let cert_der_blocks = asn1::from_der(&proto.x509_svid)?;
         let (leaf, intermediates) = match cert_der_blocks.split_first() {
             None => return Err("empty cert chain".into()),
@@ -74,7 +81,7 @@ where
     S::ResponseBody: Default + http::HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
     <S::ResponseBody as http::HttpBody>::Error: Into<Error> + Send,
 {
-    pub(super) fn watch(client: S, backoff: ExponentialBackoff) -> Watch<S> {
+    pub fn watch(client: S, backoff: ExponentialBackoff) -> Watch<S> {
         let client = Client::new(client);
         StreamWatch::new(GrpcRecover(backoff), Self { client })
     }
@@ -135,17 +142,67 @@ impl Recover<tonic::Status> for GrpcRecover {
     type Backoff = ExponentialBackoffStream;
 
     fn recover(&self, status: tonic::Status) -> Result<Self::Backoff, tonic::Status> {
-        if status.code() == tonic::Code::InvalidArgument
-            || status.code() == tonic::Code::FailedPrecondition
-        {
+        // Non retriable conditions described in:
+        // https://github.com/spiffe/spiffe/blob/a5b6456ff1bcdb6935f61ed7f83e8ee533a325a3/standards/SPIFFE_Workload_API.md#client-state-machine
+        if status.code() == tonic::Code::InvalidArgument {
             return Err(status);
         }
 
         tracing::warn!(
             grpc.status = %status.code(),
             grpc.message = status.message(),
-            "Unexpected policy SPIRE Workload API response; retrying with a backoff",
+            "Unexpected SPIRE Workload API response; retrying with a backoff",
         );
         Ok(self.0.stream())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::api::Svid;
+    use rcgen::{Certificate, CertificateParams, SanType};
+    use spiffe_proto::client as api;
+
+    fn gen_svid_pb(id: String, subject_alt_names: Vec<SanType>) -> api::X509svid {
+        let mut params = CertificateParams::default();
+        params.subject_alt_names = subject_alt_names;
+        let cert = Certificate::from_params(params).expect("should generate cert");
+
+        api::X509svid {
+            spiffe_id: id,
+            x509_svid: cert.serialize_der().expect("should serialize"),
+            x509_svid_key: cert.serialize_private_key_der(),
+            bundle: Vec::default(),
+        }
+    }
+
+    #[test]
+    fn can_parse_valid_proto() {
+        let id = "spiffe://some-domain/some-workload";
+        let svid_pb = gen_svid_pb(id.into(), vec![SanType::URI(id.into())]);
+        assert!(Svid::try_from(svid_pb).is_ok());
+    }
+
+    #[test]
+    fn cannot_parse_non_spiffe_id() {
+        let id = "some-domain.some-workload";
+        let svid_pb = gen_svid_pb(id.into(), vec![SanType::DnsName(id.into())]);
+        assert!(Svid::try_from(svid_pb).is_err());
+    }
+
+    #[test]
+    fn cannot_parse_empty_cert() {
+        let id = "spiffe://some-domain/some-workload";
+        let mut svid_pb = gen_svid_pb(id.into(), vec![SanType::URI(id.into())]);
+        svid_pb.x509_svid = Vec::default();
+        assert!(Svid::try_from(svid_pb).is_err());
+    }
+
+    #[test]
+    fn cannot_parse_empty_key() {
+        let id = "spiffe://some-domain/some-workload";
+        let mut svid_pb = gen_svid_pb(id.into(), vec![SanType::URI(id.into())]);
+        svid_pb.x509_svid_key = Vec::default();
+        assert!(Svid::try_from(svid_pb).is_err());
     }
 }

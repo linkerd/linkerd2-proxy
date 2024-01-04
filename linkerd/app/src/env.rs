@@ -793,13 +793,15 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound.http_request_queue.failfast_timeout
         };
         identity::Config {
-            certify,
-            control: ControlConfig {
-                addr,
-                connect,
-                buffer: QueueConfig {
-                    capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
-                    failfast_timeout,
+            provider: identity::Provider::ControlPlane {
+                certify,
+                control: ControlConfig {
+                    addr,
+                    connect,
+                    buffer: QueueConfig {
+                        capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
+                        failfast_timeout,
+                    },
                 },
             },
             params,

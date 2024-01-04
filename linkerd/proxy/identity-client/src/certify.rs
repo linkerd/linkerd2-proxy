@@ -93,6 +93,10 @@ impl From<Config> for Certify {
 }
 
 impl Certify {
+    pub fn new(config: Config, metrics: Metrics) -> Self {
+        Self { config, metrics }
+    }
+
     pub fn metrics(&self) -> Metrics {
         self.metrics.clone()
     }
