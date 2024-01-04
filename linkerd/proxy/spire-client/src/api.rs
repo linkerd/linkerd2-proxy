@@ -65,7 +65,7 @@ impl TryFrom<api::X509svid> for Svid {
 
         Ok(Svid {
             spiffe_id,
-            leaf: leaf.clone(),
+            leaf,
             private_key: proto.x509_svid_key,
             intermediates: intermediates.to_vec(),
         })

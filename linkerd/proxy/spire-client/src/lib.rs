@@ -8,6 +8,7 @@ use linkerd_error::{Error, Result};
 use linkerd_identity::Credentials;
 use linkerd_identity::Id;
 use linkerd_proxy_identity_client_metrics::Metrics;
+use std::fmt::Display;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 use tower::Service;
@@ -29,13 +30,13 @@ impl Spire {
     where
         C: Credentials,
         S: Service<(), Response = tonic::Response<watch::Receiver<SvidUpdate>>>,
-        S::Error: Into<Error>,
+        S::Error: Into<Error> + Display,
     {
         match client.call(()).await {
             Ok(rsp) => {
                 consume_updates(&self.id, rsp.into_inner(), credentials, &self.metrics).await
             }
-            Err(error) => error!("could not establish SVID stream: {}", error.into()),
+            Err(error) => error!(%error, "could not establish SVID stream"),
         }
     }
 }
