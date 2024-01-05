@@ -3,10 +3,15 @@ use linkerd_app_core::{
     metrics::prom::{self, encoding::*, EncodeLabelSetMut},
     svc,
 };
+use linkerd_http_prom::RequestCountFamilies;
+
+pub use linkerd_http_prom::RequestCount;
+
+pub type NewCountRequests<N> = linkerd_http_prom::NewCountRequests<RouteBackendMetrics, N>;
 
 #[derive(Clone, Debug, Default)]
 pub struct RouteBackendMetrics {
-    metrics: super::count_reqs::RequestCountFamilies<RouteBackendLabels>,
+    metrics: RequestCountFamilies<RouteBackendLabels>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -17,26 +22,21 @@ struct RouteBackendLabels(ParentRef, RouteRef, BackendRef);
 impl RouteBackendMetrics {
     pub fn register(reg: &mut prom::Registry) -> Self {
         Self {
-            metrics: super::count_reqs::RequestCountFamilies::register(reg),
+            metrics: RequestCountFamilies::register(reg),
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn request_count(
-        &self,
-        p: ParentRef,
-        r: RouteRef,
-        b: BackendRef,
-    ) -> super::count_reqs::RequestCount {
+    pub(crate) fn request_count(&self, p: ParentRef, r: RouteRef, b: BackendRef) -> RequestCount {
         self.metrics.metrics(&RouteBackendLabels(p, r, b))
     }
 }
 
-impl<T> svc::ExtractParam<super::count_reqs::RequestCount, T> for RouteBackendMetrics
+impl<T> svc::ExtractParam<RequestCount, T> for RouteBackendMetrics
 where
     T: svc::Param<ParentRef> + svc::Param<RouteRef> + svc::Param<BackendRef>,
 {
-    fn extract_param(&self, t: &T) -> super::count_reqs::RequestCount {
+    fn extract_param(&self, t: &T) -> RequestCount {
         self.metrics
             .metrics(&RouteBackendLabels(t.param(), t.param(), t.param()))
     }

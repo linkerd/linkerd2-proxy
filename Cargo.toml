@@ -29,6 +29,7 @@ members = [
     "linkerd/http/classify",
     "linkerd/http/h2",
     "linkerd/http/metrics",
+    "linkerd/http/prom",
     "linkerd/http/retry",
     "linkerd/http/route",
     "linkerd/identity",

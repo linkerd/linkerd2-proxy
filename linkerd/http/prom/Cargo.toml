@@ -1,0 +1,15 @@
+[package]
+name = "linkerd-http-prom"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[features]
+test-util = []
+
+[dependencies]
+http = "0.2"
+prometheus-client = "0.22"
+
+linkerd-stack = { path = "../../stack" }

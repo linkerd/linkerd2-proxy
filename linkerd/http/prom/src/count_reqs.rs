@@ -1,11 +1,16 @@
-use linkerd_app_core::{metrics::prom, svc};
+use linkerd_stack as svc;
+use prometheus_client::{
+    encoding::EncodeLabelSet,
+    metrics::{counter::Counter, family::Family},
+    registry::Registry,
+};
 use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
-pub struct RequestCountFamilies<L: Clone>(prom::Family<L, prom::Counter>);
+pub struct RequestCountFamilies<L: Clone>(Family<L, Counter>);
 
 #[derive(Clone, Debug)]
-pub struct RequestCount(prom::Counter);
+pub struct RequestCount(Counter);
 
 #[derive(Clone, Debug)]
 pub struct NewCountRequests<X, N> {
@@ -16,16 +21,16 @@ pub struct NewCountRequests<X, N> {
 #[derive(Clone, Debug)]
 pub struct CountRequests<S> {
     inner: S,
-    requests: prom::Counter,
+    requests: Counter,
 }
 
 impl<L> RequestCountFamilies<L>
 where
-    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
     L: Eq + Clone + Send + Sync + 'static,
 {
-    pub fn register(registry: &mut prom::Registry) -> Self {
-        let requests = prom::Family::default();
+    pub fn register(registry: &mut Registry) -> Self {
+        let requests = Family::default();
         registry.register(
             "requests",
             "The total number of requests dispatched",
@@ -46,7 +51,7 @@ impl<X: Clone, N> NewCountRequests<X, N> {
         Self { extract, inner }
     }
 
-    pub fn layer_via(extract: X) -> impl svc::Layer<N, Service = Self> + Clone {
+    pub fn layer_via(extract: X) -> impl svc::layer::Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self::new(extract.clone(), inner))
     }
 }
@@ -68,7 +73,7 @@ where
 // === impl CountRequests ===
 
 impl<S> CountRequests<S> {
-    fn new(requests: prom::Counter, inner: S) -> Self {
+    fn new(requests: Counter, inner: S) -> Self {
         Self { requests, inner }
     }
 }
@@ -94,16 +99,15 @@ where
 
 impl<L> Default for RequestCountFamilies<L>
 where
-    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
     L: Eq + Clone + Send + Sync + 'static,
 {
     fn default() -> Self {
-        Self(prom::Family::default())
+        Self(Family::default())
     }
 }
 
 impl RequestCount {
-    #[cfg(test)]
     pub fn get(&self) -> u64 {
         self.0.get()
     }
