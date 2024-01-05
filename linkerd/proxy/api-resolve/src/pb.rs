@@ -7,6 +7,7 @@ use crate::{
     metadata::{Metadata, ProtocolHint},
 };
 use http::uri::Authority;
+use linkerd_identity::Id;
 use linkerd_tls::{client::ServerId, ClientTls, ServerName};
 use std::{collections::HashMap, net::SocketAddr, str::FromStr};
 
@@ -51,18 +52,32 @@ pub fn to_addr_meta(
 }
 
 fn to_identity(pb: TlsIdentity) -> Option<ClientTls> {
-    // TODO: differenciate between id and name, once this is
-    // available in the API
     use crate::api::destination::tls_identity::Strategy;
 
-    let Strategy::DnsLikeIdentity(i) = pb.strategy?;
-    match (ServerId::from_str(&i.name), ServerName::from_str(&i.name)) {
-        (Ok(i), Ok(n)) => Some(ClientTls::new(i, n)),
-        (_, _) => {
-            tracing::warn!("Ignoring invalid identity: {}", i.name);
+    let server_id = pb
+        .strategy
+        .and_then(|s| match s {
+            Strategy::DnsLikeIdentity(dns) => Id::parse_dns_name(&dns.name)
+                .map_err(|_| tracing::warn!("Ignoring invalid DNS identity: {}", dns.name))
+                .ok(),
+            Strategy::UriLikeIdentity(uri) => Id::parse_uri(&uri.uri)
+                .map_err(|_| tracing::warn!("Ignoring invalid URI identity: {}", uri.uri))
+                .ok(),
+        })
+        .map(ServerId)?;
+
+    let server_name = match (pb.server_name, &server_id) {
+        (Some(name), _) => ServerName::from_str(&name.name)
+            .map_err(|_| tracing::warn!("Ignoring invalid Server name: {}", name.name))
+            .ok(),
+        (None, ServerId(Id::Dns(dns_id))) => Some(ServerName(dns_id.clone())),
+        (None, ServerId(Id::Uri(_))) => {
+            tracing::warn!("server name missing for URI type identity");
             None
         }
-    }
+    }?;
+
+    Some(ClientTls::new(server_id, server_name))
 }
 
 pub(crate) fn to_authority(o: AuthorityOverride) -> Option<Authority> {

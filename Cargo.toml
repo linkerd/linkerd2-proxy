@@ -80,5 +80,5 @@ members = [
 debug = 1
 lto = true
 
-# [patch.crates-io]
-# linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/deps" }
+[patch.crates-io]
+linkerd2-proxy-api = { git = "https://github.com/zaharidichev/linkerd2-proxy-api", branch = "zd/add-uri-like-identity-and-server-name" }

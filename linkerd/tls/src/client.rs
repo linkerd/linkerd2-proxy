@@ -1,7 +1,6 @@
 use crate::{NegotiatedProtocol, ServerName};
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
-use linkerd_dns_name as dns;
 use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_stack::{layer, MakeConnection, NewService, Oneshot, Param, Service, ServiceExt};
@@ -210,11 +209,9 @@ impl Deref for ServerId {
 }
 
 impl FromStr for ServerId {
-    type Err = dns::InvalidName;
+    type Err = linkerd_error::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // TODO Handle SPIFFE IDs.
-        let n = dns::Name::from_str(s)?;
-        Ok(Self(n.into()))
+        id::Id::from_str(s).map(Self)
     }
 }
 
