@@ -96,9 +96,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use std::{sync::Arc, time::Duration};
 
-    struct StubCreds;
+    struct StubCreds(Arc<AtomicU64>);
 
     impl Credentials for StubCreds {
         fn set_certificate(
@@ -108,6 +108,7 @@ mod tests {
             _key: Vec<u8>,
             _expiry: SystemTime,
         ) -> Result<()> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(())
         }
     }
@@ -116,7 +117,9 @@ mod tests {
     fn test_set_certificate() {
         let metrics = CertMetrics::register(&mut prom::Registry::default());
 
-        let mut with_cert_metrics = WithCertMetrics::new(metrics.clone(), StubCreds);
+        let called = Arc::new(AtomicU64::new(0));
+        let mut with_cert_metrics =
+            WithCertMetrics::new(metrics.clone(), StubCreds(called.clone()));
 
         assert_eq!(with_cert_metrics.metrics.refreshes.get(), 0);
         assert_eq!(with_cert_metrics.metrics.refresh_ts.get(), 0.0);
@@ -142,5 +145,6 @@ mod tests {
             with_cert_metrics.metrics.expiry_ts.get(),
             expiry.duration_since(UNIX_EPOCH).unwrap().as_secs_f64()
         );
+        assert_eq!(called.load(std::sync::atomic::Ordering::Relaxed), 1);
     }
 }
