@@ -1,42 +1,52 @@
 use crate::{BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{
-    metrics::prom::{self, encoding::*, EncodeLabelSetMut},
+    metrics::prom::{self, encoding::*, EncodeLabelSetMut, Histogram},
     svc,
 };
-use linkerd_http_prom::RequestCountFamilies;
+use linkerd_http_prom::HttpMetricsFamiles;
+use prometheus_client::metrics::family::MetricConstructor;
 
-pub use linkerd_http_prom::RequestCount;
+pub type BackendHttpMetrics =
+    linkerd_http_prom::HttpMetrics<RouteBackendLabels, RequestDurationHistogram>;
 
-pub type NewCountRequests<N> = linkerd_http_prom::NewCountRequests<RouteBackendMetrics, N>;
+pub type NewBackendHttpMetrics<N> = linkerd_http_prom::NewHttpMetrics<
+    RouteBackendMetrics,
+    RouteBackendLabels,
+    RequestDurationHistogram,
+    N,
+>;
 
 #[derive(Clone, Debug, Default)]
 pub struct RouteBackendMetrics {
-    metrics: RequestCountFamilies<RouteBackendLabels>,
+    metrics: HttpMetricsFamiles<RouteBackendLabels, RequestDurationHistogram>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-struct RouteBackendLabels(ParentRef, RouteRef, BackendRef);
+pub struct RouteBackendLabels(ParentRef, RouteRef, BackendRef);
+
+#[derive(Clone, Debug, Default)]
+pub struct RequestDurationHistogram;
 
 // === impl RouteBackendMetrics ===
 
 impl RouteBackendMetrics {
     pub fn register(reg: &mut prom::Registry) -> Self {
         Self {
-            metrics: RequestCountFamilies::register(reg),
+            metrics: HttpMetricsFamiles::register(reg, RequestDurationHistogram),
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn request_count(&self, p: ParentRef, r: RouteRef, b: BackendRef) -> RequestCount {
+    pub(crate) fn get(&self, p: ParentRef, r: RouteRef, b: BackendRef) -> BackendHttpMetrics {
         self.metrics.metrics(&RouteBackendLabels(p, r, b))
     }
 }
 
-impl<T> svc::ExtractParam<RequestCount, T> for RouteBackendMetrics
+impl<T> svc::ExtractParam<BackendHttpMetrics, T> for RouteBackendMetrics
 where
     T: svc::Param<ParentRef> + svc::Param<RouteRef> + svc::Param<BackendRef>,
 {
-    fn extract_param(&self, t: &T) -> RequestCount {
+    fn extract_param(&self, t: &T) -> BackendHttpMetrics {
         self.metrics
             .metrics(&RouteBackendLabels(t.param(), t.param(), t.param()))
     }
@@ -57,5 +67,17 @@ impl EncodeLabelSetMut for RouteBackendLabels {
 impl EncodeLabelSet for RouteBackendLabels {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl RequestDurationHistogram ===
+
+impl RequestDurationHistogram {
+    const BUCKETS: &'static [f64] = &[0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0];
+}
+
+impl MetricConstructor<Histogram> for RequestDurationHistogram {
+    fn new_metric(&self) -> Histogram {
+        Histogram::new(Self::BUCKETS.iter().copied())
     }
 }

@@ -7,7 +7,7 @@ use prometheus_client::{
 use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
-pub struct RequestCountFamilies<L: Clone>(Family<L, Counter>);
+pub struct RequestCountFamilies<L>(Family<L, Counter>);
 
 #[derive(Clone, Debug)]
 pub struct RequestCount(Counter);
@@ -22,26 +22,6 @@ pub struct NewCountRequests<X, N> {
 pub struct CountRequests<S> {
     inner: S,
     requests: Counter,
-}
-
-impl<L> RequestCountFamilies<L>
-where
-    L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
-    L: Eq + Clone + Send + Sync + 'static,
-{
-    pub fn register(registry: &mut Registry) -> Self {
-        let requests = Family::default();
-        registry.register(
-            "requests",
-            "The total number of requests dispatched",
-            requests.clone(),
-        );
-        Self(requests)
-    }
-
-    pub fn metrics(&self, labels: &L) -> RequestCount {
-        RequestCount(self.0.get_or_create(labels).clone())
-    }
 }
 
 // === impl NewCountRequests ===
@@ -64,16 +44,16 @@ where
     type Service = CountRequests<N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let RequestCount(counter) = self.extract.extract_param(&target);
+        let rc = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
-        CountRequests::new(counter, inner)
+        CountRequests::new(rc, inner)
     }
 }
 
 // === impl CountRequests ===
 
 impl<S> CountRequests<S> {
-    fn new(requests: Counter, inner: S) -> Self {
+    pub(crate) fn new(RequestCount(requests): RequestCount, inner: S) -> Self {
         Self { requests, inner }
     }
 }
@@ -97,15 +77,39 @@ where
     }
 }
 
+// === impl RequestCountFamilies ===
+
 impl<L> Default for RequestCountFamilies<L>
 where
     L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
-    L: Eq + Clone + Send + Sync + 'static,
+    L: Eq + Clone,
 {
     fn default() -> Self {
         Self(Family::default())
     }
 }
+
+impl<L> RequestCountFamilies<L>
+where
+    L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone + Send + Sync + 'static,
+{
+    pub fn register(registry: &mut Registry) -> Self {
+        let requests = Family::default();
+        registry.register(
+            "requests",
+            "The total number of requests dispatched",
+            requests.clone(),
+        );
+        Self(requests)
+    }
+
+    pub fn metrics(&self, labels: &L) -> RequestCount {
+        RequestCount(self.0.get_or_create(labels).clone())
+    }
+}
+
+// === impl RequestCount ===
 
 impl RequestCount {
     pub fn get(&self) -> u64 {

@@ -1499,9 +1499,12 @@ dependencies = [
 name = "linkerd-http-prom"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "http",
  "linkerd-stack",
+ "pin-project",
  "prometheus-client",
+ "tokio",
 ]
 
 [[package]]
