@@ -2237,7 +2237,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.12.0"
-source = "git+https://github.com/zaharidichev/linkerd2-proxy-api?branch=zd/add-uri-like-identity-and-server-name#8f84ce5063383e557855b62f109eb7c905baeebb"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=2da43c5d0237549f17480285dad8895e7e4737d2#2da43c5d0237549f17480285dad8895e7e4737d2"
 dependencies = [
  "h2",
  "http",
