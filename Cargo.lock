@@ -1540,6 +1540,7 @@ dependencies = [
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-metrics",
+ "prometheus-client",
  "thiserror",
  "tracing",
  "url",

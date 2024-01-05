@@ -11,6 +11,7 @@ pub struct CertMetrics {
     refresh_ts: prom::Gauge<f64, AtomicU64>,
     expiry_ts: prom::Gauge<f64, AtomicU64>,
     refreshes: prom::Counter,
+    errors: prom::Counter,
 }
 
 /// Implements `Credentials`, recording metrics about certificate updates.
@@ -36,17 +37,38 @@ impl CertMetrics {
             refresh_ts.clone(),
         );
 
-        let refreshes = prom::Counter::default();
+        #[derive(Clone, Debug, PartialEq, Eq, Hash, prom::encoding::EncodeLabelSet)]
+        struct RefreshLabelSet {
+            result: RefreshResult,
+        }
+        #[derive(Clone, Debug, PartialEq, Eq, Hash, prom::encoding::EncodeLabelValue)]
+        #[allow(non_camel_case_types)]
+        enum RefreshResult {
+            ok,
+            error,
+        }
+        let refreshes_fam = prom::Family::<_, prom::Counter>::default();
         registry.register(
             "refreshes",
             "The total number of times this proxy's mTLS identity certificate has been refreshed by the Identity provider",
-            refreshes.clone(),
+            refreshes_fam.clone(),
         );
+        let refreshes = refreshes_fam
+            .get_or_create(&RefreshLabelSet {
+                result: RefreshResult::ok,
+            })
+            .clone();
+        let errors = refreshes_fam
+            .get_or_create(&RefreshLabelSet {
+                result: RefreshResult::error,
+            })
+            .clone();
 
         Self {
             refresh_ts,
             expiry_ts,
             refreshes,
+            errors,
         }
     }
 }
@@ -68,7 +90,10 @@ where
         key: Vec<u8>,
         expiry: SystemTime,
     ) -> Result<()> {
-        self.inner.set_certificate(leaf, chain, key, expiry)?;
+        if let Err(err) = self.inner.set_certificate(leaf, chain, key, expiry) {
+            self.metrics.errors.inc();
+            return Err(err);
+        }
 
         self.metrics.refreshes.inc();
 
@@ -98,7 +123,7 @@ mod tests {
     use super::*;
     use std::{sync::Arc, time::Duration};
 
-    struct StubCreds(Arc<AtomicU64>);
+    struct StubCreds(Arc<AtomicU64>, Result<(), ()>);
 
     impl Credentials for StubCreds {
         fn set_certificate(
@@ -109,7 +134,7 @@ mod tests {
             _expiry: SystemTime,
         ) -> Result<()> {
             self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            Ok(())
+            self.1.map_err(|()| "boop".into())
         }
     }
 
@@ -119,9 +144,10 @@ mod tests {
 
         let called = Arc::new(AtomicU64::new(0));
         let mut with_cert_metrics =
-            WithCertMetrics::new(metrics.clone(), StubCreds(called.clone()));
+            WithCertMetrics::new(metrics.clone(), StubCreds(called.clone(), Ok(())));
 
         assert_eq!(with_cert_metrics.metrics.refreshes.get(), 0);
+        assert_eq!(with_cert_metrics.metrics.errors.get(), 0);
         assert_eq!(with_cert_metrics.metrics.refresh_ts.get(), 0.0);
         assert_eq!(with_cert_metrics.metrics.expiry_ts.get(), 0.0);
 
@@ -134,6 +160,7 @@ mod tests {
             .is_ok());
 
         assert_eq!(with_cert_metrics.metrics.refreshes.get(), 1);
+        assert_eq!(with_cert_metrics.metrics.errors.get(), 0);
         assert!(
             with_cert_metrics.metrics.refresh_ts.get()
                 < SystemTime::now()
@@ -145,6 +172,34 @@ mod tests {
             with_cert_metrics.metrics.expiry_ts.get(),
             expiry.duration_since(UNIX_EPOCH).unwrap().as_secs_f64()
         );
+        assert_eq!(called.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_set_certificate_error() {
+        let metrics = CertMetrics::register(&mut prom::Registry::default());
+
+        let called = Arc::new(AtomicU64::new(0));
+        let mut with_cert_metrics =
+            WithCertMetrics::new(metrics.clone(), StubCreds(called.clone(), Err(())));
+
+        assert_eq!(with_cert_metrics.metrics.refreshes.get(), 0);
+        assert_eq!(with_cert_metrics.metrics.errors.get(), 0);
+        assert_eq!(with_cert_metrics.metrics.refresh_ts.get(), 0.0);
+        assert_eq!(with_cert_metrics.metrics.expiry_ts.get(), 0.0);
+
+        let leaf = DerX509(b"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".to_vec());
+        let chain = vec![leaf.clone()];
+        let key = vec![0, 1, 2, 3, 4];
+        let expiry = SystemTime::now() + Duration::from_secs(60 * 60 * 24); // 1 day from now
+        assert!(with_cert_metrics
+            .set_certificate(leaf, chain, key, expiry)
+            .is_err());
+
+        assert_eq!(with_cert_metrics.metrics.refreshes.get(), 0);
+        assert_eq!(with_cert_metrics.metrics.errors.get(), 1);
+        assert_eq!(with_cert_metrics.metrics.refresh_ts.get(), 0.0);
+        assert_eq!(with_cert_metrics.metrics.expiry_ts.get(), 0.0);
         assert_eq!(called.load(std::sync::atomic::Ordering::Relaxed), 1);
     }
 }
