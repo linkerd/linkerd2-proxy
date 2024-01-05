@@ -93,3 +93,54 @@ where
         Ok(())
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    struct StubCreds;
+
+    impl Credentials for StubCreds {
+        fn set_certificate(
+            &mut self,
+            _leaf: DerX509,
+            _chain: Vec<DerX509>,
+            _key: Vec<u8>,
+            _expiry: SystemTime,
+        ) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_set_certificate() {
+        let metrics = CertMetrics::register(&mut prom::Registry::default());
+
+        let mut with_cert_metrics = WithCertMetrics::new(metrics.clone(), StubCreds);
+
+        assert_eq!(with_cert_metrics.metrics.refreshes.get(), 0);
+        assert_eq!(with_cert_metrics.metrics.refresh_ts.get(), 0.0);
+        assert_eq!(with_cert_metrics.metrics.expiry_ts.get(), 0.0);
+
+        let leaf = DerX509(b"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".to_vec());
+        let chain = vec![leaf.clone()];
+        let key = vec![0, 1, 2, 3, 4];
+        let expiry = SystemTime::now() + Duration::from_secs(60 * 60 * 24); // 1 day from now
+        assert!(with_cert_metrics
+            .set_certificate(leaf, chain, key, expiry)
+            .is_ok());
+
+        assert_eq!(with_cert_metrics.metrics.refreshes.get(), 1);
+        assert!(
+            with_cert_metrics.metrics.refresh_ts.get()
+                < SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs_f64()
+        );
+        assert_eq!(
+            with_cert_metrics.metrics.expiry_ts.get(),
+            expiry.duration_since(UNIX_EPOCH).unwrap().as_secs_f64()
+        );
+    }
+}
