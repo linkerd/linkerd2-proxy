@@ -1,4 +1,4 @@
-use crate::{Metrics, TokenSource};
+use crate::TokenSource;
 use http_body::Body;
 use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient};
 use linkerd_dns_name::Name;
@@ -36,7 +36,6 @@ pub struct LostDaemon(());
 #[derive(Debug)]
 pub struct Certify {
     config: Config,
-    metrics: Metrics,
 }
 
 impl Documents {
@@ -84,18 +83,11 @@ impl Documents {
 
 impl From<Config> for Certify {
     fn from(config: Config) -> Self {
-        Self {
-            config,
-            metrics: Metrics::default(),
-        }
+        Self { config }
     }
 }
 
 impl Certify {
-    pub fn metrics(&self) -> Metrics {
-        self.metrics.clone()
-    }
-
     pub async fn run<C, N, S>(self, name: Name, mut credentials: C, new_client: N)
     where
         C: Credentials,
@@ -126,7 +118,6 @@ impl Certify {
             match crt {
                 Ok(expiry) => {
                     debug!(?expiry, "Identity certified");
-                    self.metrics.refresh(expiry);
                     curr_expiry = expiry
                 }
                 Err(error) => {
@@ -188,6 +179,7 @@ where
         DerX509(leaf_certificate),
         intermediate_certificates.into_iter().map(DerX509).collect(),
         docs.key_pkcs8.clone(),
+        expiry,
     )?;
 
     Ok(expiry)

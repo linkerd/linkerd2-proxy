@@ -27,6 +27,7 @@ impl id::Credentials for Store {
         id::DerX509(leaf_der): id::DerX509,
         intermediates: Vec<id::DerX509>,
         key_pkcs8: Vec<u8>,
+        _expiry: std::time::SystemTime,
     ) -> Result<()> {
         let leaf = X509::from_der(&leaf_der)?;
 

@@ -5,14 +5,11 @@ pub use linkerd_app_core::identity::{
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    identity::{
-        client::{Certify, Metrics as IdentityMetrics},
-        creds, Credentials, DerX509, Mode,
-    },
+    identity::{client::Certify, creds, CertMetrics, Credentials, DerX509, Mode, WithCertMetrics},
     metrics::{prom, ControlHttp as ClientMetrics},
     Error, Result,
 };
-use std::{future::Future, pin::Pin};
+use std::{future::Future, pin::Pin, time::SystemTime};
 use tokio::sync::watch;
 use tracing::Instrument;
 
@@ -34,7 +31,6 @@ pub struct Identity {
     addr: control::ControlAddr,
     receiver: creds::Receiver,
     ready: watch::Receiver<bool>,
-    metrics: IdentityMetrics,
     task: Task,
 }
 
@@ -67,7 +63,6 @@ impl Config {
         )?;
 
         let certify = Certify::from(self.certify);
-        let metrics = certify.metrics();
 
         let addr = self.control.addr.clone();
 
@@ -76,11 +71,17 @@ impl Config {
         // Save to be spawned on an auxiliary runtime.
         let task = Box::pin({
             let addr = addr.clone();
-            let svc = self
-                .control
-                .build(dns, client_metrics, registry, receiver.new_client());
+            let svc = self.control.build(
+                dns,
+                client_metrics,
+                registry.sub_registry_with_prefix("control_identity"),
+                receiver.new_client(),
+            );
 
-            let cred = NotifyReady { store, tx };
+            let cert_metrics =
+                CertMetrics::register(registry.sub_registry_with_prefix("identity_cert"));
+            let cred = WithCertMetrics::new(cert_metrics, NotifyReady { store, tx });
+
             certify
                 .run(name, cred, svc)
                 .instrument(tracing::debug_span!("identity", server.addr = %addr).or_current())
@@ -89,7 +90,6 @@ impl Config {
         Ok(Identity {
             addr,
             receiver,
-            metrics,
             ready,
             task,
         })
@@ -97,8 +97,14 @@ impl Config {
 }
 
 impl Credentials for NotifyReady {
-    fn set_certificate(&mut self, leaf: DerX509, chain: Vec<DerX509>, key: Vec<u8>) -> Result<()> {
-        self.store.set_certificate(leaf, chain, key)?;
+    fn set_certificate(
+        &mut self,
+        leaf: DerX509,
+        chain: Vec<DerX509>,
+        key: Vec<u8>,
+        exp: SystemTime,
+    ) -> Result<()> {
+        self.store.set_certificate(leaf, chain, key, exp)?;
         let _ = self.tx.send(true);
         Ok(())
     }
@@ -123,10 +129,6 @@ impl Identity {
 
     pub fn receiver(&self) -> creds::Receiver {
         self.receiver.clone()
-    }
-
-    pub fn metrics(&self) -> IdentityMetrics {
-        self.metrics.clone()
     }
 
     pub fn run(self) -> Task {
