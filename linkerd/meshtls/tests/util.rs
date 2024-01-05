@@ -17,7 +17,12 @@ use linkerd_stack::{
 };
 use linkerd_tls as tls;
 use linkerd_tls_test_util as test_util;
-use std::{future::Future, net::SocketAddr, sync::mpsc, time::Duration};
+use std::{
+    future::Future,
+    net::SocketAddr,
+    sync::mpsc,
+    time::{Duration, SystemTime},
+};
 use tokio::net::TcpStream;
 use tracing::Instrument;
 
@@ -127,7 +132,12 @@ fn load(
         .expect("credentials must be readable");
 
     store
-        .set_certificate(DerX509(ent.crt.to_vec()), vec![], ent.key.to_vec())
+        .set_certificate(
+            DerX509(ent.crt.to_vec()),
+            vec![],
+            ent.key.to_vec(),
+            SystemTime::now() + Duration::from_secs(1000),
+        )
         .expect("certificate must be valid");
 
     (store, rx.new_client(), rx.server())

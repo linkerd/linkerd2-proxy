@@ -8,6 +8,8 @@ publish = false
 
 [dependencies]
 linkerd-dns-name = { path = "../dns/name" }
+linkerd-metrics = { path = "../metrics" }
 linkerd-error = { path = "../error" }
 url = "2.5.0"
 thiserror = "1"
+tracing = "0.1"

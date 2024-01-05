@@ -1539,7 +1539,9 @@ version = "0.1.0"
 dependencies = [
  "linkerd-dns-name",
  "linkerd-error",
+ "linkerd-metrics",
  "thiserror",
+ "tracing",
  "url",
 ]
 
