@@ -144,3 +144,86 @@ pub(crate) fn to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
         None => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::destination::TlsIdentity;
+    use linkerd2_proxy_api::destination::tls_identity::{
+        DnsLikeIdentity, Strategy, UriLikeIdentity,
+    };
+    use linkerd_identity as id;
+
+    #[test]
+    fn dns_identity_no_server_name_works() {
+        let pb_id = TlsIdentity {
+            server_name: None,
+            strategy: Some(Strategy::DnsLikeIdentity(DnsLikeIdentity {
+                name: "system.local".to_string(),
+            })),
+        };
+
+        assert!(to_identity(pb_id).is_some());
+    }
+
+    #[test]
+    fn uri_identity_no_server_name_does_not_work() {
+        let pb_id = TlsIdentity {
+            server_name: None,
+            strategy: Some(Strategy::UriLikeIdentity(UriLikeIdentity {
+                uri: "spiffe://root".to_string(),
+            })),
+        };
+
+        assert!(to_identity(pb_id).is_none());
+    }
+
+    #[test]
+    fn uri_identity_with_server_name_works() {
+        let pb_id = TlsIdentity {
+            server_name: Some(DnsLikeIdentity {
+                name: "system.local".to_string(),
+            }),
+            strategy: Some(Strategy::UriLikeIdentity(UriLikeIdentity {
+                uri: "spiffe://root".to_string(),
+            })),
+        };
+
+        assert!(to_identity(pb_id).is_some());
+    }
+
+    #[test]
+    fn dns_identity_with_server_name_works() {
+        let dns_id = DnsLikeIdentity {
+            name: "system.local".to_string(),
+        };
+        let pb_id = TlsIdentity {
+            server_name: Some(dns_id.clone()),
+            strategy: Some(Strategy::DnsLikeIdentity(dns_id)),
+        };
+
+        assert!(to_identity(pb_id).is_some());
+    }
+
+    #[test]
+    fn dns_identity_with_server_name_works_different_values() {
+        let name = DnsLikeIdentity {
+            name: "name.some".to_string(),
+        };
+        let dns_id = DnsLikeIdentity {
+            name: "system.local".to_string(),
+        };
+
+        let pb_id = TlsIdentity {
+            server_name: Some(name),
+            strategy: Some(Strategy::DnsLikeIdentity(dns_id)),
+        };
+
+        let expected_identity = Some(ClientTls::new(
+            ServerId(id::Id::parse_dns_name("system.local").expect("should parse")),
+            ServerName::from_str("name.some").expect("should parse"),
+        ));
+
+        assert_eq!(expected_identity, to_identity(pb_id));
+    }
+}
