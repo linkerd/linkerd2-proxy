@@ -2,11 +2,16 @@
 #![forbid(unsafe_code)]
 
 mod credentials;
+mod metrics;
 
-pub use self::credentials::{Credentials, DerX509};
 use linkerd_error::{Error, Result};
 use std::convert::From;
 use std::str::FromStr;
+
+pub use self::{
+    credentials::{Credentials, DerX509},
+    metrics::{CertMetrics, WithCertMetrics},
+};
 
 /// An endpoint identity descriptor used for authentication.
 ///

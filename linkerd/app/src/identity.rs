@@ -7,14 +7,11 @@ pub use linkerd_app_core::identity::{
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    identity::{
-        client::Certify, client_metrics::Metrics as IdentityMetrics, creds, Credentials, DerX509,
-        Mode,
-    },
+    identity::{client::Certify, creds, CertMetrics, Credentials, DerX509, Mode, WithCertMetrics},
     metrics::{prom, ControlHttp as ClientMetrics},
     Error, Result,
 };
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{future::Future, pin::Pin, sync::Arc, time::SystemTime};
 use tokio::sync::watch;
 use tracing::Instrument;
 
@@ -51,7 +48,6 @@ pub struct Identity {
     addr: Addr,
     receiver: creds::Receiver,
     ready: watch::Receiver<bool>,
-    metrics: IdentityMetrics,
     task: Task,
 }
 
@@ -83,34 +79,41 @@ impl Config {
             &self.params.trust_anchors_pem,
         )?;
 
-        let metrics = IdentityMetrics::default();
         let (tx, ready) = watch::channel(false);
-        let cred = NotifyReady { store, tx };
+        let cert_metrics =
+            CertMetrics::register(registry.sub_registry_with_prefix("identity_cert"));
+        let cred = WithCertMetrics::new(cert_metrics, NotifyReady { store, tx });
 
         let identity = match self.provider {
             Provider::ControlPlane { control, certify } => {
-                let certify = Certify::new(certify, metrics.clone());
+                let certify = Certify::from(certify);
                 let addr = control.addr.clone();
 
                 let task = Box::pin({
                     let addr = addr.clone();
-                    let svc = control.build(dns, client_metrics, registry, receiver.new_client());
+
+                    let svc = control.build(
+                        dns,
+                        client_metrics,
+                        registry.sub_registry_with_prefix("control_identity"),
+                        receiver.new_client(),
+                    );
 
                     certify.run(name, cred, svc).instrument(
                         tracing::debug_span!("identity", server.addr = %addr).or_current(),
                     )
                 });
+
                 Identity {
                     addr: Addr::Linkerd(addr),
                     receiver,
-                    metrics,
                     ready,
                     task,
                 }
             }
             Provider::Spire(cfg) => {
                 let addr = cfg.socket_addr.clone();
-                let spire = Spire::new(self.params.server_id.clone(), metrics.clone());
+                let spire = Spire::new(self.params.server_id.clone());
                 let task = Box::pin({
                     let client = spire::Client::from(cfg);
                     spire.run(cred, client).instrument(
@@ -121,7 +124,6 @@ impl Config {
                 Identity {
                     addr: Addr::Spire(addr),
                     receiver,
-                    metrics,
                     ready,
                     task,
                 }
@@ -133,8 +135,14 @@ impl Config {
 }
 
 impl Credentials for NotifyReady {
-    fn set_certificate(&mut self, leaf: DerX509, chain: Vec<DerX509>, key: Vec<u8>) -> Result<()> {
-        self.store.set_certificate(leaf, chain, key)?;
+    fn set_certificate(
+        &mut self,
+        leaf: DerX509,
+        chain: Vec<DerX509>,
+        key: Vec<u8>,
+        exp: SystemTime,
+    ) -> Result<()> {
+        self.store.set_certificate(leaf, chain, key, exp)?;
         let _ = self.tx.send(true);
         Ok(())
     }
@@ -159,10 +167,6 @@ impl Identity {
 
     pub fn receiver(&self) -> creds::Receiver {
         self.receiver.clone()
-    }
-
-    pub fn metrics(&self) -> IdentityMetrics {
-        self.metrics.clone()
     }
 
     pub fn run(self) -> Task {

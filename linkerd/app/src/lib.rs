@@ -139,13 +139,10 @@ impl Config {
         // Ensure that we've obtained a valid identity before binding any servers.
         debug!("Building Identity client");
         let identity = {
-            let registry = registry.sub_registry_with_prefix("control_identity");
             info_span!("identity").in_scope(|| {
-                identity.build(dns.resolver.clone(), metrics.control.clone(), registry)
+                identity.build(dns.resolver.clone(), metrics.control.clone(), &mut registry)
             })?
         };
-
-        let report = identity.metrics().and_report(report);
 
         let (drain_tx, drain_rx) = drain::channel();
 

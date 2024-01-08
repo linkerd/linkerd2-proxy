@@ -50,7 +50,6 @@ members = [
     "linkerd/proxy/dns-resolve",
     "linkerd/proxy/http",
     "linkerd/proxy/identity-client",
-    "linkerd/proxy/identity-client-metrics",
     "linkerd/proxy/spire-client",
     "linkerd/proxy/resolve",
     "linkerd/proxy/server-policy",

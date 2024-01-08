@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use crate::{NewClient, Server};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
@@ -33,15 +35,22 @@ pub enum Receiver {
 // === impl Store ===
 
 impl Credentials for Store {
-    fn set_certificate(&mut self, leaf: DerX509, chain: Vec<DerX509>, key: Vec<u8>) -> Result<()> {
+    fn set_certificate(
+        &mut self,
+        leaf: DerX509,
+        chain: Vec<DerX509>,
+        key: Vec<u8>,
+        exp: SystemTime,
+    ) -> Result<()> {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(store) => store.set_certificate(leaf, chain, key),
+            Self::Boring(store) => store.set_certificate(leaf, chain, key, exp),
 
             #[cfg(feature = "rustls")]
-            Self::Rustls(store) => store.set_certificate(leaf, chain, key),
+            Self::Rustls(store) => store.set_certificate(leaf, chain, key, exp),
+
             #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => crate::no_tls!(leaf, chain, key),
+            _ => crate::no_tls!(leaf, chain, key, exp),
         }
     }
 }

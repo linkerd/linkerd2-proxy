@@ -7,23 +7,21 @@ pub use api::{Api, SvidUpdate};
 use linkerd_error::{Error, Result};
 use linkerd_identity::Credentials;
 use linkerd_identity::Id;
-use linkerd_proxy_identity_client_metrics::Metrics;
 use std::fmt::Display;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
 use tokio::sync::watch;
 use tower::Service;
 use tracing::error;
 
 pub struct Spire {
     id: Id,
-    metrics: Metrics,
 }
 
 // === impl Spire ===
 
 impl Spire {
-    pub fn new(id: Id, metrics: Metrics) -> Self {
-        Self { id, metrics }
+    pub fn new(id: Id) -> Self {
+        Self { id }
     }
 
     pub async fn run<C, S>(self, credentials: C, mut client: S)
@@ -33,9 +31,7 @@ impl Spire {
         S::Error: Into<Error> + Display,
     {
         match client.call(()).await {
-            Ok(rsp) => {
-                consume_updates(&self.id, rsp.into_inner(), credentials, &self.metrics).await
-            }
+            Ok(rsp) => consume_updates(&self.id, rsp.into_inner(), credentials).await,
             Err(error) => error!(%error, "could not establish SVID stream"),
         }
     }
@@ -45,15 +41,13 @@ async fn consume_updates<C>(
     id: &Id,
     mut updates: watch::Receiver<api::SvidUpdate>,
     mut credentials: C,
-    metrics: &Metrics,
 ) where
     C: Credentials,
 {
     loop {
         let svid_update = updates.borrow_and_update().clone();
-        match process_svid(&mut credentials, svid_update, id) {
-            Ok(expiration) => metrics.refresh(expiration),
-            Err(error) => tracing::error!("Error processing SVID update: {}", error),
+        if let Err(error) = process_svid(&mut credentials, svid_update, id) {
+            tracing::error!("Error processing SVID update: {}", error);
         }
 
         if let Err(error) = updates.changed().await {
@@ -63,7 +57,7 @@ async fn consume_updates<C>(
     }
 }
 
-fn process_svid<C>(credentials: &mut C, mut update: SvidUpdate, id: &Id) -> Result<SystemTime>
+fn process_svid<C>(credentials: &mut C, mut update: SvidUpdate, id: &Id) -> Result<()>
 where
     C: Credentials,
 {
@@ -74,8 +68,7 @@ where
         let exp: u64 = parsed_cert.validity().not_after.timestamp().try_into()?;
         let exp = UNIX_EPOCH + Duration::from_secs(exp);
 
-        credentials.set_certificate(svid.leaf, svid.intermediates, svid.private_key)?;
-        return Ok(exp);
+        return credentials.set_certificate(svid.leaf, svid.intermediates, svid.private_key, exp);
     }
 
     Err("could not find an SVID".into())
@@ -88,7 +81,7 @@ mod tests {
     use linkerd_error::Result;
     use linkerd_identity::{Credentials, DerX509, Id};
     use rcgen::{Certificate, CertificateParams, SanType, SerialNumber};
-    use std::collections::HashMap;
+    use std::{collections::HashMap, time::SystemTime};
     use tokio::sync::watch;
 
     fn gen_svid(id: Id, subject_alt_names: Vec<SanType>, serial: SerialNumber) -> Svid {
@@ -160,7 +153,13 @@ mod tests {
     }
 
     impl Credentials for MockCredentials {
-        fn set_certificate(&mut self, leaf: DerX509, _: Vec<DerX509>, _: Vec<u8>) -> Result<()> {
+        fn set_certificate(
+            &mut self,
+            leaf: DerX509,
+            _: Vec<DerX509>,
+            _: Vec<u8>,
+            _: SystemTime,
+        ) -> Result<()> {
             let (_, cert) = x509_parser::parse_x509_certificate(&leaf.0).unwrap();
             let serial = SerialNumber::from_slice(&cert.serial.to_bytes_be());
             self.tx.send(Some(serial)).unwrap();
@@ -175,7 +174,7 @@ mod tests {
 
         let (creds, mut creds_rx) = MockCredentials::new();
 
-        let spire = Spire::new(spiffe_id.clone(), Metrics::default());
+        let spire = Spire::new(spiffe_id.clone());
 
         let serial_1 = SerialNumber::from_slice("some-serial-1".as_bytes());
         let update_1 = svid_update(vec![gen_svid(
@@ -210,7 +209,7 @@ mod tests {
 
         let (creds, mut creds_rx) = MockCredentials::new();
 
-        let spire = Spire::new(spiffe_id.clone(), Metrics::default());
+        let spire = Spire::new(spiffe_id.clone());
 
         let serial_1 = SerialNumber::from_slice("some-serial-1".as_bytes());
         let update_1 = svid_update(vec![gen_svid(
@@ -252,7 +251,7 @@ mod tests {
 
         let (creds, mut creds_rx) = MockCredentials::new();
 
-        let spire = Spire::new(spiffe_id.clone(), Metrics::default());
+        let spire = Spire::new(spiffe_id.clone());
 
         let serial_1 = SerialNumber::from_slice("some-serial-1".as_bytes());
         let update_1 = svid_update(vec![gen_svid(

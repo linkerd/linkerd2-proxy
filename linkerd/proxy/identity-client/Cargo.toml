@@ -12,7 +12,6 @@ linkerd2-proxy-api = { version = "0.12", features = ["identity"] }
 linkerd-dns-name = { path = "../../dns/name" }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
-linkerd-proxy-identity-client-metrics = { path = "../identity-client-metrics" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
 parking_lot = "0.12"

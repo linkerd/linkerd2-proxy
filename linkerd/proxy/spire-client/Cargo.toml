@@ -14,7 +14,6 @@ linkerd-identity = { path = "../../identity" }
 spiffe-proto = { path = "../../../spiffe-proto" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
-linkerd-proxy-identity-client-metrics = { path = "../identity-client-metrics" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["time", "sync"] }
 tonic = "0.10"
