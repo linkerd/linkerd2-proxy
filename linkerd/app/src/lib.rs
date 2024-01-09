@@ -345,10 +345,6 @@ impl App {
         self.identity.receiver().local_id().clone()
     }
 
-    pub fn identity_addr(&self) -> identity::Addr {
-        self.identity.addr()
-    }
-
     pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
         match self.oc_collector {
             oc_collector::OcCollector::Disabled { .. } => None,
