@@ -426,11 +426,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let ips = parse(strings, ENV_INBOUND_IPS, parse_ip_set)?.unwrap_or_default();
         if ips.is_empty() {
             info!(
-                "`{}` allowlist not configured, allowing all target addresses",
-                ENV_INBOUND_IPS
+                "`{ENV_INBOUND_IPS}` allowlist not configured, allowing all target addresses",
             );
         } else {
-            debug!(allowed = ?ips, "Only allowing connections targeting `{}`", ENV_INBOUND_IPS);
+            debug!(allowed = ?ips, "Only allowing connections targeting `{ENV_INBOUND_IPS}`");
         }
         std::sync::Arc::new(ips)
     };
@@ -575,8 +574,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             let cluster_nets = parse(strings, ENV_POLICY_CLUSTER_NETWORKS, parse_networks)?
                 .unwrap_or_else(|| {
                     info!(
-                        "{} not set; cluster-scoped modes are unsupported",
-                        ENV_POLICY_CLUSTER_NETWORKS
+                        "{ENV_POLICY_CLUSTER_NETWORKS} not set; cluster-scoped modes are unsupported",
                     );
                     Default::default()
                 });
@@ -599,7 +597,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_range_set)? {
                 Some(ports) => ports.into_iter().flatten().collect::<HashSet<_>>(),
                 None => {
-                    debug!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
+                    debug!("No inbound ports specified via {ENV_INBOUND_PORTS}",);
                     Default::default()
                 }
             };
@@ -695,8 +693,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // policy controller to support policy discovery.
         let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
             error!(
-                "{} must be set with {}_ADDR",
-                ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
+                "{ENV_POLICY_WORKLOAD} must be set with {ENV_POLICY_SVC_BASE}_ADDR",
             );
             EnvError::InvalidEnvVar
         })?;
@@ -907,7 +904,7 @@ impl Strings for Env {
             Ok(value) => Ok(Some(value)),
             Err(env::VarError::NotPresent) => Ok(None),
             Err(env::VarError::NotUnicode(_)) => {
-                error!("{} is not encoded in Unicode", key);
+                error!("{key} is not encoded in Unicode");
                 Err(EnvError::InvalidEnvVar)
             }
         }
@@ -987,7 +984,7 @@ fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
     match parse_addr(s)? {
         Addr::Socket(a) => Ok(a),
         _ => {
-            error!("Expected IP:PORT; found: {}", s);
+            error!("Expected IP:PORT; found: {s}");
             Err(ParseError::HostIsNotAnIpAddress)
         }
     }
@@ -1001,7 +998,7 @@ fn parse_ip_set(s: &str) -> Result<HashSet<IpAddr>, ParseError> {
 
 fn parse_addr(s: &str) -> Result<Addr, ParseError> {
     Addr::from_str(s).map_err(|e| {
-        error!("Not a valid address: {}", s);
+        error!("Not a valid address: {s}");
         ParseError::AddrError(e)
     })
 }
@@ -1046,14 +1043,14 @@ fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
 
 pub(super) fn parse_dns_name(s: &str) -> Result<dns::Name, ParseError> {
     s.parse().map_err(|_| {
-        error!("Not a valid identity name: {}", s);
+        error!("Not a valid identity name: {s}");
         ParseError::NameError
     })
 }
 
 pub(super) fn parse_identity(s: &str) -> Result<identity::Id, ParseError> {
     s.parse().map_err(|_| {
-        error!("Not a valid identity name: {}", s);
+        error!("Not a valid identity name: {s}");
         ParseError::NameError
     })
 }
@@ -1069,7 +1066,7 @@ where
     match strings.get(name)? {
         Some(ref s) => {
             let r = parse(s).map_err(|parse_error| {
-                error!("{}={:?} is not valid: {:?}", name, s, parse_error);
+                error!("{name}={s:?} is not valid: {parse_error:?}");
                 EnvError::InvalidEnvVar
             })?;
             Ok(Some(r))
@@ -1188,7 +1185,7 @@ pub fn parse_backoff<S: Strings>(
             })
         }
         _ => {
-            error!("You need to specify either all of {} {} {} or none of them to use the default backoff", min_env, max_env,jitter_env );
+            error!("You need to specify either all of {min_env} {max_env} {jitter_env} or none of them to use the default backoff");
             Err(EnvError::InvalidEnvVar)
         }
     }
@@ -1233,7 +1230,7 @@ pub fn parse_identity_config<S: Strings>(
     let dir = parse(strings, ENV_IDENTITY_DIR, |ref s| Ok(PathBuf::from(s)));
     let tok = parse(strings, ENV_IDENTITY_TOKEN_FILE, |ref s| {
         identity::TokenSource::if_nonempty_file(s.to_string()).map_err(|e| {
-            error!("Could not read {}: {}", ENV_IDENTITY_TOKEN_FILE, e);
+            error!("Could not read {ENV_IDENTITY_TOKEN_FILE}: {e}");
             ParseError::InvalidTokenSource
         })
     });
@@ -1247,8 +1244,7 @@ pub fn parse_identity_config<S: Strings>(
         .unwrap_or(false)
     {
         error!(
-            "{} is no longer supported. Identity is must be enabled.",
-            ENV_IDENTITY_DISABLED
+            "{ENV_IDENTITY_DISABLED} is no longer supported. Identity is must be enabled."
         );
         return Err(EnvError::InvalidEnvVar);
     }
@@ -1290,7 +1286,7 @@ pub fn parse_identity_config<S: Strings>(
                 (token.is_none(), ENV_IDENTITY_TOKEN_FILE),
             ] {
                 if *unset {
-                    error!("{} must be set.", name);
+                    error!("{name} must be set.");
                 }
             }
             Err(EnvError::InvalidEnvVar)
