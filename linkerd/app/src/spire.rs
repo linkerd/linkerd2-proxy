@@ -1,9 +1,10 @@
-pub use linkerd_app_core::identity::spire_client;
 use linkerd_app_core::{exp_backoff::ExponentialBackoff, Error};
 use std::sync::Arc;
 use tokio::net::UnixStream;
 use tokio::sync::watch;
 use tonic::transport::{Endpoint, Uri};
+
+pub use linkerd_app_core::identity::client::spire as client;
 
 const UNIX_PREFIX: &str = "unix:";
 const TONIC_DEFAULT_URI: &str = "http://[::]:50051";
@@ -28,7 +29,7 @@ impl From<Config> for Client {
 }
 
 impl tower::Service<()> for Client {
-    type Response = tonic::Response<watch::Receiver<spire_client::SvidUpdate>>;
+    type Response = tonic::Response<watch::Receiver<client::SvidUpdate>>;
     type Error = Error;
     type Future = futures::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
@@ -58,7 +59,7 @@ impl tower::Service<()> for Client {
                 }))
                 .await?;
 
-            let api = spire_client::Api::watch(chan, backoff);
+            let api = client::Api::watch(chan, backoff);
             let receiver = api.spawn_watch(()).await?;
 
             Ok(receiver)

@@ -1,51 +1,40 @@
 use crate::spire;
-pub use linkerd_app_core::identity::{
-    client::{certify, TokenSource},
-    spire_client::Spire,
-    Id,
-};
+pub use linkerd_app_core::identity::{client, Id};
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    identity::{client::Certify, creds, CertMetrics, Credentials, DerX509, Mode, WithCertMetrics},
+    identity::{
+        client::linkerd::Certify, creds, CertMetrics, Credentials, DerX509, Mode, WithCertMetrics,
+    },
     metrics::{prom, ControlHttp as ClientMetrics},
     Error, Result,
 };
-use std::{future::Future, pin::Pin, sync::Arc, time::SystemTime};
+use std::{future::Future, pin::Pin, time::SystemTime};
 use tokio::sync::watch;
 use tracing::Instrument;
 
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum Provider {
-    ControlPlane {
-        control: control::Config,
-        certify: certify::Config,
+pub enum Config {
+    Linkerd {
+        client: control::Config,
+        certify: client::linkerd::Config,
+        tls: TlsParams,
     },
-    Spire(spire::Config),
-}
-
-#[derive(Clone, Debug)]
-pub struct Config {
-    pub provider: Provider,
-    pub params: TlsParams,
+    Spire {
+        client: spire::Config,
+        tls: TlsParams,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub struct TlsParams {
-    pub server_id: Id,
+    pub id: Id,
     pub server_name: dns::Name,
     pub trust_anchors_pem: String,
 }
 
-#[derive(Clone)]
-pub enum Addr {
-    Spire(Arc<String>),
-    Linkerd(control::ControlAddr),
-}
-
 pub struct Identity {
-    addr: Addr,
     receiver: creds::Receiver,
     ready: watch::Receiver<bool>,
     task: Task,
@@ -72,67 +61,80 @@ impl Config {
         client_metrics: ClientMetrics,
         registry: &mut prom::Registry,
     ) -> Result<Identity> {
-        let name = self.params.server_name.clone();
-        let (store, receiver) = Mode::default().watch(
-            name.clone().into(),
-            name.clone(),
-            &self.params.trust_anchors_pem,
-        )?;
-
-        let (tx, ready) = watch::channel(false);
         let cert_metrics =
             CertMetrics::register(registry.sub_registry_with_prefix("identity_cert"));
-        let cred = WithCertMetrics::new(cert_metrics, NotifyReady { store, tx });
+        Ok(match self {
+            Self::Linkerd {
+                client,
+                certify,
+                tls,
+            } => {
+                let name = match (&tls.id, &tls.server_name) {
+                    (Id::Dns(id), sni) if id == sni => id.clone(),
+                    (_id, _sni) => {
+                        todo!("throw an error");
+                    }
+                };
 
-        let identity = match self.provider {
-            Provider::ControlPlane { control, certify } => {
                 let certify = Certify::from(certify);
-                let addr = control.addr.clone();
 
-                let task = Box::pin({
-                    let addr = addr.clone();
-
-                    let svc = control.build(
+                let (store, receiver, ready) = watch(tls, cert_metrics)?;
+                let task = {
+                    let addr = client.addr.clone();
+                    let svc = client.build(
                         dns,
                         client_metrics,
                         registry.sub_registry_with_prefix("control_identity"),
                         receiver.new_client(),
                     );
-
-                    certify.run(name, cred, svc).instrument(
-                        tracing::debug_span!("identity", server.addr = %addr).or_current(),
-                    )
-                });
-
+                    Box::pin(certify.run(name, store, svc).instrument(
+                        tracing::info_span!("identity", server.addr = %addr).or_current(),
+                    ))
+                };
                 Identity {
-                    addr: Addr::Linkerd(addr),
                     receiver,
                     ready,
                     task,
                 }
             }
-            Provider::Spire(cfg) => {
-                let addr = cfg.socket_addr.clone();
-                let spire = Spire::new(self.params.server_id.clone());
-                let task = Box::pin({
-                    let client = spire::Client::from(cfg);
-                    spire.run(cred, client).instrument(
-                        tracing::debug_span!("spire identity", server.addr = %addr).or_current(),
-                    )
-                });
+
+            Self::Spire { client, tls } => {
+                let addr = client.socket_addr.clone();
+
+                let spire = spire::client::Spire::new(tls.id.clone());
+
+                let (store, receiver, ready) = watch(tls, cert_metrics)?;
+                let task =
+                    Box::pin(spire.run(store, spire::Client::from(client)).instrument(
+                        tracing::info_span!("spire", server.addr = %addr).or_current(),
+                    ));
 
                 Identity {
-                    addr: Addr::Spire(addr),
                     receiver,
                     ready,
                     task,
                 }
             }
-        };
-
-        Ok(identity)
+        })
     }
 }
+
+fn watch(
+    tls: TlsParams,
+    metrics: CertMetrics,
+) -> Result<(
+    WithCertMetrics<NotifyReady>,
+    creds::Receiver,
+    watch::Receiver<bool>,
+)> {
+    let (tx, ready) = watch::channel(false);
+    let (store, receiver) =
+        Mode::default().watch(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
+    let cred = WithCertMetrics::new(metrics, NotifyReady { store, tx });
+    Ok((cred, receiver, ready))
+}
+
+// === impl NotifyReady ===
 
 impl Credentials for NotifyReady {
     fn set_certificate(
@@ -151,10 +153,6 @@ impl Credentials for NotifyReady {
 // === impl Identity ===
 
 impl Identity {
-    pub fn addr(&self) -> Addr {
-        self.addr.clone()
-    }
-
     /// Returns a future that is satisfied once certificates have been provisioned.
     pub fn ready(&self) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         let mut ready = self.ready.clone();
