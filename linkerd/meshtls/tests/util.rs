@@ -59,8 +59,7 @@ pub fn fails_processing_cert_when_wrong_id_configured(mode: meshtls::Mode) {
 
     let err = store
         .set_certificate(DerX509(cert), vec![], key, SystemTime::now())
-        .err()
-        .expect("error");
+        .expect_err("should error");
 
     assert_eq!(
         "certificate does not match TLS identity",

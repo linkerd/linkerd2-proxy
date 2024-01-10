@@ -1929,6 +1929,7 @@ dependencies = [
  "rcgen",
  "simple_asn1",
  "spiffe-proto",
+ "thiserror",
  "tokio",
  "tokio-test",
  "tonic",

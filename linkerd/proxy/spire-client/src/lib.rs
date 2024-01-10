@@ -4,13 +4,12 @@
 mod api;
 
 pub use api::{Api, SvidUpdate};
-use linkerd_error::{Error, Result};
+use linkerd_error::Error;
 use linkerd_identity::Credentials;
 use linkerd_identity::Id;
-use std::fmt::Display;
-use std::time::{Duration, UNIX_EPOCH};
+use std::fmt::{Debug, Display};
 use tokio::sync::watch;
-use tower::Service;
+use tower::{util::ServiceExt, Service};
 use tracing::error;
 
 pub struct Spire {
@@ -28,8 +27,9 @@ impl Spire {
     where
         C: Credentials,
         S: Service<(), Response = tonic::Response<watch::Receiver<SvidUpdate>>>,
-        S::Error: Into<Error> + Display,
+        S::Error: Into<Error> + Display + Debug,
     {
+        let client = client.ready().await.expect("should be ready");
         match client.call(()).await {
             Ok(rsp) => consume_updates(&self.id, rsp.into_inner(), credentials).await,
             Err(error) => error!(%error, "could not establish SVID stream"),
@@ -46,32 +46,14 @@ async fn consume_updates<C>(
 {
     loop {
         let svid_update = updates.borrow_and_update().clone();
-        if let Err(error) = process_svid(&mut credentials, svid_update, id) {
-            tracing::error!("Error processing SVID update: {}", error);
+        if let Err(error) = api::process_svid(&mut credentials, svid_update, id) {
+            tracing::error!(%error, "Error processing SVID update");
         }
-
-        if let Err(error) = updates.changed().await {
-            tracing::debug!("SVID watch closed; terminating {}", error);
+        if updates.changed().await.is_err() {
+            tracing::debug!("SVID watch closed; terminating");
             return;
         }
     }
-}
-
-fn process_svid<C>(credentials: &mut C, mut update: SvidUpdate, id: &Id) -> Result<()>
-where
-    C: Credentials,
-{
-    if let Some(svid) = update.svids.remove(id) {
-        use x509_parser::prelude::*;
-
-        let (_, parsed_cert) = X509Certificate::from_der(&svid.leaf.0)?;
-        let exp: u64 = parsed_cert.validity().not_after.timestamp().try_into()?;
-        let exp = UNIX_EPOCH + Duration::from_secs(exp);
-
-        return credentials.set_certificate(svid.leaf, svid.intermediates, svid.private_key, exp);
-    }
-
-    Err("could not find an SVID".into())
 }
 
 #[cfg(test)]
@@ -81,7 +63,7 @@ mod tests {
     use linkerd_error::Result;
     use linkerd_identity::{Credentials, DerX509, Id};
     use rcgen::{Certificate, CertificateParams, SanType, SerialNumber};
-    use std::{collections::HashMap, time::SystemTime};
+    use std::time::SystemTime;
     use tokio::sync::watch;
 
     fn gen_svid(id: Id, subject_alt_names: Vec<SanType>, serial: SerialNumber) -> Svid {
@@ -89,26 +71,17 @@ mod tests {
         params.subject_alt_names = subject_alt_names;
         params.serial_number = Some(serial);
 
-        Svid {
-            spiffe_id: id,
-            leaf: DerX509(
+        Svid::new(
+            id,
+            DerX509(
                 Certificate::from_params(params)
                     .expect("should generate cert")
                     .serialize_der()
                     .expect("should serialize"),
             ),
-            private_key: Vec::default(),
-            intermediates: Vec::default(),
-        }
-    }
-
-    fn svid_update(svids: Vec<Svid>) -> SvidUpdate {
-        let mut svids_map = HashMap::default();
-        for svid in svids.into_iter() {
-            svids_map.insert(svid.spiffe_id.clone(), svid);
-        }
-
-        SvidUpdate { svids: svids_map }
+            Vec::default(),
+            Vec::default(),
+        )
     }
 
     struct MockClient {
@@ -177,7 +150,7 @@ mod tests {
         let spire = Spire::new(spiffe_id.clone());
 
         let serial_1 = SerialNumber::from_slice("some-serial-1".as_bytes());
-        let update_1 = svid_update(vec![gen_svid(
+        let update_1 = SvidUpdate::new(vec![gen_svid(
             spiffe_id.clone(),
             vec![SanType::URI(spiffe_san.into())],
             serial_1.clone(),
@@ -190,7 +163,7 @@ mod tests {
         assert!(*creds_rx.borrow_and_update() == Some(serial_1));
 
         let serial_2 = SerialNumber::from_slice("some-serial-2".as_bytes());
-        let update_2 = svid_update(vec![gen_svid(
+        let update_2 = SvidUpdate::new(vec![gen_svid(
             spiffe_id.clone(),
             vec![SanType::URI(spiffe_san.into())],
             serial_2.clone(),
@@ -212,7 +185,7 @@ mod tests {
         let spire = Spire::new(spiffe_id.clone());
 
         let serial_1 = SerialNumber::from_slice("some-serial-1".as_bytes());
-        let update_1 = svid_update(vec![gen_svid(
+        let update_1 = SvidUpdate::new(vec![gen_svid(
             spiffe_id.clone(),
             vec![SanType::URI(spiffe_san.into())],
             serial_1.clone(),
@@ -224,15 +197,15 @@ mod tests {
         creds_rx.changed().await.unwrap();
         assert!(*creds_rx.borrow_and_update() == Some(serial_1.clone()));
 
-        let invalid_svid = Svid {
-            spiffe_id: spiffe_id.clone(),
-            leaf: DerX509(Vec::default()),
-            private_key: Vec::default(),
-            intermediates: Vec::default(),
-        };
+        let invalid_svid = Svid::new(
+            spiffe_id.clone(),
+            DerX509(Vec::default()),
+            Vec::default(),
+            Vec::default(),
+        );
 
         let mut update_sent = svid_tx.subscribe();
-        let update_2 = svid_update(vec![invalid_svid]);
+        let update_2 = SvidUpdate::new(vec![invalid_svid]);
         svid_tx.send(update_2).expect("should send");
 
         update_sent.changed().await.unwrap();
@@ -254,7 +227,7 @@ mod tests {
         let spire = Spire::new(spiffe_id.clone());
 
         let serial_1 = SerialNumber::from_slice("some-serial-1".as_bytes());
-        let update_1 = svid_update(vec![gen_svid(
+        let update_1 = SvidUpdate::new(vec![gen_svid(
             spiffe_id.clone(),
             vec![SanType::URI(spiffe_san.into())],
             serial_1.clone(),
@@ -268,7 +241,7 @@ mod tests {
 
         let serial_2 = SerialNumber::from_slice("some-serial-2".as_bytes());
         let mut update_sent = svid_tx.subscribe();
-        let update_2 = svid_update(vec![gen_svid(
+        let update_2 = SvidUpdate::new(vec![gen_svid(
             spiffe_id_wrong,
             vec![SanType::URI(spiffe_san_wrong.into())],
             serial_2.clone(),
