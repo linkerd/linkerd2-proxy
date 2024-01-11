@@ -68,7 +68,7 @@ impl Resolver {
         opts.cache_size = 0;
         // This function is synchronous, but needs to be called within the Tokio
         // 0.2 runtime context, since it gets a handle.
-        let dns = AsyncResolver::tokio(config, opts).expect("system DNS config must be valid");
+        let dns = AsyncResolver::tokio(config, opts);
         Resolver { dns }
     }
 
