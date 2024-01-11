@@ -1631,7 +1631,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tls",
  "linkerd-tls-test-util",
- "ring 0.16.20",
+ "ring 0.17.3",
  "rustls-pemfile",
  "rustls-webpki",
  "thiserror",
