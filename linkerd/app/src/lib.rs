@@ -390,7 +390,7 @@ impl App {
 
                         // Kick off the identity so that the process can become ready.
                         let local = identity.receiver();
-                        let local_name = local.server_name().clone();
+                        let local_id = local.local_id().clone();
                         let ready = identity.ready();
                         tokio::spawn(
                             identity
@@ -403,7 +403,7 @@ impl App {
                             ready
                                 .map(move |()| {
                                     latch.release();
-                                    info!(id = %local_name, "Certified identity");
+                                    info!(id = %local_id, "Certified identity");
                                 })
                                 .instrument(info_span!("identity").or_current()),
                         );
