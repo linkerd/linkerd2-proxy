@@ -425,9 +425,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_ips = {
         let ips = parse(strings, ENV_INBOUND_IPS, parse_ip_set)?.unwrap_or_default();
         if ips.is_empty() {
-            info!(
-                "`{ENV_INBOUND_IPS}` allowlist not configured, allowing all target addresses",
-            );
+            info!("`{ENV_INBOUND_IPS}` allowlist not configured, allowing all target addresses",);
         } else {
             debug!(allowed = ?ips, "Only allowing connections targeting `{ENV_INBOUND_IPS}`");
         }
@@ -692,9 +690,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // The workload, which is opaque from the proxy's point-of-view, is sent to the
         // policy controller to support policy discovery.
         let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
-            error!(
-                "{ENV_POLICY_WORKLOAD} must be set with {ENV_POLICY_SVC_BASE}_ADDR",
-            );
+            error!("{ENV_POLICY_WORKLOAD} must be set with {ENV_POLICY_SVC_BASE}_ADDR",);
             EnvError::InvalidEnvVar
         })?;
 
@@ -1243,9 +1239,7 @@ pub fn parse_identity_config<S: Strings>(
         .map(|d| !d.is_empty())
         .unwrap_or(false)
     {
-        error!(
-            "{ENV_IDENTITY_DISABLED} is no longer supported. Identity is must be enabled."
-        );
+        error!("{ENV_IDENTITY_DISABLED} is no longer supported. Identity is must be enabled.");
         return Err(EnvError::InvalidEnvVar);
     }
 
