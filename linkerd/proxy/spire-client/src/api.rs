@@ -9,9 +9,13 @@ use spiffe_proto::client::{
     self as api, spiffe_workload_api_client::SpiffeWorkloadApiClient as Client,
 };
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::time::{Duration, UNIX_EPOCH};
 use tower::Service;
 use tracing::error;
+
+const SPIFFE_HEADER_KEY: &str = "workload.spiffe.io";
+const SPIFFE_HEADER_VALUE: &str = "true";
 
 #[derive(Debug, thiserror::Error)]
 #[error("no matching SVID found")]
@@ -146,7 +150,14 @@ where
         let req = api::X509svidRequest {};
         let mut client = self.client.clone();
         Box::pin(async move {
-            let rsp = client.fetch_x509svid(tonic::Request::new(req)).await?;
+            let parsed_header = SPIFFE_HEADER_VALUE
+                .parse()
+                .map_err(|e| tonic::Status::internal(format!("Failed to parse header: {}", e)))?;
+
+            let mut req = tonic::Request::new(req);
+            req.metadata_mut().insert(SPIFFE_HEADER_KEY, parsed_header);
+
+            let rsp = client.fetch_x509svid(req).await?;
             Ok(rsp.map(|svids| {
                 svids
                     .map_ok(move |s| {
