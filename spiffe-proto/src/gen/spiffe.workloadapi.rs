@@ -140,16 +140,11 @@ pub mod spiffe_workload_api_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/spiffe.workloadapi.SpiffeWorkloadAPI/FetchX509SVID",
+                "/SpiffeWorkloadAPI/FetchX509SVID",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "spiffe.workloadapi.SpiffeWorkloadAPI",
-                        "FetchX509SVID",
-                    ),
-                );
+                .insert(GrpcMethod::new("SpiffeWorkloadAPI", "FetchX509SVID"));
             self.inner.server_streaming(req, path, codec).await
         }
     }

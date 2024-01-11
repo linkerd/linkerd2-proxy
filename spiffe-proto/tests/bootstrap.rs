@@ -26,6 +26,7 @@ fn generate(out_dir: &std::path::Path) {
         .build_client(true)
         .build_server(false)
         .emit_rerun_if_changed(false)
+        .disable_package_emission()
         .out_dir(out_dir)
         .compile(iface_files, &["."])
     {
