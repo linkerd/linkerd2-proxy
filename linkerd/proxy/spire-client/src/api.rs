@@ -9,7 +9,6 @@ use spiffe_proto::client::{
     self as api, spiffe_workload_api_client::SpiffeWorkloadApiClient as Client,
 };
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::time::{Duration, UNIX_EPOCH};
 use tower::Service;
 use tracing::error;
