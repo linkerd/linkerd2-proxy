@@ -14,6 +14,10 @@ use std::{future::Future, pin::Pin, time::SystemTime};
 use tokio::sync::watch;
 use tracing::Instrument;
 
+#[derive(Debug, thiserror::Error)]
+#[error("linkerd identity requires a TLS Id and server name to be the same")]
+pub struct TlsIdAndServerNameNotMatching(());
+
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Config {
@@ -75,10 +79,7 @@ impl Config {
                 let name = match (&tls.id, &tls.server_name) {
                     (Id::Dns(id), sni) if id == sni => id.clone(),
                     (_id, _sni) => {
-                        return Err(
-                            "Linkerd identity requires a TLS Id and server name to be the same"
-                                .into(),
-                        );
+                        return Err(TlsIdAndServerNameNotMatching(()).into());
                     }
                 };
 

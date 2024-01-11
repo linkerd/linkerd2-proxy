@@ -10,7 +10,6 @@ use linkerd_identity::Id;
 use std::fmt::{Debug, Display};
 use tokio::sync::watch;
 use tower::{util::ServiceExt, Service};
-use tracing::error;
 
 pub struct Spire {
     id: Id,
@@ -30,10 +29,11 @@ impl Spire {
         S::Error: Into<Error> + Display + Debug,
     {
         let client = client.ready().await.expect("should be ready");
-        match client.call(()).await {
-            Ok(rsp) => consume_updates(&self.id, rsp.into_inner(), credentials).await,
-            Err(error) => error!(%error, "could not establish SVID stream"),
-        }
+        let rsp = client
+            .call(())
+            .await
+            .expect("spire client must gracefully handle errors");
+        consume_updates(&self.id, rsp.into_inner(), credentials).await
     }
 }
 
