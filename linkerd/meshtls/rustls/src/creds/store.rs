@@ -146,7 +146,10 @@ impl id::Credentials for Store {
         // Use the client's verifier to validate the certificate for our local name.
         self.validate(&chain)?;
 
-        let key = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, &key).map_err(InvalidKey)?;
+        let key = {
+            let rng = rand::SystemRandom::new();
+            EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, &key, &rng).map_err(InvalidKey)?
+        };
 
         let resolver = Arc::new(CertResolver(Arc::new(rustls::sign::CertifiedKey::new(
             chain,

@@ -1395,7 +1395,7 @@ name = "linkerd-dns-name"
 version = "0.1.0"
 dependencies = [
  "thiserror",
- "untrusted 0.7.1",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -2119,7 +2119,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
- "untrusted 0.7.1",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
