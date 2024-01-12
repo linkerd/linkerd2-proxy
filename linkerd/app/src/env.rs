@@ -818,7 +818,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             Some(socket) => match &tls.id {
                 // TODO: perform stricter SPIFFE ID validation following:
                 // https://github.com/spiffe/spiffe/blob/27b59b81ba8c56885ac5d4be73b35b9b3305fd7a/standards/SPIFFE-ID.md
-                identity::Id::Uri(uri) if uri.scheme() == SPIFFE_ID_URI_SCHEME => {
+                identity::Id::Uri(uri)
+                    if uri.scheme().eq_ignore_ascii_case(SPIFFE_ID_URI_SCHEME) =>
+                {
                     identity::Config::Spire {
                         tls,
                         client: spire::Config {
