@@ -191,16 +191,16 @@ pub const ENV_IDENTITY_TOKEN_FILE: &str = "LINKERD2_PROXY_IDENTITY_TOKEN_FILE";
 pub const ENV_IDENTITY_MIN_REFRESH: &str = "LINKERD2_PROXY_IDENTITY_MIN_REFRESH";
 pub const ENV_IDENTITY_MAX_REFRESH: &str = "LINKERD2_PROXY_IDENTITY_MAX_REFRESH";
 
-// This config is here for backwards compatibility. If set, both the tls id and the server
-// name will be set to the value specified in this config. The values needs to be a DNS
-// name
+/// This config is here for backwards compatibility. If set, both the tls id and the server
+/// name will be set to the value specified in this config. The values needs to be a DNS
+/// name
 pub const ENV_IDENTITY_IDENTITY_LOCAL_NAME: &str = "LINKERD2_PROXY_IDENTITY_LOCAL_NAME";
-// Configures the TLS Id of the proxy inbound server. The value is expected to match the
-// DNS or URI SAN of the leaf certificate that will be provisioned to this proxy.
+/// Configures the TLS Id of the proxy inbound server. The value is expected to match the
+/// DNS or URI SAN of the leaf certificate that will be provisioned to this proxy.
 pub const ENV_IDENTITY_IDENTITY_SERVER_ID: &str = "LINKERD2_PROXY_IDENTITY_SERVER_ID";
-// Configures the server name of this proxy. This value is expected to match the value
-// that clients include in the SNI extension of the ClientHello, whenever they try to
-// establish a TLS connection that shall be terminated by this proxy
+/// Configures the server name of this proxy. This value is expected to match the value
+/// that clients include in the SNI extension of the ClientHello, whenever they try to
+/// establish a TLS connection that shall be terminated by this proxy
 pub const ENV_IDENTITY_IDENTITY_SERVER_NAME: &str = "LINKERD2_PROXY_IDENTITY_SERVER_NAME";
 
 // If this config is set, then the proxy will be configured to use Spire as identity
@@ -208,7 +208,8 @@ pub const ENV_IDENTITY_IDENTITY_SERVER_NAME: &str = "LINKERD2_PROXY_IDENTITY_SER
 pub const ENV_IDENTITY_SPIRE_SOCKET: &str = "LINKERD2_PROXY_IDENTITY_SPIRE_SOCKET";
 pub const IDENTITY_SPIRE_BASE: &str = "LINKERD2_PROXY_IDENTITY_SPIRE";
 const DEFAULT_SPIRE_BACKOFF: ExponentialBackoff =
-    ExponentialBackoff::new_unchecked(Duration::from_millis(1), Duration::from_millis(5), 0.1);
+    ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_secs(1), 0.1);
+const SPIFFE_ID_URI_SCHEME: &str = "spiffe";
 
 pub const ENV_IDENTITY_SVC_BASE: &str = "LINKERD2_PROXY_IDENTITY_SVC";
 
@@ -814,12 +815,26 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let tls = tls?;
 
         match strings.get(ENV_IDENTITY_SPIRE_SOCKET)? {
-            Some(socket) => identity::Config::Spire {
-                tls,
-                client: spire::Config {
-                    socket_addr: std::sync::Arc::new(socket),
-                    backoff: parse_backoff(strings, IDENTITY_SPIRE_BASE, DEFAULT_SPIRE_BACKOFF)?,
-                },
+            Some(socket) => match &tls.id {
+                // TODO: perform stricter SPIFFE ID validation following:
+                // https://github.com/spiffe/spiffe/blob/27b59b81ba8c56885ac5d4be73b35b9b3305fd7a/standards/SPIFFE-ID.md
+                identity::Id::Uri(uri) if uri.scheme() == SPIFFE_ID_URI_SCHEME => {
+                    identity::Config::Spire {
+                        tls,
+                        client: spire::Config {
+                            socket_addr: std::sync::Arc::new(socket),
+                            backoff: parse_backoff(
+                                strings,
+                                IDENTITY_SPIRE_BASE,
+                                DEFAULT_SPIRE_BACKOFF,
+                            )?,
+                        },
+                    }
+                }
+                _ => {
+                    error!("Spire support requires a SPIFFE TLS Id");
+                    return Err(EnvError::InvalidEnvVar);
+                }
             },
             None => {
                 let (addr, certify) = parse_linkerd_identity_config(strings)?;
