@@ -793,7 +793,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .unwrap_or(super::tap::Config::Disabled);
 
     let identity = {
-        let (addr, certify, params) = identity_config?;
+        let (addr, certify, tls) = identity_config?;
         // If the address doesn't have a server identity, then we're on localhost.
         let connect = if addr.addr.is_loopback() {
             inbound.proxy.connect.clone()
@@ -805,9 +805,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         } else {
             outbound.http_request_queue.failfast_timeout
         };
-        identity::Config {
+        identity::Config::Linkerd {
             certify,
-            control: ControlConfig {
+            tls,
+            client: ControlConfig {
                 addr,
                 connect,
                 buffer: QueueConfig {
@@ -815,7 +816,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     failfast_timeout,
                 },
             },
-            params,
         }
     };
 
@@ -1215,7 +1215,14 @@ pub fn parse_control_addr<S: Strings>(
 
 pub fn parse_identity_config<S: Strings>(
     strings: &S,
-) -> Result<(ControlAddr, identity::certify::Config, identity::TlsParams), EnvError> {
+) -> Result<
+    (
+        ControlAddr,
+        identity::client::linkerd::Config,
+        identity::TlsParams,
+    ),
+    EnvError,
+> {
     let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         if s.is_empty() {
@@ -1225,7 +1232,7 @@ pub fn parse_identity_config<S: Strings>(
     });
     let dir = parse(strings, ENV_IDENTITY_DIR, |ref s| Ok(PathBuf::from(s)));
     let tok = parse(strings, ENV_IDENTITY_TOKEN_FILE, |ref s| {
-        identity::TokenSource::if_nonempty_file(s.to_string()).map_err(|e| {
+        identity::client::linkerd::TokenSource::if_nonempty_file(s.to_string()).map_err(|e| {
             error!("Could not read {ENV_IDENTITY_TOKEN_FILE}: {e}");
             ParseError::InvalidTokenSource
         })
@@ -1253,17 +1260,19 @@ pub fn parse_identity_config<S: Strings>(
             min_refresh,
             max_refresh,
         ) => {
-            let certify = identity::certify::Config {
+            let certify = identity::client::linkerd::Config {
                 token,
                 min_refresh: min_refresh.unwrap_or(DEFAULT_IDENTITY_MIN_REFRESH),
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
-                documents: identity::certify::Documents::load(dir).map_err(|error| {
-                    error!(%error, "Failed to read identity documents");
-                    EnvError::InvalidEnvVar
-                })?,
+                documents: identity::client::linkerd::certify::Documents::load(dir).map_err(
+                    |error| {
+                        error!(%error, "Failed to read identity documents");
+                        EnvError::InvalidEnvVar
+                    },
+                )?,
             };
             let params = identity::TlsParams {
-                server_id: identity::Id::Dns(local_name.clone()),
+                id: identity::Id::Dns(local_name.clone()),
                 server_name: local_name,
                 trust_anchors_pem,
             };

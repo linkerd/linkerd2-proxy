@@ -1145,6 +1145,7 @@ dependencies = [
  "linkerd-proxy-identity-client",
  "linkerd-proxy-resolve",
  "linkerd-proxy-server-policy",
+ "linkerd-proxy-spire-client",
  "linkerd-proxy-tap",
  "linkerd-proxy-tcp",
  "linkerd-proxy-transport",
@@ -1583,6 +1584,7 @@ dependencies = [
  "linkerd-tls-test-util",
  "linkerd-tracing",
  "pin-project",
+ "rcgen 0.11.3",
  "tokio",
  "tracing",
 ]
@@ -1636,7 +1638,7 @@ version = "0.1.0"
 dependencies = [
  "linkerd-error",
  "linkerd-identity",
- "rcgen",
+ "rcgen 0.12.0",
  "tracing",
  "x509-parser",
 ]
@@ -1901,6 +1903,29 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "thiserror",
+]
+
+[[package]]
+name = "linkerd-proxy-spire-client"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-exp-backoff",
+ "linkerd-identity",
+ "linkerd-proxy-http",
+ "linkerd-stack",
+ "linkerd-tonic-watch",
+ "rcgen 0.11.3",
+ "simple_asn1",
+ "spiffe-proto",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tonic",
+ "tower",
+ "tracing",
+ "x509-parser",
 ]
 
 [[package]]
@@ -2768,6 +2793,18 @@ checksum = "977b1e897f9d764566891689e642653e5ed90c6895106acd005eb4c1d0203991"
 
 [[package]]
 name = "rcgen"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52c4f3084aa3bc7dfbba4eff4fab2a54db4324965d8872ab933565e6fbd83bc6"
+dependencies = [
+ "pem",
+ "ring 0.16.20",
+ "time",
+ "yasna",
+]
+
+[[package]]
+name = "rcgen"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d918c80c5a4c7560db726763020bd16db179e4d5b828078842274a443addb5d"
@@ -3060,6 +3097,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "simple_asn1"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adc4e5204eb1910f40f9cfa375f6f05b68c3abac4b6fd879c8ff5e7ae8a0a085"
+dependencies = [
+ "num-bigint",
+ "num-traits",
+ "thiserror",
+ "time",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3092,6 +3141,17 @@ checksum = "7b5fac59a5cb5dd637972e5fca70daf0523c9067fcdc4842f053dae04a18f8e9"
 dependencies = [
  "libc",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "spiffe-proto"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]

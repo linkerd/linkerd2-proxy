@@ -1,11 +1,12 @@
-pub use linkerd_app_core::identity::{
-    client::{certify, TokenSource},
-    Id,
-};
+use crate::spire;
+
+pub use linkerd_app_core::identity::{client, Id};
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    identity::{client::Certify, creds, CertMetrics, Credentials, DerX509, Mode, WithCertMetrics},
+    identity::{
+        client::linkerd::Certify, creds, CertMetrics, Credentials, DerX509, Mode, WithCertMetrics,
+    },
     metrics::{prom, ControlHttp as ClientMetrics},
     Error, Result,
 };
@@ -13,22 +14,32 @@ use std::{future::Future, pin::Pin, time::SystemTime};
 use tokio::sync::watch;
 use tracing::Instrument;
 
+#[derive(Debug, thiserror::Error)]
+#[error("linkerd identity requires a TLS Id and server name to be the same")]
+pub struct TlsIdAndServerNameNotMatching(());
+
 #[derive(Clone, Debug)]
-pub struct Config {
-    pub control: control::Config,
-    pub certify: certify::Config,
-    pub params: TlsParams,
+#[allow(clippy::large_enum_variant)]
+pub enum Config {
+    Linkerd {
+        client: control::Config,
+        certify: client::linkerd::Config,
+        tls: TlsParams,
+    },
+    Spire {
+        client: spire::Config,
+        tls: TlsParams,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub struct TlsParams {
-    pub server_id: Id,
+    pub id: Id,
     pub server_name: dns::Name,
     pub trust_anchors_pem: String,
 }
 
 pub struct Identity {
-    addr: control::ControlAddr,
     receiver: creds::Receiver,
     ready: watch::Receiver<bool>,
     task: Task,
@@ -55,46 +66,81 @@ impl Config {
         client_metrics: ClientMetrics,
         registry: &mut prom::Registry,
     ) -> Result<Identity> {
-        let name = self.params.server_name.clone();
-        let (store, receiver) = Mode::default().watch(
-            name.clone().into(),
-            name.clone(),
-            &self.params.trust_anchors_pem,
-        )?;
+        let cert_metrics =
+            CertMetrics::register(registry.sub_registry_with_prefix("identity_cert"));
 
-        let certify = Certify::from(self.certify);
+        Ok(match self {
+            Self::Linkerd {
+                client,
+                certify,
+                tls,
+            } => {
+                // TODO: move this validation into env.rs
+                let name = match (&tls.id, &tls.server_name) {
+                    (Id::Dns(id), sni) if id == sni => id.clone(),
+                    (_id, _sni) => {
+                        return Err(TlsIdAndServerNameNotMatching(()).into());
+                    }
+                };
 
-        let addr = self.control.addr.clone();
+                let certify = Certify::from(certify);
+                let (store, receiver, ready) = watch(tls, cert_metrics)?;
 
-        let (tx, ready) = watch::channel(false);
+                let task = {
+                    let addr = client.addr.clone();
+                    let svc = client.build(
+                        dns,
+                        client_metrics,
+                        registry.sub_registry_with_prefix("control_identity"),
+                        receiver.new_client(),
+                    );
 
-        // Save to be spawned on an auxiliary runtime.
-        let task = Box::pin({
-            let addr = addr.clone();
-            let svc = self.control.build(
-                dns,
-                client_metrics,
-                registry.sub_registry_with_prefix("control_identity"),
-                receiver.new_client(),
-            );
+                    Box::pin(certify.run(name, store, svc).instrument(
+                        tracing::info_span!("identity", server.addr = %addr).or_current(),
+                    ))
+                };
+                Identity {
+                    receiver,
+                    ready,
+                    task,
+                }
+            }
+            Self::Spire { client, tls } => {
+                let addr = client.socket_addr.clone();
+                let spire = spire::client::Spire::new(tls.id.clone());
 
-            let cert_metrics =
-                CertMetrics::register(registry.sub_registry_with_prefix("identity_cert"));
-            let cred = WithCertMetrics::new(cert_metrics, NotifyReady { store, tx });
+                let (store, receiver, ready) = watch(tls, cert_metrics)?;
+                let task =
+                    Box::pin(spire.run(store, spire::Client::from(client)).instrument(
+                        tracing::info_span!("spire", server.addr = %addr).or_current(),
+                    ));
 
-            certify
-                .run(name, cred, svc)
-                .instrument(tracing::debug_span!("identity", server.addr = %addr).or_current())
-        });
-
-        Ok(Identity {
-            addr,
-            receiver,
-            ready,
-            task,
+                Identity {
+                    receiver,
+                    ready,
+                    task,
+                }
+            }
         })
     }
 }
+
+fn watch(
+    tls: TlsParams,
+    metrics: CertMetrics,
+) -> Result<(
+    WithCertMetrics<NotifyReady>,
+    creds::Receiver,
+    watch::Receiver<bool>,
+)> {
+    let (tx, ready) = watch::channel(false);
+    let (store, receiver) =
+        Mode::default().watch(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
+    let cred = WithCertMetrics::new(metrics, NotifyReady { store, tx });
+    Ok((cred, receiver, ready))
+}
+
+// === impl NotifyReady ===
 
 impl Credentials for NotifyReady {
     fn set_certificate(
@@ -113,10 +159,6 @@ impl Credentials for NotifyReady {
 // === impl Identity ===
 
 impl Identity {
-    pub fn addr(&self) -> control::ControlAddr {
-        self.addr.clone()
-    }
-
     /// Returns a future that is satisfied once certificates have been provisioned.
     pub fn ready(&self) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         let mut ready = self.ready.clone();

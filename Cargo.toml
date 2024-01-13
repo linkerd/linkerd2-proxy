@@ -50,6 +50,7 @@ members = [
     "linkerd/proxy/dns-resolve",
     "linkerd/proxy/http",
     "linkerd/proxy/identity-client",
+    "linkerd/proxy/spire-client",
     "linkerd/proxy/resolve",
     "linkerd/proxy/server-policy",
     "linkerd/proxy/tap",
@@ -73,6 +74,7 @@ members = [
     "linkerd/transport-metrics",
     "linkerd2-proxy",
     "opencensus-proto",
+    "spiffe-proto",
     "tools",
 ]
 
