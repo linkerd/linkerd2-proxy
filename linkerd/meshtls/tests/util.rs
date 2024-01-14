@@ -3,8 +3,9 @@
 
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
+use linkerd_dns_name::Name;
 use linkerd_error::Infallible;
-use linkerd_identity::{Credentials, DerX509};
+use linkerd_identity::{Credentials, DerX509, Id};
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_meshtls as meshtls;
 use linkerd_proxy_transport::{
@@ -17,9 +18,54 @@ use linkerd_stack::{
 };
 use linkerd_tls as tls;
 use linkerd_tls_test_util as test_util;
-use std::{future::Future, net::SocketAddr, sync::mpsc, time::Duration};
+use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa, SanType};
+use std::str::FromStr;
+use std::{
+    future::Future,
+    net::SocketAddr,
+    sync::mpsc,
+    time::{Duration, SystemTime},
+};
 use tokio::net::TcpStream;
 use tracing::Instrument;
+
+fn generate_cert_with_name(subject_alt_names: Vec<SanType>) -> (Vec<u8>, Vec<u8>, String) {
+    let mut root_params = CertificateParams::default();
+    root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    let root_cert = Certificate::from_params(root_params).expect("should generate root");
+
+    let mut params = CertificateParams::default();
+    params.subject_alt_names = subject_alt_names;
+
+    let cert = Certificate::from_params(params).expect("should generate cert");
+
+    (
+        cert.serialize_der_with_signer(&root_cert)
+            .expect("should serialize"),
+        cert.serialize_private_key_der(),
+        root_cert.serialize_pem().expect("should serialize"),
+    )
+}
+
+pub fn fails_processing_cert_when_wrong_id_configured(mode: meshtls::Mode) {
+    let server_name = Name::from_str("system.local").expect("should parse");
+    let id = Id::Dns(server_name.clone());
+
+    let (cert, key, roots) =
+        generate_cert_with_name(vec![SanType::URI("spiffe://system/local".into())]);
+    let (mut store, _) = mode
+        .watch(id, server_name.clone(), &roots)
+        .expect("should construct");
+
+    let err = store
+        .set_certificate(DerX509(cert), vec![], key, SystemTime::now())
+        .expect_err("should error");
+
+    assert_eq!(
+        "certificate does not match TLS identity",
+        format!("{}", err),
+    );
+}
 
 pub async fn plaintext(mode: meshtls::Mode) {
     let (_foo, _, server_tls) = load(mode, &test_util::FOO_NS1);
@@ -127,7 +173,12 @@ fn load(
         .expect("credentials must be readable");
 
     store
-        .set_certificate(DerX509(ent.crt.to_vec()), vec![], ent.key.to_vec())
+        .set_certificate(
+            DerX509(ent.crt.to_vec()),
+            vec![],
+            ent.key.to_vec(),
+            SystemTime::now() + Duration::from_secs(1000),
+        )
         .expect("certificate must be valid");
 
     (store, rx.new_client(), rx.server())

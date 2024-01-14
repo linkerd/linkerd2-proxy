@@ -1,0 +1,25 @@
+[package]
+name = "spiffe-proto"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+bytes = "1"
+prost = "0.12"
+prost-types = "0.12"
+
+[dependencies.tonic]
+version = "0.10"
+default-features = false
+features = ["prost", "codegen"]
+
+[dev-dependencies.tonic-build]
+version = "0.10"
+default-features = false
+features = ["prost"]
+
+[lib]
+doctest = false
