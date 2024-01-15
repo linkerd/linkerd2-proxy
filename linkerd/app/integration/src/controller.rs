@@ -515,8 +515,9 @@ impl From<DestinationBuilder> for pb::Update {
 
         let tls_identity = identity.map(|name| pb::TlsIdentity {
             strategy: Some(pb::tls_identity::Strategy::DnsLikeIdentity(
-                pb::tls_identity::DnsLikeIdentity { name },
+                pb::tls_identity::DnsLikeIdentity { name: name.clone() },
             )),
+            server_name: Some(pb::tls_identity::DnsLikeIdentity { name }),
         });
 
         pb::Update {
