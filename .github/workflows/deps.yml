@@ -28,7 +28,7 @@ jobs:
     continue-on-error: true
     steps:
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-    - uses: EmbarkStudios/cargo-deny-action@1e59595bed8fc55c969333d08d7817b36888f0c5
+    - uses: EmbarkStudios/cargo-deny-action@bfc509ce35d857466cac346565f2a1a5439a9efa
       with:
         command: check advisories
 
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-    - uses: EmbarkStudios/cargo-deny-action@1e59595bed8fc55c969333d08d7817b36888f0c5
+    - uses: EmbarkStudios/cargo-deny-action@bfc509ce35d857466cac346565f2a1a5439a9efa
       with:
         command: check bans licenses sources
 
