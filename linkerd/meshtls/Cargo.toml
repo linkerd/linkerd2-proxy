@@ -29,7 +29,7 @@ linkerd-tls = { path = "../tls" }
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = "0.1"
-rcgen = "0.11.3"
+rcgen = "0.12.0"
 
 linkerd-conditional = { path = "../conditional" }
 linkerd-proxy-transport = { path = "../proxy/transport" }
