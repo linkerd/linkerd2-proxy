@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: tj-actions/changed-files@ae82ed4ae04587b665efad2f206578aa6f0e8539
+      - uses: tj-actions/changed-files@ac21d93904fb48e7f76ce4bd2a4d197f67e34abe
         id: changed-files
         with:
           files: |
