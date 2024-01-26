@@ -1576,7 +1576,7 @@ dependencies = [
  "linkerd-tls-test-util",
  "linkerd-tracing",
  "pin-project",
- "rcgen 0.11.3",
+ "rcgen",
  "tokio",
  "tracing",
 ]
@@ -1630,7 +1630,7 @@ version = "0.1.0"
 dependencies = [
  "linkerd-error",
  "linkerd-identity",
- "rcgen 0.12.0",
+ "rcgen",
  "tracing",
  "x509-parser",
 ]
@@ -1909,7 +1909,7 @@ dependencies = [
  "linkerd-proxy-http",
  "linkerd-stack",
  "linkerd-tonic-watch",
- "rcgen 0.11.3",
+ "rcgen",
  "simple_asn1",
  "spiffe-proto",
  "thiserror",
@@ -2793,18 +2793,6 @@ name = "rangemap"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "977b1e897f9d764566891689e642653e5ed90c6895106acd005eb4c1d0203991"
-
-[[package]]
-name = "rcgen"
-version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52c4f3084aa3bc7dfbba4eff4fab2a54db4324965d8872ab933565e6fbd83bc6"
-dependencies = [
- "pem",
- "ring 0.16.20",
- "time",
- "yasna",
-]
 
 [[package]]
 name = "rcgen"
