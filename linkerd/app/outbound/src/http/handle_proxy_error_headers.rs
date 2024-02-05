@@ -127,17 +127,16 @@ impl<B, F: TryFuture<Ok = http::Response<B>>> Future for ResponseFuture<F> {
     }
 }
 
+/// Clears the l5d-proxy-error and l5d-proxy-connection headers, logging any
+/// error messages. Returns true if the connection should be closed.
 fn update_response<B>(rsp: &mut http::Response<B>, closable: bool) -> bool {
-    // Clear the headers.
-    let hdr = rsp.headers_mut().remove(L5D_PROXY_CONNECTION);
-    let err = rsp.headers_mut().get(L5D_PROXY_ERROR);
-    debug!(
-        error = err
-            .and_then(|v| v.to_str().ok())
-            .map(tracing::field::display),
-        "Remote proxy error"
-    );
+    if let Some(e) = rsp.headers_mut().remove(L5D_PROXY_ERROR) {
+        if let Ok(error) = e.to_str() {
+            tracing::info!(error, "Remote proxy error");
+        }
+    }
 
+    let hdr = rsp.headers_mut().remove(L5D_PROXY_CONNECTION);
     if !closable {
         return false;
     }
@@ -150,10 +149,8 @@ fn update_response<B>(rsp: &mut http::Response<B>, closable: bool) -> bool {
     if rsp.version() == http::Version::HTTP_11 {
         // If the response is HTTP/1.1, we need to send a Connection: close
         // header to tell the application this connection is being closed.
-        rsp.headers_mut().insert(
-            http::header::CONNECTION,
-            http::HeaderValue::from_static("close"),
-        );
+        rsp.headers_mut()
+            .insert(http::header::CONNECTION, CLOSE.clone());
     }
     true
 }
@@ -203,6 +200,8 @@ mod test {
 
         let rsp = svc.oneshot(req).await.expect("request must succeed");
         assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
+        assert!(!rsp.headers().contains_key("l5d-proxy-error"));
+        assert!(!rsp.headers().contains_key("l5d-proxy-connection"));
 
         // The client handle close future should fire.
         time::timeout(time::Duration::from_secs(10), closed)
@@ -238,6 +237,8 @@ mod test {
 
         let rsp = svc.oneshot(req).await.expect("request must succeed");
         assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
+        assert!(!rsp.headers().contains_key("l5d-proxy-error"));
+        assert!(!rsp.headers().contains_key("l5d-proxy-connection"));
 
         // The client handle close future should fire.
         tokio::select! {
