@@ -1,14 +1,16 @@
 use super::IdentityRequired;
 use crate::{http, trace_labels, Outbound};
-use linkerd_app_core::{
-    errors, http_tracing, io,
-    svc::{self, ExtractParam},
-    Error, Result,
-};
+use linkerd_app_core::{drain, errors, http_tracing, io, svc, Error, Result};
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ServerRescue {
     emit_headers: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtractServerParams {
+    h2: http::h2::Settings,
+    drain: drain::Watch,
 }
 
 impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
@@ -61,7 +63,9 @@ impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
 impl<N> Outbound<N> {
     pub fn push_tcp_http_server<T, I, NSvc>(
         self,
-    ) -> Outbound<http::NewServeHttp<svc::ArcNewService<T, svc::NewCloneService<NSvc>>>>
+    ) -> Outbound<
+        http::NewServeHttp<ExtractServerParams, svc::ArcNewService<T, svc::NewCloneService<NSvc>>>,
+    >
     where
         // Target
         T: svc::Param<http::Version>,
@@ -81,10 +85,10 @@ impl<N> Outbound<N> {
         self.map_stack(|config, rt, http| {
             http.unlift_new()
                 .push(svc::ArcNewService::layer())
-                .push(http::NewServeHttp::layer(
-                    config.proxy.server.h2_settings,
-                    rt.drain.clone(),
-                ))
+                .push(http::NewServeHttp::layer(ExtractServerParams {
+                    h2: config.proxy.server.h2_settings,
+                    drain: rt.drain.clone(),
+                }))
         })
     }
 }
@@ -99,14 +103,14 @@ impl ServerRescue {
     }
 }
 
-impl<T> ExtractParam<Self, T> for ServerRescue {
+impl<T> svc::ExtractParam<Self, T> for ServerRescue {
     #[inline]
     fn extract_param(&self, _: &T) -> Self {
         *self
     }
 }
 
-impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
+impl<T> svc::ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
     #[inline]
     fn extract_param(&self, _: &T) -> errors::respond::EmitHeaders {
         errors::respond::EmitHeaders(self.emit_headers)
@@ -177,5 +181,21 @@ impl errors::HttpRescue<Error> for ServerRescue {
         // Everything else...
         tracing::warn!(error, "Unexpected error");
         Ok(errors::SyntheticHttpResponse::unexpected_error())
+    }
+}
+
+// === impl ExtractServerParams ===
+
+impl<T> svc::ExtractParam<http::ServerParams, T> for ExtractServerParams
+where
+    T: svc::Param<http::Version>,
+{
+    #[inline]
+    fn extract_param(&self, t: &T) -> http::ServerParams {
+        http::ServerParams {
+            version: t.param(),
+            h2: self.h2,
+            drain: self.drain.clone(),
+        }
     }
 }
