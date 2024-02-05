@@ -1,6 +1,5 @@
-use crate::{http, opaq, policy, Config, Discovery, Outbound, ParentRef};
+use crate::{http, opaq, policy, Discovery, Outbound, ParentRef};
 use linkerd_app_core::{
-    config::{ProxyConfig, ServerConfig},
     detect, errors, io,
     metrics::prom,
     profiles,
@@ -278,14 +277,6 @@ impl<N> Outbound<N> {
     {
         self.map_stack(|config, rt, inner| {
             let detect_http = config.proxy.detect_http();
-            let Config {
-                proxy:
-                    ProxyConfig {
-                        server: ServerConfig { h2_settings, .. },
-                        ..
-                    },
-                ..
-            } = config;
 
             // Route requests with destinations that can be discovered via the
             // `l5d-dst-override` header through the (load balanced) logical
@@ -314,7 +305,15 @@ impl<N> Outbound<N> {
             // destination address.
             http.check_new_service::<Http<T>, http::Request<_>>()
                 .unlift_new()
-                .push(http::NewServeHttp::layer(*h2_settings, rt.drain.clone()))
+                .push(http::NewServeHttp::layer({
+                    let h2 = config.proxy.server.h2_settings;
+                    let drain = rt.drain.clone();
+                    move |http: &Http<T>| http::ServerParams {
+                            version: http.version,
+                            h2,
+                            drain: drain.clone()
+                    }
+                }))
                 .check_new_service::<Http<T>, I>()
                 .push_switch(
                     |(detected, target): (detect::Result<http::Version>, T)| -> Result<_, Infallible> {

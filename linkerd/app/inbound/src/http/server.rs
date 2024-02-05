@@ -2,7 +2,7 @@ use super::set_identity_header::NewSetIdentityHeader;
 use crate::{policy, Inbound};
 pub use linkerd_app_core::proxy::http::{normalize_uri, Version};
 use linkerd_app_core::{
-    config::{ProxyConfig, ServerConfig},
+    config::ProxyConfig,
     errors, http_tracing, io,
     metrics::ServerLabel,
     proxy::http,
@@ -112,16 +112,18 @@ impl<H> Inbound<H> {
         HSvc::Future: Send,
     {
         self.map_stack(|config, rt, http| {
-            let ProxyConfig {
-                server: ServerConfig { h2_settings, .. },
-                ..
-            } = config.proxy;
+            let h2 = config.proxy.server.h2_settings;
+            let drain = rt.drain.clone();
 
             http.push_on_service(http::BoxRequest::layer())
                 .check_new_service::<T, http::Request<_>>()
                 .unlift_new()
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
-                .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
+                .push(http::NewServeHttp::layer(move |t: &T| http::ServerParams {
+                    version: t.param(),
+                    h2,
+                    drain: drain.clone(),
+                }))
                 .check_new_service::<T, I>()
                 .arc_new_tcp()
         })

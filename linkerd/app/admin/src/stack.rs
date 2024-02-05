@@ -123,7 +123,16 @@ impl Config {
 
         let tcp = http
             .unlift_new()
-            .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
+            .push(http::NewServeHttp::layer({
+                let drain = drain.clone();
+                move |t: &Http| {
+                    http::ServerParams {
+                        version: t.version,
+                        h2: Default::default(),
+                        drain: drain.clone(),
+                    }
+                }
+            }))
             .push_filter(
                 |(http, tcp): (
                     Result<Option<http::Version>, detect::DetectTimeoutError<_>>,
