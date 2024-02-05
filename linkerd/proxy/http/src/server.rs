@@ -16,6 +16,8 @@ use std::{
 use tower::Service;
 use tracing::{debug, Instrument};
 
+mod stream_idle_timeout;
+
 type Server = hyper::server::conn::Http<trace::Executor>;
 
 /// Configures HTTP server behavior.
