@@ -35,6 +35,7 @@ linkerd-error = { path = "../../error" }
 linkerd-http-box = { path = "../../http-box" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-io = { path = "../../io" }
+linkerd-metrics = { path = "../../metrics" }
 linkerd-proxy-balance = { path = "../balance" }
 linkerd-stack = { path = "../../stack" }
 pin-project = "1"

@@ -1837,6 +1837,7 @@ dependencies = [
  "linkerd-http-box",
  "linkerd-http-classify",
  "linkerd-io",
+ "linkerd-metrics",
  "linkerd-proxy-balance",
  "linkerd-stack",
  "linkerd-tracing",

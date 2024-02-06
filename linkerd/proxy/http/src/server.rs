@@ -18,6 +18,8 @@ use tracing::{debug, Instrument};
 
 mod stream_idle_timeout;
 
+pub use self::stream_idle_timeout::{MetricFamilies, Metrics};
+
 type Server = hyper::server::conn::Http<trace::Executor>;
 
 /// Configures HTTP server behavior.
@@ -26,6 +28,7 @@ pub struct Params {
     pub version: Version,
     pub h2: H2Settings,
     pub drain: drain::Watch,
+    // pub metrics: Metrics,
 }
 
 // A stack that builds HTTP servers.
