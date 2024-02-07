@@ -59,17 +59,18 @@ impl Outbound<()> {
             .to_tcp_connect()
             .push_opaq_cached(registry.sub_registry_with_prefix("tcp"), resolve.clone());
 
+        let (metrics, http_server_metrics) = http::HttpMetrics::register(registry);
         let http = self
             .to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_tcp_client()
-            .push_http_cached(http::HttpMetrics::register(registry), resolve)
+            .push_http_cached(metrics, resolve)
             .push_http_server()
             .into_stack()
             .push_map_target(HttpSidecar::from)
             .arc_new_clone_http();
 
-        opaq.push_protocol(http.into_inner())
+        opaq.push_protocol(http.into_inner(), http_server_metrics)
             // Use a dedicated target type to bind discovery results to the
             // outbound sidecar stack configuration.
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))

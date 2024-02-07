@@ -5,6 +5,7 @@ use linkerd_app_core::{
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
+        http,
     },
     svc,
     transport::addrs::*,
@@ -20,11 +21,11 @@ mod handle_proxy_error_headers;
 pub mod logical;
 mod require_id_header;
 mod retry;
-mod server;
+pub(super) mod server;
 
 pub use self::logical::{policy, profile, LogicalAddr, Routes};
 pub(crate) use self::require_id_header::IdentityRequired;
-pub use linkerd_app_core::proxy::http::{self as http, *};
+pub use linkerd_app_core::proxy::http::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http<T>(T);
@@ -134,19 +135,21 @@ where
 // === impl HttpMetrics ===
 
 impl HttpMetrics {
-    pub fn register(registry: &mut prom::Registry) -> Self {
+    pub fn register(registry: &mut prom::Registry) -> (Self, server::MetricFamilies) {
         let http = registry.sub_registry_with_prefix("http");
         let http_route = policy::RouteMetrics::register(http.sub_registry_with_prefix("route"));
         let balancer =
             concrete::BalancerMetrics::register(http.sub_registry_with_prefix("balancer"));
+        let server = server::MetricFamilies::register(http);
 
         let grpc = registry.sub_registry_with_prefix("grpc");
         let grpc_route = policy::RouteMetrics::register(grpc.sub_registry_with_prefix("route"));
 
-        Self {
+        let this = Self {
             balancer,
             http_route,
             grpc_route,
-        }
+        };
+        (this, server)
     }
 }

@@ -29,6 +29,7 @@ impl<N> Outbound<N> {
     pub fn push_protocol<T, I, NSvc>(
         self,
         http: svc::ArcNewCloneHttp<Http<T>>,
+        _http_server_metrics: http::server::MetricFamilies,
     ) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type indicating whether detection should be skipped.

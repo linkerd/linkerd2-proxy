@@ -1,16 +1,32 @@
 use super::IdentityRequired;
-use crate::{http, trace_labels, Outbound};
-use linkerd_app_core::{drain, errors, http_tracing, io, svc, Error, Result};
+use crate::{trace_labels, Outbound};
+use linkerd_app_core::{
+    drain, errors, http_tracing, io,
+    metrics::prom,
+    proxy::http,
+    svc,
+    transport::{Local, ServerAddr},
+    Error, Result,
+};
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ServerRescue {
     emit_headers: bool,
 }
 
+pub type MetricFamilies = http::ServerMetricFamilies<ServerMetricsLabels>;
+pub type Metrics = http::ServerMetrics;
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, prom::encoding::EncodeLabelSet)]
+pub struct ServerMetricsLabels {
+    pub target_port: u16,
+}
+
 #[derive(Clone, Debug)]
 pub struct ExtractServerParams {
     h2: http::h2::Settings,
     drain: drain::Watch,
+    metrics: MetricFamilies,
 }
 
 impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
@@ -63,6 +79,7 @@ impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
 impl<N> Outbound<N> {
     pub fn push_tcp_http_server<T, I, NSvc>(
         self,
+        metrics: MetricFamilies,
     ) -> Outbound<
         http::NewServeHttp<ExtractServerParams, svc::ArcNewService<T, svc::NewCloneService<NSvc>>>,
     >
@@ -88,6 +105,7 @@ impl<N> Outbound<N> {
                 .push(http::NewServeHttp::layer(ExtractServerParams {
                     h2: config.proxy.server.h2_settings,
                     drain: rt.drain.clone(),
+                    metrics: metrics.clone(),
                 }))
         })
     }
@@ -189,6 +207,7 @@ impl errors::HttpRescue<Error> for ServerRescue {
 impl<T> svc::ExtractParam<http::ServerParams, T> for ExtractServerParams
 where
     T: svc::Param<http::Version>,
+    T: svc::Param<Local<ServerAddr>>,
 {
     #[inline]
     fn extract_param(&self, t: &T) -> http::ServerParams {
@@ -196,6 +215,9 @@ where
             version: t.param(),
             h2: self.h2,
             drain: self.drain.clone(),
+            // metrics: self.metrics.metrics(&ServerMetricsLabels {
+            //     target_port: t.param().local_addr().port(),
+            // }),
         }
     }
 }

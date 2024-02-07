@@ -88,7 +88,7 @@ impl Gateway {
                 .to_tcp_connect()
                 .push_tcp_endpoint()
                 .push_http_tcp_client();
-            let http = self.http(registry, http.into_inner(), resolve);
+            let http = self.http(metrics, http.into_inner(), resolve);
             self.inbound
                 .clone()
                 .with_stack(http.into_inner())

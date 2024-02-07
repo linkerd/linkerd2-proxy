@@ -50,7 +50,7 @@ impl Gateway {
     /// outbound router.
     pub fn http<T, R>(
         &self,
-        registry: &mut prom::Registry,
+        metrics: outbound::http::HttpMetrics,
         inner: svc::ArcNewHttp<
             outbound::http::concrete::Endpoint<
                 outbound::http::logical::Concrete<outbound::http::Http<Target>>,
@@ -89,7 +89,7 @@ impl Gateway {
             .outbound
             .clone()
             .with_stack(inner)
-            .push_http_cached(outbound::http::HttpMetrics::register(registry), resolve)
+            .push_http_cached(metrics, resolve)
             .into_stack()
             // Discard `T` and its associated client-specific metadata.
             .push_map_target(Target::discard_parent)

@@ -92,7 +92,10 @@ impl<H> Inbound<H> {
 
     /// Uses the inner stack to serve HTTP requests for the given server-side
     /// socket.
-    pub fn push_http_tcp_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
+    pub fn push_http_tcp_server<T, I, HSvc>(
+        self,
+        metrics: http::ServerMetrics,
+    ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         // Connection target.
         T: Param<Version>,

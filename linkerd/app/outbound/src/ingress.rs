@@ -103,11 +103,12 @@ impl Outbound<()> {
                 .into_inner()
         };
 
+        let (metrics, _server_metrics) = http::HttpMetrics::register(registry);
         let http = self
             .to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_tcp_client()
-            .push_http_cached(http::HttpMetrics::register(registry), resolve)
+            .push_http_cached(metrics, resolve)
             .push_http_server()
             .map_stack(|_, _, stk| {
                 stk.check_new_service::<Http<Logical>, _>()
