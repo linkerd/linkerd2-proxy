@@ -126,6 +126,9 @@ impl<H> Inbound<H> {
                     version: t.param(),
                     h2,
                     drain: drain.clone(),
+                    metrics: metrics.clone(),
+                    // FIXME(ver)
+                    stream_idle_timeout: std::time::Duration::from_secs(300),
                 }))
                 .check_new_service::<T, I>()
                 .arc_new_tcp()
