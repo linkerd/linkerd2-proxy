@@ -4,7 +4,7 @@ mod set_identity_header;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use self::server::MetricFamilies as ServerMetricFamilies;
+pub use self::server::MetricFamilies as ServerMetricFamilies;
 
 fn trace_labels() -> std::collections::HashMap<String, String> {
     let mut l = std::collections::HashMap::new();

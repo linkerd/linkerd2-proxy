@@ -19,8 +19,7 @@ use linkerd_app_core::{
     config::ServerConfig,
     control::ControlAddr,
     dns, drain,
-    metrics::prom,
-    metrics::FmtMetrics,
+    metrics::{prom, FmtMetrics},
     serve,
     svc::Param,
     transport::{addrs::*, listen::Bind},
@@ -221,6 +220,7 @@ impl Config {
             .expect("Failed to bind inbound listener");
         let inbound_metrics = inbound.metrics();
         let inbound = inbound.mk(
+            registry.sub_registry_with_prefix("inbound"),
             inbound_addr,
             inbound_policies.clone(),
             dst.profiles.clone(),
@@ -263,25 +263,27 @@ impl Config {
 
         let admin = {
             let identity = identity.receiver().server();
-            let metrics = inbound_metrics.clone();
+            let metrics = admin::Metrics::register(
+                registry.sub_registry_with_prefix("admin"),
+                inbound_metrics.clone(),
+            );
             let report = inbound_metrics
                 .and_report(outbound_metrics)
                 .and_report(report)
                 // The prom registry reports an "# EOF" at the end of its export, so
                 // it should be emitted last.
                 .and_report(prom::Report::from(registry));
-            info_span!("admin").in_scope(move || {
-                admin.build(
-                    bind_admin,
-                    inbound_policies,
-                    identity,
-                    report,
-                    metrics,
-                    log_level,
-                    drain_rx,
-                    shutdown_tx,
-                )
-            })?
+            let _span = info_span!("admin");
+            admin.build(
+                bind_admin,
+                inbound_policies,
+                identity,
+                report,
+                metrics,
+                log_level,
+                drain_rx,
+                shutdown_tx,
+            )?
         };
 
         Ok(App {

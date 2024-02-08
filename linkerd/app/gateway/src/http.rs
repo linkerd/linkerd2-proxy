@@ -50,7 +50,8 @@ impl Gateway {
     /// outbound router.
     pub fn http<T, R>(
         &self,
-        metrics: outbound::http::HttpMetrics,
+        http_metrics: outbound::http::HttpMetrics,
+        grpc_metrics: outbound::http::GrpcMetrics,
         inner: svc::ArcNewHttp<
             outbound::http::concrete::Endpoint<
                 outbound::http::logical::Concrete<outbound::http::Http<Target>>,
@@ -89,7 +90,7 @@ impl Gateway {
             .outbound
             .clone()
             .with_stack(inner)
-            .push_http_cached(metrics, resolve)
+            .push_http_cached(http_metrics, grpc_metrics, resolve)
             .into_stack()
             // Discard `T` and its associated client-specific metadata.
             .push_map_target(Target::discard_parent)

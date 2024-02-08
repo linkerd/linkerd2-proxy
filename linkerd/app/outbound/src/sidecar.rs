@@ -59,12 +59,20 @@ impl Outbound<()> {
             .to_tcp_connect()
             .push_opaq_cached(registry.sub_registry_with_prefix("tcp"), resolve.clone());
 
-        let (metrics, http_server_metrics) = http::HttpMetrics::register(registry);
+        let (http_metrics, http_server_metrics) = {
+            let reg = registry.sub_registry_with_prefix("http");
+            (
+                http::HttpMetrics::register(reg),
+                http::ServerMetricFamilies::register(reg),
+            )
+        };
+        let grpc_metrics = http::GrpcMetrics::register(registry.sub_registry_with_prefix("grpc"));
+
         let http = self
             .to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_tcp_client()
-            .push_http_cached(metrics, resolve)
+            .push_http_cached(http_metrics, grpc_metrics, resolve)
             .push_http_server()
             .into_stack()
             .push_map_target(HttpSidecar::from)

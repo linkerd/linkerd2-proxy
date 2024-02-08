@@ -2,7 +2,7 @@ use linkerd_app_core::{
     classify,
     config::ServerConfig,
     detect, drain, errors, identity,
-    metrics::{self, FmtMetrics},
+    metrics::{self, prom, FmtMetrics},
     proxy::http,
     serve,
     svc::{self, ExtractParam, InsertParam, Param},
@@ -30,6 +30,11 @@ pub struct Task {
     pub listen_addr: Local<ServerAddr>,
     pub latch: crate::Latch,
     pub serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
+}
+
+pub struct Metrics {
+    inbound: inbound::InboundMetrics,
+    server: http::ServerMetricFamilies<ServerLabels>,
 }
 
 #[derive(Debug, Error)]
@@ -70,6 +75,11 @@ const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
 #[derive(Copy, Clone, Debug)]
 struct Rescue;
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq, prom::encoding::EncodeLabelSet)]
+struct ServerLabels {
+    target_port: u16,
+}
+
 // === impl Config ===
 
 impl Config {
@@ -80,8 +90,7 @@ impl Config {
         policy: impl inbound::policy::GetPolicy,
         identity: identity::Server,
         report: R,
-        metrics: inbound::InboundMetrics,
-        http_server_metrics: http::ServerMetrics,
+        metrics: Metrics,
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,
@@ -109,6 +118,7 @@ impl Config {
         let http = svc::stack(move |_| admin.clone())
             .push(
                 metrics
+                    .inbound
                     .proxy
                     .http_endpoint
                     .to_layer::<classify::Response, _, Permitted>(),
@@ -116,12 +126,15 @@ impl Config {
             .push(classify::NewClassify::layer_default())
             .push_map_target(|(permit, http)| Permitted { permit, http })
             .push(inbound::policy::NewHttpPolicy::layer(
-                metrics.http_authz.clone(),
+                metrics.inbound.http_authz.clone(),
             ))
             .push(Rescue::layer())
             .push_on_service(http::BoxResponse::layer())
             .arc_new_clone_http();
 
+        let server_metrics = metrics.server.metrics(&ServerLabels {
+            target_port: listen_addr.port(),
+        });
         let tcp = http
             .unlift_new()
             .push(http::NewServeHttp::layer({
@@ -131,7 +144,7 @@ impl Config {
                         version: t.version,
                         h2: Default::default(),
                         drain: drain.clone(),
-                        metrics: http_server_metrics.clone(),
+                        metrics: server_metrics.clone(),
                         // FIXME(ver)
                         stream_idle_timeout: std::time::Duration::from_secs(300),
                     }
@@ -183,7 +196,7 @@ impl Config {
             .push(detect::NewDetectService::layer(svc::stack::CloneParam::from(
                 detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT),
             )))
-            .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
+            .push(transport::metrics::NewServer::layer(metrics.inbound.proxy.transport))
             .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
                 Tcp {
                     tls,
@@ -350,5 +363,15 @@ impl errors::HttpRescue<Error> for Rescue {
 
         tracing::warn!(error, "Unexpected error");
         Ok(errors::SyntheticHttpResponse::unexpected_error())
+    }
+}
+
+// === impl Metrics ===
+
+impl Metrics {
+    pub fn register(registry: &mut prom::Registry, inbound: inbound::InboundMetrics) -> Self {
+        let server =
+            http::ServerMetricFamilies::register(registry.sub_registry_with_prefix("http"));
+        Self { inbound, server }
     }
 }

@@ -33,8 +33,12 @@ pub struct Http<T>(T);
 #[derive(Clone, Debug, Default)]
 pub struct HttpMetrics {
     balancer: concrete::BalancerMetrics,
-    http_route: policy::RouteMetrics,
-    grpc_route: policy::RouteMetrics,
+    route: policy::RouteMetrics,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct GrpcMetrics {
+    route: policy::RouteMetrics,
 }
 
 pub fn spawn_routes<T>(
@@ -89,7 +93,8 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
     /// Buffered concrete services are cached in and evicted when idle.
     pub fn push_http_cached<R>(
         self,
-        metrics: HttpMetrics,
+        http_metrics: HttpMetrics,
+        grpc_metrics: GrpcMetrics,
         resolve: R,
     ) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
@@ -102,8 +107,8 @@ impl<T> Outbound<svc::ArcNewHttp<concrete::Endpoint<logical::Concrete<Http<T>>>>
         R::Resolution: Unpin,
     {
         self.push_http_endpoint()
-            .push_http_concrete(metrics.balancer, resolve)
-            .push_http_logical(metrics.http_route, metrics.grpc_route)
+            .push_http_concrete(http_metrics.balancer, resolve)
+            .push_http_logical(http_metrics.route, grpc_metrics.route)
             .map_stack(move |config, _, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
                     .push_map_target(Http)
@@ -135,21 +140,19 @@ where
 // === impl HttpMetrics ===
 
 impl HttpMetrics {
-    pub fn register(registry: &mut prom::Registry) -> (Self, server::MetricFamilies) {
-        let http = registry.sub_registry_with_prefix("http");
-        let http_route = policy::RouteMetrics::register(http.sub_registry_with_prefix("route"));
+    pub fn register(registry: &mut prom::Registry) -> Self {
+        // let http = registry.sub_registry_with_prefix("http");
+        let route = policy::RouteMetrics::register(registry.sub_registry_with_prefix("route"));
         let balancer =
-            concrete::BalancerMetrics::register(http.sub_registry_with_prefix("balancer"));
-        let server = server::MetricFamilies::register(http);
+            concrete::BalancerMetrics::register(registry.sub_registry_with_prefix("balancer"));
+        Self { route, balancer }
+    }
+}
 
-        let grpc = registry.sub_registry_with_prefix("grpc");
-        let grpc_route = policy::RouteMetrics::register(grpc.sub_registry_with_prefix("route"));
-
-        let this = Self {
-            balancer,
-            http_route,
-            grpc_route,
-        };
-        (this, server)
+impl GrpcMetrics {
+    pub fn register(registry: &mut prom::Registry) -> Self {
+        // let grpc = registry.sub_registry_with_prefix("grpc");
+        let route = policy::RouteMetrics::register(registry.sub_registry_with_prefix("route"));
+        Self { route }
     }
 }

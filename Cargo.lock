@@ -1093,6 +1093,7 @@ dependencies = [
  "linkerd-app-inbound",
  "linkerd-tracing",
  "pprof",
+ "prometheus-client",
  "serde",
  "serde_json",
  "thiserror",

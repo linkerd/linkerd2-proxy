@@ -103,12 +103,13 @@ impl Outbound<()> {
                 .into_inner()
         };
 
-        let (metrics, _server_metrics) = http::HttpMetrics::register(registry);
+        let http_metrics = http::HttpMetrics::register(registry.sub_registry_with_prefix("http"));
+        let grpc_metrics = http::GrpcMetrics::register(registry.sub_registry_with_prefix("grpc"));
         let http = self
             .to_tcp_connect()
             .push_tcp_endpoint()
             .push_http_tcp_client()
-            .push_http_cached(metrics, resolve)
+            .push_http_cached(http_metrics, grpc_metrics, resolve)
             .push_http_server()
             .map_stack(|_, _, stk| {
                 stk.check_new_service::<Http<Logical>, _>()

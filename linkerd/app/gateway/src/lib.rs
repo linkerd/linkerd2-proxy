@@ -83,17 +83,25 @@ impl Gateway {
         };
 
         let http = {
-            let (metrics, server_metrics) = outbound::http::HttpMetrics::register(registry);
+            let (http_metrics, http_server_metrics) = {
+                let reg = registry.sub_registry_with_prefix("http");
+                (
+                    outbound::http::HttpMetrics::register(reg),
+                    inbound::http::ServerMetricFamilies::register(reg),
+                )
+            };
+            let grpc_metrics =
+                outbound::http::GrpcMetrics::register(registry.sub_registry_with_prefix("grpc"));
             let http = self
                 .outbound
                 .to_tcp_connect()
                 .push_tcp_endpoint()
                 .push_http_tcp_client();
-            let http = self.http(metrics, http.into_inner(), resolve);
+            let http = self.http(http_metrics, grpc_metrics, http.into_inner(), resolve);
             self.inbound
                 .clone()
                 .with_stack(http.into_inner())
-                .push_http_tcp_server(server_metrics)
+                .push_http_tcp_server(http_server_metrics)
                 .into_inner()
         };
 

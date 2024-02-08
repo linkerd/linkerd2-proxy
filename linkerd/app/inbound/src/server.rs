@@ -1,7 +1,9 @@
 use crate::{direct, policy, Inbound};
 use linkerd_app_core::{
     exp_backoff::ExponentialBackoff,
-    io, profiles,
+    io,
+    metrics::prom,
+    profiles,
     proxy::http,
     svc,
     transport::{self, addrs::*},
@@ -41,11 +43,11 @@ impl Inbound<()> {
 
     pub fn mk<A, I, P>(
         self,
+        registry: &mut prom::Registry,
         addr: Local<ServerAddr>,
         policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
         profiles: P,
         gateway: svc::ArcNewTcp<direct::GatewayTransportHeader, direct::GatewayIo<I>>,
-        http_server_metrics: crate::http::ServerMetricFamilies,
     ) -> svc::ArcNewTcp<A, I>
     where
         A: svc::Param<Remote<ClientAddr>>,
@@ -56,6 +58,9 @@ impl Inbound<()> {
         I: Debug + Unpin + Send + Sync + 'static,
         P: profiles::GetProfile<Error = Error>,
     {
+        let http_server_metrics =
+            crate::http::ServerMetricFamilies::register(registry.sub_registry_with_prefix("http"));
+
         // Handles connections to ports that can't be determined to be HTTP.
         let forward = self
             .clone()
