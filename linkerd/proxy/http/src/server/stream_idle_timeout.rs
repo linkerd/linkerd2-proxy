@@ -65,6 +65,17 @@ pub struct Metrics {
 
 // === impl MetricFamilies ===
 
+impl<L> Default for MetricFamilies<L>
+where
+    L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        let counter = prom::Family::default();
+        Self { counter }
+    }
+}
+
 impl<L> MetricFamilies<L>
 where
     L: prom::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,

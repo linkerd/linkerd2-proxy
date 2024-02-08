@@ -1,7 +1,7 @@
 use super::Gateway;
 use inbound::{GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_core::{
-    metrics::{prom, ServerLabel},
+    metrics::ServerLabel,
     profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},

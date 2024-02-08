@@ -1,5 +1,5 @@
 use crate::{http, Outbound};
-use linkerd_app_core::{detect, io, svc, Error, Infallible};
+use linkerd_app_core::{detect, io, svc, transport::OrigDstAddr, Error, Infallible};
 use std::{fmt::Debug, hash::Hash};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -29,11 +29,12 @@ impl<N> Outbound<N> {
     pub fn push_protocol<T, I, NSvc>(
         self,
         http: svc::ArcNewCloneHttp<Http<T>>,
-        _http_server_metrics: http::server::MetricFamilies,
+        http_server_metrics: http::server::MetricFamilies,
     ) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type indicating whether detection should be skipped.
         T: svc::Param<Protocol>,
+        T: svc::Param<OrigDstAddr>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -47,16 +48,22 @@ impl<N> Outbound<N> {
     {
         let opaq = self.clone().into_stack();
 
-        let http = self.with_stack(http).map_stack(|config, rt, stk| {
+        let http = self.with_stack(http).map_stack(move |config, rt, stk| {
             let h2 = config.proxy.server.h2_settings;
             let drain = rt.drain.clone();
             stk.push_on_service(http::BoxRequest::layer())
                 .unlift_new()
                 .push(http::NewServeHttp::layer(move |t: &Http<T>| {
+                    let OrigDstAddr(addr) = t.param();
                     http::ServerParams {
                         version: t.version,
                         h2,
                         drain: drain.clone(),
+                        metrics: http_server_metrics.metrics(&http::server::ServerMetricsLabels {
+                            target_port: addr.port(),
+                        }),
+                        // FIXME(ver)
+                        stream_idle_timeout: std::time::Duration::from_secs(300),
                     }
                 }))
                 .arc_new_tcp()

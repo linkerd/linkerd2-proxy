@@ -162,7 +162,7 @@ async fn upgraded_request_remains_relative_form() {
         );
         gateway
             .http(
-                &mut Default::default(),
+                Default::default(),
                 svc::ArcNewHttp::new(move |_: _| svc::BoxHttp::new(inner.clone())),
                 resolve,
             )

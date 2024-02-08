@@ -1216,6 +1216,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "once_cell",
  "parking_lot",
+ "prometheus-client",
  "rangemap",
  "thiserror",
  "tokio",

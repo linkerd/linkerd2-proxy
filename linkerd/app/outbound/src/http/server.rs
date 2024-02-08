@@ -1,11 +1,7 @@
 use super::IdentityRequired;
 use crate::{trace_labels, Outbound};
 use linkerd_app_core::{
-    drain, errors, http_tracing, io,
-    metrics::prom,
-    proxy::http,
-    svc,
-    transport::{Local, ServerAddr},
+    drain, errors, http_tracing, io, metrics::prom, proxy::http, svc, transport::OrigDstAddr,
     Error, Result,
 };
 
@@ -15,7 +11,6 @@ pub(crate) struct ServerRescue {
 }
 
 pub type MetricFamilies = http::ServerMetricFamilies<ServerMetricsLabels>;
-pub type Metrics = http::ServerMetrics;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, prom::encoding::EncodeLabelSet)]
 pub struct ServerMetricsLabels {
@@ -207,17 +202,20 @@ impl errors::HttpRescue<Error> for ServerRescue {
 impl<T> svc::ExtractParam<http::ServerParams, T> for ExtractServerParams
 where
     T: svc::Param<http::Version>,
-    T: svc::Param<Local<ServerAddr>>,
+    T: svc::Param<OrigDstAddr>,
 {
     #[inline]
     fn extract_param(&self, t: &T) -> http::ServerParams {
+        let OrigDstAddr(addr) = t.param();
         http::ServerParams {
             version: t.param(),
             h2: self.h2,
             drain: self.drain.clone(),
-            // metrics: self.metrics.metrics(&ServerMetricsLabels {
-            //     target_port: t.param().local_addr().port(),
-            // }),
+            metrics: self.metrics.metrics(&ServerMetricsLabels {
+                target_port: addr.port(),
+            }),
+            // FIXME(ver)
+            stream_idle_timeout: std::time::Duration::from_secs(300),
         }
     }
 }

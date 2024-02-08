@@ -4,7 +4,7 @@ pub use linkerd_app_core::proxy::http::{normalize_uri, Version};
 use linkerd_app_core::{
     config::ProxyConfig,
     errors, http_tracing, io,
-    metrics::ServerLabel,
+    metrics::{prom, ServerLabel},
     proxy::http,
     svc::{self, ExtractParam, Param},
     tls,
@@ -12,6 +12,13 @@ use linkerd_app_core::{
     Error, Result,
 };
 use linkerd_http_access_log::NewAccessLog;
+
+pub type MetricFamilies = http::ServerMetricFamilies<MetricLabels>;
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, prom::encoding::EncodeLabelSet)]
+pub struct MetricLabels {
+    pub target_port: u16,
+}
 
 #[derive(Copy, Clone, Debug)]
 struct ServerRescue;
@@ -94,10 +101,11 @@ impl<H> Inbound<H> {
     /// socket.
     pub fn push_http_tcp_server<T, I, HSvc>(
         self,
-        metrics: http::ServerMetrics,
+        metrics: MetricFamilies,
     ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         // Connection target.
+        T: Param<OrigDstAddr>,
         T: Param<Version>,
         T: Clone + Send + Unpin + 'static,
         // Server-side socket.
@@ -122,13 +130,18 @@ impl<H> Inbound<H> {
                 .check_new_service::<T, http::Request<_>>()
                 .unlift_new()
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
-                .push(http::NewServeHttp::layer(move |t: &T| http::ServerParams {
-                    version: t.param(),
-                    h2,
-                    drain: drain.clone(),
-                    metrics: metrics.clone(),
-                    // FIXME(ver)
-                    stream_idle_timeout: std::time::Duration::from_secs(300),
+                .push(http::NewServeHttp::layer(move |t: &T| {
+                    let OrigDstAddr(addr) = t.param();
+                    http::ServerParams {
+                        version: t.param(),
+                        h2,
+                        drain: drain.clone(),
+                        metrics: metrics.metrics(&MetricLabels {
+                            target_port: addr.port(),
+                        }),
+                        // FIXME(ver)
+                        stream_idle_timeout: std::time::Duration::from_secs(300),
+                    }
                 }))
                 .check_new_service::<T, I>()
                 .arc_new_tcp()

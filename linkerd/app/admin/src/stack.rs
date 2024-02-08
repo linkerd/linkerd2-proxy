@@ -81,6 +81,7 @@ impl Config {
         identity: identity::Server,
         report: R,
         metrics: inbound::InboundMetrics,
+        http_server_metrics: http::ServerMetrics,
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,
@@ -130,6 +131,9 @@ impl Config {
                         version: t.version,
                         h2: Default::default(),
                         drain: drain.clone(),
+                        metrics: http_server_metrics.clone(),
+                        // FIXME(ver)
+                        stream_idle_timeout: std::time::Duration::from_secs(300),
                     }
                 }
             }))

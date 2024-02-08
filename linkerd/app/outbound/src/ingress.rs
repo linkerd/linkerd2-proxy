@@ -310,9 +310,12 @@ impl<N> Outbound<N> {
                     let h2 = config.proxy.server.h2_settings;
                     let drain = rt.drain.clone();
                     move |http: &Http<T>| http::ServerParams {
-                            version: http.version,
-                            h2,
-                            drain: drain.clone()
+                        version: http.version,
+                        h2,
+                        drain: drain.clone(),
+                        metrics: Default::default(), // XXX Lazy. Bad.
+                        // FIXME(ver)
+                        stream_idle_timeout: std::time::Duration::from_secs(300),
                     }
                 }))
                 .check_new_service::<Http<T>, I>()

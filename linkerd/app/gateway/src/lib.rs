@@ -83,6 +83,7 @@ impl Gateway {
         };
 
         let http = {
+            let (metrics, server_metrics) = outbound::http::HttpMetrics::register(registry);
             let http = self
                 .outbound
                 .to_tcp_connect()
@@ -92,7 +93,7 @@ impl Gateway {
             self.inbound
                 .clone()
                 .with_stack(http.into_inner())
-                .push_http_tcp_server()
+                .push_http_tcp_server(server_metrics)
                 .into_inner()
         };
 

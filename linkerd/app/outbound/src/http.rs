@@ -21,7 +21,7 @@ mod handle_proxy_error_headers;
 pub mod logical;
 mod require_id_header;
 mod retry;
-pub(super) mod server;
+pub(crate) mod server;
 
 pub use self::logical::{policy, profile, LogicalAddr, Routes};
 pub(crate) use self::require_id_header::IdentityRequired;

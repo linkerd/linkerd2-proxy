@@ -45,6 +45,7 @@ impl Inbound<()> {
         policies: impl policy::GetPolicy + Clone + Send + Sync + 'static,
         profiles: P,
         gateway: svc::ArcNewTcp<direct::GatewayTransportHeader, direct::GatewayIo<I>>,
+        http_server_metrics: crate::http::ServerMetricFamilies,
     ) -> svc::ArcNewTcp<A, I>
     where
         A: svc::Param<Remote<ClientAddr>>,
@@ -75,7 +76,7 @@ impl Inbound<()> {
                 .into_tcp_connect(addr.port())
                 .push_http_router(profiles.clone())
                 .push_http_server()
-                .push_http_tcp_server()
+                .push_http_tcp_server(http_server_metrics.clone())
                 .into_inner();
 
             self.clone()
@@ -96,7 +97,7 @@ impl Inbound<()> {
 
         // Determines how to handle an inbound connection, dispatching it to the appropriate
         // stack.
-        http.push_http_tcp_server()
+        http.push_http_tcp_server(http_server_metrics)
             .push_detect(forward)
             .push_accept(addr.port(), policies, direct)
             .into_inner()
