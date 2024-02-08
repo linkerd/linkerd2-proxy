@@ -37,16 +37,20 @@ pub struct ResponseFuture<F> {
     inner: F,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[pin_project::pin_project]
 pub struct StreamIdleBody<B> {
-    metrics: Metrics,
-    timeout: time::Duration,
-    sleep: Option<Pin<Box<time::Sleep>>>,
+    idle: Option<BodyIdle>,
     idled_out: bool,
-
     #[pin]
     inner: B,
+}
+
+#[derive(Debug)]
+struct BodyIdle {
+    metrics: Metrics,
+    timeout: time::Duration,
+    sleep: Pin<Box<time::Sleep>>,
 }
 
 #[derive(Clone, Debug)]
@@ -146,9 +150,7 @@ where
             return Poll::Ready(Ok(http::Response::builder()
                 .status(http::StatusCode::REQUEST_TIMEOUT)
                 .body(StreamIdleBody {
-                    timeout: *this.timeout,
-                    sleep: None,
-                    metrics: this.metrics.clone(),
+                    idle: None,
                     inner: B::default(),
                     idled_out: false,
                 })
@@ -162,10 +164,12 @@ where
 
         Poll::Ready(Ok(rsp.map(|body| StreamIdleBody {
             inner: body,
-            sleep: Some(sleep),
+            idle: Some(BodyIdle {
+                metrics: this.metrics.clone(),
+                timeout: *this.timeout,
+                sleep,
+            }),
             idled_out: false,
-            metrics: this.metrics.clone(),
-            timeout: *this.timeout,
         })))
     }
 }
@@ -184,36 +188,42 @@ where
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.project();
+
         if *this.idled_out {
             return Poll::Ready(None);
         }
 
-        match this.inner.poll_data(cx) {
+        let poll = this.inner.poll_data(cx);
+
+        let Some(BodyIdle {
+            metrics,
+            timeout,
+            sleep,
+        }) = this.idle.as_mut()
+        else {
+            return poll;
+        };
+
+        match poll {
             Poll::Ready(Some(Ok(data))) => {
-                if let Some(sleep) = this.sleep.as_mut() {
-                    sleep.as_mut().reset(time::Instant::now() + *this.timeout);
-                    let poll = sleep.poll_unpin(cx);
-                    assert!(poll.is_pending());
-                }
+                sleep.as_mut().reset(time::Instant::now() + *timeout);
+                let poll = sleep.poll_unpin(cx);
+                assert!(poll.is_pending());
                 Poll::Ready(Some(Ok(data)))
             }
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(Err(e))) => {
-                *this.sleep = None;
+                *this.idle = None;
                 Poll::Ready(Some(Err(e)))
             }
             Poll::Pending => {
-                if let Some(sleep) = this.sleep.as_mut() {
-                    if sleep.poll_unpin(cx).is_ready() {
-                        tracing::info!(timeout = ?this.timeout, "Stream idle awaiting data");
-                        this.metrics.counter.inc();
+                futures::ready!(sleep.poll_unpin(cx));
+                tracing::info!(?timeout, "Stream idle awaiting data");
+                metrics.counter.inc();
 
-                        *this.sleep = None;
-                        *this.idled_out = true;
-                        return Poll::Ready(None);
-                    }
-                }
-                Poll::Pending
+                *this.idle = None;
+                *this.idled_out = true;
+                Poll::Ready(None)
             }
         }
     }
@@ -223,40 +233,46 @@ where
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
         let this = self.project();
+
         if *this.idled_out {
             return Poll::Ready(Ok(None));
         }
 
-        match this.inner.poll_trailers(cx) {
+        let poll = this.inner.poll_trailers(cx);
+
+        let Some(BodyIdle {
+            metrics,
+            timeout,
+            sleep,
+        }) = this.idle.as_mut()
+        else {
+            return poll;
+        };
+
+        match poll {
             Poll::Ready(Ok(Some(trls))) => {
-                if let Some(sleep) = this.sleep.as_mut() {
-                    sleep.as_mut().reset(time::Instant::now() + *this.timeout);
-                    let poll = sleep.poll_unpin(cx);
-                    assert!(poll.is_pending());
-                }
+                sleep.as_mut().reset(time::Instant::now() + *timeout);
+                let poll = sleep.poll_unpin(cx);
+                assert!(poll.is_pending());
                 Poll::Ready(Ok(Some(trls)))
             }
             Poll::Ready(Ok(None)) => {
-                *this.sleep = None;
+                *this.idle = None;
                 Poll::Ready(Ok(None))
             }
             Poll::Ready(Err(e)) => {
-                *this.sleep = None;
+                *this.idle = None;
                 Poll::Ready(Err(e))
             }
 
             Poll::Pending => {
-                if let Some(sleep) = this.sleep.as_mut() {
-                    if sleep.poll_unpin(cx).is_ready() {
-                        tracing::info!(timeout = ?this.timeout, "Stream idle awaiting trailers");
-                        this.metrics.counter.inc();
+                futures::ready!(sleep.poll_unpin(cx));
+                tracing::info!(?timeout, "Stream idle awaiting trailers");
+                metrics.counter.inc();
 
-                        *this.sleep = None;
-                        *this.idled_out = true;
-                        return Poll::Ready(Ok(None));
-                    }
-                }
-                Poll::Pending
+                *this.idle = None;
+                *this.idled_out = true;
+                Poll::Ready(Ok(None))
             }
         }
     }

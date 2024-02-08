@@ -13,14 +13,14 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
+use tokio::time;
 use tower::Service;
 use tracing::{debug, Instrument};
 
 mod stream_idle_timeout;
 
+use self::stream_idle_timeout::StreamIdleTimeout;
 pub use self::stream_idle_timeout::{MetricFamilies, Metrics};
-
-type Server = hyper::server::conn::Http<trace::Executor>;
 
 /// Configures HTTP server behavior.
 #[derive(Clone, Debug)]
@@ -28,7 +28,8 @@ pub struct Params {
     pub version: Version,
     pub h2: H2Settings,
     pub drain: drain::Watch,
-    // pub metrics: Metrics,
+    pub metrics: Metrics,
+    pub stream_idle_timeout: time::Duration,
 }
 
 // A stack that builds HTTP servers.
@@ -41,10 +42,8 @@ pub struct NewServeHttp<X, N> {
 /// Serves HTTP connectionswith an inner service.
 #[derive(Clone, Debug)]
 pub struct ServeHttp<N> {
-    version: Version,
-    server: Server,
+    params: Params,
     inner: N,
-    drain: drain::Watch,
 }
 
 // === impl NewServeHttp ===
@@ -68,25 +67,10 @@ where
     type Service = ServeHttp<N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let Params { version, h2, drain } = self.params.extract_param(&target);
-
-        let mut srv = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
-        srv.http2_initial_stream_window_size(h2.initial_stream_window_size)
-            .http2_initial_connection_window_size(h2.initial_connection_window_size);
-        // Configure HTTP/2 PING frames
-        if let Some(timeout) = h2.keepalive_timeout {
-            srv.http2_keep_alive_timeout(timeout)
-                .http2_keep_alive_interval(timeout / 4);
-        }
-
-        debug!(?version, "Creating HTTP service");
+        let params = self.params.extract_param(&target);
+        debug!(version = ?params.version, "Creating HTTP service");
         let inner = self.inner.new_service(target);
-        ServeHttp {
-            inner,
-            version,
-            drain,
-            server: srv,
-        }
+        ServeHttp { inner, params }
     }
 }
 
@@ -111,17 +95,35 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        let version = self.version;
-        let drain = self.drain.clone();
-        let mut server = self.server.clone();
+        // TODO(ver) We should be able to modify the executor to limit idle
+        // HTTP/2 streams until Hyper can provide some sort of enforcement
+        // mechanism.
+        let mut server = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
+        server
+            .http2_initial_stream_window_size(self.params.h2.initial_stream_window_size)
+            .http2_initial_connection_window_size(self.params.h2.initial_connection_window_size);
+        // Configure HTTP/2 PING frames
+        if let Some(timeout) = self.params.h2.keepalive_timeout {
+            server
+                .http2_keep_alive_timeout(timeout)
+                .http2_keep_alive_interval(timeout / 4);
+        }
 
         let res = io.peer_addr().map(|pa| {
             let (handle, closed) = ClientHandle::new(pa);
-            let svc = self.inner.new_service(handle.clone());
-            let svc = SetClientHandle::new(handle, svc);
+            let svc = SetClientHandle::new(
+                handle.clone(),
+                StreamIdleTimeout::new(
+                    self.params.stream_idle_timeout,
+                    self.params.metrics.clone(),
+                    self.inner.new_service(handle),
+                ),
+            );
             (svc, closed)
         });
 
+        let version = self.params.version;
+        let drain = self.params.drain.clone();
         Box::pin(
             async move {
                 let (svc, closed) = res?;
