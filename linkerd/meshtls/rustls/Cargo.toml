@@ -12,7 +12,7 @@ test-util = ["linkerd-tls-test-util"]
 [dependencies]
 futures = { version = "0.3", default-features = false }
 ring = { version = "0.16", features = ["std"] }
-rustls-pemfile = "1.0"
+rustls-pemfile = "2.1"
 rustls-webpki = { version = "0.101.5", features = ["std"] }
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
