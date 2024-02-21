@@ -13,22 +13,16 @@ updates:
     ignore:
       # These dependencies will be updated via higher-level aggregator dependencies like `clap`,
       # `futures`, `prost`, `tracing`, and `trust-dns-resolver`:
-      - dependency-name: "futures-channel"
-      - dependency-name: "futures-core"
-      - dependency-name: "futures-io"
-      - dependency-name: "futures-sink"
-      - dependency-name: "futures-task"
-      - dependency-name: "futures-util"
+      - dependency-name: "futures-*"
       - dependency-name: "prost-derive"
-      - dependency-name: "tracing-attributes"
-      - dependency-name: "tracing-core"
-      - dependency-name: "tracing-serde"
+      - dependency-name: "tracing-*"
       - dependency-name: "trust-dns-proto"
       # These dependencies are for platforms that we don't support:
-      - dependency-name: "redox_syscall"
+      - dependency-name: "redox_*"
       - dependency-name: "js-sys"
       - dependency-name: "wasm-bindgen"
       - dependency-name: "web-sys"
+      - dependency-name: "windows_*"
 
   - package-ecosystem: cargo
     directory: /linkerd/addr/fuzz
