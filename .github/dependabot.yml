@@ -22,7 +22,7 @@ updates:
       - dependency-name: "js-sys"
       - dependency-name: "wasm-bindgen"
       - dependency-name: "web-sys"
-      - dependency-name: "windows_*"
+      - dependency-name: "windows*"
 
   - package-ecosystem: cargo
     directory: /linkerd/addr/fuzz
