@@ -9,7 +9,6 @@ use linkerd_app_core::{
     Conditional, Error, Result,
 };
 use std::{
-    future::Future,
     pin::Pin,
     str::FromStr,
     task::{Context, Poll},

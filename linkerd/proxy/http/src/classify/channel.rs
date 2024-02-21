@@ -5,7 +5,6 @@ use linkerd_stack::{layer, ExtractParam, NewService, Service};
 use pin_project::{pin_project, pinned_drop};
 use std::{
     fmt::Debug,
-    future::Future,
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},

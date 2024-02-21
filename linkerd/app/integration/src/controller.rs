@@ -4,14 +4,11 @@ pub use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
 use linkerd_app_core::proxy::http::trace;
 use parking_lot::Mutex;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::net::IpAddr;
 use std::ops::{Bound, RangeBounds};
-use std::sync::Arc;
-use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic as grpc;
-use tracing::instrument::Instrument;
 
 pub fn new() -> Controller {
     Controller::new()

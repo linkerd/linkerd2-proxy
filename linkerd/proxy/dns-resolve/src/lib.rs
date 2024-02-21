@@ -1,7 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use futures::{future, prelude::*, stream};
+use futures::prelude::*;
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_dns as dns;
 use linkerd_error::Error;

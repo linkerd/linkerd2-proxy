@@ -1,18 +1,11 @@
 use super::*;
-use futures::TryFuture;
 use linkerd_app_core::proxy::http::trace;
 use std::{
-    collections::HashMap,
-    future::Future,
     io,
-    pin::Pin,
     sync::atomic::{AtomicUsize, Ordering},
-    sync::Arc,
-    task::{Context, Poll},
 };
-use tokio::{net::TcpStream, sync::oneshot, task::JoinHandle};
+use tokio::{net::TcpStream, task::JoinHandle};
 use tokio_rustls::{rustls::ServerConfig, TlsAcceptor};
-use tracing::instrument::Instrument;
 
 pub fn new() -> Server {
     http2()

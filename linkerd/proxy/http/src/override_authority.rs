@@ -1,5 +1,5 @@
 use super::h1;
-use http::{self, header::AsHeaderName, uri::Authority};
+use http::{header::AsHeaderName, uri::Authority};
 use linkerd_stack::{layer, NewService, Param};
 use std::{
     fmt,

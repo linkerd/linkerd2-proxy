@@ -5,7 +5,6 @@ use linkerd_app_core::{
     svc, tls,
 };
 use std::{
-    future::Future,
     pin::Pin,
     task::{Context, Poll},
 };

@@ -23,9 +23,8 @@ mod tests;
 
 pub use self::test_env::TestEnv;
 pub use bytes::{Buf, BufMut, Bytes};
-pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
-
 pub use futures::stream::{Stream, StreamExt};
+pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
 pub use linkerd_app as app;
@@ -43,7 +42,7 @@ use std::task::{Context, Poll};
 pub use std::time::Duration;
 pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpListener;
-pub use tokio::sync::oneshot;
+pub use tokio::sync::{mpsc, oneshot};
 pub use tonic as grpc;
 pub use tower::Service;
 

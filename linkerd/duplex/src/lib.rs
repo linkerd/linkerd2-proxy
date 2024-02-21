@@ -48,12 +48,14 @@ struct CopyBuf {
     write_pos: usize,
 }
 
+#[allow(dead_code)]
 enum Buffered {
     NotEmpty,
     Read(usize),
     Eof,
 }
 
+#[allow(dead_code)]
 enum Drained {
     BufferEmpty,
     Partial(usize),

@@ -6,7 +6,6 @@ use linkerd_io as io;
 use linkerd_stack::{layer, MakeConnection, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
     fmt,
-    future::Future,
     ops::Deref,
     pin::Pin,
     str::FromStr,

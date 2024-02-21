@@ -1,7 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use futures::{future, prelude::*};
+use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_stack::{layer, ExtractParam, NewService, Oneshot, Service, ServiceExt};
 use std::{

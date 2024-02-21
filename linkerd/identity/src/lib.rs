@@ -5,7 +5,6 @@ mod credentials;
 mod metrics;
 
 use linkerd_error::{Error, Result};
-use std::convert::From;
 use std::str::FromStr;
 
 pub use self::{

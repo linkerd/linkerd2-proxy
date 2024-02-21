@@ -1,7 +1,7 @@
 use crate::Addr;
 use ipnet::IpNet;
 use linkerd_dns_name::{Name, Suffix};
-use std::{fmt, iter::FromIterator, net::IpAddr, sync::Arc};
+use std::{fmt, net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug, Default)]
 pub struct AddrMatch {

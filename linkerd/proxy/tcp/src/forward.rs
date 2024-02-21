@@ -3,7 +3,6 @@ use linkerd_duplex::Duplex;
 use linkerd_error::{Error, Result};
 use linkerd_stack::layer;
 use std::{
-    future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
