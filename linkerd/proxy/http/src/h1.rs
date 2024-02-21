@@ -10,7 +10,7 @@ use http::{
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_stack::MakeConnection;
-use std::{future::Future, mem, pin::Pin, time::Duration};
+use std::{mem, pin::Pin, time::Duration};
 use tracing::{debug, trace};
 
 #[derive(Copy, Clone, Debug)]

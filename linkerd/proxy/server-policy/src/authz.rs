@@ -56,7 +56,7 @@ impl Suffix {
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
-    use crate::{authz::Network, meta::proto::InvalidMeta};
+    use crate::meta::proto::InvalidMeta;
     use linkerd2_proxy_api::{inbound as api, net::InvalidIpNetwork};
 
     #[derive(Debug, thiserror::Error)]

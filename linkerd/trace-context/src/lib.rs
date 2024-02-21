@@ -9,7 +9,6 @@ use bytes::Bytes;
 use linkerd_error::Error;
 use rand::Rng;
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::fmt;
 use std::time::SystemTime;
 use thiserror::Error;

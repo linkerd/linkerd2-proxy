@@ -8,7 +8,6 @@ use hyper::{
 use linkerd_error::{Error, Result};
 use linkerd_stack::{MakeConnection, Service};
 use std::{
-    future::Future,
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},

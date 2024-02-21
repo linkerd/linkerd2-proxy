@@ -2,7 +2,6 @@ use futures::prelude::*;
 use linkerd_error::Error;
 use std::{
     fmt::Debug,
-    future::Future,
     net::SocketAddr,
     task::{Context, Poll},
 };

@@ -3,7 +3,6 @@ use linkerd_duplex::Duplex;
 use linkerd_error::{Error, Result};
 use linkerd_stack::layer;
 use std::{
-    future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -20,7 +19,7 @@ impl<C> Forward<C> {
         Self { connect }
     }
 
-    pub fn layer() -> impl layer::Layer<C, Service = Self> + Clone + Copy {
+    pub fn layer() -> impl layer::Layer<C, Service = Self> + Copy {
         layer::mk(Self::new)
     }
 }

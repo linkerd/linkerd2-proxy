@@ -4,8 +4,7 @@ use std::{
     collections::VecDeque,
     fs, io,
     path::{Path, PathBuf},
-    sync::Arc,
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 use linkerd2_proxy_api::identity as pb;

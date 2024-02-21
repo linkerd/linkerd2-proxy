@@ -1,6 +1,6 @@
 use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
-use futures::{future, prelude::*};
+use futures::prelude::*;
 use linkerd_error::{Error, Result};
 use linkerd_stack::{layer, NewService, Param, Proxy, Service};
 use std::{

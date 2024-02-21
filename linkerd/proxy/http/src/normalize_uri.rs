@@ -53,7 +53,7 @@ pub struct MarkAbsoluteForm<S> {
 // === impl NewNormalizeUri ===
 
 impl<N> NewNormalizeUri<(), N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy + Clone {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy {
         layer::mk(|inner| Self::new((), inner))
     }
 }
@@ -137,7 +137,7 @@ impl<S> MarkAbsoluteForm<S> {
         Self { inner }
     }
 
-    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy + Clone {
+    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy {
         layer::mk(Self::new)
     }
 }

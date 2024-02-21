@@ -33,7 +33,7 @@ impl<S> EraseResponse<S> {
         Self(inner)
     }
 
-    pub fn layer() -> impl layer::Layer<S, Service = Self> + Clone + Copy {
+    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy {
         layer::mk(Self::new)
     }
 }

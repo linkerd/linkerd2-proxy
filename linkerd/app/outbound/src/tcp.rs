@@ -2,7 +2,7 @@ use crate::Outbound;
 use linkerd_app_core::{
     io, svc,
     transport::{self, addrs::*, metrics},
-    Error,
+    Error, Infallible,
 };
 
 mod connect;
@@ -55,7 +55,7 @@ impl<N> Outbound<N> {
                 .push(metrics::NewServer::layer(
                     rt.metrics.proxy.transport.clone(),
                 ))
-                .push_filter(|t: T| Accept::try_from(t.param()))
+                .push_filter(|t: T| Ok::<_, Infallible>(Accept::from(t.param())))
                 .push(rt.metrics.tcp_errors.to_layer())
                 .instrument(mk_span)
                 .arc_new_tcp()

@@ -1,4 +1,4 @@
-use libc::{self, pid_t};
+use libc::pid_t;
 use procfs::{
     process::{self, LimitValue, Process},
     ProcResult,

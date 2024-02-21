@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: linkerd/dev/actions/setup-tools@v42
+      - uses: linkerd/dev/actions/setup-tools@v43
 
       - name: Install linkerd CLI (edge)
         id: linkerd
