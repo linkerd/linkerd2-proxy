@@ -1,4 +1,4 @@
-use futures::{future, prelude::*};
+use futures::prelude::*;
 use linkerd_error::Error;
 use std::{
     fmt,

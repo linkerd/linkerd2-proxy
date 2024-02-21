@@ -27,7 +27,7 @@ jobs:
   list-changed:
     timeout-minutes: 3
     runs-on: ubuntu-latest
-    container: docker://rust:1.73.0
+    container: docker://rust:1.76.0
     steps:
       - run: apt update && apt install -y jo
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
@@ -48,7 +48,7 @@ jobs:
     needs: [list-changed]
     timeout-minutes: 40
     runs-on: ubuntu-latest
-    container: docker://rust:1.73.0
+    container: docker://rust:1.76.0
     strategy:
       matrix:
         dir: ${{ fromJson(needs.list-changed.outputs.dirs) }}
