@@ -20,7 +20,7 @@ impl<C> Forward<C> {
         Self { connect }
     }
 
-    pub fn layer() -> impl layer::Layer<C, Service = Self> + Clone + Copy {
+    pub fn layer() -> impl layer::Layer<C, Service = Self> + Copy {
         layer::mk(Self::new)
     }
 }

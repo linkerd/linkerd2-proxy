@@ -21,7 +21,7 @@ jobs:
   clippy:
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v42-rust
+    container: ghcr.io/linkerd/dev:v43-rust
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
@@ -31,7 +31,7 @@ jobs:
   fmt:
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v42-rust
+    container: ghcr.io/linkerd/dev:v43-rust
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
@@ -40,7 +40,7 @@ jobs:
   docs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    container: ghcr.io/linkerd/dev:v42-rust
+    container: ghcr.io/linkerd/dev:v43-rust
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033

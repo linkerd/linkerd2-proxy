@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
-      image: docker://ghcr.io/linkerd/dev:v42-rust
+      image: docker://ghcr.io/linkerd/dev:v43-rust
       options: --security-opt seccomp=unconfined # 🤷
     env:
       CXX: "/usr/bin/clang++-14"

@@ -39,7 +39,7 @@ impl<S, B> Retain<S, B> {
         }
     }
 
-    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy + Clone {
+    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy {
         layer::mk(Self::new)
     }
 }
