@@ -253,11 +253,11 @@ dependencies = [
 
 [[package]]
 name = "boring"
-version = "3.0.4"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f9aa560ebe73bcf696f83e70c0c3840e20506dfa4b0531eb3394f591489030f"
+checksum = "7ae1aba472e42d3cf45ac6d0a6c8fc3ddf743871209e1b40229aed9fbdf48ece"
 dependencies = [
- "bitflags 1.3.2",
+ "bitflags 2.4.0",
  "boring-sys",
  "foreign-types",
  "libc",
