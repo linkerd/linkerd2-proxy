@@ -40,7 +40,7 @@ parking_lot = "0.12"
 prometheus-client = "0.22"
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
-tonic = { version = "0.10", default-features = false }
+tonic = { version = "0.11", default-features = false }
 tower = { version = "0.4", features = ["util"] }
 tracing = "0.1"
 pin-project = "1"

@@ -1053,7 +1053,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tracing",
 ]
@@ -1140,7 +1140,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tracing",
 ]
@@ -1161,7 +1161,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tower-test",
  "tracing",
@@ -1197,7 +1197,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tracing",
 ]
@@ -1231,7 +1231,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-stream",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -1270,7 +1270,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tower-test",
  "tracing",
@@ -1297,7 +1297,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-test",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -1640,7 +1640,7 @@ dependencies = [
  "opencensus-proto",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.11.0",
  "tracing",
 ]
 
@@ -1692,7 +1692,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "pin-project",
  "prost",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tracing",
 ]
@@ -1766,7 +1766,7 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "thiserror",
- "tonic",
+ "tonic 0.11.0",
 ]
 
 [[package]]
@@ -1844,7 +1844,7 @@ dependencies = [
  "pin-project",
  "thiserror",
  "tokio",
- "tonic",
+ "tonic 0.11.0",
  "tracing",
 ]
 
@@ -1892,7 +1892,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tracing",
  "x509-parser",
@@ -1921,7 +1921,7 @@ dependencies = [
  "rand",
  "thiserror",
  "tokio",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tracing",
 ]
@@ -2022,7 +2022,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.11.0",
  "tower",
  "tracing",
 ]
@@ -2122,7 +2122,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-test",
- "tonic",
+ "tonic 0.11.0",
  "tracing",
 ]
 
@@ -2137,7 +2137,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-test",
- "tonic",
+ "tonic 0.11.0",
  "tower-test",
  "tracing",
 ]
@@ -2234,7 +2234,7 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "thiserror",
- "tonic",
+ "tonic 0.10.2",
 ]
 
 [[package]]
@@ -2459,7 +2459,7 @@ dependencies = [
  "bytes",
  "prost",
  "prost-types",
- "tonic",
+ "tonic 0.11.0",
  "tonic-build",
 ]
 
@@ -3094,7 +3094,7 @@ dependencies = [
  "bytes",
  "prost",
  "prost-types",
- "tonic",
+ "tonic 0.11.0",
  "tonic-build",
 ]
 
@@ -3383,6 +3383,27 @@ name = "tonic"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d560933a0de61cf715926b9cac824d4c883c2c43142f787595e48280c40a1d0e"
+dependencies = [
+ "async-trait",
+ "base64 0.21.5",
+ "bytes",
+ "http",
+ "http-body",
+ "percent-encoding",
+ "pin-project",
+ "prost",
+ "tokio",
+ "tokio-stream",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
+name = "tonic"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76c4eb7a4e9ef9d4763600161f12f5070b92a578e1b634db88a6887844c91a13"
 dependencies = [
  "async-stream",
  "async-trait",
