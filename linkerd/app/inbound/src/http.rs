@@ -15,10 +15,7 @@ pub mod fuzz {
     use crate::{
         http::router::Http,
         policy,
-        test_util::{
-            support::{connect::Connect, http_util, profile, resolver},
-            *,
-        },
+        test_util::{support::connect::Connect, *},
         Config, Inbound,
     };
     use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
