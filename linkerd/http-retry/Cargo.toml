@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 bytes = "1"
 futures = { version = "0.3", default-features = false }
-http-body = "0.4"
+http-body = "1.0"
 http = "0.2"
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }

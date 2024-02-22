@@ -10,7 +10,7 @@ publish = false
 bytes = "1"
 futures = { version = "0.3", default-features = false }
 http = "0.2"
-http-body = "0.4"
+http-body = "1.0"
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 pin-project = "1"
