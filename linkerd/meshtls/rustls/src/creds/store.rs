@@ -17,6 +17,7 @@ pub struct Store {
     server_name: dns::Name,
     client_tx: watch::Sender<Arc<rustls::ClientConfig>>,
     server_tx: watch::Sender<Arc<rustls::ServerConfig>>,
+    random: ring::rand::SystemRandom,
 }
 
 #[derive(Clone)]
@@ -88,6 +89,7 @@ impl Store {
             server_name,
             client_tx,
             server_tx,
+            random: ring::rand::SystemRandom::new(),
         }
     }
 
@@ -146,7 +148,8 @@ impl id::Credentials for Store {
         // Use the client's verifier to validate the certificate for our local name.
         self.validate(&chain)?;
 
-        let key = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, &key).map_err(InvalidKey)?;
+        let key = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, &key, &self.random)
+            .map_err(InvalidKey)?;
 
         let resolver = Arc::new(CertResolver(Arc::new(rustls::sign::CertifiedKey::new(
             chain,

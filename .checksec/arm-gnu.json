@@ -1,5 +1,5 @@
 {
-  "canary": "yes",
+  "canary": "no",
   "nx": "yes",
   "pie": "yes",
   "relro": "full",
