@@ -56,4 +56,4 @@ jobs:
         # Some tests are especially flakey in coverage tests. That's fine. We
         # only really care to measure how much of our codebase is covered.
         continue-on-error: true
-      - uses: codecov/codecov-action@e0b68c6749509c5f83f984dd99a76a1c1a231044
+      - uses: codecov/codecov-action@0cfda1dd0a4ad9efc75517f399d859cd1ea4ced1
