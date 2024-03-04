@@ -95,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/download-artifact@87c55149d96e628cc2ef7e6fc2aab372015aec85
+      - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427
         with:
           path: artifacts
       - run: du -h artifacts/**/*
