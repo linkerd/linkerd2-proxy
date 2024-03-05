@@ -12,7 +12,7 @@ cargo-fuzz = true
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1", features = ["derive"] }
 hyper = { version = "0.14", features = ["http1", "http2"] }
-http = "0.2"
+http = "1.1"
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 linkerd-app-core = { path = "../../core" }
 linkerd-app-inbound = { path = ".." }
