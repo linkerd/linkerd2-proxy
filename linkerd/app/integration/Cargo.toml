@@ -46,7 +46,7 @@ socket2 = "0.5"
 tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-rustls = "0.24"
-rustls-pemfile = "1.0"
+rustls-pemfile = "2.1"
 tower = { version = "0.4", default-features = false }
 tonic = { version = "0.10", features = ["transport"], default-features = false }
 tracing = "0.1"
