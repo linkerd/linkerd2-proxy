@@ -15,7 +15,7 @@ independently of the inbound and outbound proxy logic.
 [dependencies]
 bytes = "1"
 drain = { version = "0.1", features = ["retain"] }
-http = "0.2"
+http = "1.1"
 http-body = "0.4"
 hyper = { version = "0.14", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }

@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 futures-core = "0.3"
-http = "0.2"
+http = "1.1"
 humantime = "2"
 pin-project = "1"
 linkerd-stack = { path = "../stack" }

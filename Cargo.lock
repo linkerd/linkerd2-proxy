@@ -149,7 +149,7 @@ dependencies = [
  "bitflags 1.3.2",
  "bytes",
  "futures-util",
- "http",
+ "http 0.2.12",
  "http-body",
  "hyper",
  "itoa",
@@ -175,7 +175,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures-util",
- "http",
+ "http 0.2.12",
  "http-body",
  "mime",
  "rustversion",
@@ -715,7 +715,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http",
+ "http 0.2.12",
  "indexmap 2.2.5",
  "slab",
  "tokio",
@@ -775,9 +775,20 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "0.2.11"
+version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8947b1a6fad4393052c7ba1f4cd97bed3e953a95c79c92ad9b051a04611d9fbb"
+checksum = "601cbb57e577e2f5ef5be8e7b83f0f63994f25aa94d673e54a92d5c516d101f1"
+dependencies = [
+ "bytes",
+ "fnv",
+ "itoa",
+]
+
+[[package]]
+name = "http"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21b9ddb458710bc376481b842f5da65cdf31522de232c1ca8146abce2a358258"
 dependencies = [
  "bytes",
  "fnv",
@@ -791,7 +802,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ceab25649e9960c0311ea418d17bee82c0dcec1bd053b5f9a66e265a693bed2"
 dependencies = [
  "bytes",
- "http",
+ "http 0.2.12",
  "pin-project-lite",
 ]
 
@@ -824,7 +835,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http",
+ "http 0.2.12",
  "http-body",
  "httparse",
  "httpdate",
@@ -842,7 +853,7 @@ name = "hyper-balance"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http",
+ "http 1.1.0",
  "hyper",
  "pin-project",
  "tokio",
@@ -1004,7 +1015,7 @@ checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
 name = "linkerd-addr"
 version = "0.1.0"
 dependencies = [
- "http",
+ "http 1.1.0",
  "ipnet",
  "linkerd-dns-name",
  "thiserror",
@@ -1039,7 +1050,7 @@ version = "0.1.0"
 dependencies = [
  "deflate",
  "futures",
- "http",
+ "http 1.1.0",
  "hyper",
  "linkerd-app-core",
  "linkerd-app-inbound",
@@ -1060,7 +1071,7 @@ dependencies = [
  "bytes",
  "drain",
  "futures",
- "http",
+ "http 1.1.0",
  "http-body",
  "hyper",
  "ipnet",
@@ -1125,7 +1136,7 @@ name = "linkerd-app-gateway"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http",
+ "http 1.1.0",
  "linkerd-app-core",
  "linkerd-app-inbound",
  "linkerd-app-outbound",
@@ -1149,7 +1160,7 @@ dependencies = [
  "arbitrary",
  "bytes",
  "futures",
- "http",
+ "http 1.1.0",
  "hyper",
  "libfuzzer-sys",
  "linkerd-app-core",
@@ -1185,7 +1196,7 @@ dependencies = [
  "flate2",
  "futures",
  "h2",
- "http",
+ "http 1.1.0",
  "http-body",
  "hyper",
  "ipnet",
@@ -1219,7 +1230,7 @@ dependencies = [
  "ahash",
  "bytes",
  "futures",
- "http",
+ "http 1.1.0",
  "hyper",
  "linkerd-app-core",
  "linkerd-app-test",
@@ -1257,7 +1268,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "h2",
- "http",
+ "http 1.1.0",
  "http-body",
  "hyper",
  "linkerd-app-core",
@@ -1384,7 +1395,7 @@ name = "linkerd-http-access-log"
 version = "0.1.0"
 dependencies = [
  "futures-core",
- "http",
+ "http 1.1.0",
  "humantime",
  "linkerd-identity",
  "linkerd-proxy-transport",
@@ -1402,7 +1413,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
- "http",
+ "http 1.1.0",
  "http-body",
  "linkerd-error",
  "linkerd-stack",
@@ -1413,7 +1424,7 @@ dependencies = [
 name = "linkerd-http-classify"
 version = "0.1.0"
 dependencies = [
- "http",
+ "http 1.1.0",
  "linkerd-error",
 ]
 
@@ -1423,7 +1434,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
- "http",
+ "http 1.1.0",
  "http-body",
  "hyper",
  "linkerd-error",
@@ -1443,7 +1454,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
- "http",
+ "http 1.1.0",
  "http-body",
  "hyper",
  "linkerd-error",
@@ -1459,7 +1470,7 @@ dependencies = [
 name = "linkerd-http-route"
 version = "0.1.0"
 dependencies = [
- "http",
+ "http 1.1.0",
  "linkerd2-proxy-api",
  "maplit",
  "rand",
@@ -1592,7 +1603,7 @@ name = "linkerd-metrics"
 version = "0.1.0"
 dependencies = [
  "deflate",
- "http",
+ "http 1.1.0",
  "hyper",
  "linkerd-stack",
  "linkerd-system",
@@ -1608,7 +1619,7 @@ name = "linkerd-opencensus"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http",
+ "http 1.1.0",
  "http-body",
  "linkerd-error",
  "linkerd-metrics",
@@ -1655,7 +1666,7 @@ name = "linkerd-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http",
+ "http 1.1.0",
  "http-body",
  "linkerd-addr",
  "linkerd-error",
@@ -1728,7 +1739,7 @@ name = "linkerd-proxy-client-policy"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "http",
+ "http 1.1.0",
  "ipnet",
  "linkerd-error",
  "linkerd-exp-backoff",
@@ -1778,7 +1789,7 @@ dependencies = [
  "drain",
  "futures",
  "h2",
- "http",
+ "http 1.1.0",
  "http-body",
  "httparse",
  "hyper",
@@ -1840,7 +1851,7 @@ dependencies = [
 name = "linkerd-proxy-server-policy"
 version = "0.1.0"
 dependencies = [
- "http",
+ "http 1.1.0",
  "ipnet",
  "linkerd-http-route",
  "linkerd2-proxy-api",
@@ -1878,7 +1889,7 @@ name = "linkerd-proxy-tap"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http",
+ "http 1.1.0",
  "hyper",
  "ipnet",
  "linkerd-conditional",
@@ -1979,7 +1990,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
- "http",
+ "http 1.1.0",
  "http-body",
  "linkerd-addr",
  "linkerd-dns-name",
@@ -2125,7 +2136,7 @@ dependencies = [
  "bytes",
  "futures",
  "hex",
- "http",
+ "http 0.2.12",
  "linkerd-error",
  "linkerd-stack",
  "rand",
@@ -2203,7 +2214,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1713a2bd4b823395b97c89a15aeb9d7ec3cd99603e8f46190f1f0b97b6f880a"
 dependencies = [
  "h2",
- "http",
+ "http 0.2.12",
  "ipnet",
  "prost",
  "prost-types",
@@ -3318,7 +3329,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "h2",
- "http",
+ "http 0.2.12",
  "http-body",
  "hyper",
  "hyper-timeout",
