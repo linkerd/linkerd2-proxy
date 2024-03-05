@@ -18,6 +18,7 @@ updates:
       - dependency-name: "tracing-*"
       - dependency-name: "trust-dns-proto"
       # These dependencies are for platforms that we don't support:
+      - dependency-name: "hermit-abi"
       - dependency-name: "redox_*"
       - dependency-name: "js-sys"
       - dependency-name: "wasm-bindgen"
