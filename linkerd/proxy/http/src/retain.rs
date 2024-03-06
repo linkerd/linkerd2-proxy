@@ -114,6 +114,11 @@ impl<T, B: http_body::Body> http_body::Body for RetainBody<T, B> {
     }
 
     #[inline]
+    fn poll_progress(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.project().inner.poll_progress(cx)
+    }
+
+    #[inline]
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

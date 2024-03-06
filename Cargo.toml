@@ -79,6 +79,15 @@ members = [
     "tools",
 ]
 
+exclude = [
+    "http-body",
+    "hyper",
+]
+
 [profile.release]
 debug = 1
 lto = true
+
+[patch.crates-io]
+http-body = { path = "http-body" }
+hyper = { path = "hyper" }

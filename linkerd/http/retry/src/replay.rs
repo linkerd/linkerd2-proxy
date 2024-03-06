@@ -251,6 +251,21 @@ where
         Poll::Ready(Some(Ok(Data::Initial(chunk))))
     }
 
+    fn poll_progress(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        let state = Self::acquire_state(&mut this.state, &this.shared.body);
+        tracing::trace!("ReplayBody::poll_progress");
+
+        if let Some(rest) = state.rest.as_mut() {
+            // If the inner body has previously ended, don't poll it again.
+            if !rest.is_end_stream() {
+                return Pin::new(rest).poll_progress(cx).map_err(Into::into);
+            }
+        }
+
+        Poll::Ready(Ok(()))
+    }
+
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

@@ -1,0 +1,6 @@
+[submodule "http-body"]
+	path = http-body
+	url = git@github.com:olix0r/http-body.git
+[submodule "hyper"]
+	path = hyper
+	url = git@github.com:olix0r/hyper.git
