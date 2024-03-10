@@ -1,21 +1,18 @@
 name: coverage
 
-permissions:
-  contents: read
-
 on:
   # We run coverage on main so that PRs can have a meaninful comparison that
   # doesn't lag a whole day.
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request: {}
 
-  # Coverage runs on all code changes (as well as changes to the workflow).
-  pull_request:
-    paths:
-      - .codecov.yml
-      - .github/workflows/coverage.yml
-      - '**/*.rs'
+permissions:
+  contents: read
+
+concurrency:
+  group:  ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_INCREMENTAL: 0
@@ -24,20 +21,25 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
-  # Cancel any previous runs of this workflow so coverage runs don't back up,
-  # especially on main (i.e. after merging several PRs).
-  cleanup:
+  meta:
+    timeout-minutes: 5
     runs-on: ubuntu-latest
-    permissions:
-      actions: write
     steps:
-      - uses: styfle/cancel-workflow-action@85880fa0301c86cca9da44039ee3bb12d3bedbfa
+      - id: changed
+        uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
         with:
-          all_but_latest: true
-          access_token: ${{ github.token }}
+          files: |
+            .codecov.yml
+            .github/workflows/coverage.yml
+            **/*.rs
+          ignore_files: |
+            *-proto/**
+    outputs:
+      any_changed: ${{ steps.changed.outputs.any_changed }}
 
-  test:
-    name: codecov
+  codecov:
+    needs: meta
+    if: github.event_name == 'push' || needs.meta.outputs.any_changed
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:

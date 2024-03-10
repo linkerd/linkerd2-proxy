@@ -1,0 +1,122 @@
+name: Pull Request
+on: pull_request
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+  RUSTFLAGS: "-D warnings -D deprecated -C debuginfo=0"
+
+concurrency:
+  group:  ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  meta:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - id: build
+        uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
+        with:
+          files: |
+            .github/workflows/pr.yml
+            justfile
+      - id: cargo
+        uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
+        with:
+          files: '**/Cargo.toml'
+          ignored_files: 'Cargo.toml'
+      - id: rust
+        uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
+        with:
+          files: '**/*.rs'
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - id: cargo-crates
+        if: steps.cargo.outputs.any_changed
+        run: ./.github/list-crates.sh ${{ steps.cargo.outputs.all_changed_files }}
+      - run: |
+          echo 'build: ${{ steps.build.outputs.all_changed_files }}'
+          echo 'cargo: ${{ steps.cargo.outputs.all_changed_files }}'
+          echo 'crates: ${{ steps.cargo-crates.outputs.crates }}'
+          echo 'rust: ${{ steps.rust.outputs.all_changed_files }}'
+    outputs:
+      any_changed: ${{ steps.build.outputs.any_changed || steps.cargo.outputs.any_changed || steps.rust.outputs.any_changed }}
+      build_changed: ${{ steps.build.outputs.any_changed }}
+      cargo_changed: ${{ steps.cargo.outputs.any_changed }}
+      cargo_crates: ${{ steps.cargo-crates.outputs.crates }}
+      rust_changed: ${{ steps.rust.outputs.any_changed }}
+
+  rust:
+    needs: meta
+    if: needs.meta.outputs.any_changed == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/linkerd/dev:v43-rust
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
+      - run: just fetch
+      - name: cargo deny check bans licenses sources
+        uses: EmbarkStudios/cargo-deny-action@64015a69ee7ee08f6c56455089cdaf6ad974fd15
+        with:
+          command: check bans licenses sources
+      - run: just check-fmt
+      - run: just clippy
+      - run: just doc
+      - run: just test --exclude=linkerd2-proxy --no-run
+      - run: just test --exclude=linkerd2-proxy
+
+  rust-crates:
+    needs: meta
+    if: needs.meta.outputs.cargo_changed == 'true'
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    container: ghcr.io/linkerd/dev:v43-rust
+    strategy:
+      matrix:
+        crate: ${{ fromJson(needs.meta.outputs.cargo_crates) }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
+      - run: just fetch
+      - run: just check-crate ${{ matrix.crate }}
+
+  linkerd-install:
+    needs: meta
+    if: needs.meta.outputs.any_changed == 'true'
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: linkerd/dev/actions/setup-tools@v43
+      - name: scurl https://run.linkerd.io/install-edge | sh
+        run: |
+          scurl https://run.linkerd.io/install-edge | sh
+          echo "PATH=$PATH:$HOME/.linkerd2/bin" >> "$GITHUB_ENV"
+          export PATH="$PATH:$HOME/.linkerd2/bin"
+          tag=$(linkerd version --client --short)
+          echo "linkerd $tag"
+          echo "LINKERD_TAG=$tag" >> "$GITHUB_ENV"
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - run: just docker
+      - run: just-k3d create
+      - run: just k3d-load-linkerd
+      - run: just linkerd-install
+      - run: just linkerd-check-contol-plane-proxy
+        env:
+          TMPDIR: ${{ runner.temp }}
+
+  auto-merge:
+    needs: [rust, rust-crates, linkerd-install]
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: gh pr merge '${{ github.event.pull_request.number }}' --auto --merge
+        env:
+          GH_TOKEN: ${{ github.token }}
