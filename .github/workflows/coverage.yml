@@ -44,6 +44,8 @@ jobs:
     container:
       image: docker://ghcr.io/linkerd/dev:v43-rust
       options: --security-opt seccomp=unconfined # 🤷
+    env:
+      CXX: "/usr/bin/clang++-14"
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --exclude=spire-proto --no-run
