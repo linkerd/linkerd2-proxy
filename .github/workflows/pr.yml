@@ -22,6 +22,7 @@ jobs:
           files: |
             .github/workflows/pr.yml
             justfile
+            Dockerfile
       - id: cargo
         uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
         with:
@@ -49,6 +50,7 @@ jobs:
 
   rust:
     needs: meta
+    if: needs.meta.outputs.any_changed == 'true'
     runs-on: ubuntu-latest
     container: ghcr.io/linkerd/dev:v43-rust
     permissions:
@@ -85,6 +87,7 @@ jobs:
 
   linkerd-install:
     needs: meta
+    if: needs.meta.outputs.any_changed == 'true'
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -106,8 +109,17 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
 
+  ok:
+    timeout-minutes: 3
+    needs: [rust, rust-crates, linkerd-install]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - if: contains(needs.*.result, 'failure')
+        run: exit 1
+
   auto-merge:
-    needs: [rust, linkerd-install]
+    needs: ok
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
