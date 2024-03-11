@@ -107,7 +107,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
 
   auto-merge:
-    needs: [rust, linkerd-install]}
+    needs: [rust, linkerd-install]
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
