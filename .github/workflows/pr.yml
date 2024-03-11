@@ -108,15 +108,23 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
 
-  auto-merge:
+  # This job is guaranteed to run if the others succeed or are skipped by
+  # policy, so it can be required.
+  integrations:
     needs: [rust, rust-crates, linkerd-install]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Integrated"
+
+  auto-merge:
+    needs: integrations
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - run: gh pr merge '${{ github.event.pull_request.number }}' --auto --merge
         env:
           GH_TOKEN: ${{ github.token }}
