@@ -26,7 +26,7 @@ jobs:
         uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
         with:
           files: '**/Cargo.toml'
-          ignored_files: 'Cargo.toml'
+          files_ignore: 'Cargo.toml'
       - id: rust
         uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
         with:
