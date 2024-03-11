@@ -1,12 +1,7 @@
 name: release
 
 on:
-  pull_request:
-    paths:
-      - .github/actions/package/*
-      - .github/workflows/release.yml
-      - justfile
-      - Cargo.toml # For release build settings
+  pull_request: {}
   push:
     tags:
       - "release/*"
@@ -21,17 +16,11 @@ env:
   RUSTFLAGS: "-D warnings -A deprecated"
   RUSTUP_MAX_RETRIES: 10
 
-jobs:
-  cleanup:
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      - uses: styfle/cancel-workflow-action@85880fa0301c86cca9da44039ee3bb12d3bedbfa
-        with:
-          all_but_latest: true
-          access_token: ${{ github.token }}
+concurrency:
+  group:  ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
 
+jobs:
   meta:
     timeout-minutes: 5
     runs-on: ubuntu-latest
@@ -57,13 +46,24 @@ jobs:
               echo archs='["amd64"]'
             ) >> "$GITHUB_OUTPUT"
           fi
+      - id: changed
+        uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
+        with:
+          files: |
+            .github/actions/package/*
+            .github/workflows/release.yml
+            justfile
+            Cargo.toml # For release build settings
     outputs:
+      changed: ${{ steps.changed.outputs.any_changed }}
       archs: ${{ steps.meta.outputs.archs }}
       publish: ${{ steps.meta.outputs.publish }}
       version: ${{ steps.meta.outputs.version }}
 
   package:
     needs: [meta]
+    if: needs.meta.outputs.changed == 'true'
+
     strategy:
       matrix:
         arch: ${{ fromJson(needs.meta.outputs.archs) }}
@@ -91,6 +91,7 @@ jobs:
           path: target/package/*
 
   publish:
+    if: needs.meta.outputs.changed == 'true'
     needs: [meta, package]
     runs-on: ubuntu-latest
     timeout-minutes: 5
