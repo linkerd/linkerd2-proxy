@@ -1,8 +1,6 @@
 name: coverage
 
 on:
-  # We run coverage on main so that PRs can have a meaninful comparison that
-  # doesn't lag a whole day.
   push:
     branches: [main]
   pull_request: {}
@@ -32,8 +30,9 @@ jobs:
             .codecov.yml
             .github/workflows/coverage.yml
             **/*.rs
-          ignore_files: |
+          files_ignore: |
             *-proto/**
+            linkerd/transport-header/**
     outputs:
       any_changed: ${{ steps.changed.outputs.any_changed }}
 
@@ -45,16 +44,10 @@ jobs:
     container:
       image: docker://ghcr.io/linkerd/dev:v43-rust
       options: --security-opt seccomp=unconfined # 🤷
-    env:
-      CXX: "/usr/bin/clang++-14"
     steps:
-      # XXX(ver) Workaround for a linking problem in the binary we store in the
-      # devcontainer.
-      - run: scurl https://github.com/xd009642/tarpaulin/releases/download/0.27.1/cargo-tarpaulin-x86_64-unknown-linux-musl.tar.gz | tar -C /usr/local/bin -zxvf -
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-      # linkerd-transport-header and opencencus-proto tests only check codegen.
-      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --no-run
-      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --skip-clean --ignore-tests --no-fail-fast --out=Xml
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --exclude=spire-proto --no-run
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --exclude=spire-proto --skip-clean --ignore-tests --no-fail-fast --out=Xml
         # Some tests are especially flakey in coverage tests. That's fine. We
         # only really care to measure how much of our codebase is covered.
         continue-on-error: true
