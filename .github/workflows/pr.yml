@@ -49,7 +49,6 @@ jobs:
 
   rust:
     needs: meta
-    if: needs.meta.outputs.any_changed == 'true'
     runs-on: ubuntu-latest
     container: ghcr.io/linkerd/dev:v43-rust
     permissions:
@@ -86,7 +85,6 @@ jobs:
 
   linkerd-install:
     needs: meta
-    if: needs.meta.outputs.any_changed == 'true'
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -108,16 +106,8 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
 
-  # This job is guaranteed to run if the others succeed or are skipped by
-  # policy, so it can be required.
-  integrations:
-    needs: [rust, rust-crates, linkerd-install]
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Integrated"
-
   auto-merge:
-    needs: integrations
+    needs: [rust, linkerd-install]}
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
