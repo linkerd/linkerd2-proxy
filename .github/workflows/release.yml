@@ -1,4 +1,4 @@
-name: release
+name: Release
 
 on:
   pull_request: {}
@@ -50,10 +50,9 @@ jobs:
         uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
         with:
           files: |
-            .github/actions/package/*
             .github/workflows/release.yml
             justfile
-            Cargo.toml # For release build settings
+            Cargo.toml
     outputs:
       changed: ${{ steps.changed.outputs.any_changed }}
       archs: ${{ steps.meta.outputs.archs }}
