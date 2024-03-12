@@ -48,7 +48,7 @@ jobs:
       rust_changed: ${{ steps.rust.outputs.any_changed }}
 
   info:
-    timeout-minutes: 3`
+    timeout-minutes: 3
     needs: meta
     runs-on: ubuntu-latest
     steps:
