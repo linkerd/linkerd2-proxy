@@ -47,7 +47,7 @@ jobs:
             Cargo.lock
     outputs:
       is_dependabot: ${{ github.actor == 'dependabot[bot]' }}
-      any_changed: ${{ steps.build.outputs.any_changed == 'true' || steps.actions.outputs.any_change == 'true' || steps.cargo.outputs.any_change == 'true' || steps.rust.outputs.any_changed == 'true' }}
+      any_changed: ${{ steps.build.outputs.any_changed == 'true' || steps.actions.outputs.any_changed == 'true' || steps.cargo.outputs.any_change == 'true' || steps.rust.outputs.any_changed == 'true' }}
       build_changed: ${{ steps.build.outputs.any_changed }}
       actions_changed: ${{ steps.build.outputs.any_changed == 'true' || steps.actions.outputs.any_changed == 'true' }}
       cargo_changed: ${{ steps.cargo.outputs.any_changed == 'true' }}

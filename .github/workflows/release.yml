@@ -46,6 +46,8 @@ jobs:
               echo archs='["amd64"]'
             ) >> "$GITHUB_OUTPUT"
           fi
+
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - id: changed
         uses: tj-actions/changed-files@aa08304bd477b800d468db44fe10f6c61f7f7b11
         with:
@@ -53,6 +55,7 @@ jobs:
             .github/workflows/release.yml
             justfile
             Cargo.toml
+
     outputs:
       changed: ${{ steps.changed.outputs.any_changed }}
       archs: ${{ steps.meta.outputs.archs }}
