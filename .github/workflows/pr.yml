@@ -142,13 +142,13 @@ jobs:
 
   merge-dependabot:
     needs: [meta, ok]
-    if: needs.meta.outputs.any_changed == 'true' && needs.meta.outputs.is_dependabot == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     steps:
       - name: 'Merge PR #${{ github.event.pull_request.number }}'
+        if: needs.meta.outputs.is_dependabot == 'true'
         run: gh pr merge '${{ github.event.pull_request.number }}' --auto --squash
         env:
           GH_TOKEN: ${{ github.token }}
