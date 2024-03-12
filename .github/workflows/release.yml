@@ -99,7 +99,7 @@ jobs:
         with:
           path: artifacts
       - run: du -h artifacts/**/*
-      - if: needs.meta.outputs.publish
+      - if: needs.meta.outputs.publish == 'true'
         uses: softprops/action-gh-release@d99959edae48b5ffffd7b00da66dcdb0a33a52ee
         with:
           name: v${{ needs.meta.outputs.version }}

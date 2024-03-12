@@ -48,7 +48,7 @@ jobs:
       rust_changed: ${{ steps.rust.outputs.any_changed }}
 
   info:
-    timeout-minutes: 3
+    timeout-minutes: 3`
     needs: meta
     runs-on: ubuntu-latest
     steps:
@@ -65,7 +65,7 @@ jobs:
 
   rust:
     needs: meta
-    if: needs.meta.outputs.any_changed
+    if: needs.meta.outputs.any_changed == 'true'
     runs-on: ubuntu-latest
     container: ghcr.io/linkerd/dev:v43-rust
     permissions:
@@ -87,7 +87,7 @@ jobs:
 
   rust-crates:
     needs: meta
-    if: needs.meta.outputs.cargo_changed
+    if: needs.meta.outputs.cargo_changed == 'true'
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container: ghcr.io/linkerd/dev:v43-rust
@@ -102,7 +102,7 @@ jobs:
 
   linkerd-install:
     needs: meta
-    if: needs.meta.outputs.any_changed
+    if: needs.meta.outputs.any_changed == 'true'
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -142,7 +142,7 @@ jobs:
 
   merge-dependabot:
     needs: [meta, ok]
-    if: needs.meta.outputs.any_changed && needs.meta.outputs.is_dependabot == 'true'
+    if: needs.meta.outputs.any_changed == 'true' && needs.meta.outputs.is_dependabot == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
