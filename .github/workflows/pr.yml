@@ -144,7 +144,7 @@ jobs:
 
   ship-it:
     timeout-minutes: 3
-    needs: [meta, rust, rust-crates, linkerd-install]
+    needs: [meta, actions, rust, rust-crates, linkerd-install]
     if: always()
     runs-on: ubuntu-latest
 
@@ -155,6 +155,7 @@ jobs:
     steps:
       - name: Results
         run: |
+          echo 'needs.actions.result: ${{ needs.rust.result }}'
           echo 'needs.rust.result: ${{ needs.rust.result }}'
           echo 'needs.rust-crates.result: ${{ needs.rust-crates.result }}'
           echo 'needs.linkerd-install.result: ${{ needs.linkerd-install.result }}'
