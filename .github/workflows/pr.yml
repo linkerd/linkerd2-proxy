@@ -40,12 +40,29 @@ jobs:
             **/*.rs
             Cargo.lock
     outputs:
-      is_dependabot: ${{ github.actor == 'dependabot[bot]' && 'true' || '' }}
-      any_changed: ${{ steps.build.outputs.any_changed || steps.cargo.outputs.any_changed || steps.rust.outputs.any_changed }}
+      is_dependabot: ${{ github.actor == 'dependabot[bot]' }}
+      any_changed: ${{ steps.build.outputs.any_changed == 'true' || steps.cargo.outputs.any_change == 'true' || steps.rust.outputs.any_changed == 'true' }}
       build_changed: ${{ steps.build.outputs.any_changed }}
       cargo_changed: ${{ steps.cargo.outputs.any_changed }}
       cargo_crates: ${{ steps.cargo-crates.outputs.crates }}
       rust_changed: ${{ steps.rust.outputs.any_changed }}
+
+  info:
+    timeout-minutes: 3
+    needs: meta
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Info
+        run: |
+          echo 'github.actor: ${{ github.actor }}'
+          echo 'github.event_name: ${{ github.event_name }}'
+          echo 'github.event.pull_request.number: ${{ github.event.pull_request.number }}'
+          echo 'needs.meta.outputs.is_dependabot: ${{ needs.meta.outputs.is_dependabot }}'
+          echo 'needs.meta.outputs.any_changed: ${{ needs.meta.outputs.any_changed }}'
+          echo 'needs.meta.outputs.cargo_changed: ${{ needs.meta.outputs.cargo_changed }}'
+          echo 'needs.meta.outputs.cargo_crates: ${{ needs.meta.outputs.cargo_crates }}'
+          echo 'needs.meta.outputs.rust_changed: ${{ needs.meta.outputs.rust_changed }}'
 
   rust:
     needs: meta
@@ -110,23 +127,15 @@ jobs:
 
   ok:
     timeout-minutes: 3
-    needs: [meta, rust, rust-crates, linkerd-install]
+    needs: [rust, rust-crates, linkerd-install]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Info
+      - name: Results
         run: |
-          echo 'github.actor: ${{ github.actor }}'
-          echo 'github.event_name: ${{ github.event_name }}'
-          echo 'github.event.pull_request.number: ${{ github.event.pull_request.number }}'
           echo 'needs.rust.result: ${{ needs.rust.result }}'
           echo 'needs.rust-crates.result: ${{ needs.rust-crates.result }}'
           echo 'needs.linkerd-install.result: ${{ needs.linkerd-install.result }}'
-          echo 'needs.meta.outputs.is_dependabot: ${{ needs.meta.outputs.is_dependabot }}'
-          echo 'needs.meta.outputs.any_changed: ${{ needs.meta.outputs.any_changed }}'
-          echo 'needs.meta.outputs.cargo_changed: ${{ needs.meta.outputs.cargo_changed }}'
-          echo 'needs.meta.outputs.cargo_crates: ${{ needs.meta.outputs.cargo_crates }}'
-          echo 'needs.meta.outputs.rust_changed: ${{ needs.meta.outputs.rust_changed }}'
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
 
