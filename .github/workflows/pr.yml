@@ -146,6 +146,8 @@ jobs:
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
 
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'
       - name: 'Merge dependabot changes'
         if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'
         run: gh pr merge '${{ github.event.pull_request.number }}' --auto --squash
