@@ -126,29 +126,28 @@ jobs:
 
   ok:
     timeout-minutes: 3
-    needs: [rust, rust-crates, linkerd-install]
+    needs: [meta, rust, rust-crates, linkerd-install]
     if: always()
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
     steps:
       - name: Results
         run: |
           echo 'needs.rust.result: ${{ needs.rust.result }}'
           echo 'needs.rust-crates.result: ${{ needs.rust-crates.result }}'
           echo 'needs.linkerd-install.result: ${{ needs.linkerd-install.result }}'
+
       - name: Verify jobs
         # All jobs must succeed or be skipped.
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
 
-  merge-dependabot:
-    needs: [meta, ok]
-    if: needs.meta.outputs.any_changed == 'true' && needs.meta.outputs.is_dependabot == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: 'Merge PR #${{ github.event.pull_request.number }}'
+      - name: 'Merge dependabot changes'
+        if: needs.meta.outputs.is_dependabot == 'true' && needs.meta.outputs.any_changed == 'true'
         run: gh pr merge '${{ github.event.pull_request.number }}' --auto --squash
         env:
           GH_TOKEN: ${{ github.token }}
