@@ -26,12 +26,15 @@ jobs:
       - id: cargo
         uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
         with:
-          files: '**/Cargo.toml'
           files_ignore: 'Cargo.toml'
+          files: |
+            **/Cargo.toml
       - id: rust
         uses: tj-actions/changed-files@800a2825992141ddde1a8bca8ad394cec34d3188
         with:
-          files: '**/*.rs'
+          files: |
+            **/*.rs
+            Cargo.lock
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - id: cargo-crates
         if: steps.cargo.outputs.any_changed
@@ -115,6 +118,13 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Info
+        run: |
+          echo 'Actor: ${{ github.actor }}'
+          echo 'Event: ${{ github.event_name }}'
+          echo 'Rust: ${{ needs.rust.result }}'
+          echo 'Crates: ${{ needs.rust-crates.result }}'
+          echo 'Install: ${{ needs.linkerd-install.result }}'
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
 
