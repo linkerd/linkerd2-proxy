@@ -50,7 +50,6 @@ jobs:
   info:
     timeout-minutes: 3
     needs: meta
-    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Info
@@ -66,7 +65,7 @@ jobs:
 
   rust:
     needs: meta
-    if: needs.meta.outputs.any_changed == 'true'
+    if: needs.meta.outputs.any_changed
     runs-on: ubuntu-latest
     container: ghcr.io/linkerd/dev:v43-rust
     permissions:
@@ -88,7 +87,7 @@ jobs:
 
   rust-crates:
     needs: meta
-    if: needs.meta.outputs.cargo_changed == 'true'
+    if: needs.meta.outputs.cargo_changed
     timeout-minutes: 20
     runs-on: ubuntu-latest
     container: ghcr.io/linkerd/dev:v43-rust
@@ -103,7 +102,7 @@ jobs:
 
   linkerd-install:
     needs: meta
-    if: needs.meta.outputs.any_changed == 'true'
+    if: needs.meta.outputs.any_changed
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -136,17 +135,20 @@ jobs:
           echo 'needs.rust.result: ${{ needs.rust.result }}'
           echo 'needs.rust-crates.result: ${{ needs.rust-crates.result }}'
           echo 'needs.linkerd-install.result: ${{ needs.linkerd-install.result }}'
-      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+      - name: Verify jobs
+        # All jobs must succeed or be skipped.
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
 
-  auto-merge:
+  merge-dependabot:
     needs: [meta, ok]
-    if: needs.meta.outputs.is_dependabot == 'true'
+    if: needs.meta.outputs.any_changed && needs.meta.outputs.is_dependabot == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - run: gh pr merge '${{ github.event.pull_request.number }}' --auto --squash
+      - name: 'Merge PR #${{ github.event.pull_request.number }}'
+        run: gh pr merge '${{ github.event.pull_request.number }}' --auto --squash
         env:
           GH_TOKEN: ${{ github.token }}
