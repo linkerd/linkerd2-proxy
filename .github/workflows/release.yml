@@ -47,7 +47,7 @@ jobs:
             ) >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - id: changed
         uses: tj-actions/changed-files@aa08304bd477b800d468db44fe10f6c61f7f7b11
         with:
@@ -81,7 +81,7 @@ jobs:
       LINKERD2_PROXY_VENDOR: ${{ github.repository_owner }}
       LINKERD2_PROXY_VERSION: ${{ needs.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: just fetch
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
