@@ -49,7 +49,7 @@ jobs:
 
       - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - id: changed
-        uses: tj-actions/changed-files@aa08304bd477b800d468db44fe10f6c61f7f7b11
+        uses: tj-actions/changed-files@77af4bed286740ef1a6387dc4e4e4dec39f96054
         with:
           files: |
             .github/workflows/release.yml
