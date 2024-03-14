@@ -64,7 +64,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
 
   package:
-    needs: [meta]
+    needs: meta
     if: needs.meta.outputs.changed == 'true'
 
     strategy:
@@ -109,3 +109,18 @@ jobs:
           name: v${{ needs.meta.outputs.version }}
           files: artifacts/**/*
           generate_release_notes: true
+
+  release-ok:
+    needs: publish
+    if: always()
+    timeout-minutes: 3
+    runs-on: ubuntu-latest
+    steps:
+      - name: Results
+        run: |
+          echo 'needs.publish.result: ${{ needs.publish.result }}'
+
+      - name: Verify jobs
+        # All jobs must succeed or be skipped.
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
