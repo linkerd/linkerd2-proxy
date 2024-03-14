@@ -155,7 +155,7 @@ jobs:
     steps:
       - name: Results
         run: |
-          echo 'needs.actions.result: ${{ needs.rust.result }}'
+          echo 'needs.actions.result: ${{ needs.actions.result }}'
           echo 'needs.rust.result: ${{ needs.rust.result }}'
           echo 'needs.rust-crates.result: ${{ needs.rust-crates.result }}'
           echo 'needs.linkerd-install.result: ${{ needs.linkerd-install.result }}'
