@@ -117,15 +117,43 @@ mod linux {
     use tracing::warn;
 
     pub unsafe fn so_original_dst(fd: RawFd) -> io::Result<SocketAddr> {
+        let mut sockdomain: i32 = 0;
+        let mut sockdomain_len: libc::socklen_t = 32;
+
         let mut sockaddr: libc::sockaddr_storage = mem::zeroed();
-        let mut socklen: libc::socklen_t = mem::size_of::<libc::sockaddr_storage>() as u32;
+        let mut sockaddr_len: libc::socklen_t = mem::size_of::<libc::sockaddr_storage>() as u32;
 
         let ret = libc::getsockopt(
             fd,
-            libc::SOL_IP,
-            libc::SO_ORIGINAL_DST,
+            libc::SOL_SOCKET,
+            libc::SO_DOMAIN,
+            &mut sockdomain as *mut _ as *mut _,
+            &mut sockdomain_len as *mut _ as *mut _,
+        );
+        if ret != 0 {
+            let e = io::Error::last_os_error();
+            warn!("failed to read SO_DOMAIN: {:?}", e);
+            return Err(e);
+        }
+
+        let (level, optname) = match sockdomain {
+            libc::AF_INET => (libc::SOL_IP, libc::SO_ORIGINAL_DST),
+            libc::AF_INET6 => (libc::SOL_IPV6, libc::IP6T_SO_ORIGINAL_DST),
+            x => {
+                warn!("unknown SO_DOMAIN: {x}");
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "unknown SO_DOMAIN",
+                ));
+            }
+        };
+
+        let ret = libc::getsockopt(
+            fd,
+            level,
+            optname,
             &mut sockaddr as *mut _ as *mut _,
-            &mut socklen as *mut _ as *mut _,
+            &mut sockaddr_len as *mut _ as *mut _,
         );
         if ret != 0 {
             let e = io::Error::last_os_error();
@@ -133,7 +161,7 @@ mod linux {
             return Err(e);
         }
 
-        mk_addr(&sockaddr, socklen)
+        mk_addr(&sockaddr, sockaddr_len)
     }
 
     // Borrowed with love from net2-rs
