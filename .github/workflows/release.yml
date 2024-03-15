@@ -109,8 +109,8 @@ jobs:
           path: target/package/*
 
   publish:
-    if: needs.meta.outputs.changed == 'true'
     needs: [meta, package]
+    if: needs.meta.outputs.changed == 'true' || needs.meta.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
