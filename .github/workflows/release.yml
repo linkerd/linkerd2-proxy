@@ -49,23 +49,38 @@ jobs:
           fi
 
       - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
+        if: steps.meta.outputs.publish != 'true'
       - id: changed
+        if: steps.meta.outputs.publish != 'true'
         uses: tj-actions/changed-files@77af4bed286740ef1a6387dc4e4e4dec39f96054
         with:
+          # .github/workflows/release.yml
           files: |
-            .github/workflows/release.yml
             justfile
             Cargo.toml
 
     outputs:
-      changed: ${{ steps.changed.outputs.any_changed }}
       archs: ${{ steps.meta.outputs.archs }}
-      publish: ${{ steps.meta.outputs.publish }}
+      publish: ${{ steps.meta.outputs.publish == 'true' }}
       version: ${{ steps.meta.outputs.version }}
+      changed: ${{ steps.changed.outputs.any_changed == 'true' }}
+
+  info:
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Info
+        run: |
+          echo 'github.repository_owner: ${{ github.repository_owner }}'
+          echo 'needs.meta.outputs.publish: ${{ needs.meta.outputs.publish }}'
+          echo 'needs.meta.outputs.publish: ${{ needs.meta.outputs.archs }}'
+          echo 'needs.meta.outputs.version: ${{ needs.meta.outputs.version }}'
+          echo 'needs.meta.outputs.changed: ${{ needs.meta.outputs.changed }}'
 
   package:
     needs: meta
-    if: needs.meta.outputs.changed == 'true'
+    if: needs.meta.outputs.changed == 'true' || needs.meta.outputs.publish == 'true'
 
     strategy:
       matrix:
@@ -74,7 +89,7 @@ jobs:
 
     # If we're not actually building on a release tag, don't short-circuit on
     # errors. This helps us know whether a failure is platform-specific.
-    continue-on-error: ${{ !needs.meta.outputs.publish }}
+    continue-on-error: ${{ needs.meta.outputs.publish != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     container: docker://ghcr.io/linkerd/dev:v43-rust-musl
