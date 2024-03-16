@@ -70,8 +70,13 @@ where
             .http2_initial_connection_window_size(h2.initial_connection_window_size);
         // Configure HTTP/2 PING frames
         if let Some(timeout) = h2.keepalive_timeout {
-            srv.http2_keep_alive_timeout(timeout)
+            srv
+                .http2_keep_alive_timeout(timeout)
+                // set default interval
                 .http2_keep_alive_interval(timeout / 4);
+        }
+        if let Some(interval) = h2.keepalive_interval {
+            srv.http2_keep_alive_interval(interval);
         }
 
         debug!(?version, "Creating HTTP service");

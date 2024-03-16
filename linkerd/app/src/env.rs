@@ -121,6 +121,12 @@ const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEP
 const ENV_INBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_CONNECT_KEEPALIVE";
 const ENV_OUTBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_KEEPALIVE";
 
+const ENV_INBOUND_HTTP2_KEEPALIVE_INTERVAL: &str = "LINKERD2_PROXY_INBOUND_HTTP2_KEEPALIVE_INTERVAL";
+const ENV_OUTBOUND_HTTP2_KEEPALIVE_INTERVAL: &str = "LINKERD2_PROXY_OUTBOUND_HTTP2_KEEPALIVE_INTERVAL";
+
+const ENV_INBOUND_HTTP2_KEEPALIVE_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_HTTP2_KEEPALIVE_TIMEOUT";
+const ENV_OUTBOUND_HTTP2_KEEPALIVE_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_HTTP2_KEEPALIVE_TIMEOUT";
+
 const ENV_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str = "LINKERD2_PROXY_MAX_IDLE_CONNS_PER_ENDPOINT";
 const ENV_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str =
     "LINKERD2_PROXY_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT";
@@ -365,6 +371,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_connect_keepalive = parse(strings, ENV_INBOUND_CONNECT_KEEPALIVE, parse_duration);
     let outbound_connect_keepalive = parse(strings, ENV_OUTBOUND_CONNECT_KEEPALIVE, parse_duration);
 
+    let inbound_keepalive_interval = parse(strings, ENV_INBOUND_HTTP2_KEEPALIVE_INTERVAL, parse_duration);
+    let outbound_keepalive_interval = parse(strings, ENV_OUTBOUND_HTTP2_KEEPALIVE_INTERVAL, parse_duration);
+
+    let inbound_keepalive_timeout = parse(strings, ENV_INBOUND_HTTP2_KEEPALIVE_TIMEOUT, parse_duration);
+    let outbound_keepalive_timeout = parse(strings, ENV_OUTBOUND_HTTP2_KEEPALIVE_TIMEOUT, parse_duration);
+
     let shutdown_grace_period = parse(strings, ENV_SHUTDOWN_GRACE_PERIOD, parse_duration);
 
     let inbound_discovery_idle_timeout =
@@ -468,6 +480,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
         );
         let keepalive = Keepalive(outbound_accept_keepalive?);
+        let h2_settings = h2::Settings {
+            keepalive_interval: outbound_keepalive_interval?,
+            keepalive_timeout: outbound_keepalive_timeout?,
+            ..h2_settings
+        };
         let server = ServerConfig {
             addr,
             keepalive,
@@ -549,6 +566,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
         );
         let keepalive = Keepalive(inbound_accept_keepalive?);
+        let h2_settings = h2::Settings {
+            keepalive_interval: inbound_keepalive_interval?,
+            keepalive_timeout: inbound_keepalive_timeout?,
+            ..h2_settings
+        };
         let server = ServerConfig {
             addr,
             keepalive,
@@ -747,7 +769,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         server: ServerConfig {
             addr: ListenAddr(admin_listener_addr),
             keepalive: inbound.proxy.server.keepalive,
-            h2_settings,
+            h2_settings: h2::Settings {
+                keepalive_interval: inbound.proxy.server.h2_settings.keepalive_interval,
+                keepalive_timeout: inbound.proxy.server.h2_settings.keepalive_timeout,
+                ..h2_settings
+            },
         },
 
         // TODO(ver) Currently we always enable profiling when the pprof feature
@@ -806,7 +832,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             config: ServerConfig {
                 addr: ListenAddr(addr),
                 keepalive: inbound.proxy.server.keepalive,
-                h2_settings,
+                h2_settings: h2::Settings {
+                    keepalive_interval: inbound.proxy.server.h2_settings.keepalive_interval,
+                    keepalive_timeout: inbound.proxy.server.h2_settings.keepalive_timeout,
+                    ..h2_settings
+                },
             },
         })
         .unwrap_or(super::tap::Config::Disabled);
