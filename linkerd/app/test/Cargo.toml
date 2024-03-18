@@ -14,7 +14,7 @@ client-policy = ["linkerd-proxy-client-policy", "tonic", "linkerd-http-route"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-h2 = "0.3"
+h2 = "0.4"
 http = "0.2"
 http-body = "0.4"
 hyper = { version = "0.14", features = ["http1", "http2"] }
