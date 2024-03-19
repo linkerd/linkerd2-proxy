@@ -51,7 +51,7 @@ jobs:
       build_changed: ${{ steps.build.outputs.any_changed }}
       actions_changed: ${{ steps.build.outputs.any_changed == 'true' || steps.actions.outputs.any_changed == 'true' }}
       cargo_changed: ${{ steps.cargo.outputs.any_changed == 'true' }}
-      cargo_crates: ${{ steps.cargo-crates.outputs.crates == 'true' }}
+      cargo_crates: ${{ steps.cargo-crates.outputs.crates }}
       rust_changed: ${{ steps.build.outputs.any_changed == 'true' ||  steps.rust.outputs.any_changed == 'true' }}
 
   info:
