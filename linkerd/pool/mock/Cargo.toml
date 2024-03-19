@@ -1,0 +1,17 @@
+[package]
+name = "linkerd-pool-mock"
+version = "0.1.0"
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+parking_lot = "0.12"
+thiserror = "1"
+tokio = { version = "1", features = ["sync", "time"] }
+tower-test = "0.4"
+tracing = "0.1"
+
+linkerd-error = { path = "../../error" }
+linkerd-pool = { path = ".." }
+linkerd-stack = { path = "../../stack" }

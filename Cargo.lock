@@ -1637,6 +1637,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-pool-mock"
+version = "0.1.0"
+dependencies = [
+ "linkerd-error",
+ "linkerd-pool",
+ "linkerd-stack",
+ "parking_lot",
+ "thiserror",
+ "tokio",
+ "tower-test",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-pool-p2c"
 version = "0.1.0"
 dependencies = [
@@ -1718,6 +1732,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-metrics",
  "linkerd-pool",
+ "linkerd-pool-mock",
  "linkerd-proxy-core",
  "linkerd-stack",
  "linkerd-tracing",
