@@ -1,3 +1,6 @@
+#![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
+#![forbid(unsafe_code)]
+
 use linkerd_error::Error;
 use parking_lot::Mutex;
 use std::net::SocketAddr;
@@ -60,7 +63,7 @@ pub struct PoolError;
 #[error("mock resolution error")]
 pub struct ResolutionError;
 
-impl<T, Req, Rsp> crate::Pool<T, Req> for MockPool<T, Req, Rsp> {
+impl<T, Req, Rsp> linkerd_pool::Pool<T, Req> for MockPool<T, Req, Rsp> {
     fn reset_pool(&mut self, update: Vec<(SocketAddr, T)>) {
         let _ = self.tx.send(Change::Reset(update));
     }
@@ -90,7 +93,7 @@ impl<T, Req, Rsp> linkerd_stack::Service<Req> for MockPool<T, Req, Rsp> {
             return Poll::Ready(res);
         }
         // Drive the pool when the service isn't ready.
-        let _ = crate::Pool::poll_pool(self, cx)?;
+        let _ = linkerd_pool::Pool::poll_pool(self, cx)?;
         Poll::Pending
     }
 
