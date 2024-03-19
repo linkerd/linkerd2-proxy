@@ -6,11 +6,9 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-ahash = "0.8"
 futures = { version = "0.3", default-features = false }
-indexmap = "2"
 rand = "0.8"
-tokio = { version = "1", features = ["rt", "sync", "time"] }
+tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 
 linkerd-error = { path = "../../error" }
