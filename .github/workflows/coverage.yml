@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group:  ${{ github.workflow }}-${{ github.head_ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: true
 
 env:
@@ -49,6 +49,7 @@ jobs:
       CXX: "/usr/bin/clang++-14"
     steps:
       - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
+      - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84
       - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --exclude=spire-proto --no-run
       - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --exclude=spire-proto --skip-clean --ignore-tests --no-fail-fast --out=Xml
         # Some tests are especially flakey in coverage tests. That's fine. We
