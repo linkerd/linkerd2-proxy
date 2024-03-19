@@ -47,6 +47,7 @@ pub fn to_addr_meta(
         tagged_transport_port,
         tls_id,
         authority_override,
+        pb.weight,
     );
     Some((addr, meta))
 }
