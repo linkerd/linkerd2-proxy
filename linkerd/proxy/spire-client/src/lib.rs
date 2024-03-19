@@ -61,10 +61,9 @@ mod tests {
     use super::*;
     use crate::api::Svid;
     use linkerd_error::Result;
-    use linkerd_identity::{Credentials, DerX509, Id};
+    use linkerd_identity::DerX509;
     use rcgen::{Certificate, CertificateParams, SanType, SerialNumber};
     use std::time::SystemTime;
-    use tokio::sync::watch;
 
     fn gen_svid(id: Id, subject_alt_names: Vec<SanType>, serial: SerialNumber) -> Svid {
         let mut params = CertificateParams::default();

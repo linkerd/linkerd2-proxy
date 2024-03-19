@@ -3,12 +3,11 @@ use crate::spire;
 pub use linkerd_app_core::identity::{client, Id};
 use linkerd_app_core::{
     control, dns,
-    exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     identity::{
         client::linkerd::Certify, creds, CertMetrics, Credentials, DerX509, Mode, WithCertMetrics,
     },
     metrics::{prom, ControlHttp as ClientMetrics},
-    Error, Result,
+    Result,
 };
 use std::{future::Future, pin::Pin, time::SystemTime};
 use tokio::sync::watch;
@@ -46,9 +45,6 @@ pub struct Identity {
 }
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
-
-#[derive(Clone, Debug)]
-struct Recover(ExponentialBackoff);
 
 /// Wraps a credential with a watch sender that notifies receivers when the store has been updated
 /// at least once.
@@ -175,15 +171,5 @@ impl Identity {
 
     pub fn run(self) -> Task {
         self.task
-    }
-}
-
-// === impl Recover ===
-
-impl<E: Into<Error>> linkerd_error::Recover<E> for Recover {
-    type Backoff = ExponentialBackoffStream;
-
-    fn recover(&self, _: E) -> Result<Self::Backoff, E> {
-        Ok(self.0.stream())
     }
 }

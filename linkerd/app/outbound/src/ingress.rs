@@ -658,7 +658,7 @@ impl From<RequestTarget> for Addr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use svc::{NewService, ServiceExt};
+    use svc::NewService;
     use tokio::{io::AsyncReadExt, io::AsyncWriteExt, time};
     use tower_test::mock;
 

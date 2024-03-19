@@ -1,7 +1,6 @@
 use super::*;
 use crate::policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
 use linkerd_app_core::{svc::Service, Infallible};
-use std::sync::Arc;
 
 macro_rules! conn {
     ($client:expr, $dst:expr) => {{

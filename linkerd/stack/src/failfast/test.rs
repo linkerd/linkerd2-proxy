@@ -1,5 +1,4 @@
 use super::*;
-use std::time::Duration;
 use tokio_test::{assert_pending, assert_ready, assert_ready_err, assert_ready_ok, task};
 use tower_test::mock::{self, Spawn};
 

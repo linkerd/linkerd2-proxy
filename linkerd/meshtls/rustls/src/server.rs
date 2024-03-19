@@ -50,7 +50,7 @@ impl Server {
         let mut orig_rx = self.rx;
 
         let mut c = (**orig_rx.borrow_and_update()).clone();
-        c.alpn_protocols = alpn_protocols.clone();
+        c.alpn_protocols.clone_from(&alpn_protocols);
         let (tx, rx) = watch::channel(c.into());
 
         // Spawn a background task that watches the optional server configuration and publishes it
@@ -74,7 +74,7 @@ impl Server {
                 }
 
                 let mut c = (*orig_rx.borrow().clone()).clone();
-                c.alpn_protocols = alpn_protocols.clone();
+                c.alpn_protocols.clone_from(&alpn_protocols);
                 let _ = tx.send(c.into());
             }
         });

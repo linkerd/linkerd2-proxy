@@ -148,7 +148,6 @@ pub(crate) fn to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::destination::TlsIdentity;
     use linkerd2_proxy_api::destination::tls_identity::{
         DnsLikeIdentity, Strategy, UriLikeIdentity,
     };

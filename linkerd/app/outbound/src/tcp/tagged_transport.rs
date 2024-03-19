@@ -139,12 +139,10 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use futures::future;
     use linkerd_app_core::{
         io::{self, AsyncWriteExt},
-        tls,
         transport::{ClientAddr, Local},
-        transport_header::{self, TransportHeader},
+        transport_header,
     };
     use tower::util::{service_fn, ServiceExt};
 

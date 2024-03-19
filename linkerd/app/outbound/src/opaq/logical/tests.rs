@@ -3,9 +3,8 @@ use crate::test_util::*;
 use io::AsyncWriteExt;
 use linkerd_app_core::{
     errors::{self, FailFastError},
-    io::{self, AsyncReadExt},
-    profiles::{self, Profile},
-    svc::{self, NewService, ServiceExt},
+    io::AsyncReadExt,
+    svc::{NewService, ServiceExt},
 };
 use std::net::SocketAddr;
 use tokio::time;
