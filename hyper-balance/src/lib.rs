@@ -418,7 +418,7 @@ mod tests {
         assert!(wk.upgrade().is_none());
     }
 
-    struct Handle(Arc<()>);
+    struct Handle(#[allow(dead_code)] Arc<()>);
     impl Handle {
         fn new() -> (Self, Weak<()>) {
             let strong = Arc::new(());

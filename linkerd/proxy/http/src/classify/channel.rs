@@ -278,11 +278,8 @@ impl<C: ClassifyEos, B> PinnedDrop for ResponseBody<C, B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::classify::ClassifyResponse;
-    use linkerd_error::Error;
     use linkerd_http_box::BoxBody;
-    use linkerd_http_classify::ClassifyEos;
-    use tokio::{sync::mpsc, time};
+    use tokio::time;
     use tokio_test::assert_ready;
     use tower_test::mock;
 

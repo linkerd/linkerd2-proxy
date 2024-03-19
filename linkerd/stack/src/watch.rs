@@ -140,7 +140,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::NewService;
     use tokio::sync::watch;
     use tower::ServiceExt;
     use tower_test::mock;

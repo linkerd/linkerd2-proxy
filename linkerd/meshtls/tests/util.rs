@@ -11,7 +11,7 @@ use linkerd_meshtls as meshtls;
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},
-    ConnectTcp, Keepalive, ListenAddr,
+    ConnectTcp, Keepalive,
 };
 use linkerd_stack::{
     layer::Layer, service_fn, ExtractParam, InsertParam, NewService, Param, ServiceExt,
@@ -21,7 +21,6 @@ use linkerd_tls_test_util as test_util;
 use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa, SanType};
 use std::str::FromStr;
 use std::{
-    future::Future,
     net::SocketAddr,
     sync::mpsc,
     time::{Duration, SystemTime},

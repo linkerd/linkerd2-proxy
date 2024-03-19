@@ -116,10 +116,10 @@ where
         Self { inner, idle }
     }
 
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<Cached<V>>
+    pub fn get<Q>(&self, key: &Q) -> Option<Cached<V>>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + fmt::Debug,
+        Q: Hash + Eq + fmt::Debug + ?Sized,
         V: Clone,
     {
         let cache = self.inner.read();

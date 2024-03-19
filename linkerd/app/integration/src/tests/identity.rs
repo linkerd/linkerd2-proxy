@@ -1,10 +1,7 @@
 use crate::*;
 use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::{Duration, SystemTime},
+    sync::atomic::{AtomicBool, Ordering},
+    time::SystemTime,
 };
 
 #[tokio::test]
