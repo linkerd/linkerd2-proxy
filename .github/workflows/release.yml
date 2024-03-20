@@ -29,6 +29,16 @@ on:
         required: false
         type: string
         default: ""
+      prerelease:
+        description: "Is this a prerelease?"
+        required: false
+        type: boolean
+        default: false
+      draft:
+        description: "Is this a draft?"
+        required: false
+        type: boolean
+        default: false
 
 env:
   CARGO_INCREMENTAL: 0
@@ -83,6 +93,9 @@ jobs:
       package: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.any_changed == 'true' }}
       profile: ${{ inputs.profile || 'release' }}
       ref: ${{ inputs.ref || github.ref }}
+      tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.meta.outputs.version }}"
+      prerelease: ${{ inputs.prerelease }}
+      draft: ${{ inputs.draft }}
 
   info:
     needs: meta
@@ -102,6 +115,8 @@ jobs:
           echo 'needs.meta.outputs.package: ${{ needs.meta.outputs.package }}'
           echo 'needs.meta.outputs.profile: ${{ needs.meta.outputs.profile }}'
           echo 'needs.meta.outputs.ref: ${{ needs.meta.outputs.ref }}'
+          echo 'needs.meta.outputs.prerelease: ${{ needs.meta.outputs.prerelease }}'
+          echo 'needs.meta.outputs.draft: ${{ needs.meta.outputs.draft }}'
 
   package:
     needs: meta
@@ -145,8 +160,6 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
-    env:
-      TAG: "${{ inputs.tag-prefix }}v${{ needs.meta.outputs.version }}"
     steps:
       - name: Configure git
         run: |
@@ -157,7 +170,7 @@ jobs:
       - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
         with:
           ref: ${{ needs.meta.outputs.ref }}
-      - run: git tag -a -m "v${{ needs.meta.outputs.version }}" "$TAG"
+      - run: git tag -a -m 'v${{ needs.meta.outputs.version }}' '${{ needs.meta.outputs.tag }}'
       # Fetch the artifacts.
       - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427
         with:
@@ -165,14 +178,16 @@ jobs:
       - run: du -h artifacts/**/*
       # Publish the release.
       - if: inputs.publish == 'true'
-        run: git push origin "$TAG"
+        run: git push origin '${{ needs.meta.outputs.tag }}'
       - if: inputs.publish == 'true'
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         with:
           name: v${{ needs.meta.outputs.version }}
-          tag_name: ${{ env.TAG }}
+          tag_name: ${{ needs.meta.outputs.tag }}
           files: artifacts/**/*
           generate_release_notes: true
+          prerelease: ${{ needs.meta.outputs.prerelease }}
+          draft: ${{ needs.meta.outputs.draft }}
 
   release-ok:
     needs: publish
