@@ -63,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s extglob
-          if [[ '${{ github.event_name }}' == "pull_request" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             echo version="0.0.0-test.${GITHUB_SHA:0:7}"
             echo archs='["amd64"]'
             exit 0
