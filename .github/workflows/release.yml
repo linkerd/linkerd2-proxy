@@ -92,7 +92,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       package: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.any_changed == 'true' }}
       profile: ${{ inputs.profile || 'release' }}
-      publish: ${{ inputs.publish == 'true' }}
+      publish: ${{ inputs.publish }}
       ref: ${{ inputs.ref || github.ref }}
       tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.meta.outputs.version }}"
       prerelease: ${{ inputs.prerelease }}
