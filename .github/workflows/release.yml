@@ -24,6 +24,21 @@ on:
         required: false
         type: boolean
         default: false
+      ref:
+        description: "Reference of the commit to release (default: github.ref)"
+        required: false
+        type: string
+        default: ""
+      prerelease:
+        description: "Is this a prerelease?"
+        required: false
+        type: boolean
+        default: false
+      draft:
+        description: "Is this a draft?"
+        required: false
+        type: boolean
+        default: false
 
 env:
   CARGO_INCREMENTAL: 0
@@ -43,14 +58,13 @@ jobs:
     steps:
       - id: meta
         env:
-          SHA: ${{ github.sha }}
           VERSION: ${{ inputs.version }}
         shell: bash
         run: |
           set -euo pipefail
           shopt -s extglob
-          if [[ '${{ github.event_name }}' == "pull_request" ]]; then
-            echo version="0.0.0-test.${SHA:0:7}"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            echo version="0.0.0-test.${GITHUB_SHA:0:7}"
             echo archs='["amd64"]'
             exit 0
           fi >> "$GITHUB_OUTPUT"
@@ -78,6 +92,11 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       package: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.any_changed == 'true' }}
       profile: ${{ inputs.profile || 'release' }}
+      publish: ${{ inputs.publish }}
+      ref: ${{ inputs.ref || github.ref }}
+      tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.meta.outputs.version }}"
+      prerelease: ${{ inputs.prerelease }}
+      draft: ${{ inputs.draft }}
 
   info:
     needs: meta
@@ -91,10 +110,15 @@ jobs:
           echo 'inputs.tag-prefix: ${{ inputs.tag-prefix }}'
           echo 'inputs.profile: ${{ inputs.profile }}'
           echo 'inputs.publish: ${{ inputs.publish }}'
+          echo 'inputs.ref: ${{ inputs.ref }}'
           echo 'needs.meta.outputs.archs: ${{ needs.meta.outputs.archs }}'
           echo 'needs.meta.outputs.version: ${{ needs.meta.outputs.version }}'
           echo 'needs.meta.outputs.package: ${{ needs.meta.outputs.package }}'
           echo 'needs.meta.outputs.profile: ${{ needs.meta.outputs.profile }}'
+          echo 'needs.meta.outputs.publish: ${{ needs.meta.outputs.publish }}'
+          echo 'needs.meta.outputs.ref: ${{ needs.meta.outputs.ref }}'
+          echo 'needs.meta.outputs.prerelease: ${{ needs.meta.outputs.prerelease }}'
+          echo 'needs.meta.outputs.draft: ${{ needs.meta.outputs.draft }}'
 
   package:
     needs: meta
@@ -107,7 +131,7 @@ jobs:
 
     # If we're not actually building on a release tag, don't short-circuit on
     # errors. This helps us know whether a failure is platform-specific.
-    continue-on-error: ${{ inputs.publish != 'true' }}
+    continue-on-error: ${{ needs.meta.outputs.publish != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     container: docker://ghcr.io/linkerd/dev:v43-rust-musl
@@ -118,6 +142,8 @@ jobs:
       - name: Configure git
         run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
+        with:
+          ref: ${{ needs.meta.outputs.ref }}
       - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84
         with:
           key: ${{ matrix.libc }}
@@ -136,8 +162,6 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
-    env:
-      TAG: "${{ inputs.tag-prefix }}v${{ needs.meta.outputs.version }}"
     steps:
       - name: Configure git
         run: |
@@ -146,22 +170,26 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
       # Tag the release.
       - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
-      - run: git tag -a -m "v${{ needs.meta.outputs.version }}" "$TAG"
+        with:
+          ref: ${{ needs.meta.outputs.ref }}
+      - run: git tag -a -m 'v${{ needs.meta.outputs.version }}' '${{ needs.meta.outputs.tag }}'
       # Fetch the artifacts.
       - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427
         with:
           path: artifacts
       - run: du -h artifacts/**/*
       # Publish the release.
-      - if: inputs.publish == 'true'
-        run: git push origin "$TAG"
-      - if: inputs.publish == 'true'
+      - if: needs.meta.outputs.publish == 'true'
+        run: git push origin '${{ needs.meta.outputs.tag }}'
+      - if: needs.meta.outputs.publish == 'true'
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         with:
           name: v${{ needs.meta.outputs.version }}
-          tag_name: ${{ env.TAG }}
+          tag_name: ${{ needs.meta.outputs.tag }}
           files: artifacts/**/*
           generate_release_notes: true
+          prerelease: ${{ needs.meta.outputs.prerelease }}
+          draft: ${{ needs.meta.outputs.draft }}
 
   release-ok:
     needs: publish
