@@ -92,6 +92,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       package: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.any_changed == 'true' }}
       profile: ${{ inputs.profile || 'release' }}
+      publish: ${{ inputs.publish == 'true' }}
       ref: ${{ inputs.ref || github.ref }}
       tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.meta.outputs.version }}"
       prerelease: ${{ inputs.prerelease }}
@@ -114,6 +115,7 @@ jobs:
           echo 'needs.meta.outputs.version: ${{ needs.meta.outputs.version }}'
           echo 'needs.meta.outputs.package: ${{ needs.meta.outputs.package }}'
           echo 'needs.meta.outputs.profile: ${{ needs.meta.outputs.profile }}'
+          echo 'needs.meta.outputs.publish: ${{ needs.meta.outputs.publish }}'
           echo 'needs.meta.outputs.ref: ${{ needs.meta.outputs.ref }}'
           echo 'needs.meta.outputs.prerelease: ${{ needs.meta.outputs.prerelease }}'
           echo 'needs.meta.outputs.draft: ${{ needs.meta.outputs.draft }}'
@@ -129,7 +131,7 @@ jobs:
 
     # If we're not actually building on a release tag, don't short-circuit on
     # errors. This helps us know whether a failure is platform-specific.
-    continue-on-error: ${{ inputs.publish != 'true' }}
+    continue-on-error: ${{ needs.meta.outputs.publish != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     container: docker://ghcr.io/linkerd/dev:v43-rust-musl
@@ -177,9 +179,9 @@ jobs:
           path: artifacts
       - run: du -h artifacts/**/*
       # Publish the release.
-      - if: inputs.publish == 'true'
+      - if: needs.meta.outputs.publish == 'true'
         run: git push origin '${{ needs.meta.outputs.tag }}'
-      - if: inputs.publish == 'true'
+      - if: needs.meta.outputs.publish == 'true'
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         with:
           name: v${{ needs.meta.outputs.version }}
