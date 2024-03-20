@@ -139,6 +139,7 @@ where
             processing_ns = field::Empty,
             user_agent = get_header(http::header::USER_AGENT),
             host = get_header(http::header::HOST),
+            x_forwarded_for = get_header(http::header::HeaderName::from_static("x-forwarded-for"))
         );
 
         // The access log span is only enabled by the `tracing` subscriber if
