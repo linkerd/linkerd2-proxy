@@ -59,6 +59,14 @@ impl Body for BoxBody {
     }
 
     #[inline]
+    fn poll_progress(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), Self::Error>> {
+        self.as_mut().inner.as_mut().poll_progress(cx)
+    }
+
+    #[inline]
     fn poll_trailers(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -117,11 +125,16 @@ where
     }
 
     #[inline]
+    fn poll_progress(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.project().0.poll_progress(cx).map_err(Into::into)
+    }
+
+    #[inline]
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<HeaderMap<HeaderValue>>, Self::Error>> {
-        Poll::Ready(futures::ready!(self.project().0.poll_trailers(cx)).map_err(Into::into))
+        self.project().0.poll_trailers(cx).map_err(Into::into)
     }
 
     #[inline]

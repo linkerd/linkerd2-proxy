@@ -55,6 +55,7 @@ pub struct HyperConnectFuture<F> {
 }
 // === impl UpgradeBody ===
 
+// Note: There's no poll_progress implementation in hyper::Body.
 impl HttpBody for UpgradeBody {
     type Data = Bytes;
     type Error = hyper::Error;

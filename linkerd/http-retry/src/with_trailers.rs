@@ -140,6 +140,11 @@ where
         Pin::new(&mut this.inner).poll_data(cx)
     }
 
+    fn poll_progress(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.inner).poll_progress(cx)
+    }
+
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

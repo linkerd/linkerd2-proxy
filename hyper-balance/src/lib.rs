@@ -116,6 +116,11 @@ where
         Poll::Ready(ret)
     }
 
+    #[inline]
+    fn poll_progress(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.project().body.poll_progress(cx)
+    }
+
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

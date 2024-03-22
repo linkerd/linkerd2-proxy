@@ -203,6 +203,7 @@ impl HttpBody for UpgradeResponseBody {
         self.inner.is_end_stream()
     }
 
+    #[inline]
     fn poll_data(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -212,6 +213,14 @@ impl HttpBody for UpgradeResponseBody {
             .map_err(downgrade_h2_error)
     }
 
+    #[inline]
+    fn poll_progress(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(self.project().inner)
+            .poll_progress(cx)
+            .map_err(downgrade_h2_error)
+    }
+
+    #[inline]
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

@@ -232,6 +232,11 @@ where
         }
     }
 
+    #[inline]
+    fn poll_progress(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.project().inner.poll_progress(cx)
+    }
+
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

@@ -469,6 +469,13 @@ where
         }
     }
 
+    fn poll_progress(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        match self.project() {
+            ResponseBodyProj::Passthru(inner) => inner.poll_progress(cx),
+            ResponseBodyProj::GrpcRescue { inner, .. } => inner.poll_progress(cx),
+        }
+    }
+
     #[inline]
     fn poll_trailers(
         self: Pin<&mut Self>,
