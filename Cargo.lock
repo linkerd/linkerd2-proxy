@@ -1235,6 +1235,7 @@ dependencies = [
  "linkerd-app-test",
  "linkerd-distribute",
  "linkerd-http-classify",
+ "linkerd-http-prom",
  "linkerd-http-retry",
  "linkerd-http-route",
  "linkerd-identity",
