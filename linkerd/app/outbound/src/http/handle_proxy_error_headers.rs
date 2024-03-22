@@ -157,11 +157,7 @@ fn update_response<B>(rsp: &mut http::Response<B>, closable: bool) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use futures::future;
-    use linkerd_app_core::{
-        svc::{self, ServiceExt},
-        Infallible,
-    };
+    use linkerd_app_core::{svc::ServiceExt, Infallible};
     use linkerd_tracing::test;
     use tokio::time;
 

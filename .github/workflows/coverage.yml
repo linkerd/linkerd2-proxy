@@ -1,21 +1,16 @@
-name: coverage
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
 
 permissions:
   contents: read
 
-on:
-  # We run coverage on main so that PRs can have a meaninful comparison that
-  # doesn't lag a whole day.
-  push:
-    branches:
-      - main
-
-  # Coverage runs on all code changes (as well as changes to the workflow).
-  pull_request:
-    paths:
-      - .codecov.yml
-      - .github/workflows/coverage.yml
-      - '**/*.rs'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_INCREMENTAL: 0
@@ -24,20 +19,27 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
-  # Cancel any previous runs of this workflow so coverage runs don't back up,
-  # especially on main (i.e. after merging several PRs).
-  cleanup:
+  meta:
+    timeout-minutes: 5
     runs-on: ubuntu-latest
-    permissions:
-      actions: write
     steps:
-      - uses: styfle/cancel-workflow-action@85880fa0301c86cca9da44039ee3bb12d3bedbfa
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
+      - id: changed
+        uses: tj-actions/changed-files@20576b4b9ed46d41e2d45a2256e5e2316dde6834
         with:
-          all_but_latest: true
-          access_token: ${{ github.token }}
+          files: |
+            .codecov.yml
+            .github/workflows/coverage.yml
+            **/*.rs
+          files_ignore: |
+            *-proto/**
+            linkerd/transport-header/**
+    outputs:
+      any_changed: ${{ steps.changed.outputs.any_changed }}
 
-  test:
-    name: codecov
+  codecov:
+    needs: meta
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || needs.meta.outputs.any_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
@@ -46,13 +48,10 @@ jobs:
     env:
       CXX: "/usr/bin/clang++-14"
     steps:
-      # XXX(ver) Workaround for a linking problem in the binary we store in the
-      # devcontainer.
-      - run: scurl https://github.com/xd009642/tarpaulin/releases/download/0.27.1/cargo-tarpaulin-x86_64-unknown-linux-musl.tar.gz | tar -C /usr/local/bin -zxvf -
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-      # linkerd-transport-header and opencencus-proto tests only check codegen.
-      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --no-run
-      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --skip-clean --ignore-tests --no-fail-fast --out=Xml
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
+      - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --exclude=spire-proto --no-run
+      - run: cargo tarpaulin --locked --workspace --exclude=linkerd2-proxy --exclude=linkerd-transport-header --exclude=opencensus-proto --exclude=spire-proto --skip-clean --ignore-tests --no-fail-fast --out=Xml
         # Some tests are especially flakey in coverage tests. That's fine. We
         # only really care to measure how much of our codebase is covered.
         continue-on-error: true

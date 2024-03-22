@@ -1,10 +1,8 @@
 use super::*;
 use linkerd_app_core::{
-    proxy::http,
     svc::{NewService, ServiceExt},
-    tls,
     trace::test::trace_init,
-    Error, NameAddr,
+    NameAddr,
 };
 use linkerd_app_inbound::GatewayLoop;
 use linkerd_proxy_server_policy as policy;

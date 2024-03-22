@@ -104,7 +104,6 @@ impl<T, N, S: Clone> Clone for Lazy<T, N, S> {
 mod tests {
     use super::*;
     use crate::layer::Layer;
-    use std::sync::Arc;
     use tokio_test::{assert_pending, assert_ready_ok};
     use tower::ServiceExt;
     use tower_test::mock;

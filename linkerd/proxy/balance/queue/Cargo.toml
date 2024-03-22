@@ -23,7 +23,9 @@ linkerd-pool = { path = "../../../pool" }
 linkerd-stack = { path = "../../../stack" }
 
 [dev-dependencies]
-linkerd-tracing = { path = "../../../tracing" }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-test = "0.4"
 tower-test = "0.4"
+
+linkerd-pool-mock = { path = "../../../pool/mock" }
+linkerd-tracing = { path = "../../../tracing" }

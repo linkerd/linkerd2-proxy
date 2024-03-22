@@ -312,7 +312,6 @@ impl TryFrom<observe_request::r#match::Http> for HttpMatch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ipnet::{Ipv4Net, Ipv6Net};
     use linkerd2_proxy_api::http_types;
     use quickcheck::*;
     use std::collections::HashMap;

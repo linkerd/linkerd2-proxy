@@ -40,6 +40,7 @@ members = [
     "linkerd/metrics",
     "linkerd/opencensus",
     "linkerd/pool",
+    "linkerd/pool/mock",
     "linkerd/pool/p2c",
     "linkerd/proxy/api-resolve",
     "linkerd/proxy/balance",

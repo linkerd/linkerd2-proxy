@@ -4,9 +4,9 @@ use futures::future;
 use linkerd_app_core::{
     io::AsyncWriteExt,
     svc::{NewService, ServiceExt},
-    trace, Error,
+    trace,
 };
-use linkerd_proxy_server_policy::{Authentication, Authorization, Meta, Protocol, ServerPolicy};
+use linkerd_proxy_server_policy::{Authentication, Authorization, Meta, ServerPolicy};
 use std::sync::Arc;
 
 const HTTP1: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";

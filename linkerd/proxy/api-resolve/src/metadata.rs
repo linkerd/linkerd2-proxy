@@ -11,6 +11,8 @@ pub struct Metadata {
     /// Arbitrary endpoint labels. Primarily used for telemetry.
     labels: Labels,
 
+    weight: u32,
+
     /// A hint from the controller about what protocol (HTTP1, HTTP2, etc) the
     /// destination understands.
     protocol_hint: ProtocolHint,
@@ -42,6 +44,7 @@ impl Default for Metadata {
     fn default() -> Self {
         Self {
             labels: Labels::default(),
+            weight: 1,
             identity: None,
             authority_override: None,
             tagged_transport_port: None,
@@ -51,12 +54,13 @@ impl Default for Metadata {
 }
 
 impl Metadata {
-    pub fn new(
+    pub(crate) fn new(
         labels: impl IntoIterator<Item = (String, String)>,
         protocol_hint: ProtocolHint,
         tagged_transport_port: Option<u16>,
         identity: Option<ClientTls>,
         authority_override: Option<Authority>,
+        weight: u32,
     ) -> Self {
         Self {
             labels: labels.into_iter().collect::<BTreeMap<_, _>>().into(),
@@ -64,7 +68,12 @@ impl Metadata {
             tagged_transport_port,
             identity,
             authority_override,
+            weight,
         }
+    }
+
+    pub fn weight(&self) -> u32 {
+        self.weight
     }
 
     /// Returns the endpoint's labels from the destination service, if it has them.
