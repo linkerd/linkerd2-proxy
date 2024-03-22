@@ -2,12 +2,12 @@ use super::*;
 use crate::test_util::*;
 use ::http::StatusCode;
 use linkerd_app_core::{
-    errors, exp_backoff::ExponentialBackoff, svc::NewService, svc::ServiceExt, trace, Error,
+    errors, exp_backoff::ExponentialBackoff, svc::NewService, svc::ServiceExt, trace,
 };
 use linkerd_proxy_client_policy as client_policy;
 use parking_lot::Mutex;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::{sync::watch, task, time};
+use tokio::{task, time};
 use tracing::Instrument;
 
 const AUTHORITY: &str = "logical.test.svc.cluster.local";

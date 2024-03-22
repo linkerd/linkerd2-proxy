@@ -11,7 +11,7 @@ pub enum Conditional<C, R> {
 
 impl<C, R> Conditional<C, R>
 where
-    R: Copy + Clone,
+    R: Copy,
 {
     pub fn as_ref(&self) -> Conditional<&'_ C, R> {
         match self {

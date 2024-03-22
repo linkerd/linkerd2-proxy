@@ -588,7 +588,7 @@ mod http2 {
 
 mod grpc_retry {
     use super::*;
-    use http::header::{HeaderMap, HeaderName, HeaderValue};
+    use http::header::{HeaderName, HeaderValue};
     static GRPC_STATUS: HeaderName = HeaderName::from_static("grpc-status");
     static GRPC_STATUS_OK: HeaderValue = HeaderValue::from_static("0");
     static GRPC_STATUS_UNAVAILABLE: HeaderValue = HeaderValue::from_static("14");

@@ -47,12 +47,17 @@ impl<N> Outbound<N> {
         let opaq = self.clone().into_stack();
 
         let http = self.with_stack(http).map_stack(|config, rt, stk| {
+            let h2 = config.proxy.server.h2_settings;
+            let drain = rt.drain.clone();
             stk.push_on_service(http::BoxRequest::layer())
                 .unlift_new()
-                .push(http::NewServeHttp::layer(
-                    config.proxy.server.h2_settings,
-                    rt.drain.clone(),
-                ))
+                .push(http::NewServeHttp::layer(move |t: &Http<T>| {
+                    http::ServerParams {
+                        version: t.version,
+                        h2,
+                        drain: drain.clone(),
+                    }
+                }))
                 .arc_new_tcp()
         });
 

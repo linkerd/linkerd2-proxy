@@ -6,7 +6,7 @@ pub struct ArcNewService<T, S> {
 }
 
 impl<T, S> ArcNewService<T, S> {
-    pub fn layer<N>() -> impl layer::Layer<N, Service = Self> + Clone + Copy
+    pub fn layer<N>() -> impl layer::Layer<N, Service = Self> + Copy
     where
         N: NewService<T, Service = S> + Send + Sync + 'static,
         S: Send + 'static,

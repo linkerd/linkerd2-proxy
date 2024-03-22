@@ -8,7 +8,7 @@ pub struct Readiness(Weak<()>);
 
 /// When all latches are dropped, the process is considered ready.
 #[derive(Clone, Debug)]
-pub struct Latch(Arc<()>);
+pub struct Latch(#[allow(dead_code)] Arc<()>);
 
 impl Readiness {
     pub fn new() -> (Readiness, Latch) {

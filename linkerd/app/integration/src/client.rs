@@ -2,13 +2,10 @@ use super::*;
 use linkerd_app_core::proxy::http::trace;
 use parking_lot::Mutex;
 use std::io;
-use std::{convert::TryFrom, sync::Arc};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_rustls::rustls::{self, ClientConfig};
 use tracing::info_span;
-use tracing::instrument::Instrument;
 
 type ClientError = hyper::Error;
 type Request = http::Request<hyper::Body>;

@@ -5,11 +5,8 @@ use linkerd_app_core::{
     transport::{listen, orig_dst, Keepalive, ListenAddr},
     Result,
 };
-use std::{
-    collections::HashSet, fmt, future::Future, net::SocketAddr, pin::Pin, task::Poll, thread,
-};
+use std::{collections::HashSet, thread};
 use tokio::net::TcpStream;
-use tracing::instrument::Instrument;
 
 pub fn new() -> Proxy {
     Proxy::default()

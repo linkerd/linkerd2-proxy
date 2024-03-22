@@ -6,6 +6,11 @@ mod util;
 
 use linkerd_meshtls::Mode;
 
+#[test]
+fn fails_processing_cert_when_wrong_id_configured() {
+    util::fails_processing_cert_when_wrong_id_configured(Mode::Rustls);
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn plaintext() {
     util::plaintext(Mode::Rustls).await;

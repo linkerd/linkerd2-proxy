@@ -21,7 +21,7 @@ thiserror = "1"
 tokio = { version = "1", features = ["macros", "time"] }
 tower = "0.4"
 tracing = "0.1"
-untrusted = "0.7"
+untrusted = "0.9"
 
 [dev-dependencies]
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }

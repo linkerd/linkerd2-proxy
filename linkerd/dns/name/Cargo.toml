@@ -8,4 +8,4 @@ publish = false
 
 [dependencies]
 thiserror = "1"
-untrusted = "0.7"
+untrusted = "0.9"

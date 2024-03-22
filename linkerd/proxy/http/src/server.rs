@@ -7,7 +7,7 @@ use crate::{
 };
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
-use linkerd_stack::{layer, NewService, Param};
+use linkerd_stack::{layer, ExtractParam, NewService};
 use std::{
     future::Future,
     pin::Pin,
@@ -18,13 +18,22 @@ use tracing::{debug, Instrument};
 
 type Server = hyper::server::conn::Http<trace::Executor>;
 
+/// Configures HTTP server behavior.
 #[derive(Clone, Debug)]
-pub struct NewServeHttp<N> {
-    inner: N,
-    server: Server,
-    drain: drain::Watch,
+pub struct Params {
+    pub version: Version,
+    pub h2: H2Settings,
+    pub drain: drain::Watch,
 }
 
+// A stack that builds HTTP servers.
+#[derive(Clone, Debug)]
+pub struct NewServeHttp<X, N> {
+    inner: N,
+    params: X,
+}
+
+/// Serves HTTP connectionswith an inner service.
 #[derive(Clone, Debug)]
 pub struct ServeHttp<N> {
     version: Version,
@@ -35,55 +44,43 @@ pub struct ServeHttp<N> {
 
 // === impl NewServeHttp ===
 
-impl<N> NewServeHttp<N> {
-    pub fn layer(
-        h2: H2Settings,
-        drain: drain::Watch,
-    ) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |inner| Self::new(h2, inner, drain.clone()))
+impl<X: Clone, N> NewServeHttp<X, N> {
+    pub fn layer(params: X) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(params.clone(), inner))
     }
 
     /// Creates a new `ServeHttp`.
-    fn new(h2: H2Settings, inner: N, drain: drain::Watch) -> Self {
-        let mut server = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
-        server
-            .http2_initial_stream_window_size(h2.initial_stream_window_size)
-            .http2_initial_connection_window_size(h2.initial_connection_window_size);
-
-        // Configure HTTP/2 PING frames
-        if let Some(timeout) = h2.keepalive_timeout {
-            // XXX(eliza): is this a reasonable interval between
-            // PING frames?
-            let interval = timeout / 4;
-            server
-                .http2_keep_alive_timeout(timeout)
-                .http2_keep_alive_interval(interval);
-        }
-
-        Self {
-            inner,
-            server,
-            drain,
-        }
+    fn new(params: X, inner: N) -> Self {
+        Self { inner, params }
     }
 }
 
-impl<T, N> NewService<T> for NewServeHttp<N>
+impl<T, X, N> NewService<T> for NewServeHttp<X, N>
 where
-    T: Param<Version>,
+    X: ExtractParam<Params, T>,
     N: NewService<T> + Clone,
 {
     type Service = ServeHttp<N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let version = target.param();
+        let Params { version, h2, drain } = self.params.extract_param(&target);
+
+        let mut srv = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
+        srv.http2_initial_stream_window_size(h2.initial_stream_window_size)
+            .http2_initial_connection_window_size(h2.initial_connection_window_size);
+        // Configure HTTP/2 PING frames
+        if let Some(timeout) = h2.keepalive_timeout {
+            srv.http2_keep_alive_timeout(timeout)
+                .http2_keep_alive_interval(timeout / 4);
+        }
+
         debug!(?version, "Creating HTTP service");
         let inner = self.inner.new_service(target);
         ServeHttp {
             inner,
             version,
-            server: self.server.clone(),
-            drain: self.drain.clone(),
+            drain,
+            server: srv,
         }
     }
 }
@@ -93,7 +90,7 @@ where
 impl<I, N, S> Service<I> for ServeHttp<N>
 where
     I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
-    N: NewService<ClientHandle, Service = S> + Clone + Send + 'static,
+    N: NewService<ClientHandle, Service = S> + Send + 'static,
     S: Service<http::Request<UpgradeBody>, Response = http::Response<http::BoxBody>, Error = Error>
         + Unpin
         + Send
@@ -109,29 +106,30 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        let Self {
-            version,
-            inner,
-            drain,
-            mut server,
-        } = self.clone();
-        debug!(?version, "Handling as HTTP");
+        let version = self.version;
+        let drain = self.drain.clone();
+        let mut server = self.server.clone();
+
+        let res = io.peer_addr().map(|pa| {
+            let (handle, closed) = ClientHandle::new(pa);
+            let svc = self.inner.new_service(handle.clone());
+            let svc = SetClientHandle::new(handle, svc);
+            (svc, closed)
+        });
 
         Box::pin(
             async move {
-                let client_addr = io.peer_addr()?;
-                let (client_handle, closed) = ClientHandle::new(client_addr);
-                // TODO(ver): Move this into the inner stack.
-                let svc =
-                    SetClientHandle::new(client_handle.clone(), inner.new_service(client_handle));
-
+                let (svc, closed) = res?;
+                debug!(?version, "Handling as HTTP");
                 match version {
                     Version::Http1 => {
                         // Enable support for HTTP upgrades (CONNECT and websockets).
+                        let svc = upgrade::Service::new(svc, drain.clone());
                         let mut conn = server
                             .http1_only(true)
-                            .serve_connection(io, upgrade::Service::new(svc, drain.clone()))
+                            .serve_connection(io, svc)
                             .with_upgrades();
+
                         tokio::select! {
                             res = &mut conn => {
                                 debug!(?res, "The client is shutting down the connection");
@@ -154,6 +152,7 @@ where
                         let mut conn = server
                             .http2_only(true)
                             .serve_connection(io, HyperServerSvc::new(svc));
+
                         tokio::select! {
                             res = &mut conn => {
                                 debug!(?res, "The client is shutting down the connection");

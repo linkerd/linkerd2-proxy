@@ -1,13 +1,6 @@
 use super::{tagged_transport::TaggedTransport, *};
-use crate::{ConnectMeta, Outbound};
-use linkerd_app_core::{
-    io,
-    proxy::http,
-    svc, tls,
-    transport::{self, ClientAddr, Local, Remote, ServerAddr},
-    transport_header::SessionProtocol,
-    Error,
-};
+use crate::ConnectMeta;
+use linkerd_app_core::{proxy::http, tls, transport_header::SessionProtocol};
 
 impl<C> Outbound<C> {
     pub fn push_tcp_endpoint<T>(

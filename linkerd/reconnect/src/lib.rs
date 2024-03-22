@@ -5,7 +5,7 @@
 #[cfg(test)]
 mod tests;
 
-use futures::{future, prelude::*, ready};
+use futures::{prelude::*, ready};
 use linkerd_error::{Error, Recover};
 use linkerd_stack::{layer, NewService, Service};
 use std::task::{Context, Poll};

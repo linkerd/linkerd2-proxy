@@ -17,7 +17,7 @@ This proxy's features include:
 * Transparent, zero-config WebSocket proxying;
 * Automatic, latency-aware, layer-7 [load balancing][loadbalancing];
 * Automatic layer-4 load balancing for non-HTTP traffic;
-* Automatic TLS (experimental);
+* Automatic Mutual TLS;
 * An on-demand diagnostic `tap` API.
 
 This proxy is primarily intended to run on Linux in containerized

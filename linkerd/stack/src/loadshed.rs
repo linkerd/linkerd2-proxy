@@ -27,7 +27,7 @@ impl<S> LoadShed<S> {
     /// (e.g., via [`SpawnReady`], where appropriate).
     ///
     /// [`SpawnReady`]: tower::spawn_ready::SpawnReady
-    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy + Clone {
+    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy {
         layer::mk(Self::new)
     }
 

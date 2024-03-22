@@ -5,9 +5,10 @@ use std::{
     net::SocketAddr,
     task::{Context, Poll},
 };
+use tower_service::Service;
 
 /// A collection of services updated from a resolution.
-pub trait Pool<T, Req>: tower_service::Service<Req> {
+pub trait Pool<T, Req>: Service<Req> {
     fn reset_pool(&mut self, update: Vec<(SocketAddr, T)>);
 
     fn add_endpoint(&mut self, addr: SocketAddr, endpoint: T);

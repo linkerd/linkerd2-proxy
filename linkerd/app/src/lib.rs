@@ -9,6 +9,7 @@ pub mod env;
 pub mod identity;
 pub mod oc_collector;
 pub mod policy;
+pub mod spire;
 pub mod tap;
 
 pub use self::metrics::Metrics;
@@ -340,8 +341,8 @@ impl App {
         self.identity.receiver().server_name().clone()
     }
 
-    pub fn identity_addr(&self) -> ControlAddr {
-        self.identity.addr()
+    pub fn local_tls_id(&self) -> identity::Id {
+        self.identity.receiver().local_id().clone()
     }
 
     pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
@@ -389,7 +390,7 @@ impl App {
 
                         // Kick off the identity so that the process can become ready.
                         let local = identity.receiver();
-                        let local_name = local.server_name().clone();
+                        let local_id = local.local_id().clone();
                         let ready = identity.ready();
                         tokio::spawn(
                             identity
@@ -402,7 +403,7 @@ impl App {
                             ready
                                 .map(move |()| {
                                     latch.release();
-                                    info!(id = %local_name, "Certified identity");
+                                    info!(id = %local_id, "Certified identity");
                                 })
                                 .instrument(info_span!("identity").or_current()),
                         );

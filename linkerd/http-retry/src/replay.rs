@@ -275,7 +275,7 @@ where
             if !rest.is_end_stream() {
                 let res = futures::ready!(Pin::new(rest).poll_trailers(cx)).map(|tlrs| {
                     if state.trailers.is_none() {
-                        state.trailers = tlrs.clone();
+                        state.trailers.clone_from(&tlrs);
                     }
                     tlrs
                 });
@@ -503,7 +503,7 @@ impl<B> BodyState<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use http::{HeaderMap, HeaderValue};
+    use http::HeaderValue;
 
     #[tokio::test]
     async fn replays_one_chunk() {

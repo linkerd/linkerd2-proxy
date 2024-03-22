@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::string::ToString;
 
 #[derive(Debug, Clone)]
 pub struct MetricMatch {

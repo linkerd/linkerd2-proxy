@@ -4,4 +4,7 @@
 pub mod certify;
 mod token;
 
-pub use self::{certify::Certify, token::TokenSource};
+pub use self::{
+    certify::{Certify, Config},
+    token::TokenSource,
+};

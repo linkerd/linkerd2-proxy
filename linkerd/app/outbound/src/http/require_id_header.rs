@@ -31,7 +31,7 @@ impl<N> NewRequireIdentity<N> {
         Self { inner }
     }
 
-    pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone + Copy {
+    pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Copy {
         svc::layer::mk(Self::new)
     }
 }

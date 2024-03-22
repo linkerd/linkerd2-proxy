@@ -50,7 +50,10 @@ pub use linkerd_transport_header as transport_header;
 pub mod identity {
     pub use linkerd_identity::*;
     pub use linkerd_meshtls::*;
-    pub use linkerd_proxy_identity_client as client;
+    pub mod client {
+        pub use linkerd_proxy_identity_client as linkerd;
+        pub use linkerd_proxy_spire_client as spire;
+    }
 }
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";

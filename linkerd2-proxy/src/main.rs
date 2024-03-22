@@ -80,14 +80,8 @@ fn main() {
         }
 
         // TODO distinguish ServerName and Identity.
-        info!("Local identity is {}", app.local_server_name());
-        let addr = app.identity_addr();
-        match addr.identity.value() {
-            None => info!("Identity verified via {}", addr.addr),
-            Some(tls) => {
-                info!("Identity verified via {} ({})", addr.addr, tls.server_id);
-            }
-        }
+        info!("SNI is {}", app.local_server_name());
+        info!("Local identity is {}", app.local_tls_id());
 
         let dst_addr = app.dst_addr();
         match dst_addr.identity.value() {

@@ -8,7 +8,6 @@ use linkerd_conditional::Conditional;
 use linkerd_proxy_http::HasH2Reason;
 use linkerd_tls as tls;
 use pin_project::pin_project;
-use std::convert::TryFrom;
 use std::iter;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};

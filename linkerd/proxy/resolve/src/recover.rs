@@ -1,11 +1,9 @@
 //! A middleware that recovers a resolution after some failures.
 
-use futures::stream::TryStream;
-use futures::{prelude::*, ready, FutureExt, Stream};
+use futures::{prelude::*, ready};
 use linkerd_error::{Error, Recover};
 use linkerd_proxy_core::resolve::{self, Update};
 use pin_project::pin_project;
-use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use thiserror::Error;

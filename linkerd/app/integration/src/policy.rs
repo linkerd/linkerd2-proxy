@@ -4,8 +4,7 @@ use api::{inbound::inbound_server_policies_server, outbound::outbound_policies_s
 use futures::stream;
 use linkerd2_proxy_api as api;
 use parking_lot::Mutex;
-use std::{collections::VecDeque, sync::Arc, time::Duration};
-use tokio::sync::mpsc;
+use std::collections::VecDeque;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic as grpc;
 

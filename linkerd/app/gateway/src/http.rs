@@ -14,10 +14,7 @@ use linkerd_app_core::{
 };
 use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
-use std::{
-    cmp::{Eq, PartialEq},
-    fmt::Debug,
-};
+use std::fmt::Debug;
 use tokio::sync::watch;
 
 mod gateway;

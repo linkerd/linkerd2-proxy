@@ -83,7 +83,6 @@ impl Gateway {
         };
 
         let http = {
-            let registry = registry.sub_registry_with_prefix("http");
             let http = self
                 .outbound
                 .to_tcp_connect()

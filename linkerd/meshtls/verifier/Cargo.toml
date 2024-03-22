@@ -8,11 +8,11 @@ publish = false
 
 [dependencies]
 tracing = "0.1"
-x509-parser = "0.15.1"
+x509-parser = "0.16.0"
 
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
 
 
 [dev-dependencies]
-rcgen = "0.11.3"
+rcgen = "0.12.0"

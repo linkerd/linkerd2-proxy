@@ -11,7 +11,7 @@ use linkerd_app_core::{
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
     Conditional, Error, Infallible, NameAddr, Result,
 };
-use std::{convert::TryFrom, fmt::Debug};
+use std::fmt::Debug;
 use thiserror::Error;
 use tracing::{debug_span, info_span};
 

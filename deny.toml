@@ -26,6 +26,8 @@ deny = []
 copyleft = "deny"
 allow-osi-fsf-free = "neither"
 default = "deny"
+# Ignore local workspace license values for unpublished crates.
+private = { ignore = true }
 confidence-threshold = 0.8
 exceptions = [
     { allow = [

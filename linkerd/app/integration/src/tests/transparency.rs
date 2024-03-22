@@ -1,6 +1,5 @@
 use crate::*;
 use std::error::Error as _;
-use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 #[tokio::test]

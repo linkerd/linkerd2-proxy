@@ -1,5 +1,5 @@
 use crate::{GetProfile, LookupAddr, Receiver};
-use futures::{future, prelude::*};
+use futures::prelude::*;
 use linkerd_error::Error;
 use std::task::{Context, Poll};
 use tracing::debug;

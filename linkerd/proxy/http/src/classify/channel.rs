@@ -5,7 +5,6 @@ use linkerd_stack::{layer, ExtractParam, NewService, Service};
 use pin_project::{pin_project, pinned_drop};
 use std::{
     fmt::Debug,
-    future::Future,
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
@@ -279,11 +278,8 @@ impl<C: ClassifyEos, B> PinnedDrop for ResponseBody<C, B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::classify::ClassifyResponse;
-    use linkerd_error::Error;
     use linkerd_http_box::BoxBody;
-    use linkerd_http_classify::ClassifyEos;
-    use tokio::{sync::mpsc, time};
+    use tokio::time;
     use tokio_test::assert_ready;
     use tower_test::mock;
 

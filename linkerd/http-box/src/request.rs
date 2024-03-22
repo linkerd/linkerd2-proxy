@@ -16,14 +16,14 @@ impl<B, S> BoxRequest<B, S> {
         BoxRequest(inner, PhantomData)
     }
 
-    pub fn layer() -> impl layer::Layer<S, Service = Self> + Clone + Copy {
+    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy {
         layer::mk(Self::new)
     }
 }
 
 impl<S> BoxRequest<S, ()> {
     /// Constructs a boxing layer that erases the inner request type with [`EraseRequest`].
-    pub fn erased() -> impl layer::Layer<S, Service = EraseRequest<S>> + Clone + Copy {
+    pub fn erased() -> impl layer::Layer<S, Service = EraseRequest<S>> + Copy {
         EraseRequest::layer()
     }
 }

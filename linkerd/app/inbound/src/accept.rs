@@ -113,10 +113,7 @@ mod tests {
         test_util,
     };
     use futures::future;
-    use linkerd_app_core::{
-        svc::{NewService, ServiceExt},
-        Error,
-    };
+    use linkerd_app_core::svc::{NewService, ServiceExt};
     use linkerd_proxy_server_policy::{Authentication, Authorization, Meta, ServerPolicy};
     use std::sync::Arc;
 

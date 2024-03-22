@@ -19,28 +19,21 @@ find_manifest() {
 
 # Build an expression to match all changed manifests.
 manifest_expr() {
-    expr=false
-
+    printf '%s' 'false'
     for file in "$@" ; do
-        # If the workflow changes or root Cargo.toml changes, run checks for all crates in the repo.
-        if [[ "$file" = .github/* ]] || [ "$file" = "Cargo.toml" ]; then
-            expr="startswith(\"$PWD\")"
-            break
-        fi
-
-        # Otherwise, only run checks for changes to subcrates (and not the top-level crate).
         m=$(find_manifest "$file")
         if [ "$m" != "Cargo.toml" ]; then
-            expr="$expr or (. == \"$m\")"
+            printf ' or (. == "%s")' "$m"
         fi
     done
-
-    echo "$expr"
+    printf '\n'
 }
+
+expr=$(manifest_expr "$@")
 
 # Get the crate names for all changed manifest directories.
 crates=$(cargo metadata --locked --format-version=1 \
-    | jq -cr "[.packages[] | select(.manifest_path | $(manifest_expr "$@")) | .name]")
+    | jq -cr "[.packages[] | select(.manifest_path | $expr) | .name]")
 
 echo "crates=$crates" >> "$GITHUB_OUTPUT"
 echo "$crates" | jq .

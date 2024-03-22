@@ -3,14 +3,10 @@ use crate::test_util::*;
 use linkerd_app_core::{
     io,
     svc::{NewService, Service, ServiceExt},
-    transport::addrs::OrigDstAddr,
 };
-use std::{
-    net::SocketAddr,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 use tokio::time;
 

@@ -3,7 +3,6 @@ use futures::{future::Either, prelude::*};
 use linkerd_stack::layer;
 use std::{
     collections::HashMap,
-    future::Future,
     pin::Pin,
     task::{Context, Poll},
     time::SystemTime,

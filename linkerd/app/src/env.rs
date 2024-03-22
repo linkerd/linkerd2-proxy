@@ -1,4 +1,4 @@
-use crate::{dns, gateway, identity, inbound, oc_collector, outbound, policy};
+use crate::{dns, gateway, identity, inbound, oc_collector, outbound, policy, spire};
 use linkerd_app_core::{
     addr,
     config::*,
@@ -187,10 +187,29 @@ pub const ENV_INBOUND_IPS: &str = "LINKERD2_PROXY_INBOUND_IPS";
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
-pub const ENV_IDENTITY_IDENTITY_LOCAL_NAME: &str = "LINKERD2_PROXY_IDENTITY_LOCAL_NAME";
 pub const ENV_IDENTITY_TOKEN_FILE: &str = "LINKERD2_PROXY_IDENTITY_TOKEN_FILE";
 pub const ENV_IDENTITY_MIN_REFRESH: &str = "LINKERD2_PROXY_IDENTITY_MIN_REFRESH";
 pub const ENV_IDENTITY_MAX_REFRESH: &str = "LINKERD2_PROXY_IDENTITY_MAX_REFRESH";
+
+/// This config is here for backwards compatibility. If set, both the tls id and the server
+/// name will be set to the value specified in this config. The values needs to be a DNS
+/// name
+pub const ENV_IDENTITY_IDENTITY_LOCAL_NAME: &str = "LINKERD2_PROXY_IDENTITY_LOCAL_NAME";
+/// Configures the TLS Id of the proxy inbound server. The value is expected to match the
+/// DNS or URI SAN of the leaf certificate that will be provisioned to this proxy.
+pub const ENV_IDENTITY_IDENTITY_SERVER_ID: &str = "LINKERD2_PROXY_IDENTITY_SERVER_ID";
+/// Configures the server name of this proxy. This value is expected to match the value
+/// that clients include in the SNI extension of the ClientHello, whenever they try to
+/// establish a TLS connection that shall be terminated by this proxy
+pub const ENV_IDENTITY_IDENTITY_SERVER_NAME: &str = "LINKERD2_PROXY_IDENTITY_SERVER_NAME";
+
+// If this config is set, then the proxy will be configured to use Spire as identity
+// provider
+pub const ENV_IDENTITY_SPIRE_SOCKET: &str = "LINKERD2_PROXY_IDENTITY_SPIRE_SOCKET";
+pub const IDENTITY_SPIRE_BASE: &str = "LINKERD2_PROXY_IDENTITY_SPIRE";
+const DEFAULT_SPIRE_BACKOFF: ExponentialBackoff =
+    ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_secs(1), 0.1);
+const SPIFFE_ID_URI_SCHEME: &str = "spiffe";
 
 pub const ENV_IDENTITY_SVC_BASE: &str = "LINKERD2_PROXY_IDENTITY_SVC";
 
@@ -378,7 +397,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let dns_min_ttl = parse(strings, ENV_DNS_MIN_TTL, parse_duration);
     let dns_max_ttl = parse(strings, ENV_DNS_MAX_TTL, parse_duration);
 
-    let identity_config = parse_identity_config(strings);
+    let tls = parse_tls_params(strings);
 
     let hostname = strings.get(ENV_HOSTNAME);
 
@@ -425,12 +444,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_ips = {
         let ips = parse(strings, ENV_INBOUND_IPS, parse_ip_set)?.unwrap_or_default();
         if ips.is_empty() {
-            info!(
-                "`{}` allowlist not configured, allowing all target addresses",
-                ENV_INBOUND_IPS
-            );
+            info!("`{ENV_INBOUND_IPS}` allowlist not configured, allowing all target addresses",);
         } else {
-            debug!(allowed = ?ips, "Only allowing connections targeting `{}`", ENV_INBOUND_IPS);
+            debug!(allowed = ?ips, "Only allowing connections targeting `{ENV_INBOUND_IPS}`");
         }
         std::sync::Arc::new(ips)
     };
@@ -575,8 +591,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             let cluster_nets = parse(strings, ENV_POLICY_CLUSTER_NETWORKS, parse_networks)?
                 .unwrap_or_else(|| {
                     info!(
-                        "{} not set; cluster-scoped modes are unsupported",
-                        ENV_POLICY_CLUSTER_NETWORKS
+                        "{ENV_POLICY_CLUSTER_NETWORKS} not set; cluster-scoped modes are unsupported",
                     );
                     Default::default()
                 });
@@ -599,7 +614,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_range_set)? {
                 Some(ports) => ports.into_iter().flatten().collect::<HashSet<_>>(),
                 None => {
-                    error!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
+                    debug!("No inbound ports specified via {ENV_INBOUND_PORTS}",);
                     Default::default()
                 }
             };
@@ -694,10 +709,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // The workload, which is opaque from the proxy's point-of-view, is sent to the
         // policy controller to support policy discovery.
         let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
-            error!(
-                "{} must be set with {}_ADDR",
-                ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
-            );
+            error!("{ENV_POLICY_WORKLOAD} must be set with {ENV_POLICY_SVC_BASE}_ADDR",);
             EnvError::InvalidEnvVar
         })?;
 
@@ -800,29 +812,60 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .unwrap_or(super::tap::Config::Disabled);
 
     let identity = {
-        let (addr, certify, params) = identity_config?;
-        // If the address doesn't have a server identity, then we're on localhost.
-        let connect = if addr.addr.is_loopback() {
-            inbound.proxy.connect.clone()
-        } else {
-            outbound.proxy.connect.clone()
-        };
-        let failfast_timeout = if addr.addr.is_loopback() {
-            inbound.http_request_queue.failfast_timeout
-        } else {
-            outbound.http_request_queue.failfast_timeout
-        };
-        identity::Config {
-            certify,
-            control: ControlConfig {
-                addr,
-                connect,
-                buffer: QueueConfig {
-                    capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
-                    failfast_timeout,
-                },
+        let tls = tls?;
+
+        match strings.get(ENV_IDENTITY_SPIRE_SOCKET)? {
+            Some(socket) => match &tls.id {
+                // TODO: perform stricter SPIFFE ID validation following:
+                // https://github.com/spiffe/spiffe/blob/27b59b81ba8c56885ac5d4be73b35b9b3305fd7a/standards/SPIFFE-ID.md
+                identity::Id::Uri(uri)
+                    if uri.scheme().eq_ignore_ascii_case(SPIFFE_ID_URI_SCHEME) =>
+                {
+                    identity::Config::Spire {
+                        tls,
+                        client: spire::Config {
+                            socket_addr: std::sync::Arc::new(socket),
+                            backoff: parse_backoff(
+                                strings,
+                                IDENTITY_SPIRE_BASE,
+                                DEFAULT_SPIRE_BACKOFF,
+                            )?,
+                        },
+                    }
+                }
+                _ => {
+                    error!("Spire support requires a SPIFFE TLS Id");
+                    return Err(EnvError::InvalidEnvVar);
+                }
             },
-            params,
+            None => {
+                let (addr, certify) = parse_linkerd_identity_config(strings)?;
+
+                // If the address doesn't have a server identity, then we're on localhost.
+                let connect = if addr.addr.is_loopback() {
+                    inbound.proxy.connect.clone()
+                } else {
+                    outbound.proxy.connect.clone()
+                };
+                let failfast_timeout = if addr.addr.is_loopback() {
+                    inbound.http_request_queue.failfast_timeout
+                } else {
+                    outbound.http_request_queue.failfast_timeout
+                };
+
+                identity::Config::Linkerd {
+                    certify,
+                    tls,
+                    client: ControlConfig {
+                        addr,
+                        connect,
+                        buffer: QueueConfig {
+                            capacity: DEFAULT_CONTROL_QUEUE_CAPACITY,
+                            failfast_timeout,
+                        },
+                    },
+                }
+            }
         }
     };
 
@@ -907,7 +950,7 @@ impl Strings for Env {
             Ok(value) => Ok(Some(value)),
             Err(env::VarError::NotPresent) => Ok(None),
             Err(env::VarError::NotUnicode(_)) => {
-                error!("{} is not encoded in Unicode", key);
+                error!("{key} is not encoded in Unicode");
                 Err(EnvError::InvalidEnvVar)
             }
         }
@@ -987,7 +1030,7 @@ fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
     match parse_addr(s)? {
         Addr::Socket(a) => Ok(a),
         _ => {
-            error!("Expected IP:PORT; found: {}", s);
+            error!("Expected IP:PORT; found: {s}");
             Err(ParseError::HostIsNotAnIpAddress)
         }
     }
@@ -1001,7 +1044,7 @@ fn parse_ip_set(s: &str) -> Result<HashSet<IpAddr>, ParseError> {
 
 fn parse_addr(s: &str) -> Result<Addr, ParseError> {
     Addr::from_str(s).map_err(|e| {
-        error!("Not a valid address: {}", s);
+        error!("Not a valid address: {s}");
         ParseError::AddrError(e)
     })
 }
@@ -1046,14 +1089,14 @@ fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
 
 pub(super) fn parse_dns_name(s: &str) -> Result<dns::Name, ParseError> {
     s.parse().map_err(|_| {
-        error!("Not a valid identity name: {}", s);
+        error!("Not a valid identity name: {s}");
         ParseError::NameError
     })
 }
 
 pub(super) fn parse_identity(s: &str) -> Result<identity::Id, ParseError> {
     s.parse().map_err(|_| {
-        error!("Not a valid identity name: {}", s);
+        error!("Not a valid identity name: {s}");
         ParseError::NameError
     })
 }
@@ -1069,7 +1112,7 @@ where
     match strings.get(name)? {
         Some(ref s) => {
             let r = parse(s).map_err(|parse_error| {
-                error!("{}={:?} is not valid: {:?}", name, s, parse_error);
+                error!("{name}={s:?} is not valid: {parse_error:?}");
                 EnvError::InvalidEnvVar
             })?;
             Ok(Some(r))
@@ -1188,7 +1231,7 @@ pub fn parse_backoff<S: Strings>(
             })
         }
         _ => {
-            error!("You need to specify either all of {} {} {} or none of them to use the default backoff", min_env, max_env,jitter_env );
+            error!("You need to specify either all of {min_env} {max_env} {jitter_env} or none of them to use the default backoff");
             Err(EnvError::InvalidEnvVar)
         }
     }
@@ -1220,77 +1263,106 @@ pub fn parse_control_addr<S: Strings>(
     }
 }
 
-pub fn parse_identity_config<S: Strings>(
-    strings: &S,
-) -> Result<(ControlAddr, identity::certify::Config, identity::TlsParams), EnvError> {
-    let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
+pub fn parse_tls_params<S: Strings>(strings: &S) -> Result<identity::TlsParams, EnvError> {
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         if s.is_empty() {
             return Err(ParseError::InvalidTrustAnchors);
         }
         Ok(s.to_string())
     });
-    let dir = parse(strings, ENV_IDENTITY_DIR, |ref s| Ok(PathBuf::from(s)));
-    let tok = parse(strings, ENV_IDENTITY_TOKEN_FILE, |ref s| {
-        identity::TokenSource::if_nonempty_file(s.to_string()).map_err(|e| {
-            error!("Could not read {}: {}", ENV_IDENTITY_TOKEN_FILE, e);
-            ParseError::InvalidTokenSource
-        })
-    });
-    let li = parse(strings, ENV_IDENTITY_IDENTITY_LOCAL_NAME, parse_dns_name);
-    let min_refresh = parse(strings, ENV_IDENTITY_MIN_REFRESH, parse_duration);
-    let max_refresh = parse(strings, ENV_IDENTITY_MAX_REFRESH, parse_duration);
+
+    // The assumtion here is that if `ENV_IDENTITY_IDENTITY_LOCAL_NAME` has been set
+    // we will use that for both tls id and server name.
+    let (server_id_env_var, server_name_env_var) =
+        if strings.get(ENV_IDENTITY_IDENTITY_LOCAL_NAME)?.is_some() {
+            (
+                ENV_IDENTITY_IDENTITY_LOCAL_NAME,
+                ENV_IDENTITY_IDENTITY_LOCAL_NAME,
+            )
+        } else {
+            (
+                ENV_IDENTITY_IDENTITY_SERVER_ID,
+                ENV_IDENTITY_IDENTITY_SERVER_NAME,
+            )
+        };
+
+    let server_id = parse(strings, server_id_env_var, parse_identity);
+    let server_name = parse(strings, server_name_env_var, parse_dns_name);
 
     if strings
         .get(ENV_IDENTITY_DISABLED)?
         .map(|d| !d.is_empty())
         .unwrap_or(false)
     {
-        error!(
-            "{} is no longer supported. Identity is must be enabled.",
-            ENV_IDENTITY_DISABLED
-        );
+        error!("{ENV_IDENTITY_DISABLED} is no longer supported. Identity is must be enabled.");
         return Err(EnvError::InvalidEnvVar);
     }
 
-    match (control?, ta?, dir?, li?, tok?, min_refresh?, max_refresh?) {
-        (
-            Some(control),
-            Some(trust_anchors_pem),
-            Some(dir),
-            Some(local_name),
-            Some(token),
-            min_refresh,
-            max_refresh,
-        ) => {
-            let certify = identity::certify::Config {
+    match (ta?, server_id?, server_name?) {
+        (Some(trust_anchors_pem), Some(server_id), Some(server_name)) => {
+            let params = identity::TlsParams {
+                id: server_id,
+                server_name,
+                trust_anchors_pem,
+            };
+            Ok(params)
+        }
+        (trust_anchors_pem, server_id, server_name) => {
+            for (unset, name) in &[
+                (trust_anchors_pem.is_none(), ENV_IDENTITY_TRUST_ANCHORS),
+                (server_id.is_none(), server_id_env_var),
+                (server_name.is_none(), server_name_env_var),
+            ] {
+                if *unset {
+                    error!("{} must be set.", name);
+                }
+            }
+            Err(EnvError::InvalidEnvVar)
+        }
+    }
+}
+
+pub fn parse_linkerd_identity_config<S: Strings>(
+    strings: &S,
+) -> Result<(ControlAddr, identity::client::linkerd::Config), EnvError> {
+    let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
+    let dir = parse(strings, ENV_IDENTITY_DIR, |ref s| Ok(PathBuf::from(s)));
+    let tok = parse(strings, ENV_IDENTITY_TOKEN_FILE, |ref s| {
+        identity::client::linkerd::TokenSource::if_nonempty_file(s.to_string()).map_err(|e| {
+            error!("Could not read {ENV_IDENTITY_TOKEN_FILE}: {e}");
+            ParseError::InvalidTokenSource
+        })
+    });
+
+    let min_refresh = parse(strings, ENV_IDENTITY_MIN_REFRESH, parse_duration);
+    let max_refresh = parse(strings, ENV_IDENTITY_MAX_REFRESH, parse_duration);
+
+    match (control?, dir?, tok?, min_refresh?, max_refresh?) {
+        (Some(control), Some(dir), Some(token), min_refresh, max_refresh) => {
+            let certify = identity::client::linkerd::Config {
                 token,
                 min_refresh: min_refresh.unwrap_or(DEFAULT_IDENTITY_MIN_REFRESH),
                 max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
-                documents: identity::certify::Documents::load(dir).map_err(|error| {
-                    error!(%error, "Failed to read identity documents");
-                    EnvError::InvalidEnvVar
-                })?,
+                documents: identity::client::linkerd::certify::Documents::load(dir).map_err(
+                    |error| {
+                        error!(%error, "Failed to read identity documents");
+                        EnvError::InvalidEnvVar
+                    },
+                )?,
             };
-            let params = identity::TlsParams {
-                server_id: identity::Id::Dns(local_name.clone()),
-                server_name: local_name,
-                trust_anchors_pem,
-            };
-            Ok((control, certify, params))
+
+            Ok((control, certify))
         }
-        (addr, trust_anchors, end_entity_dir, local_id, token, _minr, _maxr) => {
+        (addr, end_entity_dir, token, _minr, _maxr) => {
             let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);
             let svc_env: &str = s.as_str();
             for (unset, name) in &[
                 (addr.is_none(), svc_env),
-                (trust_anchors.is_none(), ENV_IDENTITY_TRUST_ANCHORS),
                 (end_entity_dir.is_none(), ENV_IDENTITY_DIR),
-                (local_id.is_none(), ENV_IDENTITY_IDENTITY_LOCAL_NAME),
                 (token.is_none(), ENV_IDENTITY_TOKEN_FILE),
             ] {
                 if *unset {
-                    error!("{} must be set.", name);
+                    error!("{name} must be set.");
                 }
             }
             Err(EnvError::InvalidEnvVar)

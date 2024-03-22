@@ -2,13 +2,12 @@
 
 use crate::PoolQueue;
 use futures::prelude::*;
+use linkerd_pool_mock as mock;
 use linkerd_proxy_core::Update;
 use linkerd_stack::{Service, ServiceExt};
 use tokio::{sync::mpsc, time};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_test::{assert_pending, assert_ready};
-
-mod mock;
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn processes_requests() {

@@ -1,5 +1,5 @@
 use std::fmt;
-use std::marker::{PhantomData, Sized};
+use std::marker::PhantomData;
 
 /// Writes a block of metrics in prometheus-formatted output.
 pub trait FmtMetrics {
