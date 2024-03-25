@@ -1403,6 +1403,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-http-body-timeout"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "http-body",
+ "linkerd-error",
+ "pin-project",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "linkerd-http-box"
 version = "0.1.0"
 dependencies = [
