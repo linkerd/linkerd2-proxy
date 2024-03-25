@@ -14,14 +14,6 @@ bytes = "1"
 futures = { version = "0.3", default-features = false }
 http = "0.2"
 http-body = "0.4"
-linkerd-addr = { path = "../addr" }
-linkerd-dns-name = { path = "../dns/name" }
-linkerd-error = { path = "../error" }
-linkerd-http-box = { path = "../http-box" }
-linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
-linkerd-stack = { path = "../stack" }
-linkerd-tonic-stream = { path = "../tonic-stream" }
-linkerd-tonic-watch = { path = "../tonic-watch" }
 linkerd2-proxy-api = { version = "0.13", features = ["destination"] }
 once_cell = "1.17"
 prost-types = "0.12"
@@ -32,6 +24,15 @@ tonic = { version = "0.10", default-features = false }
 tower = { version = "0.4.13", features = ["retry", "util"] }
 thiserror = "1"
 tracing = "0.1"
+
+linkerd-addr = { path = "../addr" }
+linkerd-dns-name = { path = "../dns/name" }
+linkerd-error = { path = "../error" }
+linkerd-http-box = { path = "../http/box" }
+linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
+linkerd-stack = { path = "../stack" }
+linkerd-tonic-stream = { path = "../tonic-stream" }
+linkerd-tonic-watch = { path = "../tonic-watch" }
 
 [dev-dependencies]
 linkerd2-proxy-api = { version = "0.13", features = ["arbitrary"] }
