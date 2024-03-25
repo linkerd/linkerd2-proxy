@@ -11,10 +11,11 @@ futures-core = "0.3"
 http = "0.2"
 humantime = "2"
 pin-project = "1"
-linkerd-stack = { path = "../stack" }
-linkerd-identity = { path = "../identity" }
-linkerd-tls = { path = "../tls" }
-linkerd-proxy-transport = { path = "../proxy/transport" }
-linkerd-tracing = { path = "../tracing" }
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
+
+linkerd-stack = { path = "../../stack" }
+linkerd-identity = { path = "../../identity" }
+linkerd-tls = { path = "../../tls" }
+linkerd-proxy-transport = { path = "../../proxy/transport" }
+linkerd-tracing = { path = "../../tracing" }
