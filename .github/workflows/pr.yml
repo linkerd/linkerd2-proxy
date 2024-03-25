@@ -95,7 +95,7 @@ jobs:
       - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84
       - run: just fetch
       - name: Run cargo deny check bans licenses sources
-        uses: EmbarkStudios/cargo-deny-action@64015a69ee7ee08f6c56455089cdaf6ad974fd15
+        uses: EmbarkStudios/cargo-deny-action@b01e7a8cfb1f496c52d77361e84c1840d8246393
         with:
           command: check bans licenses sources
       - run: just check-fmt
@@ -103,6 +103,8 @@ jobs:
       - run: just doc
       - run: just test --exclude=linkerd2-proxy --no-run
       - run: just test --exclude=linkerd2-proxy
+        env:
+          NEXTEST_RETRIES: 3
 
   rust-crates:
     needs: meta

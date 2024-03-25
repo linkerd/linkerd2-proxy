@@ -23,7 +23,7 @@ http = "0.2"
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
-linkerd-http-access-log = { path = "../../http-access-log" }
+linkerd-http-access-log = { path = "../../http/access-log" }
 linkerd-idle-cache = { path = "../../idle-cache" }
 linkerd-meshtls = { path = "../../meshtls", optional = true }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true }
@@ -53,7 +53,7 @@ libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 [dev-dependencies]
 hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
-linkerd-http-metrics = { path = "../../http-metrics", features = ["test-util"] }
+linkerd-http-metrics = { path = "../../http/metrics", features = ["test-util"] }
 linkerd-idle-cache = { path = "../../idle-cache", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
