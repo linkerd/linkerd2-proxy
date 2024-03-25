@@ -163,6 +163,9 @@ jobs:
     permissions:
       actions: write
       contents: write
+    env:
+      VERSION: v${{ needs.meta.outputs.version }}
+      TAG: ${{ needs.meta.outputs.tag }}
     steps:
       - name: Configure git
         env:
@@ -176,7 +179,7 @@ jobs:
         with:
           token: ${{ secrets.LINKERD2_PROXY_GITHUB_TOKEN || github.token }}
           ref: ${{ needs.meta.outputs.ref }}
-      - run: git tag -a -m 'v${{ needs.meta.outputs.version }}' '${{ needs.meta.outputs.tag }}'
+      - run: git tag -a -m "$VERSION" "$TAG"
       # Fetch the artifacts.
       - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427
         with:
@@ -184,16 +187,22 @@ jobs:
       - run: du -h artifacts/**/*
       # Publish the release.
       - if: needs.meta.outputs.publish == 'true'
-        run: git push origin '${{ needs.meta.outputs.tag }}'
+        run: git push origin "$TAG"
       - if: needs.meta.outputs.publish == 'true'
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         with:
-          name: v${{ needs.meta.outputs.version }}
-          tag_name: ${{ needs.meta.outputs.tag }}
+          name: v${{ env.VERSION }}
+          tag_name: ${{ env.TAG }}
           files: artifacts/**/*
           generate_release_notes: true
           prerelease: ${{ needs.meta.outputs.prerelease }}
           draft: ${{ needs.meta.outputs.draft }}
+      - if: needs.meta.outputs.publish == 'true'
+        name: Trigger sync-proxy in linkerd2
+        run: gh workflow run sync-proxy.yml -f version="$VERSION"
+        env:
+          GH_REPO: ${{ vars.LINKERD2_REPO || 'linkerd/linkerd2' }}
+          GH_TOKEN: ${{ secrets.LINKERD2_GITHUB_TOKEN }}
 
   release-ok:
     needs: publish
