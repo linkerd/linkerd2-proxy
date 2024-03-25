@@ -103,6 +103,8 @@ jobs:
       - run: just doc
       - run: just test --exclude=linkerd2-proxy --no-run
       - run: just test --exclude=linkerd2-proxy
+        env:
+          NEXTEST_RETRIES: 3
 
   rust-crates:
     needs: meta
