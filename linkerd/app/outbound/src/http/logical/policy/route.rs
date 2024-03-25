@@ -76,13 +76,13 @@ impl RouteMetrics {
     }
 
     #[cfg(test)]
-    pub(crate) fn request_count(
+    pub(crate) fn backend_metrics(
         &self,
         p: crate::ParentRef,
         r: RouteRef,
         b: crate::BackendRef,
-    ) -> backend::RequestCount {
-        self.backend.request_count(p, r, b)
+    ) -> backend::BackendHttpMetrics {
+        self.backend.get(p, r, b)
     }
 }
 
