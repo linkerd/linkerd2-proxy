@@ -25,6 +25,7 @@ members = [
     "linkerd/error-respond",
     "linkerd/exp-backoff",
     "linkerd/http/access-log",
+    "linkerd/http/body-timeout",
     "linkerd/http/box",
     "linkerd/http/classify",
     "linkerd/http/metrics",

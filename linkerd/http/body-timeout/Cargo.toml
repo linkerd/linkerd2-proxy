@@ -1,0 +1,16 @@
+[package]
+name = "linkerd-http-body-timeout"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+http = "0.2"
+http-body = "0.4"
+futures = "0.3"
+pin-project = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["time"] }
+tower-service = "0.3"
+
+linkerd-error = { path = "../../error" }
