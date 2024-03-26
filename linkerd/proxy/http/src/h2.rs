@@ -17,16 +17,38 @@ use tracing::instrument::Instrument;
 use tracing::{debug, debug_span, trace_span};
 
 #[derive(Copy, Clone, Debug, Default)]
-pub struct Settings {
+pub struct ServerSettings {
+    pub adaptive_window: bool,
     pub initial_stream_window_size: Option<u32>,
     pub initial_connection_window_size: Option<u32>,
-    pub keepalive_timeout: Option<Duration>,
+    pub keepalive: Option<Keepalive>,
+    pub max_concurrent_streams: Option<u32>,
+    pub max_frame_size: Option<u32>,
+    pub max_header_list_size: Option<u32>,
+    pub max_pending_accept_reset_streams: Option<usize>,
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct ClientSettings {
+    pub initial_stream_window_size: Option<u32>,
+    pub initial_connection_window_size: Option<u32>,
+    pub adaptive_window: bool,
+    pub max_frame_size: Option<u32>,
+    pub keepalive: Option<Keepalive>,
+    pub max_concurrent_reset_streams: Option<usize>,
+    pub max_send_buf_size: Option<usize>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Keepalive {
+    pub interval: Duration,
+    pub timeout: Duration,
 }
 
 #[derive(Debug)]
 pub struct Connect<C, B> {
     connect: C,
-    h2_settings: Settings,
+    settings: ClientSettings,
     _marker: PhantomData<fn() -> B>,
 }
 
@@ -38,10 +60,10 @@ pub struct Connection<B> {
 // === impl Connect ===
 
 impl<C, B> Connect<C, B> {
-    pub fn new(connect: C, h2_settings: Settings) -> Self {
+    pub fn new(connect: C, settings: ClientSettings) -> Self {
         Connect {
             connect,
-            h2_settings,
+            settings,
             _marker: PhantomData,
         }
     }
@@ -51,7 +73,7 @@ impl<C: Clone, B> Clone for Connect<C, B> {
     fn clone(&self) -> Self {
         Connect {
             connect: self.connect.clone(),
-            h2_settings: self.h2_settings,
+            settings: self.settings,
             _marker: PhantomData,
         }
     }
@@ -79,11 +101,15 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let Settings {
+        let ClientSettings {
+            adaptive_window,
             initial_connection_window_size,
             initial_stream_window_size,
-            keepalive_timeout,
-        } = self.h2_settings;
+            keepalive,
+            max_frame_size,
+            max_concurrent_reset_streams,
+            max_send_buf_size,
+        } = self.settings;
 
         let connect = self
             .connect
@@ -98,13 +124,14 @@ where
                     .http2_only(true)
                     .http2_initial_stream_window_size(initial_stream_window_size)
                     .http2_initial_connection_window_size(initial_connection_window_size)
+                    .http2_adaptive_window(adaptive_window)
+                    .http2_max_frame_size(max_frame_size)
+                    .http2_max_concurrent_reset_streams(max_concurrent_reset_streams.unwrap_or(10))
+                    .http2_max_send_buf_size(max_send_buf_size.unwrap_or(1024 * 1024))
                     .executor(trace::Executor::new());
 
                 // Configure HTTP/2 PING frames
-                if let Some(timeout) = keepalive_timeout {
-                    // XXX(eliza): is this a reasonable interval between
-                    // PING frames?
-                    let interval = timeout / 4;
+                if let Some(Keepalive { interval, timeout }) = keepalive {
                     builder
                         .http2_keep_alive_timeout(timeout)
                         .http2_keep_alive_interval(interval)

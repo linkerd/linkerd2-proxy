@@ -427,13 +427,18 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let tap = parse_tap_config(strings);
 
-    let h2_settings = h2::Settings {
-        initial_stream_window_size: Some(
-            initial_stream_window_size?.unwrap_or(DEFAULT_INITIAL_STREAM_WINDOW_SIZE),
-        ),
-        initial_connection_window_size: Some(
-            initial_connection_window_size?.unwrap_or(DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE),
-        ),
+    let initial_stream_window_size =
+        initial_stream_window_size?.unwrap_or(DEFAULT_INITIAL_STREAM_WINDOW_SIZE);
+    let initial_connection_window_size =
+        initial_connection_window_size?.unwrap_or(DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE);
+    let h2_client = h2::ClientSettings {
+        initial_stream_window_size: Some(initial_stream_window_size),
+        initial_connection_window_size: Some(initial_connection_window_size),
+        ..Default::default()
+    };
+    let h2_server = h2::ServerSettings {
+        initial_stream_window_size: Some(initial_stream_window_size),
+        initial_connection_window_size: Some(initial_connection_window_size),
         ..Default::default()
     };
 
@@ -471,7 +476,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let server = ServerConfig {
             addr,
             keepalive,
-            h2_settings,
+            h2_settings: h2_server,
         };
         let discovery_idle_timeout =
             outbound_discovery_idle_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISCOVERY_IDLE_TIMEOUT);
@@ -492,7 +497,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 OUTBOUND_CONNECT_BASE,
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
-            h2_settings,
+            h2_settings: h2_client,
             h1_settings: h1::PoolSettings {
                 max_idle,
                 idle_timeout: connection_pool_timeout
@@ -552,7 +557,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let server = ServerConfig {
             addr,
             keepalive,
-            h2_settings,
+            h2_settings: h2_server,
         };
         let discovery_idle_timeout =
             inbound_discovery_idle_timeout?.unwrap_or(DEFAULT_INBOUND_DISCOVERY_IDLE_TIMEOUT);
@@ -573,7 +578,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 INBOUND_CONNECT_BASE,
                 DEFAULT_INBOUND_CONNECT_BACKOFF,
             )?,
-            h2_settings,
+            h2_settings: h2_client,
             h1_settings: h1::PoolSettings {
                 max_idle,
                 idle_timeout: connection_pool_timeout,
@@ -747,7 +752,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         server: ServerConfig {
             addr: ListenAddr(admin_listener_addr),
             keepalive: inbound.proxy.server.keepalive,
-            h2_settings,
+            h2_settings: h2_server,
         },
 
         // TODO(ver) Currently we always enable profiling when the pprof feature
@@ -806,7 +811,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             config: ServerConfig {
                 addr: ListenAddr(addr),
                 keepalive: inbound.proxy.server.keepalive,
-                h2_settings,
+                h2_settings: h2_server,
             },
         })
         .unwrap_or(super::tap::Config::Disabled);

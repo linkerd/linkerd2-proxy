@@ -316,7 +316,7 @@ mod client {
         svc, tls,
         transport::{Remote, ServerAddr},
     };
-    use linkerd_proxy_http::h2::Settings as H2Settings;
+    use linkerd_proxy_http::h2::ClientSettings as H2Settings;
     use std::{
         net::SocketAddr,
         task::{Context, Poll},

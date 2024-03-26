@@ -9,7 +9,7 @@ pub(crate) struct ServerRescue {
 
 #[derive(Clone, Debug)]
 pub struct ExtractServerParams {
-    h2: http::h2::Settings,
+    h2: http::h2::ServerSettings,
     drain: drain::Watch,
 }
 

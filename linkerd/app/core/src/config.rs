@@ -10,7 +10,7 @@ use std::time::Duration;
 pub struct ServerConfig {
     pub addr: ListenAddr,
     pub keepalive: Keepalive,
-    pub h2_settings: h2::Settings,
+    pub h2_settings: h2::ServerSettings,
 }
 
 #[derive(Clone, Debug)]
@@ -19,7 +19,7 @@ pub struct ConnectConfig {
     pub timeout: Duration,
     pub keepalive: Keepalive,
     pub h1_settings: h1::PoolSettings,
-    pub h2_settings: h2::Settings,
+    pub h2_settings: h2::ClientSettings,
 }
 
 #[derive(Clone, Debug)]

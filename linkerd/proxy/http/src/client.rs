@@ -28,7 +28,7 @@ pub enum Settings {
 pub struct MakeClient<C, B> {
     connect: C,
     h1_pool: h1::PoolSettings,
-    h2_settings: h2::Settings,
+    h2_settings: h2::ClientSettings,
     _marker: PhantomData<fn(B)>,
 }
 
@@ -40,7 +40,7 @@ pub enum Client<C, T, B> {
 
 pub fn layer<C, B>(
     h1_pool: h1::PoolSettings,
-    h2_settings: h2::Settings,
+    h2_settings: h2::ClientSettings,
 ) -> impl layer::Layer<C, Service = MakeClient<C, B>> + Copy {
     layer::mk(move |connect: C| MakeClient {
         connect,

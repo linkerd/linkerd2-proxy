@@ -26,7 +26,7 @@ pub(crate) fn default_config() -> Config {
             server: config::ServerConfig {
                 addr: ListenAddr(([0, 0, 0, 0], 0).into()),
                 keepalive: Keepalive(None),
-                h2_settings: h2::Settings::default(),
+                h2_settings: h2::ServerSettings::default(),
             },
             connect: config::ConnectConfig {
                 keepalive: Keepalive(None),
@@ -41,7 +41,7 @@ pub(crate) fn default_config() -> Config {
                     max_idle: 1,
                     idle_timeout: Duration::from_secs(1),
                 },
-                h2_settings: h2::Settings::default(),
+                h2_settings: h2::ClientSettings::default(),
             },
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(3),

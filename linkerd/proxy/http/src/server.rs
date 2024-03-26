@@ -2,8 +2,7 @@ use crate::{
     self as http,
     client_handle::SetClientHandle,
     glue::{HyperServerSvc, UpgradeBody},
-    h2::Settings as H2Settings,
-    trace, upgrade, ClientHandle, Version,
+    h2, trace, upgrade, ClientHandle, Version,
 };
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
@@ -22,7 +21,7 @@ type Server = hyper::server::conn::Http<trace::Executor>;
 #[derive(Clone, Debug)]
 pub struct Params {
     pub version: Version,
-    pub h2: H2Settings,
+    pub h2: h2::ServerSettings,
     pub drain: drain::Watch,
 }
 
@@ -65,13 +64,25 @@ where
     fn new_service(&self, target: T) -> Self::Service {
         let Params { version, h2, drain } = self.params.extract_param(&target);
 
-        let mut srv = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
-        srv.http2_initial_stream_window_size(h2.initial_stream_window_size)
-            .http2_initial_connection_window_size(h2.initial_connection_window_size);
+        let mut server = hyper::server::conn::Http::new().with_executor(trace::Executor::default());
+        const DEFAULT_SETTINGS_MAX_HEADER_LIST_SIZE: u32 = 16 << 20; // 16 MB "sane default" taken from golang http2
+        server
+            .http2_initial_stream_window_size(h2.initial_stream_window_size)
+            .http2_initial_connection_window_size(h2.initial_connection_window_size)
+            .http2_adaptive_window(h2.adaptive_window)
+            .http2_max_concurrent_streams(h2.max_concurrent_streams)
+            .http2_max_frame_size(h2.max_frame_size)
+            .http2_max_header_list_size(
+                h2.max_header_list_size
+                    .unwrap_or(DEFAULT_SETTINGS_MAX_HEADER_LIST_SIZE),
+            )
+            .http2_max_pending_accept_reset_streams(h2.max_pending_accept_reset_streams);
+
         // Configure HTTP/2 PING frames
-        if let Some(timeout) = h2.keepalive_timeout {
-            srv.http2_keep_alive_timeout(timeout)
-                .http2_keep_alive_interval(timeout / 4);
+        if let Some(h2::Keepalive { interval, timeout }) = h2.keepalive {
+            server
+                .http2_keep_alive_interval(interval)
+                .http2_keep_alive_timeout(timeout);
         }
 
         debug!(?version, "Creating HTTP service");
@@ -80,7 +91,7 @@ where
             inner,
             version,
             drain,
-            server: srv,
+            server,
         }
     }
 }
