@@ -374,8 +374,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_keepalive_interval = parse(strings, ENV_INBOUND_HTTP2_KEEPALIVE_INTERVAL, parse_duration);
     let outbound_keepalive_interval = parse(strings, ENV_OUTBOUND_HTTP2_KEEPALIVE_INTERVAL, parse_duration);
 
-    let inbound_keepalive_timeout = parse(strings, ENV_INBOUND_HTTP2_KEEPALIVE_TIMEOUT, parse_duration);
-    let outbound_keepalive_timeout = parse(strings, ENV_OUTBOUND_HTTP2_KEEPALIVE_TIMEOUT, parse_duration);
+    let inbound_keepalive_timeout =
+        parse(strings, ENV_INBOUND_HTTP2_KEEPALIVE_TIMEOUT, parse_duration)?.or(inbound_connect_keepalive.clone()?);
+    let outbound_keepalive_timeout
+        = parse(strings, ENV_OUTBOUND_HTTP2_KEEPALIVE_TIMEOUT, parse_duration)?.or(outbound_connect_keepalive.clone()?);
 
     let shutdown_grace_period = parse(strings, ENV_SHUTDOWN_GRACE_PERIOD, parse_duration);
 
@@ -482,7 +484,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let keepalive = Keepalive(outbound_accept_keepalive?);
         let h2_settings = h2::Settings {
             keepalive_interval: outbound_keepalive_interval?,
-            keepalive_timeout: outbound_keepalive_timeout?,
+            keepalive_timeout: outbound_keepalive_timeout,
             ..h2_settings
         };
         let server = ServerConfig {
@@ -568,7 +570,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let keepalive = Keepalive(inbound_accept_keepalive?);
         let h2_settings = h2::Settings {
             keepalive_interval: inbound_keepalive_interval?,
-            keepalive_timeout: inbound_keepalive_timeout?,
+            keepalive_timeout: inbound_keepalive_timeout,
             ..h2_settings
         };
         let server = ServerConfig {
