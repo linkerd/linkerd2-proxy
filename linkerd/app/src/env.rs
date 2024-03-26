@@ -771,11 +771,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         server: ServerConfig {
             addr: ListenAddr(admin_listener_addr),
             keepalive: inbound.proxy.server.keepalive,
-            h2_settings: h2::Settings {
-                keepalive_interval: inbound.proxy.server.h2_settings.keepalive_interval,
-                keepalive_timeout: inbound.proxy.server.h2_settings.keepalive_timeout,
-                ..h2_settings
-            },
+            h2_settings,
         },
 
         // TODO(ver) Currently we always enable profiling when the pprof feature
@@ -834,11 +830,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             config: ServerConfig {
                 addr: ListenAddr(addr),
                 keepalive: inbound.proxy.server.keepalive,
-                h2_settings: h2::Settings {
-                    keepalive_interval: inbound.proxy.server.h2_settings.keepalive_interval,
-                    keepalive_timeout: inbound.proxy.server.h2_settings.keepalive_timeout,
-                    ..h2_settings
-                },
+                h2_settings,
             },
         })
         .unwrap_or(super::tap::Config::Disabled);
