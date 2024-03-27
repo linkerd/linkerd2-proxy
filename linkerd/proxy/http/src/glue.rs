@@ -6,13 +6,11 @@ use hyper::client::connect as hyper_connect;
 use linkerd_error::{Error, Result};
 use linkerd_io::{self as io, AsyncRead, AsyncWrite};
 use linkerd_stack::{MakeConnection, Service};
-use pin_project::{pin_project, pinned_drop};
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
-use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
 #[pin_project(PinnedDrop)]
@@ -52,84 +50,6 @@ pub struct HyperConnectFuture<F> {
     #[pin]
     inner: F,
     absolute_form: bool,
-}
-// === impl UpgradeBody ===
-
-impl HttpBody for UpgradeBody {
-    type Data = Bytes;
-    type Error = hyper::Error;
-
-    fn is_end_stream(&self) -> bool {
-        self.body.is_end_stream()
-    }
-
-    fn poll_data(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let body = self.project().body;
-        let poll = futures::ready!(Pin::new(body) // `hyper::Body` is Unpin
-            .poll_data(cx));
-        Poll::Ready(poll.map(|x| {
-            x.map_err(|e| {
-                debug!("http body error: {}", e);
-                e
-            })
-        }))
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let body = self.project().body;
-        Pin::new(body) // `hyper::Body` is Unpin
-            .poll_trailers(cx)
-            .map_err(|e| {
-                debug!("http trailers error: {}", e);
-                e
-            })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> http_body::SizeHint {
-        self.body.size_hint()
-    }
-}
-
-impl Default for UpgradeBody {
-    fn default() -> Self {
-        hyper::Body::empty().into()
-    }
-}
-
-impl From<hyper::Body> for UpgradeBody {
-    fn from(body: hyper::Body) -> Self {
-        Self {
-            body,
-            upgrade: None,
-        }
-    }
-}
-
-impl UpgradeBody {
-    pub(crate) fn new(
-        body: hyper::Body,
-        upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
-    ) -> Self {
-        Self { body, upgrade }
-    }
-}
-
-#[pinned_drop]
-impl PinnedDrop for UpgradeBody {
-    fn drop(self: Pin<&mut Self>) {
-        let this = self.project();
-        // If an HTTP/1 upgrade was wanted, send the upgrade future.
-        if let Some((upgrade, on_upgrade)) = this.upgrade.take() {
-            upgrade.insert_half(on_upgrade);
-        }
-    }
 }
 
 // === impl HyperServerSvc ===

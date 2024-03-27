@@ -1,19 +1,32 @@
 //! HTTP/1.1 Upgrades
 
-use crate::{glue::UpgradeBody, h1};
+use bytes::Bytes;
 use futures::{
     future::{self, Either},
     TryFutureExt,
 };
 use hyper::upgrade::OnUpgrade;
 use linkerd_duplex::Duplex;
-use std::fmt;
-use std::mem;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use tracing::instrument::Instrument;
-use tracing::{debug, info, trace};
+use std::{
+    fmt, mem,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use pin_project::{pin_project, pinned_drop};
+use tracing::{debug, info, instrument::Instrument, trace};
 use try_lock::TryLock;
+use crate::{upgrade::Http11Upgrade, HasH2Reason};
+use futures::TryFuture;
+use hyper::body::HttpBody;
+use hyper::client::connect as hyper_connect;
+use linkerd_error::{Error, Result};
+use linkerd_io::{self as io, AsyncRead, AsyncWrite};
+use linkerd_stack::{MakeConnection, Service};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.
 ///
@@ -42,6 +55,16 @@ pub struct Http11UpgradeHalves {
 /// request.
 #[derive(Debug)]
 pub struct HttpConnect;
+
+/// Provides optional HTTP/1.1 upgrade support on the body.
+#[pin_project(PinnedDrop)]
+#[derive(Debug)]
+pub struct UpgradeBody {
+    /// In UpgradeBody::drop, if this was an HTTP upgrade, the body is taken
+    /// to be inserted into the Http11Upgrade half.
+    body: hyper::Body,
+    pub(super) upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
+}
 
 struct Inner {
     server: TryLock<Option<OnUpgrade>>,
@@ -192,7 +215,7 @@ where
         //
         // At the same time, this stuff is specifically HTTP1, so it feels
         // proper to not have the HTTP2 requests going through it...
-        if h1::is_bad_request(&req) {
+        if is_bad_request(&req) {
             let mut res = http::Response::default();
             *res.status_mut() = http::StatusCode::BAD_REQUEST;
             return Either::Right(future::ok(res));
@@ -217,5 +240,112 @@ where
         let req = req.map(|body| UpgradeBody::new(body, upgrade));
 
         Either::Left(self.service.call(req))
+    }
+}
+
+/// Returns if the received request is definitely bad.
+///
+/// Just because a request parses doesn't mean it's correct. For examples:
+///
+/// - `GET example.com`
+/// - `CONNECT /just-a-path
+fn is_bad_request<B>(req: &http::Request<B>) -> bool {
+    if req.method() == http::Method::CONNECT {
+        // CONNECT is only valid over HTTP/1.1
+        if req.version() != http::Version::HTTP_11 {
+            debug!("CONNECT request not valid for HTTP/1.0: {:?}", req.uri());
+            return true;
+        }
+
+        // CONNECT requests are only valid in authority-form.
+        if !is_origin_form(req.uri()) {
+            debug!("CONNECT request with illegal URI: {:?}", req.uri());
+            return true;
+        }
+    } else if is_origin_form(req.uri()) {
+        // If not CONNECT, refuse any origin-form URIs
+        debug!("{} request with illegal URI: {:?}", req.method(), req.uri());
+        return true;
+    }
+
+    false
+}
+
+// === impl UpgradeBody ===
+
+impl HttpBody for UpgradeBody {
+    type Data = Bytes;
+    type Error = hyper::Error;
+
+    fn is_end_stream(&self) -> bool {
+        self.body.is_end_stream()
+    }
+
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        let body = self.project().body;
+        let poll = futures::ready!(Pin::new(body) // `hyper::Body` is Unpin
+            .poll_data(cx));
+        Poll::Ready(poll.map(|x| {
+            x.map_err(|e| {
+                debug!("http body error: {}", e);
+                e
+            })
+        }))
+    }
+
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+        let body = self.project().body;
+        Pin::new(body) // `hyper::Body` is Unpin
+            .poll_trailers(cx)
+            .map_err(|e| {
+                debug!("http trailers error: {}", e);
+                e
+            })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.body.size_hint()
+    }
+}
+
+impl Default for UpgradeBody {
+    fn default() -> Self {
+        hyper::Body::empty().into()
+    }
+}
+
+impl From<hyper::Body> for UpgradeBody {
+    fn from(body: hyper::Body) -> Self {
+        Self {
+            body,
+            upgrade: None,
+        }
+    }
+}
+
+impl UpgradeBody {
+    pub(crate) fn new(
+        body: hyper::Body,
+        upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
+    ) -> Self {
+        Self { body, upgrade }
+    }
+}
+
+#[pinned_drop]
+impl PinnedDrop for UpgradeBody {
+    fn drop(self: Pin<&mut Self>) {
+        let this = self.project();
+        // If an HTTP/1 upgrade was wanted, send the upgrade future.
+        if let Some((upgrade, on_upgrade)) = this.upgrade.take() {
+            upgrade.insert_half(on_upgrade);
+        }
     }
 }

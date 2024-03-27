@@ -170,27 +170,7 @@ where
 
 /// Returns an Authority from a request's Host header.
 pub fn authority_from_host<B>(req: &http::Request<B>) -> Option<Authority> {
-    super::authority_from_header(req, HOST)
-}
-
-pub(crate) fn set_authority(uri: &mut http::Uri, auth: Authority) {
-    let mut parts = Parts::from(mem::take(uri));
-
-    parts.authority = Some(auth);
-
-    // If this was an origin-form target (path only),
-    // then we can't *only* set the authority, as that's
-    // an illegal target (such as `example.com/docs`).
-    //
-    // But don't set a scheme if this was authority-form (CONNECT),
-    // since that would change its meaning (like `https://example.com`).
-    if parts.path_and_query.is_some() {
-        parts.scheme = Some(Scheme::HTTP);
-    }
-
-    let new = Uri::from_parts(parts).expect("absolute uri");
-
-    *uri = new;
+    crate::authority_from_header(req, HOST)
 }
 
 pub(crate) fn strip_connection_headers(headers: &mut http::HeaderMap) {
@@ -298,32 +278,4 @@ pub(crate) fn is_absolute_form(uri: &Uri) -> bool {
 /// This is `origin-form`: `example.com`
 fn is_origin_form(uri: &Uri) -> bool {
     uri.scheme().is_none() && uri.path_and_query().is_none()
-}
-
-/// Returns if the received request is definitely bad.
-///
-/// Just because a request parses doesn't mean it's correct. For examples:
-///
-/// - `GET example.com`
-/// - `CONNECT /just-a-path
-pub(crate) fn is_bad_request<B>(req: &http::Request<B>) -> bool {
-    if req.method() == http::Method::CONNECT {
-        // CONNECT is only valid over HTTP/1.1
-        if req.version() != http::Version::HTTP_11 {
-            debug!("CONNECT request not valid for HTTP/1.0: {:?}", req.uri());
-            return true;
-        }
-
-        // CONNECT requests are only valid in authority-form.
-        if !is_origin_form(req.uri()) {
-            debug!("CONNECT request with illegal URI: {:?}", req.uri());
-            return true;
-        }
-    } else if is_origin_form(req.uri()) {
-        // If not CONNECT, refuse any origin-form URIs
-        debug!("{} request with illegal URI: {:?}", req.method(), req.uri());
-        return true;
-    }
-
-    false
 }

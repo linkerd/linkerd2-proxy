@@ -5,7 +5,7 @@
 //! HTTP/1 messages over an H2 transport; however, some requests cannot be
 //! proxied via this method, so it also maintains a fallback HTTP/1 client.
 
-use crate::{h1, h2, orig_proto};
+use crate::orig_proto;
 use futures::prelude::*;
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
@@ -17,6 +17,12 @@ use std::{
 };
 use tracing::instrument::{Instrument, Instrumented};
 use tracing::{debug, debug_span};
+
+mod h1;
+pub mod h2;
+mod h2upgrade;
+
+use h2upgrade::Http1OverH2;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Settings {
@@ -35,7 +41,7 @@ pub struct MakeClient<C, B> {
 pub enum Client<C, T, B> {
     H2(h2::Connection<B>),
     Http1(h1::Client<C, T, B>),
-    OrigProtoUpgrade(orig_proto::Upgrade<C, T, B>),
+    OrigProtoUpgrade(Http1OverH2<C, T, B>),
 }
 
 pub fn layer<C, B>(
@@ -106,7 +112,7 @@ where
                         .oneshot(target.clone())
                         .await?;
                     let http1 = h1::Client::new(connect, target, h1_pool);
-                    Client::OrigProtoUpgrade(orig_proto::Upgrade::new(http1, h2))
+                    Client::OrigProtoUpgrade(Http1OverH2::new(http1, h2))
                 }
             };
 

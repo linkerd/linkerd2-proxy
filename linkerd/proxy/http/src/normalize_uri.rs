@@ -14,7 +14,6 @@
 //! * Otherwise, if the request has a `Host` header, it is used as the authority;
 //! * Otherwise, the target's address is used (as provided by the target).
 
-use super::h1;
 use futures::{future, TryFutureExt};
 use http::uri::Authority;
 use linkerd_error::Error;
@@ -22,6 +21,9 @@ use linkerd_stack::{layer, ExtractParam, NewService};
 use std::task::{Context, Poll};
 use thiserror::Error;
 use tracing::trace;
+
+#[derive(Copy, Clone, Debug)]
+pub struct WasAbsoluteForm(());
 
 #[derive(Clone, Debug)]
 pub struct NewNormalizeUri<X, N> {
@@ -122,7 +124,7 @@ where
                 };
 
                 trace!(%authority, "Normalizing URI");
-                h1::set_authority(req.uri_mut(), authority);
+                crate::set_authority(req.uri_mut(), authority);
             }
         }
 

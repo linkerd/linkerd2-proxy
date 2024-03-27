@@ -1,7 +1,6 @@
 use crate::{
     self as http,
     glue::{HyperServerSvc, UpgradeBody},
-    h2::Settings as H2Settings,
     trace, upgrade, Version,
 };
 use linkerd_error::Error;
@@ -16,9 +15,11 @@ use tower::Service;
 use tracing::{debug, Instrument};
 
 mod client_handle;
+// mod normalize_uri;
 
 pub use self::client_handle::ClientHandle;
 use self::client_handle::SetClientHandle;
+use super::client::h2::Settings as H2Settings;
 
 type Server = hyper::server::conn::Http<trace::Executor>;
 

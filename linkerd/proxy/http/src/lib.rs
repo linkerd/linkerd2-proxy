@@ -1,7 +1,6 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use http::{header::AsHeaderName, uri::Authority};
 use linkerd_error::Error;
 
 pub mod balance;
@@ -9,8 +8,6 @@ pub mod classify;
 pub mod client;
 pub mod detect;
 mod glue;
-pub mod h1;
-pub mod h2;
 mod header_from_target;
 pub mod insert;
 pub mod normalize_uri;
@@ -78,10 +75,30 @@ impl HasH2Reason for ::h2::Error {
 }
 
 /// Returns an Authority from the value of `header`.
-pub fn authority_from_header<B, K>(req: &http::Request<B>, header: K) -> Option<Authority>
+pub fn authority_from_header<B, K>(req: &http::Request<B>, header: K) -> Option<uri::Authority>
 where
-    K: AsHeaderName,
+    K: http::header::AsHeaderName,
 {
     let v = req.headers().get(header)?;
     v.to_str().ok()?.parse().ok()
+}
+
+fn set_authority(uri: &mut uri::Uri, auth: uri::Authority) {
+    let mut parts = uri::Parts::from(mem::take(uri));
+
+    parts.authority = Some(auth);
+
+    // If this was an origin-form target (path only),
+    // then we can't *only* set the authority, as that's
+    // an illegal target (such as `example.com/docs`).
+    //
+    // But don't set a scheme if this was authority-form (CONNECT),
+    // since that would change its meaning (like `https://example.com`).
+    if parts.path_and_query.is_some() {
+        parts.scheme = Some(http::uri::Scheme::HTTP);
+    }
+
+    let new = http::uri::Uri::from_parts(parts).expect("absolute uri");
+
+    *uri = new;
 }
