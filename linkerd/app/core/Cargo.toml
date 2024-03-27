@@ -45,7 +45,7 @@ linkerd-identity = { path = "../../identity" }
 linkerd-idle-cache = { path = "../../idle-cache" }
 linkerd-io = { path = "../../io" }
 linkerd-meshtls = { path = "../../meshtls", default-features = false }
-linkerd-metrics = { path = "../../metrics", features = ["process", "stack"] }
+linkerd-metrics = { path = "../../metrics", features = ["app"] }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd-proxy-balance = { path = "../../proxy/balance" }
@@ -76,9 +76,6 @@ linkerd-trace-context = { path = "../../trace-context" }
 version = "0.4"
 default-features = false
 features = ["make", "spawn-ready", "timeout", "util", "limit"]
-
-[target.'cfg(target_os = "linux")'.dependencies]
-linkerd-system = { path = "../../system" }
 
 [build-dependencies]
 semver = "1"

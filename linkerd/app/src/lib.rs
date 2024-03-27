@@ -258,7 +258,26 @@ impl Config {
             })
         };
 
-        metrics::process::register(registry.sub_registry_with_prefix("process"));
+        #[cfg(not(tokio_unstable))]
+        tracing::debug!("Tokio runtime metrics cannot be monitored without the tokio_unstable cfg");
+        #[cfg(tokio_unstable)]
+        {
+            let metrics = metrics::tokio_rt::Runtime::register(
+                registry.sub_registry_with_prefix("tokio_rt"),
+                tokio::runtime::Handle::current(),
+            );
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            tokio::spawn(
+                async move { metrics.updated(&mut interval).await }
+                    .instrument(tracing::info_span!("prom-tokio-rt")),
+            );
+        }
+
+        if let Err(error) = metrics::process::register(registry.sub_registry_with_prefix("process"))
+        {
+            tracing::warn!(%error, "Process metrics cannot be monitored");
+        }
+
         registry.register("proxy_build_info", "Proxy build info", BUILD_INFO.metric());
 
         let admin = {

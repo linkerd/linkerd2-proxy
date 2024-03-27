@@ -10,10 +10,13 @@ mod histogram;
 pub mod latency;
 #[cfg(feature = "linkerd-stack")]
 mod new_metrics;
-#[cfg(feature = "process")]
-pub mod process;
 mod serve;
 mod store;
+
+#[cfg(feature = "process")]
+pub use kubert_prometheus_process as process;
+#[cfg(all(feature = "tokio-rt", tokio_unstable))]
+pub use kubert_prometheus_tokio as tokio_rt;
 
 #[cfg(feature = "linkerd-stack")]
 pub use self::new_metrics::NewMetrics;
