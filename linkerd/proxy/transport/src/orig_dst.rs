@@ -96,7 +96,8 @@ fn orig_dst_addr(sock: &TcpStream) -> io::Result<OrigDstAddr> {
     use std::os::unix::io::AsRawFd;
 
     let fd = sock.as_raw_fd();
-    let r = unsafe { linux::so_original_dst(fd) };
+    let peer_addr = sock.peer_addr()?;
+    let r = unsafe { linux::so_original_dst(fd, peer_addr) };
     r.map(OrigDstAddr)
 }
 
@@ -115,32 +116,21 @@ mod linux {
     use std::os::unix::io::RawFd;
     use std::{io, mem};
 
-    pub unsafe fn so_original_dst(fd: RawFd) -> io::Result<SocketAddr> {
-        let mut sockdomain: i32 = 0;
-        let mut sockdomain_len: libc::socklen_t = 32;
-
+    pub unsafe fn so_original_dst(fd: RawFd, peer_addr: SocketAddr) -> io::Result<SocketAddr> {
         let mut sockaddr: libc::sockaddr_storage = mem::zeroed();
         let mut sockaddr_len: libc::socklen_t = mem::size_of::<libc::sockaddr_storage>() as u32;
 
-        let ret = libc::getsockopt(
-            fd,
-            libc::SOL_SOCKET,
-            libc::SO_DOMAIN,
-            &mut sockdomain as *mut _ as *mut _,
-            &mut sockdomain_len as *mut _ as *mut _,
-        );
-        if ret != 0 {
-            return Err(io::Error::last_os_error());
-        }
-
-        let (level, optname) = match sockdomain {
-            libc::AF_INET => (libc::SOL_IP, libc::SO_ORIGINAL_DST),
-            libc::AF_INET6 => (libc::SOL_IPV6, libc::IP6T_SO_ORIGINAL_DST),
-            x => {
-                return Err(io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    format!("unknown SO_DOMAIN: {x}"),
-                ));
+        let (level, optname) = match peer_addr {
+            // used when binding to 0.0.0.0
+            SocketAddr::V4(_) => (libc::SOL_IP, libc::SO_ORIGINAL_DST),
+            // used when binding to ::
+            SocketAddr::V6(addr) => {
+                if addr.ip().to_ipv4_mapped().is_some() {
+                    // when in dual-stack mode and the client connected to the pod's IPv4 address
+                    (libc::SOL_IP, libc::SO_ORIGINAL_DST)
+                } else {
+                    (libc::SOL_IPV6, libc::IP6T_SO_ORIGINAL_DST)
+                }
             }
         };
 
