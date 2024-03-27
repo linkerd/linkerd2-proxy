@@ -43,12 +43,6 @@ impl<B> TimeoutBody<B> {
             sleep: Box::pin(time::sleep(time::Duration::MAX)),
         }
     }
-
-    fn reset(sleep: Pin<&mut time::Sleep>, timeout: time::Duration) {
-        // Roughly 30 years.
-        const MAX: time::Duration = time::Duration::from_secs(86400 * 365 * 30);
-        sleep.reset(time::Instant::now() + timeout.min(MAX));
-    }
 }
 
 impl<B> Body for TimeoutBody<B>
@@ -65,51 +59,38 @@ where
         self.inner.is_end_stream()
     }
 
+    #[inline]
     fn poll_data(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.project();
-        let poll = this.inner.poll_data(cx);
-        match &poll {
-            Poll::Pending if !*this.is_pending => {
-                *this.is_pending = true;
-                Self::reset(this.sleep.as_mut(), *this.timeout);
-            }
-            Poll::Ready(_) if *this.is_pending => {
-                *this.is_pending = false;
-            }
-            _ => {}
-        }
-        poll.map_err(Into::into)
+        *this.is_pending = false;
+        this.inner.poll_data(cx).map_err(Into::into)
     }
 
+    #[inline]
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<HeaderMap<HeaderValue>>, Self::Error>> {
         let this = self.project();
-        let poll = this.inner.poll_trailers(cx);
-        match &poll {
-            Poll::Pending if !*this.is_pending => {
-                *this.is_pending = true;
-                Self::reset(this.sleep.as_mut(), *this.timeout);
-            }
-            Poll::Ready(_) if *this.is_pending => {
-                *this.is_pending = false;
-            }
-            _ => {}
-        }
-        poll.map_err(Into::into)
+        *this.is_pending = false;
+        this.inner.poll_trailers(cx).map_err(Into::into)
     }
 
     fn poll_progress(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let this = self.project();
 
-        match this.inner.poll_progress(cx).map_err(Into::into) {
-            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-            poll if !*this.is_pending => return poll,
-            _ => {}
+        let _ = this.inner.poll_progress(cx).map_err(Into::into)?;
+
+        if !*this.is_pending {
+            // Avoid overflows by capping MAX to roughly 30 years.
+            const MAX: time::Duration = time::Duration::from_secs(86400 * 365 * 30);
+            this.sleep
+                .as_mut()
+                .reset(time::Instant::now() + (*this.timeout).min(MAX));
+            *this.is_pending = true;
         }
 
         match this.sleep.as_mut().poll(cx) {
