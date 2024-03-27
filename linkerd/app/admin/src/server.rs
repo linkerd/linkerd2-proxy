@@ -12,10 +12,13 @@
 
 use futures::future::{self, TryFutureExt};
 use http::StatusCode;
-use hyper::{body::Body, Request, Response};
+use hyper::{
+    body::{Body, HttpBody},
+    Request, Response,
+};
 use linkerd_app_core::{
     metrics::{self as metrics, FmtMetrics},
-    proxy::http::{BoxBody, ClientHandle},
+    proxy::http::ClientHandle,
     trace, Error, Result,
 };
 use std::{
@@ -190,9 +193,12 @@ impl<M> Admin<M> {
     }
 }
 
-impl<M> tower::Service<http::Request<BoxBody>> for Admin<M>
+impl<M, B> tower::Service<http::Request<B>> for Admin<M>
 where
     M: FmtMetrics,
+    B: HttpBody + Send + 'static,
+    B::Error: Into<Error>,
+    B::Data: Send,
 {
     type Response = http::Response<Body>;
     type Error = Error;
@@ -202,7 +208,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: Request<BoxBody>) -> Self::Future {
+    fn call(&mut self, req: Request<B>) -> Self::Future {
         match req.uri().path() {
             "/live" => Box::pin(future::ok(Self::live_rsp())),
             "/ready" => Box::pin(future::ok(self.ready_rsp())),

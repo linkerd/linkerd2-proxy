@@ -18,6 +18,13 @@ use std::{
 use tracing::{debug, info, instrument::Instrument, trace};
 use try_lock::TryLock;
 
+#[derive(Debug)]
+pub struct SetupHttp11Connect<S> {
+    service: S,
+    /// Watch any spawned HTTP/1.1 upgrade tasks.
+    upgrade_drain_signal: drain::Watch,
+}
+
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.
 ///
 /// If the HTTP1 server service detects an upgrade request, this will be
@@ -66,13 +73,6 @@ struct Inner {
 enum Half {
     Server,
     Client,
-}
-
-#[derive(Debug)]
-pub struct SetupHttp11Connect<S> {
-    service: S,
-    /// Watch any spawned HTTP/1.1 upgrade tasks.
-    upgrade_drain_signal: drain::Watch,
 }
 
 // === impl Http11Upgrade ===

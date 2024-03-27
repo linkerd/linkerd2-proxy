@@ -189,7 +189,7 @@ fn test_downgrade_h2_error() {
         "h2 errors must be downgraded"
     );
 
-    #[derive(Debug, Error)]
+    #[derive(Debug, thiserror::Error)]
     #[error("wrapped h2 error: {0}")]
     struct WrapError(#[source] Error);
     assert!(

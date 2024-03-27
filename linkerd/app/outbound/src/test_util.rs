@@ -4,7 +4,7 @@ use linkerd_app_core::{
     config::{self, QueueConfig},
     drain, exp_backoff, metrics,
     proxy::{
-        http::{h1, h2},
+        http::client::{h1, h2},
         tap,
     },
     transport::{Keepalive, ListenAddr},

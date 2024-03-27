@@ -106,7 +106,6 @@ impl Config {
         let admin = admin.with_profiling(self.enable_profiling);
 
         let http = svc::stack(move |_| admin.clone())
-            .push_on_service(http::BoxRequest::layer())
             .push(
                 metrics
                     .proxy
@@ -118,9 +117,7 @@ impl Config {
             .push(inbound::policy::NewHttpPolicy::layer(
                 metrics.http_authz.clone(),
             ))
-            .check_new_service::<_, http::Request<http::BoxBody>>()
             .push(Rescue::layer())
-            .check_new_service::<_, http::Request<http::BoxBody>>()
             .push_on_service(http::BoxResponse::layer())
             .arc_new_clone_http();
 
