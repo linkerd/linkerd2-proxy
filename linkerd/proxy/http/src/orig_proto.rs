@@ -1,16 +1,12 @@
+use crate::normalize_uri::WasAbsoluteForm;
 use futures::prelude::*;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
 use linkerd_error::Result;
 use linkerd_stack::{layer, Service};
 use std::task::{Context, Poll};
-use thiserror::Error;
 use tracing::{debug, warn};
 
 pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
-
-#[derive(Clone, Copy, Debug, Error)]
-#[error("upgraded connection failed with HTTP/2 reset: {0}")]
-pub struct DowngradedH2Error(h2::Reason);
 
 /// Downgrades HTTP2 requests that were previousl upgraded to their original
 /// protocol.
@@ -63,7 +59,7 @@ where
                 }
 
                 if was_absolute_form(val) {
-                    req.extensions_mut().insert(h1::WasAbsoluteForm(()));
+                    req.extensions_mut().insert(WasAbsoluteForm(()));
                 }
                 req.extensions_mut().insert(WasUpgrade(()));
                 upgrade_response = true;

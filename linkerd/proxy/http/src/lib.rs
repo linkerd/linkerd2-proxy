@@ -28,7 +28,6 @@ pub use self::{
         NewInsertClassifyResponse,
     },
     detect::DetectHttp,
-    glue::{HyperServerSvc, UpgradeBody},
     header_from_target::NewHeaderFromTarget,
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     override_authority::{AuthorityOverride, NewOverrideAuthority},
@@ -77,14 +76,14 @@ impl HasH2Reason for ::h2::Error {
 /// Returns an Authority from the value of `header`.
 pub fn authority_from_header<B, K>(req: &http::Request<B>, header: K) -> Option<uri::Authority>
 where
-    K: http::header::AsHeaderName,
+    K: header::AsHeaderName,
 {
     let v = req.headers().get(header)?;
     v.to_str().ok()?.parse().ok()
 }
 
 fn set_authority(uri: &mut uri::Uri, auth: uri::Authority) {
-    let mut parts = uri::Parts::from(mem::take(uri));
+    let mut parts = uri::Parts::from(std::mem::take(uri));
 
     parts.authority = Some(auth);
 
@@ -101,4 +100,26 @@ fn set_authority(uri: &mut uri::Uri, auth: uri::Authority) {
     let new = http::uri::Uri::from_parts(parts).expect("absolute uri");
 
     *uri = new;
+}
+
+fn strip_connection_headers(headers: &mut http::HeaderMap) {
+    if let Some(val) = headers.remove(header::CONNECTION) {
+        if let Ok(conn_header) = val.to_str() {
+            // A `Connection` header may have a comma-separated list of
+            // names of other headers that are meant for only this specific
+            // connection.
+            //
+            // Iterate these names and remove them as headers.
+            for name in conn_header.split(',') {
+                let name = name.trim();
+                headers.remove(name);
+            }
+        }
+    }
+
+    // Additionally, strip these "connection-level" headers always, since
+    // they are otherwise illegal if upgraded to HTTP2.
+    headers.remove(header::UPGRADE);
+    headers.remove("proxy-connection");
+    headers.remove("keep-alive");
 }

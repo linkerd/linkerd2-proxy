@@ -8,14 +8,14 @@
 //!
 //! This middleware prepares server-provided requests to be suitable for clients:
 //!
-//! * If the request was originally in absolute-form, the `h1::WasAbsoluteForm`
+//! * If the request was originally in absolute-form, the `WasAbsoluteForm`
 //!   extension is added so that the `h1::Client` can differentiate the request
 //!   from modified requests;
 //! * Otherwise, if the request has a `Host` header, it is used as the authority;
 //! * Otherwise, the target's address is used (as provided by the target).
 
 use futures::{future, TryFutureExt};
-use http::uri::Authority;
+use http::uri::{Authority, Uri};
 use linkerd_error::Error;
 use linkerd_stack::{layer, ExtractParam, NewService};
 use std::task::{Context, Poll};
@@ -23,7 +23,7 @@ use thiserror::Error;
 use tracing::trace;
 
 #[derive(Copy, Clone, Debug)]
-pub struct WasAbsoluteForm(());
+pub struct WasAbsoluteForm(pub(crate) ());
 
 #[derive(Clone, Debug)]
 pub struct NewNormalizeUri<X, N> {
@@ -114,10 +114,11 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
-            if req.extensions().get::<h1::WasAbsoluteForm>().is_none()
+            if req.extensions().get::<WasAbsoluteForm>().is_none()
                 && req.uri().authority().is_none()
             {
-                let authority = match h1::authority_from_host(&req).or_else(|| self.default.clone())
+                let authority = match crate::authority_from_header(&req, http::header::HOST)
+                    .or_else(|| self.default.clone())
                 {
                     Some(a) => a,
                     None => return future::Either::Right(future::err(NoAuthority(()).into())),
@@ -159,9 +160,9 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
-            if h1::is_absolute_form(req.uri()) {
+            if is_absolute_form(req.uri()) {
                 trace!(uri = ?req.uri(), "Absolute form");
-                req.extensions_mut().insert(h1::WasAbsoluteForm(()));
+                req.extensions_mut().insert(WasAbsoluteForm(()));
             } else {
                 trace!(uri = ?req.uri(), "Origin form");
             };
@@ -169,4 +170,25 @@ where
 
         self.inner.call(req)
     }
+}
+
+/// Returns if the request target is in `absolute-form`.
+///
+/// This is `absolute-form`: `https://example.com/docs`
+///
+/// This is not:
+///
+/// - `/docs`
+/// - `example.com`
+fn is_absolute_form(uri: &Uri) -> bool {
+    // It's sufficient just to check for a scheme, since in HTTP1,
+    // it's required in absolute-form, and `http::Uri` doesn't
+    // allow URIs with the other parts missing when the scheme is set.
+    debug_assert!(
+        uri.scheme().is_none() || (uri.authority().is_some() && uri.path_and_query().is_some()),
+        "is_absolute_form http::Uri invariants: {:?}",
+        uri
+    );
+
+    uri.scheme().is_some()
 }

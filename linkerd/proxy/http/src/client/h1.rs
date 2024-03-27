@@ -1,20 +1,15 @@
 use crate::{
     glue::HyperConnect,
+    normalize_uri::WasAbsoluteForm,
     upgrade::{Http11Upgrade, HttpConnect},
 };
 use futures::prelude::*;
-use http::{
-    header::{CONNECTION, CONTENT_LENGTH, HOST, TRANSFER_ENCODING, UPGRADE},
-    uri::{Authority, Parts, Scheme, Uri},
-};
+use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_stack::MakeConnection;
-use std::{mem, pin::Pin, time::Duration};
+use std::{pin::Pin, time::Duration};
 use tracing::{debug, trace};
-
-#[derive(Copy, Clone, Debug)]
-pub struct WasAbsoluteForm(pub(crate) ());
 
 #[derive(Copy, Clone, Debug)]
 pub struct PoolSettings {
@@ -158,7 +153,7 @@ where
                     upgrade.insert_half(hyper::upgrade::on(&mut rsp));
                 }
             } else {
-                strip_connection_headers(rsp.headers_mut());
+                crate::strip_connection_headers(rsp.headers_mut());
             }
 
             rsp.map(BoxBody::new)
@@ -168,59 +163,8 @@ where
 
 // === HTTP/1 utils ===
 
-/// Returns an Authority from a request's Host header.
-pub fn authority_from_host<B>(req: &http::Request<B>) -> Option<Authority> {
-    crate::authority_from_header(req, HOST)
-}
-
-pub(crate) fn strip_connection_headers(headers: &mut http::HeaderMap) {
-    if let Some(val) = headers.remove(CONNECTION) {
-        if let Ok(conn_header) = val.to_str() {
-            // A `Connection` header may have a comma-separated list of
-            // names of other headers that are meant for only this specific
-            // connection.
-            //
-            // Iterate these names and remove them as headers.
-            for name in conn_header.split(',') {
-                let name = name.trim();
-                headers.remove(name);
-            }
-        }
-    }
-
-    // Additionally, strip these "connection-level" headers always, since
-    // they are otherwise illegal if upgraded to HTTP2.
-    headers.remove(UPGRADE);
-    headers.remove("proxy-connection");
-    headers.remove("keep-alive");
-}
-
-/// Checks requests to determine if they want to perform an HTTP upgrade.
-pub(crate) fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
-    // HTTP upgrades were added in 1.1, not 1.0.
-    if req.version() != http::Version::HTTP_11 {
-        return false;
-    }
-
-    if let Some(upgrade) = req.headers().get(UPGRADE) {
-        // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
-        // and it succeeded, there would an h2 connection, but it would
-        // be opaque-to-the-proxy, acting as just a TCP proxy.
-        //
-        // A user wouldn't be able to see any usual HTTP telemetry about
-        // requests going over that connection. Instead of that confusion,
-        // the proxy strips h2 upgrade headers.
-        //
-        // Eventually, the proxy will support h2 upgrades directly.
-        return upgrade != "h2c";
-    }
-
-    // HTTP/1.1 CONNECT requests are just like upgrades!
-    req.method() == http::Method::CONNECT
-}
-
 /// Checks responses to determine if they are successful HTTP upgrades.
-pub(crate) fn is_upgrade<B>(res: &http::Response<B>) -> bool {
+fn is_upgrade<B>(res: &http::Response<B>) -> bool {
     #[inline]
     fn is_connect_success<B>(res: &http::Response<B>) -> bool {
         res.extensions().get::<HttpConnect>().is_some() && res.status().is_success()
@@ -250,32 +194,4 @@ pub(crate) fn is_upgrade<B>(res: &http::Response<B>) -> bool {
 
     // Just a regular HTTP response...
     false
-}
-
-/// Returns if the request target is in `absolute-form`.
-///
-/// This is `absolute-form`: `https://example.com/docs`
-///
-/// This is not:
-///
-/// - `/docs`
-/// - `example.com`
-pub(crate) fn is_absolute_form(uri: &Uri) -> bool {
-    // It's sufficient just to check for a scheme, since in HTTP1,
-    // it's required in absolute-form, and `http::Uri` doesn't
-    // allow URIs with the other parts missing when the scheme is set.
-    debug_assert!(
-        uri.scheme().is_none() || (uri.authority().is_some() && uri.path_and_query().is_some()),
-        "is_absolute_form http::Uri invariants: {:?}",
-        uri
-    );
-
-    uri.scheme().is_some()
-}
-
-/// Returns if the request target is in `origin-form`.
-///
-/// This is `origin-form`: `example.com`
-fn is_origin_form(uri: &Uri) -> bool {
-    uri.scheme().is_none() && uri.path_and_query().is_none()
 }

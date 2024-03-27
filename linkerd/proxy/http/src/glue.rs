@@ -1,32 +1,15 @@
-use crate::{upgrade::Http11Upgrade, HasH2Reason};
-use bytes::Bytes;
+use crate::HasH2Reason;
 use futures::TryFuture;
-use hyper::body::HttpBody;
 use hyper::client::connect as hyper_connect;
 use linkerd_error::{Error, Result};
 use linkerd_io::{self as io, AsyncRead, AsyncWrite};
 use linkerd_stack::{MakeConnection, Service};
+use pin_project::pin_project;
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
-
-/// Provides optional HTTP/1.1 upgrade support on the body.
-#[pin_project(PinnedDrop)]
-#[derive(Debug)]
-pub struct UpgradeBody {
-    /// In UpgradeBody::drop, if this was an HTTP upgrade, the body is taken
-    /// to be inserted into the Http11Upgrade half.
-    body: hyper::Body,
-    pub(super) upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
-}
-
-/// Glue for a `tower::Service` to used as a `hyper::server::Service`.
-#[derive(Debug)]
-pub struct HyperServerSvc<S> {
-    service: S,
-}
 
 /// Glue for any `tokio_connect::Connect` to implement `hyper::client::Connect`.
 #[derive(Debug, Clone)]
@@ -50,31 +33,6 @@ pub struct HyperConnectFuture<F> {
     #[pin]
     inner: F,
     absolute_form: bool,
-}
-
-// === impl HyperServerSvc ===
-
-impl<S> HyperServerSvc<S> {
-    pub fn new(service: S) -> Self {
-        HyperServerSvc { service }
-    }
-}
-
-impl<S> tower::Service<http::Request<hyper::Body>> for HyperServerSvc<S>
-where
-    S: tower::Service<http::Request<UpgradeBody>>,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.service.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: http::Request<hyper::Body>) -> Self::Future {
-        self.service.call(req.map(UpgradeBody::from))
-    }
 }
 
 // === impl HyperConnect ===

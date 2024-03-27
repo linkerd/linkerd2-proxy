@@ -1,32 +1,22 @@
 //! HTTP/1.1 Upgrades
 
+use crate::BoxBody;
 use bytes::Bytes;
 use futures::{
     future::{self, Either},
     TryFutureExt,
 };
-use hyper::upgrade::OnUpgrade;
+use hyper::{body::HttpBody, upgrade::OnUpgrade};
 use linkerd_duplex::Duplex;
+use pin_project::{pin_project, pinned_drop};
 use std::{
     fmt, mem,
+    pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
-use pin_project::{pin_project, pinned_drop};
 use tracing::{debug, info, instrument::Instrument, trace};
 use try_lock::TryLock;
-use crate::{upgrade::Http11Upgrade, HasH2Reason};
-use futures::TryFuture;
-use hyper::body::HttpBody;
-use hyper::client::connect as hyper_connect;
-use linkerd_error::{Error, Result};
-use linkerd_io::{self as io, AsyncRead, AsyncWrite};
-use linkerd_stack::{MakeConnection, Service};
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
 
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.
 ///
@@ -79,7 +69,7 @@ enum Half {
 }
 
 #[derive(Debug)]
-pub struct Service<S> {
+pub struct SetupHttp11Connect<S> {
     service: S,
     /// Watch any spawned HTTP/1.1 upgrade tasks.
     upgrade_drain_signal: drain::Watch,
@@ -183,8 +173,9 @@ impl Drop for Inner {
     }
 }
 
-// === impl Service ===
-impl<S> Service<S> {
+// === impl SetupHttp11Connect ===
+
+impl<S> SetupHttp11Connect<S> {
     pub fn new(service: S, upgrade_drain_signal: drain::Watch) -> Self {
         Self {
             service,
@@ -195,15 +186,16 @@ impl<S> Service<S> {
 
 type ResponseFuture<F, B, E> = Either<F, future::Ready<Result<http::Response<B>, E>>>;
 
-impl<S, B> tower::Service<http::Request<hyper::Body>> for Service<S>
+impl<S, B> tower::Service<http::Request<hyper::Body>> for SetupHttp11Connect<S>
 where
-    S: tower::Service<http::Request<UpgradeBody>, Response = http::Response<B>>,
+    S: tower::Service<http::Request<BoxBody>, Response = http::Response<B>>,
     B: Default,
 {
     type Response = S::Response;
     type Error = S::Error;
     type Future = ResponseFuture<S::Future, B, S::Error>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx)
     }
@@ -221,7 +213,7 @@ where
             return Either::Right(future::ok(res));
         }
 
-        let upgrade = if h1::wants_upgrade(&req) {
+        let upgrade = if wants_upgrade(&req) {
             trace!("server request wants HTTP/1.1 upgrade");
             // Upgrade requests include several "connection" headers that
             // cannot be removed.
@@ -233,11 +225,11 @@ where
 
             Some((halves.server, on_upgrade))
         } else {
-            h1::strip_connection_headers(req.headers_mut());
+            crate::strip_connection_headers(req.headers_mut());
             None
         };
 
-        let req = req.map(|body| UpgradeBody::new(body, upgrade));
+        let req = req.map(|body| BoxBody::new(UpgradeBody::new(body, upgrade)));
 
         Either::Left(self.service.call(req))
     }
@@ -269,6 +261,37 @@ fn is_bad_request<B>(req: &http::Request<B>) -> bool {
     }
 
     false
+}
+
+/// Returns if the request target is in `origin-form`.
+///
+/// This is `origin-form`: `example.com`
+fn is_origin_form(uri: &http::uri::Uri) -> bool {
+    uri.scheme().is_none() && uri.path_and_query().is_none()
+}
+
+/// Checks requests to determine if they want to perform an HTTP upgrade.
+pub(crate) fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
+    // HTTP upgrades were added in 1.1, not 1.0.
+    if req.version() != http::Version::HTTP_11 {
+        return false;
+    }
+
+    if let Some(upgrade) = req.headers().get(http::header::UPGRADE) {
+        // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
+        // and it succeeded, there would an h2 connection, but it would
+        // be opaque-to-the-proxy, acting as just a TCP proxy.
+        //
+        // A user wouldn't be able to see any usual HTTP telemetry about
+        // requests going over that connection. Instead of that confusion,
+        // the proxy strips h2 upgrade headers.
+        //
+        // Eventually, the proxy will support h2 upgrades directly.
+        return upgrade != "h2c";
+    }
+
+    // HTTP/1.1 CONNECT requests are just like upgrades!
+    req.method() == http::Method::CONNECT
 }
 
 // === impl UpgradeBody ===

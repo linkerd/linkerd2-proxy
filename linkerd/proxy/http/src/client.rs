@@ -5,7 +5,6 @@
 //! HTTP/1 messages over an H2 transport; however, some requests cannot be
 //! proxied via this method, so it also maintains a fallback HTTP/1 client.
 
-use crate::orig_proto;
 use futures::prelude::*;
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;

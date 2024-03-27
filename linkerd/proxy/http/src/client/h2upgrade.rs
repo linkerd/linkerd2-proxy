@@ -19,6 +19,10 @@ pub struct Http1OverH2<C, T, B> {
     h2: h2::Connection<B>,
 }
 
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+#[error("upgraded connection failed with HTTP/2 reset: {0}")]
+pub struct DowngradedH2Error(h2::Reason);
+
 #[pin_project::pin_project]
 #[derive(Debug, Default)]
 struct ResponseBody {
@@ -54,7 +58,11 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         debug_assert!(req.version() != http::Version::HTTP_2);
-        if req.extensions().get::<upgrade::Http11Upgrade>().is_some() {
+        if req
+            .extensions()
+            .get::<crate::upgrade::Http11Upgrade>()
+            .is_some()
+        {
             debug!("Skipping orig-proto upgrade due to HTTP/1.1 upgrade");
             return Box::pin(self.http1.request(req).map_ok(|rsp| rsp.map(BoxBody::new)));
         }
@@ -62,7 +70,7 @@ where
         let orig_version = req.version();
         let absolute_form = req
             .extensions_mut()
-            .remove::<h1::WasAbsoluteForm>()
+            .remove::<crate::normalize_uri::WasAbsoluteForm>()
             .is_some();
         debug!(version = ?orig_version, absolute_form, "Upgrading request");
 
@@ -104,7 +112,7 @@ where
                         .unwrap_or(orig_version);
                     trace!(?version, "Downgrading response");
                     *rsp.version_mut() = version;
-                    rsp.map(|inner| BoxBody::new(UpgradeResponseBody { inner }))
+                    rsp.map(|inner| BoxBody::new(ResponseBody { inner }))
                 }),
         )
     }

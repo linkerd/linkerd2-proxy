@@ -187,7 +187,7 @@ async fn upgraded_request_remains_relative_form() {
     let (request, _respond) = handle.next_request().await.unwrap();
     assert!(request
         .extensions()
-        .get::<http::h1::WasAbsoluteForm>()
+        .get::<http::orig_proto::WasAbsoluteForm>()
         .is_none());
 }
 

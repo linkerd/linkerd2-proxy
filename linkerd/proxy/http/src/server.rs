@@ -1,8 +1,4 @@
-use crate::{
-    self as http,
-    glue::{HyperServerSvc, UpgradeBody},
-    trace, upgrade, Version,
-};
+use crate::{self as http, trace, upgrade, BoxRequest, Version};
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
 use linkerd_stack::{layer, ExtractParam, NewService};
@@ -96,8 +92,11 @@ impl<I, N, S> Service<I> for ServeHttp<N>
 where
     I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
     N: NewService<ClientHandle, Service = S> + Send + 'static,
-    S: Service<http::Request<UpgradeBody>, Response = http::Response<http::BoxBody>, Error = Error>
-        + Unpin
+    S: Service<
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
+            Error = Error,
+        > + Unpin
         + Send
         + 'static,
     S::Future: Send + 'static,
@@ -129,7 +128,7 @@ where
                 match version {
                     Version::Http1 => {
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        let svc = upgrade::Service::new(svc, drain.clone());
+                        let svc = upgrade::SetupHttp11Connect::new(svc, drain.clone());
                         let mut conn = server
                             .http1_only(true)
                             .serve_connection(io, svc)
@@ -156,7 +155,7 @@ where
                     Version::H2 => {
                         let mut conn = server
                             .http2_only(true)
-                            .serve_connection(io, HyperServerSvc::new(svc));
+                            .serve_connection(io, BoxRequest::new(svc));
 
                         tokio::select! {
                             res = &mut conn => {
