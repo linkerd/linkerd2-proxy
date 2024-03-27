@@ -316,7 +316,7 @@ mod client {
         svc, tls,
         transport::{Remote, ServerAddr},
     };
-    use linkerd_proxy_http::h2::Settings as H2Settings;
+    use linkerd_proxy_http::client::h2::Settings as H2Settings;
     use std::{
         net::SocketAddr,
         task::{Context, Poll},
@@ -336,7 +336,7 @@ mod client {
 
     #[derive(Debug)]
     pub struct Client<C, B> {
-        inner: http::h2::Connect<C, B>,
+        inner: http::client::h2::Connect<C, B>,
     }
 
     // === impl Target ===
@@ -363,10 +363,10 @@ mod client {
 
     pub fn layer<C, B>() -> impl svc::Layer<C, Service = Client<C, B>> + Copy
     where
-        http::h2::Connect<C, B>: tower::Service<Target>,
+        http::client::h2::Connect<C, B>: tower::Service<Target>,
     {
         svc::layer::mk(|mk_conn| {
-            let inner = http::h2::Connect::new(mk_conn, H2Settings::default());
+            let inner = http::client::h2::Connect::new(mk_conn, H2Settings::default());
             Client { inner }
         })
     }
@@ -375,11 +375,11 @@ mod client {
 
     impl<C, B> tower::Service<Target> for Client<C, B>
     where
-        http::h2::Connect<C, B>: tower::Service<Target>,
+        http::client::h2::Connect<C, B>: tower::Service<Target>,
     {
-        type Response = <http::h2::Connect<C, B> as tower::Service<Target>>::Response;
-        type Error = <http::h2::Connect<C, B> as tower::Service<Target>>::Error;
-        type Future = <http::h2::Connect<C, B> as tower::Service<Target>>::Future;
+        type Response = <http::client::h2::Connect<C, B> as tower::Service<Target>>::Response;
+        type Error = <http::client::h2::Connect<C, B> as tower::Service<Target>>::Error;
+        type Future = <http::client::h2::Connect<C, B> as tower::Service<Target>>::Future;
 
         #[inline]
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -396,7 +396,7 @@ mod client {
     // a PhantomData.
     impl<C, B> Clone for Client<C, B>
     where
-        http::h2::Connect<C, B>: Clone,
+        http::client::h2::Connect<C, B>: Clone,
     {
         fn clone(&self) -> Self {
             Client {

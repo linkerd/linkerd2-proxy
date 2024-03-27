@@ -17,10 +17,11 @@ use std::{
 use tracing::instrument::{Instrument, Instrumented};
 use tracing::{debug, debug_span};
 
-mod h1;
+pub mod h1;
 pub mod h2;
 mod h2upgrade;
 
+pub use h2upgrade::DowngradedH2Error;
 use h2upgrade::Http1OverH2;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
