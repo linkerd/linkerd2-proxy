@@ -99,7 +99,7 @@ async fn downgrade_origin_form() {
     // Build the outbound server
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_h2());
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
@@ -137,7 +137,7 @@ async fn downgrade_absolute_form() {
     // Build the outbound server
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, connect).new_service(Target::UNMESHED_H2);
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::meshed_h2());
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
@@ -764,9 +764,9 @@ impl svc::Param<policy::ServerLabel> for Target {
     }
 }
 
-impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(None)
+impl svc::Param<crate::http::DefaultAuthority> for Target {
+    fn param(&self) -> crate::http::DefaultAuthority {
+        crate::http::DefaultAuthority::from_addr(Self::addr())
     }
 }
 

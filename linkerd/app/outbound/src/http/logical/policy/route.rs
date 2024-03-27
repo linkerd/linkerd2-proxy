@@ -158,9 +158,9 @@ impl<T: Clone, M, F, E> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T
     }
 }
 
-impl<T, M, F, E> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, M, F, E> {
-    fn param(&self) -> http::timeout::ResponseTimeout {
-        http::timeout::ResponseTimeout(self.params.request_timeout)
+impl<T, M, F, E> svc::Param<http::ResponseTimeout> for MatchedRoute<T, M, F, E> {
+    fn param(&self) -> http::ResponseTimeout {
+        http::ResponseTimeout(self.params.request_timeout)
     }
 }
 

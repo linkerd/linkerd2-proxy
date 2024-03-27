@@ -1,20 +1,15 @@
 use crate::{
     glue::HyperConnect,
+    server::UriWasOriginallyAbsoluteForm,
     upgrade::{Http11Upgrade, HttpConnect},
 };
 use futures::prelude::*;
-use http::{
-    header::{CONNECTION, CONTENT_LENGTH, HOST, TRANSFER_ENCODING, UPGRADE},
-    uri::{Authority, Parts, Scheme, Uri},
-};
+use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_stack::MakeConnection;
-use std::{mem, pin::Pin, time::Duration};
+use std::{pin::Pin, time::Duration};
 use tracing::{debug, trace};
-
-#[derive(Copy, Clone, Debug)]
-pub struct WasAbsoluteForm(pub(crate) ());
 
 #[derive(Copy, Clone, Debug)]
 pub struct PoolSettings {
@@ -79,7 +74,10 @@ where
         let is_http_connect = req.method() == http::Method::CONNECT;
 
         // Configured by `normalize_uri` or `orig_proto::Downgrade`.
-        let use_absolute_form = req.extensions_mut().remove::<WasAbsoluteForm>().is_some();
+        let use_absolute_form = req
+            .extensions_mut()
+            .remove::<UriWasOriginallyAbsoluteForm>()
+            .is_some();
         debug_assert!(req.uri().authority().is_some());
 
         let is_missing_host = req
@@ -158,7 +156,7 @@ where
                     upgrade.insert_half(hyper::upgrade::on(&mut rsp));
                 }
             } else {
-                strip_connection_headers(rsp.headers_mut());
+                crate::strip_connection_headers(rsp.headers_mut());
             }
 
             rsp.map(BoxBody::new)
@@ -168,79 +166,8 @@ where
 
 // === HTTP/1 utils ===
 
-/// Returns an Authority from a request's Host header.
-pub fn authority_from_host<B>(req: &http::Request<B>) -> Option<Authority> {
-    super::authority_from_header(req, HOST)
-}
-
-pub(crate) fn set_authority(uri: &mut http::Uri, auth: Authority) {
-    let mut parts = Parts::from(mem::take(uri));
-
-    parts.authority = Some(auth);
-
-    // If this was an origin-form target (path only),
-    // then we can't *only* set the authority, as that's
-    // an illegal target (such as `example.com/docs`).
-    //
-    // But don't set a scheme if this was authority-form (CONNECT),
-    // since that would change its meaning (like `https://example.com`).
-    if parts.path_and_query.is_some() {
-        parts.scheme = Some(Scheme::HTTP);
-    }
-
-    let new = Uri::from_parts(parts).expect("absolute uri");
-
-    *uri = new;
-}
-
-pub(crate) fn strip_connection_headers(headers: &mut http::HeaderMap) {
-    if let Some(val) = headers.remove(CONNECTION) {
-        if let Ok(conn_header) = val.to_str() {
-            // A `Connection` header may have a comma-separated list of
-            // names of other headers that are meant for only this specific
-            // connection.
-            //
-            // Iterate these names and remove them as headers.
-            for name in conn_header.split(',') {
-                let name = name.trim();
-                headers.remove(name);
-            }
-        }
-    }
-
-    // Additionally, strip these "connection-level" headers always, since
-    // they are otherwise illegal if upgraded to HTTP2.
-    headers.remove(UPGRADE);
-    headers.remove("proxy-connection");
-    headers.remove("keep-alive");
-}
-
-/// Checks requests to determine if they want to perform an HTTP upgrade.
-pub(crate) fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
-    // HTTP upgrades were added in 1.1, not 1.0.
-    if req.version() != http::Version::HTTP_11 {
-        return false;
-    }
-
-    if let Some(upgrade) = req.headers().get(UPGRADE) {
-        // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
-        // and it succeeded, there would an h2 connection, but it would
-        // be opaque-to-the-proxy, acting as just a TCP proxy.
-        //
-        // A user wouldn't be able to see any usual HTTP telemetry about
-        // requests going over that connection. Instead of that confusion,
-        // the proxy strips h2 upgrade headers.
-        //
-        // Eventually, the proxy will support h2 upgrades directly.
-        return upgrade != "h2c";
-    }
-
-    // HTTP/1.1 CONNECT requests are just like upgrades!
-    req.method() == http::Method::CONNECT
-}
-
 /// Checks responses to determine if they are successful HTTP upgrades.
-pub(crate) fn is_upgrade<B>(res: &http::Response<B>) -> bool {
+fn is_upgrade<B>(res: &http::Response<B>) -> bool {
     #[inline]
     fn is_connect_success<B>(res: &http::Response<B>) -> bool {
         res.extensions().get::<HttpConnect>().is_some() && res.status().is_success()
@@ -269,61 +196,5 @@ pub(crate) fn is_upgrade<B>(res: &http::Response<B>) -> bool {
     }
 
     // Just a regular HTTP response...
-    false
-}
-
-/// Returns if the request target is in `absolute-form`.
-///
-/// This is `absolute-form`: `https://example.com/docs`
-///
-/// This is not:
-///
-/// - `/docs`
-/// - `example.com`
-pub(crate) fn is_absolute_form(uri: &Uri) -> bool {
-    // It's sufficient just to check for a scheme, since in HTTP1,
-    // it's required in absolute-form, and `http::Uri` doesn't
-    // allow URIs with the other parts missing when the scheme is set.
-    debug_assert!(
-        uri.scheme().is_none() || (uri.authority().is_some() && uri.path_and_query().is_some()),
-        "is_absolute_form http::Uri invariants: {:?}",
-        uri
-    );
-
-    uri.scheme().is_some()
-}
-
-/// Returns if the request target is in `origin-form`.
-///
-/// This is `origin-form`: `example.com`
-fn is_origin_form(uri: &Uri) -> bool {
-    uri.scheme().is_none() && uri.path_and_query().is_none()
-}
-
-/// Returns if the received request is definitely bad.
-///
-/// Just because a request parses doesn't mean it's correct. For examples:
-///
-/// - `GET example.com`
-/// - `CONNECT /just-a-path
-pub(crate) fn is_bad_request<B>(req: &http::Request<B>) -> bool {
-    if req.method() == http::Method::CONNECT {
-        // CONNECT is only valid over HTTP/1.1
-        if req.version() != http::Version::HTTP_11 {
-            debug!("CONNECT request not valid for HTTP/1.0: {:?}", req.uri());
-            return true;
-        }
-
-        // CONNECT requests are only valid in authority-form.
-        if !is_origin_form(req.uri()) {
-            debug!("CONNECT request with illegal URI: {:?}", req.uri());
-            return true;
-        }
-    } else if is_origin_form(req.uri()) {
-        // If not CONNECT, refuse any origin-form URIs
-        debug!("{} request with illegal URI: {:?}", req.method(), req.uri());
-        return true;
-    }
-
     false
 }

@@ -166,7 +166,7 @@ impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ClientRescue {
 
 impl errors::HttpRescue<Error> for ClientRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if errors::is_caused_by::<http::orig_proto::DowngradedH2Error>(&*error) {
+        if errors::is_caused_by::<http::client::DowngradedH2Error>(&*error) {
             return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
         if errors::is_caused_by::<std::io::Error>(&*error) {

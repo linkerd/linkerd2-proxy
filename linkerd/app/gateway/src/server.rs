@@ -1,7 +1,7 @@
 use crate::Gateway;
 use linkerd_app_core::{
     io, profiles, proxy::http, svc, tls, transport::addrs::*, transport_header::SessionProtocol,
-    Addr, Error,
+    Error,
 };
 use linkerd_app_inbound::{self as inbound, GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_outbound::{self as outbound};
@@ -235,14 +235,13 @@ where
     }
 }
 
-impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Http<T>
+impl<T> svc::Param<inbound::http::DefaultAuthority> for Http<T>
 where
     T: svc::Param<GatewayAddr>,
 {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+    fn param(&self) -> inbound::http::DefaultAuthority {
         let GatewayAddr(addr) = (***self).param();
-        let authority = Addr::from(addr).to_http_authority();
-        http::normalize_uri::DefaultAuthority(Some(authority))
+        inbound::http::DefaultAuthority(addr.as_http_authority())
     }
 }
 

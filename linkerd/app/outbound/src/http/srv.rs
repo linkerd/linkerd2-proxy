@@ -9,9 +9,11 @@ pub(crate) struct ServerRescue {
 
 #[derive(Clone, Debug)]
 pub struct ExtractServerParams {
-    h2: http::h2::Settings,
+    h2: http::client::h2::Settings, // FIXME
     drain: drain::Watch,
 }
+
+pub struct DefaultAuthority(pub(crate) http::uri::Authority);
 
 impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
     /// Builds a [`svc::NewService`] stack that prepares HTTP requests to be
@@ -24,7 +26,7 @@ impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
     pub fn push_http_server(self) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Target
-        T: svc::Param<http::normalize_uri::DefaultAuthority> + 'static,
+        T: 'static,
     {
         self.map_stack(|config, rt, http| {
             http.check_new_service::<T, _>()
@@ -50,11 +52,6 @@ impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
                 // Initiates OpenCensus tracing.
                 .push_on_service(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                 .push_on_service(http::BoxResponse::layer())
-                // Convert origin form HTTP/1 URIs to absolute form for Hyper's
-                // `Client`.
-                .push(http::NewNormalizeUri::layer())
-                // Record when a HTTP/1 URI originated in absolute form
-                .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .arc_new_clone_http()
         })
     }
@@ -69,6 +66,7 @@ impl<N> Outbound<N> {
     where
         // Target
         T: svc::Param<http::Version>,
+        T: svc::Param<DefaultAuthority>,
         T: Clone + Send + Unpin + 'static,
         // Server-side socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
@@ -184,18 +182,20 @@ impl errors::HttpRescue<Error> for ServerRescue {
     }
 }
 
-// === impl ExtractServerParams ===
-
 impl<T> svc::ExtractParam<http::ServerParams, T> for ExtractServerParams
 where
+    T: svc::Param<DefaultAuthority>,
     T: svc::Param<http::Version>,
 {
     #[inline]
     fn extract_param(&self, t: &T) -> http::ServerParams {
+        let DefaultAuthority(default_authority) = t.param();
         http::ServerParams {
             version: t.param(),
             h2: self.h2,
             drain: self.drain.clone(),
+            supports_orig_proto_downgrades: false,
+            default_authority,
         }
     }
 }

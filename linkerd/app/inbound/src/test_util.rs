@@ -7,7 +7,7 @@ use linkerd_app_core::{
     identity::rustls,
     metrics,
     proxy::{
-        http::{h1, h2},
+        http::client::{h1, h2},
         tap,
     },
     transport::{Keepalive, ListenAddr},

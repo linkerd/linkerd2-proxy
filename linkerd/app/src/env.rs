@@ -3,7 +3,7 @@ use linkerd_app_core::{
     addr,
     config::*,
     control::{Config as ControlConfig, ControlAddr},
-    proxy::http::{h1, h2},
+    proxy::http::client::{h1, h2},
     tls,
     transport::{Keepalive, ListenAddr},
     Addr, AddrMatch, Conditional, IpNet,

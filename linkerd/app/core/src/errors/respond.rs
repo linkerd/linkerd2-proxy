@@ -2,7 +2,7 @@ use crate::svc;
 use http::header::{HeaderValue, LOCATION};
 use linkerd_error::{Error, Result};
 use linkerd_error_respond as respond;
-use linkerd_proxy_http::orig_proto;
+use linkerd_proxy_http::server::WasHttp1OverH2;
 pub use linkerd_proxy_http::{ClientHandle, HasH2Reason};
 use linkerd_stack::ExtractParam;
 use pin_project::pin_project;
@@ -338,7 +338,7 @@ where
                 }
             }
             version => {
-                let is_h2_upgrade = req.extensions().get::<orig_proto::WasUpgrade>().is_some();
+                let is_h2_upgrade = req.extensions().get::<WasHttp1OverH2>().is_some();
                 Respond {
                     client,
                     rescue,

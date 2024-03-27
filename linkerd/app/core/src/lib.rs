@@ -77,9 +77,9 @@ pub fn http_request_authority_addr<B>(req: &http::Request<B>) -> Result<Addr, ad
 }
 
 pub fn http_request_host_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
-    use crate::proxy::http::h1;
+    use crate::proxy::http;
 
-    h1::authority_from_host(req)
+    http::authority_from_header(req, http::header::HOST)
         .ok_or(addr::Error::InvalidHost)
         .and_then(|a| Addr::from_authority_and_default_port(&a, DEFAULT_PORT))
 }

@@ -4,6 +4,8 @@ mod set_identity_header;
 #[cfg(test)]
 mod tests;
 
+pub use self::server::DefaultAuthority;
+
 fn trace_labels() -> std::collections::HashMap<String, String> {
     let mut l = std::collections::HashMap::new();
     l.insert("direction".to_string(), "inbound".to_string());
@@ -246,7 +248,7 @@ pub mod fuzz {
 
     impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
         fn param(&self) -> http::normalize_uri::DefaultAuthority {
-            http::normalize_uri::DefaultAuthority(None)
+            http::normalize_uri::DefaultAuthority::from_addr(Self::addr())
         }
     }
 

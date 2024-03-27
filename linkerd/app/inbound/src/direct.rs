@@ -356,9 +356,9 @@ impl svc::Param<http::Version> for LocalHttp {
     }
 }
 
-impl svc::Param<http::normalize_uri::DefaultAuthority> for LocalHttp {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(None)
+impl svc::Param<crate::http::DefaultAuthority> for LocalHttp {
+    fn param(&self) -> crate::http::DefaultAuthority {
+        crate::http::DefaultAuthority::from_addr(self.addr)
     }
 }
 

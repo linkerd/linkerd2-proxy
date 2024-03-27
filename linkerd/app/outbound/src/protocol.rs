@@ -33,6 +33,7 @@ impl<N> Outbound<N> {
     where
         // Target type indicating whether detection should be skipped.
         T: svc::Param<Protocol>,
+        T: svc::Param<http::DefaultAuthority>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -52,10 +53,13 @@ impl<N> Outbound<N> {
             stk.push_on_service(http::BoxRequest::layer())
                 .unlift_new()
                 .push(http::NewServeHttp::layer(move |t: &Http<T>| {
+                    let http::DefaultAuthority(default_authority) = t.parent.param();
                     http::ServerParams {
                         version: t.version,
                         h2,
                         drain: drain.clone(),
+                        default_authority,
+                        supports_orig_proto_downgrades: false,
                     }
                 }))
                 .arc_new_tcp()
@@ -119,15 +123,6 @@ impl<T> From<(http::Version, T)> for Http<T> {
 impl<T> svc::Param<http::Version> for Http<T> {
     fn param(&self) -> http::Version {
         self.version
-    }
-}
-
-impl<T> svc::Param<http::normalize_uri::DefaultAuthority> for Http<T>
-where
-    T: svc::Param<http::normalize_uri::DefaultAuthority>,
-{
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        self.parent.param()
     }
 }
 

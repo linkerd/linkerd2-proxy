@@ -7,10 +7,8 @@ use linkerd_app_core::{
     serve,
     svc::{self, ExtractParam, InsertParam, Param},
     tls, trace,
-    transport::{
-        self, addrs::AddrPair, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
-    },
-    Error, Result,
+    transport::{self, addrs::*, listen::Bind},
+    Addr, Error, Result,
 };
 use linkerd_app_inbound as inbound;
 use std::{pin::Pin, time::Duration};
@@ -126,10 +124,17 @@ impl Config {
             .push(http::NewServeHttp::layer({
                 let drain = drain.clone();
                 move |t: &Http| {
+                    let default_authority = Addr::from(t.tcp.addr.0.0).to_http_authority();
+                    let meshed = matches!(t.tcp.tls,
+                        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                            ..
+                        }));
                     http::ServerParams {
                         version: t.version,
                         h2: Default::default(),
                         drain: drain.clone(),
+                        supports_orig_proto_downgrades: meshed,
+                        default_authority,
                     }
                 }
             }))

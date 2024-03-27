@@ -308,10 +308,15 @@ impl<N> Outbound<N> {
                 .push(http::NewServeHttp::layer({
                     let h2 = config.proxy.server.h2_settings;
                     let drain = rt.drain.clone();
-                    move |http: &Http<T>| http::ServerParams {
-                            version: http.version,
-                            h2,
-                            drain: drain.clone()
+                    move |http: &Http<T>| {
+                        let OrigDstAddr(addr) = http.param();
+                        http::ServerParams {
+                        version: http.version,
+                        h2,
+                        drain: drain.clone(),
+                        default_authority: Addr::from(addr).to_http_authority(),
+                        supports_orig_proto_downgrades: false,
+                        }
                     }
                 }))
                 .check_new_service::<Http<T>, I>()
@@ -405,9 +410,9 @@ impl svc::Param<http::LogicalAddr> for Http<Logical> {
     }
 }
 
-impl svc::Param<http::normalize_uri::DefaultAuthority> for Http<Logical> {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(Some(self.parent.addr.to_http_authority()))
+impl svc::Param<http::DefaultAuthority> for Http<Logical> {
+    fn param(&self) -> http::DefaultAuthority {
+        http::DefaultAuthority(self.parent.addr.to_http_authority())
     }
 }
 

@@ -1,6 +1,9 @@
 pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
-    proxy::http::{self, h1, h2},
+    proxy::http::{
+        self,
+        client::{h1, h2},
+    },
     svc::{queue, CloneParam, ExtractParam, Param},
     transport::{Keepalive, ListenAddr},
 };

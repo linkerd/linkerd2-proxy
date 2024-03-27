@@ -363,7 +363,7 @@ async fn route_request_timeout() {
         error.is::<LogicalError>(),
         "error must originate in the logical stack"
     );
-    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
+    assert!(errors::is_caused_by::<http::ResponseTimeoutError>(
         error.as_ref()
     ));
 }
@@ -435,7 +435,7 @@ async fn backend_request_timeout() {
     // timeout, we don't hit the route timeout and succeed incorrectly.
     send_rsp.send_response(mk_rsp(StatusCode::OK, "good"));
     let error = rsp.await.expect_err("request must fail with a timeout");
-    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
+    assert!(errors::is_caused_by::<http::ResponseTimeoutError>(
         error.as_ref()
     ));
 
@@ -445,7 +445,7 @@ async fn backend_request_timeout() {
     tokio::time::sleep(ROUTE_REQUEST_TIMEOUT + Duration::from_millis(1)).await;
     handle.allow(1);
     let error = rsp.await.expect_err("request must fail with a timeout");
-    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
+    assert!(errors::is_caused_by::<http::ResponseTimeoutError>(
         error.as_ref()
     ));
 }
