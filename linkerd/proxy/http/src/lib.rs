@@ -7,7 +7,6 @@ use linkerd_error::Error;
 pub mod balance;
 pub mod classify;
 pub mod client;
-pub mod client_handle;
 pub mod detect;
 mod glue;
 pub mod h1;
@@ -20,7 +19,7 @@ mod override_authority;
 mod retain;
 mod server;
 pub mod strip_header;
-pub mod timeout;
+mod timeout;
 pub mod trace;
 pub mod upgrade;
 pub mod version;
@@ -31,14 +30,13 @@ pub use self::{
         Classify, ClassifyEos, ClassifyResponse, NewClassifyGate, NewClassifyGateSet,
         NewInsertClassifyResponse,
     },
-    client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
     glue::{HyperServerSvc, UpgradeBody},
     header_from_target::NewHeaderFromTarget,
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,
-    server::{NewServeHttp, Params as ServerParams, ServeHttp},
+    server::{ClientHandle, NewServeHttp, Params as ServerParams, ServeHttp},
     strip_header::StripHeader,
     timeout::{NewTimeout, ResponseTimeout, ResponseTimeoutError},
     version::Version,

@@ -1,9 +1,8 @@
 use crate::{
     self as http,
-    client_handle::SetClientHandle,
     glue::{HyperServerSvc, UpgradeBody},
     h2::Settings as H2Settings,
-    trace, upgrade, ClientHandle, Version,
+    trace, upgrade, Version,
 };
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
@@ -15,6 +14,11 @@ use std::{
 };
 use tower::Service;
 use tracing::{debug, Instrument};
+
+mod client_handle;
+
+pub use self::client_handle::ClientHandle;
+use self::client_handle::SetClientHandle;
 
 type Server = hyper::server::conn::Http<trace::Executor>;
 
