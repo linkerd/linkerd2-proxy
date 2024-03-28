@@ -139,6 +139,8 @@ jobs:
       LINKERD2_PROXY_VENDOR: ${{ github.repository_owner }}
       LINKERD2_PROXY_VERSION: ${{ needs.meta.outputs.version }}
     steps:
+      - name: Configure git
+        run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
         with:
           ref: ${{ needs.meta.outputs.ref }}
@@ -169,6 +171,7 @@ jobs:
         env:
           GITHUB_USERNAME: ${{ vars.LINKERD2_PROXY_GITHUB_USERNAME || 'github-actions[bot]' }}
         run: |
+          git config --global --add safe.directory "$PWD" # actions/runner#2033
           git config --global user.name "$GITHUB_USERNAME"
           git config --global user.email "$GITHUB_USERNAME"@users.noreply.github.com
       # Tag the release.
