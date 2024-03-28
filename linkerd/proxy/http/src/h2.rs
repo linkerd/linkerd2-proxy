@@ -21,6 +21,7 @@ pub struct Settings {
     pub initial_stream_window_size: Option<u32>,
     pub initial_connection_window_size: Option<u32>,
     pub keepalive_timeout: Option<Duration>,
+    pub keepalive_interval: Option<Duration>,
 }
 
 #[derive(Debug)]
@@ -83,6 +84,7 @@ where
             initial_connection_window_size,
             initial_stream_window_size,
             keepalive_timeout,
+            keepalive_interval,
         } = self.h2_settings;
 
         let connect = self
@@ -104,9 +106,14 @@ where
                 if let Some(timeout) = keepalive_timeout {
                     // XXX(eliza): is this a reasonable interval between
                     // PING frames?
-                    let interval = timeout / 4;
                     builder
                         .http2_keep_alive_timeout(timeout)
+                        // set default interval
+                        .http2_keep_alive_interval(timeout / 4)
+                        .http2_keep_alive_while_idle(true);
+                }
+                if let Some(interval) = keepalive_interval {
+                    builder
                         .http2_keep_alive_interval(interval)
                         .http2_keep_alive_while_idle(true);
                 }
