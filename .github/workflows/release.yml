@@ -194,7 +194,7 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ needs.meta.outputs.prerelease }}
           draft: ${{ needs.meta.outputs.draft }}
-      - if: needs.meta.outputs.publish == 'true'
+      - if: needs.meta.outputs.publish == 'true' && needs.meta.outputs.prerelease == 'false' && needs.meta.outputs.draft == 'false'
         name: Trigger sync-proxy in linkerd2
         run: gh workflow run sync-proxy.yml -f version="$VERSION"
         env:
