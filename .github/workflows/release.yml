@@ -93,7 +93,7 @@ jobs:
       package: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.any_changed == 'true' }}
       profile: ${{ inputs.profile || 'release' }}
       publish: ${{ inputs.publish }}
-      ref: ${{ inputs.ref || github.ref }}
+      ref: ${{ inputs.ref || github.sha }}
       tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.meta.outputs.version }}"
       prerelease: ${{ inputs.prerelease }}
       draft: ${{ inputs.draft }}
@@ -139,8 +139,6 @@ jobs:
       LINKERD2_PROXY_VENDOR: ${{ github.repository_owner }}
       LINKERD2_PROXY_VERSION: ${{ needs.meta.outputs.version }}
     steps:
-      - name: Configure git
-        run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
         with:
           ref: ${{ needs.meta.outputs.ref }}
@@ -171,7 +169,6 @@ jobs:
         env:
           GITHUB_USERNAME: ${{ vars.LINKERD2_PROXY_GITHUB_USERNAME || 'github-actions[bot]' }}
         run: |
-          git config --global --add safe.directory "$PWD" # actions/runner#2033
           git config --global user.name "$GITHUB_USERNAME"
           git config --global user.email "$GITHUB_USERNAME"@users.noreply.github.com
       # Tag the release.
@@ -191,7 +188,7 @@ jobs:
       - if: needs.meta.outputs.publish == 'true'
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         with:
-          name: v${{ env.VERSION }}
+          name: ${{ env.VERSION }}
           tag_name: ${{ env.TAG }}
           files: artifacts/**/*
           generate_release_notes: true
