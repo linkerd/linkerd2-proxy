@@ -764,9 +764,9 @@ impl svc::Param<policy::ServerLabel> for Target {
     }
 }
 
-impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(None)
+impl svc::Param<crate::http::DefaultAuthority> for Target {
+    fn param(&self) -> crate::http::DefaultAuthority {
+        crate::http::DefaultAuthority(None)
     }
 }
 

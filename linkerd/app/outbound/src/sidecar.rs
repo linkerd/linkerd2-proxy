@@ -13,7 +13,7 @@ use linkerd_app_core::{
     },
     svc,
     transport::addrs::*,
-    Error,
+    Addr, Error,
 };
 use std::fmt::Debug;
 use tokio::sync::watch;
@@ -64,12 +64,15 @@ impl Outbound<()> {
             .push_tcp_endpoint()
             .push_http_tcp_client()
             .push_http_cached(http::HttpMetrics::register(registry), resolve)
+            .check_new_service::<HttpSidecar, _>()
             .push_http_server()
             .into_stack()
+            .check_new_service::<HttpSidecar, _>()
             .push_map_target(HttpSidecar::from)
             .arc_new_clone_http();
 
         opaq.push_protocol(http.into_inner())
+            .check_new_service::<Sidecar, _>()
             // Use a dedicated target type to bind discovery results to the
             // outbound sidecar stack configuration.
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
@@ -156,6 +159,12 @@ impl svc::Param<opaq::Logical> for Sidecar {
 
         let OrigDstAddr(addr) = self.orig_dst;
         opaq::Logical::Forward(Remote(ServerAddr(addr)), Default::default())
+    }
+}
+
+impl svc::Param<http::DefaultAuthority> for Sidecar {
+    fn param(&self) -> http::DefaultAuthority {
+        http::DefaultAuthority(Addr::from(self.orig_dst.0).to_http_authority())
     }
 }
 
@@ -307,12 +316,12 @@ impl svc::Param<watch::Receiver<http::Routes>> for HttpSidecar {
     }
 }
 
-impl svc::Param<http::normalize_uri::DefaultAuthority> for HttpSidecar {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(match *self.routes.borrow() {
-            http::Routes::Policy(ref policy) => Some(policy.addr().to_http_authority()),
-            http::Routes::Profile(ref profile) => Some((*profile.addr).as_http_authority()),
-            http::Routes::Endpoint(..) => None,
+impl svc::Param<http::DefaultAuthority> for HttpSidecar {
+    fn param(&self) -> http::DefaultAuthority {
+        http::DefaultAuthority(match *self.routes.borrow() {
+            http::Routes::Policy(ref policy) => policy.addr().to_http_authority(),
+            http::Routes::Profile(ref profile) => (*profile.addr).as_http_authority(),
+            http::Routes::Endpoint(..) => Addr::from(self.orig_dst.0).to_http_authority(),
         })
     }
 }

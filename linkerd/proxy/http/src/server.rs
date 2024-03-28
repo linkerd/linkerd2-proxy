@@ -11,7 +11,8 @@ use tower::Service;
 use tracing::{debug, Instrument};
 
 mod client_handle;
-// mod normalize_uri;
+mod h2_to_h1;
+mod normalize_uri;
 
 pub use self::client_handle::ClientHandle;
 use self::client_handle::SetClientHandle;
@@ -19,12 +20,24 @@ use super::client::h2::Settings as H2Settings;
 
 type Server = hyper::server::conn::Http<trace::Executor>;
 
+/// A request extension type marker that indicates that a request was originally
+/// received with an absolute-form URI.
+#[derive(Copy, Clone, Debug)]
+pub struct UriWasOriginallyAbsoluteForm(());
+
+/// Extension that indicates a request was an orig-proto upgrade.
+#[derive(Clone, Debug)]
+pub struct WasHttp1OverH2(());
+
 /// Configures HTTP server behavior.
 #[derive(Clone, Debug)]
 pub struct Params {
     pub version: Version,
     pub h2: H2Settings,
     pub drain: drain::Watch,
+
+    pub default_authority: Option<http::uri::Authority>,
+    pub supports_orig_proto_downgrades: bool,
 }
 
 // A stack that builds HTTP servers.
@@ -41,6 +54,8 @@ pub struct ServeHttp<N> {
     server: Server,
     inner: N,
     drain: drain::Watch,
+    supports_orig_proto_downgrades: bool,
+    default_authority: Option<http::uri::Authority>,
 }
 
 // === impl NewServeHttp ===
@@ -64,14 +79,22 @@ where
     type Service = ServeHttp<N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let Params { version, h2, drain } = self.params.extract_param(&target);
+        let Params {
+            version,
+            h2,
+            drain,
+            default_authority,
+            supports_orig_proto_downgrades,
+        } = self.params.extract_param(&target);
 
-        let mut srv = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
-        srv.http2_initial_stream_window_size(h2.initial_stream_window_size)
+        let mut server = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
+        server
+            .http2_initial_stream_window_size(h2.initial_stream_window_size)
             .http2_initial_connection_window_size(h2.initial_connection_window_size);
         // Configure HTTP/2 PING frames
         if let Some(timeout) = h2.keepalive_timeout {
-            srv.http2_keep_alive_timeout(timeout)
+            server
+                .http2_keep_alive_timeout(timeout)
                 .http2_keep_alive_interval(timeout / 4);
         }
 
@@ -81,7 +104,9 @@ where
             inner,
             version,
             drain,
-            server: srv,
+            default_authority,
+            supports_orig_proto_downgrades,
+            server,
         }
     }
 }
@@ -113,6 +138,8 @@ where
         let version = self.version;
         let drain = self.drain.clone();
         let mut server = self.server.clone();
+        let default_authority = self.default_authority.clone();
+        let supports_orig_proto_downgrades = self.supports_orig_proto_downgrades;
 
         let res = io.peer_addr().map(|pa| {
             let (handle, closed) = ClientHandle::new(pa);
@@ -127,8 +154,21 @@ where
                 debug!(?version, "Handling as HTTP");
                 match version {
                     Version::Http1 => {
+                        // Convert origin form HTTP/1 URIs to absolute form for Hyper's
+                        // `Client`.
+                        let svc = normalize_uri::NormalizeUri::new(default_authority, svc);
+
+                        // Downgrades the protocol if upgraded by an outbound
+                        // proxy. This may also mark requests as being in
+                        // absolute form
+                        let svc = h2_to_h1::Downgrade::new(supports_orig_proto_downgrades, svc);
+
+                        // Record when a HTTP/1 URI originated in absolute form
+                        let svc = normalize_uri::MarkAbsoluteForm::new(svc);
+
                         // Enable support for HTTP upgrades (CONNECT and websockets).
                         let svc = upgrade::SetupHttp11Connect::new(svc, drain.clone());
+
                         let mut conn = server
                             .http1_only(true)
                             .serve_connection(io, svc)

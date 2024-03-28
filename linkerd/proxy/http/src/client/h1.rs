@@ -1,6 +1,6 @@
 use crate::{
     glue::HyperConnect,
-    normalize_uri::WasAbsoluteForm,
+    server::UriWasOriginallyAbsoluteForm,
     upgrade::{Http11Upgrade, HttpConnect},
 };
 use futures::prelude::*;
@@ -74,7 +74,10 @@ where
         let is_http_connect = req.method() == http::Method::CONNECT;
 
         // Configured by `normalize_uri` or `orig_proto::Downgrade`.
-        let use_absolute_form = req.extensions_mut().remove::<WasAbsoluteForm>().is_some();
+        let use_absolute_form = req
+            .extensions_mut()
+            .remove::<UriWasOriginallyAbsoluteForm>()
+            .is_some();
         debug_assert!(req.uri().authority().is_some());
 
         let is_missing_host = req

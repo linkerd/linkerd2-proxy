@@ -76,7 +76,6 @@ impl Gateway {
         T: svc::Param<inbound::policy::AllowPolicy>,
         T: svc::Param<Option<watch::Receiver<profiles::Profile>>>,
         T: svc::Param<http::Version>,
-        T: svc::Param<http::normalize_uri::DefaultAuthority>,
         T: Clone + Send + Sync + Unpin + 'static,
         // Endpoint resolution.
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,

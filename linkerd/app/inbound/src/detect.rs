@@ -12,7 +12,7 @@ use linkerd_app_core::{
         addrs::{ClientAddr, OrigDstAddr, Remote},
         ServerAddr,
     },
-    Error, Infallible,
+    Addr, Error, Infallible,
 };
 use std::{fmt::Debug, time};
 use tracing::info;
@@ -372,11 +372,10 @@ impl svc::Param<tls::ConditionalServerTls> for Http {
     }
 }
 
-impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(Some(
-            std::str::FromStr::from_str(&self.tls.orig_dst_addr.to_string())
-                .expect("Address must be a valid authority"),
+impl svc::Param<crate::http::DefaultAuthority> for Http {
+    fn param(&self) -> crate::http::DefaultAuthority {
+        crate::http::DefaultAuthority(Some(
+            Addr::from(self.tls.orig_dst_addr.0).to_http_authority(),
         ))
     }
 }

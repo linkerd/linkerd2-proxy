@@ -10,11 +10,9 @@ pub mod detect;
 mod glue;
 mod header_from_target;
 pub mod insert;
-pub mod normalize_uri;
-pub mod orig_proto;
 mod override_authority;
 mod retain;
-mod server;
+pub mod server;
 pub mod strip_header;
 mod timeout;
 pub mod trace;
@@ -29,7 +27,6 @@ pub use self::{
     },
     detect::DetectHttp,
     header_from_target::NewHeaderFromTarget,
-    normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,
     server::{ClientHandle, NewServeHttp, Params as ServerParams, ServeHttp},
@@ -38,11 +35,17 @@ pub use self::{
     version::Version,
 };
 pub use http::{
-    header::{self, HeaderName, HeaderValue},
+    header::{HeaderName, HeaderValue},
     uri, Method, Request, Response, StatusCode,
 };
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
+
+pub mod header {
+    pub use ::http::header::*;
+
+    pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
+}
 
 #[derive(Clone, Debug)]
 pub struct HeaderPair(pub HeaderName, pub HeaderValue);

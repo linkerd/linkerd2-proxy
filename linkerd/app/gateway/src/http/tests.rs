@@ -104,9 +104,9 @@ async fn upgraded_request_remains_relative_form() {
         }
     }
 
-    impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
-        fn param(&self) -> http::normalize_uri::DefaultAuthority {
-            http::normalize_uri::DefaultAuthority(Some(
+    impl svc::Param<inbound::http::DefaultAuthority> for Target {
+        fn param(&self) -> inbound::http::DefaultAuthority {
+            inbound::http::DefaultAuthority(Some(
                 http::uri::Authority::from_str("web.test.example.com").unwrap(),
             ))
         }
@@ -187,7 +187,7 @@ async fn upgraded_request_remains_relative_form() {
     let (request, _respond) = handle.next_request().await.unwrap();
     assert!(request
         .extensions()
-        .get::<http::normalize_uri::WasAbsoluteForm>()
+        .get::<http::server::UriWasOriginallyAbsoluteForm>()
         .is_none());
 }
 

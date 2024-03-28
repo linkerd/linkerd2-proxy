@@ -1,6 +1,6 @@
 use super::set_identity_header::NewSetIdentityHeader;
 use crate::{policy, Inbound};
-pub use linkerd_app_core::proxy::http::{normalize_uri, Version};
+pub use linkerd_app_core::proxy::http::Version;
 use linkerd_app_core::{
     config::ProxyConfig,
     errors, http_tracing, io,
@@ -12,6 +12,8 @@ use linkerd_app_core::{
     Error, Result,
 };
 use linkerd_http_access_log::NewAccessLog;
+
+pub struct DefaultAuthority(pub Option<http::uri::Authority>);
 
 #[derive(Copy, Clone, Debug)]
 struct ServerRescue;
@@ -32,7 +34,6 @@ impl<H> Inbound<H> {
     where
         // Connection target.
         T: Param<Version>
-            + Param<normalize_uri::DefaultAuthority>
             + Param<tls::ConditionalServerTls>
             + Param<ServerLabel>
             + Param<OrigDstAddr>
@@ -56,13 +57,7 @@ impl<H> Inbound<H> {
             } = config.proxy;
 
             http.check_new_service::<T, http::Request<_>>()
-                // Convert origin form HTTP/1 URIs to absolute form for Hyper's
-                // `Client`. This must be below the `orig_proto::Downgrade` layer, since
-                // the request may have been downgraded from a HTTP/2 orig-proto request.
-                .push(http::NewNormalizeUri::layer())
                 .push(NewSetIdentityHeader::layer(()))
-                // Downgrades the protocol if upgraded by an outbound proxy.
-                .push_on_service(http::orig_proto::Downgrade::layer())
                 // Limit the number of in-flight inbound requests.
                 //
                 // TODO(ver) This concurrency limit applies only to
@@ -82,8 +77,6 @@ impl<H> Inbound<H> {
                     rt.span_sink.clone(),
                     super::trace_labels(),
                 ))
-                // Record when an HTTP/1 URI was in absolute form
-                .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push_on_service(http::BoxResponse::layer())
                 .push(NewAccessLog::layer())
                 .arc_new_clone_http()
@@ -95,6 +88,8 @@ impl<H> Inbound<H> {
     pub fn push_http_tcp_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         // Connection target.
+        T: Param<DefaultAuthority>,
+        T: Param<tls::ConditionalServerTls>,
         T: Param<Version>,
         T: Clone + Send + Unpin + 'static,
         // Server-side socket.
@@ -119,10 +114,20 @@ impl<H> Inbound<H> {
                 .check_new_service::<T, http::Request<_>>()
                 .unlift_new()
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
-                .push(http::NewServeHttp::layer(move |t: &T| http::ServerParams {
-                    version: t.param(),
-                    h2,
-                    drain: drain.clone(),
+                .push(http::NewServeHttp::layer(move |t: &T| {
+                    let meshed = matches!(
+                        t.param(),
+                        tls::ConditionalServerTls::Some(tls::ServerTls::Established { .. })
+                    );
+                    let DefaultAuthority(default_authority) = t.param();
+
+                    http::ServerParams {
+                        version: t.param(),
+                        h2,
+                        drain: drain.clone(),
+                        supports_orig_proto_downgrades: meshed,
+                        default_authority,
+                    }
                 }))
                 .check_new_service::<T, I>()
                 .arc_new_tcp()

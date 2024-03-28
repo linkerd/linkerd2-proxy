@@ -1,29 +1,25 @@
-use crate::normalize_uri::WasAbsoluteForm;
+use super::{UriWasOriginallyAbsoluteForm, WasHttp1OverH2};
+use crate::header::L5D_ORIG_PROTO;
 use futures::prelude::*;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
 use linkerd_error::Result;
-use linkerd_stack::{layer, Service};
+use linkerd_stack::Service;
 use std::task::{Context, Poll};
 use tracing::{debug, warn};
-
-pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 
 /// Downgrades HTTP2 requests that were previousl upgraded to their original
 /// protocol.
 #[derive(Clone, Debug)]
 pub struct Downgrade<S> {
     inner: S,
+    enabled: bool,
 }
-
-/// Extension that indicates a request was an orig-proto upgrade.
-#[derive(Clone, Debug)]
-pub struct WasUpgrade(());
 
 // === impl Downgrade ===
 
 impl<S> Downgrade<S> {
-    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy {
-        layer::mk(|inner| Self { inner })
+    pub(super) fn new(enabled: bool, inner: S) -> Self {
+        Self { enabled, inner }
     }
 }
 
@@ -37,6 +33,7 @@ where
     type Error = S::Error;
     type Future = DowngradeFuture<S::Future, S::Response>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
@@ -44,7 +41,7 @@ where
     fn call(&mut self, mut req: http::Request<A>) -> Self::Future {
         let mut upgrade_response = false;
 
-        if req.version() == http::Version::HTTP_2 {
+        if self.enabled && req.version() == http::Version::HTTP_2 {
             if let Some(orig_proto) = req.headers_mut().remove(L5D_ORIG_PROTO) {
                 debug!("translating HTTP2 to orig-proto: {:?}", orig_proto);
 
@@ -59,9 +56,10 @@ where
                 }
 
                 if was_absolute_form(val) {
-                    req.extensions_mut().insert(WasAbsoluteForm(()));
+                    req.extensions_mut()
+                        .insert(UriWasOriginallyAbsoluteForm(()));
                 }
-                req.extensions_mut().insert(WasUpgrade(()));
+                req.extensions_mut().insert(WasHttp1OverH2(()));
                 upgrade_response = true;
             }
         }

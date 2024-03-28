@@ -18,11 +18,11 @@ use tracing::instrument::{Instrument, Instrumented};
 use tracing::{debug, debug_span};
 
 pub mod h1;
+mod h1_to_h2;
 pub mod h2;
-mod h2upgrade;
 
-pub use h2upgrade::DowngradedH2Error;
-use h2upgrade::Http1OverH2;
+pub use self::h1_to_h2::DowngradedH2Error;
+use self::h1_to_h2::Http1OverH2;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Settings {

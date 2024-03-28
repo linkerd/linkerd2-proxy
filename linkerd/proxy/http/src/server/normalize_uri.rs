@@ -8,89 +8,41 @@
 //!
 //! This middleware prepares server-provided requests to be suitable for clients:
 //!
-//! * If the request was originally in absolute-form, the `WasAbsoluteForm`
+//! * If the request was originally in absolute-form, the `UriWasOriginallyAbsoluteForm`
 //!   extension is added so that the `h1::Client` can differentiate the request
 //!   from modified requests;
 //! * Otherwise, if the request has a `Host` header, it is used as the authority;
 //! * Otherwise, the target's address is used (as provided by the target).
 
+use super::UriWasOriginallyAbsoluteForm;
 use futures::{future, TryFutureExt};
 use http::uri::{Authority, Uri};
 use linkerd_error::Error;
-use linkerd_stack::{layer, ExtractParam, NewService};
 use std::task::{Context, Poll};
 use thiserror::Error;
 use tracing::trace;
 
-#[derive(Copy, Clone, Debug)]
-pub struct WasAbsoluteForm(pub(crate) ());
-
 #[derive(Clone, Debug)]
-pub struct NewNormalizeUri<X, N> {
-    extract: X,
-    inner: N,
-}
-
-#[derive(Clone, Debug)]
-pub struct NormalizeUri<S> {
+pub(super) struct NormalizeUri<S> {
     inner: S,
     default: Option<http::uri::Authority>,
 }
-
-/// Parameterizes a stack target to produce an optional default authority.
-#[derive(Clone, Debug)]
-pub struct DefaultAuthority(pub Option<Authority>);
 
 #[derive(Debug, Error)]
 #[error("failed to normalize URI because no authority could be determined")]
 pub struct NoAuthority(());
 
-/// Detects the original form of a request URI and inserts a `WasAbsoluteForm`
+/// Detects the original form of a request URI and inserts a `UriWasOriginallyAbsoluteForm`
 /// extension.
 #[derive(Clone, Debug)]
-pub struct MarkAbsoluteForm<S> {
+pub(super) struct MarkAbsoluteForm<S> {
     inner: S,
-}
-
-// === impl NewNormalizeUri ===
-
-impl<N> NewNormalizeUri<(), N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy {
-        layer::mk(|inner| Self::new((), inner))
-    }
-}
-
-impl<X, N> NewNormalizeUri<X, N> {
-    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone
-    where
-        X: Clone,
-    {
-        layer::mk(move |inner| Self::new(extract.clone(), inner))
-    }
-
-    fn new(extract: X, inner: N) -> Self {
-        Self { inner, extract }
-    }
-}
-
-impl<T, X, N> NewService<T> for NewNormalizeUri<X, N>
-where
-    X: ExtractParam<DefaultAuthority, T>,
-    N: NewService<T>,
-{
-    type Service = NormalizeUri<N::Service>;
-
-    fn new_service(&self, target: T) -> Self::Service {
-        let DefaultAuthority(default) = self.extract.extract_param(&target);
-        let inner = self.inner.new_service(target);
-        NormalizeUri::new(inner, default)
-    }
 }
 
 // === impl NormalizeUri ===
 
 impl<S> NormalizeUri<S> {
-    fn new(inner: S, default: Option<Authority>) -> Self {
+    pub(super) fn new(default: Option<Authority>, inner: S) -> Self {
         Self { inner, default }
     }
 }
@@ -114,7 +66,10 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
-            if req.extensions().get::<WasAbsoluteForm>().is_none()
+            if req
+                .extensions()
+                .get::<UriWasOriginallyAbsoluteForm>()
+                .is_none()
                 && req.uri().authority().is_none()
             {
                 let authority = match crate::authority_from_header(&req, http::header::HOST)
@@ -139,10 +94,6 @@ impl<S> MarkAbsoluteForm<S> {
     pub fn new(inner: S) -> Self {
         Self { inner }
     }
-
-    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy {
-        layer::mk(Self::new)
-    }
 }
 
 impl<S, B> tower::Service<http::Request<B>> for MarkAbsoluteForm<S>
@@ -162,7 +113,8 @@ where
         if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
             if is_absolute_form(req.uri()) {
                 trace!(uri = ?req.uri(), "Absolute form");
-                req.extensions_mut().insert(WasAbsoluteForm(()));
+                req.extensions_mut()
+                    .insert(UriWasOriginallyAbsoluteForm(()));
             } else {
                 trace!(uri = ?req.uri(), "Origin form");
             };

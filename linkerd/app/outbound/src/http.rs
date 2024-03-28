@@ -5,6 +5,7 @@ use linkerd_app_core::{
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
+        http,
     },
     svc,
     transport::addrs::*,
@@ -20,11 +21,14 @@ mod handle_proxy_error_headers;
 pub mod logical;
 mod require_id_header;
 mod retry;
-mod server;
+mod srv;
 
-pub use self::logical::{policy, profile, LogicalAddr, Routes};
 pub(crate) use self::require_id_header::IdentityRequired;
-pub use linkerd_app_core::proxy::http::{self as http, *};
+pub use self::{
+    logical::{policy, profile, LogicalAddr, Routes},
+    srv::DefaultAuthority,
+};
+pub use linkerd_app_core::proxy::http::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http<T>(T);

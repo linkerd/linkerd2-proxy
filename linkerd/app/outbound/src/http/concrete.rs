@@ -2,7 +2,7 @@
 //! and distributes HTTP requests among them.
 
 use super::{balance::EwmaConfig, client, handle_proxy_error_headers};
-use crate::{http, stack_labels, BackendRef, Outbound, ParentRef};
+use crate::{stack_labels, BackendRef, Outbound, ParentRef};
 use linkerd_app_core::{
     config::QueueConfig,
     metrics::{prefix_labels, EndpointLabels, OutboundEndpointLabels},
@@ -10,7 +10,7 @@ use linkerd_app_core::{
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
         core::Resolve,
-        tap,
+        http, tap,
     },
     svc, tls,
     transport::{self, addrs::*},
@@ -272,7 +272,7 @@ where
     T: svc::Param<http::Version>,
 {
     fn param(&self) -> client::Settings {
-        match self.param() {
+        match self.parent.param() {
             http::Version::H2 => client::Settings::H2,
             http::Version::Http1 => {
                 // When the target is local (i.e. same as source of traffic)

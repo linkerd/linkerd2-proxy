@@ -1,5 +1,5 @@
 use super::{h1, h2};
-use crate::orig_proto::L5D_ORIG_PROTO;
+use crate::header::L5D_ORIG_PROTO;
 use futures::prelude::*;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
 use hyper::body::HttpBody;
@@ -70,7 +70,7 @@ where
         let orig_version = req.version();
         let absolute_form = req
             .extensions_mut()
-            .remove::<crate::normalize_uri::WasAbsoluteForm>()
+            .remove::<crate::server::UriWasOriginallyAbsoluteForm>()
             .is_some();
         debug!(version = ?orig_version, absolute_form, "Upgrading request");
 
