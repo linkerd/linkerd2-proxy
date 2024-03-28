@@ -199,7 +199,7 @@ jobs:
           draft: ${{ needs.meta.outputs.draft }}
       - if: needs.meta.outputs.publish == 'true' && needs.meta.outputs.prerelease == 'false' && needs.meta.outputs.draft == 'false'
         name: Trigger sync-proxy in linkerd2
-        run: gh workflow run sync-proxy.yml -f version="$VERSION"
+        run: gh workflow run sync-proxy.yml -f version="$TAG"
         env:
           GH_REPO: ${{ vars.LINKERD2_REPO || 'linkerd/linkerd2' }}
           GH_TOKEN: ${{ secrets.LINKERD2_GITHUB_TOKEN }}
