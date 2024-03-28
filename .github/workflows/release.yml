@@ -93,7 +93,7 @@ jobs:
       package: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.any_changed == 'true' }}
       profile: ${{ inputs.profile || 'release' }}
       publish: ${{ inputs.publish }}
-      ref: ${{ inputs.ref || github.ref }}
+      ref: ${{ inputs.ref || github.sha }}
       tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.meta.outputs.version }}"
       prerelease: ${{ inputs.prerelease }}
       draft: ${{ inputs.draft }}
@@ -191,13 +191,13 @@ jobs:
       - if: needs.meta.outputs.publish == 'true'
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         with:
-          name: v${{ env.VERSION }}
+          name: ${{ env.VERSION }}
           tag_name: ${{ env.TAG }}
           files: artifacts/**/*
           generate_release_notes: true
           prerelease: ${{ needs.meta.outputs.prerelease }}
           draft: ${{ needs.meta.outputs.draft }}
-      - if: needs.meta.outputs.publish == 'true'
+      - if: needs.meta.outputs.publish == 'true' && needs.meta.outputs.prerelease == 'false' && needs.meta.outputs.draft == 'false'
         name: Trigger sync-proxy in linkerd2
         run: gh workflow run sync-proxy.yml -f version="$VERSION"
         env:
