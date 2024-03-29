@@ -174,7 +174,7 @@ where
 
                         // Downgrades the protocol if upgraded by an outbound
                         // proxy. This may also mark requests as being in
-                        // absolute form
+                        // absolute form, to be normalized.
                         let svc = h2_to_h1::Downgrade::new(supports_orig_proto_downgrades, svc);
 
                         // Record when a HTTP/1 URI originated in absolute form
