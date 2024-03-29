@@ -77,6 +77,7 @@ pub struct App {
     inbound_addr: Local<ServerAddr>,
     oc_collector: oc_collector::OcCollector,
     outbound_addr: Local<ServerAddr>,
+    outbound_addr_additional: Option<Local<ServerAddr>>,
     start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     tap: tap::Tap,
 }
@@ -107,7 +108,7 @@ impl Config {
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
             + Param<AddrPair>,
-        BOut: Bind<ServerConfig> + 'static,
+        BOut: Bind<ServerConfig> + Clone + 'static,
         BOut::Addrs: Param<Remote<ClientAddr>>
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
@@ -250,6 +251,9 @@ impl Config {
             gateway.into_inner(),
         );
 
+        let additional = outbound.config().proxy.server.addr_additional.is_some();
+
+        let bind_out_additional = additional.then(|| bind_out.clone());
         let (outbound_addr, outbound_listen) = bind_out
             .bind(&outbound.config().proxy.server)
             .expect("Failed to bind outbound listener");
@@ -265,9 +269,18 @@ impl Config {
                 Self::await_identity(identity_ready).await;
 
                 tokio::spawn(
-                    serve::serve(outbound_listen, outbound, drain_rx.clone().signaled())
+                    serve::serve(outbound_listen, outbound_svc, drain_rx.clone().signaled())
                         .instrument(info_span!("outbound").or_current()),
                 );
+
+                if let (Some(outbound_listen), Some(outbound_svc)) =
+                    (outbound_listen_additional, outbound_svc_additional)
+                {
+                    tokio::spawn(
+                        serve::serve(outbound_listen, outbound_svc, drain_rx.clone().signaled())
+                            .instrument(info_span!("outbound-2").or_current()),
+                    );
+                };
 
                 tokio::spawn(
                     serve::serve(inbound_listen, inbound, drain_rx.signaled())
@@ -310,6 +323,7 @@ impl Config {
             inbound_addr,
             oc_collector,
             outbound_addr,
+            outbound_addr_additional,
             start_proxy,
             tap,
         })
@@ -342,6 +356,10 @@ impl App {
 
     pub fn outbound_addr(&self) -> Local<ServerAddr> {
         self.outbound_addr
+    }
+
+    pub fn outbound_addr_additional(&self) -> Option<Local<ServerAddr>> {
+        self.outbound_addr_additional
     }
 
     pub fn tap_addr(&self) -> Option<Local<ServerAddr>> {

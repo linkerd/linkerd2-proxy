@@ -81,6 +81,8 @@ pub enum ParseError {
     NotAPortRange,
     #[error(transparent)]
     AddrError(addr::Error),
+    #[error("only two addresses are supported")]
+    TooManyAddrs,
     #[error("not a valid identity name")]
     NameError,
     #[error("could not read token source")]
@@ -93,6 +95,7 @@ pub enum ParseError {
 
 // Environment variables to look at when loading the configuration
 pub const ENV_OUTBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_OUTBOUND_LISTEN_ADDR";
+pub const ENV_OUTBOUND_LISTEN_ADDRS: &str = "LINKERD2_PROXY_OUTBOUND_LISTEN_ADDRS";
 pub const ENV_INBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_INBOUND_LISTEN_ADDR";
 pub const ENV_CONTROL_LISTEN_ADDR: &str = "LINKERD2_PROXY_CONTROL_LISTEN_ADDR";
 pub const ENV_ADMIN_LISTEN_ADDR: &str = "LINKERD2_PROXY_ADMIN_LISTEN_ADDR";
@@ -340,6 +343,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     // Parse all the environment variables. `parse` will log any errors so
     // defer returning any errors until all of them have been parsed.
     let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTEN_ADDR, parse_socket_addr);
+    let outbound_listener_addrs = parse(strings, ENV_OUTBOUND_LISTEN_ADDRS, parse_socket_addrs);
     let inbound_listener_addr = parse(strings, ENV_INBOUND_LISTEN_ADDR, parse_socket_addr);
     let admin_listener_addr = parse(strings, ENV_ADMIN_LISTEN_ADDR, parse_socket_addr);
 
@@ -463,13 +467,22 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         )?
         .unwrap_or(ingress_mode);
 
-        let addr = ListenAddr(
-            outbound_listener_addr?
-                .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
-        );
+        let (addr, addr_additional) = match outbound_listener_addrs {
+            Ok(Some(addrs)) if addrs.len() == 1 => (ListenAddr(addrs[0]), None),
+            Ok(Some(addrs)) if addrs.len() == 2 => {
+                (ListenAddr(addrs[0]), Some(ListenAddr(addrs[1])))
+            }
+            _ => {
+                let addr = outbound_listener_addr?
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap());
+                (ListenAddr(addr), None)
+            }
+        };
+
         let keepalive = Keepalive(outbound_accept_keepalive?);
         let server = ServerConfig {
             addr,
+            addr_additional,
             keepalive,
             h2_settings,
         };
@@ -551,6 +564,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let keepalive = Keepalive(inbound_accept_keepalive?);
         let server = ServerConfig {
             addr,
+            addr_additional: None,
             keepalive,
             h2_settings,
         };
@@ -746,6 +760,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
         server: ServerConfig {
             addr: ListenAddr(admin_listener_addr),
+            addr_additional: None,
             keepalive: inbound.proxy.server.keepalive,
             h2_settings,
         },
@@ -805,6 +820,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             permitted_client_ids: ids,
             config: ServerConfig {
                 addr: ListenAddr(addr),
+                addr_additional: None,
                 keepalive: inbound.proxy.server.keepalive,
                 h2_settings,
             },
@@ -1034,6 +1050,14 @@ fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
             Err(ParseError::HostIsNotAnIpAddress)
         }
     }
+}
+
+fn parse_socket_addrs(s: &str) -> Result<Vec<SocketAddr>, ParseError> {
+    let addrs: Vec<&str> = s.split(',').collect();
+    if addrs.len() > 2 {
+        return Err(ParseError::TooManyAddrs);
+    }
+    addrs.iter().map(|s| parse_socket_addr(s)).collect()
 }
 
 fn parse_ip_set(s: &str) -> Result<HashSet<IpAddr>, ParseError> {

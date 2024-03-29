@@ -1,6 +1,6 @@
 use super::*;
 use linkerd_app_core::{
-    svc::Param,
+    svc::{InsertParam, Param},
     transport::OrigDstAddr,
     transport::{listen, orig_dst, Keepalive, ListenAddr},
     Result,
@@ -64,6 +64,7 @@ enum MockOrigDst {
 
 impl<T> listen::Bind<T> for MockOrigDst
 where
+    T: Param<Option<ListenAddr>> + InsertParam<ListenAddr, (), Target = T>,
     T: Param<Keepalive> + Param<ListenAddr>,
 {
     type Addrs = orig_dst::Addrs;
@@ -87,6 +88,16 @@ where
             Ok((addrs, tcp))
         }));
         Ok((bound, incoming))
+    }
+
+    fn bind_additional(self, params: &T) -> Result<listen::Bound<Self::Incoming>> {
+        match params.param() {
+            Some(addr) => {
+                let t2 = params.insert_param(addr, ());
+                self.bind(&t2)
+            }
+            None => self.bind(params),
+        }
     }
 }
 
@@ -476,6 +487,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             identity_addr,
                             main.inbound_addr(),
                             main.outbound_addr(),
+                            main.outbound_addr_additional(),
                             main.admin_addr(),
                         );
                         let mut running = Some((running_tx, addrs));
@@ -531,8 +543,14 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         })
         .expect("spawn");
 
-    let (tap_addr, identity_addr, inbound_addr, outbound_addr, admin_addr) =
-        running_rx.await.unwrap();
+    let (
+        tap_addr,
+        identity_addr,
+        inbound_addr,
+        outbound_addr,
+        outbound_addr_additional,
+        admin_addr,
+    ) = running_rx.await.unwrap();
 
     tracing::info!(
         tap.addr = ?tap_addr,
@@ -540,6 +558,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         inbound.addr = ?inbound_addr,
         inbound.orig_dst = ?inbound,
         outbound.addr = ?outbound_addr,
+        outbound.addr.additional = ?outbound_addr_additional,
         outbound.orig_dst = ?outbound,
         metrics.addr = ?admin_addr,
     );

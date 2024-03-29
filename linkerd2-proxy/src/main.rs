@@ -75,6 +75,9 @@ fn main() {
         info!("Admin interface on {}", app.admin_addr());
         info!("Inbound interface on {}", app.inbound_addr());
         info!("Outbound interface on {}", app.outbound_addr());
+        if let Some(addr) = app.outbound_addr_additional() {
+            info!("Outbound interface on {addr}");
+        }
 
         match app.tap_addr() {
             None => info!("Tap DISABLED"),

@@ -1,7 +1,7 @@
 pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
     proxy::http::{self, h1, h2},
-    svc::{queue, CloneParam, ExtractParam, Param},
+    svc::{queue, CloneParam, ExtractParam, InsertParam, Param},
     transport::{Keepalive, ListenAddr},
 };
 use std::time::Duration;
@@ -9,6 +9,7 @@ use std::time::Duration;
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub addr: ListenAddr,
+    pub addr_additional: Option<ListenAddr>,
     pub keepalive: Keepalive,
     pub h2_settings: h2::Settings,
 }
@@ -73,8 +74,25 @@ impl Param<ListenAddr> for ServerConfig {
     }
 }
 
+impl Param<Option<ListenAddr>> for ServerConfig {
+    fn param(&self) -> Option<ListenAddr> {
+        self.addr_additional
+    }
+}
+
 impl Param<Keepalive> for ServerConfig {
     fn param(&self) -> Keepalive {
         self.keepalive
+    }
+}
+
+/// Replaces the addr field in ServerConfig with the contents of addr_additional, if any
+impl InsertParam<ListenAddr, ()> for ServerConfig {
+    type Target = ServerConfig;
+
+    fn insert_param(&self, addr: ListenAddr, _: ()) -> Self::Target {
+        let mut t = self.clone();
+        t.addr = addr;
+        t
     }
 }

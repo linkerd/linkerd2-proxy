@@ -58,6 +58,7 @@ pub fn default_config() -> Config {
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
                 addr: ListenAddr(([0, 0, 0, 0], 0).into()),
+                addr_additional: None,
                 keepalive: Keepalive(None),
                 h2_settings: h2::Settings::default(),
             },

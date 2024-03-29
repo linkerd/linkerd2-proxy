@@ -5,7 +5,7 @@ use crate::{
 use futures::prelude::*;
 use linkerd_error::Result;
 use linkerd_io as io;
-use linkerd_stack::Param;
+use linkerd_stack::{InsertParam, Param};
 use std::{net::SocketAddr, pin::Pin};
 use tokio::net::TcpStream;
 
@@ -69,6 +69,7 @@ impl<B> From<B> for BindWithOrigDst<B> {
 
 impl<T, B> Bind<T> for BindWithOrigDst<B>
 where
+    T: Param<Option<ListenAddr>> + InsertParam<ListenAddr, (), Target = T>,
     B: Bind<T, Io = TcpStream> + 'static,
     B::Addrs: Param<Remote<ClientAddr>>,
 {
@@ -99,6 +100,16 @@ where
         });
 
         Ok((addr, Box::pin(incoming)))
+    }
+
+    fn bind_additional(self, t: &T) -> Result<Bound<Self::Incoming>> {
+        match t.param() {
+            Some(addr) => {
+                let t2 = t.insert_param(addr, ());
+                self.bind(&t2)
+            }
+            None => self.bind(t),
+        }
     }
 }
 

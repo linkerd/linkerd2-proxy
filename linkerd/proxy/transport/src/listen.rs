@@ -26,6 +26,12 @@ pub trait Bind<T> {
     type Incoming: Stream<Item = Result<(Self::Addrs, Self::Io)>> + Send + Sync + 'static;
 
     fn bind(self, params: &T) -> Result<Bound<Self::Incoming>>;
+    fn bind_additional(self, _params: &T) -> Result<Bound<Self::Incoming>>
+    where
+        Self: Sized,
+    {
+        unimplemented!();
+    }
 }
 
 pub type Bound<I> = (Local<ServerAddr>, I);
