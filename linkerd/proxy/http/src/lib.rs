@@ -33,7 +33,6 @@ pub use self::{
     },
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
-    glue::{HyperServerSvc, UpgradeBody},
     header_from_target::NewHeaderFromTarget,
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     override_authority::{AuthorityOverride, NewOverrideAuthority},

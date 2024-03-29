@@ -115,8 +115,7 @@ impl<H> Inbound<H> {
             let h2 = config.proxy.server.h2_settings;
             let drain = rt.drain.clone();
 
-            http.push_on_service(http::BoxRequest::layer())
-                .check_new_service::<T, http::Request<_>>()
+            http.check_new_service::<T, http::Request<http::BoxBody>>()
                 .unlift_new()
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
                 .push(http::NewServeHttp::layer(move |t: &T| http::ServerParams {
