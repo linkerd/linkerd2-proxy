@@ -115,7 +115,7 @@ impl Config {
             .push(tls::Client::layer(identity))
             .push_connect_timeout(self.connect.timeout)
             .push_map_target(|(_version, target)| target)
-            .push(self::client::layer())
+            .push(self::client::layer(self.connect.h2_settings))
             .push_on_service(svc::MapErr::layer_boxed())
             .into_new_service();
 
@@ -353,11 +353,12 @@ mod client {
 
     // === impl Layer ===
 
-    pub fn layer<C, B>() -> impl svc::Layer<C, Service = http::client::h2::Connect<C, B>> + Copy
+    pub fn layer<C, B>(
+        settings: H2Settings,
+    ) -> impl svc::Layer<C, Service = http::client::h2::Connect<C, B>> + Copy
     where
         http::client::h2::Connect<C, B>: tower::Service<Target>,
     {
-        // FIXME(ver) We should configure the HTTP/2 settings of these clients.
-        svc::layer::mk(|mk_conn| http::client::h2::Connect::new(mk_conn, H2Settings::default()))
+        svc::layer::mk(move |mk_conn| http::client::h2::Connect::new(mk_conn, settings))
     }
 }
