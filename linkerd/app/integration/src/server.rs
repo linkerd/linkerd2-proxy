@@ -1,5 +1,5 @@
+use super::app_core::svc::http::TracingExecutor;
 use super::*;
-use linkerd_app_core::proxy::http::trace;
 use std::{
     io,
     sync::atomic::{AtomicUsize, Ordering},
@@ -194,8 +194,7 @@ impl Server {
             async move {
                 tracing::info!("support server running");
                 let mut new_svc = NewSvc(Arc::new(self.routes));
-                let mut http =
-                    hyper::server::conn::Http::new().with_executor(trace::Executor::new());
+                let mut http = hyper::server::conn::Http::new().with_executor(TracingExecutor);
                 match self.version {
                     Run::Http1 => http.http1_only(true),
                     Run::Http2 => http.http2_only(true),

@@ -7,6 +7,7 @@ pub mod balance;
 pub mod classify;
 pub mod client;
 pub mod detect;
+mod executor;
 mod glue;
 mod header_from_target;
 pub mod insert;
@@ -15,7 +16,6 @@ mod retain;
 pub mod server;
 pub mod strip_header;
 mod timeout;
-pub mod trace;
 pub mod upgrade;
 pub mod version;
 
@@ -26,6 +26,7 @@ pub use self::{
         NewInsertClassifyResponse,
     },
     detect::DetectHttp,
+    executor::TracingExecutor,
     header_from_target::NewHeaderFromTarget,
     override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,

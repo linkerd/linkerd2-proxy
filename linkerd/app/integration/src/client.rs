@@ -1,5 +1,5 @@
 use super::*;
-use linkerd_app_core::proxy::http::trace;
+use linkerd_app_core::proxy::http::TracingExecutor;
 use parking_lot::Mutex;
 use std::io;
 use tokio::net::TcpStream;
@@ -252,7 +252,7 @@ fn run(
     let work = async move {
         let client = hyper::Client::builder()
             .http2_only(http2_only)
-            .executor(trace::Executor::new())
+            .executor(TracingExecutor)
             .build::<Conn, hyper::Body>(conn);
         tracing::trace!("client task started");
         let mut rx = rx;

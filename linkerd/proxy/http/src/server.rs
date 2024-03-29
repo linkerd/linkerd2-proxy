@@ -1,4 +1,4 @@
-use crate::{self as http, trace, upgrade, BoxRequest, Version};
+use crate::{upgrade, BoxBody, BoxRequest, TracingExecutor, Version};
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
 use linkerd_stack::{layer, ExtractParam, NewService};
@@ -17,8 +17,6 @@ mod normalize_uri;
 pub use self::client_handle::ClientHandle;
 use self::client_handle::SetClientHandle;
 use super::client::h2::Settings as H2Settings;
-
-type Server = hyper::server::conn::Http<trace::Executor>;
 
 /// A request extension type marker that indicates that a request was originally
 /// received with an absolute-form URI.
@@ -51,7 +49,7 @@ pub struct NewServeHttp<X, N> {
 #[derive(Clone, Debug)]
 pub struct ServeHttp<N> {
     version: Version,
-    server: Server,
+    server: hyper::server::conn::Http<TracingExecutor>,
     inner: N,
     drain: drain::Watch,
     supports_orig_proto_downgrades: bool,
@@ -89,7 +87,7 @@ where
             supports_orig_proto_downgrades,
         } = params;
 
-        let mut server = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
+        let mut server = hyper::server::conn::Http::new().with_executor(TracingExecutor);
         server
             .http2_initial_stream_window_size(h2.initial_stream_window_size)
             .http2_initial_connection_window_size(h2.initial_connection_window_size);
@@ -119,11 +117,8 @@ impl<I, N, S> Service<I> for ServeHttp<N>
 where
     I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
     N: NewService<ClientHandle, Service = S> + Send + 'static,
-    S: Service<
-            http::Request<http::BoxBody>,
-            Response = http::Response<http::BoxBody>,
-            Error = Error,
-        > + Unpin
+    S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>
+        + Unpin
         + Send
         + 'static,
     S::Future: Send + 'static,

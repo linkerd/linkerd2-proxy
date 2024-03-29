@@ -50,8 +50,7 @@ impl<N> Outbound<N> {
         let http = self.with_stack(http).map_stack(|config, rt, stk| {
             let h2 = config.proxy.server.h2_settings;
             let drain = rt.drain.clone();
-            stk.push_on_service(http::BoxRequest::layer())
-                .unlift_new()
+            stk.unlift_new()
                 .push(http::NewServeHttp::layer(move |t: &Http<T>| {
                     let http::DefaultAuthority(default_authority) = t.parent.param();
                     http::ServerParams {
