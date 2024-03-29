@@ -1,4 +1,4 @@
-use crate::trace;
+use crate::executor::TracingExecutor;
 use futures::prelude::*;
 pub use h2::{Error as H2Error, Reason};
 use hyper::{
@@ -95,10 +95,10 @@ where
                 let (io, _meta) = connect.err_into::<Error>().await?;
                 let mut builder = conn::Builder::new();
                 builder
+                    .executor(TracingExecutor)
                     .http2_only(true)
                     .http2_initial_stream_window_size(initial_stream_window_size)
-                    .http2_initial_connection_window_size(initial_connection_window_size)
-                    .executor(trace::Executor::new());
+                    .http2_initial_connection_window_size(initial_connection_window_size);
 
                 // Configure HTTP/2 PING frames
                 if let Some(timeout) = keepalive_timeout {

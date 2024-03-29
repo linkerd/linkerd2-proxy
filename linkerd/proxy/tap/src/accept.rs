@@ -5,7 +5,7 @@ use linkerd_conditional::Conditional;
 use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_meshtls as meshtls;
-use linkerd_proxy_http::trace;
+use linkerd_proxy_http::TracingExecutor;
 use linkerd_tls as tls;
 use std::{
     collections::HashSet,
@@ -46,7 +46,7 @@ impl AcceptPermittedClients {
         let svc = TapServer::new(tap);
         Box::pin(async move {
             hyper::server::conn::Http::new()
-                .with_executor(trace::Executor::new())
+                .with_executor(TracingExecutor)
                 .http2_only(true)
                 .serve_connection(io, svc)
                 .await
