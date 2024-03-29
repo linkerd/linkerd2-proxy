@@ -39,11 +39,15 @@ on:
         required: false
         type: boolean
         default: false
+      latest:
+        description: "Make this the latest release?"
+        required: false
+        type: boolean
+        default: true
 
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
-  CHECKSEC_VERSION: 2.5.0
   RUSTFLAGS: "-D warnings -A deprecated"
   RUSTUP_MAX_RETRIES: 10
 
@@ -97,28 +101,23 @@ jobs:
       tag: "${{ inputs.tag-prefix || 'release/' }}v${{ steps.meta.outputs.version }}"
       prerelease: ${{ inputs.prerelease }}
       draft: ${{ inputs.draft }}
+      latest: ${{ inputs.latest }}
 
   info:
     needs: meta
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Info
+      - name: Inputs
         run: |
-          echo 'github.repository_owner: ${{ github.repository_owner }}'
-          echo 'inputs.version: ${{ inputs.version }}'
-          echo 'inputs.tag-prefix: ${{ inputs.tag-prefix }}'
-          echo 'inputs.profile: ${{ inputs.profile }}'
-          echo 'inputs.publish: ${{ inputs.publish }}'
-          echo 'inputs.ref: ${{ inputs.ref }}'
-          echo 'needs.meta.outputs.archs: ${{ needs.meta.outputs.archs }}'
-          echo 'needs.meta.outputs.version: ${{ needs.meta.outputs.version }}'
-          echo 'needs.meta.outputs.package: ${{ needs.meta.outputs.package }}'
-          echo 'needs.meta.outputs.profile: ${{ needs.meta.outputs.profile }}'
-          echo 'needs.meta.outputs.publish: ${{ needs.meta.outputs.publish }}'
-          echo 'needs.meta.outputs.ref: ${{ needs.meta.outputs.ref }}'
-          echo 'needs.meta.outputs.prerelease: ${{ needs.meta.outputs.prerelease }}'
-          echo 'needs.meta.outputs.draft: ${{ needs.meta.outputs.draft }}'
+          jq . <<EOF
+          ${{ toJson(inputs) }}
+          EOF
+      - name: Meta
+        run: |
+          jq . <<EOF
+          ${{ toJson(needs.meta.outputs) }}
+          EOF
 
   package:
     needs: meta
@@ -146,7 +145,7 @@ jobs:
           ref: ${{ needs.meta.outputs.ref }}
       - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84
         with:
-          key: ${{ matrix.libc }}
+          key: ${{ matrix.arch }}
       - run: just fetch
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} build
@@ -197,6 +196,7 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ needs.meta.outputs.prerelease }}
           draft: ${{ needs.meta.outputs.draft }}
+          make_latest: ${{ needs.meta.outputs.latest }}
       - if: needs.meta.outputs.publish == 'true' && needs.meta.outputs.prerelease == 'false' && needs.meta.outputs.draft == 'false'
         name: Trigger sync-proxy in linkerd2
         run: gh workflow run sync-proxy.yml -f version="$TAG"
