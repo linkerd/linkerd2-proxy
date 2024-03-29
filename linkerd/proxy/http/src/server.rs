@@ -18,7 +18,7 @@ mod upgrade;
 use self::client_handle::SetClientHandle;
 pub use self::{
     client_handle::ClientHandle,
-    upgrade::{Http11Upgrade, SetupHttp11Connect},
+    upgrade::{Http11Upgrade, PrepareHttp11Upgrade},
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -181,7 +181,7 @@ where
                         let svc = normalize_uri::MarkAbsoluteForm::new(svc);
 
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        let svc = upgrade::SetupHttp11Connect::new(svc, drain.clone());
+                        let svc = upgrade::PrepareHttp11Upgrade::new(svc, drain.clone());
 
                         let mut conn = server
                             .http1_only(true)

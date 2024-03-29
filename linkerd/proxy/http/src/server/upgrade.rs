@@ -18,8 +18,15 @@ use std::{
 use tracing::{debug, info, instrument::Instrument, trace};
 use try_lock::TryLock;
 
+/// A middleware that handles the `Upgrade` header on HTTP/1.1 requests.
+///
+/// If an HTTP/1.1 request includes an `Upgrade` header, the request is
+/// configured with extensions that can be used by the HTTP/1.1 client to
+/// perform protocol upgrades.
+///
+/// This has nothing to do with Linkerd's meshed HTTP/2.0 upgrades.
 #[derive(Debug)]
-pub struct SetupHttp11Connect<S> {
+pub struct PrepareHttp11Upgrade<S> {
     service: S,
     /// Watch any spawned HTTP/1.1 upgrade tasks.
     upgrade_drain_signal: drain::Watch,
@@ -168,9 +175,9 @@ impl Drop for Inner {
     }
 }
 
-// === impl SetupHttp11Connect ===
+// === impl PrepareHttp11Upgrade ===
 
-impl<S> SetupHttp11Connect<S> {
+impl<S> PrepareHttp11Upgrade<S> {
     pub fn new(service: S, upgrade_drain_signal: drain::Watch) -> Self {
         Self {
             service,
@@ -181,7 +188,7 @@ impl<S> SetupHttp11Connect<S> {
 
 type ResponseFuture<F, B, E> = Either<F, future::Ready<Result<http::Response<B>, E>>>;
 
-impl<S, B> tower::Service<http::Request<hyper::Body>> for SetupHttp11Connect<S>
+impl<S, B> tower::Service<http::Request<hyper::Body>> for PrepareHttp11Upgrade<S>
 where
     S: tower::Service<http::Request<BoxBody>, Response = http::Response<B>>,
     B: Default,

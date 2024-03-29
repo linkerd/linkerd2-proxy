@@ -157,7 +157,7 @@ async fn orig_proto_skipped_on_http_upgrade() {
         // We need the server-side upgrade layer to annotate the request so that the client
         // knows that an HTTP upgrade is in progress.
         .push_on_service(svc::layer::mk(|svc| {
-            http::server::SetupHttp11Connect::new(svc, drain.clone())
+            http::server::PrepareHttp11Upgrade::new(svc, drain.clone())
         }))
         .into_inner();
 
