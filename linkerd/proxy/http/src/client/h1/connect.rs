@@ -1,4 +1,3 @@
-use crate::HasH2Reason;
 use futures::TryFuture;
 use hyper::client::connect as hyper_connect;
 use linkerd_error::{Error, Result};
@@ -13,7 +12,7 @@ use std::{
 
 /// Glue for any `tokio_connect::Connect` to implement `hyper::client::Connect`.
 #[derive(Debug, Clone)]
-pub struct HyperConnect<C, T> {
+pub struct Connect<C, T> {
     connect: C,
     absolute_form: bool,
     target: T,
@@ -27,19 +26,19 @@ pub struct Connection<T> {
     absolute_form: bool,
 }
 
-/// Future returned by `HyperConnect`.
+/// Future returned by `Connect`.
 #[pin_project]
-pub struct HyperConnectFuture<F> {
+pub struct ConnectFuture<F> {
     #[pin]
     inner: F,
     absolute_form: bool,
 }
 
-// === impl HyperConnect ===
+// === impl Connect ===
 
-impl<C, T> HyperConnect<C, T> {
+impl<C, T> Connect<C, T> {
     pub(super) fn new(connect: C, target: T, absolute_form: bool) -> Self {
-        HyperConnect {
+        Connect {
             connect,
             target,
             absolute_form,
@@ -47,7 +46,7 @@ impl<C, T> HyperConnect<C, T> {
     }
 }
 
-impl<C, T> Service<hyper::Uri> for HyperConnect<C, T>
+impl<C, T> Service<hyper::Uri> for Connect<C, T>
 where
     C: MakeConnection<(crate::Version, T)> + Clone + Send + Sync,
     C::Connection: Unpin + Send,
@@ -56,14 +55,16 @@ where
 {
     type Response = Connection<C::Connection>;
     type Error = Error;
-    type Future = HyperConnectFuture<C::Future>;
+    type Future = ConnectFuture<C::Future>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.connect.poll_ready(cx).map_err(Into::into)
     }
 
+    #[inline]
     fn call(&mut self, _dst: hyper::Uri) -> Self::Future {
-        HyperConnectFuture {
+        ConnectFuture {
             inner: self
                 .connect
                 .connect((crate::Version::Http1, self.target.clone())),
@@ -72,13 +73,14 @@ where
     }
 }
 
-impl<F, I, M> Future for HyperConnectFuture<F>
+impl<F, I, M> Future for ConnectFuture<F>
 where
     F: TryFuture<Ok = (I, M)> + 'static,
     F::Error: Into<Error>,
 {
     type Output = Result<Connection<I>>;
 
+    #[inline]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let (transport, _) = futures::ready!(this.inner.try_poll(cx)).map_err(Into::into)?;
@@ -86,14 +88,6 @@ where
             transport,
             absolute_form: *this.absolute_form,
         }))
-    }
-}
-
-// === impl Error ===
-
-impl HasH2Reason for hyper::Error {
-    fn h2_reason(&self) -> Option<h2::Reason> {
-        (self as &(dyn std::error::Error + 'static)).h2_reason()
     }
 }
 

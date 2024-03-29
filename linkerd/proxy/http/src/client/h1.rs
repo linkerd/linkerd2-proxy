@@ -1,7 +1,4 @@
-use crate::{
-    glue::HyperConnect,
-    server::{Http11Upgrade, HttpConnect, UriWasOriginallyAbsoluteForm},
-};
+use crate::server::{Http11Upgrade, HttpConnect, UriWasOriginallyAbsoluteForm};
 use futures::prelude::*;
 use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};
 use linkerd_error::{Error, Result};
@@ -9,6 +6,8 @@ use linkerd_http_box::BoxBody;
 use linkerd_stack::MakeConnection;
 use std::{pin::Pin, time::Duration};
 use tracing::{debug, trace};
+
+mod connect;
 
 #[derive(Copy, Clone, Debug)]
 pub struct PoolSettings {
@@ -26,8 +25,8 @@ pub struct PoolSettings {
 pub struct Client<C, T, B> {
     connect: C,
     target: T,
-    absolute_form: Option<hyper::Client<HyperConnect<C, T>, B>>,
-    origin_form: Option<hyper::Client<HyperConnect<C, T>, B>>,
+    absolute_form: Option<hyper::Client<connect::Connect<C, T>, B>>,
+    origin_form: Option<hyper::Client<connect::Connect<C, T>, B>>,
     pool: PoolSettings,
 }
 
@@ -93,7 +92,7 @@ where
             hyper::Client::builder()
                 .pool_max_idle_per_host(0)
                 .set_host(use_absolute_form)
-                .build(HyperConnect::new(
+                .build(connect::Connect::new(
                     self.connect.clone(),
                     self.target.clone(),
                     use_absolute_form,
@@ -119,7 +118,7 @@ where
                         .pool_max_idle_per_host(self.pool.max_idle)
                         .pool_idle_timeout(self.pool.idle_timeout)
                         .set_host(use_absolute_form)
-                        .build(HyperConnect::new(
+                        .build(connect::Connect::new(
                             self.connect.clone(),
                             self.target.clone(),
                             use_absolute_form,

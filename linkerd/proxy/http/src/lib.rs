@@ -8,7 +8,6 @@ pub mod classify;
 pub mod client;
 pub mod detect;
 mod executor;
-mod glue;
 mod header_from_target;
 pub mod insert;
 mod override_authority;
@@ -67,6 +66,14 @@ impl<'a> HasH2Reason for &'a (dyn std::error::Error + 'static) {
 impl HasH2Reason for Error {
     fn h2_reason(&self) -> Option<::h2::Reason> {
         (&**self as &(dyn std::error::Error + 'static)).h2_reason()
+    }
+}
+
+// === impl Error ===
+
+impl HasH2Reason for hyper::Error {
+    fn h2_reason(&self) -> Option<h2::Reason> {
+        (self as &(dyn std::error::Error + 'static)).h2_reason()
     }
 }
 
