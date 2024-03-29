@@ -9,7 +9,7 @@ pub(crate) struct ServerRescue {
 
 #[derive(Clone, Debug)]
 pub struct ExtractServerParams {
-    h2: http::client::h2::Settings, // FIXME
+    h2: http::server::H2Settings,
     drain: drain::Watch,
 }
 

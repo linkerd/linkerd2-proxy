@@ -16,7 +16,9 @@ mod normalize_uri;
 
 pub use self::client_handle::ClientHandle;
 use self::client_handle::SetClientHandle;
-use super::client::h2::Settings as H2Settings;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct H2Settings(pub super::client::h2::Settings);
 
 /// A request extension type marker that indicates that a request was originally
 /// received with an absolute-form URI.
@@ -56,6 +58,14 @@ pub struct ServeHttp<N> {
     default_authority: http::uri::Authority,
 }
 
+// === impl H2Settings ===
+
+impl From<super::client::h2::Settings> for H2Settings {
+    fn from(s: super::client::h2::Settings) -> Self {
+        Self(s)
+    }
+}
+
 // === impl NewServeHttp ===
 
 impl<X: Clone, N> NewServeHttp<X, N> {
@@ -81,7 +91,7 @@ where
         tracing::debug!(?params, "Creating HTTP server");
         let Params {
             version,
-            h2,
+            h2: H2Settings(h2),
             drain,
             default_authority,
             supports_orig_proto_downgrades,

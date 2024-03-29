@@ -471,7 +471,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let server = ServerConfig {
             addr,
             keepalive,
-            h2_settings,
+            h2_settings: h2_settings.into(),
         };
         let discovery_idle_timeout =
             outbound_discovery_idle_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISCOVERY_IDLE_TIMEOUT);
@@ -552,7 +552,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let server = ServerConfig {
             addr,
             keepalive,
-            h2_settings,
+            h2_settings: h2_settings.into(),
         };
         let discovery_idle_timeout =
             inbound_discovery_idle_timeout?.unwrap_or(DEFAULT_INBOUND_DISCOVERY_IDLE_TIMEOUT);
@@ -747,7 +747,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         server: ServerConfig {
             addr: ListenAddr(admin_listener_addr),
             keepalive: inbound.proxy.server.keepalive,
-            h2_settings,
+            h2_settings: h2_settings.into(),
         },
 
         // TODO(ver) Currently we always enable profiling when the pprof feature
@@ -806,7 +806,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             config: ServerConfig {
                 addr: ListenAddr(addr),
                 keepalive: inbound.proxy.server.keepalive,
-                h2_settings,
+                h2_settings: h2_settings.into(),
             },
         })
         .unwrap_or(super::tap::Config::Disabled);

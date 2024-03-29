@@ -13,7 +13,7 @@ use std::time::Duration;
 pub struct ServerConfig {
     pub addr: ListenAddr,
     pub keepalive: Keepalive,
-    pub h2_settings: h2::Settings,
+    pub h2_settings: http::server::H2Settings,
 }
 
 #[derive(Clone, Debug)]

@@ -6,10 +6,7 @@ use linkerd_app_core::{
     drain, exp_backoff,
     identity::rustls,
     metrics,
-    proxy::{
-        http::client::{h1, h2},
-        tap,
-    },
+    proxy::{http, tap},
     transport::{Keepalive, ListenAddr},
     ProxyRuntime,
 };
@@ -59,7 +56,7 @@ pub fn default_config() -> Config {
             server: config::ServerConfig {
                 addr: ListenAddr(([0, 0, 0, 0], 0).into()),
                 keepalive: Keepalive(None),
-                h2_settings: h2::Settings::default(),
+                h2_settings: http::server::H2Settings::default(),
             },
             connect: config::ConnectConfig {
                 keepalive: Keepalive(None),
@@ -70,11 +67,11 @@ pub fn default_config() -> Config {
                     0.1,
                 )
                 .unwrap(),
-                h1_settings: h1::PoolSettings {
+                h1_settings: http::client::h1::PoolSettings {
                     max_idle: 1,
                     idle_timeout: Duration::from_secs(1),
                 },
-                h2_settings: h2::Settings::default(),
+                h2_settings: http::client::h2::Settings::default(),
             },
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(10),
