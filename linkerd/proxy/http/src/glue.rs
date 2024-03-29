@@ -24,12 +24,6 @@ pub struct UpgradeBody {
     pub(super) upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
 }
 
-/// Glue for a `tower::Service` to used as a `hyper::server::Service`.
-#[derive(Debug)]
-pub struct HyperServerSvc<S> {
-    service: S,
-}
-
 /// Glue for any `tokio_connect::Connect` to implement `hyper::client::Connect`.
 #[derive(Debug, Clone)]
 pub struct HyperConnect<C, T> {
@@ -129,31 +123,6 @@ impl PinnedDrop for UpgradeBody {
         if let Some((upgrade, on_upgrade)) = this.upgrade.take() {
             upgrade.insert_half(on_upgrade);
         }
-    }
-}
-
-// === impl HyperServerSvc ===
-
-impl<S> HyperServerSvc<S> {
-    pub fn new(service: S) -> Self {
-        HyperServerSvc { service }
-    }
-}
-
-impl<S> tower::Service<http::Request<hyper::Body>> for HyperServerSvc<S>
-where
-    S: tower::Service<http::Request<UpgradeBody>>,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.service.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: http::Request<hyper::Body>) -> Self::Future {
-        self.service.call(req.map(UpgradeBody::from))
     }
 }
 

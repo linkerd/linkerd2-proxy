@@ -196,7 +196,7 @@ impl<M> Admin<M> {
 impl<M, B> tower::Service<http::Request<B>> for Admin<M>
 where
     M: FmtMetrics,
-    B: HttpBody + Send + Sync + 'static,
+    B: HttpBody + Send + 'static,
     B::Error: Into<Error>,
     B::Data: Send,
 {
