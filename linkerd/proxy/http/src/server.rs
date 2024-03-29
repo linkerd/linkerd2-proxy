@@ -18,7 +18,7 @@ mod upgrade;
 use self::client_handle::SetClientHandle;
 pub use self::{
     client_handle::ClientHandle,
-    upgrade::{Http11Upgrade, HttpConnect, SetupHttp11Connect},
+    upgrade::{Http11Upgrade, SetupHttp11Connect},
 };
 
 #[derive(Clone, Copy, Debug, Default)]

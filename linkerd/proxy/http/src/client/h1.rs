@@ -1,4 +1,4 @@
-use crate::server::{Http11Upgrade, HttpConnect, UriWasOriginallyAbsoluteForm};
+use crate::server::{Http11Upgrade, UriWasOriginallyAbsoluteForm};
 use futures::prelude::*;
 use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};
 use linkerd_error::{Error, Result};
@@ -135,7 +135,6 @@ where
                     upgrade.is_some(),
                     "Upgrade extension must be set on CONNECT requests"
                 );
-                rsp.extensions_mut().insert(HttpConnect);
 
                 // Strip headers that may not be transmitted to the server, per
                 // https://tools.ietf.org/html/rfc7231#section-4.3.6:
@@ -148,7 +147,7 @@ where
                 }
             }
 
-            if is_upgrade(&rsp) {
+            if is_upgrade(&rsp, is_http_connect) {
                 trace!("Client response is HTTP/1.1 upgrade");
                 if let Some(upgrade) = upgrade {
                     upgrade.insert_half(hyper::upgrade::on(&mut rsp));
@@ -165,21 +164,14 @@ where
 // === HTTP/1 utils ===
 
 /// Checks responses to determine if they are successful HTTP upgrades.
-fn is_upgrade<B>(res: &http::Response<B>) -> bool {
-    #[inline]
-    fn is_connect_success<B>(res: &http::Response<B>) -> bool {
-        res.extensions().get::<HttpConnect>().is_some() && res.status().is_success()
-    }
-
+fn is_upgrade<B>(res: &http::Response<B>, is_http_connect: bool) -> bool {
     // Upgrades were introduced in HTTP/1.1
-    if res.version() != http::Version::HTTP_11 {
-        if is_connect_success(res) {
-            tracing::warn!(
-                "A successful response to a CONNECT request had an incorrect HTTP version \
+    if res.version() != http::Version::HTTP_11 && is_http_connect && res.status().is_success() {
+        tracing::warn!(
+            "A successful response to a CONNECT request had an incorrect HTTP version \
                 (expected HTTP/1.1, got {:?})",
-                res.version()
-            );
-        }
+            res.version()
+        );
         return false;
     }
 
@@ -189,7 +181,7 @@ fn is_upgrade<B>(res: &http::Response<B>) -> bool {
     }
 
     // CONNECT requests are complete if status code is 2xx.
-    if is_connect_success(res) {
+    if is_http_connect && res.status().is_success() {
         return true;
     }
 

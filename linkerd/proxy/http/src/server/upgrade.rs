@@ -48,11 +48,6 @@ pub struct Http11UpgradeHalves {
     pub client: Http11Upgrade,
 }
 
-/// A marker type inserted into Extensions to signal it was an HTTP CONNECT
-/// request.
-#[derive(Debug)]
-pub struct HttpConnect;
-
 /// Provides optional HTTP/1.1 upgrade support on the body.
 #[pin_project(PinnedDrop)]
 #[derive(Debug)]
