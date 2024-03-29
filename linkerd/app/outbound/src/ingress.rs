@@ -305,17 +305,15 @@ impl<N> Outbound<N> {
             // destination address.
             http.check_new_service::<Http<T>, http::Request<_>>()
                 .unlift_new()
-                .push(http::NewServeHttp::layer({
+                .push(http::NewServeHttp::layer(rt.drain.clone(), {
                     let h2 = config.proxy.server.h2_settings;
-                    let drain = rt.drain.clone();
                     move |http: &Http<T>| {
                         let OrigDstAddr(addr) = http.param();
                         http::ServerParams {
-                        version: http.version,
-                        h2,
-                        drain: drain.clone(),
-                        default_authority: Addr::from(addr).to_http_authority(),
-                        supports_orig_proto_downgrades: false,
+                            version: http.version,
+                            h2,
+                            default_authority: Addr::from(addr).to_http_authority(),
+                            supports_orig_proto_downgrades: false,
                         }
                     }
                 }))

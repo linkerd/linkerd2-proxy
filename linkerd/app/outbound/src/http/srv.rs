@@ -1,6 +1,6 @@
 use super::IdentityRequired;
 use crate::{http, trace_labels, Outbound};
-use linkerd_app_core::{drain, errors, http_tracing, io, svc, Error, Result};
+use linkerd_app_core::{errors, http_tracing, io, svc, Error, Result};
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ServerRescue {
@@ -10,7 +10,6 @@ pub(crate) struct ServerRescue {
 #[derive(Clone, Debug)]
 pub struct ExtractServerParams {
     h2: http::server::H2Settings,
-    drain: drain::Watch,
 }
 
 pub struct DefaultAuthority(pub(crate) http::uri::Authority);
@@ -83,10 +82,12 @@ impl<N> Outbound<N> {
         self.map_stack(|config, rt, http| {
             http.unlift_new()
                 .push(svc::ArcNewService::layer())
-                .push(http::NewServeHttp::layer(ExtractServerParams {
-                    h2: config.proxy.server.h2_settings,
-                    drain: rt.drain.clone(),
-                }))
+                .push(http::NewServeHttp::layer(
+                    rt.drain.clone(),
+                    ExtractServerParams {
+                        h2: config.proxy.server.h2_settings,
+                    },
+                ))
         })
     }
 }
@@ -193,7 +194,6 @@ where
         http::ServerParams {
             version: t.param(),
             h2: self.h2,
-            drain: self.drain.clone(),
             supports_orig_proto_downgrades: false,
             default_authority,
         }

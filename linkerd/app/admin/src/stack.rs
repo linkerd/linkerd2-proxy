@@ -121,21 +121,17 @@ impl Config {
 
         let tcp = http
             .unlift_new()
-            .push(http::NewServeHttp::layer({
-                let drain = drain.clone();
-                move |t: &Http| {
-                    let default_authority = Addr::from(t.tcp.addr.0.0).to_http_authority();
-                    let meshed = matches!(t.tcp.tls,
-                        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                            ..
-                        }));
-                    http::ServerParams {
-                        version: t.version,
-                        h2: Default::default(),
-                        drain: drain.clone(),
-                        supports_orig_proto_downgrades: meshed,
-                        default_authority,
-                    }
+            .push(http::NewServeHttp::layer(drain.clone(), move |t: &Http| {
+                let default_authority = Addr::from(t.tcp.addr.0.0).to_http_authority();
+                let meshed = matches!(t.tcp.tls,
+                    tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                        ..
+                    }));
+                http::ServerParams {
+                    version: t.version,
+                    h2: Default::default(), // FIXME
+                    supports_orig_proto_downgrades: meshed,
+                    default_authority,
                 }
             }))
             .push_filter(

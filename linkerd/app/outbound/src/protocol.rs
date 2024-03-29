@@ -51,16 +51,18 @@ impl<N> Outbound<N> {
             let h2 = config.proxy.server.h2_settings;
             let drain = rt.drain.clone();
             stk.unlift_new()
-                .push(http::NewServeHttp::layer(move |t: &Http<T>| {
-                    let http::DefaultAuthority(default_authority) = t.parent.param();
-                    http::ServerParams {
-                        version: t.version,
-                        h2,
-                        drain: drain.clone(),
-                        default_authority,
-                        supports_orig_proto_downgrades: false,
-                    }
-                }))
+                .push(http::NewServeHttp::layer(
+                    drain.clone(),
+                    move |t: &Http<T>| {
+                        let http::DefaultAuthority(default_authority) = t.parent.param();
+                        http::ServerParams {
+                            version: t.version,
+                            h2,
+                            default_authority,
+                            supports_orig_proto_downgrades: false,
+                        }
+                    },
+                ))
                 .arc_new_tcp()
         });
 

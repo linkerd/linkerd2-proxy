@@ -114,12 +114,11 @@ impl<H> Inbound<H> {
             http.check_new_service::<T, http::Request<http::BoxBody>>()
                 .unlift_new()
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
-                .push(http::NewServeHttp::layer(move |t: &T| {
+                .push(http::NewServeHttp::layer(drain, move |t: &T| {
                     let DefaultAuthority(default_authority) = t.param();
                     http::ServerParams {
                         version: t.param(),
                         h2,
-                        drain: drain.clone(),
                         default_authority,
                         // TODO(ver) this should be conditional on whether the
                         // client is meshed, but our integration tests currently

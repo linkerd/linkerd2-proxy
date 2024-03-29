@@ -38,7 +38,6 @@ pub struct WasHttp1OverH2(());
 pub struct Params {
     pub version: Version,
     pub h2: H2Settings,
-    pub drain: drain::Watch,
 
     pub default_authority: http::uri::Authority,
     pub supports_orig_proto_downgrades: bool,
@@ -48,6 +47,7 @@ pub struct Params {
 #[derive(Clone, Debug)]
 pub struct NewServeHttp<X, N> {
     inner: N,
+    drain: drain::Watch,
     params: X,
 }
 
@@ -73,13 +73,17 @@ impl From<super::client::h2::Settings> for H2Settings {
 // === impl NewServeHttp ===
 
 impl<X: Clone, N> NewServeHttp<X, N> {
-    pub fn layer(params: X) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |inner| Self::new(params.clone(), inner))
+    pub fn layer(drain: drain::Watch, params: X) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(drain.clone(), params.clone(), inner))
     }
 
     /// Creates a new `ServeHttp`.
-    fn new(params: X, inner: N) -> Self {
-        Self { inner, params }
+    fn new(drain: drain::Watch, params: X, inner: N) -> Self {
+        Self {
+            inner,
+            drain,
+            params,
+        }
     }
 }
 
@@ -96,7 +100,6 @@ where
         let Params {
             version,
             h2: H2Settings(h2),
-            drain,
             default_authority,
             supports_orig_proto_downgrades,
         } = params;
@@ -117,7 +120,7 @@ where
         ServeHttp {
             inner,
             version,
-            drain,
+            drain: self.drain.clone(),
             default_authority,
             supports_orig_proto_downgrades,
             server,
