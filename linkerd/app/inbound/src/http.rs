@@ -14,8 +14,8 @@ fn trace_labels() -> std::collections::HashMap<String, String> {
 
 #[cfg(fuzzing)]
 pub mod fuzz {
+    use super::{router::Http, DefaultAuthority};
     use crate::{
-        http::router::Http,
         policy,
         test_util::{support::connect::Connect, *},
         Config, Inbound,
@@ -246,9 +246,9 @@ pub mod fuzz {
         }
     }
 
-    impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
-        fn param(&self) -> http::normalize_uri::DefaultAuthority {
-            http::normalize_uri::DefaultAuthority::from_addr(Self::addr())
+    impl svc::Param<DefaultAuthority> for Target {
+        fn param(&self) -> DefaultAuthority {
+            DefaultAuthority::from_addr(Self::addr())
         }
     }
 

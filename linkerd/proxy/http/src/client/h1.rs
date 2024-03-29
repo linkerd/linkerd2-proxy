@@ -71,7 +71,7 @@ where
         let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
         let is_http_connect = req.method() == http::Method::CONNECT;
 
-        // Configured by `normalize_uri` or `orig_proto::Downgrade`.
+        // Configured by the server.
         let use_absolute_form = req
             .extensions_mut()
             .remove::<UriWasOriginallyAbsoluteForm>()
