@@ -60,7 +60,7 @@ where
         debug_assert!(req.version() != http::Version::HTTP_2);
         if req
             .extensions()
-            .get::<crate::upgrade::Http11Upgrade>()
+            .get::<crate::server::Http11Upgrade>()
             .is_some()
         {
             debug!("Skipping orig-proto upgrade due to HTTP/1.1 upgrade");

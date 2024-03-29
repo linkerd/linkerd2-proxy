@@ -16,7 +16,6 @@ mod retain;
 pub mod server;
 pub mod strip_header;
 mod timeout;
-pub mod upgrade;
 pub mod version;
 
 pub use self::{

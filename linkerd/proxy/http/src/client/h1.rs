@@ -1,7 +1,6 @@
 use crate::{
     glue::HyperConnect,
-    server::UriWasOriginallyAbsoluteForm,
-    upgrade::{Http11Upgrade, HttpConnect},
+    server::{Http11Upgrade, HttpConnect, UriWasOriginallyAbsoluteForm},
 };
 use futures::prelude::*;
 use http::header::{CONTENT_LENGTH, TRANSFER_ENCODING};

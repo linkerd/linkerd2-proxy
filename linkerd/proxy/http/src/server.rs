@@ -1,4 +1,4 @@
-use crate::{upgrade, BoxBody, BoxRequest, TracingExecutor, Version};
+use crate::{BoxBody, BoxRequest, TracingExecutor, Version};
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
 use linkerd_stack::{layer, ExtractParam, NewService};
@@ -13,9 +13,13 @@ use tracing::{debug, Instrument};
 mod client_handle;
 mod h2_to_h1;
 mod normalize_uri;
+mod upgrade;
 
-pub use self::client_handle::ClientHandle;
 use self::client_handle::SetClientHandle;
+pub use self::{
+    client_handle::ClientHandle,
+    upgrade::{Http11Upgrade, HttpConnect, SetupHttp11Connect},
+};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct H2Settings(pub super::client::h2::Settings);
