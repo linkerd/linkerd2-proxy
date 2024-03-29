@@ -197,7 +197,11 @@ jobs:
           prerelease: ${{ needs.meta.outputs.prerelease }}
           draft: ${{ needs.meta.outputs.draft }}
           make_latest: ${{ needs.meta.outputs.latest }}
-      - if: needs.meta.outputs.publish == 'true' && needs.meta.outputs.prerelease == 'false' && needs.meta.outputs.draft == 'false'
+      - if: >-
+          needs.meta.outputs.publish == 'true' &&
+          needs.meta.outputs.prerelease == 'false' &&
+          needs.meta.outputs.draft == 'false' &&
+          needs.meta.outputs.latest == 'true'
         name: Trigger sync-proxy in linkerd2
         run: gh workflow run sync-proxy.yml -f version="$TAG"
         env:
