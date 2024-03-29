@@ -9,6 +9,7 @@ pub mod classify;
 pub mod client;
 pub mod client_handle;
 pub mod detect;
+mod executor;
 mod glue;
 pub mod h1;
 pub mod h2;
@@ -21,7 +22,6 @@ mod retain;
 mod server;
 pub mod strip_header;
 pub mod timeout;
-pub mod trace;
 pub mod upgrade;
 pub mod version;
 
@@ -33,6 +33,7 @@ pub use self::{
     },
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
+    executor::TracingExecutor,
     header_from_target::NewHeaderFromTarget,
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     override_authority::{AuthorityOverride, NewOverrideAuthority},

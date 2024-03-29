@@ -1,6 +1,6 @@
 use crate::{
-    client_handle::SetClientHandle, h2::Settings as H2Settings, trace, upgrade, BoxBody,
-    BoxRequest, ClientHandle, Version,
+    client_handle::SetClientHandle, h2::Settings as H2Settings, upgrade, BoxBody, BoxRequest,
+    ClientHandle, TracingExecutor, Version,
 };
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
@@ -12,8 +12,6 @@ use std::{
 };
 use tower::Service;
 use tracing::{debug, Instrument};
-
-type Server = hyper::server::conn::Http<trace::Executor>;
 
 /// Configures HTTP server behavior.
 #[derive(Clone, Debug)]
@@ -34,7 +32,7 @@ pub struct NewServeHttp<X, N> {
 #[derive(Clone, Debug)]
 pub struct ServeHttp<N> {
     version: Version,
-    server: Server,
+    server: hyper::server::conn::Http<TracingExecutor>,
     inner: N,
     drain: drain::Watch,
 }
@@ -62,7 +60,7 @@ where
     fn new_service(&self, target: T) -> Self::Service {
         let Params { version, h2, drain } = self.params.extract_param(&target);
 
-        let mut srv = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
+        let mut srv = hyper::server::conn::Http::new().with_executor(TracingExecutor);
         srv.http2_initial_stream_window_size(h2.initial_stream_window_size)
             .http2_initial_connection_window_size(h2.initial_connection_window_size);
         // Configure HTTP/2 PING frames

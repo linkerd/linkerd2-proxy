@@ -2,15 +2,9 @@ use std::future::Future;
 use tracing::instrument::Instrument;
 
 #[derive(Clone, Debug, Default)]
-pub struct Executor(());
+pub struct TracingExecutor;
 
-impl Executor {
-    pub fn new() -> Self {
-        Self(())
-    }
-}
-
-impl<F> hyper::rt::Executor<F> for Executor
+impl<F> hyper::rt::Executor<F> for TracingExecutor
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
