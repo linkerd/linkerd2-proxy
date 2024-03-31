@@ -18,6 +18,7 @@ pub struct EnabledConfig {
     pub control: control::Config,
     pub attributes: HashMap<String, String>,
     pub hostname: Option<String>,
+    pub service_name: Option<String>,
 }
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
@@ -69,7 +70,7 @@ impl Config {
                             start_timestamp: Some(SystemTime::now().into()),
                         }),
                         service_info: Some(oc::ServiceInfo {
-                            name: Self::SERVICE_NAME.to_string(),
+                            name: inner.service_name.unwrap_or(Self::SERVICE_NAME.to_string()),
                         }),
                         attributes: inner.attributes,
                         ..oc::Node::default()
