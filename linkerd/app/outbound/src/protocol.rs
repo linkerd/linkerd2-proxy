@@ -33,7 +33,7 @@ impl<N> Outbound<N> {
     where
         // Target type indicating whether detection should be skipped.
         T: svc::Param<Protocol>,
-        T: svc::Param<http::DefaultAuthority>,
+        T: svc::Param<http::server::DefaultAuthority>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -54,7 +54,7 @@ impl<N> Outbound<N> {
                 .push(http::NewServeHttp::layer(
                     drain.clone(),
                     move |t: &Http<T>| {
-                        let http::DefaultAuthority(default_authority) = t.parent.param();
+                        let default_authority = t.parent.param();
                         http::ServerParams {
                             version: t.version,
                             h2,

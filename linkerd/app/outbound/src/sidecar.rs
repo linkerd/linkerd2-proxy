@@ -162,9 +162,9 @@ impl svc::Param<opaq::Logical> for Sidecar {
     }
 }
 
-impl svc::Param<http::DefaultAuthority> for Sidecar {
-    fn param(&self) -> http::DefaultAuthority {
-        http::DefaultAuthority(Addr::from(self.orig_dst.0).to_http_authority())
+impl svc::Param<http::server::DefaultAuthority> for Sidecar {
+    fn param(&self) -> http::server::DefaultAuthority {
+        http::server::DefaultAuthority(Addr::from(self.orig_dst.0).to_http_authority())
     }
 }
 
@@ -316,9 +316,9 @@ impl svc::Param<watch::Receiver<http::Routes>> for HttpSidecar {
     }
 }
 
-impl svc::Param<http::DefaultAuthority> for HttpSidecar {
-    fn param(&self) -> http::DefaultAuthority {
-        http::DefaultAuthority(match *self.routes.borrow() {
+impl svc::Param<http::server::DefaultAuthority> for HttpSidecar {
+    fn param(&self) -> http::server::DefaultAuthority {
+        http::server::DefaultAuthority(match *self.routes.borrow() {
             http::Routes::Policy(ref policy) => policy.addr().to_http_authority(),
             http::Routes::Profile(ref profile) => (*profile.addr).as_http_authority(),
             http::Routes::Endpoint(..) => Addr::from(self.orig_dst.0).to_http_authority(),

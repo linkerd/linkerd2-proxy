@@ -8,7 +8,7 @@ use linkerd_app_core::{
     svc::{self, ExtractParam, InsertParam, Param},
     tls, trace,
     transport::{self, addrs::*, listen::Bind},
-    Addr, Error, Result,
+    Error, Result,
 };
 use linkerd_app_inbound as inbound;
 use std::{pin::Pin, time::Duration};
@@ -122,7 +122,6 @@ impl Config {
         let tcp = http
             .unlift_new()
             .push(http::NewServeHttp::layer(drain.clone(), move |t: &Http| {
-                let default_authority = Addr::from(t.tcp.addr.0.0).to_http_authority();
                 let meshed = matches!(t.tcp.tls,
                     tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                         ..
@@ -131,7 +130,7 @@ impl Config {
                     version: t.version,
                     h2: Default::default(), // FIXME
                     supports_orig_proto_downgrades: meshed,
-                    default_authority,
+                    default_authority: http::server::DefaultAuthority::from_addr(t.tcp.addr),
                 }
             }))
             .push_filter(

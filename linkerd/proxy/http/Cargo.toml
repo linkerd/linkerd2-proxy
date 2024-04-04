@@ -37,6 +37,7 @@ tower = { version = "0.4", default-features = false }
 tracing = "0.1"
 try-lock = "0.2"
 
+linkerd-addr = { path = "../../addr" }
 linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }

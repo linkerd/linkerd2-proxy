@@ -9,12 +9,9 @@ use linkerd_app_core::{
     svc::{self, ExtractParam, Param},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
-    Addr, Error, Result,
+    Error, Result,
 };
 use linkerd_http_access_log::NewAccessLog;
-use std::net::SocketAddr;
-
-pub struct DefaultAuthority(pub http::uri::Authority);
 
 #[derive(Copy, Clone, Debug)]
 struct ServerRescue;
@@ -89,7 +86,7 @@ impl<H> Inbound<H> {
     pub fn push_http_tcp_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         // Connection target.
-        T: Param<DefaultAuthority>,
+        T: Param<http::server::DefaultAuthority>,
         T: Param<tls::ConditionalServerTls>,
         T: Param<Version>,
         T: Clone + Send + Unpin + 'static,
@@ -115,7 +112,7 @@ impl<H> Inbound<H> {
                 .unlift_new()
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
                 .push(http::NewServeHttp::layer(drain, move |t: &T| {
-                    let DefaultAuthority(default_authority) = t.param();
+                    let default_authority = t.param();
                     http::ServerParams {
                         version: t.param(),
                         h2,
@@ -228,11 +225,5 @@ impl errors::HttpRescue<Error> for ServerRescue {
 
         tracing::warn!(error, "Unexpected error");
         Ok(errors::SyntheticHttpResponse::unexpected_error())
-    }
-}
-
-impl DefaultAuthority {
-    pub fn from_addr(addr: impl Into<SocketAddr>) -> Self {
-        Self(Addr::from(addr.into()).to_http_authority())
     }
 }

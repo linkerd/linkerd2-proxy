@@ -23,11 +23,8 @@ mod require_id_header;
 mod retry;
 mod srv;
 
+pub use self::logical::{policy, profile, LogicalAddr, Routes};
 pub(crate) use self::require_id_header::IdentityRequired;
-pub use self::{
-    logical::{policy, profile, LogicalAddr, Routes},
-    srv::DefaultAuthority,
-};
 pub use linkerd_app_core::proxy::http::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

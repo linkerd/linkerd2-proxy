@@ -312,7 +312,7 @@ impl<N> Outbound<N> {
                         http::ServerParams {
                             version: http.version,
                             h2,
-                            default_authority: Addr::from(addr).to_http_authority(),
+                            default_authority: http::server::DefaultAuthority::from_addr(addr),
                             supports_orig_proto_downgrades: false,
                         }
                     }
@@ -408,9 +408,9 @@ impl svc::Param<http::LogicalAddr> for Http<Logical> {
     }
 }
 
-impl svc::Param<http::DefaultAuthority> for Http<Logical> {
-    fn param(&self) -> http::DefaultAuthority {
-        http::DefaultAuthority(self.parent.addr.to_http_authority())
+impl svc::Param<http::server::DefaultAuthority> for Http<Logical> {
+    fn param(&self) -> http::server::DefaultAuthority {
+        http::server::DefaultAuthority(self.parent.addr.to_http_authority())
     }
 }
 

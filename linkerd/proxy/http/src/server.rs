@@ -4,6 +4,7 @@ use linkerd_io::{self as io, PeerAddr};
 use linkerd_stack::{layer, ExtractParam, NewService};
 use std::{
     future::Future,
+    net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -39,9 +40,13 @@ pub struct Params {
     pub version: Version,
     pub h2: H2Settings,
 
-    pub default_authority: http::uri::Authority,
+    pub default_authority: DefaultAuthority,
     pub supports_orig_proto_downgrades: bool,
 }
+
+/// Parameterizes a stack target to produce an optional default authority.
+#[derive(Clone, Debug)]
+pub struct DefaultAuthority(pub http::uri::Authority);
 
 // A stack that builds HTTP servers.
 #[derive(Clone, Debug)]
@@ -62,7 +67,24 @@ pub struct ServeHttp<N> {
     default_authority: http::uri::Authority,
 }
 
-// === impl H2Settings ===
+// === impl DefaultAuthority ===
+
+impl From<http::uri::Authority> for DefaultAuthority {
+    fn from(auth: http::uri::Authority) -> Self {
+        Self(auth)
+    }
+}
+
+impl DefaultAuthority {
+    pub fn from_addr<T>(addr: T) -> Self
+    where
+        T: Into<SocketAddr>,
+    {
+        Self(linkerd_addr::Addr::Socket(addr.into()).to_http_authority())
+    }
+}
+
+// === impl H2Settings ===z
 
 impl From<super::client::h2::Settings> for H2Settings {
     fn from(s: super::client::h2::Settings) -> Self {
@@ -100,7 +122,7 @@ where
         let Params {
             version,
             h2: H2Settings(h2),
-            default_authority,
+            default_authority: DefaultAuthority(default_authority),
             supports_orig_proto_downgrades,
         } = params;
 

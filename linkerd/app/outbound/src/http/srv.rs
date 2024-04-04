@@ -12,8 +12,6 @@ pub struct ExtractServerParams {
     h2: http::server::H2Settings,
 }
 
-pub struct DefaultAuthority(pub(crate) http::uri::Authority);
-
 impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
     /// Builds a [`svc::NewService`] stack that prepares HTTP requests to be
     /// proxied.
@@ -65,7 +63,7 @@ impl<N> Outbound<N> {
     where
         // Target
         T: svc::Param<http::Version>,
-        T: svc::Param<DefaultAuthority>,
+        T: svc::Param<http::server::DefaultAuthority>,
         T: Clone + Send + Unpin + 'static,
         // Server-side socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
@@ -185,17 +183,16 @@ impl errors::HttpRescue<Error> for ServerRescue {
 
 impl<T> svc::ExtractParam<http::ServerParams, T> for ExtractServerParams
 where
-    T: svc::Param<DefaultAuthority>,
+    T: svc::Param<http::server::DefaultAuthority>,
     T: svc::Param<http::Version>,
 {
     #[inline]
     fn extract_param(&self, t: &T) -> http::ServerParams {
-        let DefaultAuthority(default_authority) = t.param();
         http::ServerParams {
             version: t.param(),
+            default_authority: t.param(),
             h2: self.h2,
             supports_orig_proto_downgrades: false,
-            default_authority,
         }
     }
 }

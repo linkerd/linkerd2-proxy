@@ -4,7 +4,7 @@ mod set_identity_header;
 #[cfg(test)]
 mod tests;
 
-pub use self::server::DefaultAuthority;
+pub use linkerd_app_core::proxy::http::server::DefaultAuthority;
 
 fn trace_labels() -> std::collections::HashMap<String, String> {
     let mut l = std::collections::HashMap::new();
