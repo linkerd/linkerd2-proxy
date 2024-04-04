@@ -1,4 +1,3 @@
-use super::h1;
 use http::{header::AsHeaderName, uri::Authority};
 use linkerd_stack::{layer, NewService, Param};
 use std::{
@@ -85,7 +84,7 @@ where
             }
 
             debug!(%authority, "Overriding");
-            h1::set_authority(req.uri_mut(), authority);
+            crate::set_authority(req.uri_mut(), authority);
         }
 
         self.inner.call(req)

@@ -115,14 +115,15 @@ where
             if req.extensions().get::<h1::WasAbsoluteForm>().is_none()
                 && req.uri().authority().is_none()
             {
-                let authority = match h1::authority_from_host(&req).or_else(|| self.default.clone())
+                let authority = match crate::authority_from_header(&req, http::header::HOST)
+                    .or_else(|| self.default.clone())
                 {
                     Some(a) => a,
                     None => return future::Either::Right(future::err(NoAuthority(()).into())),
                 };
 
                 trace!(%authority, "Normalizing URI");
-                h1::set_authority(req.uri_mut(), authority);
+                crate::set_authority(req.uri_mut(), authority);
             }
         }
 

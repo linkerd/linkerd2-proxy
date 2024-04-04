@@ -1,4 +1,4 @@
-use crate::{upgrade::Http11Upgrade, HasH2Reason};
+use crate::upgrade::Http11Upgrade;
 use bytes::Bytes;
 use futures::TryFuture;
 use hyper::body::HttpBody;
@@ -177,14 +177,6 @@ where
             transport,
             absolute_form: *this.absolute_form,
         }))
-    }
-}
-
-// === impl Error ===
-
-impl HasH2Reason for hyper::Error {
-    fn h2_reason(&self) -> Option<h2::Reason> {
-        (self as &(dyn std::error::Error + 'static)).h2_reason()
     }
 }
 

@@ -4,13 +4,13 @@ use crate::{
 };
 use futures::prelude::*;
 use http::{
-    header::{CONNECTION, CONTENT_LENGTH, HOST, TRANSFER_ENCODING, UPGRADE},
-    uri::{Authority, Parts, Scheme, Uri},
+    header::{CONTENT_LENGTH, TRANSFER_ENCODING},
+    uri::Uri,
 };
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
 use linkerd_stack::MakeConnection;
-use std::{mem, pin::Pin, time::Duration};
+use std::{pin::Pin, time::Duration};
 use tracing::{debug, trace};
 
 #[derive(Copy, Clone, Debug)]
@@ -158,85 +158,12 @@ where
                     upgrade.insert_half(hyper::upgrade::on(&mut rsp));
                 }
             } else {
-                strip_connection_headers(rsp.headers_mut());
+                crate::strip_connection_headers(rsp.headers_mut());
             }
 
             rsp.map(BoxBody::new)
         }))
     }
-}
-
-// === HTTP/1 utils ===
-
-/// Returns an Authority from a request's Host header.
-pub fn authority_from_host<B>(req: &http::Request<B>) -> Option<Authority> {
-    super::authority_from_header(req, HOST)
-}
-
-pub(crate) fn set_authority(uri: &mut http::Uri, auth: Authority) {
-    let mut parts = Parts::from(mem::take(uri));
-
-    parts.authority = Some(auth);
-
-    // If this was an origin-form target (path only),
-    // then we can't *only* set the authority, as that's
-    // an illegal target (such as `example.com/docs`).
-    //
-    // But don't set a scheme if this was authority-form (CONNECT),
-    // since that would change its meaning (like `https://example.com`).
-    if parts.path_and_query.is_some() {
-        parts.scheme = Some(Scheme::HTTP);
-    }
-
-    let new = Uri::from_parts(parts).expect("absolute uri");
-
-    *uri = new;
-}
-
-pub(crate) fn strip_connection_headers(headers: &mut http::HeaderMap) {
-    if let Some(val) = headers.remove(CONNECTION) {
-        if let Ok(conn_header) = val.to_str() {
-            // A `Connection` header may have a comma-separated list of
-            // names of other headers that are meant for only this specific
-            // connection.
-            //
-            // Iterate these names and remove them as headers.
-            for name in conn_header.split(',') {
-                let name = name.trim();
-                headers.remove(name);
-            }
-        }
-    }
-
-    // Additionally, strip these "connection-level" headers always, since
-    // they are otherwise illegal if upgraded to HTTP2.
-    headers.remove(UPGRADE);
-    headers.remove("proxy-connection");
-    headers.remove("keep-alive");
-}
-
-/// Checks requests to determine if they want to perform an HTTP upgrade.
-pub(crate) fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
-    // HTTP upgrades were added in 1.1, not 1.0.
-    if req.version() != http::Version::HTTP_11 {
-        return false;
-    }
-
-    if let Some(upgrade) = req.headers().get(UPGRADE) {
-        // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
-        // and it succeeded, there would an h2 connection, but it would
-        // be opaque-to-the-proxy, acting as just a TCP proxy.
-        //
-        // A user wouldn't be able to see any usual HTTP telemetry about
-        // requests going over that connection. Instead of that confusion,
-        // the proxy strips h2 upgrade headers.
-        //
-        // Eventually, the proxy will support h2 upgrades directly.
-        return upgrade != "h2c";
-    }
-
-    // HTTP/1.1 CONNECT requests are just like upgrades!
-    req.method() == http::Method::CONNECT
 }
 
 /// Checks responses to determine if they are successful HTTP upgrades.
