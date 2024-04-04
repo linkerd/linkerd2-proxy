@@ -7,10 +7,11 @@ use futures::{
 };
 use hyper::upgrade::OnUpgrade;
 use linkerd_duplex::Duplex;
-use std::fmt;
-use std::mem;
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::{
+    fmt, mem,
+    sync::Arc,
+    task::{Context, Poll},
+};
 use tracing::instrument::Instrument;
 use tracing::{debug, info, trace};
 use try_lock::TryLock;
@@ -198,7 +199,7 @@ where
             return Either::Right(future::ok(res));
         }
 
-        let upgrade = if h1::wants_upgrade(&req) {
+        let upgrade = if wants_upgrade(&req) {
             trace!("server request wants HTTP/1.1 upgrade");
             // Upgrade requests include several "connection" headers that
             // cannot be removed.
@@ -210,7 +211,7 @@ where
 
             Some((halves.server, on_upgrade))
         } else {
-            h1::strip_connection_headers(req.headers_mut());
+            crate::strip_connection_headers(req.headers_mut());
             None
         };
 
@@ -218,4 +219,28 @@ where
 
         Either::Left(self.service.call(req))
     }
+}
+
+/// Checks requests to determine if they want to perform an HTTP upgrade.
+fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
+    // HTTP upgrades were added in 1.1, not 1.0.
+    if req.version() != http::Version::HTTP_11 {
+        return false;
+    }
+
+    if let Some(upgrade) = req.headers().get(http::header::UPGRADE) {
+        // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
+        // and it succeeded, there would an h2 connection, but it would
+        // be opaque-to-the-proxy, acting as just a TCP proxy.
+        //
+        // A user wouldn't be able to see any usual HTTP telemetry about
+        // requests going over that connection. Instead of that confusion,
+        // the proxy strips h2 upgrade headers.
+        //
+        // Eventually, the proxy will support h2 upgrades directly.
+        return upgrade != "h2c";
+    }
+
+    // HTTP/1.1 CONNECT requests are just like upgrades!
+    req.method() == http::Method::CONNECT
 }
