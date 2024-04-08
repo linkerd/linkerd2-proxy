@@ -130,13 +130,17 @@ impl Resolver {
     // because of: https://github.com/hickory-dns/hickory-dns/issues/872
     // Here we rely in on the fact that the first label of the SRV
     // record's target will be the ip of the pod delimited by dashes
-    // instead of dots. We can alternatively do another lookup
+    // instead of dots/colons. We can alternatively do another lookup
     // on the pod's DNS but it seems unnecessary since the pod's
     // ip is in the target of the SRV record.
     fn srv_to_socket_addr(srv: rdata::SRV) -> Result<net::SocketAddr, InvalidSrv> {
         if let Some(first_label) = srv.target().iter().next() {
             if let Ok(utf8) = std::str::from_utf8(first_label) {
-                if let Ok(ip) = utf8.replace('-', ".").parse::<std::net::IpAddr>() {
+                let mut res = utf8.replace('-', ".").parse::<std::net::IpAddr>();
+                if res.is_err() {
+                    res = utf8.replace('-', ":").parse::<std::net::IpAddr>();
+                }
+                if let Ok(ip) = res {
                     return Ok(net::SocketAddr::new(ip, srv.port()));
                 }
             }
@@ -185,8 +189,9 @@ impl ResolveError {
 
 #[cfg(test)]
 mod tests {
-    use super::{Name, Suffix};
-    use std::str::FromStr;
+    use super::{Name, Resolver, Suffix};
+    use std::{net, str::FromStr};
+    use trust_dns_resolver::proto::rr::{domain, rdata};
 
     #[test]
     fn test_dns_name_parsing() {
@@ -288,6 +293,42 @@ mod tests {
         }
 
         assert!(Suffix::from_str("").is_err(), "suffix must not be empty");
+    }
+
+    #[test]
+    fn srv_to_socket_addr_invalid() {
+        let name = "foobar.linkerd-dst-headless.linkerd.svc.cluster.local.";
+        let target = domain::Name::from_str(name).unwrap();
+        let srv = rdata::SRV::new(1, 1, 8086, target);
+        assert!(Resolver::srv_to_socket_addr(srv).is_err());
+    }
+
+    #[test]
+    fn srv_to_socket_addr_valid() {
+        struct Case {
+            input: &'static str,
+            output: &'static str,
+        }
+
+        for case in &[
+            Case {
+                input: "10-42-0-15.linkerd-dst-headless.linkerd.svc.cluster.local.",
+                output: "10.42.0.15",
+            },
+            Case {
+                input: "2001-0db8-0000-0000-0000-ff00-0042-8329.linkerd-dst-headless.linkerd.svc.cluster.local.",
+                output: "2001:0db8:0000:0000:0000:ff00:0042:8329",
+            },
+            Case {
+                input: "2001-0db8--0042-8329.linkerd-dst-headless.linkerd.svc.cluster.local.",
+                output: "2001:0db8::0042:8329",
+            },
+        ] {
+            let target = domain::Name::from_str(case.input).unwrap();
+            let srv = rdata::SRV::new(1, 1, 8086, target);
+            let socket = Resolver::srv_to_socket_addr(srv).unwrap();
+            assert_eq!(socket.ip(), net::IpAddr::from_str(case.output).unwrap());
+        }
     }
 }
 
