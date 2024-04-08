@@ -14,7 +14,7 @@ stream = ["thingbuf", "slab"]
 [dependencies]
 linkerd-error = { path = "../error" }
 slab = { version = "0.4", optional = true }
-thingbuf = { version = "0.1.4", features = ["std"], optional = true }
+thingbuf = { version = "0.1.5", features = ["std"], optional = true }
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 tracing-log = "0.2"
