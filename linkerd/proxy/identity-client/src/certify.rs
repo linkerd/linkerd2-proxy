@@ -88,7 +88,7 @@ impl From<Config> for Certify {
 }
 
 impl Certify {
-    pub async fn run<C, N, S>(self, name: Name, mut credentials: C, new_client: N)
+    pub async fn run<C, N, S>(self, name: Name, roots: DerX509, mut credentials: C, new_client: N)
     where
         C: Credentials,
         N: NewService<(), Service = S>,
@@ -111,6 +111,7 @@ impl Certify {
                     client,
                     &name,
                     &mut credentials,
+                    roots.clone(),
                 )
                 .await
             };
@@ -151,6 +152,7 @@ async fn certify<C, S>(
     client: S,
     name: &Name,
     credentials: &mut C,
+    roots: DerX509,
 ) -> Result<SystemTime>
 where
     C: Credentials,
@@ -180,6 +182,7 @@ where
         intermediate_certificates.into_iter().map(DerX509).collect(),
         docs.key_pkcs8.clone(),
         expiry,
+        roots,
     )?;
 
     Ok(expiry)

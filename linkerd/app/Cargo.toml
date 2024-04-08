@@ -34,3 +34,4 @@ tokio-stream = { version = "0.1", features = ["time", "sync"] }
 tonic = { version = "0.10", default-features = false, features = ["prost"] }
 tower = "0.4"
 tracing = "0.1"
+pkix = "0.2.3"

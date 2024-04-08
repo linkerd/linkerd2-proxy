@@ -11,7 +11,7 @@ compile_error!(
     "at least one of the following TLS implementations must be enabled: 'meshtls-boring', 'meshtls-rustls'"
 );
 
-use linkerd_app::{trace, BindTcp, Config, BUILD_INFO};
+use linkerd_app::{identity, metrics::prom, trace, BindTcp, Config, Metrics, BUILD_INFO};
 use linkerd_signal as signal;
 use tokio::{sync::mpsc, time};
 use tracing::{debug, info, warn};
@@ -51,16 +51,59 @@ fn main() {
         }
     };
 
+    // construct metrics and dns resolver
+    let (metrics, report) = Metrics::new(config.admin.metrics_retain_idle);
+    let mut registry = prom::Registry::default();
+    let dns = config.dns.clone().build();
+
+    let identity = {
+        // Load identity configuration from the environment.
+        let identity_config = match identity::Config::try_from_env() {
+            Ok(config) => config,
+            Err(e) => {
+                eprintln!("Invalid identity configuration: {}", e);
+                std::process::exit(EX_USAGE);
+            }
+        };
+
+        debug!("Building Identity client");
+        let identity = tracing::info_span!("identity").in_scope(|| {
+            identity_config.build(dns.resolver.clone(), metrics.control.clone(), &mut registry)
+        });
+
+        match identity {
+            Ok(identity) => identity,
+            Err(e) => {
+                eprintln!("Identity client construction: {}", e);
+                std::process::exit(1);
+            }
+        }
+    };
+
     // Builds a runtime with the appropriate number of cores:
     // `LINKERD2_PROXY_CORES` env or the number of available CPUs (as provided
     // by cgroups, when possible).
     rt::build().block_on(async move {
+        let receiver = identity.initialize().await;
+        let local_id = receiver.local_id();
+        info!(id = %local_id, "Certified identity");
+
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
         let shutdown_grace_period = config.shutdown_grace_period;
 
         let bind = BindTcp::with_orig_dst();
         let app = match config
-            .build(bind, bind, BindTcp::default(), shutdown_tx, trace)
+            .build(
+                bind,
+                bind,
+                BindTcp::default(),
+                shutdown_tx,
+                trace,
+                receiver,
+                registry,
+                metrics,
+                report,
+            )
             .await
         {
             Ok(app) => app,
@@ -79,7 +122,6 @@ fn main() {
             Some(addr) => info!("Tap interface on {}", addr),
         }
 
-        // TODO distinguish ServerName and Identity.
         info!("SNI is {}", app.local_server_name());
         info!("Local identity is {}", app.local_tls_id());
 

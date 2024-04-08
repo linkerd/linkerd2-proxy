@@ -13,14 +13,14 @@ pub mod spire;
 pub mod tap;
 
 pub use self::metrics::Metrics;
-use futures::{future, Future, FutureExt};
+use futures::{future, FutureExt};
 use linkerd_app_admin as admin;
 use linkerd_app_core::{
     config::ServerConfig,
     control::ControlAddr,
     dns, drain,
-    metrics::prom,
-    metrics::FmtMetrics,
+    identity::creds::{self, Receiver},
+    metrics::{prom, FmtMetrics},
     serve,
     svc::Param,
     transport::{addrs::*, listen::Bind},
@@ -35,7 +35,7 @@ use tokio::{
     sync::mpsc,
     time::{self, Duration},
 };
-use tracing::{debug, info, info_span, Instrument};
+use tracing::{debug, info_span, Instrument};
 
 /// Spawns a sidecar proxy.
 ///
@@ -74,7 +74,7 @@ pub struct App {
     admin: admin::Task,
     drain: drain::Signal,
     dst: ControlAddr,
-    identity: identity::Identity,
+    identity: creds::Receiver,
     inbound_addr: Local<ServerAddr>,
     oc_collector: oc_collector::OcCollector,
     outbound_addr: Local<ServerAddr>,
@@ -93,15 +93,21 @@ impl Config {
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub async fn build<BIn, BOut, BAdmin>(
+    #[allow(clippy::too_many_arguments)]
+    pub async fn build<BIn, BOut, BAdmin, R>(
         self,
         bind_in: BIn,
         bind_out: BOut,
         bind_admin: BAdmin,
         shutdown_tx: mpsc::UnboundedSender<()>,
         log_level: trace::Handle,
+        identity: Receiver,
+        mut registry: prom::Registry,
+        metrics: Metrics,
+        report: R,
     ) -> Result<App, Error>
     where
+        R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
         BIn: Bind<ServerConfig> + 'static,
         BIn::Addrs: Param<Remote<ClientAddr>>
             + Param<Local<ServerAddr>>
@@ -120,7 +126,6 @@ impl Config {
             dns,
             dst,
             policy,
-            identity,
             inbound,
             oc_collector,
             outbound,
@@ -129,28 +134,16 @@ impl Config {
             ..
         } = self;
         debug!("Building app");
-        let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
-
-        let mut registry = prom::Registry::default();
 
         debug!("Building DNS client");
         let dns = dns.build();
-
-        // Ensure that we've obtained a valid identity before binding any servers.
-        debug!("Building Identity client");
-        let identity = {
-            info_span!("identity").in_scope(|| {
-                identity.build(dns.resolver.clone(), metrics.control.clone(), &mut registry)
-            })?
-        };
 
         let (drain_tx, drain_rx) = drain::channel();
 
         debug!(config = ?tap, "Building Tap server");
         let tap = {
             let bind = bind_admin.clone();
-            info_span!("tap")
-                .in_scope(|| tap.build(bind, identity.receiver().server(), drain_rx.clone()))?
+            info_span!("tap").in_scope(|| tap.build(bind, identity.server(), drain_rx.clone()))?
         };
 
         debug!("Building Destination client");
@@ -158,8 +151,7 @@ impl Config {
             let registry = registry.sub_registry_with_prefix("control_destination");
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst")
-                .in_scope(|| dst.build(dns, metrics, registry, identity.receiver().new_client()))
+            info_span!("dst").in_scope(|| dst.build(dns, metrics, registry, identity.new_client()))
         }?;
 
         debug!("Building Policy client");
@@ -168,13 +160,13 @@ impl Config {
             let dns = dns.resolver.clone();
             let metrics = metrics.control.clone();
             info_span!("policy")
-                .in_scope(|| policy.build(dns, metrics, registry, identity.receiver().new_client()))
+                .in_scope(|| policy.build(dns, metrics, registry, identity.new_client()))
         }?;
 
         debug!(config = ?oc_collector, "Building client");
         let oc_collector = {
             let registry = registry.sub_registry_with_prefix("opencensus");
-            let identity = identity.receiver().new_client();
+            let identity = identity.new_client();
             let dns = dns.resolver;
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
@@ -183,7 +175,7 @@ impl Config {
         }?;
 
         let runtime = ProxyRuntime {
-            identity: identity.receiver(),
+            identity: identity.clone(),
             metrics: metrics.proxy,
             tap: tap.registry(),
             span_sink: oc_collector.span_sink(),
@@ -241,11 +233,8 @@ impl Config {
         // Build a task that initializes and runs the proxy stacks.
         let start_proxy = {
             let drain_rx = drain_rx.clone();
-            let identity_ready = identity.ready();
 
             Box::pin(async move {
-                Self::await_identity(identity_ready).await;
-
                 tokio::spawn(
                     serve::serve(outbound_listen, outbound, drain_rx.clone().signaled())
                         .instrument(info_span!("outbound").or_current()),
@@ -262,7 +251,7 @@ impl Config {
         registry.register("proxy_build_info", "Proxy build info", BUILD_INFO.metric());
 
         let admin = {
-            let identity = identity.receiver().server();
+            let identity = identity.server();
             let metrics = inbound_metrics.clone();
             let report = inbound_metrics
                 .and_report(outbound_metrics)
@@ -296,21 +285,6 @@ impl Config {
             tap,
         })
     }
-
-    /// Waits for the proxy's identity to be certified.
-    ///
-    /// If this does not complete in a timely fashion, warnings are logged every 15s
-    async fn await_identity(mut fut: Pin<Box<dyn Future<Output = ()> + Send + 'static>>) {
-        const TIMEOUT: time::Duration = time::Duration::from_secs(15);
-        loop {
-            tokio::select! {
-                _ = (&mut fut) => return,
-                _ = time::sleep(TIMEOUT) => {
-                    tracing::warn!("Waiting for identity to be initialized...");
-                }
-            }
-        }
-    }
 }
 
 impl App {
@@ -338,11 +312,11 @@ impl App {
     }
 
     pub fn local_server_name(&self) -> dns::Name {
-        self.identity.receiver().server_name().clone()
+        self.identity.server_name().clone()
     }
 
     pub fn local_tls_id(&self) -> identity::Id {
-        self.identity.receiver().local_id().clone()
+        self.identity.local_id().clone()
     }
 
     pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
@@ -356,7 +330,6 @@ impl App {
         let App {
             admin,
             drain,
-            identity,
             oc_collector,
             start_proxy,
             tap,
@@ -388,25 +361,8 @@ impl App {
                                 .instrument(info_span!("admin", listen.addr = %admin.listen_addr)),
                         );
 
-                        // Kick off the identity so that the process can become ready.
-                        let local = identity.receiver();
-                        let local_id = local.local_id().clone();
-                        let ready = identity.ready();
-                        tokio::spawn(
-                            identity
-                                .run()
-                                .instrument(info_span!("identity").or_current()),
-                        );
-
                         let latch = admin.latch;
-                        tokio::spawn(
-                            ready
-                                .map(move |()| {
-                                    latch.release();
-                                    info!(id = %local_id, "Certified identity");
-                                })
-                                .instrument(info_span!("identity").or_current()),
-                        );
+                        latch.release();
 
                         if let tap::Tap::Enabled {
                             registry, serve, ..

@@ -1,10 +1,12 @@
 use super::*;
 use linkerd_app_core::{
+    metrics::{prom, Metrics},
     svc::Param,
     transport::OrigDstAddr,
     transport::{listen, orig_dst, Keepalive, ListenAddr},
     Result,
 };
+
 use std::{collections::HashSet, thread};
 use tokio::net::TcpStream;
 
@@ -280,6 +282,21 @@ impl Listening {
     }
 }
 
+async fn build_identity(
+    config: app::Config,
+    metrics: Metrics,
+    registry: &mut prom::Registry,
+) -> Result<app::identity::Identity> {
+    let dns = config.dns.clone().build();
+
+    debug!("Building Identity client");
+    tracing::info_span!("identity").in_scope(|| {
+        config
+            .identity
+            .build(dns.resolver.clone(), metrics.control.clone(), registry)
+    })
+}
+
 async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     use app::env::Strings;
 
@@ -452,12 +469,30 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                     .build()
                     .expect("proxy")
                     .block_on(async move {
+                        let mut registry = prom::Registry::default();
+                        let (metrics, report) = Metrics::new(config.admin.metrics_retain_idle);
+
+                        let identity =
+                            build_identity(config.clone(), metrics.clone(), &mut registry)
+                                .await
+                                .expect("identity");
                         let bind_in = inbound;
                         let bind_out = outbound;
                         let bind_adm = listen::BindTcp::default();
                         let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
+
                         let main = config
-                            .build(bind_in, bind_out, bind_adm, shutdown_tx, trace_handle)
+                            .build(
+                                bind_in,
+                                bind_out,
+                                bind_adm,
+                                shutdown_tx,
+                                trace_handle,
+                                identity.initialize().await,
+                                registry,
+                                metrics,
+                                report,
+                            )
                             .await
                             .expect("config");
 

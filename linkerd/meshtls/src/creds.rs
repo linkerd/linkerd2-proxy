@@ -41,13 +41,14 @@ impl Credentials for Store {
         chain: Vec<DerX509>,
         key: Vec<u8>,
         exp: SystemTime,
+        _roots: DerX509,
     ) -> Result<()> {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(store) => store.set_certificate(leaf, chain, key, exp),
+            Self::Boring(store) => store.set_certificate(leaf, chain, key, exp, _roots),
 
             #[cfg(feature = "rustls")]
-            Self::Rustls(store) => store.set_certificate(leaf, chain, key, exp),
+            Self::Rustls(store) => store.set_certificate(leaf, chain, key, exp, _roots),
 
             #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(leaf, chain, key, exp),

@@ -20,6 +20,8 @@ pub use self::{
     client::{ClientIo, Connect, ConnectFuture, NewClient},
     server::{Server, ServerIo, TerminateFuture},
 };
+pub use linkerd_meshtls_verifier::client_identity;
+
 use linkerd_dns_name as dns;
 use linkerd_error::{Error, Result};
 use linkerd_identity as id;

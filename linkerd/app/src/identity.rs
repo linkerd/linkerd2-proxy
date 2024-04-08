@@ -1,17 +1,18 @@
-use crate::spire;
+pub mod linkerd_config;
+pub mod spire_config;
 
 pub use linkerd_app_core::identity::{client, Id};
+
 use linkerd_app_core::{
-    control, dns,
-    identity::{
-        client::linkerd::Certify, creds, CertMetrics, Credentials, DerX509, Mode, WithCertMetrics,
-    },
+    dns,
+    identity::{creds, CertMetrics},
     metrics::{prom, ControlHttp as ClientMetrics},
     Result,
 };
-use std::{future::Future, pin::Pin, time::SystemTime};
+use std::{future::Future, pin::Pin};
 use tokio::sync::watch;
-use tracing::Instrument;
+use tokio::time;
+use tracing::{info_span, Instrument};
 
 #[derive(Debug, thiserror::Error)]
 #[error("linkerd identity requires a TLS Id and server name to be the same")]
@@ -20,15 +21,8 @@ pub struct TlsIdAndServerNameNotMatching(());
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Config {
-    Linkerd {
-        client: control::Config,
-        certify: client::linkerd::Config,
-        tls: TlsParams,
-    },
-    Spire {
-        client: spire::Config,
-        tls: TlsParams,
-    },
+    Linkerd(linkerd_config::Config),
+    Spire(spire_config::Config),
 }
 
 #[derive(Clone, Debug)]
@@ -39,23 +33,19 @@ pub struct TlsParams {
 }
 
 pub struct Identity {
-    receiver: creds::Receiver,
-    ready: watch::Receiver<bool>,
+    ready: watch::Receiver<Option<creds::Receiver>>,
     task: Task,
 }
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
-/// Wraps a credential with a watch sender that notifies receivers when the store has been updated
-/// at least once.
-struct NotifyReady {
-    store: creds::Store,
-    tx: watch::Sender<bool>,
-}
-
 // === impl Config ===
 
 impl Config {
+    pub fn try_from_env() -> Result<Self, super::env::EnvError> {
+        super::env::Env.try_config().map(|c| c.identity)
+    }
+
     pub fn build(
         self,
         dns: dns::Resolver,
@@ -64,112 +54,39 @@ impl Config {
     ) -> Result<Identity> {
         let cert_metrics =
             CertMetrics::register(registry.sub_registry_with_prefix("identity_cert"));
-
-        Ok(match self {
-            Self::Linkerd {
-                client,
-                certify,
-                tls,
-            } => {
-                // TODO: move this validation into env.rs
-                let name = match (&tls.id, &tls.server_name) {
-                    (Id::Dns(id), sni) if id == sni => id.clone(),
-                    (_id, _sni) => {
-                        return Err(TlsIdAndServerNameNotMatching(()).into());
-                    }
-                };
-
-                let certify = Certify::from(certify);
-                let (store, receiver, ready) = watch(tls, cert_metrics)?;
-
-                let task = {
-                    let addr = client.addr.clone();
-                    let svc = client.build(
-                        dns,
-                        client_metrics,
-                        registry.sub_registry_with_prefix("control_identity"),
-                        receiver.new_client(),
-                    );
-
-                    Box::pin(certify.run(name, store, svc).instrument(
-                        tracing::info_span!("identity", server.addr = %addr).or_current(),
-                    ))
-                };
-                Identity {
-                    receiver,
-                    ready,
-                    task,
-                }
-            }
-            Self::Spire { client, tls } => {
-                let addr = client.socket_addr.clone();
-                let spire = spire::client::Spire::new(tls.id.clone());
-
-                let (store, receiver, ready) = watch(tls, cert_metrics)?;
-                let task =
-                    Box::pin(spire.run(store, spire::Client::from(client)).instrument(
-                        tracing::info_span!("spire", server.addr = %addr).or_current(),
-                    ));
-
-                Identity {
-                    receiver,
-                    ready,
-                    task,
-                }
-            }
-        })
-    }
-}
-
-fn watch(
-    tls: TlsParams,
-    metrics: CertMetrics,
-) -> Result<(
-    WithCertMetrics<NotifyReady>,
-    creds::Receiver,
-    watch::Receiver<bool>,
-)> {
-    let (tx, ready) = watch::channel(false);
-    let (store, receiver) =
-        Mode::default().watch(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
-    let cred = WithCertMetrics::new(metrics, NotifyReady { store, tx });
-    Ok((cred, receiver, ready))
-}
-
-// === impl NotifyReady ===
-
-impl Credentials for NotifyReady {
-    fn set_certificate(
-        &mut self,
-        leaf: DerX509,
-        chain: Vec<DerX509>,
-        key: Vec<u8>,
-        exp: SystemTime,
-    ) -> Result<()> {
-        self.store.set_certificate(leaf, chain, key, exp)?;
-        let _ = self.tx.send(true);
-        Ok(())
+        match self {
+            Self::Linkerd(linkerd) => linkerd.build(cert_metrics, dns, client_metrics, registry),
+            Self::Spire(spire) => spire.build(cert_metrics),
+        }
     }
 }
 
 // === impl Identity ===
 
 impl Identity {
-    /// Returns a future that is satisfied once certificates have been provisioned.
-    pub fn ready(&self) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+    pub async fn initialize(self) -> creds::Receiver {
+        // spawn the identity task
+        tokio::spawn(self.task.instrument(info_span!("identity").or_current()));
+
         let mut ready = self.ready.clone();
-        Box::pin(async move {
-            while !*ready.borrow_and_update() {
+        const TIMEOUT: time::Duration = time::Duration::from_secs(15);
+
+        let mut receiver_fut = Box::pin(async move {
+            loop {
+                if let Some(receiver) = (*ready.borrow_and_update()).clone() {
+                    return receiver;
+                }
                 ready.changed().await.expect("identity sender must be held");
             }
-        })
-    }
+        });
 
-    pub fn receiver(&self) -> creds::Receiver {
-        self.receiver.clone()
-    }
-
-    pub fn run(self) -> Task {
-        self.task
+        loop {
+            tokio::select! {
+                receiver = (&mut receiver_fut) => return receiver,
+                _ = time::sleep(TIMEOUT) => {
+                    tracing::warn!("Waiting for identity to be initialized...");
+                }
+            }
+        }
     }
 }

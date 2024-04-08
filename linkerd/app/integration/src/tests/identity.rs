@@ -131,6 +131,7 @@ async fn http1_accepts_tls_after_identity_is_certified() {
 }
 
 #[tokio::test]
+#[ignore] // ignored for now - if app is constructed identity is assumed to be initialized
 async fn http1_rejects_tls_before_identity_is_certified() {
     generate_tls_reject_test! {client: client::http1_tls}
 }
@@ -144,6 +145,7 @@ async fn http2_accepts_tls_after_identity_is_certified() {
 }
 
 #[tokio::test]
+#[ignore] // ignored for now - if app is constructed identity is assumed to be initialized
 async fn http2_rejects_tls_before_identity_is_certified() {
     generate_tls_reject_test! {client: client::http2_tls}
 }
@@ -166,6 +168,10 @@ async fn ready() {
         .run()
         .await;
 
+    // Make the mock identity service respond to the certify request.
+    tx.send(certify_rsp)
+        .expect("certify rx should not be dropped");
+
     let proxy = proxy::new().identity(id_svc).run_with_test_env(env).await;
 
     let client = client::http1(proxy.admin, "localhost");
@@ -176,15 +182,8 @@ async fn ready() {
             .await
             .unwrap()
     };
-    // The proxy's identity has not yet been verified, so it should not be
-    // considered ready.
-    assert_ne!(ready().await.status(), http::StatusCode::OK);
 
-    // Make the mock identity service respond to the certify request.
-    tx.send(certify_rsp)
-        .expect("certify rx should not be dropped");
-
-    // Now, the proxy should be ready.
+    // The proxy should be ready.
     assert_eventually!(ready().await.status() == http::StatusCode::OK);
 }
 

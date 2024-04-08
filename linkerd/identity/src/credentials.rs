@@ -12,6 +12,7 @@ pub trait Credentials {
         chain: Vec<DerX509>,
         key: Vec<u8>,
         expiry: SystemTime,
+        roots: DerX509,
     ) -> Result<()>;
 }
 

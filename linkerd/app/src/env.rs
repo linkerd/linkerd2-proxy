@@ -209,7 +209,6 @@ pub const ENV_IDENTITY_SPIRE_SOCKET: &str = "LINKERD2_PROXY_IDENTITY_SPIRE_SOCKE
 pub const IDENTITY_SPIRE_BASE: &str = "LINKERD2_PROXY_IDENTITY_SPIRE";
 const DEFAULT_SPIRE_BACKOFF: ExponentialBackoff =
     ExponentialBackoff::new_unchecked(Duration::from_millis(100), Duration::from_secs(1), 0.1);
-const SPIFFE_ID_URI_SCHEME: &str = "spiffe";
 
 pub const ENV_IDENTITY_SVC_BASE: &str = "LINKERD2_PROXY_IDENTITY_SVC";
 
@@ -812,17 +811,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .unwrap_or(super::tap::Config::Disabled);
 
     let identity = {
-        let tls = tls?;
-
         match strings.get(ENV_IDENTITY_SPIRE_SOCKET)? {
-            Some(socket) => match &tls.id {
-                // TODO: perform stricter SPIFFE ID validation following:
-                // https://github.com/spiffe/spiffe/blob/27b59b81ba8c56885ac5d4be73b35b9b3305fd7a/standards/SPIFFE-ID.md
-                identity::Id::Uri(uri)
-                    if uri.scheme().eq_ignore_ascii_case(SPIFFE_ID_URI_SCHEME) =>
-                {
-                    identity::Config::Spire {
-                        tls,
+            Some(socket) => {
+                let server_name =
+                    parse(strings, ENV_IDENTITY_IDENTITY_SERVER_NAME, parse_dns_name)?;
+
+                match server_name {
+                    Some(server_name) => identity::Config::Spire(identity::spire_config::Config {
+                        server_name,
                         client: spire::Config {
                             socket_addr: std::sync::Arc::new(socket),
                             backoff: parse_backoff(
@@ -831,13 +827,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                                 DEFAULT_SPIRE_BACKOFF,
                             )?,
                         },
+                    }),
+
+                    None => {
+                        error!("{} must be set.", ENV_IDENTITY_IDENTITY_SERVER_NAME);
+                        return Err(EnvError::InvalidEnvVar);
                     }
                 }
-                _ => {
-                    error!("Spire support requires a SPIFFE TLS Id");
-                    return Err(EnvError::InvalidEnvVar);
-                }
-            },
+            }
             None => {
                 let (addr, certify) = parse_linkerd_identity_config(strings)?;
 
@@ -853,9 +850,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     outbound.http_request_queue.failfast_timeout
                 };
 
-                identity::Config::Linkerd {
+                identity::Config::Linkerd(identity::linkerd_config::Config {
                     certify,
-                    tls,
+                    tls: tls?,
                     client: ControlConfig {
                         addr,
                         connect,
@@ -864,7 +861,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                             failfast_timeout,
                         },
                     },
-                }
+                })
             }
         }
     };
@@ -1007,7 +1004,7 @@ fn parse_duration_opt(s: &str) -> Result<Option<Duration>, ParseError> {
     parse_duration(s).map(Some)
 }
 
-fn parse_duration(s: &str) -> Result<Duration, ParseError> {
+pub fn parse_duration(s: &str) -> Result<Duration, ParseError> {
     use regex::Regex;
 
     let re = Regex::new(r"^\s*(\d+)(ms|s|m|h|d)?\s*$").expect("duration regex");
@@ -1026,7 +1023,7 @@ fn parse_duration(s: &str) -> Result<Duration, ParseError> {
     }
 }
 
-fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
+pub fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
     match parse_addr(s)? {
         Addr::Socket(a) => Ok(a),
         _ => {
@@ -1087,7 +1084,7 @@ fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
     Ok(set)
 }
 
-pub(super) fn parse_dns_name(s: &str) -> Result<dns::Name, ParseError> {
+pub fn parse_dns_name(s: &str) -> Result<dns::Name, ParseError> {
     s.parse().map_err(|_| {
         error!("Not a valid identity name: {s}");
         ParseError::NameError

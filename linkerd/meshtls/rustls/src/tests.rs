@@ -20,7 +20,8 @@ fn can_construct_client_and_server_config_from_valid_settings() {
             DerX509(FOO_NS1.crt.to_vec()),
             vec![],
             FOO_NS1.key.to_vec(),
-            SystemTime::now() + Duration::from_secs(1000)
+            SystemTime::now() + Duration::from_secs(1000),
+            DerX509(FOO_NS1.trust_anchors.to_vec()),
         )
         .is_ok());
 }
@@ -32,7 +33,8 @@ fn recognize_ca_did_not_issue_cert() {
             DerX509(FOO_NS1.crt.to_vec()),
             vec![],
             FOO_NS1.key.to_vec(),
-            SystemTime::now() + Duration::from_secs(1000)
+            SystemTime::now() + Duration::from_secs(1000),
+            DerX509(FOO_NS1.trust_anchors.to_vec()),
         )
         .is_err());
 }
@@ -44,7 +46,8 @@ fn recognize_cert_is_not_valid_for_identity() {
             DerX509(FOO_NS1.crt.to_vec()),
             vec![],
             FOO_NS1.key.to_vec(),
-            SystemTime::now() + Duration::from_secs(1000)
+            SystemTime::now() + Duration::from_secs(1000),
+            DerX509(FOO_NS1.trust_anchors.to_vec()),
         )
         .is_err());
 }

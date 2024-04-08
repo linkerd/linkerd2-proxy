@@ -1,14 +1,13 @@
 use futures::prelude::*;
 use linkerd_error::{Error, Recover, Result};
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
+use linkerd_identity::Credentials;
 use linkerd_identity::DerX509;
-use linkerd_identity::{Credentials, Id};
 use linkerd_proxy_http as http;
 use linkerd_tonic_watch::StreamWatch;
 use spiffe_proto::client::{
     self as api, spiffe_workload_api_client::SpiffeWorkloadApiClient as Client,
 };
-use std::collections::HashMap;
 use std::time::{Duration, UNIX_EPOCH};
 use tower::Service;
 use tracing::error;
@@ -22,15 +21,15 @@ pub struct NoMatchingSVIDFound(());
 
 #[derive(Clone)]
 pub struct Svid {
-    pub(super) spiffe_id: Id,
     leaf: DerX509,
     private_key: Vec<u8>,
     intermediates: Vec<DerX509>,
+    roots: DerX509,
 }
 
 #[derive(Clone)]
 pub struct SvidUpdate {
-    svids: HashMap<Id, Svid>,
+    svids: Vec<Svid>,
 }
 
 #[derive(Clone, Debug)]
@@ -47,12 +46,7 @@ pub type Watch<S> = StreamWatch<GrpcRecover, Api<S>>;
 
 impl SvidUpdate {
     pub(super) fn new(svids: Vec<Svid>) -> Self {
-        let mut svids_map = HashMap::default();
-        for svid in svids.into_iter() {
-            svids_map.insert(svid.spiffe_id.clone(), svid);
-        }
-
-        SvidUpdate { svids: svids_map }
+        SvidUpdate { svids }
     }
 }
 
@@ -61,16 +55,16 @@ impl SvidUpdate {
 impl Svid {
     #[cfg(test)]
     pub(super) fn new(
-        spiffe_id: Id,
         leaf: DerX509,
         private_key: Vec<u8>,
         intermediates: Vec<DerX509>,
+        roots: DerX509,
     ) -> Self {
         Self {
-            spiffe_id,
             leaf,
             private_key,
             intermediates,
+            roots,
         }
     }
 }
@@ -99,13 +93,11 @@ impl TryFrom<api::X509svid> for Svid {
             }
         };
 
-        let spiffe_id = Id::parse_uri(&proto.spiffe_id)?;
-
         Ok(Svid {
-            spiffe_id,
             leaf,
             private_key: proto.x509_svid_key,
             intermediates: intermediates.to_vec(),
+            roots: DerX509(proto.bundle),
         })
     }
 }
@@ -200,18 +192,24 @@ impl Recover<tonic::Status> for GrpcRecover {
     }
 }
 
-pub(super) fn process_svid<C>(credentials: &mut C, mut update: SvidUpdate, id: &Id) -> Result<()>
+pub(super) fn process_svid<C>(credentials: &mut C, update: SvidUpdate) -> Result<()>
 where
     C: Credentials,
 {
-    if let Some(svid) = update.svids.remove(id) {
+    if let Some(svid) = update.svids.into_iter().next() {
         use x509_parser::prelude::*;
 
         let (_, parsed_cert) = X509Certificate::from_der(&svid.leaf.0)?;
         let exp: u64 = parsed_cert.validity().not_after.timestamp().try_into()?;
         let exp = UNIX_EPOCH + Duration::from_secs(exp);
 
-        return credentials.set_certificate(svid.leaf, svid.intermediates, svid.private_key, exp);
+        return credentials.set_certificate(
+            svid.leaf,
+            svid.intermediates,
+            svid.private_key,
+            exp,
+            svid.roots,
+        );
     }
 
     Err(NoMatchingSVIDFound(()).into())

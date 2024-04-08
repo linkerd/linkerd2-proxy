@@ -11,8 +11,8 @@ const TONIC_DEFAULT_URI: &str = "http://[::]:50051";
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub(crate) socket_addr: Arc<String>,
-    pub(crate) backoff: ExponentialBackoff,
+    pub socket_addr: Arc<String>,
+    pub backoff: ExponentialBackoff,
 }
 
 // Connects to SPIRE workload API via Unix Domain Socket

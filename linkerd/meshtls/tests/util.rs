@@ -57,7 +57,13 @@ pub fn fails_processing_cert_when_wrong_id_configured(mode: meshtls::Mode) {
         .expect("should construct");
 
     let err = store
-        .set_certificate(DerX509(cert), vec![], key, SystemTime::now())
+        .set_certificate(
+            DerX509(cert.clone()),
+            vec![],
+            key,
+            SystemTime::now(),
+            DerX509(cert),
+        )
         .expect_err("should error");
 
     assert_eq!(
@@ -177,6 +183,7 @@ fn load(
             vec![],
             ent.key.to_vec(),
             SystemTime::now() + Duration::from_secs(1000),
+            DerX509(ent.trust_anchors.to_vec()),
         )
         .expect("certificate must be valid");
 
