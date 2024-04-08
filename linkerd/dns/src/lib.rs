@@ -1,16 +1,16 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
+pub use hickory_resolver::config::ResolverOpts;
+use hickory_resolver::{
+    config::ResolverConfig, error, proto::rr::rdata, system_conf, AsyncResolver, TokioAsyncResolver,
+};
 use linkerd_dns_name::NameRef;
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
 use std::{fmt, net};
 use thiserror::Error;
 use tokio::time::{self, Instant};
 use tracing::{debug, trace};
-pub use trust_dns_resolver::config::ResolverOpts;
-use trust_dns_resolver::{
-    config::ResolverConfig, error, proto::rr::rdata, system_conf, AsyncResolver, TokioAsyncResolver,
-};
 
 #[derive(Clone)]
 pub struct Resolver {
@@ -127,7 +127,7 @@ impl Resolver {
     }
 
     // XXX We need to convert the SRV records to an IP addr manually,
-    // because of: https://github.com/bluejekyll/trust-dns/issues/872
+    // because of: https://github.com/hickory-dns/hickory-dns/issues/872
     // Here we rely in on the fact that the first label of the SRV
     // record's target will be the ip of the pod delimited by dashes
     // instead of dots. We can alternatively do another lookup
