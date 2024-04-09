@@ -1,6 +1,6 @@
 use crate::spire;
 
-pub use linkerd_app_core::identity::{client, Id};
+pub use linkerd_app_core::identity::{client, Id, Roots};
 use linkerd_app_core::{
     control, dns,
     identity::{
@@ -79,6 +79,8 @@ impl Config {
                     }
                 };
 
+                let roots = Roots::Pem(tls.trust_anchors_pem.clone());
+
                 let certify = Certify::from(certify);
                 let (store, receiver, ready) = watch(tls, cert_metrics)?;
 
@@ -90,8 +92,7 @@ impl Config {
                         registry.sub_registry_with_prefix("control_identity"),
                         receiver.new_client(),
                     );
-
-                    Box::pin(certify.run(name, store, svc).instrument(
+                    Box::pin(certify.run(name, store, svc, roots).instrument(
                         tracing::info_span!("identity", server.addr = %addr).or_current(),
                     ))
                 };
@@ -103,6 +104,7 @@ impl Config {
             }
             Self::Spire { client, tls } => {
                 let addr = client.socket_addr.clone();
+
                 let spire = spire::client::Spire::new(tls.id.clone());
 
                 let (store, receiver, ready) = watch(tls, cert_metrics)?;
@@ -130,8 +132,8 @@ fn watch(
     watch::Receiver<bool>,
 )> {
     let (tx, ready) = watch::channel(false);
-    let (store, receiver) =
-        Mode::default().watch(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
+    let roots = Roots::Pem(tls.trust_anchors_pem.clone());
+    let (store, receiver) = Mode::default().watch(tls.id, tls.server_name, roots)?;
     let cred = WithCertMetrics::new(metrics, NotifyReady { store, tx });
     Ok((cred, receiver, ready))
 }
@@ -145,8 +147,9 @@ impl Credentials for NotifyReady {
         chain: Vec<DerX509>,
         key: Vec<u8>,
         exp: SystemTime,
+        roots: Roots,
     ) -> Result<()> {
-        self.store.set_certificate(leaf, chain, key, exp)?;
+        self.store.set_certificate(leaf, chain, key, exp, roots)?;
         let _ = self.tx.send(true);
         Ok(())
     }

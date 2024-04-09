@@ -136,6 +136,7 @@ impl id::Credentials for Store {
         intermediates: Vec<id::DerX509>,
         key: Vec<u8>,
         _expiry: std::time::SystemTime,
+        _roots: id::Roots,
     ) -> Result<()> {
         let mut chain = Vec::with_capacity(intermediates.len() + 1);
         chain.push(rustls::Certificate(leaf));

@@ -1,4 +1,4 @@
-use crate::{Credentials, DerX509};
+use crate::{Credentials, DerX509, Roots};
 use linkerd_error::Result;
 use linkerd_metrics::prom;
 use std::{
@@ -89,8 +89,9 @@ where
         chain: Vec<DerX509>,
         key: Vec<u8>,
         expiry: SystemTime,
+        roots: Roots,
     ) -> Result<()> {
-        if let Err(err) = self.inner.set_certificate(leaf, chain, key, expiry) {
+        if let Err(err) = self.inner.set_certificate(leaf, chain, key, expiry, roots) {
             self.metrics.errors.inc();
             return Err(err);
         }
@@ -132,6 +133,7 @@ mod tests {
             _chain: Vec<DerX509>,
             _key: Vec<u8>,
             _expiry: SystemTime,
+            _roots: Roots,
         ) -> Result<()> {
             self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.1.map_err(|()| "boop".into())
@@ -155,8 +157,10 @@ mod tests {
         let chain = vec![leaf.clone()];
         let key = vec![0, 1, 2, 3, 4];
         let expiry = SystemTime::now() + Duration::from_secs(60 * 60 * 24); // 1 day from now
+        let roots =
+            Roots::Pem("-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into());
         assert!(with_cert_metrics
-            .set_certificate(leaf, chain, key, expiry)
+            .set_certificate(leaf, chain, key, expiry, roots)
             .is_ok());
 
         assert_eq!(with_cert_metrics.metrics.refreshes.get(), 1);
@@ -192,8 +196,10 @@ mod tests {
         let chain = vec![leaf.clone()];
         let key = vec![0, 1, 2, 3, 4];
         let expiry = SystemTime::now() + Duration::from_secs(60 * 60 * 24); // 1 day from now
+        let roots =
+            Roots::Pem("-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into());
         assert!(with_cert_metrics
-            .set_certificate(leaf, chain, key, expiry)
+            .set_certificate(leaf, chain, key, expiry, roots)
             .is_err());
 
         assert_eq!(with_cert_metrics.metrics.refreshes.get(), 0);

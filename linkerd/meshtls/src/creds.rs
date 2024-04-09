@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use crate::{NewClient, Server};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
-use linkerd_identity::{Credentials, DerX509, Id};
+use linkerd_identity::{Credentials, DerX509, Id, Roots};
 
 #[cfg(feature = "boring")]
 pub use crate::boring;
@@ -41,13 +41,14 @@ impl Credentials for Store {
         chain: Vec<DerX509>,
         key: Vec<u8>,
         exp: SystemTime,
+        roots: Roots,
     ) -> Result<()> {
         match self {
             #[cfg(feature = "boring")]
-            Self::Boring(store) => store.set_certificate(leaf, chain, key, exp),
+            Self::Boring(store) => store.set_certificate(leaf, chain, key, exp, roots),
 
             #[cfg(feature = "rustls")]
-            Self::Rustls(store) => store.set_certificate(leaf, chain, key, exp),
+            Self::Rustls(store) => store.set_certificate(leaf, chain, key, exp, roots),
 
             #[cfg(not(feature = "__has_any_tls_impls"))]
             _ => crate::no_tls!(leaf, chain, key, exp),

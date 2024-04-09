@@ -1,6 +1,13 @@
 use linkerd_error::Result;
 use std::{ops::Deref, time::SystemTime};
 
+/// Contains roots certificates in PEM or DER formats.
+#[derive(Clone, Debug)]
+pub enum Roots {
+    Der(Vec<DerX509>),
+    Pem(String),
+}
+
 /// Publishes certificates to be used by TLS implementations.
 pub trait Credentials {
     /// Set the certificate returned by the identity service.
@@ -12,6 +19,7 @@ pub trait Credentials {
         chain: Vec<DerX509>,
         key: Vec<u8>,
         expiry: SystemTime,
+        roots: Roots,
     ) -> Result<()>;
 }
 

@@ -3,7 +3,7 @@ use http_body::Body;
 use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient};
 use linkerd_dns_name::Name;
 use linkerd_error::{Error, Result};
-use linkerd_identity::{Credentials, DerX509};
+use linkerd_identity::{Credentials, DerX509, Roots};
 use linkerd_stack::NewService;
 use std::{
     path::PathBuf,
@@ -88,7 +88,7 @@ impl From<Config> for Certify {
 }
 
 impl Certify {
-    pub async fn run<C, N, S>(self, name: Name, mut credentials: C, new_client: N)
+    pub async fn run<C, N, S>(self, name: Name, mut credentials: C, new_client: N, roots: Roots)
     where
         C: Credentials,
         N: NewService<(), Service = S>,
@@ -111,6 +111,7 @@ impl Certify {
                     client,
                     &name,
                     &mut credentials,
+                    &roots,
                 )
                 .await
             };
@@ -151,6 +152,7 @@ async fn certify<C, S>(
     client: S,
     name: &Name,
     credentials: &mut C,
+    roots: &Roots,
 ) -> Result<SystemTime>
 where
     C: Credentials,
@@ -180,6 +182,7 @@ where
         intermediate_certificates.into_iter().map(DerX509).collect(),
         docs.key_pkcs8.clone(),
         expiry,
+        roots.clone(),
     )?;
 
     Ok(expiry)

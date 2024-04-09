@@ -5,8 +5,7 @@ mod api;
 
 pub use api::{Api, SvidUpdate};
 use linkerd_error::Error;
-use linkerd_identity::Credentials;
-use linkerd_identity::Id;
+use linkerd_identity::{Credentials, Id};
 use std::fmt::{Debug, Display};
 use tokio::sync::watch;
 use tower::{util::ServiceExt, Service};
@@ -61,7 +60,7 @@ mod tests {
     use super::*;
     use crate::api::Svid;
     use linkerd_error::Result;
-    use linkerd_identity::DerX509;
+    use linkerd_identity::{DerX509, Roots};
     use rcgen::{Certificate, CertificateParams, SanType, SerialNumber};
     use std::time::SystemTime;
 
@@ -78,6 +77,7 @@ mod tests {
                     .serialize_der()
                     .expect("should serialize"),
             ),
+            Vec::default(),
             Vec::default(),
             Vec::default(),
         )
@@ -131,6 +131,7 @@ mod tests {
             _: Vec<DerX509>,
             _: Vec<u8>,
             _: SystemTime,
+            _: Roots,
         ) -> Result<()> {
             let (_, cert) = x509_parser::parse_x509_certificate(&leaf.0).unwrap();
             let serial = SerialNumber::from_slice(&cert.serial.to_bytes_be());
@@ -199,6 +200,7 @@ mod tests {
         let invalid_svid = Svid::new(
             spiffe_id.clone(),
             DerX509(Vec::default()),
+            Vec::default(),
             Vec::default(),
             Vec::default(),
         );

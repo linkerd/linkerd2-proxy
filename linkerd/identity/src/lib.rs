@@ -8,7 +8,7 @@ use linkerd_error::{Error, Result};
 use std::str::FromStr;
 
 pub use self::{
-    credentials::{Credentials, DerX509},
+    credentials::{Credentials, DerX509, Roots},
     metrics::{CertMetrics, WithCertMetrics},
 };
 

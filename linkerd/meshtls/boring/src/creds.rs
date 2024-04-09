@@ -16,12 +16,20 @@ use tokio::sync::watch;
 pub fn watch(
     local_id: id::Id,
     server_name: dns::Name,
-    roots_pem: &str,
+    roots: id::Roots,
 ) -> Result<(Store, Receiver)> {
-    let creds = {
-        let roots = X509::stack_from_pem(roots_pem.as_bytes())?;
-        Arc::new(BaseCreds { roots })
+    let roots = match roots {
+        id::Roots::Pem(roots_pem) => X509::stack_from_pem(roots_pem.as_bytes())?,
+        id::Roots::Der(roots_der) => {
+            let mut roots = vec![];
+            for der in roots_der {
+                let root = X509::from_der(&der)?;
+                roots.push(root);
+            }
+            roots
+        }
     };
+    let creds = Arc::new(BaseCreds { roots });
 
     let (tx, rx) = watch::channel(Creds::from(creds.clone()));
     let rx = Receiver::new(local_id.clone(), server_name, rx);

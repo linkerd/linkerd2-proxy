@@ -3,6 +3,7 @@ mod store;
 pub(crate) mod verify;
 
 pub use self::{receiver::Receiver, store::Store};
+use id::{DerX509, Roots};
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
@@ -21,31 +22,8 @@ pub struct InvalidKey(KeyRejected);
 #[error("invalid trust roots")]
 pub struct InvalidTrustRoots(());
 
-pub fn watch(
-    local_id: id::Id,
-    server_name: dns::Name,
-    roots_pem: &str,
-) -> Result<(Store, Receiver)> {
-    let mut roots = rustls::RootCertStore::empty();
-    let certs = match rustls_pemfile::certs(&mut std::io::Cursor::new(roots_pem)) {
-        Err(error) => {
-            warn!(%error, "invalid trust anchors file");
-            return Err(error.into());
-        }
-        Ok(certs) if certs.is_empty() => {
-            warn!("no valid certs in trust anchors file");
-            return Err("no trust roots in PEM file".into());
-        }
-        Ok(certs) => certs,
-    };
-
-    let (added, skipped) = roots.add_parsable_certificates(&certs[..]);
-    if skipped != 0 {
-        warn!("Skipped {} invalid trust anchors", skipped);
-    }
-    if added == 0 {
-        return Err("no trust roots loaded".into());
-    }
+pub fn watch(local_id: id::Id, server_name: dns::Name, roots: Roots) -> Result<(Store, Receiver)> {
+    let roots = roots_store(roots)?;
 
     // XXX: Rustls's built-in verifiers don't let us tweak things as fully as we'd like (e.g.
     // controlling the set of trusted signature algorithms), but they provide good enough
@@ -88,12 +66,43 @@ pub fn watch(
     Ok((store, rx))
 }
 
+fn roots_store(roots: Roots) -> Result<rustls::RootCertStore> {
+    let mut cert_store = rustls::RootCertStore::empty();
+    let certs: Vec<Vec<u8>> = match roots {
+        Roots::Pem(roots_pem) => {
+            match rustls_pemfile::certs(&mut std::io::Cursor::new(&(*roots_pem))) {
+                Err(error) => {
+                    warn!(%error, "invalid trust anchors file");
+                    return Err(error.into());
+                }
+                Ok(certs) if certs.is_empty() => {
+                    warn!("no valid certs in trust anchors file");
+                    return Err("no trust roots in PEM file".into());
+                }
+                Ok(certs) => certs,
+            }
+        }
+        Roots::Der(roots_der) => roots_der.into_iter().map(|DerX509(c)| c).collect(),
+    };
+
+    let (added, skipped) = cert_store.add_parsable_certificates(&certs[..]);
+    if skipped != 0 {
+        warn!("Skipped {} invalid trust anchors", skipped);
+    }
+    if added == 0 {
+        return Err("no trust roots loaded".into());
+    }
+
+    Ok(cert_store)
+}
+
 #[cfg(feature = "test-util")]
 pub fn for_test(ent: &linkerd_tls_test_util::Entity) -> (Store, Receiver) {
+    let roots = std::str::from_utf8(ent.trust_anchors).expect("roots must be PEM");
     watch(
         ent.name.parse().expect("id must be valid"),
         ent.name.parse().expect("name must be valid"),
-        std::str::from_utf8(ent.trust_anchors).expect("roots must be PEM"),
+        id::Roots::Pem(roots.into()),
     )
     .expect("credentials must be valid")
 }

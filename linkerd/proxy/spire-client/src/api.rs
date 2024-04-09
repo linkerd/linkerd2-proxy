@@ -1,8 +1,8 @@
 use futures::prelude::*;
 use linkerd_error::{Error, Recover, Result};
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
-use linkerd_identity::DerX509;
 use linkerd_identity::{Credentials, Id};
+use linkerd_identity::{DerX509, Roots};
 use linkerd_proxy_http as http;
 use linkerd_tonic_watch::StreamWatch;
 use spiffe_proto::client::{
@@ -26,6 +26,7 @@ pub struct Svid {
     leaf: DerX509,
     private_key: Vec<u8>,
     intermediates: Vec<DerX509>,
+    roots: Vec<DerX509>,
 }
 
 #[derive(Clone)]
@@ -65,12 +66,14 @@ impl Svid {
         leaf: DerX509,
         private_key: Vec<u8>,
         intermediates: Vec<DerX509>,
+        roots: Vec<DerX509>,
     ) -> Self {
         Self {
             spiffe_id,
             leaf,
             private_key,
             intermediates,
+            roots,
         }
     }
 }
@@ -99,6 +102,13 @@ impl TryFrom<api::X509svid> for Svid {
             }
         };
 
+        let roots_der_blocks = asn1::from_der(&proto.bundle)?;
+        let mut roots = vec![];
+        for block in roots_der_blocks.iter() {
+            let cert_der = asn1::to_der(block)?;
+            roots.push(DerX509(cert_der));
+        }
+
         let spiffe_id = Id::parse_uri(&proto.spiffe_id)?;
 
         Ok(Svid {
@@ -106,6 +116,7 @@ impl TryFrom<api::X509svid> for Svid {
             leaf,
             private_key: proto.x509_svid_key,
             intermediates: intermediates.to_vec(),
+            roots,
         })
     }
 }
@@ -211,7 +222,13 @@ where
         let exp: u64 = parsed_cert.validity().not_after.timestamp().try_into()?;
         let exp = UNIX_EPOCH + Duration::from_secs(exp);
 
-        return credentials.set_certificate(svid.leaf, svid.intermediates, svid.private_key, exp);
+        return credentials.set_certificate(
+            svid.leaf,
+            svid.intermediates,
+            svid.private_key,
+            exp,
+            Roots::Der(svid.roots),
+        );
     }
 
     Err(NoMatchingSVIDFound(()).into())
@@ -220,7 +237,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::api::Svid;
-    use rcgen::{Certificate, CertificateParams, SanType};
+    use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa, SanType};
     use spiffe_proto::client as api;
 
     fn gen_svid_pb(id: String, subject_alt_names: Vec<SanType>) -> api::X509svid {
@@ -228,11 +245,15 @@ mod tests {
         params.subject_alt_names = subject_alt_names;
         let cert = Certificate::from_params(params).expect("should generate cert");
 
+        let mut root_params = CertificateParams::default();
+        root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let root_cert = Certificate::from_params(root_params).expect("should generate root");
+
         api::X509svid {
             spiffe_id: id,
             x509_svid: cert.serialize_der().expect("should serialize"),
             x509_svid_key: cert.serialize_private_key_der(),
-            bundle: Vec::default(),
+            bundle: root_cert.serialize_der().expect("should serialize"),
         }
     }
 

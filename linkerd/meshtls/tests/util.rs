@@ -5,7 +5,7 @@ use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_dns_name::Name;
 use linkerd_error::Infallible;
-use linkerd_identity::{Credentials, DerX509, Id};
+use linkerd_identity::{Credentials, DerX509, Id, Roots};
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_meshtls as meshtls;
 use linkerd_proxy_transport::{
@@ -28,7 +28,7 @@ use std::{
 use tokio::net::TcpStream;
 use tracing::Instrument;
 
-fn generate_cert_with_name(subject_alt_names: Vec<SanType>) -> (Vec<u8>, Vec<u8>, String) {
+fn generate_cert_with_name(subject_alt_names: Vec<SanType>) -> (Vec<u8>, Vec<u8>, Roots) {
     let mut root_params = CertificateParams::default();
     root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     let root_cert = Certificate::from_params(root_params).expect("should generate root");
@@ -42,7 +42,9 @@ fn generate_cert_with_name(subject_alt_names: Vec<SanType>) -> (Vec<u8>, Vec<u8>
         cert.serialize_der_with_signer(&root_cert)
             .expect("should serialize"),
         cert.serialize_private_key_der(),
-        root_cert.serialize_pem().expect("should serialize"),
+        Roots::Der(vec![DerX509(
+            root_cert.serialize_der().expect("should serialize"),
+        )]),
     )
 }
 
@@ -53,11 +55,11 @@ pub fn fails_processing_cert_when_wrong_id_configured(mode: meshtls::Mode) {
     let (cert, key, roots) =
         generate_cert_with_name(vec![SanType::URI("spiffe://system/local".into())]);
     let (mut store, _) = mode
-        .watch(id, server_name.clone(), &roots)
+        .watch(id, server_name.clone(), roots.clone())
         .expect("should construct");
 
     let err = store
-        .set_certificate(DerX509(cert), vec![], key, SystemTime::now())
+        .set_certificate(DerX509(cert), vec![], key, SystemTime::now(), roots)
         .expect_err("should error");
 
     assert_eq!(
@@ -163,11 +165,12 @@ fn load(
     ent: &test_util::Entity,
 ) -> (meshtls::creds::Store, meshtls::NewClient, meshtls::Server) {
     let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
+    let roots = Roots::Pem(roots_pem.into());
     let (mut store, rx) = mode
         .watch(
             ent.name.parse().unwrap(),
             ent.name.parse().unwrap(),
-            roots_pem,
+            roots.clone(),
         )
         .expect("credentials must be readable");
 
@@ -177,6 +180,7 @@ fn load(
             vec![],
             ent.key.to_vec(),
             SystemTime::now() + Duration::from_secs(1000),
+            roots,
         )
         .expect("certificate must be valid");
 
