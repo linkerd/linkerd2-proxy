@@ -26,7 +26,7 @@ const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
 const ENV_ACCESS_LOG: &str = "LINKERD2_PROXY_ACCESS_LOG";
 
-const DEFAULT_LOG_LEVEL: &str = "warn,linkerd=info,trust_dns=error";
+const DEFAULT_LOG_LEVEL: &str = "warn,linkerd=info,hickory_dns=error";
 const DEFAULT_LOG_FORMAT: &str = "PLAIN";
 
 #[derive(Debug, Default)]
