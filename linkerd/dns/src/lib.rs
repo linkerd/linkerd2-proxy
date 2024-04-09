@@ -190,8 +190,8 @@ impl ResolveError {
 #[cfg(test)]
 mod tests {
     use super::{Name, Resolver, Suffix};
+    use hickory_resolver::proto::rr::{domain, rdata};
     use std::{net, str::FromStr};
-    use trust_dns_resolver::proto::rr::{domain, rdata};
 
     #[test]
     fn test_dns_name_parsing() {
