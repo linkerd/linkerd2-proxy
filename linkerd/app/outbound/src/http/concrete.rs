@@ -60,11 +60,7 @@ impl<N> Outbound<N> {
     /// 'failfast'. While in failfast, buffered requests are failed and the
     /// service becomes unavailable so callers may choose alternate concrete
     /// services.
-    pub fn push_http_concrete<T, NSvc, R>(
-        self,
-        balancer_metrics: balance::BalancerMetrics,
-        resolve: R,
-    ) -> Outbound<svc::ArcNewCloneHttp<T>>
+    pub fn push_http_concrete<T, NSvc, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneHttp<T>>
     where
         // Concrete target type.
         T: svc::Param<ParentRef>,
@@ -105,12 +101,7 @@ impl<N> Outbound<N> {
             });
 
             inner
-                .push(balance::Balance::layer(
-                    config,
-                    rt,
-                    balancer_metrics,
-                    resolve,
-                ))
+                .push(balance::Balance::layer(config, rt, resolve))
                 .check_new_clone()
                 .push_switch(Ok::<_, Infallible>, forward.into_inner())
                 .push_switch(

@@ -30,7 +30,7 @@ async fn forward() {
 
     // Build the TCP logical stack with a mocked connector.
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt)
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(svc::mk(move |ep: concrete::Endpoint<Concrete<Logical>>| {
             let Remote(ServerAddr(ea)) = svc::Param::param(&ep);
             assert_eq!(ea, ep_addr);
@@ -39,7 +39,7 @@ async fn forward() {
             let local = Local(ClientAddr(([0, 0, 0, 0], 4444).into()));
             future::ok::<_, support::io::Error>((io.build(), local))
         }))
-        .push_opaq_concrete(&mut Default::default(), resolve)
+        .push_opaq_concrete(resolve)
         .push_opaq_logical()
         .into_inner();
 
@@ -84,7 +84,7 @@ async fn balances() {
     // Build the TCP logical stack with a mocked endpoint stack that alters its response stream
     // based on the address.
     let (rt, _shutdown) = runtime();
-    let svc = Outbound::new(default_config(), rt)
+    let svc = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(svc::mk(
             move |ep: concrete::Endpoint<Concrete<Logical>>| match svc::Param::param(&ep) {
                 Remote(ServerAddr(addr)) if addr == ep0_addr => {
@@ -104,7 +104,7 @@ async fn balances() {
                 addr => unreachable!("unexpected endpoint: {}", addr),
             },
         ))
-        .push_opaq_concrete(&mut Default::default(), resolve)
+        .push_opaq_concrete(resolve)
         .push_opaq_logical()
         .into_inner()
         .new_service(logical);

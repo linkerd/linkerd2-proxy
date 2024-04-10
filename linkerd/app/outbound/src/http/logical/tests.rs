@@ -28,9 +28,9 @@ async fn routes() {
     let connect = HttpConnect::default().service(addr, svc);
     let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt)
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(Default::default(), resolve)
+        .push_http_cached(resolve)
         .into_inner();
 
     let backend = default_backend(&dest);
@@ -71,9 +71,9 @@ async fn consecutive_failures_accrue() {
     let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
     let (rt, _shutdown) = runtime();
     let cfg = default_config();
-    let stack = Outbound::new(cfg.clone(), rt)
+    let stack = Outbound::new(cfg.clone(), rt, &mut Default::default())
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(Default::default(), resolve)
+        .push_http_cached(resolve)
         .into_inner();
 
     let backend = default_backend(&dest);
@@ -234,9 +234,9 @@ async fn balancer_doesnt_select_tripped_breakers() {
         .unwrap();
     let (rt, _shutdown) = runtime();
     let cfg = default_config();
-    let stack = Outbound::new(cfg.clone(), rt)
+    let stack = Outbound::new(cfg.clone(), rt, &mut Default::default())
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(Default::default(), resolve)
+        .push_http_cached(resolve)
         .into_inner();
 
     let backend = default_backend(&dest);
@@ -322,9 +322,9 @@ async fn route_request_timeout() {
     let connect = HttpConnect::default().service(addr, svc);
     let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt)
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(Default::default(), resolve)
+        .push_http_cached(resolve)
         .into_inner();
 
     let (_route_tx, routes) = {
@@ -385,9 +385,9 @@ async fn backend_request_timeout() {
     let connect = HttpConnect::default().service(addr, svc);
     let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt)
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(Default::default(), resolve)
+        .push_http_cached(resolve)
         .into_inner();
 
     let (_route_tx, routes) = {

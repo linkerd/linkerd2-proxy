@@ -37,7 +37,7 @@ async fn errors_propagate() {
 
     // Create a profile stack that uses the tracked inner stack.
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt)
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(stack)
         .push_discover(discover)
         .into_inner();
@@ -107,7 +107,7 @@ async fn caches_profiles_until_idle() {
         cfg
     };
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(cfg, rt)
+    let stack = Outbound::new(cfg, rt, &mut Default::default())
         .with_stack(stack)
         .push_discover(discover)
         .into_inner();

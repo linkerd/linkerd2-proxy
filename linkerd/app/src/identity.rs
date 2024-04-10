@@ -46,11 +46,25 @@ pub struct Identity {
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
+#[derive(Clone, Debug, Default)]
+pub struct IdentityMetrics {
+    cert: CertMetrics,
+    client: control::Metrics,
+}
+
 /// Wraps a credential with a watch sender that notifies receivers when the store has been updated
 /// at least once.
 struct NotifyReady {
     store: creds::Store,
     tx: watch::Sender<bool>,
+}
+
+impl IdentityMetrics {
+    pub fn register(registry: &mut prom::Registry) -> Self {
+        let cert = CertMetrics::register(registry.sub_registry_with_prefix("cert"));
+        let client = control::Metrics::register(registry);
+        Self { cert, client }
+    }
 }
 
 // === impl Config ===
@@ -60,11 +74,8 @@ impl Config {
         self,
         dns: dns::Resolver,
         client_metrics: ClientMetrics,
-        registry: &mut prom::Registry,
+        metrics: IdentityMetrics,
     ) -> Result<Identity> {
-        let cert_metrics =
-            CertMetrics::register(registry.sub_registry_with_prefix("identity_cert"));
-
         Ok(match self {
             Self::Linkerd {
                 client,
@@ -80,16 +91,12 @@ impl Config {
                 };
 
                 let certify = Certify::from(certify);
-                let (store, receiver, ready) = watch(tls, cert_metrics)?;
+                let (store, receiver, ready) = watch(tls, metrics.cert)?;
 
                 let task = {
                     let addr = client.addr.clone();
-                    let svc = client.build(
-                        dns,
-                        client_metrics,
-                        registry.sub_registry_with_prefix("control_identity"),
-                        receiver.new_client(),
-                    );
+                    let svc =
+                        client.build(dns, client_metrics, metrics.client, receiver.new_client());
 
                     Box::pin(certify.run(name, store, svc).instrument(
                         tracing::info_span!("identity", server.addr = %addr).or_current(),
@@ -105,7 +112,7 @@ impl Config {
                 let addr = client.socket_addr.clone();
                 let spire = spire::client::Spire::new(tls.id.clone());
 
-                let (store, receiver, ready) = watch(tls, cert_metrics)?;
+                let (store, receiver, ready) = watch(tls, metrics.cert)?;
                 let task =
                     Box::pin(spire.run(store, spire::Client::from(client)).instrument(
                         tracing::info_span!("spire", server.addr = %addr).or_current(),

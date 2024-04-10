@@ -42,6 +42,8 @@ fn main() {
         vendor = BUILD_INFO.vendor,
     );
 
+    let metrics = linkerd_metrics::prom::Registry::default();
+
     // Load configuration from the environment without binding ports.
     let config = match Config::try_from_env() {
         Ok(config) => config,
@@ -60,7 +62,7 @@ fn main() {
 
         let bind = BindTcp::with_orig_dst();
         let app = match config
-            .build(bind, bind, BindTcp::default(), shutdown_tx, trace)
+            .build(bind, bind, BindTcp::default(), shutdown_tx, trace, metrics)
             .await
         {
             Ok(app) => app,

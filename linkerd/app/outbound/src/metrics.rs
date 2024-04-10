@@ -18,7 +18,7 @@ use std::fmt::Write;
 pub(crate) mod error;
 pub use linkerd_app_core::{metrics::*, proxy::balance};
 
-/// Holds outbound proxy metrics.
+/// Holds LEGACY outbound proxy metrics.
 #[derive(Clone, Debug)]
 pub struct OutboundMetrics {
     pub(crate) http_errors: error::Http,
@@ -29,6 +29,14 @@ pub struct OutboundMetrics {
     /// Holds metrics that are common to both inbound and outbound proxies. These metrics are
     /// reported separately
     pub(crate) proxy: Proxy,
+
+    pub(crate) prom: PromMetrics,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PromMetrics {
+    pub(crate) http: crate::http::HttpMetrics,
+    pub(crate) opaq: crate::opaq::OpaqMetrics,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -72,15 +80,26 @@ where
         Self(balance::MetricFamilies::default())
     }
 }
+// === impl PromMetrics ===
+
+impl PromMetrics {
+    pub fn register(registry: &mut prom::Registry) -> Self {
+        Self {
+            http: crate::http::HttpMetrics::register(registry.sub_registry_with_prefix("http")),
+            opaq: crate::opaq::OpaqMetrics::register(registry.sub_registry_with_prefix("tcp")),
+        }
+    }
+}
 
 // === impl OutboundMetrics ===
 
 impl OutboundMetrics {
-    pub(crate) fn new(proxy: Proxy) -> Self {
+    pub(crate) fn new(proxy: Proxy, registry: &mut prom::Registry) -> Self {
         Self {
             proxy,
             http_errors: error::Http::default(),
             tcp_errors: error::Tcp::default(),
+            prom: PromMetrics::register(registry),
         }
     }
 }

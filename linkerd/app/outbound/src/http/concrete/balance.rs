@@ -82,7 +82,6 @@ where
     pub(super) fn layer<N, NSvc, R>(
         config: &crate::Config,
         rt: &crate::Runtime,
-        metrics: BalancerMetrics,
         resolve: R,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
@@ -101,6 +100,7 @@ where
         let http_queue = config.http_request_queue;
         let inbound_ips = config.inbound_ips.clone();
         let stack_metrics = rt.metrics.proxy.stack.clone();
+        let balance_metrics = rt.metrics.prom.http.balancer.clone();
 
         let resolve = svc::stack(resolve.into_service())
             .push_map_target(|t: Self| ConcreteAddr(t.addr))
@@ -148,7 +148,10 @@ where
                 .push(svc::ArcNewService::layer());
 
             endpoint
-                .push(http::NewBalance::layer(resolve.clone(), metrics.clone()))
+                .push(http::NewBalance::layer(
+                    resolve.clone(),
+                    balance_metrics.clone(),
+                ))
                 .push_on_service(http::BoxResponse::layer())
                 .push_on_service(stack_metrics.layer(stack_labels("http", "balance")))
                 .push(svc::NewMapErr::layer_from_target::<BalanceError, _>())

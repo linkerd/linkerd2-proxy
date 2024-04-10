@@ -47,10 +47,8 @@ pub mod tcp;
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
 
-pub use self::{
-    discover::{spawn_synthesized_profile_policy, synthesize_forward_policy, Discovery},
-    metrics::OutboundMetrics,
-};
+pub use self::discover::{spawn_synthesized_profile_policy, synthesize_forward_policy, Discovery};
+use self::metrics::OutboundMetrics;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -122,9 +120,9 @@ pub struct EndpointRef(Arc<policy::Meta>);
 // === impl Outbound ===
 
 impl Outbound<()> {
-    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+    pub fn new(config: Config, runtime: ProxyRuntime, prom: &mut prom::Registry) -> Self {
         let runtime = Runtime {
-            metrics: OutboundMetrics::new(runtime.metrics),
+            metrics: OutboundMetrics::new(runtime.metrics, prom),
             identity: runtime.identity.new_client(),
             tap: runtime.tap,
             span_sink: runtime.span_sink,
@@ -162,7 +160,7 @@ impl Outbound<()> {
     #[cfg(any(test, feature = "test-util"))]
     pub fn for_test() -> (Self, drain::Signal) {
         let (rt, drain) = test_util::runtime();
-        let this = Self::new(test_util::default_config(), rt);
+        let this = Self::new(test_util::default_config(), rt, &mut Default::default());
         (this, drain)
     }
 }
@@ -226,7 +224,6 @@ impl<S> Outbound<S> {
 impl Outbound<()> {
     pub fn mk<T, I, R>(
         self,
-        registry: &mut prom::Registry,
         profiles: impl profiles::GetProfile<Error = Error>,
         policies: impl policy::GetPolicy,
         resolve: R,
@@ -245,9 +242,9 @@ impl Outbound<()> {
         let profiles = profiles::WithAllowlist::new(profiles, self.config.allow_discovery.clone());
         if self.config.ingress_mode {
             tracing::info!("Outbound routing in ingress-mode");
-            self.mk_ingress(registry, profiles, policies, resolve)
+            self.mk_ingress(profiles, policies, resolve)
         } else {
-            self.mk_sidecar(registry, profiles, policies, resolve)
+            self.mk_sidecar(profiles, policies, resolve)
         }
     }
 }

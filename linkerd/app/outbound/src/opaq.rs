@@ -21,6 +21,11 @@ pub use self::logical::Logical;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Opaq(Logical);
 
+#[derive(Clone, Debug, Default)]
+pub struct OpaqMetrics {
+    balance: concrete::BalancerMetrics,
+}
+
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
@@ -28,11 +33,7 @@ impl<C> Outbound<C> {
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.
-    pub fn push_opaq_cached<T, I, R>(
-        self,
-        registry: &mut prom::Registry,
-        resolve: R,
-    ) -> Outbound<svc::ArcNewCloneTcp<T, I>>
+    pub fn push_opaq_cached<T, I, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneTcp<T, I>>
     where
         // Opaque target
         T: svc::Param<Logical>,
@@ -50,7 +51,7 @@ impl<C> Outbound<C> {
         C::Future: Send + Unpin,
     {
         self.push_tcp_endpoint()
-            .push_opaq_concrete(registry, resolve)
+            .push_opaq_concrete(resolve)
             .push_opaq_logical()
             .map_stack(|config, _rt, stk| {
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
@@ -76,5 +77,15 @@ impl svc::Param<Option<profiles::Receiver>> for Opaq {
             Logical::Route(_, rx) => Some(rx),
             _ => None,
         }
+    }
+}
+
+// === impl OpaqMetrics ===
+
+impl OpaqMetrics {
+    pub fn register(registry: &mut prom::Registry) -> Self {
+        let balance =
+            concrete::BalancerMetrics::register(registry.sub_registry_with_prefix("balancer"));
+        Self { balance }
     }
 }

@@ -72,17 +72,30 @@ impl fmt::Display for ControlAddr {
 pub type RspBody =
     linkerd_http_metrics::requests::ResponseBody<http::balance::Body<hyper::Body>, classify::Eos>;
 
+#[derive(Clone, Debug, Default)]
+pub struct Metrics {
+    balance: balance::Metrics,
+}
+
 const EWMA_CONFIG: http::balance::EwmaConfig = http::balance::EwmaConfig {
     default_rtt: time::Duration::from_millis(30),
     decay: time::Duration::from_secs(10),
 };
 
+impl Metrics {
+    pub fn register(registry: &mut prom::Registry) -> Self {
+        Metrics {
+            balance: balance::Metrics::register(registry.sub_registry_with_prefix("balancer")),
+        }
+    }
+}
+
 impl Config {
     pub fn build(
         self,
         dns: dns::Resolver,
-        metrics: metrics::ControlHttp,
-        registry: &mut prom::Registry,
+        legacy_metrics: metrics::ControlHttp,
+        metrics: Metrics,
         identity: identity::NewClient,
     ) -> svc::ArcNewService<
         (),
@@ -133,12 +146,8 @@ impl Config {
 
         let balance = endpoint
             .lift_new()
-            .push(self::balance::layer(
-                registry.sub_registry_with_prefix("balancer"),
-                dns,
-                resolve_backoff,
-            ))
-            .push(metrics.to_layer::<classify::Response, _, _>())
+            .push(self::balance::layer(metrics.balance, dns, resolve_backoff))
+            .push(legacy_metrics.to_layer::<classify::Response, _, _>())
             .push(classify::NewClassify::layer_default());
 
         balance
@@ -233,15 +242,17 @@ mod balance {
     use super::{client::Target, ControlAddr};
     use crate::{
         dns,
-        metrics::prom::{self, encoding::EncodeLabelSet},
+        metrics::prom::encoding::EncodeLabelSet,
         proxy::{dns_resolve::DnsResolve, http, resolve::recover},
         svc, tls,
     };
     use linkerd_stack::ExtractParam;
     use std::net::SocketAddr;
 
+    pub(super) type Metrics = http::balance::MetricFamilies<Labels>;
+
     pub fn layer<B, R: Clone, N>(
-        registry: &mut prom::Registry,
+        metrics: Metrics,
         dns: dns::Resolver,
         recover: R,
     ) -> impl svc::Layer<
@@ -249,9 +260,12 @@ mod balance {
         Service = http::NewBalance<B, Params, recover::Resolve<R, DnsResolve>, NewIntoTarget<N>>,
     > {
         let resolve = recover::Resolve::new(recover, DnsResolve::new(dns));
-        let metrics = Params(http::balance::MetricFamilies::register(registry));
         svc::layer::mk(move |inner| {
-            http::NewBalance::new(NewIntoTarget { inner }, resolve.clone(), metrics.clone())
+            http::NewBalance::new(
+                NewIntoTarget { inner },
+                resolve.clone(),
+                Params(metrics.clone()),
+            )
         })
     }
 
@@ -270,7 +284,7 @@ mod balance {
     }
 
     #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-    struct Labels {
+    pub(super) struct Labels {
         addr: String,
     }
 
