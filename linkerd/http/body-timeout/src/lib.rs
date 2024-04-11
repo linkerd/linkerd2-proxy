@@ -115,6 +115,12 @@ impl<B> ProgressTimeoutBody<B> {
     }
 }
 
+impl<B: Default> Default for ProgressTimeoutBody<B> {
+    fn default() -> Self {
+        Self::new(time::Duration::MAX, B::default())
+    }
+}
+
 impl<B> Body for ProgressTimeoutBody<B>
 where
     B: Body + Send + 'static,
@@ -161,10 +167,9 @@ where
             *this.is_pending = true;
         }
 
-        match this.sleep.as_mut().poll(cx) {
-            Poll::Ready(()) => Poll::Ready(Err(BodyProgressTimeoutError(*this.timeout).into())),
-            Poll::Pending => Poll::Pending,
-        }
+        futures::ready!(this.sleep.as_mut().poll(cx));
+        tracing::debug!(timeout = ?*this.timeout, "Progress timed out");
+        Poll::Ready(Err(::h2::Error::from(::h2::Reason::CANCEL).into()))
     }
 
     #[inline]

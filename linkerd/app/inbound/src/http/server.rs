@@ -113,6 +113,7 @@ impl<H> Inbound<H> {
     {
         self.map_stack(|config, rt, http| {
             let h2 = config.proxy.server.h2_settings;
+            let progress_timeout = config.proxy.server.progress_timeout;
             let drain = rt.drain.clone();
 
             http.check_new_service::<T, http::Request<http::BoxBody>>()
@@ -121,6 +122,7 @@ impl<H> Inbound<H> {
                 .push(http::NewServeHttp::layer(move |t: &T| http::ServerParams {
                     version: t.param(),
                     h2,
+                    progress_timeout,
                     drain: drain.clone(),
                 }))
                 .check_new_service::<T, I>()

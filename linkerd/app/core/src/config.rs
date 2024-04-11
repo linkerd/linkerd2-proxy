@@ -1,3 +1,5 @@
+use tokio::time;
+
 pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
     proxy::http::{self, h1, h2},
@@ -11,6 +13,7 @@ pub struct ServerConfig {
     pub addr: ListenAddr,
     pub keepalive: Keepalive,
     pub h2_settings: h2::Settings,
+    pub progress_timeout: time::Duration,
 }
 
 #[derive(Clone, Debug)]

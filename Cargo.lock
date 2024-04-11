@@ -1461,6 +1461,7 @@ name = "linkerd-http-body-timeout"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "h2",
  "http",
  "http-body",
  "linkerd-error",
@@ -1468,6 +1469,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -1873,6 +1875,7 @@ dependencies = [
  "linkerd-detect",
  "linkerd-duplex",
  "linkerd-error",
+ "linkerd-http-body-timeout",
  "linkerd-http-box",
  "linkerd-http-classify",
  "linkerd-io",

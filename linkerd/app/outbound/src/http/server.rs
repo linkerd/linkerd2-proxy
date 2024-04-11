@@ -1,6 +1,7 @@
 use super::IdentityRequired;
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{drain, errors, http_tracing, io, svc, Error, Result};
+use tokio::time;
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ServerRescue {
@@ -11,6 +12,7 @@ pub(crate) struct ServerRescue {
 pub struct ExtractServerParams {
     h2: http::h2::Settings,
     drain: drain::Watch,
+    progress_timeout: time::Duration,
 }
 
 impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
@@ -88,6 +90,7 @@ impl<N> Outbound<N> {
                 .push(http::NewServeHttp::layer(ExtractServerParams {
                     h2: config.proxy.server.h2_settings,
                     drain: rt.drain.clone(),
+                    progress_timeout: config.proxy.server.progress_timeout,
                 }))
         })
     }
@@ -196,6 +199,7 @@ where
             version: t.param(),
             h2: self.h2,
             drain: self.drain.clone(),
+            progress_timeout: self.progress_timeout,
         }
     }
 }

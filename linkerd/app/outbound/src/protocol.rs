@@ -48,6 +48,7 @@ impl<N> Outbound<N> {
 
         let http = self.with_stack(http).map_stack(|config, rt, stk| {
             let h2 = config.proxy.server.h2_settings;
+            let progress_timeout = config.proxy.server.progress_timeout;
             let drain = rt.drain.clone();
             stk.unlift_new()
                 .push(http::NewServeHttp::layer(move |t: &Http<T>| {
@@ -55,6 +56,7 @@ impl<N> Outbound<N> {
                         version: t.version,
                         h2,
                         drain: drain.clone(),
+                        progress_timeout,
                     }
                 }))
                 .arc_new_tcp()

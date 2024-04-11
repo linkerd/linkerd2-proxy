@@ -335,6 +335,19 @@ const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24)
 const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
 const OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
 
+// Progress timeouts are used to prevent the proxy from waiting indefinitely for
+// writes to complete. This can occur when FIN packets are lost, or when HTTP/2
+// flow control capacity is exhausted.
+//
+// The default timeout of 10 minutes is arbitrary. We want this value to high
+// enough that it should never be hit in normal operation, but low enough that
+// it will eventually be hit in the case of a stuck connection.
+const ENV_INBOUND_SERVER_PROGRESS_TIMEOUT: &str =
+    "LINKERD2_PROXY_INBOUND_HTTP_SERVER_PROGRESS_TIMEOUT";
+const ENV_OUTBOUND_SERVER_PROGRESS_TIMEOUT: &str =
+    "LINKERD2_PROXY_OUTBOUND_HTTP_SERVER_PROGRESS_TIMEOUT";
+const DEFAULT_PROGRESS_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
 /// Load a `App` by reading ENV variables.
 pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> {
     // Parse all the environment variables. `parse` will log any errors so
@@ -437,6 +450,16 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         ..Default::default()
     };
 
+    let inbound_progress_timeout =
+        parse(strings, ENV_INBOUND_SERVER_PROGRESS_TIMEOUT, parse_duration)?
+            .unwrap_or(DEFAULT_PROGRESS_TIMEOUT);
+    let outbound_progress_timeout = parse(
+        strings,
+        ENV_OUTBOUND_SERVER_PROGRESS_TIMEOUT,
+        parse_duration,
+    )?
+    .unwrap_or(DEFAULT_PROGRESS_TIMEOUT);
+
     let dst_profile_suffixes = dst_profile_suffixes?
         .unwrap_or_else(|| parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
     let dst_profile_networks = dst_profile_networks?.unwrap_or_default();
@@ -472,6 +495,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             addr,
             keepalive,
             h2_settings,
+            progress_timeout: outbound_progress_timeout,
         };
         let discovery_idle_timeout =
             outbound_discovery_idle_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISCOVERY_IDLE_TIMEOUT);
@@ -553,6 +577,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             addr,
             keepalive,
             h2_settings,
+            progress_timeout: inbound_progress_timeout,
         };
         let discovery_idle_timeout =
             inbound_discovery_idle_timeout?.unwrap_or(DEFAULT_INBOUND_DISCOVERY_IDLE_TIMEOUT);
@@ -748,6 +773,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             addr: ListenAddr(admin_listener_addr),
             keepalive: inbound.proxy.server.keepalive,
             h2_settings,
+            progress_timeout: inbound_progress_timeout,
         },
 
         // TODO(ver) Currently we always enable profiling when the pprof feature
@@ -807,6 +833,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 addr: ListenAddr(addr),
                 keepalive: inbound.proxy.server.keepalive,
                 h2_settings,
+                progress_timeout: inbound_progress_timeout,
             },
         })
         .unwrap_or(super::tap::Config::Disabled);

@@ -60,6 +60,7 @@ pub fn default_config() -> Config {
                 addr: ListenAddr(([0, 0, 0, 0], 0).into()),
                 keepalive: Keepalive(None),
                 h2_settings: h2::Settings::default(),
+                progress_timeout: Duration::MAX,
             },
             connect: config::ConnectConfig {
                 keepalive: Keepalive(None),

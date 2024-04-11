@@ -24,6 +24,7 @@ async fn h2_connection_window_exhaustion() {
     let mut server = TestServer::connect_h2(
         // A basic HTTP/2 server configuration with no overrides.
         H2Settings::default(),
+        time::Duration::MAX,
         // An HTTP/2 client with constrained connection and stream windows to
         // force window exhaustion.
         hyper::client::conn::Builder::new()
@@ -86,6 +87,105 @@ async fn h2_connection_window_exhaustion() {
     assert_eq!(body.to_bytes(), bytes);
 }
 
+/// Tests how the server behaves when the client connection window is exhausted.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn h2_progress_timeout() {
+    let _trace = linkerd_tracing::test::with_default_filter(LOG_LEVEL);
+
+    // Setup a HTTP/2 server with consumers and producers that are mocked for
+    // tests.
+    const CONCURRENCY: u32 = 3;
+    const CLIENT_STREAM_WINDOW: u32 = 65535;
+    const CLIENT_CONN_WINDOW: u32 = CONCURRENCY * CLIENT_STREAM_WINDOW;
+    const PROGRESS_TIMEOUT: time::Duration = time::Duration::from_secs(10);
+
+    tracing::info!("Connecting to server");
+    let mut server = TestServer::connect_h2(
+        // A basic HTTP/2 server configuration with no overrides.
+        H2Settings::default(),
+        PROGRESS_TIMEOUT,
+        // An HTTP/2 client with constrained connection and stream windows to
+        // force window exhaustion.
+        hyper::client::conn::Builder::new()
+            .http2_initial_connection_window_size(CLIENT_CONN_WINDOW)
+            .http2_initial_stream_window_size(CLIENT_STREAM_WINDOW),
+    )
+    .await;
+
+    // Mocked response data to fill up the stream and connection windows.
+    let bytes = (0..CLIENT_STREAM_WINDOW).map(|_| b'a').collect::<Bytes>();
+
+    // Response bodies held to exhaust connection window.
+    let mut retain = vec![];
+
+    // Streams 1 and 3
+    tracing::info!(
+        streams = CONCURRENCY - 1,
+        data = bytes.len(),
+        "Consuming connection window"
+    );
+    for _ in 0..CONCURRENCY - 1 {
+        let (mut tx, rx) = timeout(server.get()).await.expect("timed out");
+        tx.send_data(bytes.clone()).await.expect("send data");
+        retain.push((tx, rx));
+    }
+
+    // Stream 5...
+    tracing::info!("Processing a stream with available connection window");
+    let rx = timeout(server.respond(bytes.clone()))
+        .await
+        .expect("timed out");
+    let body = timeout(rx.collect().instrument(info_span!("collect")))
+        .await
+        .expect("response timed out")
+        .expect("response");
+    assert_eq!(body.to_bytes(), bytes);
+
+    // Stream 7...
+    tracing::info!("Consuming the remaining connection window");
+    let (mut tx, rx) = timeout(server.get()).await.expect("timed out");
+    tx.send_data(bytes.clone()).await.expect("send data");
+    retain.push((tx, rx));
+
+    tracing::info!("The connection window is exhausted");
+
+    time::sleep(PROGRESS_TIMEOUT / 2).await;
+
+    for (tx, _rx) in retain.iter_mut() {
+        timeout(futures::future::poll_fn(|cx| tx.poll_ready(cx)))
+            .await
+            .expect("timed out")
+            .expect("ready");
+    }
+
+    // Stream 9...
+    tracing::info!("Trying to process an additional stream. The response headers are received but no data is received.");
+    let mut rx = timeout(server.respond(bytes.clone()))
+        .await
+        .expect("timed out");
+    timeout(rx.data()).await.expect_err("data should time out");
+
+    time::sleep(PROGRESS_TIMEOUT / 2).await;
+    tracing::info!(
+        "The progress timeout should have expired,checking that retained streams have been closed"
+    );
+    for (mut tx, rx) in retain.into_iter() {
+        let err = timeout(futures::future::poll_fn(|cx| tx.poll_ready(cx)))
+            .await
+            .expect("timed out")
+            .expect_err("ready");
+        assert!(err.is_closed());
+        drop(rx);
+    }
+
+    tracing::info!("After dropping client bodies, connection capacity allows for data");
+    let body = timeout(rx.collect().instrument(info_span!("collect")))
+        .await
+        .expect("response timed out")
+        .expect("response");
+    assert_eq!(body.to_bytes(), bytes);
+}
+
 /// Tests how the server behaves when the client stream window is exhausted.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn h2_stream_window_exhaustion() {
@@ -98,6 +198,7 @@ async fn h2_stream_window_exhaustion() {
     let mut server = TestServer::connect_h2(
         // A basic HTTP/2 server configuration with no overrides.
         H2Settings::default(),
+        time::Duration::MAX,
         // An HTTP/2 client with stream windows to force window exhaustion.
         hyper::client::conn::Builder::new().http2_initial_stream_window_size(CLIENT_STREAM_WINDOW),
     )
@@ -139,7 +240,7 @@ async fn h2_stream_window_exhaustion() {
 
 // === Utilities ===
 
-const LOG_LEVEL: &str = "h2::proto=trace,hyper=trace,linkerd=trace,info";
+const LOG_LEVEL: &str = "h2=trace,h2::hpack=off,hyper=trace,linkerd=trace,info";
 
 struct TestServer {
     client: hyper::client::conn::SendRequest<BoxBody>,
@@ -201,12 +302,17 @@ impl TestServer {
         Self { client, server }
     }
 
-    async fn connect_h2(h2: H2Settings, client: &mut hyper::client::conn::Builder) -> Self {
+    async fn connect_h2(
+        h2: H2Settings,
+        progress_timeout: time::Duration,
+        client: &mut hyper::client::conn::Builder,
+    ) -> Self {
         Self::connect(
             // A basic HTTP/2 server configuration with no overrides.
             Params {
                 drain: drain(),
                 version: Version::H2,
+                progress_timeout,
                 h2,
             },
             // An HTTP/2 client with constrained connection and stream windows to accomodate
@@ -234,7 +340,7 @@ impl TestServer {
         (tx, rsp.into_body())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip_all)]
     async fn respond(&mut self, body: Bytes) -> hyper::Body {
         let (mut tx, rx) = self.get().await;
         tx.send_data(body.clone()).await.expect("send data");

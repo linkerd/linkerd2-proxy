@@ -40,6 +40,7 @@ try-lock = "0.2"
 linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }
+linkerd-http-body-timeout = { path = "../../http/body-timeout" }
 linkerd-http-box = { path = "../../http/box" }
 linkerd-http-classify = { path = "../../http/classify" }
 linkerd-io = { path = "../../io" }

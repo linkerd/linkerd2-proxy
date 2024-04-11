@@ -302,11 +302,13 @@ impl<N> Outbound<N> {
                 .unlift_new()
                 .push(http::NewServeHttp::layer({
                     let h2 = config.proxy.server.h2_settings;
+                    let progress_timeout = config.proxy.server.progress_timeout;
                     let drain = rt.drain.clone();
                     move |http: &Http<T>| http::ServerParams {
-                            version: http.version,
-                            h2,
-                            drain: drain.clone()
+                        version: http.version,
+                        h2,
+                        drain: drain.clone(),
+                        progress_timeout,
                     }
                 }))
                 .check_new_service::<Http<T>, I>()

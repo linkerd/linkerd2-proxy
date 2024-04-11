@@ -3,6 +3,7 @@ use crate::{
     ClientHandle, TracingExecutor, Version,
 };
 use linkerd_error::Error;
+use linkerd_http_body_timeout::TimeoutResponseProgress;
 use linkerd_io::{self as io, PeerAddr};
 use linkerd_stack::{layer, ExtractParam, NewService};
 use std::{
@@ -10,6 +11,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
+use tokio::time;
 use tower::Service;
 use tracing::{debug, Instrument};
 
@@ -22,6 +24,8 @@ pub struct Params {
     pub version: Version,
     pub h2: H2Settings,
     pub drain: drain::Watch,
+
+    pub progress_timeout: time::Duration,
 }
 
 // A stack that builds HTTP servers.
@@ -38,6 +42,8 @@ pub struct ServeHttp<N> {
     server: hyper::server::conn::Http<TracingExecutor>,
     inner: N,
     drain: drain::Watch,
+
+    progress_timeout: time::Duration,
 }
 
 // === impl NewServeHttp ===
@@ -61,7 +67,12 @@ where
     type Service = ServeHttp<N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let Params { version, h2, drain } = self.params.extract_param(&target);
+        let Params {
+            version,
+            h2,
+            drain,
+            progress_timeout,
+        } = self.params.extract_param(&target);
 
         let mut srv = hyper::server::conn::Http::new().with_executor(TracingExecutor);
         srv.http2_initial_stream_window_size(h2.initial_stream_window_size)
@@ -78,6 +89,7 @@ where
             inner,
             version,
             drain,
+            progress_timeout,
             server: srv,
         }
     }
@@ -106,12 +118,14 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         let version = self.version;
         let drain = self.drain.clone();
+        let progress_timeout = self.progress_timeout;
         let mut server = self.server.clone();
 
         let res = io.peer_addr().map(|pa| {
             let (handle, closed) = ClientHandle::new(pa);
             let svc = self.inner.new_service(handle.clone());
             let svc = SetClientHandle::new(handle, svc);
+            let svc = TimeoutResponseProgress::new(progress_timeout, svc);
             (svc, closed)
         });
 
