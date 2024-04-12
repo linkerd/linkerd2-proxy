@@ -1,18 +1,30 @@
 use super::IdentityRequired;
-use crate::{http, trace_labels, Outbound};
-use linkerd_app_core::{drain, errors, http_tracing, io, svc, Error, Result};
+use crate::{trace_labels, Outbound};
+use linkerd_app_core::{
+    drain, errors, http_tracing, io, metrics::prom, proxy::http, svc, transport::OrigDstAddr,
+    Error, Result,
+};
 use tokio::time;
-
-#[derive(Copy, Clone, Debug)]
-pub(crate) struct ServerRescue {
-    emit_headers: bool,
-}
 
 #[derive(Clone, Debug)]
 pub struct ExtractServerParams {
     h2: http::h2::Settings,
     drain: drain::Watch,
     progress_timeout: time::Duration,
+    metrics: ServerMetrics,
+}
+
+pub(super) type ServerMetrics = http::ServerMetricFamilies<ServerLabels>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, prom::encoding::EncodeLabelSet)]
+pub struct ServerLabels {
+    pub(crate) target_port: u16,
+    pub(crate) http_version: &'static str,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct ServerRescue {
+    emit_headers: bool,
 }
 
 impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
@@ -71,6 +83,7 @@ impl<N> Outbound<N> {
     where
         // Target
         T: svc::Param<http::Version>,
+        T: svc::Param<OrigDstAddr>,
         T: Clone + Send + Unpin + 'static,
         // Server-side socket
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
@@ -85,12 +98,14 @@ impl<N> Outbound<N> {
         NSvc::Future: Send,
     {
         self.map_stack(|config, rt, http| {
+            let metrics = rt.metrics.prom.http.server.clone();
             http.unlift_new()
                 .push(svc::ArcNewService::layer())
                 .push(http::NewServeHttp::layer(ExtractServerParams {
                     h2: config.proxy.server.h2_settings,
                     drain: rt.drain.clone(),
                     progress_timeout: config.proxy.server.progress_timeout,
+                    metrics,
                 }))
         })
     }
@@ -192,14 +207,21 @@ impl errors::HttpRescue<Error> for ServerRescue {
 impl<T> svc::ExtractParam<http::ServerParams, T> for ExtractServerParams
 where
     T: svc::Param<http::Version>,
+    T: svc::Param<OrigDstAddr>,
 {
     #[inline]
     fn extract_param(&self, t: &T) -> http::ServerParams {
+        let version = t.param();
+        let OrigDstAddr(addr) = t.param();
         http::ServerParams {
-            version: t.param(),
+            version,
             h2: self.h2,
             drain: self.drain.clone(),
             progress_timeout: self.progress_timeout,
+            metrics: self.metrics.metrics(&ServerLabels {
+                target_port: addr.port(),
+                http_version: version.as_str(),
+            }),
         }
     }
 }

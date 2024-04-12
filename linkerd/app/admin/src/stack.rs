@@ -121,18 +121,25 @@ impl Config {
             .push_on_service(http::BoxResponse::layer())
             .arc_new_clone_http();
 
-        let h2 = self.server.h2_settings;
-        let progress_timeout = self.server.progress_timeout;
         let tcp = http
             .unlift_new()
             .push(http::NewServeHttp::layer({
+                let h2 = self.server.h2_settings;
+                let progress_timeout = self.server.progress_timeout;
+                let metrics = metrics.http_server.clone();
                 let drain = drain.clone();
                 move |t: &Http| {
+                    let OrigDstAddr(addr) = t.param();
                     http::ServerParams {
                         version: t.version,
                         h2,
                         progress_timeout,
                         drain: drain.clone(),
+                        metrics: metrics.metrics(&inbound::HttpServerLabels {
+                            target_port: addr.port(),
+                            http_version: t.version.as_str(),
+                            server: t.param(),
+                        }),
                     }
                 }
             }))

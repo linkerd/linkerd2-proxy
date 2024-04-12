@@ -26,6 +26,7 @@ pub struct Params {
     pub drain: drain::Watch,
 
     pub progress_timeout: time::Duration,
+    pub metrics: Metrics,
 }
 
 // A stack that builds HTTP servers.
@@ -44,7 +45,11 @@ pub struct ServeHttp<N> {
     drain: drain::Watch,
 
     progress_timeout: time::Duration,
+    metrics: Metrics,
 }
+
+pub type MetricFamilies<L> = linkerd_http_body_timeout::MetricFamilies<L>;
+type Metrics = linkerd_http_body_timeout::Metrics;
 
 // === impl NewServeHttp ===
 
@@ -72,6 +77,7 @@ where
             h2,
             drain,
             progress_timeout,
+            metrics,
         } = self.params.extract_param(&target);
 
         let mut srv = hyper::server::conn::Http::new().with_executor(TracingExecutor);
@@ -91,6 +97,7 @@ where
             drain,
             progress_timeout,
             server: srv,
+            metrics,
         }
     }
 }
@@ -118,14 +125,14 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         let version = self.version;
         let drain = self.drain.clone();
-        let progress_timeout = self.progress_timeout;
         let mut server = self.server.clone();
 
         let res = io.peer_addr().map(|pa| {
             let (handle, closed) = ClientHandle::new(pa);
             let svc = self.inner.new_service(handle.clone());
             let svc = SetClientHandle::new(handle, svc);
-            let svc = TimeoutResponseProgress::new(progress_timeout, svc);
+            let svc =
+                TimeoutResponseProgress::new(self.metrics.clone(), self.progress_timeout, svc);
             (svc, closed)
         });
 

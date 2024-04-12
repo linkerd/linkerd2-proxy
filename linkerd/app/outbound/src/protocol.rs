@@ -1,5 +1,5 @@
 use crate::{http, Outbound};
-use linkerd_app_core::{detect, io, svc, Error, Infallible};
+use linkerd_app_core::{detect, io, svc, transport::OrigDstAddr, Error, Infallible};
 use std::{fmt::Debug, hash::Hash};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -33,6 +33,7 @@ impl<N> Outbound<N> {
     where
         // Target type indicating whether detection should be skipped.
         T: svc::Param<Protocol>,
+        T: svc::Param<OrigDstAddr>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -50,13 +51,19 @@ impl<N> Outbound<N> {
             let h2 = config.proxy.server.h2_settings;
             let progress_timeout = config.proxy.server.progress_timeout;
             let drain = rt.drain.clone();
+            let metrics = rt.metrics.prom.http.server.clone();
             stk.unlift_new()
                 .push(http::NewServeHttp::layer(move |t: &Http<T>| {
+                    let OrigDstAddr(addr) = t.param();
                     http::ServerParams {
                         version: t.version,
                         h2,
                         drain: drain.clone(),
                         progress_timeout,
+                        metrics: metrics.metrics(&http::ServerLabels {
+                            target_port: addr.port(),
+                            http_version: t.version.as_str(),
+                        }),
                     }
                 }))
                 .arc_new_tcp()

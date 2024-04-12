@@ -38,7 +38,9 @@ pub use self::{
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,
-    server::{NewServeHttp, Params as ServerParams, ServeHttp},
+    server::{
+        MetricFamilies as ServerMetricFamilies, NewServeHttp, Params as ServerParams, ServeHttp,
+    },
     strip_header::StripHeader,
     timeout::{NewTimeout, ResponseTimeout, ResponseTimeoutError},
     version::Version,

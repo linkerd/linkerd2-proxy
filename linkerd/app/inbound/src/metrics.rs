@@ -13,6 +13,8 @@ pub(crate) mod error;
 
 pub use linkerd_app_core::metrics::*;
 
+use crate::http::HttpServerMetricFamilies;
+
 /// Holds outbound proxy metrics.
 #[derive(Clone, Debug)]
 pub struct InboundMetrics {
@@ -22,19 +24,22 @@ pub struct InboundMetrics {
     pub(crate) tcp_authz: authz::TcpAuthzMetrics,
     pub tcp_errors: error::TcpErrorMetrics,
 
+    pub http_server: HttpServerMetricFamilies,
+
     /// Holds metrics that are common to both inbound and outbound proxies. These metrics are
     /// reported separately
     pub proxy: Proxy,
 }
 
 impl InboundMetrics {
-    pub(crate) fn new(proxy: Proxy) -> Self {
+    pub(crate) fn new(proxy: Proxy, http_server: HttpServerMetricFamilies) -> Self {
         Self {
             http_authz: authz::HttpAuthzMetrics::default(),
             http_errors: error::HttpErrorMetrics::default(),
             tcp_authz: authz::TcpAuthzMetrics::default(),
             tcp_errors: error::TcpErrorMetrics::default(),
             proxy,
+            http_server,
         }
     }
 }

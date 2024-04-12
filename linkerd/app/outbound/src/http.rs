@@ -23,7 +23,7 @@ mod retry;
 mod server;
 
 pub use self::logical::{policy, profile, LogicalAddr, Routes};
-pub(crate) use self::require_id_header::IdentityRequired;
+pub(crate) use self::{require_id_header::IdentityRequired, server::ServerLabels};
 pub use linkerd_app_core::proxy::http::{self as http, *};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -31,6 +31,7 @@ pub struct Http<T>(T);
 
 #[derive(Clone, Debug, Default)]
 pub struct HttpMetrics {
+    pub(crate) server: server::ServerMetrics,
     balancer: concrete::BalancerMetrics,
     http_route: policy::RouteMetrics,
     grpc_route: policy::RouteMetrics,
@@ -132,6 +133,9 @@ where
 impl HttpMetrics {
     pub fn register(registry: &mut prom::Registry) -> Self {
         let http = registry.sub_registry_with_prefix("http");
+
+        let server = server::ServerMetrics::register(http.sub_registry_with_prefix("server"));
+
         let http_route = policy::RouteMetrics::register(http.sub_registry_with_prefix("route"));
         let balancer =
             concrete::BalancerMetrics::register(http.sub_registry_with_prefix("balancer"));
@@ -140,6 +144,7 @@ impl HttpMetrics {
         let grpc_route = policy::RouteMetrics::register(grpc.sub_registry_with_prefix("route"));
 
         Self {
+            server,
             balancer,
             http_route,
             grpc_route,

@@ -10,6 +10,15 @@ pub enum Version {
 #[error("unsupported HTTP version {:?}", self.0)]
 pub struct Unsupported(http::Version);
 
+impl Version {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Http1 => "HTTP/1",
+            Self::H2 => "HTTP/2",
+        }
+    }
+}
+
 impl std::convert::TryFrom<http::Version> for Version {
     type Error = Unsupported;
     fn try_from(v: http::Version) -> Result<Self, Unsupported> {

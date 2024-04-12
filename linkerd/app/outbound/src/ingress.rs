@@ -304,11 +304,16 @@ impl<N> Outbound<N> {
                     let h2 = config.proxy.server.h2_settings;
                     let progress_timeout = config.proxy.server.progress_timeout;
                     let drain = rt.drain.clone();
+                    let metrics = rt.metrics.prom.http.server.clone();
                     move |http: &Http<T>| http::ServerParams {
                         version: http.version,
                         h2,
                         drain: drain.clone(),
                         progress_timeout,
+                        metrics: metrics.metrics(&http::ServerLabels {
+                            target_port: svc::Param::<OrigDstAddr>::param(&http.parent).port(),
+                            http_version: http.version.as_str(),
+                        }),
                     }
                 }))
                 .check_new_service::<Http<T>, I>()

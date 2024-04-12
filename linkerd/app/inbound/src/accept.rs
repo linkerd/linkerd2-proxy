@@ -181,7 +181,11 @@ mod tests {
     }
 
     fn inbound() -> Inbound<()> {
-        Inbound::new(test_util::default_config(), test_util::runtime().0)
+        Inbound::new(
+            test_util::default_config(),
+            test_util::runtime().0,
+            Default::default(),
+        )
     }
 
     fn new_panic<T>(msg: &'static str) -> svc::ArcNewTcp<T, io::DuplexStream> {

@@ -4,6 +4,8 @@ mod set_identity_header;
 #[cfg(test)]
 mod tests;
 
+pub use self::server::{HttpServerLabels, HttpServerMetricFamilies};
+
 fn trace_labels() -> std::collections::HashMap<String, String> {
     let mut l = std::collections::HashMap::new();
     l.insert("direction".to_string(), "inbound".to_string());

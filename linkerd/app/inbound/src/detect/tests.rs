@@ -209,7 +209,11 @@ fn orig_dst_addr() -> OrigDstAddr {
 }
 
 fn inbound() -> Inbound<()> {
-    Inbound::new(test_util::default_config(), test_util::runtime().0)
+    Inbound::new(
+        test_util::default_config(),
+        test_util::runtime().0,
+        Default::default(),
+    )
 }
 
 fn new_panic<T, I: 'static>(msg: &'static str) -> svc::ArcNewTcp<T, I> {

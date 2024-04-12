@@ -32,7 +32,7 @@ fn build_server<I>(
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {
-    Inbound::new(cfg, rt)
+    Inbound::new(cfg, rt, Default::default())
         .with_stack(connect)
         .map_stack(|cfg, _, s| {
             s.push_map_target(|t| Param::<Remote<ServerAddr>>::param(&t))

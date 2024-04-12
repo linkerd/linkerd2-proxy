@@ -6,6 +6,7 @@ use http::{HeaderMap, HeaderValue};
 use http_body::Body;
 use linkerd_error::Error;
 use pin_project::pin_project;
+use prometheus_client::metrics::{counter::Counter, family::Family};
 use std::{
     future::Future,
     pin::Pin,
@@ -16,11 +17,75 @@ use tokio::time;
 pub struct TimeoutRequestProgress<S> {
     inner: S,
     timeout: time::Duration,
+    metrics: Metrics,
 }
 
 pub struct TimeoutResponseProgress<S> {
     inner: S,
     timeout: time::Duration,
+    metrics: Metrics,
+}
+
+#[derive(Clone, Debug)]
+pub struct MetricFamilies<L: Clone> {
+    timeouts: Family<L, Counter>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Metrics {
+    timeouts: Counter,
+}
+
+impl<L> MetricFamilies<L>
+where
+    L: prometheus_client::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone + Send + Sync + 'static,
+{
+    /// Registers metrics families (i.e. with labels).
+    pub fn register(registry: &mut prometheus_client::registry::Registry) -> Self {
+        let timeouts = Family::default();
+        registry.register(
+            "stream_progress_timeouts",
+            "The number of progress timeouts that have triggered on HTTP resopnse streams",
+            timeouts.clone(),
+        );
+        Self { timeouts }
+    }
+
+    pub fn metrics(&self, labels: &L) -> Metrics {
+        let timeouts = self.timeouts.get_or_create(labels).clone();
+        Metrics { timeouts }
+    }
+}
+
+impl<L> Default for MetricFamilies<L>
+where
+    L: prometheus_client::encoding::EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
+    L: Eq + Clone + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self {
+            timeouts: Family::default(),
+        }
+    }
+}
+
+impl Metrics {
+    /// Registers singleton metrics (i.e. without labels).
+    pub fn register(registry: &mut prometheus_client::registry::Registry) -> Self {
+        let timeouts = Counter::default();
+        registry.register(
+            "stream_progress_timeouts",
+            "The number of progress timeouts that have triggered on HTTP resopnse streams",
+            timeouts.clone(),
+        );
+        Self { timeouts }
+    }
+
+    /// Returns the current value of the timeouts counter. For tests.
+    pub fn timeouts(&self) -> u64 {
+        self.timeouts.get()
+    }
 }
 
 /// A [`Body`] that imposes a timeout on the amount of time the stream may be
@@ -33,6 +98,7 @@ pub struct ProgressTimeoutBody<B> {
     sleep: Pin<Box<time::Sleep>>,
     timeout: time::Duration,
     is_pending: bool,
+    metrics: Metrics,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -42,8 +108,12 @@ pub struct BodyProgressTimeoutError(time::Duration);
 // === impl TimeoutRequestProgress ===
 
 impl<S> TimeoutRequestProgress<S> {
-    pub fn new(timeout: time::Duration, inner: S) -> Self {
-        Self { inner, timeout }
+    pub fn new(metrics: Metrics, timeout: time::Duration, inner: S) -> Self {
+        Self {
+            inner,
+            timeout,
+            metrics,
+        }
     }
 }
 
@@ -63,15 +133,19 @@ where
     #[inline]
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         self.inner
-            .call(req.map(|b| ProgressTimeoutBody::new(self.timeout, b)))
+            .call(req.map(|b| ProgressTimeoutBody::new(self.metrics.clone(), self.timeout, b)))
     }
 }
 
 // === impl TimeoutResponseProgress ===
 
 impl<S> TimeoutResponseProgress<S> {
-    pub fn new(timeout: time::Duration, inner: S) -> Self {
-        Self { inner, timeout }
+    pub fn new(metrics: Metrics, timeout: time::Duration, inner: S) -> Self {
+        Self {
+            inner,
+            timeout,
+            metrics,
+        }
     }
 }
 
@@ -93,9 +167,10 @@ where
     #[inline]
     fn call(&mut self, req: Req) -> Self::Future {
         let timeout = self.timeout;
+        let metrics = self.metrics.clone();
         self.inner
             .call(req)
-            .map_ok(move |res| res.map(|b| ProgressTimeoutBody::new(timeout, b)))
+            .map_ok(move |res| res.map(|b| ProgressTimeoutBody::new(metrics, timeout, b)))
             .boxed()
     }
 }
@@ -103,7 +178,7 @@ where
 // === impl ProgressTimeoutBody ===
 
 impl<B> ProgressTimeoutBody<B> {
-    pub fn new(timeout: time::Duration, inner: B) -> Self {
+    pub fn new(metrics: Metrics, timeout: time::Duration, inner: B) -> Self {
         // Avoid overflows by capping MAX to roughly 30 years.
         const MAX: time::Duration = time::Duration::from_secs(86400 * 365 * 30);
         Self {
@@ -111,13 +186,14 @@ impl<B> ProgressTimeoutBody<B> {
             timeout: timeout.min(MAX),
             is_pending: false,
             sleep: Box::pin(time::sleep(MAX)),
+            metrics,
         }
     }
 }
 
 impl<B: Default> Default for ProgressTimeoutBody<B> {
     fn default() -> Self {
-        Self::new(time::Duration::MAX, B::default())
+        Self::new(Metrics::default(), time::Duration::MAX, B::default())
     }
 }
 
@@ -168,7 +244,10 @@ where
         }
 
         futures::ready!(this.sleep.as_mut().poll(cx));
-        tracing::debug!(timeout = ?*this.timeout, "Progress timed out");
+
+        tracing::debug!(timeout = ?this.timeout, "Body progress timed out");
+        this.metrics.timeouts.inc();
+
         Poll::Ready(Err(::h2::Error::from(::h2::Reason::CANCEL).into()))
     }
 

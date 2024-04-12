@@ -45,8 +45,6 @@ pub struct ConcreteLabels(pub ParentRef, pub BackendRef);
 #[derive(Clone, Debug)]
 pub struct BalancerMetricsParams<K>(balance::MetricFamilies<K>);
 
-struct ScopedKey<'a, 'b>(&'a str, &'b str);
-
 // === impl BalancerMetricsPaarams ===
 
 impl<K> BalancerMetricsParams<K>
@@ -141,21 +139,15 @@ pub(crate) fn write_service_meta_labels(
     Ok(())
 }
 
-impl EncodeLabelKey for ScopedKey<'_, '_> {
-    fn encode(&self, enc: &mut LabelKeyEncoder<'_>) -> std::fmt::Result {
-        write!(enc, "{}_{}", self.0, self.1)
-    }
-}
-
 fn prom_encode_meta_labels(
     scope: &str,
     meta: &policy::Meta,
     enc: &mut LabelSetEncoder<'_>,
 ) -> std::fmt::Result {
-    (ScopedKey(scope, "group"), meta.group()).encode(enc.encode_label())?;
-    (ScopedKey(scope, "kind"), meta.kind()).encode(enc.encode_label())?;
-    (ScopedKey(scope, "namespace"), meta.namespace()).encode(enc.encode_label())?;
-    (ScopedKey(scope, "name"), meta.name()).encode(enc.encode_label())?;
+    (ScopedLabelKey(scope, "group"), meta.group()).encode(enc.encode_label())?;
+    (ScopedLabelKey(scope, "kind"), meta.kind()).encode(enc.encode_label())?;
+    (ScopedLabelKey(scope, "namespace"), meta.namespace()).encode(enc.encode_label())?;
+    (ScopedLabelKey(scope, "name"), meta.name()).encode(enc.encode_label())?;
     Ok(())
 }
 
@@ -166,10 +158,12 @@ fn prom_encode_service_labels(
 ) -> std::fmt::Result {
     prom_encode_meta_labels(scope, meta, enc)?;
     match meta.port() {
-        Some(port) => (ScopedKey(scope, "port"), port.to_string()).encode(enc.encode_label())?,
-        None => (ScopedKey(scope, "port"), "").encode(enc.encode_label())?,
+        Some(port) => {
+            (ScopedLabelKey(scope, "port"), port.to_string()).encode(enc.encode_label())?
+        }
+        None => (ScopedLabelKey(scope, "port"), "").encode(enc.encode_label())?,
     }
-    (ScopedKey(scope, "section_name"), meta.section()).encode(enc.encode_label())?;
+    (ScopedLabelKey(scope, "section_name"), meta.section()).encode(enc.encode_label())?;
     Ok(())
 }
 

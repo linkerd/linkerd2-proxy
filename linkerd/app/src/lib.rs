@@ -207,7 +207,7 @@ impl Config {
             span_sink: oc_collector.span_sink(),
             drain: drain_rx.clone(),
         };
-        let inbound = Inbound::new(inbound, runtime.clone());
+        let inbound = Inbound::new(inbound, runtime.clone(), Default::default());
         let outbound = Outbound::new(
             outbound,
             runtime,

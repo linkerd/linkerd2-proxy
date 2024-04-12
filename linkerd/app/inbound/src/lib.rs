@@ -18,7 +18,12 @@ mod server;
 #[cfg(any(test, feature = "test-util", fuzzing))]
 pub mod test_util;
 
-pub use self::{metrics::InboundMetrics, policy::DefaultPolicy};
+pub use self::{
+    http::{HttpServerLabels, HttpServerMetricFamilies},
+    metrics::InboundMetrics,
+    policy::DefaultPolicy,
+};
+
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig, QueueConfig},
     drain,
@@ -149,9 +154,13 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
-    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+    pub fn new(
+        config: Config,
+        runtime: ProxyRuntime,
+        server_metrics: HttpServerMetricFamilies,
+    ) -> Self {
         let runtime = Runtime {
-            metrics: InboundMetrics::new(runtime.metrics),
+            metrics: InboundMetrics::new(runtime.metrics, server_metrics),
             identity: runtime.identity,
             tap: runtime.tap,
             span_sink: runtime.span_sink,
@@ -167,7 +176,7 @@ impl Inbound<()> {
     #[cfg(any(test, feature = "test-util"))]
     pub fn for_test() -> (Self, drain::Signal) {
         let (rt, drain) = test_util::runtime();
-        let this = Self::new(test_util::default_config(), rt);
+        let this = Self::new(test_util::default_config(), rt, Default::default());
         (this, drain)
     }
 

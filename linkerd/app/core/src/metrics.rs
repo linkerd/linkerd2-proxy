@@ -124,6 +124,9 @@ pub enum Direction {
     Out,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct ScopedLabelKey<'a, 'b>(pub &'a str, pub &'b str);
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Authority<'a>(&'a http::uri::Authority);
 
@@ -450,5 +453,11 @@ impl FmtLabels for StackLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.direction.fmt_labels(f)?;
         write!(f, ",protocol=\"{}\",name=\"{}\"", self.protocol, self.name)
+    }
+}
+
+impl prom::encoding::EncodeLabelKey for ScopedLabelKey<'_, '_> {
+    fn encode(&self, enc: &mut prom::encoding::LabelKeyEncoder<'_>) -> std::fmt::Result {
+        write!(enc, "{}_{}", self.0, self.1)
     }
 }

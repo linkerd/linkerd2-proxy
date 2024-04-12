@@ -4,7 +4,7 @@ pub use linkerd_app_core::proxy::http::{normalize_uri, Version};
 use linkerd_app_core::{
     config::ProxyConfig,
     errors, http_tracing, io,
-    metrics::ServerLabel,
+    metrics::{prom, ServerLabel},
     proxy::http,
     svc::{self, ExtractParam, Param},
     tls,
@@ -24,6 +24,15 @@ struct ServerError {
     #[source]
     source: Error,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct HttpServerLabels {
+    pub target_port: u16,
+    pub http_version: &'static str,
+    pub server: ServerLabel,
+}
+
+pub type HttpServerMetricFamilies = http::ServerMetricFamilies<HttpServerLabels>;
 
 impl<H> Inbound<H> {
     /// Prepares HTTP requests for inbound processing. Fails requests when the
@@ -96,6 +105,8 @@ impl<H> Inbound<H> {
     where
         // Connection target.
         T: Param<Version>,
+        T: Param<ServerLabel>,
+        T: Param<OrigDstAddr>,
         T: Clone + Send + Unpin + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
@@ -115,15 +126,26 @@ impl<H> Inbound<H> {
             let h2 = config.proxy.server.h2_settings;
             let progress_timeout = config.proxy.server.progress_timeout;
             let drain = rt.drain.clone();
+            let server_metrics = rt.metrics.http_server.clone();
 
             http.check_new_service::<T, http::Request<http::BoxBody>>()
                 .unlift_new()
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
-                .push(http::NewServeHttp::layer(move |t: &T| http::ServerParams {
-                    version: t.param(),
-                    h2,
-                    progress_timeout,
-                    drain: drain.clone(),
+                .push(http::NewServeHttp::layer(move |t: &T| {
+                    let OrigDstAddr(addr) = t.param();
+                    let version: http::Version = t.param();
+                    let metrics = server_metrics.metrics(&HttpServerLabels {
+                        target_port: addr.port(),
+                        http_version: version.as_str(),
+                        server: t.param(),
+                    });
+                    http::ServerParams {
+                        version,
+                        h2,
+                        progress_timeout,
+                        metrics,
+                        drain: drain.clone(),
+                    }
                 }))
                 .check_new_service::<T, I>()
                 .arc_new_tcp()
@@ -142,6 +164,20 @@ where
             dst: t.param(),
             source,
         }
+    }
+}
+
+// === impl HttpServerLabels ===
+
+impl prom::encoding::EncodeLabelSet for HttpServerLabels {
+    fn encode(&self, mut enc: prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+        use prom::encoding::EncodeLabel;
+        ("target_port", self.target_port).encode(enc.encode_label())?;
+        let ServerLabel(ref srv) = self.server;
+        ("srv_group", srv.group()).encode(enc.encode_label())?;
+        ("srv_kind", srv.kind()).encode(enc.encode_label())?;
+        ("srv_name", srv.name()).encode(enc.encode_label())?;
+        Ok(())
     }
 }
 

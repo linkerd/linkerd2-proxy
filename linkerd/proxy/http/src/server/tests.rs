@@ -1,5 +1,3 @@
-use std::vec;
-
 use super::*;
 use bytes::Bytes;
 use http_body::Body;
@@ -25,6 +23,7 @@ async fn h2_connection_window_exhaustion() {
         // A basic HTTP/2 server configuration with no overrides.
         H2Settings::default(),
         time::Duration::MAX,
+        Metrics::default(),
         // An HTTP/2 client with constrained connection and stream windows to
         // force window exhaustion.
         hyper::client::conn::Builder::new()
@@ -99,11 +98,14 @@ async fn h2_progress_timeout() {
     const CLIENT_CONN_WINDOW: u32 = CONCURRENCY * CLIENT_STREAM_WINDOW;
     const PROGRESS_TIMEOUT: time::Duration = time::Duration::from_secs(10);
 
+    let metrics = Metrics::default();
+
     tracing::info!("Connecting to server");
     let mut server = TestServer::connect_h2(
         // A basic HTTP/2 server configuration with no overrides.
         H2Settings::default(),
         PROGRESS_TIMEOUT,
+        metrics.clone(),
         // An HTTP/2 client with constrained connection and stream windows to
         // force window exhaustion.
         hyper::client::conn::Builder::new()
@@ -151,6 +153,7 @@ async fn h2_progress_timeout() {
 
     time::sleep(PROGRESS_TIMEOUT / 2).await;
 
+    assert_eq!(metrics.timeouts(), 0, "no timeouts yet");
     for (tx, _rx) in retain.iter_mut() {
         timeout(futures::future::poll_fn(|cx| tx.poll_ready(cx)))
             .await
@@ -169,6 +172,7 @@ async fn h2_progress_timeout() {
     tracing::info!(
         "The progress timeout should have expired,checking that retained streams have been closed"
     );
+    assert_eq!(metrics.timeouts(), CONCURRENCY as u64, "timeouts expected");
     for (mut tx, rx) in retain.into_iter() {
         let err = timeout(futures::future::poll_fn(|cx| tx.poll_ready(cx)))
             .await
@@ -199,6 +203,7 @@ async fn h2_stream_window_exhaustion() {
         // A basic HTTP/2 server configuration with no overrides.
         H2Settings::default(),
         time::Duration::MAX,
+        Metrics::default(),
         // An HTTP/2 client with stream windows to force window exhaustion.
         hyper::client::conn::Builder::new().http2_initial_stream_window_size(CLIENT_STREAM_WINDOW),
     )
@@ -305,6 +310,7 @@ impl TestServer {
     async fn connect_h2(
         h2: H2Settings,
         progress_timeout: time::Duration,
+        metrics: Metrics,
         client: &mut hyper::client::conn::Builder,
     ) -> Self {
         Self::connect(
@@ -313,6 +319,7 @@ impl TestServer {
                 drain: drain(),
                 version: Version::H2,
                 progress_timeout,
+                metrics,
                 h2,
             },
             // An HTTP/2 client with constrained connection and stream windows to accomodate
