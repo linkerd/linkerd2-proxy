@@ -1,7 +1,7 @@
 use super::Gateway;
 use inbound::{GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_core::{
-    metrics::{prom, ServerLabel},
+    metrics::ServerLabel,
     profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
@@ -47,7 +47,6 @@ impl Gateway {
     /// outbound router.
     pub fn http<T, R>(
         &self,
-        registry: &mut prom::Registry,
         inner: svc::ArcNewHttp<
             outbound::http::concrete::Endpoint<
                 outbound::http::logical::Concrete<outbound::http::Http<Target>>,
@@ -86,7 +85,7 @@ impl Gateway {
             .outbound
             .clone()
             .with_stack(inner)
-            .push_http_cached(outbound::http::HttpMetrics::register(registry), resolve)
+            .push_http_cached(resolve)
             .into_stack()
             // Discard `T` and its associated client-specific metadata.
             .push_map_target(Target::discard_parent)

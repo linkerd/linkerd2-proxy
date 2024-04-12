@@ -23,7 +23,7 @@ async fn http11_forward() {
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt)
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(connect)
         .push_http_tcp_client()
         .push_http_endpoint()
@@ -59,7 +59,7 @@ async fn http2_forward() {
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt)
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(connect)
         .push_http_tcp_client()
         .push_http_endpoint::<http::BoxBody>()
@@ -97,7 +97,7 @@ async fn orig_proto_upgrade() {
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt)
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(connect)
         .push_http_tcp_client()
         .push_http_endpoint::<http::BoxBody>()
@@ -147,7 +147,7 @@ async fn orig_proto_skipped_on_http_upgrade() {
     // Build the outbound server
     let (rt, _shutdown) = runtime();
     let drain = rt.drain.clone();
-    let stack = Outbound::new(default_config(), rt)
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(connect)
         .push_http_tcp_client()
         .push_http_endpoint::<http::BoxBody>()
@@ -195,7 +195,7 @@ async fn orig_proto_http2_noop() {
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt)
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(connect)
         .push_http_tcp_client()
         .push_http_endpoint::<http::BoxBody>()

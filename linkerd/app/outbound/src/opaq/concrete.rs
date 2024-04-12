@@ -47,6 +47,8 @@ pub struct Endpoint<T> {
     parent: T,
 }
 
+pub type BalancerMetrics = BalancerMetricsParams<ConcreteLabels>;
+
 /// A target configuring a load balancer stack.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Balance<T> {
@@ -58,7 +60,7 @@ struct Balance<T> {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-struct ConcreteLabels {
+pub struct ConcreteLabels {
     logical: Arc<str>,
     concrete: Arc<str>,
 }
@@ -102,7 +104,6 @@ impl<C> Outbound<C> {
     /// services.
     pub fn push_opaq_concrete<T, I, R>(
         self,
-        registry: &mut prom::Registry,
         resolve: R,
     ) -> Outbound<
         svc::ArcNewService<
@@ -129,9 +130,6 @@ impl<C> Outbound<C> {
         let resolve =
             svc::MapTargetLayer::new(|t: Balance<T>| -> ConcreteAddr { ConcreteAddr(t.concrete) })
                 .layer(resolve.into_service());
-
-        let metrics_params =
-            BalancerMetricsParams::register(registry.sub_registry_with_prefix("balancer"));
 
         self.map_stack(|config, rt, inner| {
             let queue = config.tcp_connection_queue;
@@ -174,7 +172,10 @@ impl<C> Outbound<C> {
                     },
                 )
                 .lift_new_with_target()
-                .push(tcp::NewBalance::layer(resolve, metrics_params))
+                .push(tcp::NewBalance::layer(
+                    resolve,
+                    rt.metrics.prom.opaq.balance.clone(),
+                ))
                 .push(svc::NewMapErr::layer_from_target::<ConcreteError, _>())
                 .push_on_service(
                     rt.metrics

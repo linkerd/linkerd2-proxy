@@ -2255,6 +2255,7 @@ dependencies = [
  "jemallocator",
  "linkerd-app",
  "linkerd-meshtls",
+ "linkerd-metrics",
  "linkerd-signal",
  "num_cpus",
  "tokio",

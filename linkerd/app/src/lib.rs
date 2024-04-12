@@ -17,10 +17,9 @@ use futures::{future, Future, FutureExt};
 use linkerd_app_admin as admin;
 use linkerd_app_core::{
     config::ServerConfig,
-    control::ControlAddr,
+    control::{ControlAddr, Metrics as ControlMetrics},
     dns, drain,
-    metrics::prom,
-    metrics::FmtMetrics,
+    metrics::{prom, FmtMetrics},
     serve,
     svc::Param,
     transport::{addrs::*, listen::Bind},
@@ -100,6 +99,7 @@ impl Config {
         bind_admin: BAdmin,
         shutdown_tx: mpsc::UnboundedSender<()>,
         log_level: trace::Handle,
+        mut registry: prom::Registry,
     ) -> Result<App, Error>
     where
         BIn: Bind<ServerConfig> + 'static,
@@ -131,16 +131,18 @@ impl Config {
         debug!("Building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
-        let mut registry = prom::Registry::default();
-
         debug!("Building DNS client");
         let dns = dns.build();
 
         // Ensure that we've obtained a valid identity before binding any servers.
         debug!("Building Identity client");
         let identity = {
+            let id_metrics = identity::IdentityMetrics::register(
+                registry.sub_registry_with_prefix("control_identity"),
+            );
+
             info_span!("identity").in_scope(|| {
-                identity.build(dns.resolver.clone(), metrics.control.clone(), &mut registry)
+                identity.build(dns.resolver.clone(), metrics.control.clone(), id_metrics)
             })?
         };
 
@@ -155,31 +157,47 @@ impl Config {
 
         debug!("Building Destination client");
         let dst = {
-            let registry = registry.sub_registry_with_prefix("control_destination");
+            let control_metrics =
+                ControlMetrics::register(registry.sub_registry_with_prefix("control_destination"));
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst")
-                .in_scope(|| dst.build(dns, metrics, registry, identity.receiver().new_client()))
+            info_span!("dst").in_scope(|| {
+                dst.build(
+                    dns,
+                    metrics,
+                    control_metrics,
+                    identity.receiver().new_client(),
+                )
+            })
         }?;
 
         debug!("Building Policy client");
         let policies = {
-            let registry = registry.sub_registry_with_prefix("control_policy");
+            let control_metrics =
+                ControlMetrics::register(registry.sub_registry_with_prefix("control_policy"));
             let dns = dns.resolver.clone();
             let metrics = metrics.control.clone();
-            info_span!("policy")
-                .in_scope(|| policy.build(dns, metrics, registry, identity.receiver().new_client()))
+            info_span!("policy").in_scope(|| {
+                policy.build(
+                    dns,
+                    metrics,
+                    control_metrics,
+                    identity.receiver().new_client(),
+                )
+            })
         }?;
 
         debug!(config = ?oc_collector, "Building client");
         let oc_collector = {
-            let registry = registry.sub_registry_with_prefix("opencensus");
+            let control_metrics =
+                ControlMetrics::register(registry.sub_registry_with_prefix("opencensus"));
             let identity = identity.receiver().new_client();
             let dns = dns.resolver;
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
-            info_span!("opencensus")
-                .in_scope(|| oc_collector.build(identity, dns, metrics, registry, client_metrics))
+            info_span!("opencensus").in_scope(|| {
+                oc_collector.build(identity, dns, metrics, control_metrics, client_metrics)
+            })
         }?;
 
         let runtime = ProxyRuntime {
@@ -190,7 +208,11 @@ impl Config {
             drain: drain_rx.clone(),
         };
         let inbound = Inbound::new(inbound, runtime.clone());
-        let outbound = Outbound::new(outbound, runtime);
+        let outbound = Outbound::new(
+            outbound,
+            runtime,
+            registry.sub_registry_with_prefix("outbound"),
+        );
 
         let inbound_policies = inbound.build_policies(
             policies.workload.clone(),
@@ -207,8 +229,9 @@ impl Config {
         );
 
         let dst_addr = dst.addr.clone();
+        // registry.sub_registry_with_prefix("gateway"),
+
         let gateway = gateway::Gateway::new(gateway, inbound.clone(), outbound.clone()).stack(
-            registry.sub_registry_with_prefix("gateway"),
             dst.resolve.clone(),
             dst.profiles.clone(),
             outbound_policies.clone(),
@@ -231,12 +254,7 @@ impl Config {
             .bind(&outbound.config().proxy.server)
             .expect("Failed to bind outbound listener");
         let outbound_metrics = outbound.metrics();
-        let outbound = outbound.mk(
-            registry.sub_registry_with_prefix("outbound"),
-            dst.profiles.clone(),
-            outbound_policies,
-            dst.resolve.clone(),
-        );
+        let outbound = outbound.mk(dst.profiles.clone(), outbound_policies, dst.resolve.clone());
 
         // Build a task that initializes and runs the proxy stacks.
         let start_proxy = {
