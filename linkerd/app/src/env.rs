@@ -5,7 +5,7 @@ use linkerd_app_core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
     tls,
-    transport::{Keepalive, ListenAddr},
+    transport::{DualListenAddr, Keepalive, ListenAddr},
     Addr, AddrMatch, Conditional, IpNet,
 };
 use linkerd_tonic_stream::ReceiveLimits;
@@ -467,22 +467,19 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         )?
         .unwrap_or(ingress_mode);
 
-        let (addr, addr_additional) = match outbound_listener_addrs {
-            Ok(Some(addrs)) if addrs.len() == 1 => (ListenAddr(addrs[0]), None),
-            Ok(Some(addrs)) if addrs.len() == 2 => {
-                (ListenAddr(addrs[0]), Some(ListenAddr(addrs[1])))
-            }
+        let addr = match outbound_listener_addrs {
+            Ok(Some(addrs)) if addrs.len() == 1 => DualListenAddr(addrs[0], None),
+            Ok(Some(addrs)) if addrs.len() == 2 => DualListenAddr(addrs[0], Some(addrs[1])),
             _ => {
                 let addr = outbound_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap());
-                (ListenAddr(addr), None)
+                DualListenAddr(addr, None)
             }
         };
 
         let keepalive = Keepalive(outbound_accept_keepalive?);
         let server = ServerConfig {
             addr,
-            addr_additional,
             keepalive,
             h2_settings,
         };
@@ -557,14 +554,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap());
 
     let inbound = {
-        let addr = ListenAddr(
+        let addr = DualListenAddr(
             inbound_listener_addr?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
+            None,
         );
         let keepalive = Keepalive(inbound_accept_keepalive?);
         let server = ServerConfig {
             addr,
-            addr_additional: None,
             keepalive,
             h2_settings,
         };
@@ -600,7 +597,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // Ensure that connections that directly target the inbound port are secured (unless
         // identity is disabled).
         let policy = {
-            let inbound_port = server.addr.port();
+            let inbound_port = ListenAddr(server.addr.0).port();
 
             let cluster_nets = parse(strings, ENV_POLICY_CLUSTER_NETWORKS, parse_networks)?
                 .unwrap_or_else(|| {
@@ -759,8 +756,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let admin = super::admin::Config {
         metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
         server: ServerConfig {
-            addr: ListenAddr(admin_listener_addr),
-            addr_additional: None,
+            addr: DualListenAddr(admin_listener_addr, None),
             keepalive: inbound.proxy.server.keepalive,
             h2_settings,
         },
@@ -819,8 +815,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .map(|(addr, ids)| super::tap::Config::Enabled {
             permitted_client_ids: ids,
             config: ServerConfig {
-                addr: ListenAddr(addr),
-                addr_additional: None,
+                addr: DualListenAddr(addr, None),
                 keepalive: inbound.proxy.server.keepalive,
                 h2_settings,
             },

@@ -26,15 +26,9 @@ pub trait Bind<T> {
     type Incoming: Stream<Item = Result<(Self::Addrs, Self::Io)>> + Send + Sync + 'static;
 
     fn bind(self, params: &T) -> Result<Bound<Self::Incoming>>;
-    fn bind_additional(self, _params: &T) -> Result<Bound<Self::Incoming>>
-    where
-        Self: Sized,
-    {
-        unimplemented!();
-    }
 }
 
-pub type Bound<I> = (Local<ServerAddr>, I);
+pub type Bound<I> = (Local<ServerAddr>, Option<Local<ServerAddr>>, I);
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct BindTcp(());
@@ -62,6 +56,10 @@ struct PeerAddrError(#[source] io::Error);
 impl BindTcp {
     pub fn with_orig_dst() -> super::BindWithOrigDst<Self> {
         super::BindWithOrigDst::from(Self::default())
+    }
+
+    pub fn dual_with_orig_dst() -> super::DualBindWithOrigDst<super::BindWithOrigDst<Self>> {
+        super::DualBindWithOrigDst::from(super::BindWithOrigDst::default())
     }
 }
 
@@ -91,7 +89,7 @@ where
             Ok((Addrs { server, client }, tcp))
         });
 
-        Ok((server, Box::pin(accept)))
+        Ok((server, None, Box::pin(accept)))
     }
 }
 

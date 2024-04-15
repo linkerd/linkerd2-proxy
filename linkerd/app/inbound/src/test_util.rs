@@ -10,7 +10,7 @@ use linkerd_app_core::{
         http::{h1, h2},
         tap,
     },
-    transport::{Keepalive, ListenAddr},
+    transport::{DualListenAddr, Keepalive},
     ProxyRuntime,
 };
 pub use linkerd_app_test as support;
@@ -57,8 +57,7 @@ pub fn default_config() -> Config {
         allow_discovery: Some(cluster_local).into_iter().collect(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
-                addr: ListenAddr(([0, 0, 0, 0], 0).into()),
-                addr_additional: None,
+                addr: DualListenAddr(([0, 0, 0, 0], 0).into(), None),
                 keepalive: Keepalive(None),
                 h2_settings: h2::Settings::default(),
             },

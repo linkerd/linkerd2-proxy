@@ -1,6 +1,6 @@
 use super::*;
 use linkerd_app_core::{
-    svc::{InsertParam, Param},
+    svc::Param,
     transport::OrigDstAddr,
     transport::{listen, orig_dst, Keepalive, ListenAddr},
     Result,
@@ -64,7 +64,6 @@ enum MockOrigDst {
 
 impl<T> listen::Bind<T> for MockOrigDst
 where
-    T: Param<Option<ListenAddr>> + InsertParam<ListenAddr, (), Target = T>,
     T: Param<Keepalive> + Param<ListenAddr>,
 {
     type Addrs = orig_dst::Addrs;
@@ -73,7 +72,7 @@ where
         Pin<Box<dyn Stream<Item = Result<(orig_dst::Addrs, TcpStream)>> + Send + Sync + 'static>>;
 
     fn bind(self, params: &T) -> Result<listen::Bound<Self::Incoming>> {
-        let (bound, incoming) = listen::BindTcp::default().bind(params)?;
+        let (bound, _, incoming) = listen::BindTcp::default().bind(params)?;
         let incoming = Box::pin(incoming.map(move |res| {
             let (inner, tcp) = res?;
             tracing::info!(?inner, ?self, "mocking SO_ORIG_DST");
@@ -87,17 +86,7 @@ where
             let addrs = orig_dst::Addrs { inner, orig_dst };
             Ok((addrs, tcp))
         }));
-        Ok((bound, incoming))
-    }
-
-    fn bind_additional(self, params: &T) -> Result<listen::Bound<Self::Incoming>> {
-        match params.param() {
-            Some(addr) => {
-                let t2 = params.insert_param(addr, ());
-                self.bind(&t2)
-            }
-            None => self.bind(params),
-        }
+        Ok((bound, None, incoming))
     }
 }
 

@@ -11,6 +11,9 @@ pub struct ClientAddr(pub SocketAddr);
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ListenAddr(pub SocketAddr);
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct DualListenAddr(pub SocketAddr, pub Option<SocketAddr>);
+
 /// The address of a server.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerAddr(pub SocketAddr);

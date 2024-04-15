@@ -1,15 +1,14 @@
 pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
     proxy::http::{self, h1, h2},
-    svc::{queue, CloneParam, ExtractParam, InsertParam, Param},
-    transport::{Keepalive, ListenAddr},
+    svc::{queue, CloneParam, ExtractParam, Param},
+    transport::{DualListenAddr, Keepalive, ListenAddr},
 };
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
-    pub addr: ListenAddr,
-    pub addr_additional: Option<ListenAddr>,
+    pub addr: DualListenAddr,
     pub keepalive: Keepalive,
     pub h2_settings: h2::Settings,
 }
@@ -68,31 +67,28 @@ impl ProxyConfig {
 
 // === impl ServerConfig ===
 
-impl Param<ListenAddr> for ServerConfig {
-    fn param(&self) -> ListenAddr {
+impl Param<DualListenAddr> for ServerConfig {
+    fn param(&self) -> DualListenAddr {
         self.addr
     }
 }
 
-impl Param<Option<ListenAddr>> for ServerConfig {
-    fn param(&self) -> Option<ListenAddr> {
-        self.addr_additional
+impl ExtractParam<ServerConfig, SocketAddr> for ServerConfig {
+    fn extract_param(&self, addr: &SocketAddr) -> ServerConfig {
+        let mut cfg = self.clone();
+        cfg.addr = DualListenAddr(*addr, None);
+        cfg
+    }
+}
+
+impl Param<ListenAddr> for ServerConfig {
+    fn param(&self) -> ListenAddr {
+        ListenAddr(self.addr.0)
     }
 }
 
 impl Param<Keepalive> for ServerConfig {
     fn param(&self) -> Keepalive {
         self.keepalive
-    }
-}
-
-/// Replaces the addr field in ServerConfig with the contents of addr_additional, if any
-impl InsertParam<ListenAddr, ()> for ServerConfig {
-    type Target = ServerConfig;
-
-    fn insert_param(&self, addr: ListenAddr, _: ()) -> Self::Target {
-        let mut t = self.clone();
-        t.addr = addr;
-        t
     }
 }

@@ -108,7 +108,7 @@ impl Config {
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
             + Param<AddrPair>,
-        BOut: Bind<ServerConfig> + Clone + 'static,
+        BOut: Bind<ServerConfig> + 'static,
         BOut::Addrs: Param<Remote<ClientAddr>>
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
@@ -240,7 +240,7 @@ impl Config {
 
         // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
         // stacks until the proxy starts running.
-        let (inbound_addr, inbound_listen) = bind_in
+        let (inbound_addr, _, inbound_listen) = bind_in
             .bind(&inbound.config().proxy.server)
             .expect("Failed to bind inbound listener");
         let inbound_metrics = inbound.metrics();
@@ -251,10 +251,7 @@ impl Config {
             gateway.into_inner(),
         );
 
-        let additional = outbound.config().proxy.server.addr_additional.is_some();
-
-        let bind_out_additional = additional.then(|| bind_out.clone());
-        let (outbound_addr, outbound_listen) = bind_out
+        let (outbound_addr, outbound_addr_additional, outbound_listen) = bind_out
             .bind(&outbound.config().proxy.server)
             .expect("Failed to bind outbound listener");
         let outbound_metrics = outbound.metrics();
@@ -269,18 +266,9 @@ impl Config {
                 Self::await_identity(identity_ready).await;
 
                 tokio::spawn(
-                    serve::serve(outbound_listen, outbound_svc, drain_rx.clone().signaled())
+                    serve::serve(outbound_listen, outbound, drain_rx.clone().signaled())
                         .instrument(info_span!("outbound").or_current()),
                 );
-
-                if let (Some(outbound_listen), Some(outbound_svc)) =
-                    (outbound_listen_additional, outbound_svc_additional)
-                {
-                    tokio::spawn(
-                        serve::serve(outbound_listen, outbound_svc, drain_rx.clone().signaled())
-                            .instrument(info_span!("outbound-2").or_current()),
-                    );
-                };
 
                 tokio::spawn(
                     serve::serve(inbound_listen, inbound, drain_rx.signaled())
