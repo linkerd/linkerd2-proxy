@@ -13,6 +13,9 @@ use std::{
 use tower::Service;
 use tracing::{debug, Instrument};
 
+#[cfg(test)]
+mod tests;
+
 /// Configures HTTP server behavior.
 #[derive(Clone, Debug)]
 pub struct Params {
