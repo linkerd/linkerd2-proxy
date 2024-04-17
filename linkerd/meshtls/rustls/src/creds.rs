@@ -3,6 +3,7 @@ mod store;
 pub(crate) mod verify;
 
 pub use self::{receiver::Receiver, store::Store};
+use id::DerX509;
 use linkerd_dns_name as dns;
 use linkerd_error::Result;
 use linkerd_identity as id;
@@ -24,21 +25,26 @@ pub struct InvalidTrustRoots(());
 pub fn watch(
     local_id: id::Id,
     server_name: dns::Name,
-    roots_pem: &str,
+    roots: &id::Roots,
 ) -> Result<(Store, Receiver)> {
-    let mut roots = rustls::RootCertStore::empty();
-    let certs = match rustls_pemfile::certs(&mut std::io::Cursor::new(roots_pem)) {
-        Err(error) => {
-            warn!(%error, "invalid trust anchors file");
-            return Err(error.into());
+    let certs = match roots {
+        id::Roots::Pem(roots_pem) => {
+            match rustls_pemfile::certs(&mut std::io::Cursor::new(roots_pem)) {
+                Err(error) => {
+                    warn!(%error, "invalid trust anchors file");
+                    return Err(error.into());
+                }
+                Ok(certs) if certs.is_empty() => {
+                    warn!("no valid certs in trust anchors file");
+                    return Err("no trust roots in PEM file".into());
+                }
+                Ok(certs) => certs,
+            }
         }
-        Ok(certs) if certs.is_empty() => {
-            warn!("no valid certs in trust anchors file");
-            return Err("no trust roots in PEM file".into());
-        }
-        Ok(certs) => certs,
+        id::Roots::Der(roots_der) => roots_der.iter().map(DerX509::to_vec).collect(),
     };
 
+    let mut roots = rustls::RootCertStore::empty();
     let (added, skipped) = roots.add_parsable_certificates(&certs[..]);
     if skipped != 0 {
         warn!("Skipped {} invalid trust anchors", skipped);
@@ -90,10 +96,12 @@ pub fn watch(
 
 #[cfg(feature = "test-util")]
 pub fn for_test(ent: &linkerd_tls_test_util::Entity) -> (Store, Receiver) {
+    let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("roots must be PEM");
+    let roots = id::Roots::Pem(roots_pem.into());
     watch(
         ent.name.parse().expect("id must be valid"),
         ent.name.parse().expect("name must be valid"),
-        std::str::from_utf8(ent.trust_anchors).expect("roots must be PEM"),
+        &roots,
     )
     .expect("credentials must be valid")
 }

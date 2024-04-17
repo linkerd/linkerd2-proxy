@@ -5,7 +5,7 @@ use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_dns_name::Name;
 use linkerd_error::Infallible;
-use linkerd_identity::{Credentials, DerX509, Id};
+use linkerd_identity::{Credentials, DerX509, Id, Roots};
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_meshtls as meshtls;
 use linkerd_proxy_transport::{
@@ -28,7 +28,18 @@ use std::{
 use tokio::net::TcpStream;
 use tracing::Instrument;
 
-fn generate_cert_with_name(subject_alt_names: Vec<SanType>) -> (Vec<u8>, Vec<u8>, String) {
+pub enum RootsFormat {
+    Pem,
+    Der,
+}
+
+struct Creds {
+    cert: Vec<u8>,
+    key: Vec<u8>,
+    roots: Roots,
+}
+
+fn generate_cert_with_name(subject_alt_names: Vec<SanType>, roots_format: RootsFormat) -> Creds {
     let mut root_params = CertificateParams::default();
     root_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     let root_cert = Certificate::from_params(root_params).expect("should generate root");
@@ -37,21 +48,55 @@ fn generate_cert_with_name(subject_alt_names: Vec<SanType>) -> (Vec<u8>, Vec<u8>
     params.subject_alt_names = subject_alt_names;
 
     let cert = Certificate::from_params(params).expect("should generate cert");
+    let roots = match roots_format {
+        RootsFormat::Pem => Roots::Pem(root_cert.serialize_pem().expect("should serialize")),
+        RootsFormat::Der => Roots::Der(vec![DerX509(
+            root_cert.serialize_der().expect("should serialize"),
+        )]),
+    };
 
-    (
-        cert.serialize_der_with_signer(&root_cert)
+    Creds {
+        cert: cert
+            .serialize_der_with_signer(&root_cert)
             .expect("should serialize"),
-        cert.serialize_private_key_der(),
-        root_cert.serialize_pem().expect("should serialize"),
-    )
+        key: cert.serialize_private_key_der(),
+        roots,
+    }
 }
 
-pub fn fails_processing_cert_when_wrong_id_configured(mode: meshtls::Mode) {
+pub fn can_construct_store(mode: meshtls::Mode, roots_format: RootsFormat) {
     let server_name = Name::from_str("system.local").expect("should parse");
     let id = Id::Dns(server_name.clone());
 
-    let (cert, key, roots) =
-        generate_cert_with_name(vec![SanType::URI("spiffe://system/local".into())]);
+    let creds =
+        generate_cert_with_name(vec![SanType::DnsName("system.local".into())], roots_format);
+
+    assert!(mode.watch(id, server_name.clone(), &creds.roots).is_ok());
+}
+
+pub fn fails_to_construct_store_for_empty_roots(mode: meshtls::Mode, roots_format: RootsFormat) {
+    let server_name = Name::from_str("system.local").expect("should parse");
+    let id = Id::Dns(server_name.clone());
+
+    let roots = match roots_format {
+        RootsFormat::Pem => Roots::Pem("".into()),
+        RootsFormat::Der => Roots::Der(vec![]),
+    };
+
+    assert!(mode.watch(id, server_name.clone(), &roots).is_err());
+}
+
+pub fn fails_processing_cert_when_wrong_id_configured(
+    mode: meshtls::Mode,
+    roots_format: RootsFormat,
+) {
+    let server_name = Name::from_str("system.local").expect("should parse");
+    let id = Id::Dns(server_name.clone());
+
+    let Creds { cert, key, roots } = generate_cert_with_name(
+        vec![SanType::URI("spiffe://system/local".into())],
+        roots_format,
+    );
     let (mut store, _) = mode
         .watch(id, server_name.clone(), &roots)
         .expect("should construct");
@@ -167,7 +212,7 @@ fn load(
         .watch(
             ent.name.parse().unwrap(),
             ent.name.parse().unwrap(),
-            roots_pem,
+            &Roots::Pem(roots_pem.into()),
         )
         .expect("credentials must be readable");
 

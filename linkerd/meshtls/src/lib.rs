@@ -85,12 +85,12 @@ impl Mode {
         self,
         local_id: id::Id,
         server_name: dns::Name,
-        roots_pem: &str,
+        roots: &id::Roots,
     ) -> Result<(creds::Store, creds::Receiver)> {
         match self {
             #[cfg(feature = "boring")]
             Self::Boring => {
-                let (store, receiver) = boring::creds::watch(local_id, server_name, roots_pem)?;
+                let (store, receiver) = boring::creds::watch(local_id, server_name, roots)?;
                 Ok((
                     creds::Store::Boring(store),
                     creds::Receiver::Boring(receiver),
@@ -99,7 +99,7 @@ impl Mode {
 
             #[cfg(feature = "rustls")]
             Self::Rustls => {
-                let (store, receiver) = rustls::creds::watch(local_id, server_name, roots_pem)?;
+                let (store, receiver) = rustls::creds::watch(local_id, server_name, roots)?;
                 Ok((
                     creds::Store::Rustls(store),
                     creds::Receiver::Rustls(receiver),
@@ -107,7 +107,7 @@ impl Mode {
             }
 
             #[cfg(not(feature = "__has_any_tls_impls"))]
-            _ => no_tls!(local_id, server_name, roots_pem),
+            _ => no_tls!(local_id, server_name, roots),
         }
     }
 }

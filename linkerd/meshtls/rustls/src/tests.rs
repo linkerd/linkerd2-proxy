@@ -1,15 +1,16 @@
-use linkerd_identity::{Credentials, DerX509};
+use linkerd_identity::{Credentials, DerX509, Roots};
 use linkerd_tls_test_util::*;
 use std::time::{Duration, SystemTime};
 
 fn load(ent: &Entity) -> crate::creds::Store {
-    let roots_pem = std::str::from_utf8(ent.trust_anchors).expect("valid PEM");
-    let (store, _) = crate::creds::watch(
-        ent.name.parse().unwrap(),
-        ent.name.parse().unwrap(),
-        roots_pem,
-    )
-    .expect("credentials must be readable");
+    let roots = Roots::Pem(
+        std::str::from_utf8(ent.trust_anchors)
+            .expect("valid PEM")
+            .into(),
+    );
+    let (store, _) =
+        crate::creds::watch(ent.name.parse().unwrap(), ent.name.parse().unwrap(), &roots)
+            .expect("credentials must be readable");
     store
 }
 

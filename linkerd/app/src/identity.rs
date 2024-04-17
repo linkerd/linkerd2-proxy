@@ -1,6 +1,6 @@
 use crate::spire;
 
-pub use linkerd_app_core::identity::{client, Id};
+pub use linkerd_app_core::identity::{client, Id, Roots};
 use linkerd_app_core::{
     control, dns,
     identity::{
@@ -35,7 +35,7 @@ pub enum Config {
 pub struct TlsParams {
     pub id: Id,
     pub server_name: dns::Name,
-    pub trust_anchors_pem: String,
+    pub roots: Roots,
 }
 
 pub struct Identity {
@@ -137,8 +137,7 @@ fn watch(
     watch::Receiver<bool>,
 )> {
     let (tx, ready) = watch::channel(false);
-    let (store, receiver) =
-        Mode::default().watch(tls.id, tls.server_name, &tls.trust_anchors_pem)?;
+    let (store, receiver) = Mode::default().watch(tls.id, tls.server_name, &tls.roots)?;
     let cred = WithCertMetrics::new(metrics, NotifyReady { store, tx });
     Ok((cred, receiver, ready))
 }

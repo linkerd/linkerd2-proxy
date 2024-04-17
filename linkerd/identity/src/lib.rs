@@ -12,6 +12,13 @@ pub use self::{
     metrics::{CertMetrics, WithCertMetrics},
 };
 
+/// A set of x509 trust root certificates in either PEM or DER format.
+#[derive(Clone, Debug)]
+pub enum Roots {
+    Pem(String),
+    Der(Vec<self::DerX509>),
+}
+
 /// An endpoint identity descriptor used for authentication.
 ///
 /// Practically speaking, this could be:

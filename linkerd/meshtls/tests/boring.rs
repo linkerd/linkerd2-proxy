@@ -7,8 +7,33 @@ mod util;
 use linkerd_meshtls::Mode;
 
 #[test]
-fn fails_processing_cert_when_wrong_id_configured() {
-    util::fails_processing_cert_when_wrong_id_configured(Mode::Boring);
+fn can_construct_store_der_roots() {
+    util::can_construct_store(Mode::Boring, util::RootsFormat::Der);
+}
+
+#[test]
+fn can_construct_store_pem_roots() {
+    util::can_construct_store(Mode::Boring, util::RootsFormat::Pem);
+}
+
+#[test]
+fn fails_processing_cert_when_wrong_id_configured_der_roots() {
+    util::fails_processing_cert_when_wrong_id_configured(Mode::Boring, util::RootsFormat::Der);
+}
+
+#[test]
+fn fails_processing_cert_when_wrong_id_configured_pem_roots() {
+    util::fails_processing_cert_when_wrong_id_configured(Mode::Boring, util::RootsFormat::Pem);
+}
+
+#[test]
+fn fails_to_construct_store_for_empty_der_roots() {
+    util::fails_to_construct_store_for_empty_roots(Mode::Boring, util::RootsFormat::Der);
+}
+
+#[test]
+fn fails_to_construct_store_for_empty_pem_roots() {
+    util::fails_to_construct_store_for_empty_roots(Mode::Boring, util::RootsFormat::Pem);
 }
 
 #[tokio::test(flavor = "current_thread")]

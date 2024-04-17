@@ -12,14 +12,34 @@ use linkerd_error::Result;
 use linkerd_identity as id;
 use std::sync::Arc;
 use tokio::sync::watch;
+use tracing::warn;
 
 pub fn watch(
     local_id: id::Id,
     server_name: dns::Name,
-    roots_pem: &str,
+    roots: &id::Roots,
 ) -> Result<(Store, Receiver)> {
     let creds = {
-        let roots = X509::stack_from_pem(roots_pem.as_bytes())?;
+        let roots = match roots {
+            id::Roots::Pem(roots_pem) => X509::stack_from_pem(roots_pem.as_bytes())?,
+            id::Roots::Der(roots_der) => {
+                let certs: Vec<X509> = roots_der
+                    .iter()
+                    .filter_map(|cert| X509::from_der(cert).ok())
+                    .collect();
+
+                let skipped = roots_der.len() - certs.len();
+                if skipped > 0 {
+                    warn!("Skipped {} invalid trust anchors", skipped);
+                }
+
+                certs
+            }
+        };
+
+        if roots.is_empty() {
+            return Err("no trust roots loaded".into());
+        }
         Arc::new(BaseCreds { roots })
     };
 

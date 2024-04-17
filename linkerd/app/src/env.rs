@@ -1303,7 +1303,7 @@ pub fn parse_tls_params<S: Strings>(strings: &S) -> Result<identity::TlsParams, 
             let params = identity::TlsParams {
                 id: server_id,
                 server_name,
-                trust_anchors_pem,
+                roots: identity::Roots::Pem(trust_anchors_pem),
             };
             Ok(params)
         }
