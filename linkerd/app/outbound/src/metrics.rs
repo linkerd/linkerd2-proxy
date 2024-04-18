@@ -84,10 +84,13 @@ where
 
 impl PromMetrics {
     pub fn register(registry: &mut prom::Registry) -> Self {
-        Self {
-            http: crate::http::HttpMetrics::register(registry.sub_registry_with_prefix("http")),
-            opaq: crate::opaq::OpaqMetrics::register(registry.sub_registry_with_prefix("tcp")),
-        }
+        // NOTE: HTTP metrics are scoped internally, since this configures both
+        // HTTP and gRPC scopes.
+        let http = crate::http::HttpMetrics::register(registry);
+
+        let opaq = crate::opaq::OpaqMetrics::register(registry.sub_registry_with_prefix("tcp"));
+
+        Self { http, opaq }
     }
 }
 
