@@ -23,7 +23,7 @@ async fn h2_connection_window_exhaustion() {
     tracing::info!("Connecting to server");
     let mut server = TestServer::connect_h2(
         // A basic HTTP/2 server configuration with no overrides.
-        H2Settings::default(),
+        h2::ServerParams::default(),
         // An HTTP/2 client with constrained connection and stream windows to
         // force window exhaustion.
         hyper::client::conn::Builder::new()
@@ -97,7 +97,7 @@ async fn h2_stream_window_exhaustion() {
 
     let mut server = TestServer::connect_h2(
         // A basic HTTP/2 server configuration with no overrides.
-        H2Settings::default(),
+        h2::ServerParams::default(),
         // An HTTP/2 client with stream windows to force window exhaustion.
         hyper::client::conn::Builder::new().http2_initial_stream_window_size(CLIENT_STREAM_WINDOW),
     )
@@ -201,13 +201,13 @@ impl TestServer {
         Self { client, server }
     }
 
-    async fn connect_h2(h2: H2Settings, client: &mut hyper::client::conn::Builder) -> Self {
+    async fn connect_h2(h2: h2::ServerParams, client: &mut hyper::client::conn::Builder) -> Self {
         Self::connect(
             // A basic HTTP/2 server configuration with no overrides.
             Params {
                 drain: drain(),
                 version: Version::H2,
-                h2,
+                http2: h2,
             },
             // An HTTP/2 client with constrained connection and stream windows to accomodate
             client.http2_only(true),

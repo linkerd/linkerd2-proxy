@@ -13,6 +13,7 @@ use std::{collections::HashSet, pin::Pin};
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Config {
     Disabled,
     Enabled {

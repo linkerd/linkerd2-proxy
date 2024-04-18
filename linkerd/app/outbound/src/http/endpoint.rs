@@ -54,9 +54,7 @@ impl<C> Outbound<C> {
     {
         self.map_stack(|config, _, inner| {
             let config::ConnectConfig {
-                h1_settings,
-                h2_settings,
-                ..
+                http1, ref http2, ..
             } = config.proxy.connect;
 
             // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
@@ -65,7 +63,7 @@ impl<C> Outbound<C> {
             svc::stack(inner.into_inner().into_service())
                 .check_service::<Connect<T>>()
                 .push_map_target(|(version, inner)| Connect { version, inner })
-                .push(http::client::layer(h1_settings, h2_settings))
+                .push(http::client::layer(http1, http2.clone()))
                 .push_on_service(svc::MapErr::layer_boxed())
                 .check_service::<T>()
                 .into_new_service()

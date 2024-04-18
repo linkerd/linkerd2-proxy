@@ -128,7 +128,7 @@ impl Config {
             .push(tls::Client::layer(identity))
             .push_connect_timeout(self.connect.timeout)
             .push_map_target(|(_version, target)| target)
-            .push(self::client::layer(self.connect.h2_settings))
+            .push(self::client::layer(self.connect.http2))
             .push_on_service(svc::MapErr::layer_boxed())
             .into_new_service();
 
@@ -330,7 +330,6 @@ mod client {
         svc, tls,
         transport::{Remote, ServerAddr},
     };
-    use linkerd_proxy_http::h2::Settings as H2Settings;
     use std::net::SocketAddr;
 
     #[derive(Clone, Hash, Debug, Eq, PartialEq)]
@@ -368,11 +367,11 @@ mod client {
     // === impl Layer ===
 
     pub fn layer<C, B>(
-        settings: H2Settings,
-    ) -> impl svc::Layer<C, Service = http::h2::Connect<C, B>> + Copy
+        h2: http::h2::ClientParams,
+    ) -> impl svc::Layer<C, Service = http::h2::Connect<C, B>> + Clone
     where
         http::h2::Connect<C, B>: tower::Service<Target>,
     {
-        svc::layer::mk(move |mk_conn| http::h2::Connect::new(mk_conn, settings))
+        svc::layer::mk(move |mk_conn| http::h2::Connect::new(mk_conn, h2.clone()))
     }
 }

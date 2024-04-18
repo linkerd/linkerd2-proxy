@@ -26,7 +26,7 @@ pub(crate) fn default_config() -> Config {
             server: config::ServerConfig {
                 addr: DualListenAddr(([0, 0, 0, 0], 0).into(), None),
                 keepalive: Keepalive(None),
-                h2_settings: h2::Settings::default(),
+                http2: h2::ServerParams::default(),
             },
             connect: config::ConnectConfig {
                 keepalive: Keepalive(None),
@@ -37,11 +37,11 @@ pub(crate) fn default_config() -> Config {
                     0.1,
                 )
                 .unwrap(),
-                h1_settings: h1::PoolSettings {
+                http1: h1::PoolSettings {
                     max_idle: 1,
                     idle_timeout: Duration::from_secs(1),
                 },
-                h2_settings: h2::Settings::default(),
+                http2: h2::ClientParams::default(),
             },
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(3),

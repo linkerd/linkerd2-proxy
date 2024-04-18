@@ -10,7 +10,7 @@ use std::time::Duration;
 pub struct ServerConfig {
     pub addr: DualListenAddr,
     pub keepalive: Keepalive,
-    pub h2_settings: h2::Settings,
+    pub http2: h2::ServerParams,
 }
 
 #[derive(Clone, Debug)]
@@ -18,8 +18,8 @@ pub struct ConnectConfig {
     pub backoff: ExponentialBackoff,
     pub timeout: Duration,
     pub keepalive: Keepalive,
-    pub h1_settings: h1::PoolSettings,
-    pub h2_settings: h2::Settings,
+    pub http1: h1::PoolSettings,
+    pub http2: h2::ClientParams,
 }
 
 #[derive(Clone, Debug)]
