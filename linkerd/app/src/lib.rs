@@ -240,7 +240,7 @@ impl Config {
 
         // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
         // stacks until the proxy starts running.
-        let (inbound_addr, _, inbound_listen) = bind_in
+        let (inbound_addr, inbound_listen) = bind_in
             .bind(&inbound.config().proxy.server)
             .expect("Failed to bind inbound listener");
         let inbound_metrics = inbound.metrics();
@@ -251,7 +251,7 @@ impl Config {
             gateway.into_inner(),
         );
 
-        let (outbound_addr, outbound_addr_additional, outbound_listen) = bind_out
+        let ((outbound_addr, outbound_addr_additional), outbound_listen) = bind_out
             .bind(&outbound.config().proxy.server)
             .expect("Failed to bind outbound listener");
         let outbound_metrics = outbound.metrics();

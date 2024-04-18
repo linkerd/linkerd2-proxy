@@ -13,6 +13,7 @@ use tokio_stream::wrappers::TcpListenerStream;
 /// Typically, this represents binding a TCP socket. However, it may also be an
 /// stream of in-memory mock connections, for testing purposes.
 pub trait Bind<T> {
+    type BoundAddrs;
     type Io: io::AsyncRead
         + io::AsyncWrite
         + io::Peek
@@ -25,10 +26,10 @@ pub trait Bind<T> {
     type Addrs: Clone + Send + Sync + 'static;
     type Incoming: Stream<Item = Result<(Self::Addrs, Self::Io)>> + Send + Sync + 'static;
 
-    fn bind(self, params: &T) -> Result<Bound<Self::Incoming>>;
+    fn bind(self, params: &T) -> Result<(Self::BoundAddrs, Self::Incoming)>;
 }
 
-pub type Bound<I> = (Local<ServerAddr>, Option<Local<ServerAddr>>, I);
+pub type Bound<I> = (Local<ServerAddr>, I);
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct BindTcp(());
@@ -67,6 +68,7 @@ impl<T> Bind<T> for BindTcp
 where
     T: Param<ListenAddr> + Param<Keepalive>,
 {
+    type BoundAddrs = Local<ServerAddr>;
     type Addrs = Addrs;
     type Incoming = Pin<Box<dyn Stream<Item = Result<(Self::Addrs, Self::Io)>> + Send + Sync>>;
     type Io = TcpStream;
@@ -89,7 +91,7 @@ where
             Ok((Addrs { server, client }, tcp))
         });
 
-        Ok((server, None, Box::pin(accept)))
+        Ok((server, Box::pin(accept)))
     }
 }
 

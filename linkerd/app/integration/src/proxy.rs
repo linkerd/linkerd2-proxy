@@ -72,7 +72,7 @@ where
         Pin<Box<dyn Stream<Item = Result<(orig_dst::Addrs, TcpStream)>> + Send + Sync + 'static>>;
 
     fn bind(self, params: &T) -> Result<listen::Bound<Self::Incoming>> {
-        let (bound, _, incoming) = listen::BindTcp::default().bind(params)?;
+        let (bound, incoming) = listen::BindTcp::default().bind(params)?;
         let incoming = Box::pin(incoming.map(move |res| {
             let (inner, tcp) = res?;
             tracing::info!(?inner, ?self, "mocking SO_ORIG_DST");
