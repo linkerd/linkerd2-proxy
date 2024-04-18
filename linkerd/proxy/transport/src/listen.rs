@@ -1,4 +1,7 @@
+mod dual_bind;
+
 use crate::{addrs::*, Keepalive};
+use dual_bind::DualBindWithOrigDst;
 use futures::prelude::*;
 use linkerd_error::Result;
 use linkerd_io as io;
@@ -23,12 +26,11 @@ pub trait Bind<T> {
         + Sync
         + 'static;
     type Addrs: Clone + Send + Sync + 'static;
+    type BoundAddrs;
     type Incoming: Stream<Item = Result<(Self::Addrs, Self::Io)>> + Send + Sync + 'static;
 
-    fn bind(self, params: &T) -> Result<Bound<Self::Incoming>>;
+    fn bind(self, params: &T) -> Result<(Self::BoundAddrs, Self::Incoming)>;
 }
-
-pub type Bound<I> = (Local<ServerAddr>, Option<Local<ServerAddr>>, I);
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct BindTcp(());
@@ -58,8 +60,8 @@ impl BindTcp {
         super::BindWithOrigDst::from(Self::default())
     }
 
-    pub fn dual_with_orig_dst() -> super::DualBindWithOrigDst<super::BindWithOrigDst<Self>> {
-        super::DualBindWithOrigDst::from(super::BindWithOrigDst::default())
+    pub fn dual_with_orig_dst() -> DualBindWithOrigDst<super::BindWithOrigDst<Self>> {
+        DualBindWithOrigDst::from(super::BindWithOrigDst::default())
     }
 }
 
@@ -68,10 +70,11 @@ where
     T: Param<ListenAddr> + Param<Keepalive>,
 {
     type Addrs = Addrs;
+    type BoundAddrs = Local<ServerAddr>;
     type Incoming = Pin<Box<dyn Stream<Item = Result<(Self::Addrs, Self::Io)>> + Send + Sync>>;
     type Io = TcpStream;
 
-    fn bind(self, params: &T) -> Result<Bound<Self::Incoming>> {
+    fn bind(self, params: &T) -> Result<(Self::BoundAddrs, Self::Incoming)> {
         let listen = {
             let ListenAddr(addr) = params.param();
             let l = std::net::TcpListener::bind(addr)?;
@@ -89,7 +92,7 @@ where
             Ok((Addrs { server, client }, tcp))
         });
 
-        Ok((server, None, Box::pin(accept)))
+        Ok((server, Box::pin(accept)))
     }
 }
 

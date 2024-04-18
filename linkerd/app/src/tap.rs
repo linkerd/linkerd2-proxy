@@ -45,7 +45,7 @@ impl Config {
         drain: drain::Watch,
     ) -> Result<Tap, Error>
     where
-        B: Bind<ServerConfig>,
+        B: Bind<ServerConfig, BoundAddrs = Local<ServerAddr>>,
         B::Addrs: Param<Remote<ClientAddr>>,
         B::Addrs: Param<AddrPair>,
     {
@@ -59,7 +59,7 @@ impl Config {
                 config,
                 permitted_client_ids,
             } => {
-                let (listen_addr, _, listen) = bind.bind(&config)?;
+                let (listen_addr, listen) = bind.bind(&config)?;
                 let accept = svc::stack(server)
                     .push(svc::layer::mk(move |service| {
                         tap::AcceptPermittedClients::new(

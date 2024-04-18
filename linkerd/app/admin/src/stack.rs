@@ -87,12 +87,12 @@ impl Config {
     ) -> Result<Task>
     where
         R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
-        B: Bind<ServerConfig>,
+        B: Bind<ServerConfig, BoundAddrs = Local<ServerAddr>>,
         B::Addrs: svc::Param<Remote<ClientAddr>>,
         B::Addrs: svc::Param<Local<ServerAddr>>,
         B::Addrs: svc::Param<AddrPair>,
     {
-        let (listen_addr, _, listen) = bind.bind(&self.server)?;
+        let (listen_addr, listen) = bind.bind(&self.server)?;
 
         // Get the policy for the admin server.
         let policy = policy.get_policy(OrigDstAddr(listen_addr.into()));

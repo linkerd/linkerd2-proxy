@@ -103,17 +103,17 @@ impl Config {
         mut registry: prom::Registry,
     ) -> Result<App, Error>
     where
-        BIn: Bind<ServerConfig> + 'static,
+        BIn: Bind<ServerConfig, BoundAddrs = Local<ServerAddr>> + 'static,
         BIn::Addrs: Param<Remote<ClientAddr>>
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
             + Param<AddrPair>,
-        BOut: Bind<ServerConfig> + 'static,
+        BOut: Bind<ServerConfig, BoundAddrs = DualLocal<ServerAddr>> + 'static,
         BOut::Addrs: Param<Remote<ClientAddr>>
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
             + Param<AddrPair>,
-        BAdmin: Bind<ServerConfig> + Clone + 'static,
+        BAdmin: Bind<ServerConfig, BoundAddrs = Local<ServerAddr>> + Clone + 'static,
         BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<AddrPair>,
     {
         let Config {
@@ -240,7 +240,7 @@ impl Config {
 
         // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
         // stacks until the proxy starts running.
-        let (inbound_addr, _, inbound_listen) = bind_in
+        let (inbound_addr, inbound_listen) = bind_in
             .bind(&inbound.config().proxy.server)
             .expect("Failed to bind inbound listener");
         let inbound_metrics = inbound.metrics();
@@ -251,7 +251,7 @@ impl Config {
             gateway.into_inner(),
         );
 
-        let (outbound_addr, outbound_addr_additional, outbound_listen) = bind_out
+        let ((outbound_addr, outbound_addr_additional), outbound_listen) = bind_out
             .bind(&outbound.config().proxy.server)
             .expect("Failed to bind outbound listener");
         let outbound_metrics = outbound.metrics();

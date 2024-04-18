@@ -4,7 +4,7 @@ use crate::{
     svc::{queue, CloneParam, ExtractParam, Param},
     transport::{DualListenAddr, Keepalive, ListenAddr},
 };
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -70,14 +70,6 @@ impl ProxyConfig {
 impl Param<DualListenAddr> for ServerConfig {
     fn param(&self) -> DualListenAddr {
         self.addr
-    }
-}
-
-impl ExtractParam<ServerConfig, SocketAddr> for ServerConfig {
-    fn extract_param(&self, addr: &SocketAddr) -> ServerConfig {
-        let mut cfg = self.clone();
-        cfg.addr = DualListenAddr(*addr, None);
-        cfg
     }
 }
 

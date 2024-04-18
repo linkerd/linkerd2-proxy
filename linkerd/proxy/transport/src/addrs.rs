@@ -27,6 +27,10 @@ pub struct OrigDstAddr(pub SocketAddr);
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Local<T>(pub T);
 
+/// Pair wrapping a local address and optionally a second one, used when binding to both IPv4 and
+/// IPv6
+pub type DualLocal<T> = (Local<T>, Option<Local<T>>);
+
 /// Wraps an address type to indicate it describes another process.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Remote<T>(pub T);

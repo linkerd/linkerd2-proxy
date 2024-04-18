@@ -11,7 +11,6 @@
 
 pub mod addrs;
 mod connect;
-pub mod dual_bind;
 pub mod listen;
 pub mod orig_dst;
 
@@ -20,7 +19,6 @@ pub use self::{
         AddrPair, ClientAddr, DualListenAddr, ListenAddr, Local, OrigDstAddr, Remote, ServerAddr,
     },
     connect::ConnectTcp,
-    dual_bind::DualBindWithOrigDst,
     listen::{Bind, BindTcp},
     orig_dst::BindWithOrigDst,
 };

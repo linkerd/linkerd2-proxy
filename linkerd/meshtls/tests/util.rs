@@ -255,7 +255,7 @@ where
             },
         );
 
-        let (listen_addr, _, listen) = BindTcp::default().bind(&Server).expect("must bind");
+        let (listen_addr, listen) = BindTcp::default().bind(&Server).expect("must bind");
         let server = async move {
             futures::pin_mut!(listen);
             let (addrs, io) = listen
