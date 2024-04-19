@@ -11,12 +11,6 @@ pub struct DualBindWithOrigDst<B> {
     inner: B,
 }
 
-#[derive(Clone, Debug)]
-pub struct Addrs<A> {
-    pub addr1: A,
-    pub addr2: Option<A>,
-}
-
 pub struct Listen<T> {
     addr: SocketAddr,
     parent: T,
