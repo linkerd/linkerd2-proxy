@@ -18,13 +18,13 @@ pub struct Listen<T> {
 
 // === impl DualBind ===
 
-impl<B> From<B> for DualBindWithOrigDst<B> {
+impl<B> From<B> for DualBind<B> {
     fn from(inner: B) -> Self {
         Self { inner }
     }
 }
 
-impl<T, B> Bind<T> for DualBindWithOrigDst<B>
+impl<T, B> Bind<T> for DualBind<B>
 where
     T: Param<DualListenAddr> + Param<Keepalive> + Clone,
     B: Bind<Listen<T>, Io = TcpStream> + Clone + 'static,

@@ -1,7 +1,7 @@
 mod dual_bind;
 
 use crate::{addrs::*, Keepalive};
-use dual_bind::DualBindWithOrigDst;
+use dual_bind::DualBind;
 use futures::prelude::*;
 use linkerd_error::Result;
 use linkerd_io as io;
@@ -60,8 +60,8 @@ impl BindTcp {
         super::BindWithOrigDst::from(Self::default())
     }
 
-    pub fn dual_with_orig_dst() -> DualBindWithOrigDst<super::BindWithOrigDst<Self>> {
-        DualBindWithOrigDst::from(super::BindWithOrigDst::default())
+    pub fn dual_with_orig_dst() -> DualBind<super::BindWithOrigDst<Self>> {
+        DualBind::from(super::BindWithOrigDst::default())
     }
 }
 
