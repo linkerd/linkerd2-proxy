@@ -318,13 +318,24 @@ impl svc::Param<http::Version> for Endpoint {
     }
 }
 
-impl svc::Param<http::client::Settings> for Endpoint {
-    fn param(&self) -> http::client::Settings {
+impl svc::Param<http::client::Params> for Endpoint {
+    fn param(&self) -> http::client::Params {
         match self.version {
-            http::Version::H2 => http::client::Settings::H2,
+            http::Version::H2 => http::client::Params::H2(Default::default()),
             http::Version::Http1 => match self.hint {
-                ProtocolHint::Unknown | ProtocolHint::Opaque => http::client::Settings::Http1,
-                ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
+                ProtocolHint::Unknown | ProtocolHint::Opaque => {
+                    http::client::Params::Http1(http::h1::PoolSettings {
+                        max_idle: 1,
+                        idle_timeout: std::time::Duration::from_secs(1),
+                    })
+                }
+                ProtocolHint::Http2 => http::client::Params::OrigProtoUpgrade(
+                    http::h2::ClientParams::default(),
+                    http::h1::PoolSettings {
+                        max_idle: 1,
+                        idle_timeout: std::time::Duration::from_secs(1),
+                    },
+                ),
             },
         }
     }

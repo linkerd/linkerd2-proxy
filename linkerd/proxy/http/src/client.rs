@@ -9,7 +9,7 @@ use crate::{h1, h2, orig_proto};
 use futures::prelude::*;
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
-use linkerd_stack::{layer, MakeConnection, Param, Service, ServiceExt};
+use linkerd_stack::{layer, ExtractParam, MakeConnection, Service, ServiceExt};
 use std::{
     marker::PhantomData,
     pin::Pin,
@@ -18,17 +18,16 @@ use std::{
 use tracing::instrument::{Instrument, Instrumented};
 use tracing::{debug, debug_span};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Settings {
-    Http1,
-    H2,
-    OrigProtoUpgrade,
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Params {
+    Http1(h1::PoolSettings),
+    H2(h2::ClientParams),
+    OrigProtoUpgrade(h2::ClientParams, h1::PoolSettings),
 }
 
-pub struct MakeClient<C, B> {
+pub struct MakeClient<X, C, B> {
     connect: C,
-    h1_pool: h1::PoolSettings,
-    h2_params: h2::ClientParams,
+    params: X,
     _marker: PhantomData<fn(B)>,
 }
 
@@ -38,35 +37,28 @@ pub enum Client<C, T, B> {
     OrigProtoUpgrade(orig_proto::Upgrade<C, T, B>),
 }
 
-pub fn layer<C, B>(
-    h1_pool: h1::PoolSettings,
-    h2: h2::ClientParams,
-) -> impl layer::Layer<C, Service = MakeClient<C, B>> + Clone {
+pub fn layer_via<X: Clone, C, B>(
+    params: X,
+) -> impl layer::Layer<C, Service = MakeClient<X, C, B>> + Clone {
     layer::mk(move |connect: C| MakeClient {
         connect,
-        h1_pool,
-        h2_params: h2.clone(),
+        params: params.clone(),
         _marker: PhantomData,
     })
 }
 
-impl From<crate::Version> for Settings {
-    fn from(v: crate::Version) -> Self {
-        match v {
-            crate::Version::Http1 => Self::Http1,
-            crate::Version::H2 => Self::H2,
-        }
-    }
+pub fn layer<C, B>() -> impl layer::Layer<C, Service = MakeClient<(), C, B>> + Clone {
+    layer_via(())
 }
 
 // === impl MakeClient ===
 
 type MakeFuture<C, T, B> = Pin<Box<dyn Future<Output = Result<Client<C, T, B>>> + Send + 'static>>;
 
-impl<C, T, B> tower::Service<T> for MakeClient<C, B>
+impl<X, C, T, B> tower::Service<T> for MakeClient<X, C, B>
 where
     T: Clone + Send + Sync + 'static,
-    T: Param<Settings>,
+    X: ExtractParam<Params, T>,
     C: MakeConnection<(crate::Version, T)> + Clone + Unpin + Send + Sync + 'static,
     C::Connection: Unpin + Send,
     C::Metadata: Send,
@@ -86,24 +78,21 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let connect = self.connect.clone();
-        let h1_pool = self.h1_pool;
-        let h2_params = self.h2_params.clone();
+        let settings = self.params.extract_param(&target);
 
         Box::pin(async move {
-            let settings = target.param();
             debug!(?settings, "Building HTTP client");
-
             let client = match settings {
-                Settings::H2 => {
-                    let h2 = h2::Connect::new(connect, h2_params).oneshot(target).await?;
+                Params::H2(params) => {
+                    let h2 = h2::Connect::new(connect, params).oneshot(target).await?;
                     Client::H2(h2)
                 }
-                Settings::Http1 => Client::Http1(h1::Client::new(connect, target, h1_pool)),
-                Settings::OrigProtoUpgrade => {
-                    let h2 = h2::Connect::new(connect.clone(), h2_params)
+                Params::Http1(params) => Client::Http1(h1::Client::new(connect, target, params)),
+                Params::OrigProtoUpgrade(h2params, h1params) => {
+                    let h2 = h2::Connect::new(connect.clone(), h2params)
                         .oneshot(target.clone())
                         .await?;
-                    let http1 = h1::Client::new(connect, target, h1_pool);
+                    let http1 = h1::Client::new(connect, target, h1params);
                     Client::OrigProtoUpgrade(orig_proto::Upgrade::new(http1, h2))
                 }
             };
@@ -113,12 +102,11 @@ where
     }
 }
 
-impl<C: Clone, B> Clone for MakeClient<C, B> {
+impl<X: Clone, C: Clone, B> Clone for MakeClient<X, C, B> {
     fn clone(&self) -> Self {
         Self {
             connect: self.connect.clone(),
-            h1_pool: self.h1_pool,
-            h2_params: self.h2_params.clone(),
+            params: self.params.clone(),
             _marker: self._marker,
         }
     }

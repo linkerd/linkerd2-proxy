@@ -6,7 +6,7 @@ use crate::{
 };
 use linkerd_app_core::{
     classify,
-    config::QueueConfig,
+    config::{ConnectConfig, QueueConfig},
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -98,6 +98,10 @@ where
     {
         // TODO(ver) Configure queues from the target (i.e. from discovery).
         let http_queue = config.http_request_queue;
+
+        // TODO(ver) Configure from discovery.
+        let ConnectConfig { http1, http2, .. } = config.proxy.connect.clone();
+
         let inbound_ips = config.inbound_ips.clone();
         let stack_metrics = rt.metrics.proxy.stack.clone();
         let balance_metrics = rt.metrics.prom.http.balancer.clone();
@@ -109,6 +113,7 @@ where
         svc::layer::mk(move |inner: N| {
             let endpoint = svc::stack(inner)
                 .push_map_target({
+                    let http2 = http2.clone();
                     let inbound_ips = inbound_ips.clone();
                     move |((addr, metadata), target): ((SocketAddr, Metadata), Self)| {
                         tracing::trace!(%addr, ?metadata, ?target, "Resolved endpoint");
@@ -123,6 +128,9 @@ where
                             // get `l5d-proxy-connection: close` response headers
                             // going through the balancer.
                             close_server_connection_on_remote_proxy_error: false,
+                            // TODO(ver) Configure from metadata.
+                            http1,
+                            http2: http2.clone(),
                         }
                     }
                 })

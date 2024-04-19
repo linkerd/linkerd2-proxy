@@ -41,7 +41,7 @@ impl<C> Outbound<C> {
     pub fn push_http_tcp_client<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
     where
         // Http endpoint target.
-        T: svc::Param<http::client::Settings>,
+        T: svc::Param<http::client::Params>,
         T: Clone + Send + Sync + 'static,
         // Http endpoint body.
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
@@ -52,18 +52,14 @@ impl<C> Outbound<C> {
         C::Metadata: Send + Unpin,
         C::Future: Send + Unpin + 'static,
     {
-        self.map_stack(|config, _, inner| {
-            let config::ConnectConfig {
-                http1, ref http2, ..
-            } = config.proxy.connect;
-
+        self.map_stack(|_, _, inner| {
             // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
             // is typically used (i.e. when communicating with other proxies); though
             // HTTP/1.x fallback is supported as needed.
             svc::stack(inner.into_inner().into_service())
                 .check_service::<Connect<T>>()
                 .push_map_target(|(version, inner)| Connect { version, inner })
-                .push(http::client::layer(http1, http2.clone()))
+                .push(http::client::layer())
                 .push_on_service(svc::MapErr::layer_boxed())
                 .check_service::<T>()
                 .into_new_service()
@@ -77,7 +73,7 @@ impl<T> Outbound<svc::ArcNewHttp<T, http::BoxBody>> {
     where
         // Http endpoint target.
         T: svc::Param<Remote<ServerAddr>>,
-        T: svc::Param<http::client::Settings>,
+        T: svc::Param<http::client::Params>,
         T: svc::Param<Option<http::AuthorityOverride>>,
         T: svc::Param<handle_proxy_error_headers::CloseServerConnection>,
         T: svc::Param<metrics::EndpointLabels>,

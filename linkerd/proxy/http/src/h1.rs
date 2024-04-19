@@ -16,7 +16,7 @@ use tracing::{debug, trace};
 #[derive(Copy, Clone, Debug)]
 pub struct WasAbsoluteForm(pub(crate) ());
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct PoolSettings {
     pub max_idle: usize,
     pub idle_timeout: Duration,
