@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 
 #[derive(Copy, Clone, Debug, Default)]
-pub struct DualBindWithOrigDst<B> {
+pub struct DualBind<B> {
     inner: B,
 }
 
@@ -16,7 +16,7 @@ pub struct Listen<T> {
     parent: T,
 }
 
-// === impl DualBindTcp ===
+// === impl DualBind ===
 
 impl<B> From<B> for DualBindWithOrigDst<B> {
     fn from(inner: B) -> Self {
@@ -41,23 +41,13 @@ where
             addr: addr1,
             parent: target.clone(),
         })?;
-        let incoming1 = incoming1.map(|res| {
-            let (inner, tcp) = res?;
-            Ok((inner, tcp))
-        });
         match addr2 {
             Some(addr2) => {
                 let (addr2, incoming2) = self.inner.bind(&Listen {
                     addr: addr2,
                     parent: target.clone(),
                 })?;
-
-                let incoming_merged = incoming1.merge(incoming2);
-                let incoming_merged = incoming_merged.map(|res| {
-                    let (inner, tcp) = res?;
-                    Ok((inner, tcp))
-                });
-                Ok(((addr1, Some(addr2)), Box::pin(incoming_merged)))
+                Ok(((addr1, Some(addr2)), Box::pin(incoming1.merge(incoming2))))
             }
             None => Ok(((addr1, None), Box::pin(incoming1))),
         }
