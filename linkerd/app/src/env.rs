@@ -467,9 +467,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         )?
         .unwrap_or(ingress_mode);
 
-        let addr = match outbound_listener_addrs {
-            Ok(Some(addrs)) if addrs.len() == 1 => DualListenAddr(addrs[0], None),
-            Ok(Some(addrs)) if addrs.len() == 2 => DualListenAddr(addrs[0], Some(addrs[1])),
+        let addr = match outbound_listener_addrs? {
+            Some(addrs) if addrs.len() == 1 => DualListenAddr(addrs[0], None),
+            Some(addrs) if addrs.len() == 2 => DualListenAddr(addrs[0], Some(addrs[1])),
             _ => {
                 let addr = outbound_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap());
