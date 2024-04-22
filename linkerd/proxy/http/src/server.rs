@@ -67,7 +67,7 @@ where
             drain,
         } = self.params.extract_param(&target);
         let h2::ServerParams {
-            keepalive,
+            keep_alive,
             flow_control,
             max_concurrent_streams,
             max_frame_size,
@@ -92,9 +92,9 @@ where
         }
 
         // Configure HTTP/2 PING frames
-        if let Some(ka) = keepalive {
-            srv.http2_keep_alive_timeout(ka.timeout)
-                .http2_keep_alive_interval(ka.interval);
+        if let Some(h2::KeepAlive { timeout, interval }) = keep_alive {
+            srv.http2_keep_alive_timeout(timeout)
+                .http2_keep_alive_interval(interval);
         }
 
         srv.http2_max_concurrent_streams(max_concurrent_streams)
