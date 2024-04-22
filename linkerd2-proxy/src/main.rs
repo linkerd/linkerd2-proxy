@@ -60,9 +60,17 @@ fn main() {
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
         let shutdown_grace_period = config.shutdown_grace_period;
 
-        let bind = BindTcp::with_orig_dst();
+        let bind_in = BindTcp::with_orig_dst();
+        let bind_out = BindTcp::dual_with_orig_dst();
         let app = match config
-            .build(bind, bind, BindTcp::default(), shutdown_tx, trace, metrics)
+            .build(
+                bind_in,
+                bind_out,
+                BindTcp::default(),
+                shutdown_tx,
+                trace,
+                metrics,
+            )
             .await
         {
             Ok(app) => app,
@@ -75,6 +83,9 @@ fn main() {
         info!("Admin interface on {}", app.admin_addr());
         info!("Inbound interface on {}", app.inbound_addr());
         info!("Outbound interface on {}", app.outbound_addr());
+        if let Some(addr) = app.outbound_addr_additional() {
+            info!("Outbound interface on {addr}");
+        }
 
         match app.tap_addr() {
             None => info!("Tap DISABLED"),

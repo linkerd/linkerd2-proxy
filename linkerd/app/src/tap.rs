@@ -45,7 +45,7 @@ impl Config {
         drain: drain::Watch,
     ) -> Result<Tap, Error>
     where
-        B: Bind<ServerConfig>,
+        B: Bind<ServerConfig, BoundAddrs = Local<ServerAddr>>,
         B::Addrs: Param<Remote<ClientAddr>>,
         B::Addrs: Param<AddrPair>,
     {

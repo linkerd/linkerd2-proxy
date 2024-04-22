@@ -77,6 +77,7 @@ pub struct App {
     inbound_addr: Local<ServerAddr>,
     oc_collector: oc_collector::OcCollector,
     outbound_addr: Local<ServerAddr>,
+    outbound_addr_additional: Option<Local<ServerAddr>>,
     start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     tap: tap::Tap,
 }
@@ -102,17 +103,17 @@ impl Config {
         mut registry: prom::Registry,
     ) -> Result<App, Error>
     where
-        BIn: Bind<ServerConfig> + 'static,
+        BIn: Bind<ServerConfig, BoundAddrs = Local<ServerAddr>> + 'static,
         BIn::Addrs: Param<Remote<ClientAddr>>
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
             + Param<AddrPair>,
-        BOut: Bind<ServerConfig> + 'static,
+        BOut: Bind<ServerConfig, BoundAddrs = DualLocal<ServerAddr>> + 'static,
         BOut::Addrs: Param<Remote<ClientAddr>>
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
             + Param<AddrPair>,
-        BAdmin: Bind<ServerConfig> + Clone + 'static,
+        BAdmin: Bind<ServerConfig, BoundAddrs = Local<ServerAddr>> + Clone + 'static,
         BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<AddrPair>,
     {
         let Config {
@@ -250,7 +251,7 @@ impl Config {
             gateway.into_inner(),
         );
 
-        let (outbound_addr, outbound_listen) = bind_out
+        let ((outbound_addr, outbound_addr_additional), outbound_listen) = bind_out
             .bind(&outbound.config().proxy.server)
             .expect("Failed to bind outbound listener");
         let outbound_metrics = outbound.metrics();
@@ -310,6 +311,7 @@ impl Config {
             inbound_addr,
             oc_collector,
             outbound_addr,
+            outbound_addr_additional,
             start_proxy,
             tap,
         })
@@ -342,6 +344,10 @@ impl App {
 
     pub fn outbound_addr(&self) -> Local<ServerAddr> {
         self.outbound_addr
+    }
+
+    pub fn outbound_addr_additional(&self) -> Option<Local<ServerAddr>> {
+        self.outbound_addr_additional
     }
 
     pub fn tap_addr(&self) -> Option<Local<ServerAddr>> {

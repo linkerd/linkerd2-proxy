@@ -87,7 +87,7 @@ impl Config {
     ) -> Result<Task>
     where
         R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
-        B: Bind<ServerConfig>,
+        B: Bind<ServerConfig, BoundAddrs = Local<ServerAddr>>,
         B::Addrs: svc::Param<Remote<ClientAddr>>,
         B::Addrs: svc::Param<Local<ServerAddr>>,
         B::Addrs: svc::Param<AddrPair>,

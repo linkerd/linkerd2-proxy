@@ -2,13 +2,13 @@ pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
     proxy::http::{self, h1, h2},
     svc::{queue, CloneParam, ExtractParam, Param},
-    transport::{Keepalive, ListenAddr},
+    transport::{DualListenAddr, Keepalive, ListenAddr},
 };
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
-    pub addr: ListenAddr,
+    pub addr: DualListenAddr,
     pub keepalive: Keepalive,
     pub h2_settings: h2::Settings,
 }
@@ -67,9 +67,15 @@ impl ProxyConfig {
 
 // === impl ServerConfig ===
 
+impl Param<DualListenAddr> for ServerConfig {
+    fn param(&self) -> DualListenAddr {
+        self.addr
+    }
+}
+
 impl Param<ListenAddr> for ServerConfig {
     fn param(&self) -> ListenAddr {
-        self.addr
+        ListenAddr(self.addr.0)
     }
 }
 

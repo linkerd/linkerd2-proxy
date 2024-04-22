@@ -1,6 +1,6 @@
 use crate::{
     addrs::*,
-    listen::{self, Bind, Bound},
+    listen::{self, Bind},
 };
 use futures::prelude::*;
 use linkerd_error::Result;
@@ -73,11 +73,12 @@ where
     B::Addrs: Param<Remote<ClientAddr>>,
 {
     type Addrs = Addrs<B::Addrs>;
+    type BoundAddrs = B::BoundAddrs;
     type Io = TcpStream;
     type Incoming =
         Pin<Box<dyn Stream<Item = Result<(Self::Addrs, TcpStream)>> + Send + Sync + 'static>>;
 
-    fn bind(self, t: &T) -> Result<Bound<Self::Incoming>> {
+    fn bind(self, t: &T) -> Result<(Self::BoundAddrs, Self::Incoming)> {
         let (addr, incoming) = self.inner.bind(t)?;
 
         let incoming = incoming.map(|res| {

@@ -11,6 +11,9 @@ pub struct ClientAddr(pub SocketAddr);
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ListenAddr(pub SocketAddr);
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct DualListenAddr(pub SocketAddr, pub Option<SocketAddr>);
+
 /// The address of a server.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerAddr(pub SocketAddr);
@@ -23,6 +26,10 @@ pub struct OrigDstAddr(pub SocketAddr);
 /// process.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Local<T>(pub T);
+
+/// Pair wrapping a local address and optionally a second one, used when binding to both IPv4 and
+/// IPv6
+pub type DualLocal<T> = (Local<T>, Option<Local<T>>);
 
 /// Wraps an address type to indicate it describes another process.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]

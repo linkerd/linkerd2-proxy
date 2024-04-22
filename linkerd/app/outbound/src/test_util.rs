@@ -7,7 +7,7 @@ use linkerd_app_core::{
         http::{h1, h2},
         tap,
     },
-    transport::{Keepalive, ListenAddr},
+    transport::{DualListenAddr, Keepalive},
     IpMatch, IpNet, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
@@ -24,7 +24,7 @@ pub(crate) fn default_config() -> Config {
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
-                addr: ListenAddr(([0, 0, 0, 0], 0).into()),
+                addr: DualListenAddr(([0, 0, 0, 0], 0).into(), None),
                 keepalive: Keepalive(None),
                 h2_settings: h2::Settings::default(),
             },

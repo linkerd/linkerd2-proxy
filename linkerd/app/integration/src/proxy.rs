@@ -1,8 +1,7 @@
 use super::*;
 use linkerd_app_core::{
     svc::Param,
-    transport::OrigDstAddr,
-    transport::{listen, orig_dst, Keepalive, ListenAddr},
+    transport::{listen, orig_dst, Keepalive, ListenAddr, Local, OrigDstAddr, ServerAddr},
     Result,
 };
 use std::{collections::HashSet, thread};
@@ -21,7 +20,7 @@ pub struct Proxy {
     /// Inbound/outbound addresses helpful for mocking connections that do not
     /// implement `server::Listener`.
     inbound: MockOrigDst,
-    outbound: MockOrigDst,
+    outbound: MockDualOrigDst,
 
     /// Inbound/outbound addresses for mocking connections that implement
     /// `server::Listener`.
@@ -60,6 +59,11 @@ enum MockOrigDst {
     None,
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+struct MockDualOrigDst {
+    inner: MockOrigDst,
+}
+
 // === impl MockOrigDst ===
 
 impl<T> listen::Bind<T> for MockOrigDst
@@ -67,11 +71,12 @@ where
     T: Param<Keepalive> + Param<ListenAddr>,
 {
     type Addrs = orig_dst::Addrs;
+    type BoundAddrs = Local<ServerAddr>;
     type Io = tokio::net::TcpStream;
     type Incoming =
         Pin<Box<dyn Stream<Item = Result<(orig_dst::Addrs, TcpStream)>> + Send + Sync + 'static>>;
 
-    fn bind(self, params: &T) -> Result<listen::Bound<Self::Incoming>> {
+    fn bind(self, params: &T) -> Result<(Self::BoundAddrs, Self::Incoming)> {
         let (bound, incoming) = listen::BindTcp::default().bind(params)?;
         let incoming = Box::pin(incoming.map(move |res| {
             let (inner, tcp) = res?;
@@ -106,6 +111,24 @@ impl fmt::Debug for MockOrigDst {
             Self::Direct => f.debug_tuple("MockOrigDst::Direct").finish(),
             Self::None => f.debug_tuple("MockOrigDst::None").finish(),
         }
+    }
+}
+
+// === impl MockDualOrigDst ===
+
+impl<T> listen::Bind<T> for MockDualOrigDst
+where
+    T: Param<Keepalive> + Param<ListenAddr>,
+{
+    type Addrs = orig_dst::Addrs;
+    type BoundAddrs = (Local<ServerAddr>, Option<Local<ServerAddr>>);
+    type Io = tokio::net::TcpStream;
+    type Incoming =
+        Pin<Box<dyn Stream<Item = Result<(orig_dst::Addrs, TcpStream)>> + Send + Sync + 'static>>;
+
+    fn bind(self, params: &T) -> Result<(Self::BoundAddrs, Self::Incoming)> {
+        let (bound, incoming) = self.inner.bind(params)?;
+        Ok(((bound, None), incoming))
     }
 }
 
@@ -163,13 +186,17 @@ impl Proxy {
     }
 
     pub fn outbound(mut self, s: server::Listening) -> Self {
-        self.outbound = MockOrigDst::Addr(s.addr);
+        self.outbound = MockDualOrigDst {
+            inner: MockOrigDst::Addr(s.addr),
+        };
         self.outbound_server = Some(s);
         self
     }
 
     pub fn outbound_ip(mut self, s: SocketAddr) -> Self {
-        self.outbound = MockOrigDst::Addr(s);
+        self.outbound = MockDualOrigDst {
+            inner: MockOrigDst::Addr(s),
+        };
         self
     }
 
@@ -476,6 +503,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             identity_addr,
                             main.inbound_addr(),
                             main.outbound_addr(),
+                            main.outbound_addr_additional(),
                             main.admin_addr(),
                         );
                         let mut running = Some((running_tx, addrs));
@@ -531,8 +559,14 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         })
         .expect("spawn");
 
-    let (tap_addr, identity_addr, inbound_addr, outbound_addr, admin_addr) =
-        running_rx.await.unwrap();
+    let (
+        tap_addr,
+        identity_addr,
+        inbound_addr,
+        outbound_addr,
+        outbound_addr_additional,
+        admin_addr,
+    ) = running_rx.await.unwrap();
 
     tracing::info!(
         tap.addr = ?tap_addr,
@@ -540,6 +574,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         inbound.addr = ?inbound_addr,
         inbound.orig_dst = ?inbound,
         outbound.addr = ?outbound_addr,
+        outbound.addr.additional = ?outbound_addr_additional,
         outbound.orig_dst = ?outbound,
         metrics.addr = ?admin_addr,
     );
