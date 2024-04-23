@@ -94,8 +94,8 @@ impl<C> Inbound<C> {
                 .check_service::<Http>()
                 .push_map_target(|(_version, target)| target)
                 .push(http::client::layer(
-                    config.proxy.connect.h1_settings,
-                    config.proxy.connect.h2_settings,
+                    config.proxy.connect.http1,
+                    config.proxy.connect.http2.clone(),
                 ))
                 .check_service::<Http>()
                 .push_on_service(svc::MapErr::layer_boxed())

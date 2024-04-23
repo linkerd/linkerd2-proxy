@@ -301,11 +301,11 @@ impl<N> Outbound<N> {
             http.check_new_service::<Http<T>, http::Request<_>>()
                 .unlift_new()
                 .push(http::NewServeHttp::layer({
-                    let h2 = config.proxy.server.h2_settings;
+                    let h2 = config.proxy.server.http2.clone();
                     let drain = rt.drain.clone();
                     move |http: &Http<T>| http::ServerParams {
                             version: http.version,
-                            h2,
+                            http2: h2.clone(),
                             drain: drain.clone()
                     }
                 }))

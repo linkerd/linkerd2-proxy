@@ -112,7 +112,7 @@ impl<H> Inbound<H> {
         HSvc::Future: Send,
     {
         self.map_stack(|config, rt, http| {
-            let h2 = config.proxy.server.h2_settings;
+            let h2 = config.proxy.server.http2.clone();
             let drain = rt.drain.clone();
 
             http.check_new_service::<T, http::Request<http::BoxBody>>()
@@ -120,7 +120,7 @@ impl<H> Inbound<H> {
                 .check_new_new_service::<T, http::ClientHandle, http::Request<_>>()
                 .push(http::NewServeHttp::layer(move |t: &T| http::ServerParams {
                     version: t.param(),
-                    h2,
+                    http2: h2.clone(),
                     drain: drain.clone(),
                 }))
                 .check_new_service::<T, I>()

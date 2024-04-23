@@ -1,6 +1,6 @@
 use crate::{
-    client_handle::SetClientHandle, h2::Settings as H2Settings, upgrade, BoxBody, BoxRequest,
-    ClientHandle, TracingExecutor, Version,
+    client_handle::SetClientHandle, h2, upgrade, BoxBody, BoxRequest, ClientHandle,
+    TracingExecutor, Version,
 };
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
@@ -20,7 +20,7 @@ mod tests;
 #[derive(Clone, Debug)]
 pub struct Params {
     pub version: Version,
-    pub h2: H2Settings,
+    pub http2: h2::ServerParams,
     pub drain: drain::Watch,
 }
 
@@ -61,15 +61,50 @@ where
     type Service = ServeHttp<N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let Params { version, h2, drain } = self.params.extract_param(&target);
+        let Params {
+            version,
+            http2: h2,
+            drain,
+        } = self.params.extract_param(&target);
+        let h2::ServerParams {
+            keepalive,
+            flow_control,
+            max_concurrent_streams,
+            max_frame_size,
+            max_header_list_size,
+            max_send_buf_size,
+            max_pending_accept_reset_streams,
+        } = h2;
 
         let mut srv = hyper::server::conn::Http::new().with_executor(TracingExecutor);
-        srv.http2_initial_stream_window_size(h2.initial_stream_window_size)
-            .http2_initial_connection_window_size(h2.initial_connection_window_size);
+        match flow_control {
+            None => {}
+            Some(h2::FlowControl::Adaptive) => {
+                srv.http2_adaptive_window(true);
+            }
+            Some(h2::FlowControl::Fixed {
+                initial_stream_window_size,
+                initial_connection_window_size,
+            }) => {
+                srv.http2_initial_stream_window_size(initial_stream_window_size)
+                    .http2_initial_connection_window_size(initial_connection_window_size);
+            }
+        }
+
         // Configure HTTP/2 PING frames
-        if let Some(timeout) = h2.keepalive_timeout {
-            srv.http2_keep_alive_timeout(timeout)
-                .http2_keep_alive_interval(timeout / 4);
+        if let Some(ka) = keepalive {
+            srv.http2_keep_alive_timeout(ka.timeout)
+                .http2_keep_alive_interval(ka.interval);
+        }
+
+        srv.http2_max_concurrent_streams(max_concurrent_streams)
+            .http2_max_frame_size(max_frame_size)
+            .http2_max_pending_accept_reset_streams(max_pending_accept_reset_streams);
+        if let Some(sz) = max_header_list_size {
+            srv.http2_max_header_list_size(sz);
+        }
+        if let Some(sz) = max_send_buf_size {
+            srv.http2_max_send_buf_size(sz);
         }
 
         debug!(?version, "Creating HTTP service");

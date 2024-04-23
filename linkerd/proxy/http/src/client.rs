@@ -28,7 +28,7 @@ pub enum Settings {
 pub struct MakeClient<C, B> {
     connect: C,
     h1_pool: h1::PoolSettings,
-    h2_settings: h2::Settings,
+    h2_params: h2::ClientParams,
     _marker: PhantomData<fn(B)>,
 }
 
@@ -40,12 +40,12 @@ pub enum Client<C, T, B> {
 
 pub fn layer<C, B>(
     h1_pool: h1::PoolSettings,
-    h2_settings: h2::Settings,
-) -> impl layer::Layer<C, Service = MakeClient<C, B>> + Copy {
+    h2: h2::ClientParams,
+) -> impl layer::Layer<C, Service = MakeClient<C, B>> + Clone {
     layer::mk(move |connect: C| MakeClient {
         connect,
         h1_pool,
-        h2_settings,
+        h2_params: h2.clone(),
         _marker: PhantomData,
     })
 }
@@ -87,7 +87,7 @@ where
     fn call(&mut self, target: T) -> Self::Future {
         let connect = self.connect.clone();
         let h1_pool = self.h1_pool;
-        let h2_settings = self.h2_settings;
+        let h2_params = self.h2_params.clone();
 
         Box::pin(async move {
             let settings = target.param();
@@ -95,14 +95,12 @@ where
 
             let client = match settings {
                 Settings::H2 => {
-                    let h2 = h2::Connect::new(connect, h2_settings)
-                        .oneshot(target)
-                        .await?;
+                    let h2 = h2::Connect::new(connect, h2_params).oneshot(target).await?;
                     Client::H2(h2)
                 }
                 Settings::Http1 => Client::Http1(h1::Client::new(connect, target, h1_pool)),
                 Settings::OrigProtoUpgrade => {
-                    let h2 = h2::Connect::new(connect.clone(), h2_settings)
+                    let h2 = h2::Connect::new(connect.clone(), h2_params)
                         .oneshot(target.clone())
                         .await?;
                     let http1 = h1::Client::new(connect, target, h1_pool);
@@ -120,7 +118,7 @@ impl<C: Clone, B> Clone for MakeClient<C, B> {
         Self {
             connect: self.connect.clone(),
             h1_pool: self.h1_pool,
-            h2_settings: self.h2_settings,
+            h2_params: self.h2_params.clone(),
             _marker: self._marker,
         }
     }

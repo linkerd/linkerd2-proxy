@@ -128,7 +128,7 @@ impl Config {
                 move |t: &Http| {
                     http::ServerParams {
                         version: t.version,
-                        h2: Default::default(),
+                        http2: Default::default(),
                         drain: drain.clone(),
                     }
                 }

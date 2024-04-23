@@ -9,7 +9,7 @@ pub(crate) struct ServerRescue {
 
 #[derive(Clone, Debug)]
 pub struct ExtractServerParams {
-    h2: http::h2::Settings,
+    h2: http::h2::ServerParams,
     drain: drain::Watch,
 }
 
@@ -86,7 +86,7 @@ impl<N> Outbound<N> {
             http.unlift_new()
                 .push(svc::ArcNewService::layer())
                 .push(http::NewServeHttp::layer(ExtractServerParams {
-                    h2: config.proxy.server.h2_settings,
+                    h2: config.proxy.server.http2.clone(),
                     drain: rt.drain.clone(),
                 }))
         })
@@ -194,7 +194,7 @@ where
     fn extract_param(&self, t: &T) -> http::ServerParams {
         http::ServerParams {
             version: t.param(),
-            h2: self.h2,
+            http2: self.h2.clone(),
             drain: self.drain.clone(),
         }
     }
