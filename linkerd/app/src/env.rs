@@ -6,20 +6,22 @@ use linkerd_app_core::{
     proxy::http::{h1, h2},
     tls,
     transport::{DualListenAddr, Keepalive, ListenAddr},
-    Addr, AddrMatch, Conditional, IpNet,
+    AddrMatch, Conditional, IpNet,
 };
-use linkerd_tonic_stream::ReceiveLimits;
-use rangemap::RangeInclusiveSet;
 use std::{
     collections::{HashMap, HashSet},
-    fs,
-    net::{IpAddr, SocketAddr},
+    net::SocketAddr,
     path::PathBuf,
-    str::FromStr,
     time::Duration,
 };
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
+
+mod control;
+mod opencensus;
+mod types;
+
+use self::types::*;
 
 /// The strings used to build a configuration.
 pub trait Strings {
@@ -392,7 +394,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let metrics_retain_idle = parse(strings, ENV_METRICS_RETAIN_IDLE, parse_duration);
 
-    let control_receive_limits = mk_control_receive_limits(strings)?;
+    let control_receive_limits = control::mk_receive_limits(strings)?;
 
     // DNS
 
@@ -698,7 +700,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let limits = addr
             .addr
             .is_loopback()
-            .then(ReceiveLimits::default)
+            .then(control::ReceiveLimits::default)
             .unwrap_or(control_receive_limits);
         super::dst::Config {
             context: dst_token?.unwrap_or_default(),
@@ -727,7 +729,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let limits = addr
             .addr
             .is_loopback()
-            .then(ReceiveLimits::default)
+            .then(control::ReceiveLimits::default)
             .unwrap_or(control_receive_limits);
 
         let control = {
@@ -790,8 +792,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 outbound.http_request_queue.failfast_timeout
             };
             let attributes = oc_attributes_file_path
-                .map(|path| match path {
-                    Some(path) => oc_trace_attributes(path),
+                .map(|path| match path.and_then(|p| p.parse::<PathBuf>().ok()) {
+                    Some(path) => opencensus::read_trace_attributes(&path),
                     None => HashMap::new(),
                 })
                 .unwrap_or_default();
@@ -895,62 +897,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     })
 }
 
-fn oc_trace_attributes(oc_attributes_file_path: String) -> HashMap<String, String> {
-    match fs::read_to_string(oc_attributes_file_path.clone()) {
-        Ok(attributes_string) => convert_attributes_string_to_map(attributes_string),
-        Err(err) => {
-            warn!(
-                "could not read OC trace attributes file at {}: {}",
-                oc_attributes_file_path, err
-            );
-            HashMap::new()
-        }
-    }
-}
-
-fn convert_attributes_string_to_map(attributes: String) -> HashMap<String, String> {
-    attributes
-        .lines()
-        .filter_map(|line| {
-            let mut parts = line.splitn(2, '=');
-            parts.next().and_then(move |key| {
-                parts.next().map(move |val|
-                // Trim double quotes in value, present by default when attached through k8s downwardAPI
-                (key.to_string(), val.trim_matches('"').to_string()))
-            })
-        })
-        .collect()
-}
-
-fn mk_control_receive_limits(env: &dyn Strings) -> Result<ReceiveLimits, EnvError> {
-    const ENV_INIT: &str = "LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT";
-    const ENV_IDLE: &str = "LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT";
-    const ENV_LIFE: &str = "LINKERD2_PROXY_CONTROL_STREAM_LIFETIME";
-
-    let initial = parse(env, ENV_INIT, parse_duration_opt)?.flatten();
-    let idle = parse(env, ENV_IDLE, parse_duration_opt)?.flatten();
-    let lifetime = parse(env, ENV_LIFE, parse_duration_opt)?.flatten();
-
-    if initial.unwrap_or(Duration::ZERO) > idle.unwrap_or(Duration::MAX) {
-        error!("{ENV_INIT} must be less than {ENV_IDLE}");
-        return Err(EnvError::InvalidEnvVar);
-    }
-    if initial.unwrap_or(Duration::ZERO) > lifetime.unwrap_or(Duration::MAX) {
-        error!("{ENV_INIT} must be less than {ENV_LIFE}");
-        return Err(EnvError::InvalidEnvVar);
-    }
-    if idle.unwrap_or(Duration::ZERO) > lifetime.unwrap_or(Duration::MAX) {
-        error!("{ENV_IDLE} must be less than {ENV_LIFE}");
-        return Err(EnvError::InvalidEnvVar);
-    }
-
-    Ok(ReceiveLimits {
-        initial,
-        idle,
-        lifetime,
-    })
-}
-
 // === impl Env ===
 
 impl Strings for Env {
@@ -999,127 +945,6 @@ fn parse_tap_config(
     Ok(None)
 }
 
-fn parse_bool(s: &str) -> Result<bool, ParseError> {
-    s.parse().map_err(Into::into)
-}
-
-fn parse_number<T>(s: &str) -> Result<T, ParseError>
-where
-    T: FromStr,
-    ParseError: From<T::Err>,
-{
-    s.parse().map_err(Into::into)
-}
-
-fn parse_duration_opt(s: &str) -> Result<Option<Duration>, ParseError> {
-    if s.is_empty() {
-        return Ok(None);
-    }
-    parse_duration(s).map(Some)
-}
-
-fn parse_duration(s: &str) -> Result<Duration, ParseError> {
-    use regex::Regex;
-
-    let re = Regex::new(r"^\s*(\d+)(ms|s|m|h|d)?\s*$").expect("duration regex");
-
-    let cap = re.captures(s).ok_or(ParseError::NotADuration)?;
-
-    let magnitude = parse_number(&cap[1])?;
-    match cap.get(2).map(|m| m.as_str()) {
-        None if magnitude == 0 => Ok(Duration::from_secs(0)),
-        Some("ms") => Ok(Duration::from_millis(magnitude)),
-        Some("s") => Ok(Duration::from_secs(magnitude)),
-        Some("m") => Ok(Duration::from_secs(magnitude * 60)),
-        Some("h") => Ok(Duration::from_secs(magnitude * 60 * 60)),
-        Some("d") => Ok(Duration::from_secs(magnitude * 60 * 60 * 24)),
-        _ => Err(ParseError::NotADuration),
-    }
-}
-
-fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
-    match parse_addr(s)? {
-        Addr::Socket(a) => Ok(a),
-        _ => {
-            error!("Expected IP:PORT; found: {s}");
-            Err(ParseError::HostIsNotAnIpAddress)
-        }
-    }
-}
-
-fn parse_socket_addrs(s: &str) -> Result<Vec<SocketAddr>, ParseError> {
-    let addrs: Vec<&str> = s.split(',').collect();
-    if addrs.len() > 2 {
-        return Err(ParseError::TooManyAddrs);
-    }
-    addrs.iter().map(|s| parse_socket_addr(s)).collect()
-}
-
-fn parse_ip_set(s: &str) -> Result<HashSet<IpAddr>, ParseError> {
-    s.split(',')
-        .map(|s| s.parse::<IpAddr>().map_err(Into::into))
-        .collect()
-}
-
-fn parse_addr(s: &str) -> Result<Addr, ParseError> {
-    Addr::from_str(s).map_err(|e| {
-        error!("Not a valid address: {s}");
-        ParseError::AddrError(e)
-    })
-}
-
-fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, ParseError> {
-    let mut set = RangeInclusiveSet::new();
-    if !s.is_empty() {
-        for part in s.split(',') {
-            let part = part.trim();
-            // Ignore empty list entries
-            if part.is_empty() {
-                continue;
-            }
-
-            let mut parts = part.splitn(2, '-');
-            let low = parts
-                .next()
-                .ok_or_else(|| {
-                    error!("Not a valid port range: {part}");
-                    ParseError::NotAPortRange
-                })?
-                .trim();
-            let low = parse_number::<u16>(low)?;
-            if let Some(high) = parts.next() {
-                let high = high.trim();
-                let high = parse_number::<u16>(high).map_err(|e| {
-                    error!("Not a valid port range: {part}");
-                    e
-                })?;
-                if high < low {
-                    error!("Not a valid port range: {part}; {high} is greater than {low}");
-                    return Err(ParseError::NotAPortRange);
-                }
-                set.insert(low..=high);
-            } else {
-                set.insert(low..=low);
-            }
-        }
-    }
-    Ok(set)
-}
-
-pub(super) fn parse_dns_name(s: &str) -> Result<dns::Name, ParseError> {
-    s.parse().map_err(|_| {
-        error!("Not a valid identity name: {s}");
-        ParseError::NameError
-    })
-}
-
-pub(super) fn parse_identity(s: &str) -> Result<identity::Id, ParseError> {
-    s.parse().map_err(|_| {
-        error!("Not a valid identity name: {s}");
-        ParseError::NameError
-    })
-}
-
 pub(super) fn parse<T, Parse>(
     strings: &dyn Strings,
     name: &str,
@@ -1163,42 +988,6 @@ where
     }
 }
 
-fn parse_dns_suffixes(list: &str) -> Result<HashSet<dns::Suffix>, ParseError> {
-    let mut suffixes = HashSet::new();
-    for item in list.split(',') {
-        let item = item.trim();
-        if !item.is_empty() {
-            let sfx = parse_dns_suffix(item)?;
-            suffixes.insert(sfx);
-        }
-    }
-
-    Ok(suffixes)
-}
-
-fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
-    if s == "." {
-        return Ok(dns::Suffix::Root);
-    }
-
-    dns::Suffix::from_str(s).map_err(|_| ParseError::NotADomainSuffix)
-}
-
-fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
-    let mut nets = HashSet::new();
-    for input in list.split(',') {
-        let input = input.trim();
-        if !input.is_empty() {
-            let net = IpNet::from_str(input).map_err(|error| {
-                error!(%input, %error, "Invalid network");
-                ParseError::NotANetwork
-            })?;
-            nets.insert(net);
-        }
-    }
-    Ok(nets)
-}
-
 fn parse_default_policy(
     s: &str,
     cluster_nets: HashSet<IpNet>,
@@ -1229,6 +1018,7 @@ fn parse_default_policy(
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
     }
 }
+
 pub fn parse_backoff<S: Strings>(
     strings: &S,
     base: &str,
@@ -1386,285 +1176,5 @@ pub fn parse_linkerd_identity_config<S: Strings>(
             }
             Err(EnvError::InvalidEnvVar)
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_unit<F: Fn(u64) -> Duration>(unit: &str, to_duration: F) {
-        for v in &[0, 1, 23, 456_789] {
-            let d = to_duration(*v);
-            let text = format!("{}{}", v, unit);
-            assert_eq!(parse_duration(&text), Ok(d), "text=\"{}\"", text);
-
-            let text = format!(" {}{}\t", v, unit);
-            assert_eq!(parse_duration(&text), Ok(d), "text=\"{}\"", text);
-        }
-    }
-
-    #[test]
-    fn parse_duration_unit_ms() {
-        test_unit("ms", Duration::from_millis);
-    }
-
-    #[test]
-    fn parse_duration_unit_s() {
-        test_unit("s", Duration::from_secs);
-    }
-
-    #[test]
-    fn parse_duration_unit_m() {
-        test_unit("m", |v| Duration::from_secs(v * 60));
-    }
-
-    #[test]
-    fn parse_duration_unit_h() {
-        test_unit("h", |v| Duration::from_secs(v * 60 * 60));
-    }
-
-    #[test]
-    fn parse_duration_unit_d() {
-        test_unit("d", |v| Duration::from_secs(v * 60 * 60 * 24));
-    }
-
-    #[test]
-    fn parse_duration_floats_invalid() {
-        assert_eq!(parse_duration(".123h"), Err(ParseError::NotADuration));
-        assert_eq!(parse_duration("1.23h"), Err(ParseError::NotADuration));
-    }
-
-    #[test]
-    fn parse_duration_space_before_unit_invalid() {
-        assert_eq!(parse_duration("1 ms"), Err(ParseError::NotADuration));
-    }
-
-    #[test]
-    fn parse_duration_overflows_invalid() {
-        assert!(matches!(
-            parse_duration("123456789012345678901234567890ms"),
-            Err(ParseError::NotAnInteger(_))
-        ));
-    }
-
-    #[test]
-    fn parse_duration_invalid_unit() {
-        assert_eq!(parse_duration("12moons"), Err(ParseError::NotADuration));
-        assert_eq!(parse_duration("12y"), Err(ParseError::NotADuration));
-    }
-
-    #[test]
-    fn parse_duration_zero_without_unit() {
-        assert_eq!(parse_duration("0"), Ok(Duration::from_secs(0)));
-    }
-
-    #[test]
-    fn parse_duration_number_without_unit_is_invalid() {
-        assert_eq!(parse_duration("1"), Err(ParseError::NotADuration));
-    }
-
-    #[test]
-    fn convert_attributes_string_to_map_different_values() {
-        let attributes_string = "\
-            cluster=\"test-cluster1\"\n\
-            rack=\"rack-22\"\n\
-            zone=us-est-coast\n\
-            linkerd.io/control-plane-component=\"controller\"\n\
-            linkerd.io/proxy-deployment=\"linkerd-controller\"\n\
-            workload=\n\
-            kind=\"\"\n\
-            key1=\"=\"\n\
-            key2==value2\n\
-            key3\n\
-            =key4\n\
-            "
-        .to_string();
-
-        let expected = [
-            ("cluster".to_string(), "test-cluster1".to_string()),
-            ("rack".to_string(), "rack-22".to_string()),
-            ("zone".to_string(), "us-est-coast".to_string()),
-            (
-                "linkerd.io/control-plane-component".to_string(),
-                "controller".to_string(),
-            ),
-            (
-                "linkerd.io/proxy-deployment".to_string(),
-                "linkerd-controller".to_string(),
-            ),
-            ("workload".to_string(), "".to_string()),
-            ("kind".to_string(), "".to_string()),
-            ("key1".to_string(), "=".to_string()),
-            ("key2".to_string(), "=value2".to_string()),
-            ("".to_string(), "key4".to_string()),
-        ]
-        .iter()
-        .cloned()
-        .collect();
-
-        assert_eq!(
-            convert_attributes_string_to_map(attributes_string),
-            expected
-        );
-    }
-
-    #[test]
-    fn dns_suffixes() {
-        fn p(s: &str) -> Result<Vec<String>, ParseError> {
-            let mut sfxs = parse_dns_suffixes(s)?
-                .into_iter()
-                .map(|s| format!("{}", s))
-                .collect::<Vec<_>>();
-            sfxs.sort();
-            Ok(sfxs)
-        }
-
-        assert_eq!(p(""), Ok(vec![]), "empty string");
-        assert_eq!(p(",,,"), Ok(vec![]), "empty list components are ignored");
-        assert_eq!(p("."), Ok(vec![".".to_owned()]), "root is valid");
-        assert_eq!(
-            p("a.b.c"),
-            Ok(vec!["a.b.c".to_owned()]),
-            "a name without trailing dot"
-        );
-        assert_eq!(
-            p("a.b.c."),
-            Ok(vec!["a.b.c.".to_owned()]),
-            "a name with a trailing dot"
-        );
-        assert_eq!(
-            p(" a.b.c. , d.e.f. "),
-            Ok(vec!["a.b.c.".to_owned(), "d.e.f.".to_owned()]),
-            "whitespace is ignored"
-        );
-        assert_eq!(
-            p("a .b.c"),
-            Err(ParseError::NotADomainSuffix),
-            "whitespace not allowed within a name"
-        );
-        assert_eq!(
-            p("mUlti.CasE.nAmE"),
-            Ok(vec!["multi.case.name".to_owned()]),
-            "names are coerced to lowercase"
-        );
-    }
-
-    #[test]
-    fn ip_sets() {
-        let ips = &[
-            IpAddr::from([127, 0, 0, 1]),
-            IpAddr::from([10, 0, 2, 42]),
-            IpAddr::from([192, 168, 0, 69]),
-        ];
-        assert_eq!(
-            parse_ip_set("127.0.0.1"),
-            Ok(ips[..1].iter().cloned().collect())
-        );
-        assert_eq!(
-            parse_ip_set("127.0.0.1,10.0.2.42"),
-            Ok(ips[..2].iter().cloned().collect())
-        );
-        assert_eq!(
-            parse_ip_set("127.0.0.1,10.0.2.42,192.168.0.69"),
-            Ok(ips[..3].iter().cloned().collect())
-        );
-        assert!(parse_ip_set("blaah").is_err());
-        assert!(parse_ip_set("10.4.0.555").is_err());
-        assert!(parse_ip_set("10.4.0.3,foobar,192.168.0.69").is_err());
-        assert!(parse_ip_set("10.0.1.1/24").is_err());
-    }
-
-    #[test]
-    fn ranges() {
-        fn set(
-            ranges: impl IntoIterator<Item = std::ops::RangeInclusive<u16>>,
-        ) -> Result<RangeInclusiveSet<u16>, ParseError> {
-            Ok(ranges.into_iter().collect())
-        }
-
-        assert_eq!(dbg!(parse_port_range_set("1-65535")), set([1..=65535]));
-        assert_eq!(
-            dbg!(parse_port_range_set("1-2,42-420")),
-            set([1..=2, 42..=420])
-        );
-        assert_eq!(
-            dbg!(parse_port_range_set("1-2,42,80-420")),
-            set([1..=2, 42..=42, 80..=420])
-        );
-        assert_eq!(
-            dbg!(parse_port_range_set("1,20,30,40")),
-            set([1..=1, 20..=20, 30..=30, 40..=40])
-        );
-        assert_eq!(
-            dbg!(parse_port_range_set("40,30,20,1")),
-            set([1..=1, 20..=20, 30..=30, 40..=40])
-        );
-        // ignores empty list entries
-        assert_eq!(dbg!(parse_port_range_set("1,,,,2")), set([1..=1, 2..=2]));
-        // ignores rando whitespace
-        assert_eq!(
-            dbg!(parse_port_range_set("1, 2,\t3- 5")),
-            set([1..=1, 2..=2, 3..=5])
-        );
-        assert_eq!(dbg!(parse_port_range_set("1, , 2,")), set([1..=1, 2..=2]));
-
-        // non-numeric strings
-        assert!(dbg!(parse_port_range_set("asdf")).is_err());
-        assert!(dbg!(parse_port_range_set("80, 443, http")).is_err());
-        assert!(dbg!(parse_port_range_set("80,http-443")).is_err());
-
-        // backwards ranges
-        assert!(dbg!(parse_port_range_set("80-79")).is_err());
-        assert!(dbg!(parse_port_range_set("1,2,5-2")).is_err());
-
-        // malformed (half-open) ranges
-        assert!(dbg!(parse_port_range_set("-1")).is_err());
-        assert!(dbg!(parse_port_range_set("1,2-,50")).is_err());
-
-        // not a u16
-        assert!(dbg!(parse_port_range_set("69420")).is_err());
-        assert!(dbg!(parse_port_range_set("1-69420")).is_err());
-    }
-
-    #[test]
-    fn control_stream_limits() {
-        impl Strings for HashMap<&'static str, &'static str> {
-            fn get(&self, key: &str) -> Result<Option<String>, EnvError> {
-                Ok(self.get(key).map(ToString::to_string))
-            }
-        }
-
-        let mut env = HashMap::default();
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "1s");
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "2s");
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "3s");
-        let limits = mk_control_receive_limits(&env).unwrap();
-        assert_eq!(limits.initial, Some(Duration::from_secs(1)));
-        assert_eq!(limits.idle, Some(Duration::from_secs(2)));
-        assert_eq!(limits.lifetime, Some(Duration::from_secs(3)));
-
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "");
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "");
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "");
-        let limits = mk_control_receive_limits(&env).unwrap();
-        assert_eq!(limits.initial, None);
-        assert_eq!(limits.idle, None);
-        assert_eq!(limits.lifetime, None);
-
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "3s");
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "1s");
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "");
-        assert!(mk_control_receive_limits(&env).is_err());
-
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "3s");
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "");
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "1s");
-        assert!(mk_control_receive_limits(&env).is_err());
-
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "");
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "3s");
-        env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "1s");
-        assert!(mk_control_receive_limits(&env).is_err());
     }
 }
