@@ -18,6 +18,7 @@ use thiserror::Error;
 use tracing::{debug, error, info, warn};
 
 mod control;
+mod http2;
 mod opencensus;
 mod types;
 
@@ -475,13 +476,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let server = ServerConfig {
             addr,
             keepalive,
-            http2: h2::ServerParams {
-                flow_control: Some(h2::FlowControl::Fixed {
-                    initial_stream_window_size,
-                    initial_connection_window_size,
-                }),
-                ..Default::default()
-            },
+            http2: http2::parse_server(strings, "LINKERD2_PROXY_OUTBOUND_SERVER_HTTP2")?,
         };
         let discovery_idle_timeout =
             outbound_discovery_idle_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISCOVERY_IDLE_TIMEOUT);
@@ -569,13 +564,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let server = ServerConfig {
             addr,
             keepalive,
-            http2: h2::ServerParams {
-                flow_control: Some(h2::FlowControl::Fixed {
-                    initial_stream_window_size,
-                    initial_connection_window_size,
-                }),
-                ..Default::default()
-            },
+            http2: http2::parse_server(strings, "LINKERD2_PROXY_INBOUND_SERVER_HTTP2")?,
         };
         let discovery_idle_timeout =
             inbound_discovery_idle_timeout?.unwrap_or(DEFAULT_INBOUND_DISCOVERY_IDLE_TIMEOUT);
@@ -776,13 +765,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         server: ServerConfig {
             addr: DualListenAddr(admin_listener_addr, None),
             keepalive: inbound.proxy.server.keepalive,
-            http2: h2::ServerParams {
-                flow_control: Some(h2::FlowControl::Fixed {
-                    initial_stream_window_size,
-                    initial_connection_window_size,
-                }),
-                ..Default::default()
-            },
+            http2: inbound.proxy.server.http2.clone(),
         },
 
         // TODO(ver) Currently we always enable profiling when the pprof feature
@@ -841,13 +824,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             config: ServerConfig {
                 addr: DualListenAddr(addr, None),
                 keepalive: inbound.proxy.server.keepalive,
-                http2: h2::ServerParams {
-                    flow_control: Some(h2::FlowControl::Fixed {
-                        initial_stream_window_size,
-                        initial_connection_window_size,
-                    }),
-                    ..Default::default()
-                },
+                http2: inbound.proxy.server.http2.clone(),
             },
         })
         .unwrap_or(super::tap::Config::Disabled);
@@ -1078,8 +1055,8 @@ pub fn parse_control_addr<S: Strings>(
     strings: &S,
     base: &str,
 ) -> Result<Option<ControlAddr>, EnvError> {
-    let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
-    let n = parse(strings, &format!("{}_NAME", base), parse_dns_name)?;
+    let a = parse(strings, &format!("{base}_ADDR"), parse_addr)?;
+    let n = parse(strings, &format!("{base}_NAME"), parse_dns_name)?;
     match (a, n) {
         (None, None) => Ok(None),
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
@@ -1204,5 +1181,12 @@ pub fn parse_linkerd_identity_config<S: Strings>(
             }
             Err(EnvError::InvalidEnvVar)
         }
+    }
+}
+
+#[cfg(test)]
+impl Strings for std::collections::HashMap<&'static str, &'static str> {
+    fn get(&self, key: &str) -> Result<Option<String>, EnvError> {
+        Ok(self.get(key).map(ToString::to_string))
     }
 }

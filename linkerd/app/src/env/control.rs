@@ -40,13 +40,8 @@ mod tests {
 
     #[test]
     fn control_stream_limits() {
-        impl Strings for HashMap<&'static str, &'static str> {
-            fn get(&self, key: &str) -> Result<Option<String>, EnvError> {
-                Ok(self.get(key).map(ToString::to_string))
-            }
-        }
-
         let mut env = HashMap::default();
+
         env.insert("LINKERD2_PROXY_CONTROL_STREAM_INITIAL_TIMEOUT", "1s");
         env.insert("LINKERD2_PROXY_CONTROL_STREAM_IDLE_TIMEOUT", "2s");
         env.insert("LINKERD2_PROXY_CONTROL_STREAM_LIFETIME", "3s");

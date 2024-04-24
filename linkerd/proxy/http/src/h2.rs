@@ -16,10 +16,10 @@ use std::{
 use tracing::instrument::Instrument;
 use tracing::{debug, debug_span, trace_span};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ServerParams {
     pub flow_control: Option<FlowControl>,
-    pub keepalive: Option<KeepAlive>,
+    pub keep_alive: Option<KeepAlive>,
     pub max_concurrent_streams: Option<u32>,
 
     // Internals
@@ -29,30 +29,31 @@ pub struct ServerParams {
     pub max_send_buf_size: Option<usize>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ClientParams {
     pub flow_control: Option<FlowControl>,
-    pub keepalive: Option<ClientKeepAlive>,
+    pub keep_alive: Option<ClientKeepAlive>,
 
-    // Interansl
+    // Internals
     pub max_concurrent_reset_streams: Option<usize>,
     pub max_frame_size: Option<u32>,
     pub max_send_buf_size: Option<usize>,
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct KeepAlive {
     pub interval: Duration,
     pub timeout: Duration,
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ClientKeepAlive {
-    pub keepalive: KeepAlive,
+    pub interval: Duration,
+    pub timeout: Duration,
     pub while_idle: bool,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum FlowControl {
     Adaptive,
     Fixed {
@@ -119,7 +120,7 @@ where
     fn call(&mut self, target: T) -> Self::Future {
         let ClientParams {
             flow_control,
-            keepalive,
+            keep_alive,
             max_concurrent_reset_streams,
             max_frame_size,
             max_send_buf_size,
@@ -152,13 +153,14 @@ where
 
                 // Configure HTTP/2 PING frames
                 if let Some(ClientKeepAlive {
-                    keepalive: ka,
+                    timeout,
+                    interval,
                     while_idle,
-                }) = keepalive
+                }) = keep_alive
                 {
                     builder
-                        .http2_keep_alive_timeout(ka.timeout)
-                        .http2_keep_alive_interval(ka.interval)
+                        .http2_keep_alive_timeout(timeout)
+                        .http2_keep_alive_interval(interval)
                         .http2_keep_alive_while_idle(while_idle);
                 }
 
