@@ -1,0 +1,6 @@
+[package]
+name = "linkerd-http-h2"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "HTTP/2-specific configuration types"
