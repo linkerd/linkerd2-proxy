@@ -1,7 +1,7 @@
 use crate::{
     api::destination::{
         protocol_hint::{OpaqueTransport, Protocol},
-        AuthorityOverride, TlsIdentity, WeightedAddr,
+        AuthorityOverride, Http2ClientParams, TlsIdentity, WeightedAddr,
     },
     api::net::TcpAddress,
     metadata::{Metadata, ProtocolHint},
@@ -9,7 +9,7 @@ use crate::{
 use http::uri::Authority;
 use linkerd_identity::Id;
 use linkerd_tls::{client::ServerId, ClientTls, ServerName};
-use std::{collections::HashMap, net::SocketAddr, str::FromStr};
+use std::{collections::HashMap, net::SocketAddr, str::FromStr, time::Duration};
 
 /// Construct a new labeled `SocketAddr `from a protobuf `WeightedAddr`.
 pub fn to_addr_meta(
@@ -41,6 +41,8 @@ pub fn to_addr_meta(
     }
 
     let tls_id = pb.tls_identity.and_then(to_identity);
+    let http2 = pb.http2.map(to_http2_client_params).unwrap_or_default();
+
     let meta = Metadata::new(
         labels,
         proto_hint,
@@ -48,6 +50,7 @@ pub fn to_addr_meta(
         tls_id,
         authority_override,
         pb.weight,
+        http2,
     );
     Some((addr, meta))
 }
@@ -146,6 +149,60 @@ pub(crate) fn to_sock_addr(pb: TcpAddress) -> Option<SocketAddr> {
     }
 }
 
+fn to_http2_client_params(pb: Http2ClientParams) -> linkerd_http_h2::ClientParams {
+    use linkerd_http_h2 as h2;
+
+    h2::ClientParams {
+        flow_control: pb.flow_control.and_then(|pb| {
+            if pb.adaptive_flow_control {
+                return Some(h2::FlowControl::Adaptive);
+            }
+            let initial_connection_window_size = if pb.initial_connection_window_size > 0 {
+                pb.initial_connection_window_size
+            } else {
+                return None;
+            };
+            let initial_stream_window_size = if pb.initial_stream_window_size > 0 {
+                pb.initial_stream_window_size
+            } else {
+                return None;
+            };
+            Some(h2::FlowControl::Fixed {
+                initial_connection_window_size,
+                initial_stream_window_size,
+            })
+        }),
+        keep_alive: pb.keep_alive.and_then(|pb| {
+            let Some(interval) = pb.interval.and_then(|pb| Duration::try_from(pb).ok()) else {
+                return None;
+            };
+            let Some(timeout) = pb.timeout.and_then(|pb| Duration::try_from(pb).ok()) else {
+                return None;
+            };
+            Some(h2::ClientKeepAlive {
+                interval,
+                timeout,
+                while_idle: pb.while_idle,
+            })
+        }),
+        max_concurrent_reset_streams: pb
+            .internals
+            .as_ref()
+            .map(|i| i.max_concurrent_reset_streams as usize)
+            .filter(|n| *n > 0),
+        max_frame_size: pb
+            .internals
+            .as_ref()
+            .map(|i| i.max_frame_size)
+            .filter(|n| *n > 0),
+        max_send_buf_size: pb
+            .internals
+            .as_ref()
+            .map(|i| i.max_send_buf_size as usize)
+            .filter(|n| *n > 0),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,5 +282,115 @@ mod tests {
         ));
 
         assert_eq!(expected_identity, to_identity(pb_id));
+    }
+
+    #[test]
+    fn http2_client_params() {
+        use linkerd2_proxy_api::destination::http2_client_params as pb;
+        use linkerd_http_h2 as h2;
+
+        assert_eq!(
+            h2::ClientParams {
+                flow_control: Some(h2::FlowControl::Adaptive),
+                ..Default::default()
+            },
+            to_http2_client_params(Http2ClientParams {
+                flow_control: Some(pb::FlowControl {
+                    adaptive_flow_control: true,
+                    initial_connection_window_size: 0,
+                    initial_stream_window_size: 0,
+                }),
+                ..Default::default()
+            }),
+        );
+
+        assert_eq!(
+            h2::ClientParams {
+                flow_control: Some(h2::FlowControl::Fixed {
+                    initial_stream_window_size: 10,
+                    initial_connection_window_size: 100,
+                }),
+                ..Default::default()
+            },
+            to_http2_client_params(Http2ClientParams {
+                flow_control: Some(pb::FlowControl {
+                    initial_connection_window_size: 100,
+                    initial_stream_window_size: 10,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        );
+
+        assert_eq!(
+            h2::ClientParams::default(),
+            to_http2_client_params(Http2ClientParams {
+                flow_control: Some(pb::FlowControl {
+                    initial_stream_window_size: 10,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        );
+        assert_eq!(
+            h2::ClientParams {
+                keep_alive: Some(h2::ClientKeepAlive {
+                    interval: Duration::from_secs(10),
+                    timeout: Duration::from_secs(20),
+                    while_idle: true,
+                }),
+                ..Default::default()
+            },
+            to_http2_client_params(Http2ClientParams {
+                keep_alive: Some(pb::KeepAlive {
+                    interval: Some(Duration::from_secs(10).try_into().unwrap()),
+                    timeout: Some(Duration::from_secs(20).try_into().unwrap()),
+                    while_idle: true,
+                }),
+                ..Default::default()
+            }),
+        );
+
+        assert_eq!(
+            h2::ClientParams {
+                max_frame_size: Some(10),
+                ..Default::default()
+            },
+            to_http2_client_params(Http2ClientParams {
+                internals: Some(pb::Internals {
+                    max_frame_size: 10,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        );
+
+        assert_eq!(
+            h2::ClientParams {
+                max_send_buf_size: Some(10),
+                ..Default::default()
+            },
+            to_http2_client_params(Http2ClientParams {
+                internals: Some(pb::Internals {
+                    max_send_buf_size: 10,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        );
+
+        assert_eq!(
+            h2::ClientParams {
+                max_concurrent_reset_streams: Some(10),
+                ..Default::default()
+            },
+            to_http2_client_params(Http2ClientParams {
+                internals: Some(pb::Internals {
+                    max_concurrent_reset_streams: 10,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        );
     }
 }

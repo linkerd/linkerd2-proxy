@@ -1,4 +1,5 @@
 use http::uri::Authority;
+use linkerd_http_h2::ClientParams as HTTP2ClientParams;
 use linkerd_tls::client::ClientTls;
 use std::collections::BTreeMap;
 
@@ -24,6 +25,8 @@ pub struct Metadata {
 
     /// Used to override the the authority if needed
     authority_override: Option<Authority>,
+
+    http2: HTTP2ClientParams,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -49,6 +52,7 @@ impl Default for Metadata {
             authority_override: None,
             tagged_transport_port: None,
             protocol_hint: ProtocolHint::Unknown,
+            http2: HTTP2ClientParams::default(),
         }
     }
 }
@@ -61,6 +65,7 @@ impl Metadata {
         identity: Option<ClientTls>,
         authority_override: Option<Authority>,
         weight: u32,
+        http2: HTTP2ClientParams,
     ) -> Self {
         Self {
             labels: labels.into_iter().collect::<BTreeMap<_, _>>().into(),
@@ -69,6 +74,7 @@ impl Metadata {
             identity,
             authority_override,
             weight,
+            http2,
         }
     }
 
@@ -95,5 +101,9 @@ impl Metadata {
 
     pub fn authority_override(&self) -> Option<&Authority> {
         self.authority_override.as_ref()
+    }
+
+    pub fn http2_client_params(&self) -> &HTTP2ClientParams {
+        &self.http2
     }
 }

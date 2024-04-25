@@ -118,6 +118,7 @@ where
                     move |((addr, metadata), target): ((SocketAddr, Metadata), Self)| {
                         tracing::trace!(%addr, ?metadata, ?target, "Resolved endpoint");
                         let is_local = inbound_ips.contains(&addr.ip());
+                        let http2 = http2.override_from(metadata.http2_client_params());
                         Endpoint {
                             addr: Remote(ServerAddr(addr)),
                             metadata,
@@ -130,7 +131,7 @@ where
                             close_server_connection_on_remote_proxy_error: false,
                             // TODO(ver) Configure from metadata.
                             http1,
-                            http2: http2.clone(),
+                            http2,
                         }
                     }
                 })

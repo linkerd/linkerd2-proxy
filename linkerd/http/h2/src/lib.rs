@@ -45,3 +45,19 @@ pub enum FlowControl {
         initial_connection_window_size: u32,
     },
 }
+
+// === impl ClientParams ===
+
+impl ClientParams {
+    pub fn override_from(&self, overrides: &Self) -> Self {
+        Self {
+            flow_control: overrides.flow_control.or(self.flow_control),
+            keep_alive: overrides.keep_alive.or(self.keep_alive),
+            max_concurrent_reset_streams: overrides
+                .max_concurrent_reset_streams
+                .or(self.max_concurrent_reset_streams),
+            max_frame_size: overrides.max_frame_size.or(self.max_frame_size),
+            max_send_buf_size: overrides.max_send_buf_size.or(self.max_send_buf_size),
+        }
+    }
+}
