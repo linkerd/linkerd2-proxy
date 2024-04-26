@@ -148,7 +148,6 @@ where
             } else {
                 if t.is_none() {
                     tracing::info!(?addr, "Adding endpoint");
-                    self.metrics.endpoints.inc();
                 } else {
                     tracing::info!(?addr, "Updating endpoint");
                 }
@@ -164,11 +163,11 @@ where
         for (addr, _) in remaining.drain() {
             tracing::info!(?addr, "Removing endpoint");
             self.pool.evict(&addr);
-            self.metrics.endpoints.dec();
             changed = true;
         }
 
         if changed {
+            self.metrics.endpoints.set(self.endpoints.len() as i64);
             self.metrics.updates_reset.inc();
             self.next_idx = None;
         }
@@ -272,6 +271,12 @@ where
     fn call(&mut self, req: Req) -> Self::Future {
         let idx = self.next_idx.take().expect("call before ready");
         self.pool.call_ready_index(idx, req).err_into()
+    }
+}
+
+impl<T, N, Req, S> Drop for P2cPool<T, N, Req, S> {
+    fn drop(&mut self) {
+        self.metrics.endpoints.set(0);
     }
 }
 
@@ -458,6 +463,51 @@ mod tests {
         assert_eq!(metrics.updates_reset.get(), 5);
         assert_eq!(metrics.updates_add.get(), 2);
         assert_eq!(metrics.updates_rm.get(), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn update_pool_handle_drop() {
+        let _trace = linkerd_tracing::test::with_default_filter("trace");
+
+        let addr0 = "192.168.10.10:80".parse().unwrap();
+        let addr1 = "192.168.10.11:80".parse().unwrap();
+        let addr2 = "192.168.10.12:80".parse().unwrap();
+
+        let seen = Arc::new(Mutex::new(HashSet::<(SocketAddr, usize)>::default()));
+        let metrics = P2cMetrics::default();
+        let mut pool = P2cPool::new(metrics.clone(), |(addr, n): (SocketAddr, usize)| {
+            assert!(seen.lock().insert((addr, n)));
+            PeakEwma::new(
+                linkerd_stack::service_fn(|()| {
+                    std::future::ready(Ok::<_, std::convert::Infallible>(()))
+                }),
+                time::Duration::from_secs(1),
+                1.0 * 1000.0 * 1000.0,
+                CompleteOnResponse::default(),
+            )
+        });
+
+        pool.reset_pool(vec![(addr0, 0), (addr1, 0), (addr2, 0)]);
+        assert_eq!(pool.endpoints.len(), 3);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
+
+        drop(pool);
+        assert_eq!(metrics.endpoints.get(), 0);
+
+        let mut pool = P2cPool::new(metrics.clone(), |(addr, n): (SocketAddr, usize)| {
+            assert!(seen.lock().insert((addr, n)));
+            PeakEwma::new(
+                linkerd_stack::service_fn(|()| {
+                    std::future::ready(Ok::<_, std::convert::Infallible>(()))
+                }),
+                time::Duration::from_secs(1),
+                1.0 * 1000.0 * 1000.0,
+                CompleteOnResponse::default(),
+            )
+        });
+        pool.reset_pool(vec![(addr0, 1), (addr1, 1), (addr2, 1)]);
+        assert_eq!(pool.endpoints.len(), 3);
+        assert_eq!(metrics.endpoints.get(), pool.endpoints.len() as i64);
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
