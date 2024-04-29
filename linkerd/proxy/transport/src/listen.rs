@@ -6,11 +6,7 @@ use futures::prelude::*;
 use linkerd_error::Result;
 use linkerd_io as io;
 use linkerd_stack::Param;
-use std::{
-    fmt,
-    net::{SocketAddr, SocketAddrV4},
-    pin::Pin,
-};
+use std::{fmt, net::SocketAddr, pin::Pin};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -93,7 +89,7 @@ where
             super::set_nodelay_or_warn(&tcp);
             let tcp = super::set_keepalive_or_warn(tcp, keepalive).map_err(KeepaliveError)?;
 
-            fn ipv4_mapped(orig: SocketAddr) -> SocketAddr {    
+            fn ipv4_mapped(orig: SocketAddr) -> SocketAddr {
                 if let SocketAddr::V6(v6) = orig {
                     if let Some(ip) = v6.ip().to_ipv4_mapped() {
                         return (ip, orig.port()).into();
@@ -101,7 +97,7 @@ where
                 }
                 orig
             }
-            
+
             let client_addr = tcp.peer_addr().map_err(PeerAddrError)?;
             let client = Remote(ClientAddr(ipv4_mapped(client_addr)));
             Ok((Addrs { server, client }, tcp))
