@@ -83,16 +83,12 @@ where
 
         let incoming = incoming.map(|res| {
             let (inner, tcp) = res?;
-            let is_ipv4 = match inner.param() {
-                // used when binding to 0.0.0.0
-                Remote(ClientAddr(SocketAddr::V4(_))) => true,
-                // used when binding to ::
-                Remote(ClientAddr(SocketAddr::V6(a))) => a.ip().to_ipv4_mapped().is_some(),
-            };
-            let orig_dst = if is_ipv4 {
-                orig_dst_addr_v4(&tcp)?
-            } else {
-                orig_dst_addr_v6(&tcp)?
+            let orig_dst = match inner.param() {
+                // IPv4-mapped IPv6 addresses are unwrapped by BindTcp::bind() and received here as
+                // SocketAddr::V4. We must call getsockopt with IPv4 constants (via
+                // orig_dst_addr_v4) even if it originally was an IPv6
+                Remote(ClientAddr(SocketAddr::V4(_))) => orig_dst_addr_v4(&tcp)?,
+                Remote(ClientAddr(SocketAddr::V6(_))) => orig_dst_addr_v6(&tcp)?,
             };
             let orig_dst = OrigDstAddr(orig_dst);
             let addrs = Addrs { inner, orig_dst };
