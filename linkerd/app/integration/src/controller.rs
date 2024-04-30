@@ -529,6 +529,7 @@ impl From<DestinationBuilder> for pb::Update {
                     protocol_hint,
                     tls_identity,
                     authority_override: None,
+                    http2: None,
                 }],
                 metric_labels: set_labels,
             })),
