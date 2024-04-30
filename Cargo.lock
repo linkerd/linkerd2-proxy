@@ -1730,6 +1730,7 @@ dependencies = [
  "http-body",
  "linkerd-addr",
  "linkerd-error",
+ "linkerd-http-h2",
  "linkerd-identity",
  "linkerd-proxy-core",
  "linkerd-stack",
