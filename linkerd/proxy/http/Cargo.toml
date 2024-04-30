@@ -41,6 +41,7 @@ linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }
 linkerd-http-box = { path = "../../http/box" }
+linkerd-http-h2 = { path = "../../http/h2" }
 linkerd-http-classify = { path = "../../http/classify" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-balance = { path = "../balance" }

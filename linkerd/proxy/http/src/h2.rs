@@ -1,6 +1,5 @@
 use crate::executor::TracingExecutor;
 use futures::prelude::*;
-pub use h2::{Error as H2Error, Reason};
 use hyper::{
     body::HttpBody,
     client::conn::{self, SendRequest},
@@ -11,56 +10,12 @@ use std::{
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
-    time::Duration,
 };
 use tracing::instrument::Instrument;
 use tracing::{debug, debug_span, trace_span};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ServerParams {
-    pub flow_control: Option<FlowControl>,
-    pub keep_alive: Option<KeepAlive>,
-    pub max_concurrent_streams: Option<u32>,
-
-    // Internals
-    pub max_frame_size: Option<u32>,
-    pub max_header_list_size: Option<u32>,
-    pub max_pending_accept_reset_streams: Option<usize>,
-    pub max_send_buf_size: Option<usize>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ClientParams {
-    pub flow_control: Option<FlowControl>,
-    pub keep_alive: Option<ClientKeepAlive>,
-
-    // Internals
-    pub max_concurrent_reset_streams: Option<usize>,
-    pub max_frame_size: Option<u32>,
-    pub max_send_buf_size: Option<usize>,
-}
-
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct KeepAlive {
-    pub interval: Duration,
-    pub timeout: Duration,
-}
-
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct ClientKeepAlive {
-    pub interval: Duration,
-    pub timeout: Duration,
-    pub while_idle: bool,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum FlowControl {
-    Adaptive,
-    Fixed {
-        initial_stream_window_size: u32,
-        initial_connection_window_size: u32,
-    },
-}
+pub use h2::{Error as H2Error, Reason};
+pub use linkerd_http_h2::{ClientKeepAlive, ClientParams, FlowControl, KeepAlive, ServerParams};
 
 #[derive(Debug)]
 pub struct Connect<C, B> {

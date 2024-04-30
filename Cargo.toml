@@ -27,6 +27,7 @@ members = [
     "linkerd/http/access-log",
     "linkerd/http/box",
     "linkerd/http/classify",
+    "linkerd/http/h2",
     "linkerd/http/metrics",
     "linkerd/http/retry",
     "linkerd/http/route",
@@ -77,6 +78,7 @@ members = [
     "opencensus-proto",
     "spiffe-proto",
     "tools",
+    "linkerd/http/h2",
 ]
 
 [profile.release]
