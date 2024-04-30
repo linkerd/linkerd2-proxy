@@ -4,7 +4,7 @@
 use super::{balance::EwmaConfig, client, handle_proxy_error_headers};
 use crate::{http, stack_labels, BackendRef, Outbound, ParentRef};
 use linkerd_app_core::{
-    config::QueueConfig,
+    config::{ConnectConfig, QueueConfig},
     metrics::{prefix_labels, EndpointLabels, OutboundEndpointLabels},
     profiles,
     proxy::{
@@ -46,6 +46,9 @@ pub struct Endpoint<T> {
     parent: T,
     queue: QueueConfig,
     close_server_connection_on_remote_proxy_error: bool,
+
+    http1: http::h1::PoolSettings,
+    http2: http::h2::ClientParams,
 }
 
 // === impl Outbound ===
@@ -100,6 +103,8 @@ impl<N> Outbound<N> {
                 svc::mk(move |_| futures::future::ready(Err(DispatcherFailed(message.clone()))))
             });
 
+            let ConnectConfig { http1, http2, .. } = config.proxy.connect.clone();
+
             inner
                 .push(balance::Balance::layer(config, rt, resolve))
                 .check_new_clone()
@@ -124,6 +129,9 @@ impl<N> Outbound<N> {
                                     parent,
                                     queue,
                                     close_server_connection_on_remote_proxy_error: true,
+                                    // TODO(ver) read these from metadata.
+                                    http1,
+                                    http2: http2.clone(),
                                 }
                             })),
                             Dispatch::Fail { message } => svc::Either::B(message),
@@ -258,25 +266,29 @@ where
     }
 }
 
-impl<T> svc::Param<client::Settings> for Endpoint<T>
+impl<T> svc::Param<client::Params> for Endpoint<T>
 where
     T: svc::Param<http::Version>,
 {
-    fn param(&self) -> client::Settings {
+    fn param(&self) -> client::Params {
         match self.param() {
-            http::Version::H2 => client::Settings::H2,
+            http::Version::H2 => client::Params::H2(self.http2.clone()),
             http::Version::Http1 => {
                 // When the target is local (i.e. same as source of traffic)
                 // then do not perform a protocol upgrade to HTTP/2
                 if self.is_local {
-                    return client::Settings::Http1;
+                    return client::Params::Http1(self.http1);
                 }
                 match self.metadata.protocol_hint() {
                     // If the protocol hint is unknown or indicates that the
                     // endpoint's proxy will treat connections as opaque, do not
                     // perform a protocol upgrade to HTTP/2.
-                    ProtocolHint::Unknown | ProtocolHint::Opaque => client::Settings::Http1,
-                    ProtocolHint::Http2 => client::Settings::OrigProtoUpgrade,
+                    ProtocolHint::Unknown | ProtocolHint::Opaque => {
+                        client::Params::Http1(self.http1)
+                    }
+                    ProtocolHint::Http2 => {
+                        client::Params::OrigProtoUpgrade(self.http2.clone(), self.http1)
+                    }
                 }
             }
         }

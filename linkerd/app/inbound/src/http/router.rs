@@ -14,7 +14,7 @@ use tracing::{debug, debug_span};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http {
     addr: Remote<ServerAddr>,
-    settings: http::client::Settings,
+    params: http::client::Params,
     permit: policy::HttpRoutePermit,
 }
 
@@ -83,6 +83,8 @@ impl<C> Inbound<C> {
     {
         self.map_stack(|config, rt, connect| {
             let allow_profile = config.allow_discovery.clone();
+            let h1_params = config.proxy.connect.http1;
+            let h2_params = config.proxy.connect.http2.clone();
 
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http = connect
@@ -93,15 +95,21 @@ impl<C> Inbound<C> {
                 .push(transport::metrics::Client::layer(rt.metrics.proxy.transport.clone()))
                 .check_service::<Http>()
                 .push_map_target(|(_version, target)| target)
-                .push(http::client::layer(
-                    config.proxy.connect.http1,
-                    config.proxy.connect.http2.clone(),
-                ))
+                .push(http::client::layer())
                 .check_service::<Http>()
                 .push_on_service(svc::MapErr::layer_boxed())
                 .into_new_service()
                 .push_new_reconnect(config.proxy.connect.backoff)
-                .push_map_target(Http::from)
+                .push_map_target(move |t: Logical| {
+                    Http {
+                        addr: t.addr,
+                        permit: t.permit,
+                        params: match t.http {
+                            http::Version::Http1 => http::client::Params::Http1(h1_params),
+                            http::Version::H2 => http::client::Params::H2(h2_params.clone())
+                        },
+                    }
+                })
                 // Handle connection-level errors eagerly so that we can report 5XX failures in tap
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
@@ -434,19 +442,9 @@ impl Param<Remote<ServerAddr>> for Http {
     }
 }
 
-impl Param<http::client::Settings> for Http {
-    fn param(&self) -> http::client::Settings {
-        self.settings
-    }
-}
-
-impl From<Logical> for Http {
-    fn from(l: Logical) -> Self {
-        Self {
-            addr: l.addr,
-            settings: l.http.into(),
-            permit: l.permit,
-        }
+impl Param<http::client::Params> for Http {
+    fn param(&self) -> http::client::Params {
+        self.params.clone()
     }
 }
 
