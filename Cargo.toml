@@ -78,7 +78,6 @@ members = [
     "opencensus-proto",
     "spiffe-proto",
     "tools",
-    "linkerd/http/h2",
 ]
 
 [profile.release]
