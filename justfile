@@ -237,7 +237,7 @@ linkerd-tag := env_var_or_default('LINKERD_TAG', '')
 _controller-image := 'ghcr.io/linkerd/controller'
 _policy-image := 'ghcr.io/linkerd/policy-controller'
 _init-image := 'ghcr.io/linkerd/proxy-init'
-_init-tag := 'v2.2.0'
+_init-tag := 'v2.4.0'
 
 _kubectl := 'just-k3d kubectl'
 _linkerd := 'linkerd --context=k3d-$(just-k3d --evaluate K3D_CLUSTER_NAME)'
