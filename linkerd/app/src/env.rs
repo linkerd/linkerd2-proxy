@@ -141,6 +141,8 @@ const ENV_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS: &str =
 
 pub const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 
+pub const ENV_TRACE_SERVICE_NAME: &str = "LINKERD2_PROXY_TRACE_SERVICE_NAME";
+
 /// Constrains which destination names may be used for profile/route discovery.
 ///
 /// The value is a comma-separated list of domain name suffixes that may be
@@ -256,8 +258,6 @@ const ENV_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT: &str =
     "LINKERD2_PROXY_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT";
 
 const ENV_SHUTDOWN_GRACE_PERIOD: &str = "LINKERD2_PROXY_SHUTDOWN_GRACE_PERIOD";
-
-const ENV_PROXY_TRACING_SERVICE_NAME: &str = "LINKERD2_PROXY_TRACING_SERVICE_NAME";
 
 // Default values for various configuration fields
 const DEFAULT_OUTBOUND_LISTEN_ADDR: &str = "127.0.0.1:4140";
@@ -378,7 +378,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let shutdown_grace_period = parse(strings, ENV_SHUTDOWN_GRACE_PERIOD, parse_duration);
 
-    let proxy_tracing_service_name = strings.get(ENV_PROXY_TRACING_SERVICE_NAME);
+    let proxy_tracing_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
 
     let inbound_discovery_idle_timeout =
         parse(strings, ENV_INBOUND_DISCOVERY_IDLE_TIMEOUT, parse_duration);
