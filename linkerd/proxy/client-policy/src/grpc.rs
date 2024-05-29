@@ -36,8 +36,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
-                failure_policy: Codes::default(),
-                request_timeout: None,
+                policy: Codes::default(),
             },
         }],
     }
@@ -102,7 +101,6 @@ pub mod proto {
             r#match::host::{proto::InvalidHostMatch, MatchHost},
         },
     };
-    use std::time::Duration;
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidGrpcRoute {
@@ -203,7 +201,9 @@ pub mod proto {
             matches,
             backends,
             filters,
-            request_timeout,
+            timeouts,
+            retry,
+            ..
         } = proto;
 
         let matches = matches
@@ -220,7 +220,8 @@ pub mod proto {
             .ok_or(InvalidGrpcRoute::Missing("distribution"))?
             .try_into()?;
 
-        let request_timeout = request_timeout.map(Duration::try_from).transpose()?;
+        // let request_timeout = request_timeout.map(Duration::try_from).transpose()?;
+        let _ = (timeouts, retry);
 
         Ok(Rule {
             matches,
@@ -228,8 +229,7 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
-                failure_policy: Codes::default(),
-                request_timeout,
+                policy: Codes::default(),
             },
         })
     }
@@ -280,13 +280,11 @@ pub mod proto {
         type Error = InvalidBackend;
         fn try_from(
             grpc_route::RouteBackend {
-                backend,
-                filters,
-                request_timeout,
+                backend, filters, ..
             }: grpc_route::RouteBackend,
         ) -> Result<RouteBackend<Filter>, InvalidBackend> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-            RouteBackend::try_from_proto(backend, filters, request_timeout)
+            RouteBackend::try_from_proto(backend, filters)
         }
     }
 

@@ -168,7 +168,6 @@ where
                 route_ref: route_ref.clone(),
                 filters,
                 concrete,
-                request_timeout: rb.request_timeout,
             }
         };
 
@@ -193,8 +192,7 @@ where
                              meta,
                              filters,
                              distribution,
-                             failure_policy,
-                             request_timeout,
+                             policy,
                          }| {
             let route_ref = RouteRef(meta);
             let distribution = mk_distribution(&route_ref, &distribution);
@@ -203,9 +201,8 @@ where
                 parent: parent.clone(),
                 route_ref,
                 filters,
-                failure_policy,
+                policy,
                 distribution,
-                request_timeout,
             }
         };
 

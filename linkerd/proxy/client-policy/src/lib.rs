@@ -54,25 +54,12 @@ pub enum Meta {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct RoutePolicy<T, F> {
+pub struct RoutePolicy<T, P> {
     pub meta: Arc<Meta>,
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
-    /// Request timeout applied to HTTP and gRPC routes.
-    ///
-    /// Opaque routes are proxied as opaque TCP, and therefore, we have no
-    /// concept of a "request", so this field is ignored by opaque routes.
-    /// It's somewhat unfortunate that this field is part of the `RoutePolicy`
-    /// struct, which is used to represent routes for all protocols, rather than
-    /// as a filter, which are a generic type that depends on the protocol in
-    /// use. However, this can't be easily modeled as a filter using the current
-    /// design for filters, as filters synchronously modify a request or return
-    /// an error --- a filter cannot wrap the response future in order to add a
-    /// timeout.
-    pub request_timeout: Option<time::Duration>,
 
-    /// Configures what responses are classified as failures.
-    pub failure_policy: F,
+    pub policy: P,
 }
 
 // TODO(ver) Weighted random WITHOUT availability awareness, as required by
@@ -90,7 +77,6 @@ pub enum RouteDistribution<T> {
 pub struct RouteBackend<T> {
     pub filters: Arc<[T]>,
     pub backend: Backend,
-    pub request_timeout: Option<time::Duration>,
 }
 
 // TODO(ver) how does configuration like failure accrual fit in here? What about
@@ -167,8 +153,7 @@ impl ClientPolicy {
                         ))
                         .collect(),
                         distribution: RouteDistribution::Empty,
-                        failure_policy: http::StatusRanges::default(),
-                        request_timeout: None,
+                        policy: http::StatusRanges::default(),
                     },
                 }],
             }])
@@ -598,7 +583,6 @@ pub mod proto {
         pub(crate) fn try_from_proto<U>(
             backend: outbound::Backend,
             filters: impl IntoIterator<Item = U>,
-            request_timeout: Option<prost_types::Duration>,
         ) -> Result<Self, InvalidBackend>
         where
             T: TryFrom<U>,
@@ -610,20 +594,8 @@ pub mod proto {
                 .map(T::try_from)
                 .collect::<Result<Arc<[_]>, _>>()
                 .map_err(|error| InvalidBackend::Filter(error.into()))?;
-            let request_timeout =
-                request_timeout
-                    .map(|d| d.try_into())
-                    .transpose()
-                    .map_err(|error| InvalidBackend::Duration {
-                        field: "backend request timeout",
-                        error,
-                    })?;
 
-            Ok(RouteBackend {
-                filters,
-                backend,
-                request_timeout,
-            })
+            Ok(RouteBackend { filters, backend })
         }
     }
 

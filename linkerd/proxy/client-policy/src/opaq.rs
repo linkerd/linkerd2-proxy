@@ -125,10 +125,8 @@ pub(crate) mod proto {
         Ok(Policy {
             meta: meta.clone(),
             filters: NO_FILTERS.clone(),
-            failure_policy: NonIoErrors,
+            policy: NonIoErrors,
             distribution,
-            // Request timeouts are ignored on opaque routes.
-            request_timeout: None,
         })
     }
 
@@ -180,7 +178,7 @@ pub(crate) mod proto {
             opaque_route::RouteBackend { backend }: opaque_route::RouteBackend,
         ) -> Result<Self, Self::Error> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-            RouteBackend::try_from_proto(backend, std::iter::empty::<()>(), None)
+            RouteBackend::try_from_proto(backend, std::iter::empty::<()>())
         }
     }
 

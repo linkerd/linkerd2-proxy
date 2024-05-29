@@ -72,12 +72,10 @@ impl ClientPolicies {
                 policy: http::Policy {
                     meta: Meta::new_default("default"),
                     filters: Arc::new([]),
-                    failure_policy: Default::default(),
-                    request_timeout: None,
+                    policy: Default::default(),
                     distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                         filters: Arc::new([]),
                         backend: backend.clone(),
-                        request_timeout: None,
                     }])),
                 },
             }],
@@ -97,12 +95,10 @@ impl ClientPolicies {
                 policy: Some(opaq::Policy {
                     meta: Meta::new_default("default"),
                     filters: Arc::new([]),
-                    failure_policy: Default::default(),
-                    request_timeout: None,
+                    policy: Default::default(),
                     distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                         filters: Arc::new([]),
                         backend: backend.clone(),
-                        request_timeout: None,
                     }])),
                 }),
             },

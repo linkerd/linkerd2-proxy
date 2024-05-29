@@ -118,11 +118,11 @@ pub fn outbound_default(dst: impl ToString) -> outbound::OutboundPolicy {
                 timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                 http1: Some(proxy_protocol::Http1 {
                     routes: vec![route.clone()],
-                    failure_accrual: None,
+                    ..Default::default()
                 }),
                 http2: Some(proxy_protocol::Http2 {
                     routes: vec![route],
-                    failure_accrual: None,
+                    ..Default::default()
                 }),
                 opaque: Some(proxy_protocol::Opaque {
                     routes: vec![outbound_default_opaque_route(dst)],
@@ -150,7 +150,7 @@ pub fn outbound_default_http_route(dst: impl ToString) -> outbound::HttpRoute {
             }],
             filters: Vec::new(),
             backends: Some(http_first_available(std::iter::once(backend(dst)))),
-            request_timeout: None,
+            ..Default::default()
         }],
     }
 }
@@ -214,7 +214,7 @@ pub fn http_first_available(
                     .map(|backend| http_route::RouteBackend {
                         backend: Some(backend),
                         filters: Vec::new(),
-                        request_timeout: None,
+                        ..Default::default()
                     })
                     .collect(),
             },

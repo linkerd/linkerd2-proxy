@@ -16,7 +16,6 @@ pub(crate) struct Backend<T, F> {
     pub(crate) route_ref: RouteRef,
     pub(crate) concrete: Concrete<T>,
     pub(crate) filters: Arc<[F]>,
-    pub(crate) request_timeout: Option<std::time::Duration>,
 }
 
 pub(crate) type MatchedBackend<T, M, F> = super::Matched<M, Backend<T, F>>;
@@ -42,7 +41,6 @@ impl<T: Clone, F> Clone for Backend<T, F> {
             route_ref: self.route_ref.clone(),
             filters: self.filters.clone(),
             concrete: self.concrete.clone(),
-            request_timeout: self.request_timeout,
         }
     }
 }
@@ -102,7 +100,7 @@ where
                      }| concrete,
                 )
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                .push(http::NewTimeout::layer())
+                // .push(http::NewTimeout::layer())
                 .push(count_reqs::NewCountRequests::layer_via(metrics.clone()))
                 .push(svc::NewMapErr::layer_with(|t: &Self| {
                     let backend = t.params.concrete.backend_ref.clone();
@@ -119,11 +117,11 @@ where
     }
 }
 
-impl<T, M, F> svc::Param<http::ResponseTimeout> for MatchedBackend<T, M, F> {
-    fn param(&self) -> http::ResponseTimeout {
-        http::ResponseTimeout(self.params.request_timeout)
-    }
-}
+// impl<T, M, F> svc::Param<http::ResponseTimeout> for MatchedBackend<T, M, F> {
+//     fn param(&self) -> http::ResponseTimeout {
+//         http::ResponseTimeout(self.params.request_timeout)
+//     }
+// }
 
 impl<T, M, F> svc::Param<ParentRef> for MatchedBackend<T, M, F> {
     fn param(&self) -> ParentRef {

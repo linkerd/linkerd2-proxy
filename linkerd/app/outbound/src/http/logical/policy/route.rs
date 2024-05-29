@@ -28,14 +28,13 @@ pub(crate) struct Matched<M, P> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct Route<T, F, E> {
+pub(crate) struct Route<T, F, P> {
     pub(super) parent: T,
     pub(super) addr: Addr,
     pub(super) route_ref: RouteRef,
     pub(super) filters: Arc<[F]>,
     pub(super) distribution: BackendDistribution<T, F>,
-    pub(super) failure_policy: E,
-    pub(super) request_timeout: Option<std::time::Duration>,
+    pub(super) policy: P,
 }
 
 pub(crate) type MatchedRoute<T, M, F, E> = Matched<M, Route<T, F, E>>;
@@ -136,8 +135,8 @@ where
                 .push_on_service(svc::LoadShed::layer())
                 // TODO(ver) attach the `E` typed failure policy to requests.
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                // Sets an optional request timeout.
-                .push(http::NewTimeout::layer())
+                // // Sets an optional request timeout.
+                // .push(http::NewTimeout::layer())
                 .push(classify::NewClassify::layer())
                 .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();
@@ -158,11 +157,11 @@ impl<T: Clone, M, F, E> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T
     }
 }
 
-impl<T, M, F, E> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, M, F, E> {
-    fn param(&self) -> http::timeout::ResponseTimeout {
-        http::timeout::ResponseTimeout(self.params.request_timeout)
-    }
-}
+// impl<T, M, F, E> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, M, F, E> {
+//     fn param(&self) -> http::timeout::ResponseTimeout {
+//         http::timeout::ResponseTimeout(self.params.request_timeout)
+//     }
+// }
 
 impl<T> filters::Apply for Http<T> {
     #[inline]
@@ -178,9 +177,7 @@ impl<T> filters::Apply for Http<T> {
 
 impl<T> svc::Param<classify::Request> for Http<T> {
     fn param(&self) -> classify::Request {
-        classify::Request::ClientPolicy(classify::ClientPolicy::Http(
-            self.params.failure_policy.clone(),
-        ))
+        classify::Request::ClientPolicy(classify::ClientPolicy::Http(self.params.policy.clone()))
     }
 }
 
@@ -198,8 +195,6 @@ impl<T> filters::Apply for Grpc<T> {
 
 impl<T> svc::Param<classify::Request> for Grpc<T> {
     fn param(&self) -> classify::Request {
-        classify::Request::ClientPolicy(classify::ClientPolicy::Grpc(
-            self.params.failure_policy.clone(),
-        ))
+        classify::Request::ClientPolicy(classify::ClientPolicy::Grpc(self.params.policy.clone()))
     }
 }

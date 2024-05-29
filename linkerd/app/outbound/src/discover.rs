@@ -237,13 +237,11 @@ fn policy_for_backend(
         policy: Some(policy::opaq::Policy {
             meta: meta.clone(),
             filters: NO_OPAQ_FILTERS.clone(),
-            failure_policy: Default::default(),
-            request_timeout: None,
+            policy: Default::default(),
             distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
                 policy::RouteBackend {
                     filters: NO_OPAQ_FILTERS.clone(),
                     backend: backend.clone(),
-                    request_timeout: None,
                 },
             ])),
         }),
@@ -256,13 +254,11 @@ fn policy_for_backend(
             policy: policy::http::Policy {
                 meta: meta.clone(),
                 filters: NO_HTTP_FILTERS.clone(),
-                failure_policy: Default::default(),
-                request_timeout: None,
+                policy: Default::default(),
                 distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
                     policy::RouteBackend {
                         filters: NO_HTTP_FILTERS.clone(),
                         backend: backend.clone(),
-                        request_timeout: None,
                     },
                 ])),
             },

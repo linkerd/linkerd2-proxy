@@ -83,3 +83,6 @@ members = [
 [profile.release]
 debug = 1
 lto = true
+
+[patch.crates-io]
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/retries-timeouts" }
