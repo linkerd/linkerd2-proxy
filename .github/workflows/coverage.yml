@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
       - id: changed
-        uses: tj-actions/changed-files@03334d095e2739fa9ac4034ec16f66d5d01e9eba
+        uses: tj-actions/changed-files@d6babd6899969df1a11d14c368283ea4436bca78
         with:
           files: |
             .codecov.yml
