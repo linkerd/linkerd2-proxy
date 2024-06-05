@@ -103,12 +103,13 @@ impl<T> Outbound<svc::ArcNewHttp<T, http::BoxBody>> {
                 // is only done when the `Closable` parameter is set to true.
                 // This module always strips error headers from responses.
                 .push(NewHandleProxyErrorHeaders::layer())
+                .push_on_service(http::BoxRequest::layer())
+                .push_on_service(super::policy::EnforceDeadlines::layer())
                 // Handle connection-level errors eagerly so that we can report 5XX failures in tap
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
                 // track proxy errors that occur higher in the stack.
                 .push(ClientRescue::layer(config.emit_headers))
-                .push_on_service(http::BoxRequest::layer())
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics
