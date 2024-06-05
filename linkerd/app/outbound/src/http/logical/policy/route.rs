@@ -7,6 +7,7 @@ use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 pub(crate) mod backend;
+pub(crate) mod deadline;
 pub(crate) mod filters;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
@@ -87,7 +88,7 @@ impl RouteMetrics {
 
 // === impl MatchedRoute ===
 
-impl<T, M, F, E> MatchedRoute<T, M, F, E>
+impl<T, M, F, P> MatchedRoute<T, M, F, P>
 where
     // Parent target.
     T: Debug + Eq + Hash,
@@ -97,11 +98,12 @@ where
     // Request filter.
     F: Debug + Eq + Hash,
     F: Clone + Send + Sync + 'static,
-    // Failure policy.
-    E: Clone + Send + Sync + 'static,
+    // Route params.
+    P: Clone + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
+    Self: svc::Param<policy::http::Timeouts>,
     MatchedBackend<T, M, F>: filters::Apply,
 {
     /// Builds a route stack that applies policy filters to requests and
@@ -133,8 +135,8 @@ where
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
-                // TODO(ver) attach the `E` typed failure policy to requests.
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
+                .push(deadline::NewSetDeadlines::layer())
                 // // Sets an optional request timeout.
                 // .push(http::NewTimeout::layer())
                 .push(classify::NewClassify::layer())
@@ -151,13 +153,13 @@ where
     }
 }
 
-impl<T: Clone, M, F, E> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T, M, F, E> {
+impl<T: Clone, M, F, P> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T, M, F, P> {
     fn param(&self) -> BackendDistribution<T, F> {
         self.params.distribution.clone()
     }
 }
 
-// impl<T, M, F, E> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, M, F, E> {
+// impl<T, M, F, P> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, M, F, P> {
 //     fn param(&self) -> http::timeout::ResponseTimeout {
 //         http::timeout::ResponseTimeout(self.params.request_timeout)
 //     }
@@ -172,6 +174,12 @@ impl<T> filters::Apply for Http<T> {
     #[inline]
     fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()> {
         filters::apply_http_response(&self.params.filters, rsp)
+    }
+}
+
+impl<T> svc::Param<policy::http::Timeouts> for Http<T> {
+    fn param(&self) -> policy::http::Timeouts {
+        self.params.params.timeouts.clone()
     }
 }
 
@@ -192,6 +200,12 @@ impl<T> filters::Apply for Grpc<T> {
     #[inline]
     fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()> {
         filters::apply_grpc_response(&self.params.filters, rsp)
+    }
+}
+
+impl<T> svc::Param<policy::http::Timeouts> for Grpc<T> {
+    fn param(&self) -> policy::http::Timeouts {
+        self.params.params.timeouts.clone()
     }
 }
 
