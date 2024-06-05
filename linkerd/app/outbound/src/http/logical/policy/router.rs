@@ -21,9 +21,8 @@ pub struct Params<M, F, E> {
 }
 
 pub type HttpParams =
-    Params<http_route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>;
-pub type GrpcParams =
-    Params<http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>;
+    Params<http_route::http::MatchRequest, policy::http::Filter, policy::http::HttpRoutePolicy>;
+pub type GrpcParams = Params<http_route::grpc::MatchRoute, policy::grpc::Filter, ()>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
@@ -34,15 +33,14 @@ pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
 }
 
 pub(super) type Http<T> =
-    Router<T, http_route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>;
-pub(super) type Grpc<T> =
-    Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>;
+    Router<T, http_route::http::MatchRequest, policy::http::Filter, policy::http::HttpRoutePolicy>;
+pub(super) type Grpc<T> = Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter, ()>;
 
 type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
 
 // === impl Router ===
 
-impl<T, M, F, E> Router<T, M, F, E>
+impl<T, M, F, P> Router<T, M, F, P>
 where
     // Parent target type.
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
@@ -53,16 +51,16 @@ where
     // Request filter.
     F: Debug + Eq + Hash,
     F: Clone + Send + Sync + 'static,
-    // Failure policy.
-    E: Debug + Eq + Hash,
-    E: Clone + Send + Sync + 'static,
+    // Route policy.
+    P: Debug + Eq + Hash,
+    P: Clone + Send + Sync + 'static,
     // Assert that we can route for the given match and filter types.
     Self: svc::router::SelectRoute<
         http::Request<http::BoxBody>,
-        Key = route::MatchedRoute<T, M::Summary, F, E>,
+        Key = route::MatchedRoute<T, M::Summary, F, P>,
         Error = NoRoute,
     >,
-    route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply + svc::Param<classify::Request>,
+    route::MatchedRoute<T, M::Summary, F, P>: route::filters::Apply + svc::Param<classify::Request>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
     route::backend::RouteBackendMetrics:
         svc::ExtractParam<route::backend::RequestCount, route::MatchedBackend<T, M::Summary, F>>,
@@ -100,14 +98,14 @@ where
     }
 }
 
-impl<T, M, F, E> From<(Params<M, F, E>, T)> for Router<T, M, F, E>
+impl<T, M, F, P> From<(Params<M, F, P>, T)> for Router<T, M, F, P>
 where
     T: Eq + Hash + Clone + Debug,
     M: Clone,
     F: Clone,
-    E: Clone,
+    P: Clone,
 {
-    fn from((rts, parent): (Params<M, F, E>, T)) -> Self {
+    fn from((rts, parent): (Params<M, F, P>, T)) -> Self {
         let Params {
             addr,
             meta: parent_ref,
@@ -188,7 +186,7 @@ where
             }
         };
 
-        let mk_policy = |policy::RoutePolicy::<F, E> {
+        let mk_policy = |policy::RoutePolicy::<F, P> {
                              meta,
                              filters,
                              distribution,
@@ -271,7 +269,7 @@ where
     }
 }
 
-impl<T, M, F, E> svc::Param<LogicalAddr> for Router<T, M, F, E>
+impl<T, M, F, P> svc::Param<LogicalAddr> for Router<T, M, F, P>
 where
     T: Eq + Hash + Clone + Debug,
 {
@@ -280,7 +278,7 @@ where
     }
 }
 
-impl<T, M, F, E> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F, E>
+impl<T, M, F, P> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F, P>
 where
     T: Eq + Hash + Clone + Debug,
 {

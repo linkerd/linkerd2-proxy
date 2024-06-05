@@ -153,7 +153,7 @@ impl ClientPolicy {
                         ))
                         .collect(),
                         distribution: RouteDistribution::Empty,
-                        policy: http::StatusRanges::default(),
+                        policy: http::HttpRoutePolicy::default(),
                     },
                 }],
             }])

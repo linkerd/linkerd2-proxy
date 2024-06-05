@@ -1,12 +1,17 @@
 use crate::FailureAccrual;
 use linkerd_http_route::http;
-use std::{ops::RangeInclusive, sync::Arc};
+use std::{ops::RangeInclusive, sync::Arc, time};
 
 pub use linkerd_http_route::http::{filter, find, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter, StatusRanges>;
+pub type Policy = crate::RoutePolicy<Filter, HttpRoutePolicy>;
 pub type Route = http::Route<Policy>;
 pub type Rule = http::Rule<Policy>;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct HttpRoutePolicy {
+    pub timeouts: Timeouts,
+}
 
 // TODO: keepalive settings, etc.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -38,6 +43,13 @@ pub enum Filter {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct StatusRanges(pub Arc<[RangeInclusive<u16>]>);
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Timeouts {
+    pub response: Option<time::Duration>,
+    pub idle: Option<time::Duration>,
+    pub stream: Option<time::Duration>,
+}
+
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     Route {
         hosts: vec![],
@@ -47,7 +59,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
-                policy: StatusRanges::default(),
+                policy: HttpRoutePolicy::default(),
             },
         }],
     }
@@ -91,6 +103,8 @@ impl Default for StatusRanges {
     }
 }
 
+// === impl Timeouts ===
+
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
@@ -132,8 +146,18 @@ pub mod proto {
         #[error("missing {0}")]
         Missing(&'static str),
 
-        #[error("invalid request timeout: {0}")]
-        Timeout(#[from] prost_types::DurationError),
+        #[error(transparent)]
+        Timeout(#[from] InvalidTimeouts),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidTimeouts {
+        #[error("invalid response timeout: {0}")]
+        Response(prost_types::DurationError),
+        #[error("invalid idle timeout: {0}")]
+        Idle(prost_types::DurationError),
+        #[error("invalid stream timeout: {0}")]
+        Stream(prost_types::DurationError),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -240,10 +264,7 @@ pub mod proto {
             .ok_or(InvalidHttpRoute::Missing("distribution"))?
             .try_into()?;
 
-        // let request_timeout = request_timeout
-        //     .map(std::time::Duration::try_from)
-        //     .transpose()?;
-        let _ = (timeouts, retry);
+        let policy = HttpRoutePolicy::try_from_proto(timeouts, retry)?;
 
         Ok(Rule {
             matches,
@@ -251,9 +272,48 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
-                policy: StatusRanges::default(),
+                policy,
             },
         })
+    }
+
+    impl HttpRoutePolicy {
+        fn try_from_proto(
+            timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
+            _retry: Option<http_route::Retry>,
+        ) -> Result<Self, InvalidHttpRoute> {
+            Ok(Self {
+                timeouts: timeouts
+                    .map(Timeouts::try_from)
+                    .transpose()?
+                    .unwrap_or_default(),
+            })
+        }
+    }
+
+    impl TryFrom<linkerd2_proxy_api::http_route::Timeouts> for Timeouts {
+        type Error = InvalidTimeouts;
+        fn try_from(
+            timeouts: linkerd2_proxy_api::http_route::Timeouts,
+        ) -> Result<Self, Self::Error> {
+            Ok(Self {
+                response: timeouts
+                    .response
+                    .map(time::Duration::try_from)
+                    .transpose()
+                    .map_err(InvalidTimeouts::Response)?,
+                idle: timeouts
+                    .idle
+                    .map(time::Duration::try_from)
+                    .transpose()
+                    .map_err(InvalidTimeouts::Response)?,
+                stream: timeouts
+                    .stream
+                    .map(time::Duration::try_from)
+                    .transpose()
+                    .map_err(InvalidTimeouts::Stream)?,
+            })
+        }
     }
 
     impl TryFrom<http_route::Distribution> for RouteDistribution<Filter> {

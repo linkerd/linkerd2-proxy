@@ -37,19 +37,15 @@ pub(crate) struct Route<T, F, P> {
     pub(super) policy: P,
 }
 
-pub(crate) type MatchedRoute<T, M, F, E> = Matched<M, Route<T, F, E>>;
+pub(crate) type MatchedRoute<T, M, F, P> = Matched<M, Route<T, F, P>>;
 pub(crate) type Http<T> = MatchedRoute<
     T,
     http_route::http::r#match::RequestMatch,
     policy::http::Filter,
-    policy::http::StatusRanges,
+    policy::http::HttpRoutePolicy,
 >;
-pub(crate) type Grpc<T> = MatchedRoute<
-    T,
-    http_route::grpc::r#match::RouteMatch,
-    policy::grpc::Filter,
-    policy::grpc::Codes,
->;
+pub(crate) type Grpc<T> =
+    MatchedRoute<T, http_route::grpc::r#match::RouteMatch, policy::grpc::Filter, ()>;
 
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
@@ -177,7 +173,9 @@ impl<T> filters::Apply for Http<T> {
 
 impl<T> svc::Param<classify::Request> for Http<T> {
     fn param(&self) -> classify::Request {
-        classify::Request::ClientPolicy(classify::ClientPolicy::Http(self.params.policy.clone()))
+        classify::Request::ClientPolicy(classify::ClientPolicy::Http(
+            policy::http::StatusRanges::default(),
+        ))
     }
 }
 
@@ -195,6 +193,8 @@ impl<T> filters::Apply for Grpc<T> {
 
 impl<T> svc::Param<classify::Request> for Grpc<T> {
     fn param(&self) -> classify::Request {
-        classify::Request::ClientPolicy(classify::ClientPolicy::Grpc(self.params.policy.clone()))
+        classify::Request::ClientPolicy(
+            classify::ClientPolicy::Grpc(policy::grpc::Codes::default()),
+        )
     }
 }

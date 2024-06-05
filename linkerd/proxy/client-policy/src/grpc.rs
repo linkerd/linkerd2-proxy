@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 pub use linkerd_http_route::grpc::{filter, find, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter, Codes>;
+pub type Policy = crate::RoutePolicy<Filter, ()>;
 pub type Route = grpc::Route<Policy>;
 pub type Rule = grpc::Rule<Policy>;
 
@@ -36,7 +36,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
-                policy: Codes::default(),
+                policy: (),
             },
         }],
     }
@@ -229,7 +229,7 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
-                policy: Codes::default(),
+                policy: (),
             },
         })
     }
