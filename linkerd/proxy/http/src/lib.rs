@@ -44,7 +44,7 @@ pub use self::{
     version::Version,
 };
 pub use http::{
-    header::{self, HeaderName, HeaderValue},
+    header::{self, HeaderMap, HeaderName, HeaderValue},
     uri, Method, Request, Response, StatusCode,
 };
 pub use hyper::body::HttpBody;

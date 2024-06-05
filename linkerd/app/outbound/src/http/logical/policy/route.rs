@@ -136,7 +136,7 @@ where
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                .push(deadline::NewSetDeadlines::layer())
+                .push(deadline::NewSetStreamTimeoutsExtension::layer())
                 // // Sets an optional request timeout.
                 // .push(http::NewTimeout::layer())
                 .push(classify::NewClassify::layer())
