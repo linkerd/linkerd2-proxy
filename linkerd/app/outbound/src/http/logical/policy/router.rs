@@ -21,8 +21,9 @@ pub struct Params<M, F, E> {
 }
 
 pub type HttpParams =
-    Params<http_route::http::MatchRequest, policy::http::Filter, policy::http::HttpRoutePolicy>;
-pub type GrpcParams = Params<http_route::grpc::MatchRoute, policy::grpc::Filter, ()>;
+    Params<http_route::http::MatchRequest, policy::http::Filter, policy::http::RouteParams>;
+pub type GrpcParams =
+    Params<http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::RouteParams>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
@@ -33,8 +34,9 @@ pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
 }
 
 pub(super) type Http<T> =
-    Router<T, http_route::http::MatchRequest, policy::http::Filter, policy::http::HttpRoutePolicy>;
-pub(super) type Grpc<T> = Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter, ()>;
+    Router<T, http_route::http::MatchRequest, policy::http::Filter, policy::http::RouteParams>;
+pub(super) type Grpc<T> =
+    Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::RouteParams>;
 
 type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
 
@@ -190,7 +192,7 @@ where
                              meta,
                              filters,
                              distribution,
-                             policy,
+                             params,
                          }| {
             let route_ref = RouteRef(meta);
             let distribution = mk_distribution(&route_ref, &distribution);
@@ -199,7 +201,7 @@ where
                 parent: parent.clone(),
                 route_ref,
                 filters,
-                policy,
+                params,
                 distribution,
             }
         };

@@ -59,7 +59,7 @@ pub struct RoutePolicy<T, P> {
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
 
-    pub policy: P,
+    pub params: P,
 }
 
 // TODO(ver) Weighted random WITHOUT availability awareness, as required by
@@ -153,7 +153,7 @@ impl ClientPolicy {
                         ))
                         .collect(),
                         distribution: RouteDistribution::Empty,
-                        policy: http::HttpRoutePolicy::default(),
+                        params: http::RouteParams::default(),
                     },
                 }],
             }])

@@ -34,7 +34,7 @@ pub(crate) struct Route<T, F, P> {
     pub(super) route_ref: RouteRef,
     pub(super) filters: Arc<[F]>,
     pub(super) distribution: BackendDistribution<T, F>,
-    pub(super) policy: P,
+    pub(super) params: P,
 }
 
 pub(crate) type MatchedRoute<T, M, F, P> = Matched<M, Route<T, F, P>>;
@@ -42,10 +42,14 @@ pub(crate) type Http<T> = MatchedRoute<
     T,
     http_route::http::r#match::RequestMatch,
     policy::http::Filter,
-    policy::http::HttpRoutePolicy,
+    policy::http::RouteParams,
 >;
-pub(crate) type Grpc<T> =
-    MatchedRoute<T, http_route::grpc::r#match::RouteMatch, policy::grpc::Filter, ()>;
+pub(crate) type Grpc<T> = MatchedRoute<
+    T,
+    http_route::grpc::r#match::RouteMatch,
+    policy::grpc::Filter,
+    policy::grpc::RouteParams,
+>;
 
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;

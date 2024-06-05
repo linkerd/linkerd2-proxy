@@ -237,7 +237,7 @@ fn policy_for_backend(
         policy: Some(policy::opaq::Policy {
             meta: meta.clone(),
             filters: NO_OPAQ_FILTERS.clone(),
-            policy: Default::default(),
+            params: Default::default(),
             distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
                 policy::RouteBackend {
                     filters: NO_OPAQ_FILTERS.clone(),
@@ -254,7 +254,7 @@ fn policy_for_backend(
             policy: policy::http::Policy {
                 meta: meta.clone(),
                 filters: NO_HTTP_FILTERS.clone(),
-                policy: Default::default(),
+                params: Default::default(),
                 distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
                     policy::RouteBackend {
                         filters: NO_HTTP_FILTERS.clone(),

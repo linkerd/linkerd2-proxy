@@ -4,9 +4,14 @@ use std::sync::Arc;
 
 pub use linkerd_http_route::grpc::{filter, find, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter, ()>;
+pub type Policy = crate::RoutePolicy<Filter, RouteParams>;
 pub type Route = grpc::Route<Policy>;
 pub type Rule = grpc::Rule<Policy>;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct RouteParams {
+    pub timeouts: crate::http::Timeouts,
+}
 
 // TODO HTTP2 settings
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -36,7 +41,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
-                policy: (),
+                params: Default::default(),
             },
         }],
     }
@@ -125,8 +130,8 @@ pub mod proto {
         #[error("invalid failure accrual policy: {0}")]
         Breaker(#[from] InvalidFailureAccrual),
 
-        #[error("invalid duration: {0}")]
-        Duration(#[from] prost_types::DurationError),
+        #[error(transparent)]
+        Timeout(#[from] crate::http::proto::InvalidTimeouts),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -220,8 +225,7 @@ pub mod proto {
             .ok_or(InvalidGrpcRoute::Missing("distribution"))?
             .try_into()?;
 
-        // let request_timeout = request_timeout.map(Duration::try_from).transpose()?;
-        let _ = (timeouts, retry);
+        let params = RouteParams::try_from_proto(timeouts, retry)?;
 
         Ok(Rule {
             matches,
@@ -229,9 +233,23 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
-                policy: (),
+                params,
             },
         })
+    }
+
+    impl RouteParams {
+        fn try_from_proto(
+            timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
+            _retry: Option<grpc_route::Retry>,
+        ) -> Result<Self, InvalidGrpcRoute> {
+            Ok(Self {
+                timeouts: timeouts
+                    .map(crate::http::Timeouts::try_from)
+                    .transpose()?
+                    .unwrap_or_default(),
+            })
+        }
     }
 
     impl TryFrom<grpc_route::Distribution> for RouteDistribution<Filter> {

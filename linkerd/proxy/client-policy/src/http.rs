@@ -4,12 +4,12 @@ use std::{ops::RangeInclusive, sync::Arc, time};
 
 pub use linkerd_http_route::http::{filter, find, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter, HttpRoutePolicy>;
+pub type Policy = crate::RoutePolicy<Filter, RouteParams>;
 pub type Route = http::Route<Policy>;
 pub type Rule = http::Rule<Policy>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct HttpRoutePolicy {
+pub struct RouteParams {
     pub timeouts: Timeouts,
 }
 
@@ -59,7 +59,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
-                policy: HttpRoutePolicy::default(),
+                params: RouteParams::default(),
             },
         }],
     }
@@ -264,7 +264,7 @@ pub mod proto {
             .ok_or(InvalidHttpRoute::Missing("distribution"))?
             .try_into()?;
 
-        let policy = HttpRoutePolicy::try_from_proto(timeouts, retry)?;
+        let params = RouteParams::try_from_proto(timeouts, retry)?;
 
         Ok(Rule {
             matches,
@@ -272,12 +272,12 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
-                policy,
+                params,
             },
         })
     }
 
-    impl HttpRoutePolicy {
+    impl RouteParams {
         fn try_from_proto(
             timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
             _retry: Option<http_route::Retry>,

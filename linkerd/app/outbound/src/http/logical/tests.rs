@@ -617,7 +617,7 @@ fn default_route(backend: client_policy::Backend) -> client_policy::http::Route 
             policy: Policy {
                 meta: Meta::new_default("test_route"),
                 filters: NO_FILTERS.clone(),
-                policy: Default::default(),
+                params: Default::default(),
                 distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                     filters: NO_FILTERS.clone(),
                     backend,

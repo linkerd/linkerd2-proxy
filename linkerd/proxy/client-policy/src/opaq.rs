@@ -5,7 +5,7 @@ pub struct Opaque {
     pub policy: Option<Policy>,
 }
 
-pub type Policy = RoutePolicy<Filter, NonIoErrors>;
+pub type Policy = RoutePolicy<Filter, ()>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct NonIoErrors;
@@ -125,7 +125,7 @@ pub(crate) mod proto {
         Ok(Policy {
             meta: meta.clone(),
             filters: NO_FILTERS.clone(),
-            policy: NonIoErrors,
+            params: (),
             distribution,
         })
     }
