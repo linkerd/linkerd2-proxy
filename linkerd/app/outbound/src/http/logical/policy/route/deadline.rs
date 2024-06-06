@@ -3,7 +3,13 @@ use linkerd_app_core::{proxy::http, svc, Error, Result};
 use linkerd_proxy_client_policy::http::Timeouts;
 use parking_lot::RwLock;
 use pin_project::pin_project;
-use std::{future::Future, pin::Pin, sync::Arc, task};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use thiserror::Error;
 use tokio::{sync::oneshot, time};
 
 #[derive(Clone, Debug)]
@@ -20,14 +26,23 @@ pub struct StreamTimeouts {
     pub response_headers: Option<time::Duration>,
 
     /// The maximum amount of time between the body of the request being fully
-    /// flushed and the response being fully received.
+    /// flushed (or the response headers being received, if that occurs first)
+    /// and the response being fully received.
     pub response_end: Option<time::Duration>,
 
     /// The maximum amount of time the stream may be idle.
     pub idle: Option<time::Duration>,
 
-    /// The time by which the entire stream must be complete.
-    pub deadline: Option<time::Instant>,
+    /// Limits the total time the stream may be active in the proxy.
+    pub limit: Option<StreamLifetime>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct StreamLifetime {
+    /// The deadline for the stream.
+    pub deadline: time::Instant,
+    /// The maximum amount of time the stream may be active, used for error reporting.
+    pub lifetime: time::Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -41,6 +56,37 @@ pub struct EnforceTimeouts<S> {
     inner: S,
 }
 
+#[derive(Clone, Copy, Debug, Error)]
+#[error("timed out waiting for response headers: {0:?}")]
+pub struct ResponseHeadersTimeout(time::Duration);
+
+#[derive(Clone, Copy, Debug, Error)]
+#[error("timed out waiting for response stream: {0:?}")]
+pub struct ResponseStreamTimeout(time::Duration);
+
+#[derive(Clone, Copy, Debug, Error)]
+#[error("stream lifetime exceeded: {0:?}")]
+pub struct StreamLifetimeExceeded(time::Duration);
+
+#[derive(Clone, Copy, Debug, Error)]
+#[error("stream timed out due to idleness: {0:?}")]
+pub struct StreamIdleTimeout(time::Duration);
+
+#[derive(Clone, Copy, Debug, Error)]
+pub enum StreamTimeoutError {
+    #[error(transparent)]
+    ResponseHeaders(#[from] ResponseHeadersTimeout),
+
+    #[error(transparent)]
+    ResponseStream(#[from] ResponseStreamTimeout),
+
+    #[error(transparent)]
+    Lifetime(#[from] StreamLifetimeExceeded),
+
+    #[error(transparent)]
+    Idle(#[from] StreamIdleTimeout),
+}
+
 #[derive(Debug)]
 #[pin_project]
 pub struct ResponseFuture<F> {
@@ -48,6 +94,7 @@ pub struct ResponseFuture<F> {
     inner: F,
     #[pin]
     deadline: Option<time::Sleep>,
+    error: Option<StreamTimeoutError>,
 
     #[pin]
     request_flushed: Option<oneshot::Receiver<time::Instant>>,
@@ -66,6 +113,7 @@ pub struct RequestBody<B> {
 
     #[pin]
     deadline: Option<time::Sleep>,
+    error: Option<StreamTimeoutError>,
 
     idle: Option<Idle>,
 
@@ -80,12 +128,9 @@ pub struct ResponseBody<B> {
 
     #[pin]
     deadline: Option<time::Sleep>,
+    error: Option<StreamTimeoutError>,
 
     idle: Option<Idle>,
-
-    #[pin]
-    request_flushed: Option<oneshot::Receiver<time::Instant>>,
-    request_flushed_at: Option<time::Instant>,
 
     timeouts: StreamTimeouts,
 }
@@ -134,17 +179,20 @@ where
     type Future = S::Future;
 
     #[inline]
-    fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         // TODO(ver): Use request headers, like grpc-timeout, to set deadlines.
         let _prior = req.extensions_mut().insert(StreamTimeouts {
-            response_headers: None,
+            response_headers: self.timeouts.response,
             response_end: self.timeouts.response,
             idle: self.timeouts.idle,
-            deadline: self.timeouts.stream.map(|t| time::Instant::now() + t),
+            limit: self.timeouts.stream.map(|lifetime| StreamLifetime {
+                lifetime,
+                deadline: time::Instant::now() + lifetime,
+            }),
         });
         debug_assert!(_prior.is_none(), "Timeouts must only be configured once");
         self.inner.call(req)
@@ -169,7 +217,7 @@ where
     type Future = ResponseFuture<S::Future>;
 
     #[inline]
-    fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx).map_err(Into::into)
     }
 
@@ -193,15 +241,23 @@ where
         };
 
         let (tx, rx) = oneshot::channel();
-        let inner = self.inner.call(req.map(move |inner| RequestBody {
-            inner,
-            request_flushed: Some(tx),
-            deadline: timeouts.deadline.map(time::sleep_until),
-            idle: req_idle,
+        let inner = self.inner.call(req.map(move |inner| {
+            RequestBody {
+                inner,
+                request_flushed: Some(tx),
+                deadline: timeouts.limit.map(|l| time::sleep_until(l.deadline)),
+                error: timeouts
+                    .limit
+                    .map(|l| StreamLifetimeExceeded(l.lifetime).into()),
+                idle: req_idle,
+            }
         }));
         ResponseFuture {
             inner,
-            deadline: timeouts.deadline.map(time::sleep_until),
+            deadline: timeouts.limit.map(|l| time::sleep_until(l.deadline)),
+            error: timeouts
+                .limit
+                .map(|l| StreamLifetimeExceeded(l.lifetime).into()),
             request_flushed: Some(rx),
             request_flushed_at: None,
             timeouts,
@@ -219,21 +275,22 @@ where
 {
     type Output = Result<http::Response<ResponseBody<RspB>>>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> task::Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
 
         // Mark the time at which the request body was fully flushed and adjust
         // the response deadline as necessary.
         if let Some(flushed) = this.request_flushed.as_mut().as_pin_mut() {
-            if let task::Poll::Ready(res) = flushed.poll(cx) {
+            if let Poll::Ready(res) = flushed.poll(cx) {
                 *this.request_flushed = None;
                 if let Ok(flush) = res {
                     *this.request_flushed_at = Some(flush);
 
-                    if let Some(rh) = this.timeouts.response_headers {
-                        let headers_by = flush + rh;
+                    if let Some(timeout) = this.timeouts.response_headers {
+                        let headers_by = flush + timeout;
                         if let Some(deadline) = this.deadline.as_mut().as_pin_mut() {
                             if headers_by < deadline.deadline() {
+                                *this.error = Some(ResponseHeadersTimeout(timeout).into());
                                 deadline.reset(headers_by);
                             }
                         } else {
@@ -244,37 +301,59 @@ where
             }
         }
 
+        // Poll for the response headers.
         let rsp = match this.inner.poll(cx) {
-            task::Poll::Ready(Ok(rsp)) => rsp,
-            task::Poll::Ready(Err(e)) => return task::Poll::Ready(Err(e.into())),
-            task::Poll::Pending => {
+            Poll::Ready(Ok(rsp)) => rsp,
+            Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+            Poll::Pending => {
+                // If the response headers are not ready, check the deadline and
+                // return an error if it is exceeded.
                 if let Some(deadline) = this.deadline.as_pin_mut() {
                     if deadline.poll(cx).is_ready() {
-                        return task::Poll::Ready(Err(Error::from("TODO")));
+                        // TODO telemetry
+                        return Poll::Ready(Err(this
+                            .error
+                            .expect("error must be set when deadline is set")
+                            .into()));
                     }
                 }
-                return task::Poll::Pending;
+                return Poll::Pending;
             }
         };
 
+        // We've received response headers, so we prepare the response body to
+        // timeout. We use the more restrictive of the response-end timeout (as
+        // measured since the request body was fully flushed) and the stream
+        // lifetime limit.
+        let start = this.request_flushed_at.unwrap_or_else(time::Instant::now);
+        let (deadline, error) = match (this.timeouts.response_end, this.timeouts.limit) {
+            (Some(eos), Some(lim)) if start + eos < lim.deadline => {
+                (Some(start + eos), Some(ResponseStreamTimeout(eos).into()))
+            }
+            (Some(_), Some(lim)) => (
+                Some(lim.deadline),
+                Some(StreamLifetimeExceeded(lim.lifetime).into()),
+            ),
+            (Some(eos), None) => (Some(start + eos), Some(ResponseStreamTimeout(eos).into())),
+            (None, Some(lim)) => (
+                Some(lim.deadline),
+                Some(StreamLifetimeExceeded(lim.lifetime).into()),
+            ),
+            (None, None) => (None, None),
+        };
+
+        // Share the idle state across request and response bodies
         let idle = this.idle.take().map(|(last_update, timeout)| Idle {
             sleep: Box::pin(time::sleep(timeout)),
             last_update,
             timeout,
         });
 
-        let deadline = this
-            .request_flushed_at
-            .and_then(|t| this.timeouts.response_end.map(|d| t + d))
-            .min(this.timeouts.deadline)
-            .map(time::sleep_until);
-
-        task::Poll::Ready(Ok(rsp.map(move |inner| ResponseBody {
+        Poll::Ready(Ok(rsp.map(move |inner| ResponseBody {
             inner,
-            deadline,
+            deadline: deadline.map(time::sleep_until),
+            error,
             idle,
-            request_flushed: this.request_flushed.take(),
-            request_flushed_at: this.request_flushed_at.take(),
             timeouts: this.timeouts.clone(),
         })))
     }
@@ -291,66 +370,48 @@ where
 
     fn poll_data(
         self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-    ) -> task::Poll<Option<Result<Self::Data, Self::Error>>> {
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.project();
 
-        if let task::Poll::Ready(res) = this.inner.poll_data(cx) {
-            if let Some(idle) = this.idle.as_mut() {
+        if let Poll::Ready(res) = this.inner.poll_data(cx) {
+            if let Some(idle) = this.idle {
                 idle.reset(time::Instant::now());
             }
-            return task::Poll::Ready(res);
+            return Poll::Ready(res);
         }
 
-        if let Some(deadline) = this.deadline.as_pin_mut() {
-            if deadline.poll(cx).is_ready() {
-                // FIXME
-                return task::Poll::Ready(Some(Err(Error::from("FIXME"))));
-            }
+        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.error, this.idle, cx) {
+            // TODO telemetry
+            return Poll::Ready(Some(Err(Error::from(e))));
         }
 
-        if let Some(idle) = this.idle.as_mut() {
-            if idle.poll_idle(cx).is_ready() {
-                // FIXME
-                return task::Poll::Ready(Some(Err(Error::from("FIXME"))));
-            }
-        }
-
-        task::Poll::Pending
+        Poll::Pending
     }
 
     fn poll_trailers(
         self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-    ) -> task::Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
         let this = self.project();
 
-        if let task::Poll::Ready(res) = this.inner.poll_trailers(cx) {
+        if let Poll::Ready(res) = this.inner.poll_trailers(cx) {
             let now = time::Instant::now();
-            if let Some(idle) = this.idle.as_mut() {
+            if let Some(idle) = this.idle {
                 idle.reset(now);
             }
             if let Some(tx) = this.request_flushed.take() {
                 let _ = tx.send(now);
             }
-            return task::Poll::Ready(res);
+            return Poll::Ready(res);
         }
 
-        if let Some(deadline) = this.deadline.as_pin_mut() {
-            if deadline.poll(cx).is_ready() {
-                // FIXME
-                return task::Poll::Ready(Err(Error::from("FIXME")));
-            }
+        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.error, this.idle, cx) {
+            // TODO telemetry
+            return Poll::Ready(Err(Error::from(e)));
         }
 
-        if let Some(idle) = this.idle.as_mut() {
-            if idle.poll_idle(cx).is_ready() {
-                // FIXME
-                return task::Poll::Ready(Err(Error::from("FIXME")));
-            }
-        }
-
-        task::Poll::Pending
+        Poll::Pending
     }
 
     fn is_end_stream(&self) -> bool {
@@ -369,74 +430,44 @@ where
 
     fn poll_data(
         self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-    ) -> task::Poll<Option<Result<Self::Data, Self::Error>>> {
-        let mut this = self.project();
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        let this = self.project();
 
-        if let task::Poll::Ready(res) = this.inner.poll_data(cx) {
-            if let Some(idle) = this.idle.as_mut() {
+        if let Poll::Ready(res) = this.inner.poll_data(cx) {
+            if let Some(idle) = this.idle {
                 idle.reset(time::Instant::now());
             }
-            return task::Poll::Ready(res);
+            return Poll::Ready(res);
         }
 
-        if Self::poll_timeout(
-            this.deadline.as_mut(),
-            this.request_flushed.as_mut(),
-            this.request_flushed_at,
-            this.timeouts,
-            cx,
-        )
-        .is_ready()
-        {
-            // FIXME
-            return task::Poll::Ready(Some(Err(Error::from("FIXME"))));
+        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.error, this.idle, cx) {
+            // TODO telemetry
+            return Poll::Ready(Some(Err(Error::from(e))));
         }
 
-        if let Some(idle) = this.idle.as_mut() {
-            if idle.poll_idle(cx).is_ready() {
-                // FIXME
-                return task::Poll::Ready(Some(Err(Error::from("FIXME"))));
-            }
-        }
-
-        task::Poll::Pending
+        Poll::Pending
     }
 
     fn poll_trailers(
         self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-    ) -> task::Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let mut this = self.project();
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+        let this = self.project();
 
-        if let task::Poll::Ready(res) = this.inner.poll_trailers(cx) {
-            if let Some(idle) = this.idle.as_mut() {
+        if let Poll::Ready(res) = this.inner.poll_trailers(cx) {
+            if let Some(idle) = this.idle {
                 idle.reset(time::Instant::now());
             };
-            return task::Poll::Ready(res);
+            return Poll::Ready(res);
         }
 
-        if Self::poll_timeout(
-            this.deadline.as_mut(),
-            this.request_flushed.as_mut(),
-            this.request_flushed_at,
-            this.timeouts,
-            cx,
-        )
-        .is_ready()
-        {
-            // FIXME
-            return task::Poll::Ready(Err(Error::from("FIXME")));
+        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.error, this.idle, cx) {
+            // TODO telemetry
+            return Poll::Ready(Err(Error::from(e)));
         }
 
-        if let Some(idle) = this.idle.as_mut() {
-            if idle.poll_idle(cx).is_ready() {
-                // FIXME
-                return task::Poll::Ready(Err(Error::from("FIXME")));
-            }
-        }
-
-        task::Poll::Pending
+        Poll::Pending
     }
 
     fn is_end_stream(&self) -> bool {
@@ -444,43 +475,30 @@ where
     }
 }
 
-impl<B> ResponseBody<B> {
-    fn poll_timeout(
-        mut deadline: Pin<&mut Option<time::Sleep>>,
-        mut request_flushed: Pin<&mut Option<oneshot::Receiver<time::Instant>>>,
-        request_flushed_at: &mut Option<time::Instant>,
-        timeouts: &StreamTimeouts,
-        cx: &mut task::Context<'_>,
-    ) -> task::Poll<()> {
-        if let Some(flushed) = request_flushed.as_mut().as_pin_mut() {
-            if let task::Poll::Ready(res) = flushed.poll(cx) {
-                request_flushed.set(None);
-                if let Ok(flush) = res {
-                    *request_flushed_at = Some(flush);
-
-                    if let Some(timeout) = timeouts.response_end {
-                        let eos_by = flush + timeout;
-                        if let Some(deadline) = deadline.as_mut().as_pin_mut() {
-                            if eos_by < deadline.deadline() {
-                                deadline.reset(eos_by);
-                            }
-                        } else {
-                            deadline.set(Some(time::sleep_until(eos_by)));
-                        }
-                    }
-                }
-            }
+fn poll_body_timeout(
+    mut deadline: Pin<&mut Option<time::Sleep>>,
+    error: &mut Option<StreamTimeoutError>,
+    idle: &mut Option<Idle>,
+    cx: &mut Context<'_>,
+) -> Poll<StreamTimeoutError> {
+    if let Some(d) = deadline.as_mut().as_pin_mut() {
+        if d.poll(cx).is_ready() {
+            deadline.set(None); // Prevent polling again.
+            return Poll::Ready(
+                error
+                    .take()
+                    .expect("deadline must be set when error is set"),
+            );
         }
-
-        if let Some(d) = deadline.as_mut().as_pin_mut() {
-            if d.poll(cx).is_ready() {
-                deadline.set(None);
-                return task::Poll::Ready(());
-            }
-        }
-
-        task::Poll::Pending
     }
+
+    if let Some(idle) = idle {
+        if let Poll::Ready(e) = idle.poll_idle(cx) {
+            return Poll::Ready(e.into());
+        }
+    }
+
+    Poll::Pending
 }
 
 // === impl Idle ===
@@ -491,15 +509,15 @@ impl Idle {
         *self.last_update.write() = now;
     }
 
-    fn poll_idle(&mut self, cx: &mut task::Context<'_>) -> task::Poll<()> {
+    fn poll_idle(&mut self, cx: &mut Context<'_>) -> Poll<StreamIdleTimeout> {
         loop {
             if self.sleep.poll_unpin(cx).is_pending() {
-                return task::Poll::Pending;
+                return Poll::Pending;
             }
             let now = time::Instant::now();
             let expiry = *self.last_update.read() + self.timeout;
             if expiry <= now {
-                return task::Poll::Ready(());
+                return Poll::Ready(StreamIdleTimeout(self.timeout));
             }
             self.sleep.as_mut().reset(expiry);
         }
