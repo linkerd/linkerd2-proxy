@@ -297,9 +297,7 @@ where
 
         if let task::Poll::Ready(res) = this.inner.poll_data(cx) {
             if let Some(idle) = this.idle.as_mut() {
-                let now = time::Instant::now();
-                idle.sleep.as_mut().reset(now + idle.timeout);
-                *idle.last_update.write() = now;
+                idle.reset(time::Instant::now());
             }
             return task::Poll::Ready(res);
         }
@@ -330,9 +328,8 @@ where
         if let task::Poll::Ready(res) = this.inner.poll_trailers(cx) {
             let now = time::Instant::now();
             if let Some(idle) = this.idle.as_mut() {
-                idle.sleep.as_mut().reset(now + idle.timeout);
-                *idle.last_update.write() = now;
-            };
+                idle.reset(now);
+            }
             if let Some(tx) = this.request_flushed.take() {
                 let _ = tx.send(now);
             }
@@ -378,9 +375,7 @@ where
 
         if let task::Poll::Ready(res) = this.inner.poll_data(cx) {
             if let Some(idle) = this.idle.as_mut() {
-                let now = time::Instant::now();
-                idle.sleep.as_mut().reset(now + idle.timeout);
-                *idle.last_update.write() = now;
+                idle.reset(time::Instant::now());
             }
             return task::Poll::Ready(res);
         }
@@ -415,10 +410,8 @@ where
         let mut this = self.project();
 
         if let task::Poll::Ready(res) = this.inner.poll_trailers(cx) {
-            let now = time::Instant::now();
             if let Some(idle) = this.idle.as_mut() {
-                idle.sleep.as_mut().reset(now + idle.timeout);
-                *idle.last_update.write() = now;
+                idle.reset(time::Instant::now());
             };
             return task::Poll::Ready(res);
         }
@@ -479,8 +472,9 @@ impl<B> ResponseBody<B> {
             }
         }
 
-        if let Some(deadline) = deadline.as_pin_mut() {
-            if deadline.poll(cx).is_ready() {
+        if let Some(d) = deadline.as_mut().as_pin_mut() {
+            if d.poll(cx).is_ready() {
+                deadline.set(None);
                 return task::Poll::Ready(());
             }
         }
@@ -492,6 +486,11 @@ impl<B> ResponseBody<B> {
 // === impl Idle ===
 
 impl Idle {
+    fn reset(&mut self, now: time::Instant) {
+        self.sleep.as_mut().reset(now + self.timeout);
+        *self.last_update.write() = now;
+    }
+
     fn poll_idle(&mut self, cx: &mut task::Context<'_>) -> task::Poll<()> {
         loop {
             if self.sleep.poll_unpin(cx).is_pending() {
