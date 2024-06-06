@@ -3,7 +3,7 @@ use linkerd_stack::{layer, ExtractParam, MapErr, NewService, Timeout, TimeoutErr
 use std::time::Duration;
 use thiserror::Error;
 
-/// An HTTP-specific optional timeout layer.
+/// DEPRECATED: An HTTP-specific optional timeout layer.
 ///
 /// The stack target must implement `HasTimeout`, and if a duration is
 /// specified for the target, a timeout is applied waiting for HTTP responses.

@@ -8,7 +8,7 @@ mod router;
 mod tests;
 
 pub use self::{
-    route::{deadline::EnforceTimeouts, errors, RouteMetrics},
+    route::{errors, RouteMetrics},
     router::{GrpcParams, HttpParams},
 };
 pub use linkerd_proxy_client_policy::{ClientPolicy, FailureAccrual};

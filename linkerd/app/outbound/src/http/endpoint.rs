@@ -104,7 +104,7 @@ impl<T> Outbound<svc::ArcNewHttp<T, http::BoxBody>> {
                 // This module always strips error headers from responses.
                 .push(NewHandleProxyErrorHeaders::layer())
                 .push_on_service(http::BoxRequest::layer())
-                .push_on_service(super::policy::EnforceTimeouts::layer())
+                .push_on_service(http::EnforceTimeouts::layer())
                 // Handle connection-level errors eagerly so that we can report 5XX failures in tap
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
