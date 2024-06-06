@@ -47,33 +47,39 @@ pub struct EnforceTimeouts<S> {
 
 #[derive(Clone, Copy, Debug, Error)]
 #[error("timed out waiting for response headers: {0:?}")]
-pub struct ResponseHeadersTimeout(time::Duration);
+pub struct ResponseHeadersTimeoutError(time::Duration);
 
 #[derive(Clone, Copy, Debug, Error)]
 #[error("timed out waiting for response stream: {0:?}")]
-pub struct ResponseStreamTimeout(time::Duration);
+pub struct ResponseStreamTimeoutError(time::Duration);
 
 #[derive(Clone, Copy, Debug, Error)]
-#[error("stream lifetime exceeded: {0:?}")]
-pub struct StreamLifetimeExceeded(time::Duration);
+#[error("stream deadline met: {0:?}")]
+pub struct StreamDeadlineError(time::Duration);
 
 #[derive(Clone, Copy, Debug, Error)]
 #[error("stream timed out due to idleness: {0:?}")]
-pub struct StreamIdleTimeout(time::Duration);
+pub struct StreamIdleError(time::Duration);
 
 #[derive(Clone, Copy, Debug, Error)]
-pub enum StreamTimeoutError {
+pub enum ResponseTimeoutError {
     #[error(transparent)]
-    ResponseHeaders(#[from] ResponseHeadersTimeout),
+    Headers(#[from] ResponseHeadersTimeoutError),
 
     #[error(transparent)]
-    ResponseStream(#[from] ResponseStreamTimeout),
+    Lifetime(#[from] StreamDeadlineError),
+}
+
+#[derive(Clone, Copy, Debug, Error)]
+pub enum BodyTimeoutError {
+    #[error(transparent)]
+    Response(#[from] ResponseStreamTimeoutError),
 
     #[error(transparent)]
-    Lifetime(#[from] StreamLifetimeExceeded),
+    Lifetime(#[from] StreamDeadlineError),
 
     #[error(transparent)]
-    Idle(#[from] StreamIdleTimeout),
+    Idle(#[from] StreamIdleError),
 }
 
 #[derive(Debug)]
@@ -83,7 +89,7 @@ pub struct ResponseFuture<F> {
     inner: F,
     #[pin]
     deadline: Option<time::Sleep>,
-    error: Option<StreamTimeoutError>,
+    error: Option<ResponseTimeoutError>,
 
     #[pin]
     request_flushed: Option<oneshot::Receiver<time::Instant>>,
@@ -102,7 +108,7 @@ pub struct RequestBody<B> {
 
     #[pin]
     deadline: Option<time::Sleep>,
-    error: Option<StreamTimeoutError>,
+    error: Option<BodyTimeoutError>,
 
     idle: Option<Idle>,
 
@@ -117,7 +123,7 @@ pub struct ResponseBody<B> {
 
     #[pin]
     deadline: Option<time::Sleep>,
-    error: Option<StreamTimeoutError>,
+    error: Option<BodyTimeoutError>,
 
     idle: Option<Idle>,
 
@@ -131,6 +137,17 @@ struct Idle {
     sleep: Pin<Box<time::Sleep>>,
     timestamp: IdleTimestamp,
     timeout: time::Duration,
+}
+
+// === impl StreamLifetime ===
+
+impl From<time::Duration> for StreamLifetime {
+    fn from(lifetime: time::Duration) -> Self {
+        Self {
+            deadline: time::Instant::now() + lifetime,
+            lifetime,
+        }
+    }
 }
 
 // === impl EnforceTimeouts ===
@@ -182,7 +199,7 @@ where
                 deadline: timeouts.limit.map(|l| time::sleep_until(l.deadline)),
                 error: timeouts
                     .limit
-                    .map(|l| StreamLifetimeExceeded(l.lifetime).into()),
+                    .map(|l| StreamDeadlineError(l.lifetime).into()),
                 idle: req_idle,
             }
         }));
@@ -191,7 +208,7 @@ where
             deadline: timeouts.limit.map(|l| time::sleep_until(l.deadline)),
             error: timeouts
                 .limit
-                .map(|l| StreamLifetimeExceeded(l.lifetime).into()),
+                .map(|l| StreamDeadlineError(l.lifetime).into()),
             request_flushed: Some(rx),
             request_flushed_at: None,
             timeouts,
@@ -224,7 +241,7 @@ where
                         let headers_by = flush + timeout;
                         if let Some(deadline) = this.deadline.as_mut().as_pin_mut() {
                             if headers_by < deadline.deadline() {
-                                *this.error = Some(ResponseHeadersTimeout(timeout).into());
+                                *this.error = Some(ResponseHeadersTimeoutError(timeout).into());
                                 deadline.reset(headers_by);
                             }
                         } else {
@@ -254,30 +271,34 @@ where
                 return Poll::Pending;
             }
         };
-
         // We've received response headers, so we prepare the response body to
-        // timeout. We use the more restrictive of the response-end timeout (as
+        // timeout.
+
+        // Share the idle state across request and response bodies. Update the
+        // state to reflect that we've accepted headers.
+        let idle = this.idle.take().map(|(timestamp, timeout)| {
+            let now = time::Instant::now();
+            *timestamp.write() = now;
+            Idle {
+                timestamp,
+                timeout,
+                sleep: Box::pin(time::sleep_until(now + timeout)),
+            }
+        });
+
+        // We use the more restrictive of the response-end timeout (as
         // measured since the request body was fully flushed) and the stream
         // lifetime limit.
         let start = this.request_flushed_at.unwrap_or_else(time::Instant::now);
         let timeout = match (this.timeouts.response_end, this.timeouts.limit) {
             (Some(eos), Some(lim)) if start + eos < lim.deadline => {
-                Some((start + eos, ResponseStreamTimeout(eos).into()))
+                Some((start + eos, ResponseStreamTimeoutError(eos).into()))
             }
-            (Some(_), Some(lim)) => {
-                Some((lim.deadline, StreamLifetimeExceeded(lim.lifetime).into()))
-            }
-            (Some(eos), None) => Some((start + eos, ResponseStreamTimeout(eos).into())),
-            (None, Some(lim)) => Some((lim.deadline, StreamLifetimeExceeded(lim.lifetime).into())),
+            (Some(_), Some(lim)) => Some((lim.deadline, StreamDeadlineError(lim.lifetime).into())),
+            (Some(eos), None) => Some((start + eos, ResponseStreamTimeoutError(eos).into())),
+            (None, Some(lim)) => Some((lim.deadline, StreamDeadlineError(lim.lifetime).into())),
             (None, None) => None,
         };
-
-        // Share the idle state across request and response bodies
-        let idle = this.idle.take().map(|(last_update, timeout)| Idle {
-            sleep: Box::pin(time::sleep(timeout)),
-            timestamp: last_update,
-            timeout,
-        });
 
         Poll::Ready(Ok(rsp.map(move |inner| ResponseBody {
             inner,
@@ -407,10 +428,10 @@ where
 
 fn poll_body_timeout(
     mut deadline: Pin<&mut Option<time::Sleep>>,
-    error: &mut Option<StreamTimeoutError>,
+    error: &mut Option<BodyTimeoutError>,
     idle: &mut Option<Idle>,
     cx: &mut Context<'_>,
-) -> Poll<StreamTimeoutError> {
+) -> Poll<BodyTimeoutError> {
     if let Some(d) = deadline.as_mut().as_pin_mut() {
         if d.poll(cx).is_ready() {
             deadline.set(None); // Prevent polling again.
@@ -439,7 +460,7 @@ impl Idle {
         *self.timestamp.write() = now;
     }
 
-    fn poll_idle(&mut self, cx: &mut Context<'_>) -> Poll<StreamIdleTimeout> {
+    fn poll_idle(&mut self, cx: &mut Context<'_>) -> Poll<StreamIdleError> {
         loop {
             if self.sleep.poll_unpin(cx).is_pending() {
                 return Poll::Pending;
@@ -451,20 +472,9 @@ impl Idle {
             let now = time::Instant::now();
             let expiry = *self.timestamp.read() + self.timeout;
             if expiry <= now {
-                return Poll::Ready(StreamIdleTimeout(self.timeout));
+                return Poll::Ready(StreamIdleError(self.timeout));
             }
             self.sleep.as_mut().reset(expiry);
-        }
-    }
-}
-
-// === impl StreamLifetime ===
-
-impl From<time::Duration> for StreamLifetime {
-    fn from(lifetime: time::Duration) -> Self {
-        Self {
-            deadline: time::Instant::now() + lifetime,
-            lifetime,
         }
     }
 }
