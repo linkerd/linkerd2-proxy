@@ -178,6 +178,7 @@ where
             .get::<StreamTimeouts>()
             .cloned()
             .unwrap_or_default();
+        tracing::trace!(?timeouts, "Enforcing timeouts on stream");
 
         let (req_idle, rsp_idle) = if let Some(timeout) = timeouts.idle {
             let last_update = Arc::new(RwLock::new(time::Instant::now()));
@@ -233,6 +234,7 @@ where
         // the response deadline as necessary.
         if let Some(flushed) = this.request_flushed.as_mut().as_pin_mut() {
             if let Poll::Ready(res) = flushed.poll(cx) {
+                tracing::trace!(?res, "Request body fully flushed");
                 *this.request_flushed = None;
                 if let Ok(flush) = res {
                     *this.request_flushed_at = Some(flush);
@@ -241,10 +243,14 @@ where
                         let headers_by = flush + timeout;
                         if let Some(deadline) = this.deadline.as_mut().as_pin_mut() {
                             if headers_by < deadline.deadline() {
+                                tracing::trace!(?timeout, "Updating response headers deadline");
                                 *this.error = Some(ResponseHeadersTimeoutError(timeout).into());
                                 deadline.reset(headers_by);
+                            } else {
+                                tracing::trace!("Using original response headers deadline");
                             }
                         } else {
+                            tracing::trace!(?timeout, "Setting response headers deadline");
                             this.deadline.set(Some(time::sleep_until(headers_by)));
                         }
                     }
