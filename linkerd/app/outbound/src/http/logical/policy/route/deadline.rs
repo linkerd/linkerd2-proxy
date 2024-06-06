@@ -53,14 +53,28 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        // TODO(ver): Use request headers, like grpc-timeout, to set deadlines.
+        let user_limit = req.headers().get("l5d-timeout").and_then(|val| {
+            val.to_str()
+                .ok()
+                .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
+        });
+        let limit = user_limit.or(self.timeouts.stream);
+
+        let user_response_timeout = req.headers().get("l5d-response-timeout").and_then(|val| {
+            val.to_str()
+                .ok()
+                .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
+        });
+        let response_timeout = user_response_timeout.or(self.timeouts.response).or(limit);
+
         let _prior = req.extensions_mut().insert(http::StreamTimeouts {
-            response_headers: self.timeouts.response,
-            response_end: self.timeouts.response,
+            response_headers: response_timeout,
+            response_end: response_timeout,
             idle: self.timeouts.idle,
-            limit: self.timeouts.stream.map(Into::into),
+            limit: limit.map(Into::into),
         });
         debug_assert!(_prior.is_none(), "Timeouts must only be configured once");
+
         self.inner.call(req)
     }
 }
