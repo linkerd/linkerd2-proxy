@@ -11,6 +11,7 @@ pub type Rule = http::Rule<Policy>;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct RouteParams {
     pub timeouts: Timeouts,
+    pub retry: Option<Retry>,
 }
 
 // TODO: keepalive settings, etc.
@@ -38,6 +39,13 @@ pub enum Filter {
     RequestHeaders(filter::ModifyHeader),
     ResponseHeaders(filter::ModifyHeader),
     InternalError(&'static str),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Retry {
+    pub limit: u32,
+    pub retry_on: StatusRanges,
+    pub per_try_timeout: Option<time::Duration>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -283,6 +291,7 @@ pub mod proto {
             _retry: Option<http_route::Retry>,
         ) -> Result<Self, InvalidHttpRoute> {
             Ok(Self {
+                retry: None, // retry.map(Retry::try_from).transpose()?,
                 timeouts: timeouts
                     .map(Timeouts::try_from)
                     .transpose()?
@@ -315,6 +324,21 @@ pub mod proto {
             })
         }
     }
+
+    // impl TryFrom<outbound::http_route::Retry> for Retry {
+    //     type Error = InvalidTimeouts;
+    //     fn try_from(retry: outbound::http_route::Retry) -> Result<Self, Self::Error> {
+    //         Ok(Self {
+    //             limit: retry.limit,
+    //             retry_on: retry.on.into(),
+    //             per_try_timeout: retry
+    //                 .per_try_timeout
+    //                 .map(time::Duration::try_from)
+    //                 .transpose()
+    //                 .map_err(InvalidTimeouts::Response)?,
+    //         })
+    //     }
+    // }
 
     impl TryFrom<http_route::Distribution> for RouteDistribution<Filter> {
         type Error = InvalidDistribution;

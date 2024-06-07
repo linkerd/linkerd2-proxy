@@ -82,48 +82,6 @@ pub struct Retry<P, S, O> {
     proxy: O,
 }
 
-#[derive(Clone, Debug)]
-pub struct NewRetryLayer<P, O = ()> {
-    new_policy: P,
-    proxy: O,
-}
-
-// === impl NewRetryLayer ===
-pub fn layer<P>(new_policy: P) -> NewRetryLayer<P> {
-    NewRetryLayer {
-        new_policy,
-        proxy: (),
-    }
-}
-
-impl<P, O, N> Layer<N> for NewRetryLayer<P, O>
-where
-    P: Clone,
-    O: Clone,
-{
-    type Service = NewRetry<P, N, O>;
-    fn layer(&self, inner: N) -> Self::Service {
-        NewRetry {
-            inner,
-            new_policy: self.new_policy.clone(),
-            proxy: self.proxy.clone(),
-        }
-    }
-}
-
-impl<P> NewRetryLayer<P, ()> {
-    /// Adds a [`Proxy`] that will be applied to both the inner service and the
-    /// retry service.
-    ///
-    /// By default, this is the identity proxy, and does nothing.
-    pub fn with_proxy<O>(self, proxy: O) -> NewRetryLayer<P, O> {
-        NewRetryLayer {
-            new_policy: self.new_policy,
-            proxy,
-        }
-    }
-}
-
 // === impl NewRetry ===
 
 impl<P: Clone, N, O: Clone> NewRetry<P, N, O> {
@@ -192,17 +150,16 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        trace!(retryable = %self.policy.is_some());
-
         let policy = match self.policy.as_ref() {
-            None => return future::Either::Left(self.proxy.proxy(&mut self.inner, req)),
             Some(p) => p,
+            None => return future::Either::Left(self.proxy.proxy(&mut self.inner, req)),
         };
 
-        let retry_req = match policy.prepare_request(req) {
-            Either::A(retry_req) => retry_req,
+        let req = match policy.prepare_request(req) {
+            Either::A(req) => req,
             Either::B(req) => return future::Either::Left(self.proxy.proxy(&mut self.inner, req)),
         };
+        trace!(retryable = true);
 
         let inner = AndThen::new(
             self.inner.clone(),
@@ -210,6 +167,6 @@ where
         );
         let retry = tower::retry::Retry::new(policy.clone(), inner);
         let retry = self.proxy.clone().into_service(retry);
-        future::Either::Right(retry.oneshot(retry_req))
+        future::Either::Right(retry.oneshot(req))
     }
 }

@@ -3,43 +3,43 @@ use linkerd_proxy_client_policy::http::Timeouts;
 use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
-pub struct NewSetStreamTimeoutsExtension<N> {
+pub struct NewSetExtensions<N> {
     inner: N,
 }
 
 #[derive(Clone, Debug)]
-pub struct SetStreamTimeoutsExtension<S> {
+pub struct SetExtensions<S> {
     inner: S,
     timeouts: Timeouts,
 }
 
-// === impl NewSetDeadlines ===
+// === impl NewSetExtensions ===
 
-impl<N> NewSetStreamTimeoutsExtension<N> {
+impl<N> NewSetExtensions<N> {
     pub fn layer() -> impl svc::Layer<N, Service = Self> + Clone {
         svc::layer::mk(|inner| Self { inner })
     }
 }
 
-impl<T, N> svc::NewService<T> for NewSetStreamTimeoutsExtension<N>
+impl<T, N> svc::NewService<T> for NewSetExtensions<N>
 where
     N: svc::NewService<T>,
     T: svc::Param<Timeouts>,
 {
-    type Service = SetStreamTimeoutsExtension<N::Service>;
+    type Service = SetExtensions<N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let timeouts = target.param();
-        SetStreamTimeoutsExtension {
+        SetExtensions {
             timeouts,
             inner: self.inner.new_service(target),
         }
     }
 }
 
-// === impl SetDeadlines ===
+// === impl SetExtensions ===
 
-impl<B, S> svc::Service<http::Request<B>> for SetStreamTimeoutsExtension<S>
+impl<B, S> svc::Service<http::Request<B>> for SetExtensions<S>
 where
     S: svc::Service<http::Request<B>>,
 {

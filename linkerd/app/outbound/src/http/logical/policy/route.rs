@@ -7,8 +7,10 @@ use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 pub(crate) mod backend;
-pub(crate) mod deadline;
+pub(crate) mod extensions;
 pub(crate) mod filters;
+#[cfg(feature = "todo")]
+pub(crate) mod retry;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
@@ -136,7 +138,7 @@ where
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                .push(deadline::NewSetStreamTimeoutsExtension::layer())
+                .push(extensions::NewSetExtensions::layer())
                 // // Sets an optional request timeout.
                 // .push(http::NewTimeout::layer())
                 .push(classify::NewClassify::layer())

@@ -19,11 +19,10 @@ use std::sync::Arc;
 pub fn layer<N>(
     metrics: metrics::HttpProfileRouteRetry,
 ) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N, EraseResponse<()>>> + Clone {
-    retry::layer(NewRetryPolicy::new(metrics))
-        // Because we wrap the response body type on retries, we must include a
-        // `Proxy` middleware for unifying the response body types of the retry
-        // and non-retry services.
-        .with_proxy(EraseResponse::new(()))
+    // Because we wrap the response body type on retries, we must include a
+    // `Proxy` middleware for unifying the response body types of the retry
+    // and non-retry services.
+    retry::NewRetry::layer(NewRetryPolicy::new(metrics), EraseResponse::new(()))
 }
 
 #[derive(Clone, Debug)]
