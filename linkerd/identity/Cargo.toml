@@ -10,7 +10,7 @@ publish = false
 prometheus-client = "0.22"
 thiserror = "1"
 tracing = "0.1"
-url = "2.5.0"
+url = "2.5.1"
 
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-metrics = { path = "../metrics" }
