@@ -1,20 +1,22 @@
 use futures::{
     future::{self, Either},
-    FutureExt,
+    FutureExt, TryFutureExt,
 };
 use http_body::Body;
+use linkerd_http_box::BoxBody;
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
+use tower::Service;
 
 /// An HTTP body that allows inspecting the body's trailers, if a `TRAILERS`
 /// frame was the first frame after the initial headers frame.
 ///
 /// If the first frame of the body stream was *not* a `TRAILERS` frame, this
 /// behaves identically to a normal body.
-pub struct WithTrailers<B: Body> {
+pub struct TrailersBody<B: Body = BoxBody> {
     inner: B,
 
     /// The first DATA frame received from the inner body, or an error that
@@ -38,13 +40,16 @@ pub struct WithTrailers<B: Body> {
 }
 
 pub type WithTrailersFuture<B> = Either<
-    futures::future::Ready<http::Response<WithTrailers<B>>>,
-    Pin<Box<dyn Future<Output = http::Response<WithTrailers<B>>> + Send + 'static>>,
+    futures::future::Ready<http::Response<TrailersBody<B>>>,
+    Pin<Box<dyn Future<Output = http::Response<TrailersBody<B>>> + Send + 'static>>,
 >;
+
+#[derive(Clone, Debug)]
+pub struct ResponseWithTrailers<S>(pub(crate) S);
 
 // === impl WithTrailers ===
 
-impl<B: Body> WithTrailers<B> {
+impl<B: Body> TrailersBody<B> {
     pub fn trailers(&self) -> Option<&http::HeaderMap> {
         self.trailers
             .as_ref()
@@ -119,7 +124,7 @@ impl<B: Body> WithTrailers<B> {
     }
 }
 
-impl<B> Body for WithTrailers<B>
+impl<B> Body for TrailersBody<B>
 where
     B: Body + Unpin,
     B::Data: Unpin,
@@ -173,5 +178,36 @@ where
         }
 
         hint
+    }
+}
+
+// === impl ResponseWithTrailers ===
+
+type WrapTrailersFuture<E> = future::Map<
+    WithTrailersFuture<BoxBody>,
+    fn(http::Response<TrailersBody>) -> Result<http::Response<TrailersBody>, E>,
+>;
+
+impl<Req, S> Service<Req> for ResponseWithTrailers<S>
+where
+    S: Service<Req, Response = http::Response<BoxBody>>,
+{
+    type Response = http::Response<TrailersBody>;
+    type Error = S::Error;
+    type Future = future::AndThen<
+        S::Future,
+        WrapTrailersFuture<S::Error>,
+        fn(http::Response<BoxBody>) -> WrapTrailersFuture<S::Error>,
+    >;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
+    }
+
+    #[inline]
+    fn call(&mut self, req: Req) -> Self::Future {
+        self.0
+            .call(req)
+            .and_then(|rsp| TrailersBody::map_response(rsp).map(Ok))
     }
 }

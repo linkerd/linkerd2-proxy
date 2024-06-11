@@ -8,7 +8,7 @@ use linkerd_app_core::{
     Error, Result,
 };
 use linkerd_http_retry::{
-    with_trailers::{self, WithTrailers},
+    with_trailers::{self, TrailersBody},
     ReplayBody,
 };
 use linkerd_proxy_client_policy as policy;
@@ -203,10 +203,10 @@ impl HttpPolicy {
 
 impl retry::PrepareRetry<http::Request<BoxBody>, http::Response<BoxBody>> for GrpcPolicy {
     type RetryRequest = http::Request<ReplayBody<BoxBody>>;
-    type RetryResponse = http::Response<WithTrailers<BoxBody>>;
+    type RetryResponse = http::Response<TrailersBody<BoxBody>>;
     type ResponseFuture = future::Map<
         with_trailers::WithTrailersFuture<BoxBody>,
-        fn(http::Response<WithTrailers<BoxBody>>) -> Result<http::Response<WithTrailers<BoxBody>>>,
+        fn(http::Response<TrailersBody<BoxBody>>) -> Result<http::Response<TrailersBody<BoxBody>>>,
     >;
 
     fn prepare_request(
@@ -233,11 +233,11 @@ impl retry::PrepareRetry<http::Request<BoxBody>, http::Response<BoxBody>> for Gr
     /// If the response is HTTP/2, return a future that checks for a `TRAILERS`
     /// frame immediately after the first frame of the response.
     fn prepare_response(rsp: http::Response<BoxBody>) -> Self::ResponseFuture {
-        WithTrailers::map_response(rsp).map(Ok)
+        TrailersBody::map_response(rsp).map(Ok)
     }
 }
 
-impl retry::Policy<http::Request<ReplayBody<BoxBody>>, http::Response<WithTrailers<BoxBody>>, Error>
+impl retry::Policy<http::Request<ReplayBody<BoxBody>>, http::Response<TrailersBody<BoxBody>>, Error>
     for GrpcPolicy
 {
     type Future = future::Ready<Self>;
@@ -252,7 +252,7 @@ impl retry::Policy<http::Request<ReplayBody<BoxBody>>, http::Response<WithTraile
     fn retry(
         &self,
         req: &http::Request<ReplayBody<BoxBody>>,
-        result: Result<&http::Response<WithTrailers<BoxBody>>, &Error>,
+        result: Result<&http::Response<TrailersBody<BoxBody>>, &Error>,
     ) -> Option<Self::Future> {
         // If the request body exceeds the buffer limit, we can't retry
         // it.
@@ -284,7 +284,7 @@ impl retry::Policy<http::Request<ReplayBody<BoxBody>>, http::Response<WithTraile
 }
 
 impl GrpcPolicy {
-    fn grpc_status(rsp: &http::Response<WithTrailers<BoxBody>>) -> Option<tonic::Code> {
+    fn grpc_status(rsp: &http::Response<TrailersBody<BoxBody>>) -> Option<tonic::Code> {
         if let Some(header) = rsp.headers().get("grpc-status") {
             return Some(header.to_str().ok()?.parse::<i32>().ok()?.into());
         }
