@@ -1,16 +1,13 @@
-use futures::{future, FutureExt};
+use futures::future;
 use linkerd_app_core::{
     cause_ref,
     config::ExponentialBackoff,
     is_caused_by,
-    proxy::http::{stream_timeouts::ResponseTimeoutError, BoxBody, ClientHandle, HttpBody},
-    svc::{http::EraseResponse, layer, Either, FailFastError},
+    proxy::http::{stream_timeouts::ResponseTimeoutError, BoxBody, ClientHandle},
+    svc::{CloneParam, FailFastError},
     Error, Result,
 };
-use linkerd_http_retry::{
-    with_trailers::{self, TrailersBody},
-    ReplayBody,
-};
+use linkerd_http_retry::{with_trailers::TrailersBody, ReplayBody};
 use linkerd_proxy_client_policy as policy;
 // use linkerd_proxy_client_policy as policy;
 use linkerd_retry as retry;
@@ -24,10 +21,8 @@ pub struct RetryPolicy {
     pub backoff: ExponentialBackoff,
 }
 
-pub type NewRetry<N> = retry::NewRetry<NewRetryPolicy, N, EraseResponse<()>>;
-
-#[derive(Clone, Debug)]
-pub struct NewRetryPolicy(());
+pub type NewHttpRetry<P, N> =
+    linkerd_http_retry::NewHttpRetry<CloneParam<linkerd_http_retry::Params>, P, N>;
 
 #[derive(Clone, Debug)]
 pub struct HttpPolicy {
@@ -47,51 +42,47 @@ pub struct GrpcPolicy {
     pub policy: RetryPolicy,
 }
 
-pub fn layer<N>() -> impl layer::Layer<N, Service = NewRetry<N>> + Clone {
-    retry::NewRetry::layer(NewRetryPolicy(()), EraseResponse::new(()))
-}
-
 // === impl NewRetryPolicy ===
 
-impl<T> retry::NewPolicy<super::Http<T>> for NewRetryPolicy {
-    type Policy = HttpPolicy;
+// impl<T> retry::NewPolicy<super::Http<T>> for NewRetryPolicy {
+//     type Policy = HttpPolicy;
 
-    fn new_policy(&self, _target: &super::Http<T>) -> Option<Self::Policy> {
-        Some(HttpPolicy {
-            statuses: policy::http::StatusRanges::default(),
-            policy: RetryPolicy {
-                num_retries: 5,
-                timeout: None,
-                max_request_bytes: 1024 * 1024,
-                backoff: ExponentialBackoff::new_unchecked(
-                    std::time::Duration::from_millis(25),
-                    std::time::Duration::from_millis(25 * 10),
-                    0.0,
-                ),
-            },
-        })
-    }
-}
+//     fn new_policy(&self, _target: &super::Http<T>) -> Option<Self::Policy> {
+//         Some(HttpPolicy {
+//             statuses: policy::http::StatusRanges::default(),
+//             policy: RetryPolicy {
+//                 num_retries: 5,
+//                 timeout: None,
+//                 max_request_bytes: 1024 * 1024,
+//                 backoff: ExponentialBackoff::new_unchecked(
+//                     std::time::Duration::from_millis(25),
+//                     std::time::Duration::from_millis(25 * 10),
+//                     0.0,
+//                 ),
+//             },
+//         })
+//     }
+// }
 
-impl<T> retry::NewPolicy<super::Grpc<T>> for NewRetryPolicy {
-    type Policy = GrpcPolicy;
+// impl<T> retry::NewPolicy<super::Grpc<T>> for NewRetryPolicy {
+//     type Policy = GrpcPolicy;
 
-    fn new_policy(&self, _target: &super::Grpc<T>) -> Option<Self::Policy> {
-        Some(GrpcPolicy {
-            codes: policy::grpc::Codes::default(),
-            policy: RetryPolicy {
-                num_retries: 5,
-                timeout: None,
-                max_request_bytes: 1024 * 1024,
-                backoff: ExponentialBackoff::new_unchecked(
-                    std::time::Duration::from_millis(25),
-                    std::time::Duration::from_millis(25 * 10),
-                    0.0,
-                ),
-            },
-        })
-    }
-}
+//     fn new_policy(&self, _target: &super::Grpc<T>) -> Option<Self::Policy> {
+//         Some(GrpcPolicy {
+//             codes: policy::grpc::Codes::default(),
+//             policy: RetryPolicy {
+//                 num_retries: 5,
+//                 timeout: None,
+//                 max_request_bytes: 1024 * 1024,
+//                 backoff: ExponentialBackoff::new_unchecked(
+//                     std::time::Duration::from_millis(25),
+//                     std::time::Duration::from_millis(25 * 10),
+//                     0.0,
+//                 ),
+//             },
+//         })
+//     }
+// }
 
 fn clone_request<B: Clone>(orig: &http::Request<B>) -> http::Request<B> {
     // Since the body is already wrapped in a ReplayBody, it must not be obviously too large to
@@ -113,53 +104,17 @@ fn clone_request<B: Clone>(orig: &http::Request<B>) -> http::Request<B> {
 
 // === impl HttpRetryPolicy ===
 
-impl retry::PrepareRetry<http::Request<BoxBody>, http::Response<BoxBody>> for HttpPolicy {
-    type RetryRequest = http::Request<ReplayBody<BoxBody>>;
-    type RetryResponse = http::Response<BoxBody>;
-    type ResponseFuture = future::Ready<Result<http::Response<BoxBody>>>;
-
-    fn prepare_request(
-        self,
-        req: http::Request<BoxBody>,
-    ) -> Either<(Self, Self::RetryRequest), http::Request<BoxBody>> {
-        let (head, body) = req.into_parts();
-        let replay_body = match ReplayBody::try_new(body, self.policy.max_request_bytes) {
-            Ok(body) => body,
-            Err(body) => {
-                tracing::debug!(
-                    size = body.size_hint().lower(),
-                    "Body is too large to buffer"
-                );
-                return Either::B(http::Request::from_parts(head, body));
-            }
-        };
-
-        // The body may still be too large to be buffered if the body's length was not known.
-        // `ReplayBody` handles this gracefully.
-        Either::A((self, http::Request::from_parts(head, replay_body)))
-    }
-
-    fn prepare_response(rsp: http::Response<BoxBody>) -> Self::ResponseFuture {
-        future::ok(rsp)
-    }
-}
-
-impl retry::Policy<http::Request<ReplayBody<BoxBody>>, http::Response<BoxBody>, Error>
-    for HttpPolicy
-{
+impl retry::Policy<http::Request<ReplayBody>, http::Response<TrailersBody>, Error> for HttpPolicy {
     type Future = future::Ready<Self>;
 
-    fn clone_request(
-        &self,
-        req: &http::Request<ReplayBody<BoxBody>>,
-    ) -> Option<http::Request<ReplayBody<BoxBody>>> {
+    fn clone_request(&self, req: &http::Request<ReplayBody>) -> Option<http::Request<ReplayBody>> {
         Some(clone_request(req))
     }
 
     fn retry(
         &self,
-        req: &http::Request<ReplayBody<BoxBody>>,
-        result: Result<&http::Response<BoxBody>, &Error>,
+        req: &http::Request<ReplayBody>,
+        result: Result<&http::Response<TrailersBody>, &Error>,
     ) -> Option<Self::Future> {
         // If the request body exceeds the buffer limit, we can't retry
         // it.
@@ -190,7 +145,7 @@ impl retry::Policy<http::Request<ReplayBody<BoxBody>>, http::Response<BoxBody>, 
 }
 
 impl HttpPolicy {
-    fn retryable_rsp(&self, rsp: &http::Response<BoxBody>) -> bool {
+    fn retryable_rsp<B>(&self, rsp: &http::Response<B>) -> bool {
         self.statuses.contains(rsp.status())
     }
 
@@ -201,45 +156,7 @@ impl HttpPolicy {
 
 // === impl GrpcRetryPolicy ===
 
-impl retry::PrepareRetry<http::Request<BoxBody>, http::Response<BoxBody>> for GrpcPolicy {
-    type RetryRequest = http::Request<ReplayBody<BoxBody>>;
-    type RetryResponse = http::Response<TrailersBody<BoxBody>>;
-    type ResponseFuture = future::Map<
-        with_trailers::WithTrailersFuture<BoxBody>,
-        fn(http::Response<TrailersBody<BoxBody>>) -> Result<http::Response<TrailersBody<BoxBody>>>,
-    >;
-
-    fn prepare_request(
-        self,
-        req: http::Request<BoxBody>,
-    ) -> Either<(Self, Self::RetryRequest), http::Request<BoxBody>> {
-        let (head, body) = req.into_parts();
-        let replay_body = match ReplayBody::try_new(body, self.policy.max_request_bytes) {
-            Ok(body) => body,
-            Err(body) => {
-                tracing::debug!(
-                    size = body.size_hint().lower(),
-                    "Body is too large to buffer"
-                );
-                return Either::B(http::Request::from_parts(head, body));
-            }
-        };
-
-        // The body may still be too large to be buffered if the body's length was not known.
-        // `ReplayBody` handles this gracefully.
-        Either::A((self, http::Request::from_parts(head, replay_body)))
-    }
-
-    /// If the response is HTTP/2, return a future that checks for a `TRAILERS`
-    /// frame immediately after the first frame of the response.
-    fn prepare_response(rsp: http::Response<BoxBody>) -> Self::ResponseFuture {
-        TrailersBody::map_response(rsp).map(Ok)
-    }
-}
-
-impl retry::Policy<http::Request<ReplayBody<BoxBody>>, http::Response<TrailersBody<BoxBody>>, Error>
-    for GrpcPolicy
-{
+impl retry::Policy<http::Request<ReplayBody>, http::Response<TrailersBody>, Error> for GrpcPolicy {
     type Future = future::Ready<Self>;
 
     fn clone_request(
