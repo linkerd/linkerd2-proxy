@@ -24,6 +24,7 @@ pub struct Config {
     pub metrics_retain_idle: Duration,
     #[cfg(feature = "pprof")]
     pub enable_profiling: bool,
+    pub enable_shutdown: bool,
 }
 
 pub struct Task {
@@ -100,7 +101,7 @@ impl Config {
         let (ready, latch) = crate::server::Readiness::new();
 
         #[cfg_attr(not(feature = "pprof"), allow(unused_mut))]
-        let admin = crate::server::Admin::new(report, ready, shutdown, trace);
+        let admin = crate::server::Admin::new(report, ready, shutdown, self.enable_shutdown, trace);
 
         #[cfg(feature = "pprof")]
         let admin = admin.with_profiling(self.enable_profiling);
