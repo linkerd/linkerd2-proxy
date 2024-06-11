@@ -11,7 +11,7 @@ use crate::with_trailers::ResponseWithTrailers;
 use futures::future;
 use linkerd_error::Error;
 use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse};
-use linkerd_stack::{layer, ExtractParam, NewService, Service};
+use linkerd_stack::{layer, NewService, Param, Service};
 use std::task::{Context, Poll};
 use tracing::{debug, trace};
 
@@ -20,52 +20,39 @@ pub struct Params {
     pub max_request_bytes: usize,
 }
 
-/// Applies per-target retry policies.
 #[derive(Clone, Debug)]
-pub struct NewHttpRetry<P, X, N> {
+pub struct NewHttpRetry<P, N> {
     inner: N,
-    extract: X,
     _marker: std::marker::PhantomData<fn() -> P>,
 }
 
 #[derive(Clone, Debug)]
 pub struct HttpRetry<P, S> {
     inner: S,
-    params: Params,
     _marker: std::marker::PhantomData<fn() -> P>,
 }
 
 // === impl NewRetry ===
 
-impl<P, N> NewHttpRetry<P, (), N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone {
-        Self::layer_via(())
-    }
-}
-
-impl<P, X: Clone, N> NewHttpRetry<P, X, N> {
-    pub fn layer_via(extract: X) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |inner| Self {
+impl<P, N> NewHttpRetry<P, N> {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy {
+        layer::mk(|inner| Self {
             inner,
-            extract: extract.clone(),
             _marker: std::marker::PhantomData,
         })
     }
 }
 
-impl<T, P, X, N> NewService<T> for NewHttpRetry<P, X, N>
+impl<T, P, N> NewService<T> for NewHttpRetry<P, N>
 where
-    X: ExtractParam<Params, T>,
     N: NewService<T>,
 {
     type Service = HttpRetry<P, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let params = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
         HttpRetry {
             inner,
-            params,
             _marker: std::marker::PhantomData,
         }
     }
@@ -79,6 +66,7 @@ type RetrySvc<P, S> =
 impl<P, S> Service<http::Request<BoxBody>> for HttpRetry<P, S>
 where
     P: Policy<http::Request<ReplayBody>, http::Response<TrailersBody>, Error>,
+    P: Param<Params>,
     P: Clone + Send + Sync + std::fmt::Debug + 'static,
     S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error> + Clone,
 {
@@ -103,13 +91,14 @@ where
                 return future::Either::Left(self.inner.call(req));
             }
         };
+        let Params { max_request_bytes } = policy.param();
 
         // Since this request is retryable, we need to setup the request body to
         // be buffered/cloneable. If the request body is too large to be cloned,
         // the retry policy is ignored.
         let req = {
             let (head, body) = req.into_parts();
-            match ReplayBody::try_new(body, self.params.max_request_bytes) {
+            match ReplayBody::try_new(body, max_request_bytes) {
                 Ok(body) => http::Request::from_parts(head, body),
                 Err(body) => {
                     debug!(retryable = false, "Request body is too large to be retried");
