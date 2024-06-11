@@ -1504,11 +1504,13 @@ dependencies = [
  "http-body",
  "hyper",
  "linkerd-error",
+ "linkerd-http-box",
  "linkerd-stack",
  "linkerd-tracing",
  "parking_lot",
  "thiserror",
  "tokio",
+ "tower",
  "tracing",
 ]
 

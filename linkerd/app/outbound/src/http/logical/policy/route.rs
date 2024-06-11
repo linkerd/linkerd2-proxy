@@ -9,7 +9,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 pub(crate) mod backend;
 pub(crate) mod extensions;
 pub(crate) mod filters;
-#[cfg(feature = "todo")]
+#[allow(dead_code)]
 pub(crate) mod retry;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
@@ -167,6 +167,8 @@ impl<T: Clone, M, F, P> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T
 //     }
 // }
 
+// === impl Http ===
+
 impl<T> filters::Apply for Http<T> {
     #[inline]
     fn apply_request<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
@@ -192,6 +194,8 @@ impl<T> svc::Param<classify::Request> for Http<T> {
         ))
     }
 }
+
+// === impl Grpc ===
 
 impl<T> filters::Apply for Grpc<T> {
     #[inline]

@@ -6,7 +6,7 @@ use linkerd_app_core::{
     profiles::{self, http::Route},
     proxy::http::{ClientHandle, EraseResponse, HttpBody},
     svc::{layer, Either, Param},
-    Error,
+    Error, Result,
 };
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_http_retry::{
@@ -138,7 +138,7 @@ where
     }
 }
 
-impl<A, B, E> retry::PrepareRetry<http::Request<A>, http::Response<B>, E> for RetryPolicy
+impl<A, B> retry::PrepareRetry<http::Request<A>, http::Response<B>> for RetryPolicy
 where
     A: HttpBody + Unpin,
     A::Error: Into<Error>,
@@ -150,13 +150,13 @@ where
     type RetryResponse = http::Response<WithTrailers<B>>;
     type ResponseFuture = future::Map<
         with_trailers::WithTrailersFuture<B>,
-        fn(http::Response<WithTrailers<B>>) -> Result<http::Response<WithTrailers<B>>, E>,
+        fn(http::Response<WithTrailers<B>>) -> Result<http::Response<WithTrailers<B>>>,
     >;
 
     fn prepare_request(
-        &self,
+        self,
         req: http::Request<A>,
-    ) -> Either<Self::RetryRequest, http::Request<A>> {
+    ) -> Either<(Self, Self::RetryRequest), http::Request<A>> {
         let (head, body) = req.into_parts();
         let replay_body = match ReplayBody::try_new(body, MAX_BUFFERED_BYTES) {
             Ok(body) => body,
@@ -171,7 +171,7 @@ where
 
         // The body may still be too large to be buffered if the body's length was not known.
         // `ReplayBody` handles this gracefully.
-        Either::A(http::Request::from_parts(head, replay_body))
+        Either::A((self, http::Request::from_parts(head, replay_body)))
     }
 
     /// If the response is HTTP/2, return a future that checks for a `TRAILERS`

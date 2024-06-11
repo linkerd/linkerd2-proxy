@@ -247,7 +247,7 @@ where
                             *this.error = Some(ResponseHeadersTimeoutError(timeout).into());
                             deadline.reset(headers_by);
                         } else {
-                            tracing::trace!("Using original response headers deadline");
+                            tracing::trace!("Using original stream deadline");
                         }
                     } else {
                         tracing::trace!(?timeout, "Setting response headers deadline");

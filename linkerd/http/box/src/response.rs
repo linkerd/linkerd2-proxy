@@ -10,8 +10,12 @@ use std::task::{Context, Poll};
 pub struct BoxResponse<S>(S);
 
 impl<S> BoxResponse<S> {
+    pub fn new(inner: S) -> Self {
+        Self(inner)
+    }
+
     pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy {
-        layer::mk(Self)
+        layer::mk(Self::new)
     }
 
     /// Constructs a boxing layer that erases the inner response type with [`EraseResponse`].
