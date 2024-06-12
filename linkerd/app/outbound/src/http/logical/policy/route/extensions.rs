@@ -78,10 +78,10 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        let retry = configure_retry(req.headers(), self.params.retry.clone());
+        let retry = configure_retry(req.headers_mut(), self.params.retry.clone());
 
         let timeouts = configure_timeouts(
-            req.headers(),
+            req.headers_mut(),
             self.params.timeouts.clone(),
             retry.as_ref().and_then(|r| r.timeout),
         );
@@ -144,17 +144,17 @@ fn parse_grpc_conditions(s: &str) -> Option<policy::grpc::Codes> {
     )))
 }
 
-fn configure_retry(req: &http::HeaderMap, orig: Option<RetryPolicy>) -> Option<RetryPolicy> {
+fn configure_retry(req: &mut http::HeaderMap, orig: Option<RetryPolicy>) -> Option<RetryPolicy> {
     let user_retry_http = req
-        .get("l5d-retry-http")
+        .remove("l5d-retry-http")
         .and_then(|val| val.to_str().ok().and_then(parse_http_conditions));
     let user_retry_grpc = req
-        .get("l5d-retry-grpc")
+        .remove("l5d-retry-grpc")
         .and_then(|val| val.to_str().ok().and_then(parse_grpc_conditions));
     let user_retry_limit = req
-        .get("l5d-retry-limit")
+        .remove("l5d-retry-limit")
         .and_then(|val| val.to_str().ok().and_then(|v| v.parse::<u16>().ok()));
-    let user_retry_timeout = req.get("l5d-retry-timeout").and_then(|val| {
+    let user_retry_timeout = req.remove("l5d-retry-timeout").and_then(|val| {
         val.to_str()
             .ok()
             .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
@@ -195,18 +195,18 @@ fn configure_retry(req: &http::HeaderMap, orig: Option<RetryPolicy>) -> Option<R
 }
 
 fn configure_timeouts(
-    req: &http::HeaderMap,
+    req: &mut http::HeaderMap,
     orig: policy::http::Timeouts,
     retry: Option<std::time::Duration>,
 ) -> http::StreamTimeouts {
-    let user_timeout = req.get("l5d-timeout").and_then(|val| {
+    let user_timeout = req.remove("l5d-timeout").and_then(|val| {
         val.to_str()
             .ok()
             .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
     });
     let timeout = user_timeout.or(orig.stream);
 
-    let user_response_timeout = req.get("l5d-response-timeout").and_then(|val| {
+    let user_response_timeout = req.remove("l5d-response-timeout").and_then(|val| {
         val.to_str()
             .ok()
             .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
