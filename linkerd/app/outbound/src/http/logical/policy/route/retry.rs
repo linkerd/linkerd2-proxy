@@ -1,5 +1,3 @@
-use std::num::NonZeroU16;
-
 use futures::future;
 use linkerd_app_core::{
     cause_ref, config::ExponentialBackoff, is_caused_by,
@@ -7,7 +5,10 @@ use linkerd_app_core::{
 };
 use linkerd_http_retry::{self as retry, with_trailers::TrailersBody, ReplayBody};
 use linkerd_proxy_client_policy as policy;
+use std::num::NonZeroU16;
 use tokio::time;
+
+pub type HttpRetry<S> = retry::HttpRetry<RetryPolicy, S>;
 
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
@@ -18,8 +19,6 @@ pub struct RetryPolicy {
     pub retryable_http_statuses: Option<policy::http::StatusRanges>,
     pub retryable_grpc_statuses: Option<policy::grpc::Codes>,
 }
-
-pub type NewHttpRetry<P, N> = retry::NewHttpRetry<P, N>;
 
 // A request extension that marks the number of times a request has been
 // retried.

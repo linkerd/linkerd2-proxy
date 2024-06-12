@@ -11,7 +11,7 @@ use crate::with_trailers::ResponseWithTrailers;
 use futures::future;
 use linkerd_error::Error;
 use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse};
-use linkerd_stack::{layer, NewService, Param, Service};
+use linkerd_stack::{layer, Param, Service};
 use std::{
     marker::PhantomData,
     task::{Context, Poll},
@@ -24,20 +24,17 @@ pub struct Params {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewHttpRetry<P, N> {
-    inner: N,
-    _marker: PhantomData<fn() -> P>,
-}
-
-#[derive(Clone, Debug)]
 pub struct HttpRetry<P, S> {
     inner: S,
     _marker: PhantomData<fn() -> P>,
 }
 
-// === impl NewRetry ===
+type RetrySvc<P, S> =
+    BoxResponse<tower::retry::Retry<P, ResponseWithTrailers<BoxRequest<ReplayBody, S>>>>;
 
-impl<P, N> NewHttpRetry<P, N> {
+// === impl HttpRetry ===
+
+impl<P, N> HttpRetry<P, N> {
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy {
         layer::mk(|inner| Self {
             inner,
@@ -45,26 +42,6 @@ impl<P, N> NewHttpRetry<P, N> {
         })
     }
 }
-
-impl<T, P, N> NewService<T> for NewHttpRetry<P, N>
-where
-    N: NewService<T>,
-{
-    type Service = HttpRetry<P, N::Service>;
-
-    fn new_service(&self, target: T) -> Self::Service {
-        let inner = self.inner.new_service(target);
-        HttpRetry {
-            inner,
-            _marker: PhantomData,
-        }
-    }
-}
-
-// === impl Retry ===
-
-type RetrySvc<P, S> =
-    BoxResponse<tower::retry::Retry<P, ResponseWithTrailers<BoxRequest<ReplayBody, S>>>>;
 
 impl<P, S> Service<http::Request<BoxBody>> for HttpRetry<P, S>
 where

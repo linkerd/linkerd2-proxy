@@ -137,6 +137,7 @@ where
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
+                .push_on_service(retry::HttpRetry::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 .push(extensions::NewSetExtensions::layer())
                 // // Sets an optional request timeout.
