@@ -50,12 +50,14 @@ impl retry::Policy<http::Request<ReplayBody>, http::Response<TrailersBody>, Erro
         super::extensions::clone_request(orig.extensions(), new.extensions_mut());
 
         // Add a marker extension to indicate that the request has been retried.
-        new.extensions_mut().insert(Retry(
-            orig.extensions()
-                .get::<Retry>()
-                .and_then(|Retry(n)| n.checked_add(1))
-                .unwrap_or(1.try_into().unwrap()),
-        ));
+        let retry_n = orig
+            .extensions()
+            .get::<Retry>()
+            .and_then(|Retry(n)| n.checked_add(1))
+            .unwrap_or(1.try_into().unwrap());
+        new.extensions_mut().insert(Retry(retry_n));
+        new.headers_mut()
+            .insert("l5d-retry-count", retry_n.get().into());
 
         Some(new)
     }
@@ -133,12 +135,11 @@ impl RetryPolicy {
     }
 
     fn retryable_error(e: &Error) -> bool {
-        if let Some(e) = cause_ref::<ResponseTimeoutError>(&**e) {
-            return matches!(e, ResponseTimeoutError::Headers(_));
-        }
-
         // While LoadShed errors are not retryable, FailFast errors are, since
         // retrying may put us in another backend that is available.
-        is_caused_by::<svc::FailFastError>(&**e)
+        matches!(
+            cause_ref::<ResponseTimeoutError>(&**e),
+            Some(ResponseTimeoutError::Headers(_))
+        ) || is_caused_by::<svc::FailFastError>(&**e)
     }
 }
