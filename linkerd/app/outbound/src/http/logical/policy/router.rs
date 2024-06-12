@@ -62,8 +62,9 @@ where
         Key = route::MatchedRoute<T, M::Summary, F, P>,
         Error = NoRoute,
     >,
-    route::MatchedRoute<T, M::Summary, F, P>:
-        route::filters::Apply + svc::Param<classify::Request> + svc::Param<policy::http::Timeouts>,
+    route::MatchedRoute<T, M::Summary, F, P>: route::filters::Apply
+        + svc::Param<classify::Request>
+        + svc::Param<route::extensions::Params>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
     route::backend::RouteBackendMetrics:
         svc::ExtractParam<route::backend::RequestCount, route::MatchedBackend<T, M::Summary, F>>,

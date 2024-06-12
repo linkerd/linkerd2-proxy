@@ -12,7 +12,10 @@ use futures::future;
 use linkerd_error::Error;
 use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse};
 use linkerd_stack::{layer, NewService, Param, Service};
-use std::task::{Context, Poll};
+use std::{
+    marker::PhantomData,
+    task::{Context, Poll},
+};
 use tracing::{debug, trace};
 
 #[derive(Clone, Debug)]
@@ -23,13 +26,13 @@ pub struct Params {
 #[derive(Clone, Debug)]
 pub struct NewHttpRetry<P, N> {
     inner: N,
-    _marker: std::marker::PhantomData<fn() -> P>,
+    _marker: PhantomData<fn() -> P>,
 }
 
 #[derive(Clone, Debug)]
 pub struct HttpRetry<P, S> {
     inner: S,
-    _marker: std::marker::PhantomData<fn() -> P>,
+    _marker: PhantomData<fn() -> P>,
 }
 
 // === impl NewRetry ===
@@ -38,7 +41,7 @@ impl<P, N> NewHttpRetry<P, N> {
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy {
         layer::mk(|inner| Self {
             inner,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         })
     }
 }
@@ -53,7 +56,7 @@ where
         let inner = self.inner.new_service(target);
         HttpRetry {
             inner,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         }
     }
 }
@@ -108,7 +111,7 @@ where
                 }
             }
         };
-        trace!(retryable = true, ?policy);
+        debug!(retryable = true, ?policy);
 
         // Take the inner service, replacing it with a clone. This allows the
         // readiness from poll_ready to be preserved.

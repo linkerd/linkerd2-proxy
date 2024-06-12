@@ -105,7 +105,7 @@ where
     // Assert that filters can be applied.
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
-    Self: svc::Param<policy::http::Timeouts>,
+    Self: svc::Param<extensions::Params>,
     MatchedBackend<T, M, F>: filters::Apply,
 {
     /// Builds a route stack that applies policy filters to requests and
@@ -181,9 +181,12 @@ impl<T> filters::Apply for Http<T> {
     }
 }
 
-impl<T> svc::Param<policy::http::Timeouts> for Http<T> {
-    fn param(&self) -> policy::http::Timeouts {
-        self.params.params.timeouts.clone()
+impl<T> svc::Param<extensions::Params> for Http<T> {
+    fn param(&self) -> extensions::Params {
+        extensions::Params {
+            timeouts: self.params.params.timeouts.clone(),
+            retry: None,
+        }
     }
 }
 
@@ -209,9 +212,12 @@ impl<T> filters::Apply for Grpc<T> {
     }
 }
 
-impl<T> svc::Param<policy::http::Timeouts> for Grpc<T> {
-    fn param(&self) -> policy::http::Timeouts {
-        self.params.params.timeouts.clone()
+impl<T> svc::Param<extensions::Params> for Grpc<T> {
+    fn param(&self) -> extensions::Params {
+        extensions::Params {
+            timeouts: self.params.params.timeouts.clone(),
+            retry: None,
+        }
     }
 }
 
