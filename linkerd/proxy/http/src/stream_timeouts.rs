@@ -87,9 +87,9 @@ pub enum BodyTimeoutError {
 pub struct ResponseFuture<F> {
     #[pin]
     inner: F,
+
     #[pin]
-    deadline: Option<time::Sleep>,
-    error: Option<ResponseTimeoutError>,
+    deadline: Option<Deadline<ResponseTimeoutError>>,
 
     #[pin]
     request_flushed: Option<oneshot::Receiver<time::Instant>>,
@@ -107,9 +107,7 @@ pub struct RequestBody<B> {
     inner: B,
 
     #[pin]
-    deadline: Option<time::Sleep>,
-    error: Option<BodyTimeoutError>,
-
+    deadline: Option<Deadline<BodyTimeoutError>>,
     idle: Option<Idle>,
 
     request_flushed: Option<oneshot::Sender<time::Instant>>,
@@ -122,12 +120,18 @@ pub struct ResponseBody<B> {
     inner: B,
 
     #[pin]
-    deadline: Option<time::Sleep>,
-    error: Option<BodyTimeoutError>,
-
+    deadline: Option<Deadline<BodyTimeoutError>>,
     idle: Option<Idle>,
 
     timeouts: StreamTimeouts,
+}
+
+#[derive(Debug)]
+#[pin_project]
+struct Deadline<E> {
+    #[pin]
+    sleep: time::Sleep,
+    error: E,
 }
 
 type IdleTimestamp = Arc<RwLock<time::Instant>>;
@@ -193,23 +197,21 @@ where
         };
 
         let (tx, rx) = oneshot::channel();
-        let inner = self.inner.call(req.map(move |inner| {
-            RequestBody {
-                inner,
-                request_flushed: Some(tx),
-                deadline: timeouts.limit.map(|l| time::sleep_until(l.deadline)),
-                error: timeouts
-                    .limit
-                    .map(|l| StreamDeadlineError(l.lifetime).into()),
-                idle: req_idle,
-            }
+        let inner = self.inner.call(req.map(move |inner| RequestBody {
+            inner,
+            request_flushed: Some(tx),
+            deadline: timeouts.limit.map(|l| Deadline {
+                sleep: time::sleep_until(l.deadline),
+                error: StreamDeadlineError(l.lifetime).into(),
+            }),
+            idle: req_idle,
         }));
         ResponseFuture {
             inner,
-            deadline: timeouts.limit.map(|l| time::sleep_until(l.deadline)),
-            error: timeouts
-                .limit
-                .map(|l| StreamDeadlineError(l.lifetime).into()),
+            deadline: timeouts.limit.map(|l| Deadline {
+                sleep: time::sleep_until(l.deadline),
+                error: StreamDeadlineError(l.lifetime).into(),
+            }),
             request_flushed: Some(rx),
             request_flushed_at: None,
             timeouts,
@@ -242,16 +244,20 @@ where
                 if let Some(timeout) = this.timeouts.response_headers {
                     let headers_by = start + timeout;
                     if let Some(deadline) = this.deadline.as_mut().as_pin_mut() {
-                        if headers_by < deadline.deadline() {
+                        if headers_by < deadline.sleep.deadline() {
                             tracing::trace!(?timeout, "Updating response headers deadline");
-                            *this.error = Some(ResponseHeadersTimeoutError(timeout).into());
-                            deadline.reset(headers_by);
+                            let dl = deadline.project();
+                            *dl.error = ResponseHeadersTimeoutError(timeout).into();
+                            dl.sleep.reset(headers_by);
                         } else {
                             tracing::trace!("Using original stream deadline");
                         }
                     } else {
                         tracing::trace!(?timeout, "Setting response headers deadline");
-                        this.deadline.set(Some(time::sleep_until(headers_by)));
+                        this.deadline.set(Some(Deadline {
+                            sleep: time::sleep_until(headers_by),
+                            error: ResponseHeadersTimeoutError(timeout).into(),
+                        }));
                     }
                 }
             }
@@ -265,12 +271,10 @@ where
                 // If the response headers are not ready, check the deadline and
                 // return an error if it is exceeded.
                 if let Some(deadline) = this.deadline.as_pin_mut() {
-                    if deadline.poll(cx).is_ready() {
+                    let dl = deadline.project();
+                    if dl.sleep.poll(cx).is_ready() {
                         // TODO telemetry
-                        return Poll::Ready(Err(this
-                            .error
-                            .expect("error must be set when deadline is set")
-                            .into()));
+                        return Poll::Ready(Err((*dl.error).into()));
                     }
                 }
                 return Poll::Pending;
@@ -307,8 +311,10 @@ where
 
         Poll::Ready(Ok(rsp.map(move |inner| ResponseBody {
             inner,
-            deadline: timeout.map(|(t, _)| time::sleep_until(t)),
-            error: timeout.map(|(_, e)| e),
+            deadline: timeout.map(|(t, error)| Deadline {
+                sleep: time::sleep_until(t),
+                error,
+            }),
             idle,
             timeouts: this.timeouts.clone(),
         })))
@@ -337,7 +343,7 @@ where
             return Poll::Ready(res);
         }
 
-        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.error, this.idle, cx) {
+        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.idle, cx) {
             // TODO telemetry
             return Poll::Ready(Some(Err(Error::from(e))));
         }
@@ -362,7 +368,7 @@ where
             return Poll::Ready(res);
         }
 
-        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.error, this.idle, cx) {
+        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.idle, cx) {
             // TODO telemetry
             return Poll::Ready(Err(Error::from(e)));
         }
@@ -397,7 +403,7 @@ where
             return Poll::Ready(res);
         }
 
-        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.error, this.idle, cx) {
+        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.idle, cx) {
             // TODO telemetry
             return Poll::Ready(Some(Err(Error::from(e))));
         }
@@ -418,7 +424,7 @@ where
             return Poll::Ready(res);
         }
 
-        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.error, this.idle, cx) {
+        if let Poll::Ready(e) = poll_body_timeout(this.deadline, this.idle, cx) {
             // TODO telemetry
             return Poll::Ready(Err(Error::from(e)));
         }
@@ -432,19 +438,16 @@ where
 }
 
 fn poll_body_timeout(
-    mut deadline: Pin<&mut Option<time::Sleep>>,
-    error: &mut Option<BodyTimeoutError>,
+    mut deadline: Pin<&mut Option<Deadline<BodyTimeoutError>>>,
     idle: &mut Option<Idle>,
     cx: &mut Context<'_>,
 ) -> Poll<BodyTimeoutError> {
-    if let Some(d) = deadline.as_mut().as_pin_mut() {
-        if d.poll(cx).is_ready() {
+    if let Some(dl) = deadline.as_mut().as_pin_mut() {
+        let d = dl.project();
+        if d.sleep.poll(cx).is_ready() {
+            let error = *d.error;
             deadline.set(None); // Prevent polling again.
-            return Poll::Ready(
-                error
-                    .take()
-                    .expect("error must be set when deadline is set"),
-            );
+            return Poll::Ready(error);
         }
     }
 
