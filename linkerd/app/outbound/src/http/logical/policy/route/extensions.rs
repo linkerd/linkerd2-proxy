@@ -1,5 +1,5 @@
 use super::retry::RetryPolicy;
-use linkerd_app_core::{config::ExponentialBackoff, proxy::http, svc};
+use linkerd_app_core::{classify, config::ExponentialBackoff, proxy::http, svc};
 use linkerd_proxy_client_policy as policy;
 use std::task::{Context, Poll};
 
@@ -55,6 +55,10 @@ pub(super) fn clone_request(orig: &::http::Extensions, new: &mut ::http::Extensi
     // to close the server-side connection.
     if let Some(client_handle) = orig.get::<http::ClientHandle>().cloned() {
         new.insert(client_handle);
+    }
+
+    if let Some(classify) = orig.get::<classify::Response>().cloned() {
+        new.insert(classify);
     }
 }
 
