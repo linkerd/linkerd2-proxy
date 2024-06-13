@@ -9,6 +9,11 @@ pub struct Params {
     pub timeouts: policy::http::Timeouts,
 }
 
+// A request extension that marks the number of times a request has been
+// attempted.
+#[derive(Clone, Debug)]
+pub struct Attempt(pub std::num::NonZeroU16);
+
 #[derive(Clone, Debug)]
 pub struct NewSetExtensions<N> {
     inner: N,
@@ -43,6 +48,10 @@ where
 }
 
 pub(super) fn clone_request(orig: &::http::Extensions, new: &mut ::http::Extensions) {
+    if let Some(Attempt(n)) = orig.get::<Attempt>() {
+        new.insert(Attempt(n.saturating_add(1)));
+    }
+
     if let Some(retry) = orig.get::<RetryPolicy>() {
         new.insert(retry.clone());
     }
@@ -98,50 +107,10 @@ where
             "StreamTimeouts must only be configured once"
         );
 
+        req.extensions_mut().insert(Attempt(1.try_into().unwrap()));
+
         self.inner.call(req)
     }
-}
-
-fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {
-    Some(policy::http::StatusRanges(
-        s.split(',')
-            .filter_map(|cond| {
-                if cond.eq_ignore_ascii_case("5xx") {
-                    return Some(500..=599);
-                }
-                if cond.eq_ignore_ascii_case("gateway-error") {
-                    return Some(502..=504);
-                }
-
-                None
-            })
-            .collect(),
-    ))
-}
-
-fn parse_grpc_conditions(s: &str) -> Option<policy::grpc::Codes> {
-    Some(policy::grpc::Codes(std::sync::Arc::new(
-        s.split(',')
-            .filter_map(|cond| {
-                if cond.eq_ignore_ascii_case("cancelled") {
-                    return Some(tonic::Code::Cancelled as u16);
-                }
-                if cond.eq_ignore_ascii_case("deadline-exceeded") {
-                    return Some(tonic::Code::DeadlineExceeded as u16);
-                }
-                if cond.eq_ignore_ascii_case("internal") {
-                    return Some(tonic::Code::Internal as u16);
-                }
-                if cond.eq_ignore_ascii_case("resource-exhausted") {
-                    return Some(tonic::Code::ResourceExhausted as u16);
-                }
-                if cond.eq_ignore_ascii_case("unavailable") {
-                    return Some(tonic::Code::Unavailable as u16);
-                }
-                None
-            })
-            .collect(),
-    )))
 }
 
 fn configure_retry(req: &mut http::HeaderMap, orig: Option<RetryPolicy>) -> Option<RetryPolicy> {
@@ -219,4 +188,46 @@ fn configure_timeouts(
         idle: orig.idle,
         limit: timeout.map(Into::into),
     }
+}
+
+fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {
+    Some(policy::http::StatusRanges(
+        s.split(',')
+            .filter_map(|cond| {
+                if cond.eq_ignore_ascii_case("5xx") {
+                    return Some(500..=599);
+                }
+                if cond.eq_ignore_ascii_case("gateway-error") {
+                    return Some(502..=504);
+                }
+
+                None
+            })
+            .collect(),
+    ))
+}
+
+fn parse_grpc_conditions(s: &str) -> Option<policy::grpc::Codes> {
+    Some(policy::grpc::Codes(std::sync::Arc::new(
+        s.split(',')
+            .filter_map(|cond| {
+                if cond.eq_ignore_ascii_case("cancelled") {
+                    return Some(tonic::Code::Cancelled as u16);
+                }
+                if cond.eq_ignore_ascii_case("deadline-exceeded") {
+                    return Some(tonic::Code::DeadlineExceeded as u16);
+                }
+                if cond.eq_ignore_ascii_case("internal") {
+                    return Some(tonic::Code::Internal as u16);
+                }
+                if cond.eq_ignore_ascii_case("resource-exhausted") {
+                    return Some(tonic::Code::ResourceExhausted as u16);
+                }
+                if cond.eq_ignore_ascii_case("unavailable") {
+                    return Some(tonic::Code::Unavailable as u16);
+                }
+                None
+            })
+            .collect(),
+    )))
 }

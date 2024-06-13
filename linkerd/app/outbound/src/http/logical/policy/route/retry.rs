@@ -5,8 +5,11 @@ use linkerd_app_core::{
 };
 use linkerd_http_retry::{self as retry, with_trailers::TrailersBody, ReplayBody};
 use linkerd_proxy_client_policy as policy;
-use std::num::NonZeroU16;
 use tokio::time;
+
+// A request extension that marks that a request is a retry.
+#[derive(Copy, Clone, Debug)]
+pub struct IsRetry(());
 
 pub type HttpRetry<S> = retry::HttpRetry<RetryPolicy, S>;
 
@@ -19,11 +22,6 @@ pub struct RetryPolicy {
     pub retryable_http_statuses: Option<policy::http::StatusRanges>,
     pub retryable_grpc_statuses: Option<policy::grpc::Codes>,
 }
-
-// A request extension that marks the number of times a request has been
-// retried.
-#[derive(Clone, Debug)]
-pub struct Retry(pub NonZeroU16);
 
 // === impl RetryPolicy ===
 
@@ -50,14 +48,7 @@ impl retry::Policy<http::Request<ReplayBody>, http::Response<TrailersBody>, Erro
         super::extensions::clone_request(orig.extensions(), new.extensions_mut());
 
         // Add a marker extension to indicate that the request has been retried.
-        let retry_n = orig
-            .extensions()
-            .get::<Retry>()
-            .and_then(|Retry(n)| n.checked_add(1))
-            .unwrap_or(1.try_into().unwrap());
-        new.extensions_mut().insert(Retry(retry_n));
-        new.headers_mut()
-            .insert("l5d-retry-count", retry_n.get().into());
+        new.extensions_mut().insert(IsRetry);
 
         Some(new)
     }
