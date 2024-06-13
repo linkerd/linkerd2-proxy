@@ -1,6 +1,6 @@
 use futures::future;
 use linkerd_app_core::{
-    cause_ref, config::ExponentialBackoff, is_caused_by,
+    cause_ref, exp_backoff::ExponentialBackoff, is_caused_by,
     proxy::http::stream_timeouts::ResponseTimeoutError, svc, Error, Result,
 };
 use linkerd_http_retry::{self as retry, with_trailers::TrailersBody, ReplayBody};
@@ -119,10 +119,12 @@ impl RetryPolicy {
         if let Some(statuses) = self.retryable_http_statuses.as_ref() {
             let retryable = statuses.contains(rsp.status());
             tracing::debug!(retryable, http.status = %rsp.status());
-            retryable
-        } else {
-            false
+            if retryable {
+                return true;
+            }
         }
+
+        false
     }
 
     fn grpc_status(rsp: &http::Response<TrailersBody>) -> Option<tonic::Code> {
@@ -134,12 +136,26 @@ impl RetryPolicy {
         Some(trailer.to_str().ok()?.parse::<i32>().ok()?.into())
     }
 
-    fn retryable_error(e: &Error) -> bool {
+    fn retryable_error(error: &Error) -> bool {
         // While LoadShed errors are not retryable, FailFast errors are, since
         // retrying may put us in another backend that is available.
-        matches!(
-            cause_ref::<ResponseTimeoutError>(&**e),
+        if is_caused_by::<svc::LoadShedError>(&**error) {
+            return false;
+        }
+        if is_caused_by::<svc::FailFastError>(&**error) {
+            return true;
+        }
+
+        if matches!(
+            cause_ref::<ResponseTimeoutError>(&**error),
             Some(ResponseTimeoutError::Headers(_))
-        ) || is_caused_by::<svc::FailFastError>(&**e)
+        ) {
+            return true;
+        }
+
+        // TODO h2 errors
+        // TODO connection errors
+
+        false
     }
 }
