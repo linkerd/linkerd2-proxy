@@ -24,7 +24,7 @@ impl Config {
 }
 
 impl ConfigureResolver for Config {
-    /// Modify a `trust-dns-resolver::config::ResolverOpts` to reflect
+    /// Modify a `hickory-resolver::config::ResolverOpts` to reflect
     /// the configured minimum and maximum DNS TTL values.
     fn configure_resolver(&self, opts: &mut ResolverOpts) {
         opts.positive_min_ttl = self.min_ttl;

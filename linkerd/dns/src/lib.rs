@@ -64,7 +64,7 @@ impl Resolver {
     }
 
     pub fn new(config: ResolverConfig, mut opts: ResolverOpts) -> Self {
-        // Disable Trust-DNS's caching.
+        // Disable Hickory-resolver's caching.
         opts.cache_size = 0;
         // This function is synchronous, but needs to be called within the Tokio
         // 0.2 runtime context, since it gets a handle.
