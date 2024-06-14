@@ -75,7 +75,7 @@ skip = [
     # https://github.com/hawkw/matchers/pull/4
     { name = "regex-automata", version = "0.1" },
     { name = "regex-syntax", version = "0.6" },
-    # `trust-dns-proto`, depends on `idna` v0.2.3 while `url` depends on v0.5.0
+    # `trust-dns-proto`, depends on `idna` v0.4.0 while `url` depends on v0.5.0
     { name = "idna" },
     # Some dependencies still use indexmap v1.
     { name = "indexmap", version = "1" },
