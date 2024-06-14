@@ -35,8 +35,8 @@ impl<N> NewSetExtensions<N> {
 
 impl<T, N> svc::NewService<T> for NewSetExtensions<N>
 where
-    N: svc::NewService<T>,
     T: svc::Param<Params>,
+    N: svc::NewService<T>,
 {
     type Service = SetExtensions<N::Service>;
 
