@@ -14,13 +14,14 @@ notice = "warn"
 ignore = []
 
 [licenses]
-unlicensed = "deny"
 allow = [
     "Apache-2.0",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "MIT",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
 ]
 deny = []
 copyleft = "deny"
@@ -38,13 +39,6 @@ exceptions = [
         "MIT",
         "OpenSSL",
     ], name = "ring", version = "*" },
-    # The Unicode-DFS-2016 license is necessary for unicode-ident because they
-    # use data from the unicode tables to generate the tables which are
-    # included in the application. We do not distribute those data files so
-    # this is not a problem for us. See https://github.com/dtolnay/unicode-ident/pull/9/files
-    { allow = [
-        "Unicode-DFS-2016",
-    ], name = "unicode-ident", version = "*" },
 ]
 
 [[licenses.clarify]]
@@ -81,7 +75,7 @@ skip = [
     # https://github.com/hawkw/matchers/pull/4
     { name = "regex-automata", version = "0.1" },
     { name = "regex-syntax", version = "0.6" },
-    # `trust-dns-proto`, depends on `idna` v0.2.3 while `url` depends on v0.5.0
+    # `trust-dns-proto`, depends on `idna` v0.4.0 while `url` depends on v0.5.0
     { name = "idna" },
     # Some dependencies still use indexmap v1.
     { name = "indexmap", version = "1" },

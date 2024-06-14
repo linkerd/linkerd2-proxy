@@ -105,6 +105,8 @@ pub const ENV_ADMIN_LISTEN_ADDR: &str = "LINKERD2_PROXY_ADMIN_LISTEN_ADDR";
 
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 
+pub const ENV_SHUTDOWN_ENDPOINT_ENABLED: &str = "LINKERD2_PROXY_SHUTDOWN_ENDPOINT_ENABLED";
+
 const ENV_INGRESS_MODE: &str = "LINKERD2_PROXY_INGRESS_MODE";
 
 const ENV_INBOUND_HTTP_QUEUE_CAPACITY: &str = "LINKERD2_PROXY_INBOUND_HTTP_QUEUE_CAPACITY";
@@ -396,6 +398,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let metrics_retain_idle = parse(strings, ENV_METRICS_RETAIN_IDLE, parse_duration);
 
     let control_receive_limits = control::mk_receive_limits(strings)?;
+
+    let shutdown_endpoint_enabled = parse(strings, ENV_SHUTDOWN_ENDPOINT_ENABLED, parse_bool);
 
     // DNS
 
@@ -773,6 +777,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // configuration.
         #[cfg(feature = "pprof")]
         enable_profiling: true,
+        enable_shutdown: shutdown_endpoint_enabled?.unwrap_or_default(),
     };
 
     let dns = dns::Config {
