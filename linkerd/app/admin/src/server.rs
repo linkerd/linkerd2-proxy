@@ -188,7 +188,16 @@ impl<M> Admin<M> {
     fn client_is_localhost<B>(req: &Request<B>) -> bool {
         req.extensions()
             .get::<ClientHandle>()
-            .map(|a| a.addr.ip().is_loopback())
+            .map(|a| match a.addr.ip() {
+                std::net::IpAddr::V4(v4) => v4.is_loopback(),
+                std::net::IpAddr::V6(v6) => {
+                    if let Some(v4) = v6.to_ipv4_mapped() {
+                        v4.is_loopback()
+                    } else {
+                        v6.is_loopback()
+                    }
+                }
+            })
             .unwrap_or(false)
     }
 }
