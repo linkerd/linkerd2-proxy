@@ -40,6 +40,7 @@ pub struct Admin<M> {
     tracing: trace::Handle,
     ready: Readiness,
     shutdown_tx: mpsc::UnboundedSender<()>,
+    enable_shutdown: bool,
     #[cfg(feature = "pprof")]
     pprof: Option<crate::pprof::Pprof>,
 }
@@ -51,12 +52,14 @@ impl<M> Admin<M> {
         metrics: M,
         ready: Readiness,
         shutdown_tx: mpsc::UnboundedSender<()>,
+        enable_shutdown: bool,
         tracing: trace::Handle,
     ) -> Self {
         Self {
             metrics: metrics::Serve::new(metrics),
             ready,
             shutdown_tx,
+            enable_shutdown,
             tracing,
 
             #[cfg(feature = "pprof")]
@@ -140,6 +143,13 @@ impl<M> Admin<M> {
     }
 
     fn shutdown(&self) -> Response<Body> {
+        if !self.enable_shutdown {
+            return Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .header(http::header::CONTENT_TYPE, "text/plain")
+                .body("shutdown endpoint is not enabled\n".into())
+                .expect("builder with known status code must not fail");
+        }
         if self.shutdown_tx.send(()).is_ok() {
             Response::builder()
                 .status(StatusCode::OK)
@@ -315,7 +325,7 @@ mod tests {
 
         let (_, t) = trace::Settings::default().build();
         let (s, _) = mpsc::unbounded_channel();
-        let admin = Admin::new((), r, s, t);
+        let admin = Admin::new((), r, s, true, t);
         macro_rules! call {
             () => {{
                 let r = Request::builder()
