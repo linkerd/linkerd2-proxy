@@ -30,7 +30,7 @@ jobs:
     container: docker://rust:1.76.0
     steps:
       - run: apt update && apt install -y jo
-      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - uses: tj-actions/changed-files@d6babd6899969df1a11d14c368283ea4436bca78
         id: changed-files
@@ -55,7 +55,7 @@ jobs:
     steps:
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz
-      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - working-directory: ${{matrix.dir}}
         run: cargo +nightly fetch
