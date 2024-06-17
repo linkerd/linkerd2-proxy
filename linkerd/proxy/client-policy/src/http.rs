@@ -44,8 +44,8 @@ pub enum Filter {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Retry {
     pub limit: u32,
-    pub retry_on: StatusRanges,
-    pub per_try_timeout: Option<time::Duration>,
+    pub status_ranges: StatusRanges,
+    pub timeout: Option<time::Duration>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -156,6 +156,17 @@ pub mod proto {
 
         #[error(transparent)]
         Timeout(#[from] InvalidTimeouts),
+
+        #[error(transparent)]
+        Retry(#[from] InvalidRetry),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidRetry {
+        #[error("invalid retry condition")]
+        Condition,
+        #[error("invalid retry timeout: {0}")]
+        Timeout(#[from] prost_types::DurationError),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -288,10 +299,10 @@ pub mod proto {
     impl RouteParams {
         fn try_from_proto(
             timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
-            _retry: Option<http_route::Retry>,
+            retry: Option<http_route::Retry>,
         ) -> Result<Self, InvalidHttpRoute> {
             Ok(Self {
-                retry: None, // retry.map(Retry::try_from).transpose()?,
+                retry: retry.map(Retry::try_from).transpose()?,
                 timeouts: timeouts
                     .map(Timeouts::try_from)
                     .transpose()?
@@ -325,20 +336,40 @@ pub mod proto {
         }
     }
 
-    // impl TryFrom<outbound::http_route::Retry> for Retry {
-    //     type Error = InvalidTimeouts;
-    //     fn try_from(retry: outbound::http_route::Retry) -> Result<Self, Self::Error> {
-    //         Ok(Self {
-    //             limit: retry.limit,
-    //             retry_on: retry.on.into(),
-    //             per_try_timeout: retry
-    //                 .per_try_timeout
-    //                 .map(time::Duration::try_from)
-    //                 .transpose()
-    //                 .map_err(InvalidTimeouts::Response)?,
-    //         })
-    //     }
-    // }
+    impl TryFrom<outbound::http_route::Retry> for Retry {
+        type Error = InvalidRetry;
+        fn try_from(retry: outbound::http_route::Retry) -> Result<Self, Self::Error> {
+            fn range(
+                r: outbound::http_route::retry::conditions::StatusRange,
+            ) -> Result<RangeInclusive<u16>, InvalidRetry> {
+                let Ok(start) = u16::try_from(r.start) else {
+                    return Err(InvalidRetry::Condition);
+                };
+                let Ok(end) = u16::try_from(r.end) else {
+                    return Err(InvalidRetry::Condition);
+                };
+                if start == 0 || end == 0 || end > 599 || start > end {
+                    return Err(InvalidRetry::Condition);
+                }
+                Ok(start..=end)
+            }
+
+            let status_ranges = StatusRanges(
+                retry
+                    .conditions
+                    .ok_or(InvalidRetry::Condition)?
+                    .status_ranges
+                    .into_iter()
+                    .map(range)
+                    .collect::<Result<_, _>>()?,
+            );
+            Ok(Self {
+                limit: retry.limit,
+                status_ranges,
+                timeout: retry.timeout.map(time::Duration::try_from).transpose()?,
+            })
+        }
+    }
 
     impl TryFrom<http_route::Distribution> for RouteDistribution<Filter> {
         type Error = InvalidDistribution;

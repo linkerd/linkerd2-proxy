@@ -1164,7 +1164,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c2a198fb6b0eada2a8df47933734e6d35d350665a33a3593d7164fa52c75c19"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.0",
 ]
 
 [[package]]
@@ -2395,7 +2395,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.13.1"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/retries-timeouts#c232512880647c26a09491433c8853d1102520f6"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/retries-timeouts#e3fced1ffe016919ad19192fb1b5f64de1116195"
 dependencies = [
  "h2",
  "http",
