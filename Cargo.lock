@@ -2395,7 +2395,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.13.1"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/retries-timeouts#e3fced1ffe016919ad19192fb1b5f64de1116195"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/retries-timeouts#c712ef132f6f94e5524811b33f0326e00aff33c1"
 dependencies = [
  "h2",
  "http",

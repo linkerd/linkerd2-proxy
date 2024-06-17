@@ -1,6 +1,6 @@
 use crate::FailureAccrual;
 use linkerd_http_route::{grpc, http};
-use std::sync::Arc;
+use std::{sync::Arc, time};
 
 pub use linkerd_http_route::grpc::{filter, find, r#match, RouteMatch};
 
@@ -11,6 +11,7 @@ pub type Rule = grpc::Rule<Policy>;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct RouteParams {
     pub timeouts: crate::http::Timeouts,
+    pub retry: Option<Retry>,
 }
 
 // TODO HTTP2 settings
@@ -27,6 +28,13 @@ pub enum Filter {
     InjectFailure(filter::InjectFailure),
     RequestHeaders(http::filter::ModifyHeader),
     InternalError(&'static str),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Retry {
+    pub limit: u32,
+    pub codes: Codes,
+    pub timeout: Option<time::Duration>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -131,7 +139,19 @@ pub mod proto {
         Breaker(#[from] InvalidFailureAccrual),
 
         #[error(transparent)]
+        Retry(#[from] InvalidRetry),
+
+        #[error(transparent)]
         Timeout(#[from] crate::http::proto::InvalidTimeouts),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidRetry {
+        #[error("invalid retry condition")]
+        Condition,
+
+        #[error("invalid retry timeout: {0}")]
+        Timeout(#[from] prost_types::DurationError),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -241,13 +261,42 @@ pub mod proto {
     impl RouteParams {
         fn try_from_proto(
             timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
-            _retry: Option<grpc_route::Retry>,
+            retry: Option<grpc_route::Retry>,
         ) -> Result<Self, InvalidGrpcRoute> {
             Ok(Self {
+                retry: retry.map(Retry::try_from).transpose()?,
                 timeouts: timeouts
                     .map(crate::http::Timeouts::try_from)
                     .transpose()?
                     .unwrap_or_default(),
+            })
+        }
+    }
+
+    impl TryFrom<outbound::grpc_route::Retry> for Retry {
+        type Error = InvalidRetry;
+
+        fn try_from(retry: outbound::grpc_route::Retry) -> Result<Self, Self::Error> {
+            let cond = retry.conditions.ok_or(InvalidRetry::Condition)?;
+            let codes = Codes(Arc::new(
+                [
+                    cond.cancelled.then_some(tonic::Code::Cancelled as u16),
+                    cond.deadine_exceeded
+                        .then_some(tonic::Code::DeadlineExceeded as u16),
+                    cond.resource_exhausted
+                        .then_some(tonic::Code::ResourceExhausted as u16),
+                    cond.internal.then_some(tonic::Code::Internal as u16),
+                    cond.unavailable.then_some(tonic::Code::Unavailable as u16),
+                ]
+                .into_iter()
+                .flatten()
+                .collect(),
+            ));
+
+            Ok(Self {
+                codes,
+                limit: retry.limit,
+                timeout: retry.timeout.map(time::Duration::try_from).transpose()?,
             })
         }
     }
