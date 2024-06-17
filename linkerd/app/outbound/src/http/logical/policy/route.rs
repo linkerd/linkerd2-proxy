@@ -188,9 +188,17 @@ impl<T> filters::Apply for Http<T> {
 
 impl<T> svc::Param<extensions::Params> for Http<T> {
     fn param(&self) -> extensions::Params {
+        let retry = self.params.params.retry.clone();
         extensions::Params {
             timeouts: self.params.params.timeouts.clone(),
-            retry: None,
+            retry: retry.map(|r| retry::RetryPolicy {
+                num_retries: r.num_retries,
+                max_request_bytes: r.max_request_bytes,
+                timeout: r.timeout,
+                backoff: r.backoff.clone(),
+                retryable_http_statuses: Some(r.status_ranges.clone()),
+                retryable_grpc_statuses: None,
+            }),
         }
     }
 }
@@ -219,9 +227,17 @@ impl<T> filters::Apply for Grpc<T> {
 
 impl<T> svc::Param<extensions::Params> for Grpc<T> {
     fn param(&self) -> extensions::Params {
+        let retry = self.params.params.retry.clone();
         extensions::Params {
             timeouts: self.params.params.timeouts.clone(),
-            retry: None,
+            retry: retry.map(|r| retry::RetryPolicy {
+                num_retries: r.num_retries,
+                max_request_bytes: r.max_request_bytes,
+                timeout: r.timeout,
+                backoff: r.backoff.clone(),
+                retryable_http_statuses: None,
+                retryable_grpc_statuses: Some(r.codes.clone()),
+            }),
         }
     }
 }
