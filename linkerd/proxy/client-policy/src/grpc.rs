@@ -20,6 +20,7 @@ pub struct Grpc {
     pub routes: Arc<[Route]>,
 
     /// Configures how endpoints accrue observed failures.
+    // TODO(ver) Move this to backends and scope to endpoints.
     pub failure_accrual: FailureAccrual,
 }
 
