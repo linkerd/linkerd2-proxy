@@ -407,13 +407,17 @@ pub mod proto {
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidFailureAccrual {
         #[error("invalid backoff: {0}")]
+        Backoff(#[from] InvalidBackoff),
+        #[error("missing {0}")]
+        Missing(&'static str),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidBackoff {
+        #[error(transparent)]
         Backoff(#[from] linkerd_exp_backoff::InvalidBackoff),
-        #[error("invalid {field} duration: {error}")]
-        Duration {
-            field: &'static str,
-            #[source]
-            error: prost_types::DurationError,
-        },
+        #[error("invalid duration: {0}")]
+        Duration(#[from] prost_types::DurationError),
         #[error("missing {0}")]
         Missing(&'static str),
     }
@@ -695,34 +699,12 @@ pub mod proto {
                 failure_accrual::Kind::ConsecutiveFailures(ConsecutiveFailures {
                     max_failures,
                     backoff,
-                }) => {
-                    // TODO(eliza): if other failure accrual kinds are added
-                    // that also use exponential backoffs, this could be factored out...
-                    let outbound::ExponentialBackoff {
-                        min_backoff,
-                        max_backoff,
-                        jitter_ratio,
-                    } = backoff.ok_or(InvalidFailureAccrual::Missing(
-                        "consecutive failures backoff",
-                    ))?;
-
-                    let duration = |dur: Option<prost_types::Duration>, field: &'static str| {
-                        dur.ok_or(InvalidFailureAccrual::Missing(field))?
-                            .try_into()
-                            .map_err(|error| InvalidFailureAccrual::Duration { field, error })
-                    };
-                    let min = duration(min_backoff, "min_backoff")?;
-                    let max = duration(max_backoff, "max_backoff")?;
-                    let backoff = linkerd_exp_backoff::ExponentialBackoff::try_new(
-                        min,
-                        max,
-                        jitter_ratio as f64,
-                    )?;
-                    Ok(FailureAccrual::ConsecutiveFailures {
-                        max_failures: max_failures as usize,
-                        backoff,
-                    })
-                }
+                }) => Ok(FailureAccrual::ConsecutiveFailures {
+                    max_failures: max_failures as usize,
+                    backoff: backoff.map(try_backoff).transpose()?.ok_or(
+                        InvalidFailureAccrual::Missing("consecutive failures backoff"),
+                    )?,
+                }),
             }
         }
     }
@@ -734,5 +716,24 @@ pub mod proto {
                 .map(Self::try_from)
                 .unwrap_or(Ok(FailureAccrual::None))
         }
+    }
+
+    pub(crate) fn try_backoff(
+        outbound::ExponentialBackoff {
+            min_backoff,
+            max_backoff,
+            jitter_ratio,
+        }: outbound::ExponentialBackoff,
+    ) -> Result<linkerd_exp_backoff::ExponentialBackoff, InvalidBackoff> {
+        let min = min_backoff
+            .map(time::Duration::try_from)
+            .transpose()?
+            .ok_or(InvalidBackoff::Missing("min_backoff"))?;
+        let max = max_backoff
+            .map(time::Duration::try_from)
+            .transpose()?
+            .ok_or(InvalidBackoff::Missing("max_backoff"))?;
+        linkerd_exp_backoff::ExponentialBackoff::try_new(min, max, jitter_ratio as f64)
+            .map_err(Into::into)
     }
 }

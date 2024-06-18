@@ -1,4 +1,5 @@
 use crate::FailureAccrual;
+use linkerd_exp_backoff::ExponentialBackoff;
 use linkerd_http_route::http;
 use std::{ops::RangeInclusive, sync::Arc, time};
 
@@ -43,9 +44,11 @@ pub enum Filter {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Retry {
-    pub limit: u32,
+    pub max_retries: u16,
+    pub max_request_bytes: usize,
     pub status_ranges: StatusRanges,
     pub timeout: Option<time::Duration>,
+    pub backoff: Option<ExponentialBackoff>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -163,10 +166,17 @@ pub mod proto {
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidRetry {
-        #[error("invalid retry condition")]
+        #[error("invalid max-retries: {0}")]
+        MaxRetries(u32),
+
+        #[error("invalid condition")]
         Condition,
-        #[error("invalid retry timeout: {0}")]
+
+        #[error("invalid timeout: {0}")]
         Timeout(#[from] prost_types::DurationError),
+
+        #[error("invalid backoff: {0}")]
+        Backoff(#[from] crate::proto::InvalidBackoff),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -364,8 +374,11 @@ pub mod proto {
                     .collect::<Result<_, _>>()?,
             );
             Ok(Self {
-                limit: retry.limit,
                 status_ranges,
+                max_retries: u16::try_from(retry.max_retries)
+                    .map_err(|_| InvalidRetry::MaxRetries(retry.max_retries))?,
+                max_request_bytes: retry.max_request_bytes as _,
+                backoff: retry.backoff.map(crate::proto::try_backoff).transpose()?,
                 timeout: retry.timeout.map(time::Duration::try_from).transpose()?,
             })
         }

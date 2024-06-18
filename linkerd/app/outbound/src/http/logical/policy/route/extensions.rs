@@ -132,7 +132,7 @@ fn configure_retry(req: &mut http::HeaderMap, orig: Option<RetryPolicy>) -> Opti
     if let Some(retry) = orig {
         return Some(RetryPolicy {
             timeout: user_retry_timeout.or(retry.timeout),
-            num_retries: user_retry_limit.unwrap_or(retry.num_retries),
+            max_retries: user_retry_limit.unwrap_or(retry.max_retries),
             retryable_http_statuses: user_retry_http.or(retry.retryable_http_statuses.clone()),
             retryable_grpc_statuses: user_retry_grpc.or(retry.retryable_grpc_statuses.clone()),
             ..retry
@@ -151,13 +151,13 @@ fn configure_retry(req: &mut http::HeaderMap, orig: Option<RetryPolicy>) -> Opti
                 timeout,
                 retryable_http_statuses,
                 retryable_grpc_statuses,
-                num_retries: retry_limit.unwrap_or(3),
+                max_retries: retry_limit.unwrap_or(3),
                 max_request_bytes: 64 * 1024,
-                backoff: ExponentialBackoff::new_unchecked(
+                backoff: Some(ExponentialBackoff::new_unchecked(
                     std::time::Duration::from_millis(25),
                     std::time::Duration::from_millis(250),
-                    0.0,
-                ),
+                    1.0,
+                )),
             })
         }
     }

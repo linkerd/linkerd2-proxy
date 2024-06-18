@@ -15,10 +15,10 @@ pub type HttpRetry<S> = retry::HttpRetry<RetryPolicy, S>;
 
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
-    pub num_retries: u16,
+    pub max_retries: u16,
     pub max_request_bytes: usize,
     pub timeout: Option<time::Duration>,
-    pub backoff: ExponentialBackoff,
+    pub backoff: Option<ExponentialBackoff>,
     pub retryable_http_statuses: Option<policy::http::StatusRanges>,
     pub retryable_grpc_statuses: Option<policy::grpc::Codes>,
 }
@@ -58,7 +58,7 @@ impl retry::Policy<http::Request<ReplayBody>, http::Response<TrailersBody>, Erro
         req: &http::Request<ReplayBody>,
         result: Result<&http::Response<TrailersBody>, &Error>,
     ) -> Option<Self::Future> {
-        if self.num_retries == 0 {
+        if self.max_retries == 0 {
             tracing::debug!("No retries left");
             return None;
         }
@@ -74,14 +74,22 @@ impl retry::Policy<http::Request<ReplayBody>, http::Response<TrailersBody>, Erro
             return None;
         }
 
-        let (delay, backoff) = self.backoff.next();
+        let (delay, backoff) = if let Some(bo) = self.backoff {
+            let (d, b) = bo.next();
+            (Some(d), Some(b))
+        } else {
+            (None, None)
+        };
 
         let mut next = self.clone();
         next.backoff = backoff;
-        next.num_retries -= 1;
+        next.max_retries -= 1;
 
         Some(Box::pin(async move {
-            time::sleep(delay).await;
+            if let Some(delay) = delay {
+                tracing::trace!(?delay, "Delaying retry");
+                time::sleep(delay).await;
+            }
             next
         }))
     }
