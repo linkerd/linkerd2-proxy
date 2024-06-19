@@ -126,6 +126,16 @@ impl SyntheticHttpResponse {
         }
     }
 
+    pub fn gateway_timeout_nonfatal(msg: impl ToString) -> Self {
+        Self {
+            close_connection: false,
+            http_status: http::StatusCode::GATEWAY_TIMEOUT,
+            grpc_status: tonic::Code::Unavailable,
+            message: Cow::Owned(msg.to_string()),
+            location: None,
+        }
+    }
+
     pub fn unavailable(msg: impl ToString) -> Self {
         Self {
             close_connection: true,

@@ -134,7 +134,9 @@ impl errors::HttpRescue<Error> for ServerRescue {
 
         // Handle policy-driven timeouts.
         if errors::is_caused_by::<http::stream_timeouts::ResponseTimeoutError>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout_nonfatal(
+                error,
+            ));
         }
 
         // A profile configured request timeout was encountered.
