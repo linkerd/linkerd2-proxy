@@ -1,5 +1,5 @@
 use super::retry::RetryPolicy;
-use linkerd_app_core::{classify, config::ExponentialBackoff, proxy::http, svc};
+use linkerd_app_core::{config::ExponentialBackoff, proxy::http, svc};
 use linkerd_proxy_client_policy as policy;
 use std::task::{Context, Poll};
 
@@ -47,30 +47,6 @@ where
     }
 }
 
-pub(super) fn clone_request(orig: &::http::Extensions, new: &mut ::http::Extensions) {
-    if let Some(Attempt(n)) = orig.get::<Attempt>() {
-        new.insert(Attempt(n.saturating_add(1)));
-    }
-
-    if let Some(retry) = orig.get::<RetryPolicy>() {
-        new.insert(retry.clone());
-    }
-
-    if let Some(timeouts) = orig.get::<http::StreamTimeouts>() {
-        new.insert(timeouts.clone());
-    }
-
-    // The HTTP server sets a ClientHandle with the client's address and a means
-    // to close the server-side connection.
-    if let Some(client_handle) = orig.get::<http::ClientHandle>().cloned() {
-        new.insert(client_handle);
-    }
-
-    if let Some(classify) = orig.get::<classify::Response>().cloned() {
-        new.insert(classify);
-    }
-}
-
 // === impl SetExtensions ===
 
 impl<B, S> svc::Service<http::Request<B>> for SetExtensions<S>
@@ -88,12 +64,7 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         let retry = configure_retry(req.headers_mut(), self.params.retry.clone());
-
-        let timeouts = configure_timeouts(
-            req.headers_mut(),
-            self.params.timeouts.clone(),
-            retry.as_ref().and_then(|r| r.timeout),
-        );
+        let timeouts = configure_timeouts(req.headers_mut(), self.params.timeouts.clone());
         tracing::debug!(?retry, ?timeouts, "Setting extensions");
 
         if let Some(retry) = retry {
@@ -166,7 +137,6 @@ fn configure_retry(req: &mut http::HeaderMap, orig: Option<RetryPolicy>) -> Opti
 fn configure_timeouts(
     req: &mut http::HeaderMap,
     orig: policy::http::Timeouts,
-    retry: Option<std::time::Duration>,
 ) -> http::StreamTimeouts {
     let user_timeout = req.remove("l5d-timeout").and_then(|val| {
         val.to_str()
@@ -183,7 +153,7 @@ fn configure_timeouts(
     let response_timeout = user_response_timeout.or(orig.response).or(timeout);
 
     http::StreamTimeouts {
-        response_headers: retry.or(response_timeout),
+        response_headers: response_timeout,
         response_end: response_timeout,
         idle: orig.idle,
         limit: timeout.map(Into::into),
@@ -191,6 +161,15 @@ fn configure_timeouts(
 }
 
 fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {
+    fn to_code(s: &str) -> Option<u16> {
+        let code = s.parse::<u16>().ok()?;
+        if (100..600).contains(&code) {
+            Some(code)
+        } else {
+            None
+        }
+    }
+
     Some(policy::http::StatusRanges(
         s.split(',')
             .filter_map(|cond| {
@@ -199,6 +178,15 @@ fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {
                 }
                 if cond.eq_ignore_ascii_case("gateway-error") {
                     return Some(502..=504);
+                }
+
+                if let Some(code) = to_code(cond) {
+                    return Some(code..=code);
+                }
+                if let Some((start, end)) = cond.split_once('-') {
+                    if let (Some(s), Some(e)) = (to_code(start), to_code(end)) {
+                        return Some(s..=e);
+                    }
                 }
 
                 None

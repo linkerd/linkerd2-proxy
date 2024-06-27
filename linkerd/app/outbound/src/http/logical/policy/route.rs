@@ -139,13 +139,15 @@ where
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 .push_on_service(retry::HttpRetry::layer())
+                // Set request extensions based on the route configuration
+                // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
                 // FIXME
                 // Set an optional request timeout.
                 // .push(http::NewTimeout::layer())
                 //
                 // Configure a classifier to use in the endpoint stack.
-                // FIXME move this into NewSetExtensions
+                // FIXME(ver) move this into NewSetExtensions
                 .push(classify::NewClassify::layer())
                 .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();

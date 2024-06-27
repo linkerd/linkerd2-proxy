@@ -1,9 +1,12 @@
-use futures::future;
+use super::extensions;
 use linkerd_app_core::{
-    cause_ref, exp_backoff::ExponentialBackoff, is_caused_by,
-    proxy::http::stream_timeouts::ResponseTimeoutError, svc, Error, Result,
+    cause_ref, classify,
+    exp_backoff::ExponentialBackoff,
+    is_caused_by,
+    proxy::http::{self, stream_timeouts::ResponseTimeoutError},
+    svc, Error, Result,
 };
-use linkerd_http_retry::{self as retry, with_trailers::TrailersBody, ReplayBody};
+use linkerd_http_retry::{self as retry, with_trailers::TrailersBody};
 use linkerd_proxy_client_policy as policy;
 use tokio::time;
 
@@ -33,29 +36,51 @@ impl svc::Param<retry::Params> for RetryPolicy {
     }
 }
 
-impl retry::Policy<http::Request<ReplayBody>, http::Response<TrailersBody>, Error> for RetryPolicy {
-    type Future = future::BoxFuture<'static, Self>;
+impl retry::Policy for RetryPolicy {
+    type Future = time::Sleep;
 
-    fn clone_request(&self, orig: &http::Request<ReplayBody>) -> Option<http::Request<ReplayBody>> {
-        // Since the body is already wrapped in a ReplayBody, it must not be obviously too large to
-        // buffer/clone.
-        let mut new = http::Request::new(orig.body().clone());
-        *new.method_mut() = orig.method().clone();
-        *new.uri_mut() = orig.uri().clone();
-        *new.headers_mut() = orig.headers().clone();
-        *new.version_mut() = orig.version();
+    fn exhausted(&self) -> bool {
+        self.max_retries == 0
+    }
 
-        super::extensions::clone_request(orig.extensions(), new.extensions_mut());
+    fn set_extensions(&self, dst: &mut ::http::Extensions, src: &::http::Extensions) {
+        if let Some(extensions::Attempt(n)) = src.get::<extensions::Attempt>() {
+            dst.insert(extensions::Attempt(n.saturating_add(1)));
+        }
 
-        // Add a marker extension to indicate that the request has been retried.
-        new.extensions_mut().insert(IsRetry);
+        let retries_remain = self.max_retries > 0;
+        if retries_remain {
+            dst.insert(self.clone());
+        }
 
-        Some(new)
+        if let Some(mut timeouts) = src.get::<http::StreamTimeouts>().cloned() {
+            // If retries are exhausted, remove the response headers timeout,
+            // since we're not blocked on making a decision on a retry decision.
+            // This may give the request additional time to be satisfied.
+            if !retries_remain {
+                timeouts.response_headers = None;
+            }
+            dst.insert(timeouts);
+        }
+
+        // The HTTP server sets a ClientHandle with the client's address and a means
+        // to close the server-side connection.
+        if let Some(client_handle) = src.get::<http::ClientHandle>().cloned() {
+            dst.insert(client_handle);
+        }
+
+        // The legacy response classifier is set for the endpoint stack to use.
+        // This informs endpoint-level behavior (failure accrual, etc.).
+        // TODO(ver): This should ultimately be eliminated in favor of
+        // failure-accrual specific configuration. The endpoint metrics should
+        // be migrated, ultimately...
+        if let Some(classify) = src.get::<classify::Response>().cloned() {
+            dst.insert(classify);
+        }
     }
 
     fn retry(
-        &self,
-        req: &http::Request<ReplayBody>,
+        &mut self,
         result: Result<&http::Response<TrailersBody>, &Error>,
     ) -> Option<Self::Future> {
         if self.max_retries == 0 {
@@ -63,35 +88,18 @@ impl retry::Policy<http::Request<ReplayBody>, http::Response<TrailersBody>, Erro
             return None;
         }
 
-        // If the request body exceeds the buffer limit, we can't retry
-        // it.
-        if req.body().is_capped() {
-            tracing::debug!("Request body is too large to be retried");
-            return None;
-        }
-
         if !self.is_retryable(result) {
             return None;
         }
 
-        let (delay, backoff) = if let Some(bo) = self.backoff {
-            let (d, b) = bo.next();
-            (Some(d), Some(b))
+        self.max_retries -= 1;
+
+        let delay = if let Some(backoff) = self.backoff.as_mut() {
+            backoff.advance()
         } else {
-            (None, None)
+            time::Duration::ZERO
         };
-
-        let mut next = self.clone();
-        next.backoff = backoff;
-        next.max_retries -= 1;
-
-        Some(Box::pin(async move {
-            if let Some(delay) = delay {
-                tracing::trace!(?delay, "Delaying retry");
-                time::sleep(delay).await;
-            }
-            next
-        }))
+        Some(time::sleep(delay))
     }
 }
 
@@ -100,25 +108,25 @@ impl RetryPolicy {
         let rsp = match res {
             Ok(rsp) => rsp,
             Err(error) => {
-                let retryable = Self::retryable_error(error);
-                tracing::debug!(retryable, %error);
-                return retryable;
+                let retries_remain = Self::retryable_error(error);
+                tracing::debug!(retries_remain, %error);
+                return retries_remain;
             }
         };
 
         if let Some(codes) = self.retryable_grpc_statuses.as_ref() {
             let grpc_status = Self::grpc_status(rsp);
-            let retryable = grpc_status.map_or(false, |c| codes.contains(c));
-            tracing::debug!(retryable, grpc.status = ?grpc_status);
-            if retryable {
+            let retries_remain = grpc_status.map_or(false, |c| codes.contains(c));
+            tracing::debug!(retries_remain, grpc.status = ?grpc_status);
+            if retries_remain {
                 return true;
             }
         }
 
         if let Some(statuses) = self.retryable_http_statuses.as_ref() {
-            let retryable = statuses.contains(rsp.status());
-            tracing::debug!(retryable, http.status = %rsp.status());
-            if retryable {
+            let retries_remain = statuses.contains(rsp.status());
+            tracing::debug!(retries_remain, http.status = %rsp.status());
+            if retries_remain {
                 return true;
             }
         }
@@ -136,7 +144,7 @@ impl RetryPolicy {
     }
 
     fn retryable_error(error: &Error) -> bool {
-        // While LoadShed errors are not retryable, FailFast errors are, since
+        // While LoadShed errors are not retries_remain, FailFast errors are, since
         // retrying may put us in another backend that is available.
         if is_caused_by::<svc::LoadShedError>(&**error) {
             return false;

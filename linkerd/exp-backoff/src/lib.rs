@@ -82,20 +82,17 @@ impl ExponentialBackoff {
         }
     }
 
-    pub fn next(&self) -> (time::Duration, Self) {
+    pub fn advance(&mut self) -> time::Duration {
         if self.min == self.max {
-            return (self.min, *self);
+            return self.min;
         }
 
         let backoff = self.min + self.jitter(self.min, &mut thread_rng());
-        let next = Self {
-            min: self
-                .min
-                .checked_mul(2)
-                .map_or(self.max, |v| v.min(self.max)),
-            ..*self
-        };
-        (backoff.min(self.max), next)
+        self.min = self
+            .min
+            .checked_mul(2)
+            .map_or(self.max, |v| v.min(self.max));
+        backoff.min(self.max)
     }
 
     fn base(&self, iterations: u32) -> time::Duration {
