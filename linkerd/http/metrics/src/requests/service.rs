@@ -333,9 +333,8 @@ where
     C: ClassifyEos,
     C::Class: Hash + Eq,
 {
-    fn record_latency(self: Pin<&mut Self>) {
+    fn record_latency(self: Pin<&mut Self>, now: Instant) {
         let this = self.project();
-        let now = Instant::now();
 
         let lock = match this.metrics.as_mut() {
             Some(lock) => lock,
@@ -377,6 +376,11 @@ where
     }
 }
 
+fn count_frame<C: Hash + Eq>(lock: &Mutex<Metrics<C>>) {
+    let metrics = lock.lock();
+    metrics.response_frames_total.incr();
+}
+
 fn measure_class<C: Hash + Eq>(
     lock: &Arc<Mutex<Metrics<C>>>,
     class: C,
@@ -415,8 +419,11 @@ where
         let poll = ready!(self.as_mut().project().inner.poll_data(cx));
         let frame = poll.map(|opt| opt.map_err(|e| self.as_mut().measure_err(e.into())));
 
+        if let Some(lock) = self.metrics.as_ref().map(Arc::as_ref) {
+            count_frame(lock);
+        }
         if !(*self.as_mut().project().latency_recorded) {
-            self.record_latency();
+            self.record_latency(Instant::now());
         }
 
         Poll::Ready(frame)
@@ -457,7 +464,7 @@ where
 {
     fn drop(mut self: Pin<&mut Self>) {
         if !self.as_ref().latency_recorded {
-            self.as_mut().record_latency();
+            self.as_mut().record_latency(Instant::now());
         }
 
         if let Some(c) = self.as_mut().project().classify.take().map(|c| c.eos(None)) {
