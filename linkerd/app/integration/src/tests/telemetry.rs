@@ -7,6 +7,8 @@ mod env;
 mod log_stream;
 mod tcp_errors;
 
+use app_core::Infallible;
+
 use crate::*;
 use std::io::Read;
 
@@ -33,6 +35,28 @@ struct TcpFixture {
 }
 
 impl Fixture {
+    async fn http_chunked_server(send_chunks: usize, chunk_size: usize) -> server::Listening {
+        server::new()
+            .route_async("/", move |_req| async move {
+                let chunk: bytes::Bytes = (0..chunk_size).map(|u| u as u8).collect();
+                let body = {
+                    let (mut tx, body) = hyper::Body::channel();
+
+                    tokio::spawn(async move {
+                        for nth in 0..send_chunks {
+                            tx.send_data(chunk.clone())
+                                .await
+                                .expect(&format!("failed to send {nth} chunk"));
+                        }
+                    });
+                    body
+                };
+                Ok::<_, Infallible>(http::Response::new(body))
+            })
+            .run()
+            .await
+    }
+
     async fn inbound() -> Self {
         info!("running test server");
         Fixture::inbound_with_server(server::new().route("/", "hello").run().await).await
@@ -211,6 +235,35 @@ impl TcpFixture {
     }
 }
 
+async fn test_http_response_frames_count(
+    fixture: impl Future<Output = Fixture>,
+    expected_chunks: usize,
+) {
+    let _trace = trace_init();
+    let Fixture {
+        client,
+        metrics,
+        proxy: _proxy,
+        _profile,
+        dst_tx: _dst_tx,
+        pol_out_tx: _pol_out_tx,
+        labels,
+        ..
+    } = fixture.await;
+
+    let metric = labels.metric("response_frames_total");
+
+    assert!(metric.is_not_in(metrics.get("/metrics").await));
+
+    info!("client.get(/)");
+    client.get("/").await;
+
+    metric
+        .value(expected_chunks as u64)
+        .assert_in(&metrics)
+        .await;
+}
+
 #[tokio::test]
 async fn admin_request_count() {
     let _trace = trace_init();
@@ -277,6 +330,28 @@ async fn admin_transport_metrics() {
 #[tokio::test]
 async fn metrics_endpoint_inbound_request_count() {
     test_http_count("request_total", Fixture::inbound()).await;
+}
+
+#[tokio::test]
+async fn metrics_endpoint_inbound_response_frames_total() {
+    for chunks in 1..=10 {
+        test_http_response_frames_count(
+            Fixture::inbound_with_server(Fixture::http_chunked_server(chunks, 64).await),
+            chunks + 1,
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn metrics_endpoint_outbound_response_frames_total() {
+    for chunks in 1..=10 {
+        test_http_response_frames_count(
+            Fixture::outbound_with_server(Fixture::http_chunked_server(chunks, 64).await),
+            chunks + 1,
+        )
+        .await;
+    }
 }
 
 #[tokio::test]
