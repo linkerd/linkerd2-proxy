@@ -93,7 +93,7 @@ fn configure_retry(req: &mut http::HeaderMap, orig: Option<RetryPolicy>) -> Opti
         .and_then(|val| val.to_str().ok().and_then(parse_grpc_conditions));
     let user_retry_limit = req
         .remove("l5d-retry-limit")
-        .and_then(|val| val.to_str().ok().and_then(|v| v.parse::<u16>().ok()));
+        .and_then(|val| val.to_str().ok().and_then(|v| v.parse::<usize>().ok()));
     let user_retry_timeout = req.remove("l5d-retry-timeout").and_then(|val| {
         val.to_str()
             .ok()
@@ -103,9 +103,9 @@ fn configure_retry(req: &mut http::HeaderMap, orig: Option<RetryPolicy>) -> Opti
     if let Some(retry) = orig {
         return Some(RetryPolicy {
             timeout: user_retry_timeout.or(retry.timeout),
-            max_retries: user_retry_limit.unwrap_or(retry.max_retries),
             retryable_http_statuses: user_retry_http.or(retry.retryable_http_statuses.clone()),
             retryable_grpc_statuses: user_retry_grpc.or(retry.retryable_grpc_statuses.clone()),
+            max_retries: user_retry_limit.unwrap_or(retry.max_retries),
             ..retry
         });
     }

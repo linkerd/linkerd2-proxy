@@ -19,6 +19,8 @@ thiserror = "1"
 
 linkerd-http-box = { path = "../box" }
 linkerd-error = { path = "../../error" }
+linkerd-exp-backoff = { path = "../../exp-backoff" }
+linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
 
 [dev-dependencies]

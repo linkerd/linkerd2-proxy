@@ -34,7 +34,7 @@ pub enum Filter {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Retry {
-    pub max_retries: u16,
+    pub max_retries: usize,
     pub max_request_bytes: usize,
     pub codes: Codes,
     pub timeout: Option<time::Duration>,
@@ -305,8 +305,7 @@ pub mod proto {
 
             Ok(Self {
                 codes,
-                max_retries: u16::try_from(retry.max_retries)
-                    .map_err(|_| InvalidRetry::MaxRetries(retry.max_retries))?,
+                max_retries: retry.max_retries as usize,
                 max_request_bytes: retry.max_request_bytes as _,
                 backoff: retry.backoff.map(crate::proto::try_backoff).transpose()?,
                 timeout: retry.timeout.map(time::Duration::try_from).transpose()?,
