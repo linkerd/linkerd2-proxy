@@ -120,6 +120,7 @@ where
 
         let mk_concrete = {
             let parent = parent.clone();
+            let parent_ref = parent_ref.clone();
             move |backend_ref: BackendRef, target: concrete::Dispatch| {
                 // XXX With policies we don't have a top-level authority name at
                 // the moment. So, instead, we use the concrete addr used for
@@ -190,21 +191,27 @@ where
             }
         };
 
-        let mk_policy = |policy::RoutePolicy::<F, P> {
-                             meta,
-                             filters,
-                             distribution,
-                             params,
-                         }| {
-            let route_ref = RouteRef(meta);
-            let distribution = mk_distribution(&route_ref, &distribution);
-            route::Route {
-                addr: addr.clone(),
-                parent: parent.clone(),
-                route_ref,
-                filters,
-                params,
-                distribution,
+        let mk_policy = {
+            let addr = addr.clone();
+            let parent = parent.clone();
+            let parent_ref = parent_ref.clone();
+            move |policy::RoutePolicy::<F, P> {
+                      meta,
+                      filters,
+                      distribution,
+                      params,
+                  }| {
+                let route_ref = RouteRef(meta);
+                let distribution = mk_distribution(&route_ref, &distribution);
+                route::Route {
+                    addr: addr.clone(),
+                    parent: parent.clone(),
+                    parent_ref: parent_ref.clone(),
+                    route_ref,
+                    filters,
+                    params,
+                    distribution,
+                }
             }
         };
 

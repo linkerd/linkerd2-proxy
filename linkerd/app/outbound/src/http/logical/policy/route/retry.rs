@@ -1,4 +1,5 @@
 use super::extensions;
+use super::metrics::RouteLabels;
 use futures::future::{Either, Ready};
 use linkerd_app_core::{
     cause_ref, classify,
@@ -15,7 +16,7 @@ use tokio::time;
 #[derive(Copy, Clone, Debug)]
 pub struct IsRetry(());
 
-pub type HttpRetry<S> = retry::HttpRetry<RetryPolicy, S>;
+pub type NewHttpRetry<N> = retry::NewHttpRetry<RetryPolicy, RouteLabels, N>;
 
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
@@ -27,6 +28,8 @@ pub struct RetryPolicy {
     pub max_request_bytes: usize,
     pub backoff: Option<ExponentialBackoff>,
 }
+
+pub type RouteRetryMetrics = retry::MetricFamilies<RouteLabels>;
 
 // === impl RetryPolicy ===
 

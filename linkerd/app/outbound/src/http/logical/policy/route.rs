@@ -1,5 +1,5 @@
 use super::super::Concrete;
-use crate::RouteRef;
+use crate::{ParentRef, RouteRef};
 use linkerd_app_core::{classify, metrics::prom, proxy::http, svc, Addr, Error, Result};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
@@ -9,14 +9,17 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 pub(crate) mod backend;
 pub(crate) mod extensions;
 pub(crate) mod filters;
+mod metrics;
 #[allow(dead_code)]
 pub(crate) mod retry;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
+use self::metrics::RouteLabels;
 
 #[derive(Clone, Debug, Default)]
 pub struct RouteMetrics {
+    retry: retry::RouteRetryMetrics,
     backend: backend::RouteBackendMetrics,
 }
 
@@ -34,6 +37,7 @@ pub(crate) struct Matched<M, P> {
 pub(crate) struct Route<T, F, P> {
     pub(super) parent: T,
     pub(super) addr: Addr,
+    pub(super) parent_ref: ParentRef,
     pub(super) route_ref: RouteRef,
     pub(super) filters: Arc<[F]>,
     pub(super) distribution: BackendDistribution<T, F>,
@@ -70,11 +74,12 @@ struct RouteError {
 
 impl RouteMetrics {
     pub fn register(reg: &mut prom::Registry) -> Self {
-        Self {
-            backend: backend::RouteBackendMetrics::register(
-                reg.sub_registry_with_prefix("backend"),
-            ),
-        }
+        let backend =
+            backend::RouteBackendMetrics::register(reg.sub_registry_with_prefix("backend"));
+
+        let retry = retry::RouteRetryMetrics::register(reg.sub_registry_with_prefix("retry"));
+
+        Self { backend, retry }
     }
 
     #[cfg(test)]
@@ -138,7 +143,7 @@ where
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                .push_on_service(retry::HttpRetry::layer())
+                .push(retry::NewHttpRetry::layer(metrics.retry.clone()))
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
@@ -165,6 +170,15 @@ where
 impl<T: Clone, M, F, P> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T, M, F, P> {
     fn param(&self) -> BackendDistribution<T, F> {
         self.params.distribution.clone()
+    }
+}
+
+impl<T: Clone, M, F, P> svc::Param<RouteLabels> for MatchedRoute<T, M, F, P> {
+    fn param(&self) -> RouteLabels {
+        RouteLabels(
+            self.params.parent_ref.clone(),
+            self.params.route_ref.clone(),
+        )
     }
 }
 

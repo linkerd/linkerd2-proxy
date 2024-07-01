@@ -113,6 +113,20 @@ where
 
 // === impl MetricFamilies ===
 
+impl<L> Default for MetricFamilies<L>
+where
+    L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
+{
+    fn default() -> Self {
+        Self {
+            limit_exceeded: prom::Family::default(),
+            overflow: prom::Family::default(),
+            requests: prom::Family::default(),
+            successes: prom::Family::default(),
+        }
+    }
+}
+
 impl<L> MetricFamilies<L>
 where
     L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
