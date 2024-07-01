@@ -143,7 +143,7 @@ fn configure_timeouts(
             .ok()
             .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
     });
-    let timeout = user_timeout.or(orig.stream);
+    let timeout = user_timeout.or(orig.request);
 
     let user_response_timeout = req.remove("l5d-response-timeout").and_then(|val| {
         val.to_str()

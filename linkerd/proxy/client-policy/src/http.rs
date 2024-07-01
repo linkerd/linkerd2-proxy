@@ -58,7 +58,7 @@ pub struct StatusRanges(pub Arc<[RangeInclusive<u16>]>);
 pub struct Timeouts {
     pub response: Option<time::Duration>,
     pub idle: Option<time::Duration>,
-    pub stream: Option<time::Duration>,
+    pub request: Option<time::Duration>,
 }
 
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
@@ -185,8 +185,8 @@ pub mod proto {
         Response(prost_types::DurationError),
         #[error("invalid idle timeout: {0}")]
         Idle(prost_types::DurationError),
-        #[error("invalid stream timeout: {0}")]
-        Stream(prost_types::DurationError),
+        #[error("invalid request timeout: {0}")]
+        Request(prost_types::DurationError),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -337,11 +337,11 @@ pub mod proto {
                     .map(time::Duration::try_from)
                     .transpose()
                     .map_err(InvalidTimeouts::Response)?,
-                stream: timeouts
-                    .stream
+                request: timeouts
+                    .request
                     .map(time::Duration::try_from)
                     .transpose()
-                    .map_err(InvalidTimeouts::Stream)?,
+                    .map_err(InvalidTimeouts::Request)?,
             })
         }
     }
