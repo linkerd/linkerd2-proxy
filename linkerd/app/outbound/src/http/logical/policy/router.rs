@@ -66,8 +66,10 @@ where
         + svc::Param<classify::Request>
         + svc::Param<route::extensions::Params>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
-    route::backend::RouteBackendMetrics:
-        svc::ExtractParam<route::backend::RequestCount, route::MatchedBackend<T, M::Summary, F>>,
+    route::backend::RouteBackendMetrics: svc::ExtractParam<
+        route::backend::BackendHttpMetrics,
+        route::MatchedBackend<T, M::Summary, F>,
+    >,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.

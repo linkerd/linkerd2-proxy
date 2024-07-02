@@ -1398,6 +1398,7 @@ dependencies = [
  "linkerd-app-test",
  "linkerd-distribute",
  "linkerd-http-classify",
+ "linkerd-http-prom",
  "linkerd-http-retry",
  "linkerd-http-route",
  "linkerd-identity",
@@ -1612,6 +1613,18 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "linkerd-http-prom"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "linkerd-stack",
+ "pin-project",
+ "prometheus-client",
+ "tokio",
 ]
 
 [[package]]

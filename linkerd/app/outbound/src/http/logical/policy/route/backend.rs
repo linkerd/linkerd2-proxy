@@ -5,11 +5,9 @@ use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-mod count_reqs;
 mod metrics;
 
-pub use self::count_reqs::RequestCount;
-pub use self::metrics::RouteBackendMetrics;
+pub use self::metrics::{BackendHttpMetrics, RouteBackendMetrics};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Backend<T, F> {
@@ -69,7 +67,7 @@ where
     F: Clone + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
-    RouteBackendMetrics: svc::ExtractParam<RequestCount, Self>,
+    RouteBackendMetrics: svc::ExtractParam<BackendHttpMetrics, Self>,
 {
     /// Builds a stack that applies per-route-backend policy filters over an
     /// inner [`Concrete`] stack.
@@ -100,8 +98,7 @@ where
                      }| concrete,
                 )
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                // .push(http::NewTimeout::layer())
-                .push(count_reqs::NewCountRequests::layer_via(metrics.clone()))
+                .push(metrics::NewBackendHttpMetrics::layer_via(metrics.clone()))
                 .push(svc::NewMapErr::layer_with(|t: &Self| {
                     let backend = t.params.concrete.backend_ref.clone();
                     move |source| {
