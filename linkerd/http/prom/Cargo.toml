@@ -1,0 +1,18 @@
+[package]
+name = "linkerd-http-prom"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[features]
+test-util = []
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+http = "0.2"
+pin-project = "1"
+prometheus-client = "0.22"
+tokio = { version = "1", features = ["time"] }
+
+linkerd-stack = { path = "../../stack" }
