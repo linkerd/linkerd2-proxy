@@ -248,17 +248,12 @@ where
         // can rely on the fact that we've taken the ready inner service handle.
         let pending = self.inner.clone();
         let svc = std::mem::replace(&mut self.inner, pending);
-        future::Either::Right(Box::pin(dispatch(
-            svc,
-            req,
-            policy,
-            self.metrics.clone(),
-            params,
-        )))
+        let call = send_req_with_retries(svc, req, policy, self.metrics.clone(), params);
+        future::Either::Right(Box::pin(call))
     }
 }
 
-async fn dispatch(
+async fn send_req_with_retries(
     // `svc` must be made ready before calling this function.
     mut svc: impl Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>,
     request: http::Request<ReplayBody>,
@@ -266,46 +261,47 @@ async fn dispatch(
     metrics: Metrics,
     params: Params,
 ) -> Result<http::Response<BoxBody>> {
-    // Send the initial request and determine if it should be retried, backing
-    // off as appropriate.
+    // Initial request.
     let mut backup = mk_backup(&request, &policy);
     let mut result = send_req(&mut svc, request).await;
-    if backup.body().is_capped() {
-        return result.map(|rsp| rsp.map(BoxBody::new));
-    }
     if !policy.is_retryable(result.as_ref()) {
         return result.map(|rsp| rsp.map(BoxBody::new));
     }
+    if backup.body().is_capped() {
+        return result.map(|rsp| rsp.map(BoxBody::new));
+    }
 
-    // The response was retryable, so continue trying to dispatch backup requests.
+    // The response was retryable, so continue trying to dispatch backup
+    // requests.
     let mut backoff = params.backoff.map(|b| b.stream());
     for _ in 0..params.max_retries {
         if let Some(backoff) = backoff.as_mut() {
             backoff.next().await;
         }
 
-        // The service must be buffered to be cloneable;
-        if svc.ready().now_or_never().is_none() {
+        // The service must be buffered to be cloneable; so if it's not ready,
+        // then a circuit breaker is active and requests will be load shed.
+        let Some(svc) = svc.ready().now_or_never().transpose()? else {
             metrics.overflow.inc();
             return result.map(|rsp| rsp.map(BoxBody::new));
-        }
+        };
 
         let request = backup;
         backup = mk_backup(&request, &policy);
-
         metrics.requests.inc();
-        result = send_req(&mut svc, request).await;
-        if backup.body().is_capped() {
-            return result.map(|rsp| rsp.map(BoxBody::new));
-        }
+        result = send_req(svc, request).await;
         if !policy.is_retryable(result.as_ref()) {
             if result.is_ok() {
                 metrics.successes.inc();
             }
             return result.map(|rsp| rsp.map(BoxBody::new));
         }
+        if backup.body().is_capped() {
+            return result.map(|rsp| rsp.map(BoxBody::new));
+        }
     }
 
+    // The result is retryable but we've run out of attempts.
     metrics.limit_exceeded.inc();
     result.map(|rsp| rsp.map(BoxBody::new))
 }
