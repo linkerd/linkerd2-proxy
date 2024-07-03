@@ -1621,6 +1621,9 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "http",
+ "http-body",
+ "linkerd-error",
+ "linkerd-http-box",
  "linkerd-stack",
  "pin-project",
  "prometheus-client",

@@ -11,8 +11,11 @@ test-util = []
 [dependencies]
 futures = { version = "0.3", default-features = false }
 http = "0.2"
+http-body = "0.4"
 pin-project = "1"
 prometheus-client = "0.22"
 tokio = { version = "1", features = ["time"] }
 
+linkerd-error = { path = "../../error" }
+linkerd-http-box = { path = "../box" }
 linkerd-stack = { path = "../../stack" }

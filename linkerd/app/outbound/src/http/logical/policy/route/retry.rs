@@ -1,5 +1,4 @@
-use super::extensions;
-use super::metrics::RouteLabels;
+use super::{extensions, metrics::RouteLabels};
 use futures::future::{Either, Ready};
 use linkerd_app_core::{
     cause_ref, classify,

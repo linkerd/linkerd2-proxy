@@ -9,12 +9,14 @@ use prometheus_client::{
 
 mod count_reqs;
 mod count_rsps;
+mod request_duration;
 
 pub use self::{
     count_reqs::{CountRequests, NewCountRequests, RequestCount, RequestCountFamilies},
     count_rsps::{
         NewResponseMetrics, ResponseMetrics, ResponseMetricsFamilies, ResponseMetricsService,
     },
+    // request_duration::RequestDurationHistogram,
 };
 
 #[derive(Clone, Debug)]
