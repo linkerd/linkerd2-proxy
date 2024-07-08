@@ -150,7 +150,7 @@ jobs:
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} build
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} package
-      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+      - uses: actions/upload-artifact@0b2256b8c012f0828dc542b3febcab082c67f72b
         with:
           name: ${{ matrix.arch }}-artifacts
           path: target/package/*
