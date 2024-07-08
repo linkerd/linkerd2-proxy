@@ -9,7 +9,7 @@ use prometheus_client::{
 
 mod count_reqs;
 mod count_rsps;
-mod request_duration;
+pub mod request_duration;
 
 pub use self::{
     count_reqs::{CountRequests, NewCountRequests, RequestCount, RequestCountFamilies},

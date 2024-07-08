@@ -53,7 +53,7 @@ pub struct ResponseFuture<L, H, F> {
     metrics: ResponseMetrics<L, H>,
 }
 
-#[pin_project::pin_project]
+#[pin_project::pin_project(PinnedDrop)]
 pub struct ResponseBody<B> {
     #[pin]
     inner: B,
@@ -236,9 +236,10 @@ where
     }
 }
 
-impl<B> Drop for ResponseBody<B> {
-    fn drop(&mut self) {
-        drop(self.inner);
+#[pin_project::pinned_drop]
+impl<B> PinnedDrop for ResponseBody<B> {
+    fn drop(self: Pin<&mut Self>) {
+        todo!()
     }
 }
 
