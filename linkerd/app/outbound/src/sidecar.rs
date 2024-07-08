@@ -54,6 +54,8 @@ impl Outbound<()> {
     {
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
 
+        let tls = self.to_tcp_connect().push_opaq_cached(resolve.clone());
+
         let http = self
             .to_tcp_connect()
             .push_tcp_endpoint()
@@ -64,7 +66,8 @@ impl Outbound<()> {
             .push_map_target(HttpSidecar::from)
             .arc_new_clone_http();
 
-        opaq.push_protocol(http.into_inner())
+        opaq.clone()
+            .push_protocol(http.into_inner(), tls.into_inner())
             // Use a dedicated target type to bind discovery results to the
             // outbound sidecar stack configuration.
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))

@@ -8,6 +8,11 @@ pub struct Http<T> {
     parent: T,
 }
 
+// pub struct Tls<T> {
+//     parent: T,
+//     sni: Option<String>,
+// }
+
 /// Parameter type indicating how the proxy should handle a connection.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Protocol {
@@ -15,6 +20,7 @@ pub enum Protocol {
     Http2,
     Detect,
     Opaque,
+    Tls,
 }
 
 // === impl Outbound ===
@@ -29,6 +35,7 @@ impl<N> Outbound<N> {
     pub fn push_protocol<T, I, NSvc>(
         self,
         http: svc::ArcNewCloneHttp<Http<T>>,
+        tls: svc::ArcNewCloneTcp<T, io::EitherIo<I, io::PrefixedIo<I>>>,
     ) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         // Target type indicating whether detection should be skipped.
@@ -83,7 +90,14 @@ impl<N> Outbound<N> {
         http.map_stack(|_, _, http| {
             // First separate traffic that needs protocol detection. Then switch
             // between traffic that is known to be HTTP or opaque.
-            http.push_switch(Ok::<_, Infallible>, opaq.clone().into_inner())
+            let known = http.push_switch(
+                Ok::<_, Infallible>,
+                opaq.clone()
+                    .push_switch(Ok::<_, Infallible>, tls.clone())
+                    .into_inner(),
+            );
+
+            known
                 .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
                 .push_switch(
                     |parent: T| -> Result<_, Infallible> {
@@ -96,7 +110,12 @@ impl<N> Outbound<N> {
                                 version: http::Version::H2,
                                 parent,
                             }))),
-                            Protocol::Opaque => Ok(svc::Either::A(svc::Either::B(parent))),
+                            Protocol::Opaque => {
+                                Ok(svc::Either::A(svc::Either::B(svc::Either::A(parent))))
+                            }
+                            Protocol::Tls => {
+                                Ok(svc::Either::A(svc::Either::B(svc::Either::B(parent))))
+                            }
                             Protocol::Detect => Ok(svc::Either::B(parent)),
                         }
                     },
