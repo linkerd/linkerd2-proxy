@@ -1625,8 +1625,10 @@ dependencies = [
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-stack",
+ "parking_lot",
  "pin-project",
  "prometheus-client",
+ "thiserror",
  "tokio",
 ]
 

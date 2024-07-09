@@ -1,14 +1,6 @@
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use linkerd_stack as svc;
-use prometheus_client::{
-    encoding::EncodeLabelSet,
-    metrics::{
-        family::{Family, MetricConstructor},
-        histogram::Histogram,
-    },
-    registry::{Registry, Unit},
-};
 use std::{
     future::Future,
     pin::Pin,
@@ -16,100 +8,57 @@ use std::{
 };
 use tokio::time;
 
-#[derive(Clone, Debug)]
-pub struct ResponseMetricsFamilies<L, H> {
-    // errors: Family<L, Counter>,
-    request_durations: RequestDurationsFamily<L, H>,
+pub trait Recorder: Sized + Send + 'static {
+    fn new_for_request<B>(&self, req: &http::Request<B>) -> Option<Self>;
+
+    fn init_response<B>(&mut self, rsp: &http::Response<B>);
+
+    fn end_stream(
+        self,
+        elapsed: time::Duration,
+        trailers: Result<Option<&http::HeaderMap>, &Error>,
+    );
 }
 
-type RequestDurationsFamily<L, H> = Family<Labels<L>, Histogram, H>;
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("request was cancelled before completion")]
+pub struct RequestCancelled(());
 
 #[derive(Clone, Debug)]
-pub struct ResponseMetrics<L, H> {
-    labels: L,
-    // errors: Counter,
-    request_durations: Family<Labels<L>, Histogram, H>,
-}
-
-#[derive(Clone, Debug)]
-pub struct NewResponseMetrics<X, L, H, N> {
+pub struct NewRequestDuration<R, X, N> {
     inner: N,
     extract: X,
-    _marker: std::marker::PhantomData<fn() -> (L, H)>,
+    _marker: std::marker::PhantomData<fn() -> R>,
 }
 
 #[derive(Clone, Debug)]
-pub struct ResponseMetricsService<L, H, S> {
+pub struct RequestDurationService<R, S> {
     inner: S,
-    metrics: ResponseMetrics<L, H>,
+    recorder: R,
 }
 
-// Define the ResponseFuture type
 #[pin_project::pin_project]
-pub struct ResponseFuture<L, H, F> {
+pub struct ResponseFuture<R, F> {
     #[pin]
-    future: F,
-    t0: time::Instant,
-    metrics: ResponseMetrics<L, H>,
+    inner: F,
+    recorder: Option<R>,
+    request_start: time::Instant,
 }
 
 #[pin_project::pin_project(PinnedDrop)]
-pub struct ResponseBody<B> {
+pub struct ResponseBody<R, B>
+where
+    R: Recorder,
+{
     #[pin]
     inner: B,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Labels<L> {
-    status_code: u16,
-    common: L,
-}
-
-// === impl ResponseMetricsFamilies ===
-
-impl<L, H> Default for ResponseMetricsFamilies<L, H>
-where
-    L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
-    L: Eq + Clone,
-    H: Default,
-{
-    fn default() -> Self {
-        Self {
-            request_durations: Family::new_with_constructor(H::default()),
-        }
-    }
-}
-
-impl<L, H> ResponseMetricsFamilies<L, H>
-where
-    L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
-    L: Eq + Clone + Send + Sync + 'static,
-    H: MetricConstructor<Histogram> + Clone + Send + Sync + 'static,
-{
-    pub fn register(registry: &mut Registry, mk_histo: H) -> Self
-where {
-        let request_durations = RequestDurationsFamily::new_with_constructor(mk_histo);
-        registry.register_with_unit(
-            "request_duration",
-            "The durations between sending an HTTP request and receiving response headers",
-            Unit::Seconds,
-            request_durations.clone(),
-        );
-
-        Self { request_durations }
-    }
-
-    pub fn metrics(&self, labels: &L) -> ResponseMetrics<L, H> {
-        ResponseMetrics {
-            labels: labels.clone(),
-            request_durations: self.request_durations.clone(),
-        }
-    }
+    recorder: Option<R>,
+    request_start: time::Instant,
 }
 
 // === impl NewCountResponses ===
 
-impl<X: Clone, L, H, N> NewResponseMetrics<X, L, H, N> {
+impl<R, X, N> NewRequestDuration<R, X, N> {
     pub fn new(extract: X, inner: N) -> Self {
         Self {
             extract,
@@ -118,117 +67,146 @@ impl<X: Clone, L, H, N> NewResponseMetrics<X, L, H, N> {
         }
     }
 
-    pub fn layer_via(extract: X) -> impl svc::layer::Layer<N, Service = Self> + Clone {
+    pub fn layer_via(extract: X) -> impl svc::layer::Layer<N, Service = Self> + Clone
+    where
+        X: Clone,
+    {
         svc::layer::mk(move |inner| Self::new(extract.clone(), inner))
     }
 }
 
-impl<T, X, L, H, N> svc::NewService<T> for NewResponseMetrics<X, L, H, N>
+impl<R, N> NewRequestDuration<R, (), N> {
+    pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone {
+        Self::layer_via(())
+    }
+}
+
+impl<T, R, X, N> svc::NewService<T> for NewRequestDuration<R, X, N>
 where
-    X: svc::ExtractParam<ResponseMetrics<L, H>, T>,
-    L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
-    L: Eq + Clone + Send + Sync + 'static,
+    X: svc::ExtractParam<R, T>,
     N: svc::NewService<T>,
 {
-    type Service = ResponseMetricsService<L, H, N::Service>;
+    type Service = RequestDurationService<R, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let rc = self.extract.extract_param(&target);
+        let recorder = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
-        ResponseMetricsService::new(rc, inner)
+        RequestDurationService::new(recorder, inner)
     }
 }
 
 // === impl CountResponses ===
 
-impl<L, H, S> ResponseMetricsService<L, H, S> {
-    pub(crate) fn new(metrics: ResponseMetrics<L, H>, inner: S) -> Self {
-        Self { metrics, inner }
+impl<R, S> RequestDurationService<R, S> {
+    pub(crate) fn new(recorder: R, inner: S) -> Self {
+        Self { recorder, inner }
     }
 }
 
-impl<B, L, H, RspB, S> svc::Service<http::Request<B>> for ResponseMetricsService<L, H, S>
+impl<ReqB, RspB, R, S> svc::Service<http::Request<ReqB>> for RequestDurationService<R, S>
 where
-    L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
-    L: Eq + Clone + Send + Sync + 'static,
-    H: MetricConstructor<Histogram> + Clone + Send + Sync + 'static,
-    S: svc::Service<http::Request<B>, Response = http::Response<RspB>>,
+    R: Recorder,
+    S: svc::Service<http::Request<ReqB>, Response = http::Response<RspB>, Error = Error>,
     RspB: http_body::Body + Send + 'static,
     RspB::Data: Send,
     RspB::Error: Into<Error>,
 {
     type Response = http::Response<BoxBody>;
     type Error = S::Error;
-    type Future = ResponseFuture<L, H, S::Future>;
+    type Future = ResponseFuture<R, S::Future>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+    fn call(&mut self, req: http::Request<ReqB>) -> Self::Future {
         ResponseFuture {
-            t0: time::Instant::now(),
-            metrics: self.metrics.clone(),
-            future: self.inner.call(req),
+            request_start: time::Instant::now(),
+            recorder: self.recorder.new_for_request(&req),
+            inner: self.inner.call(req),
         }
     }
 }
 
 // === impl ResponseFuture ===
 
-impl<RspB, E, L, H, F> Future for ResponseFuture<L, H, F>
+impl<RspB, R, F> Future for ResponseFuture<R, F>
 where
-    L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
-    L: Eq + Clone + Send + Sync + 'static,
-    H: MetricConstructor<Histogram> + Clone + Send + Sync + 'static,
-    F: Future<Output = Result<http::Response<RspB>, E>>,
+    R: Recorder,
+    F: Future<Output = Result<http::Response<RspB>, Error>>,
     RspB: http_body::Body + Send + 'static,
     RspB::Data: Send,
     RspB::Error: Into<Error>,
 {
-    type Output = Result<http::Response<BoxBody>, E>;
+    type Output = Result<http::Response<BoxBody>, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        this.future
-            .poll(cx)
-            .map_ok(|rsp| rsp.map(|inner| BoxBody::new(ResponseBody { inner })))
-        // let status_code = res.as_ref().map(|rsp| rsp.status().as_u16()).unwrap_or(0);
-        // let labels = Labels {
-        //     status_code,
-        //     common: this.metrics.labels.clone(),
-        // };
-        // let elapsed = time::Instant::now().saturating_duration_since(*this.t0);
-        // this.metrics
-        //     .request_durations
-        //     .get_or_create(&labels)
-        //     .observe(elapsed.as_secs_f64());
-        // Poll::Ready(res)
+        let res = futures::ready!(this.inner.poll(cx)).map_err(Into::into);
+        let mut recorder = this.recorder.take();
+        let request_start = *this.request_start;
+        match res {
+            Ok(rsp) => {
+                let (head, inner) = rsp.into_parts();
+                if inner.is_end_stream() {
+                    end_stream(&mut recorder, request_start, Ok(None));
+                }
+                Poll::Ready(Ok(http::Response::from_parts(
+                    head,
+                    BoxBody::new(ResponseBody {
+                        inner,
+                        request_start,
+                        recorder,
+                    }),
+                )))
+            }
+            Err(error) => {
+                end_stream(&mut recorder, request_start, Err(&error));
+                Poll::Ready(Err(error))
+            }
+        }
     }
 }
 
 // === impl ResponseBody ===
 
-impl<B> http_body::Body for ResponseBody<B>
+impl<R, B> http_body::Body for ResponseBody<R, B>
 where
+    R: Recorder,
     B: http_body::Body,
+    B::Error: Into<Error>,
 {
     type Data = B::Data;
-    type Error = B::Error;
+    type Error = Error;
 
     fn poll_data(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        self.project().inner.poll_data(cx)
+    ) -> Poll<Option<Result<Self::Data, Error>>> {
+        let mut this = self.project();
+        let res =
+            futures::ready!(this.inner.as_mut().poll_data(cx)).map(|res| res.map_err(Into::into));
+        if let Some(Err(error)) = res.as_ref() {
+            end_stream(this.recorder, *this.request_start, Err(error));
+        } else if (*this.inner).is_end_stream() {
+            end_stream(this.recorder, *this.request_start, Ok(None));
+        }
+        Poll::Ready(res)
     }
 
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        self.project().inner.poll_trailers(cx)
+    ) -> Poll<Result<Option<http::HeaderMap>, Error>> {
+        let this = self.project();
+        let res = futures::ready!(this.inner.poll_trailers(cx)).map_err(Into::into);
+        end_stream(
+            this.recorder,
+            *this.request_start,
+            res.as_ref().map(Option::as_ref),
+        );
+        Poll::Ready(res)
     }
 
     fn is_end_stream(&self) -> bool {
@@ -236,26 +214,30 @@ where
     }
 }
 
-#[pin_project::pinned_drop]
-impl<B> PinnedDrop for ResponseBody<B> {
-    fn drop(self: Pin<&mut Self>) {
-        todo!()
+fn end_stream<R>(
+    recorder: &mut Option<R>,
+    request_start: time::Instant,
+    res: Result<Option<&http::HeaderMap>, &Error>,
+) where
+    R: Recorder,
+{
+    if let Some(recorder) = recorder.take() {
+        let elapsed = time::Instant::now().saturating_duration_since(request_start);
+        recorder.end_stream(elapsed, res)
     }
 }
 
-// === impl Labels ===
-
-impl<L> prometheus_client::encoding::EncodeLabelSet for Labels<L>
+#[pin_project::pinned_drop]
+impl<R, B> PinnedDrop for ResponseBody<R, B>
 where
-    L: EncodeLabelSet,
+    R: Recorder,
 {
-    fn encode(
-        &self,
-        mut enc: prometheus_client::encoding::LabelSetEncoder<'_>,
-    ) -> std::fmt::Result {
-        use prometheus_client::encoding::EncodeLabel;
-        ("status_code", self.status_code).encode(enc.encode_label())?;
-        self.common.encode(enc)?;
-        Ok(())
+    fn drop(self: Pin<&mut Self>) {
+        let this = self.project();
+        if let Some(recorder) = this.recorder.take() {
+            let elapsed = time::Instant::now().saturating_duration_since(*this.request_start);
+            // TODO(ver) lazy static
+            recorder.end_stream(elapsed, Err(&RequestCancelled(()).into()))
+        }
     }
 }

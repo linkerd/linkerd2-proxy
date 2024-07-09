@@ -1,3 +1,5 @@
+#![cfg(feature = "FIXME: metrics")]
+
 use super::{super::concrete, *};
 use crate::ParentRef;
 use linkerd_app_core::{

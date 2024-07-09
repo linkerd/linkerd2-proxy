@@ -82,15 +82,15 @@ impl RouteMetrics {
         Self { backend, retry }
     }
 
-    #[cfg(test)]
-    pub(crate) fn backend_metrics(
-        &self,
-        p: crate::ParentRef,
-        r: RouteRef,
-        b: crate::BackendRef,
-    ) -> backend::BackendHttpMetrics {
-        self.backend.get(p, r, b)
-    }
+    // #[cfg(test)]
+    // pub(crate) fn backend_metrics(
+    //     &self,
+    //     p: crate::ParentRef,
+    //     r: RouteRef,
+    //     b: crate::BackendRef,
+    // ) -> backend::BackendHttpMetrics {
+    //     self.backend.get(p, r, b)
+    // }
 }
 
 // === impl MatchedRoute ===
@@ -147,10 +147,6 @@ where
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
-                // FIXME
-                // Set an optional request timeout.
-                // .push(http::NewTimeout::layer())
-                //
                 // Configure a classifier to use in the endpoint stack.
                 // FIXME(ver) move this into NewSetExtensions
                 .push(classify::NewClassify::layer())
