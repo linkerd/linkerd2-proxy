@@ -8,11 +8,15 @@ use std::{
 };
 use tokio::{sync::oneshot, time};
 
+/// A strategy for recording request/response durations.
+///
+/// The `K` type parameter is a marker type that indicates the type of
+/// measurement.
 pub trait MkRecord<K> {
     type Recorder: Record<K>;
 
     /// Returns None when the request should not be recorded.
-    fn mk_recorder<B>(&self, req: &http::Request<B>) -> Option<Self::Recorder>;
+    fn mk_record<B>(&self, req: &http::Request<B>) -> Option<Self::Recorder>;
 }
 
 pub trait Record<K>: Send + 'static {
@@ -177,7 +181,7 @@ where
     }
 
     fn call(&mut self, req: http::Request<ReqB>) -> Self::Future {
-        let state = self.mk.mk_recorder(&req).map(|recorder| {
+        let state = self.mk.mk_record(&req).map(|recorder| {
             let (tx, start) = oneshot::channel();
             tx.send(time::Instant::now()).unwrap();
             ResponseState { recorder, start }
@@ -212,7 +216,7 @@ where
     fn call(&mut self, mut req: http::Request<BoxBody>) -> Self::Future {
         // If there's a recorder, wrap the request body to record the time that
         // the respond flushes.
-        let state = if let Some(recorder) = self.mk.mk_recorder(&req) {
+        let state = if let Some(recorder) = self.mk.mk_record(&req) {
             let (tx, rx) = oneshot::channel();
             req = req.map(|inner| {
                 BoxBody::new(RequestBody {
