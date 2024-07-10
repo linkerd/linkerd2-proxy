@@ -3,7 +3,7 @@
 
 mod count_reqs;
 // mod count_rsps;
-pub mod request_duration;
+pub mod record_response;
 
 pub use self::{
     count_reqs::{CountRequests, NewCountRequests, RequestCount, RequestCountFamilies},

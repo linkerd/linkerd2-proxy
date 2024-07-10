@@ -8,10 +8,14 @@ use std::{
 };
 use tokio::{sync::oneshot, time};
 
-pub trait Recorder: Sized + Send + 'static {
-    /// Returns None when the request should not be recorded.
-    fn new_for_request<B>(&self, req: &http::Request<B>) -> Option<Self>;
+pub trait MkRecord<K> {
+    type Recorder: Record<K>;
 
+    /// Returns None when the request should not be recorded.
+    fn mk_recorder<B>(&self, req: &http::Request<B>) -> Option<Self::Recorder>;
+}
+
+pub trait Record<K>: Send + 'static {
     fn init_response<B>(&mut self, rsp: &http::Response<B>);
 
     fn end_response(
@@ -21,68 +25,85 @@ pub trait Recorder: Sized + Send + 'static {
     );
 }
 
+/// A marker type for recorders that measure the time from request
+/// initialization to response completion.
+#[derive(Copy, Clone, Debug)]
+pub enum RequestDuration {}
+
+/// A marker type for recorders that measure the time request completion to
+/// response completion.
+#[derive(Copy, Clone, Debug)]
+pub enum ResponseDuration {}
+
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("request was cancelled before completion")]
 pub struct RequestCancelled(());
 
+/// Builds RecordResponse instances by extracing M-typed parameters from stack
+/// targets
 #[derive(Clone, Debug)]
-pub struct NewRequestDuration<R, X, N> {
+pub struct NewRecordResponse<M, X, K, N> {
     inner: N,
     extract: X,
-    _marker: std::marker::PhantomData<fn() -> R>,
+    _marker: std::marker::PhantomData<fn() -> (M, K)>,
 }
 
+/// A Service that can record a request/response durations.
 #[derive(Clone, Debug)]
-pub struct NewResponseDuration<R, X, N> {
-    inner: N,
-    extract: X,
-    _marker: std::marker::PhantomData<fn() -> R>,
-}
-
-#[derive(Clone, Debug)]
-pub struct RequestDurationService<R, S> {
+pub struct RecordResponse<R, K, S> {
     inner: S,
-    recorder: R,
+    mk: R,
+    _marker: std::marker::PhantomData<fn() -> K>,
 }
 
-#[derive(Clone, Debug)]
-pub struct ResponseDurationService<R, S> {
-    inner: S,
-    recorder: R,
+pub type NewRequestDuration<M, X, N> = NewRecordResponse<M, X, RequestDuration, N>;
+pub type RecordRequestDuration<R, S> = RecordResponse<R, RequestDuration, S>;
+
+pub type NewResponseDuration<M, X, N> = NewRecordResponse<M, X, ResponseDuration, N>;
+pub type RecordResponseDuration<R, S> = RecordResponse<R, ResponseDuration, S>;
+
+#[pin_project::pin_project]
+pub struct ResponseFuture<R, K, F>
+where
+    R: Record<K>,
+{
+    #[pin]
+    inner: F,
+    state: Option<ResponseState<R>>,
+    _marker: std::marker::PhantomData<fn() -> K>,
 }
 
+/// Notifies the response body when the request body is flushed.
 #[pin_project::pin_project(PinnedDrop)]
-pub struct RequestBody<B> {
+struct RequestBody<B> {
     #[pin]
     inner: B,
     flushed: Option<oneshot::Sender<time::Instant>>,
 }
 
-#[pin_project::pin_project]
-pub struct ResponseFuture<R, F> {
-    #[pin]
-    inner: F,
-    state: Option<State<R>>,
-}
-
+/// Notifies the response recorder when the response body is flushed.
 #[pin_project::pin_project(PinnedDrop)]
-pub struct ResponseBody<R, B>
+struct ResponseBody<R, K, B>
 where
-    R: Recorder,
+    R: Record<K>,
 {
     #[pin]
     inner: B,
-    state: Option<State<R>>,
+    state: Option<ResponseState<R>>,
+    _marker: std::marker::PhantomData<fn() -> K>,
 }
 
-struct State<R> {
+struct ResponseState<R> {
     recorder: R,
     start: oneshot::Receiver<time::Instant>,
 }
 
-// === impl NewRequestDuration ===
+// === impl NewRecordResponse ===
 
-impl<R, X, N> NewRequestDuration<R, X, N> {
+impl<M, X, K, N> NewRecordResponse<M, X, K, N>
+where
+    M: MkRecord<K>,
+{
     pub fn new(extract: X, inner: N) -> Self {
         Self {
             extract,
@@ -99,76 +120,48 @@ impl<R, X, N> NewRequestDuration<R, X, N> {
     }
 }
 
-impl<R, N> NewRequestDuration<R, (), N> {
+impl<M, K, N> NewRecordResponse<M, (), K, N>
+where
+    M: MkRecord<K>,
+{
     pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone {
         Self::layer_via(())
     }
 }
 
-impl<T, R, X, N> svc::NewService<T> for NewRequestDuration<R, X, N>
+impl<T, M, X, K, N> svc::NewService<T> for NewRecordResponse<M, X, K, N>
 where
-    X: svc::ExtractParam<R, T>,
+    M: MkRecord<K>,
+    X: svc::ExtractParam<M, T>,
     N: svc::NewService<T>,
 {
-    type Service = RequestDurationService<R, N::Service>;
+    type Service = RecordResponse<M, K, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let recorder = self.extract.extract_param(&target);
+        let mk_rec = self.extract.extract_param(&target);
         let inner = self.inner.new_service(target);
-        RequestDurationService::new(recorder, inner)
+        RecordResponse::new(mk_rec, inner)
     }
 }
 
-// === impl NewResponseDuration ===
+// === impl RecordResponse ===
 
-impl<R, X, N> NewResponseDuration<R, X, N> {
-    pub fn new(extract: X, inner: N) -> Self {
+impl<M, K, S> RecordResponse<M, K, S>
+where
+    M: MkRecord<K>,
+{
+    pub(crate) fn new(mk: M, inner: S) -> Self {
         Self {
-            extract,
+            mk,
             inner,
             _marker: std::marker::PhantomData,
         }
     }
-
-    pub fn layer_via(extract: X) -> impl svc::layer::Layer<N, Service = Self> + Clone
-    where
-        X: Clone,
-    {
-        svc::layer::mk(move |inner| Self::new(extract.clone(), inner))
-    }
 }
 
-impl<R, N> NewResponseDuration<R, (), N> {
-    pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone {
-        Self::layer_via(())
-    }
-}
-
-impl<T, R, X, N> svc::NewService<T> for NewResponseDuration<R, X, N>
+impl<ReqB, RspB, M, S> svc::Service<http::Request<ReqB>> for RecordRequestDuration<M, S>
 where
-    X: svc::ExtractParam<R, T>,
-    N: svc::NewService<T>,
-{
-    type Service = ResponseDurationService<R, N::Service>;
-
-    fn new_service(&self, target: T) -> Self::Service {
-        let recorder = self.extract.extract_param(&target);
-        let inner = self.inner.new_service(target);
-        ResponseDurationService::new(recorder, inner)
-    }
-}
-
-// === impl RequestDurationService ===
-
-impl<R, S> RequestDurationService<R, S> {
-    pub(crate) fn new(recorder: R, inner: S) -> Self {
-        Self { recorder, inner }
-    }
-}
-
-impl<ReqB, RspB, R, S> svc::Service<http::Request<ReqB>> for RequestDurationService<R, S>
-where
-    R: Recorder,
+    M: MkRecord<RequestDuration>,
     S: svc::Service<http::Request<ReqB>, Response = http::Response<RspB>, Error = Error>,
     RspB: http_body::Body + Send + 'static,
     RspB::Data: Send,
@@ -176,7 +169,7 @@ where
 {
     type Response = http::Response<BoxBody>;
     type Error = S::Error;
-    type Future = ResponseFuture<R, S::Future>;
+    type Future = ResponseFuture<M::Recorder, RequestDuration, S::Future>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
@@ -184,30 +177,24 @@ where
     }
 
     fn call(&mut self, req: http::Request<ReqB>) -> Self::Future {
-        let state = self.recorder.new_for_request(&req).map(|recorder| {
+        let state = self.mk.mk_recorder(&req).map(|recorder| {
             let (tx, start) = oneshot::channel();
             tx.send(time::Instant::now()).unwrap();
-            State { recorder, start }
+            ResponseState { recorder, start }
         });
 
+        let inner = self.inner.call(req);
         ResponseFuture {
             state,
-            inner: self.inner.call(req),
+            inner,
+            _marker: std::marker::PhantomData,
         }
     }
 }
 
-// === impl ResponseDurationService ===
-
-impl<R, S> ResponseDurationService<R, S> {
-    pub(crate) fn new(recorder: R, inner: S) -> Self {
-        Self { recorder, inner }
-    }
-}
-
-impl<RspB, R, S> svc::Service<http::Request<BoxBody>> for ResponseDurationService<R, S>
+impl<RspB, M, S> svc::Service<http::Request<BoxBody>> for RecordResponseDuration<M, S>
 where
-    R: Recorder,
+    M: MkRecord<ResponseDuration>,
     S: svc::Service<http::Request<BoxBody>, Response = http::Response<RspB>, Error = Error>,
     RspB: http_body::Body + Send + 'static,
     RspB::Data: Send,
@@ -215,44 +202,47 @@ where
 {
     type Response = http::Response<BoxBody>;
     type Error = S::Error;
-    type Future = ResponseFuture<R, S::Future>;
+    type Future = ResponseFuture<M::Recorder, ResponseDuration, S::Future>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: http::Request<BoxBody>) -> Self::Future {
-        let (req, state) = match self.recorder.new_for_request(&req) {
-            None => (req, None),
-            Some(recorder) => {
-                let (tx, rx) = oneshot::channel();
-                let req = req.map(|inner| {
-                    BoxBody::new(RequestBody {
-                        inner,
-                        flushed: Some(tx),
-                    })
-                });
-                let state = State {
-                    recorder,
-                    start: rx,
-                };
-                (req, Some(state))
-            }
+    fn call(&mut self, mut req: http::Request<BoxBody>) -> Self::Future {
+        // If there's a recorder, wrap the request body to record the time that
+        // the respond flushes.
+        let state = if let Some(recorder) = self.mk.mk_recorder(&req) {
+            let (tx, rx) = oneshot::channel();
+            req = req.map(|inner| {
+                BoxBody::new(RequestBody {
+                    inner,
+                    flushed: Some(tx),
+                })
+            });
+            Some(ResponseState {
+                recorder,
+                start: rx,
+            })
+        } else {
+            None
         };
 
+        let inner = self.inner.call(req);
         ResponseFuture {
             state,
-            inner: self.inner.call(req),
+            inner,
+            _marker: std::marker::PhantomData,
         }
     }
 }
 
 // === impl ResponseFuture ===
 
-impl<RspB, R, F> Future for ResponseFuture<R, F>
+impl<RspB, R, K, F> Future for ResponseFuture<R, K, F>
 where
-    R: Recorder,
+    K: 'static,
+    R: Record<K>,
     F: Future<Output = Result<http::Response<RspB>, Error>>,
     RspB: http_body::Body + Send + 'static,
     RspB::Data: Send,
@@ -272,7 +262,11 @@ where
                 }
                 Poll::Ready(Ok(http::Response::from_parts(
                     head,
-                    BoxBody::new(ResponseBody { inner, state }),
+                    BoxBody::new(ResponseBody {
+                        inner,
+                        state,
+                        _marker: std::marker::PhantomData,
+                    }),
                 )))
             }
             Err(error) => {
@@ -335,9 +329,9 @@ impl<B> PinnedDrop for RequestBody<B> {
 
 // === impl ResponseBody ===
 
-impl<R, B> http_body::Body for ResponseBody<R, B>
+impl<R, K, B> http_body::Body for ResponseBody<R, K, B>
 where
-    R: Recorder,
+    R: Record<K>,
     B: http_body::Body,
     B::Error: Into<Error>,
 {
@@ -374,11 +368,13 @@ where
     }
 }
 
-fn end_stream<R>(state: &mut Option<State<R>>, res: Result<Option<&http::HeaderMap>, &Error>)
-where
-    R: Recorder,
+fn end_stream<R, K>(
+    state: &mut Option<ResponseState<R>>,
+    res: Result<Option<&http::HeaderMap>, &Error>,
+) where
+    R: Record<K>,
 {
-    let Some(State {
+    let Some(ResponseState {
         recorder,
         start: mut request_start,
     }) = state.take()
@@ -395,9 +391,9 @@ where
 }
 
 #[pin_project::pinned_drop]
-impl<R, B> PinnedDrop for ResponseBody<R, B>
+impl<R, K, B> PinnedDrop for ResponseBody<R, K, B>
 where
-    R: Recorder,
+    R: Record<K>,
 {
     fn drop(self: Pin<&mut Self>) {
         let this = self.project();
