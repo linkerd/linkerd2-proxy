@@ -3,23 +3,10 @@ use linkerd_http_prom::record_response::{self, StreamLabel};
 
 pub use linkerd_http_prom::record_response::MkStreamLabel;
 
-pub type RequestDuration<RspL> = record_response::RequestDuration<labels::RouteRsp<RspL>>;
-// pub type HttpRouteRequestDuration = RequestDuration<labels::HttpRsp>;
-// pub type GrpcRouteRequestDuration = RequestDuration<labels::GrpcRsp>;
-
-pub type RequestDurationParams<T, RspL> = record_response::Params<T, RequestDuration<RspL>>;
-// pub type HttpRouteRequestDurationParams<T> = RequestDurationParams<T, labels::HttpRsp>;
-// pub type GrpcRouteRequestDurationParams<T> = RequestDurationParams<T, labels::GrpcRsp>;
-
-pub type NewRequestDuration<T, RspL, N> = record_response::NewRecordResponse<
-    T,
-    ExtractRequestDurationParams<RspL>,
-    RequestDuration<RspL>,
-    N,
->;
+pub type RouteRequestDuration<RspL> = record_response::RequestDuration<labels::RouteRsp<RspL>>;
 
 #[derive(Clone, Debug)]
-pub struct ExtractRequestDurationParams<RspL>(pub RequestDuration<RspL>);
+pub struct ExtractRecordDurationParams<M>(M);
 
 /// Tracks HTTP streams to produce response labels.
 #[derive(Clone, Debug)]
@@ -38,26 +25,29 @@ pub struct LabelGrpcRsp<L> {
 pub type LabelHttpRouteRsp = LabelHttpRsp<labels::Route>;
 pub type LabelGrpcRouteRsp = LabelGrpcRsp<labels::Route>;
 
+pub type NewRecordDuration<T, M, N> =
+    record_response::NewRecordResponse<T, ExtractRecordDurationParams<M>, M, N>;
+
 pub fn request_duration<T, RspL, N>(
-    metric: RequestDuration<RspL>,
-) -> impl svc::Layer<N, Service = NewRequestDuration<T, RspL, N>> + Clone
+    metric: RouteRequestDuration<RspL>,
+) -> impl svc::Layer<N, Service = NewRecordDuration<T, RouteRequestDuration<RspL>, N>> + Clone
 where
     T: Clone + MkStreamLabel<EncodeLabelSet = labels::RouteRsp<RspL>>,
     RspL:
         EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
 {
-    NewRequestDuration::layer_via(ExtractRequestDurationParams(metric))
+    NewRecordDuration::layer_via(ExtractRecordDurationParams(metric))
 }
 
 // === impl ExtractRequestDurationParams ===
 
-impl<T, L> svc::ExtractParam<RequestDurationParams<T, L>, T> for ExtractRequestDurationParams<L>
+impl<T, M> svc::ExtractParam<record_response::Params<T, M>, T> for ExtractRecordDurationParams<M>
 where
     T: Clone + MkStreamLabel,
-    L: Clone,
+    M: Clone,
 {
-    fn extract_param(&self, target: &T) -> RequestDurationParams<T, L> {
-        RequestDurationParams {
+    fn extract_param(&self, target: &T) -> record_response::Params<T, M> {
+        record_response::Params {
             labeler: target.clone(),
             metric: self.0.clone(),
         }

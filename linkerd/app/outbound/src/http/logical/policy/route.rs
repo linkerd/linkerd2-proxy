@@ -25,7 +25,7 @@ use self::metrics::labels::Route as RouteLabels;
 #[derive(Clone, Debug)]
 pub struct RouteMetrics<RspL> {
     retry: retry::RouteRetryMetrics,
-    request_duration: metrics::RequestDuration<RspL>, // backend: backend::RouteBackendMetrics,
+    request_duration: metrics::RouteRequestDuration<RspL>, // backend: backend::RouteBackendMetrics,
 }
 
 pub type HttpRouteMetrics = RouteMetrics<metrics::labels::HttpRsp>;
@@ -86,7 +86,7 @@ where
         EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
 {
     pub fn register(reg: &mut prom::Registry) -> Self {
-        let route = metrics::RequestDuration::register(reg);
+        let route = metrics::RouteRequestDuration::register(reg);
 
         // let backend =
         //     backend::RouteBackendMetrics::register(reg.sub_registry_with_prefix("backend"));
@@ -116,7 +116,7 @@ where
 {
     fn default() -> Self {
         Self {
-            request_duration: metrics::RequestDuration::default(),
+            request_duration: metrics::RouteRequestDuration::default(),
             // backend: backend::RouteBackendMetrics::default(),
             retry: retry::RouteRetryMetrics::default(),
         }
