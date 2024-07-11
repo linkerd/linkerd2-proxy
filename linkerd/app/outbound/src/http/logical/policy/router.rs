@@ -8,7 +8,6 @@ use linkerd_app_core::{
     NameAddr, Result,
 };
 use linkerd_distribute as distribute;
-use linkerd_http_prom::record_response::MkStreamLabel;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -68,7 +67,7 @@ where
         Error = NoRoute,
     >,
     route::MatchedRoute<T, M::Summary, F, P>: route::filters::Apply
-        + MkStreamLabel<EncodeLabelSet = route::metrics::labels::RouteRsp<RspL>>
+        + route::metrics::MkStreamLabel<EncodeLabelSet = route::metrics::labels::RouteRsp<RspL>>
         + svc::Param<classify::Request>
         + svc::Param<route::extensions::Params>,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,

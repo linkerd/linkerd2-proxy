@@ -1,21 +1,34 @@
-use linkerd_app_core::metrics::prom::EncodeLabelSetMut;
+use linkerd_app_core::{metrics::prom::EncodeLabelSetMut, svc};
 use linkerd_http_prom::record_response::{self, StreamLabel};
+
+pub use linkerd_http_prom::record_response::MkStreamLabel;
 
 pub type RequestDuration<RspL> = record_response::RequestDuration<labels::RouteRsp<RspL>>;
 // pub type HttpRouteRequestDuration = RequestDuration<labels::HttpRsp>;
 // pub type GrpcRouteRequestDuration = RequestDuration<labels::GrpcRsp>;
 
 pub type RequestDurationParams<T, RspL> = record_response::Params<T, RequestDuration<RspL>>;
-pub type HttpRouteRequestDurationParams<T> = RequestDurationParams<T, labels::HttpRsp>;
-pub type GrpcRouteRequestDurationParams<T> = RequestDurationParams<T, labels::GrpcRsp>;
+// pub type HttpRouteRequestDurationParams<T> = RequestDurationParams<T, labels::HttpRsp>;
+// pub type GrpcRouteRequestDurationParams<T> = RequestDurationParams<T, labels::GrpcRsp>;
 
-/// Tracks HTTP streams to produce
+pub type NewRequestDuration<T, RspL, N> = record_response::NewRecordResponse<
+    T,
+    ExtractRequestDurationParams<RspL>,
+    RequestDuration<RspL>,
+    N,
+>;
+
+#[derive(Clone, Debug)]
+pub struct ExtractRequestDurationParams<RspL>(pub RequestDuration<RspL>);
+
+/// Tracks HTTP streams to produce response labels.
 #[derive(Clone, Debug)]
 pub struct LabelHttpRsp<L> {
     parent: L,
     status: Option<http::StatusCode>,
 }
 
+/// Tracks gRPC streams to produce response labels.
 #[derive(Clone, Debug)]
 pub struct LabelGrpcRsp<L> {
     parent: L,
@@ -24,6 +37,32 @@ pub struct LabelGrpcRsp<L> {
 
 pub type LabelHttpRouteRsp = LabelHttpRsp<labels::Route>;
 pub type LabelGrpcRouteRsp = LabelGrpcRsp<labels::Route>;
+
+pub fn request_duration<T, RspL, N>(
+    metric: RequestDuration<RspL>,
+) -> impl svc::Layer<N, Service = NewRequestDuration<T, RspL, N>> + Clone
+where
+    T: Clone + MkStreamLabel<EncodeLabelSet = labels::RouteRsp<RspL>>,
+    RspL:
+        EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+{
+    NewRequestDuration::layer_via(ExtractRequestDurationParams(metric))
+}
+
+// === impl ExtractRequestDurationParams ===
+
+impl<T, L> svc::ExtractParam<RequestDurationParams<T, L>, T> for ExtractRequestDurationParams<L>
+where
+    T: Clone + MkStreamLabel,
+    L: Clone,
+{
+    fn extract_param(&self, target: &T) -> RequestDurationParams<T, L> {
+        RequestDurationParams {
+            labeler: target.clone(),
+            metric: self.0.clone(),
+        }
+    }
+}
 
 // === impl LabelHttpRsp ===
 

@@ -7,7 +7,6 @@ use linkerd_app_core::{
     svc, Addr, Error, Result,
 };
 use linkerd_distribute as distribute;
-use linkerd_http_prom::record_response::MkStreamLabel;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -31,9 +30,6 @@ pub struct RouteMetrics<RspL> {
 
 pub type HttpRouteMetrics = RouteMetrics<metrics::labels::HttpRsp>;
 pub type GrpcRouteMetrics = RouteMetrics<metrics::labels::GrpcRsp>;
-
-#[derive(Clone, Debug)]
-pub struct ExtractRequestDurationParams<L>(metrics::RequestDuration<L>);
 
 /// A target type that includes a summary of exactly how a request was matched.
 /// This match state is required to apply route filters.
@@ -148,7 +144,7 @@ where
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
     Self: svc::Param<extensions::Params>,
-    Self: MkStreamLabel<EncodeLabelSet = metrics::labels::RouteRsp<RspL>>,
+    Self: metrics::MkStreamLabel<EncodeLabelSet = metrics::labels::RouteRsp<RspL>>,
     MatchedBackend<T, M, F>: filters::Apply,
 {
     /// Builds a route stack that applies policy filters to requests and
@@ -185,6 +181,7 @@ where
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
+                .push(metrics::request_duration(metrics.request_duration.clone()))
                 // Configure a classifier to use in the endpoint stack.
                 // FIXME(ver) move this into NewSetExtensions
                 .push(classify::NewClassify::layer())
@@ -236,7 +233,7 @@ impl<T> filters::Apply for Http<T> {
     }
 }
 
-impl<T> MkStreamLabel for Http<T> {
+impl<T> metrics::MkStreamLabel for Http<T> {
     type EncodeLabelSet = metrics::labels::HttpRouteRsp;
     type StreamLabel = metrics::LabelHttpRouteRsp;
 
@@ -246,17 +243,6 @@ impl<T> MkStreamLabel for Http<T> {
         Some(metrics::LabelHttpRsp::from(metrics::labels::Route::from((
             parent, route,
         ))))
-    }
-}
-
-impl<T: Clone> svc::ExtractParam<metrics::HttpRouteRequestDurationParams<Http<T>>, Http<T>>
-    for ExtractRequestDurationParams<metrics::labels::HttpRsp>
-{
-    fn extract_param(&self, target: &Http<T>) -> metrics::HttpRouteRequestDurationParams<Http<T>> {
-        metrics::HttpRouteRequestDurationParams {
-            labeler: target.clone(),
-            metric: self.0.clone(),
-        }
     }
 }
 
@@ -299,18 +285,7 @@ impl<T> filters::Apply for Grpc<T> {
     }
 }
 
-impl<T: Clone> svc::ExtractParam<metrics::GrpcRouteRequestDurationParams<Grpc<T>>, Grpc<T>>
-    for ExtractRequestDurationParams<metrics::labels::GrpcRsp>
-{
-    fn extract_param(&self, target: &Grpc<T>) -> metrics::GrpcRouteRequestDurationParams<Grpc<T>> {
-        metrics::GrpcRouteRequestDurationParams {
-            labeler: target.clone(),
-            metric: self.0.clone(),
-        }
-    }
-}
-
-impl<T> MkStreamLabel for Grpc<T> {
+impl<T> metrics::MkStreamLabel for Grpc<T> {
     type EncodeLabelSet = metrics::labels::GrpcRouteRsp;
     type StreamLabel = metrics::LabelGrpcRouteRsp;
 
