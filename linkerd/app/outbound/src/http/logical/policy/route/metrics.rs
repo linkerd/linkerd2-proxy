@@ -1,5 +1,5 @@
 use linkerd_app_core::{metrics::prom::EncodeLabelSetMut, svc};
-use linkerd_http_prom::record_response::{self, StreamLabel};
+use linkerd_http_prom::record_response::{self, ResponseMetrics, StreamLabel};
 
 pub use linkerd_http_prom::record_response::MkStreamLabel;
 
@@ -27,6 +27,9 @@ pub struct LabelGrpcRsp<L> {
 pub type LabelHttpRouteRsp = LabelHttpRsp<labels::Route>;
 pub type LabelGrpcRouteRsp = LabelGrpcRsp<labels::Route>;
 
+pub type LabelHttpRouteBackendRsp = LabelHttpRsp<labels::RouteBackend>;
+pub type LabelGrpcRouteBackendRsp = LabelGrpcRsp<labels::RouteBackend>;
+
 pub type NewRecordDuration<T, M, N> =
     record_response::NewRecordResponse<T, ExtractRecordDurationParams<M>, M, N>;
 
@@ -35,6 +38,18 @@ pub fn request_duration<T, N>(
 ) -> impl svc::Layer<
     N,
     Service = NewRecordDuration<T, RequestMetrics<T::DurationLabels, T::TotalLabels>, N>,
+> + Clone
+where
+    T: Clone + MkStreamLabel,
+{
+    NewRecordDuration::layer_via(ExtractRecordDurationParams(metric))
+}
+
+pub fn response_duration<T, N>(
+    metric: ResponseMetrics<T::DurationLabels, T::TotalLabels>,
+) -> impl svc::Layer<
+    N,
+    Service = NewRecordDuration<T, ResponseMetrics<T::DurationLabels, T::TotalLabels>, N>,
 > + Clone
 where
     T: Clone + MkStreamLabel,
@@ -159,19 +174,24 @@ pub mod labels {
     use linkerd_app_core::Error as BoxError;
     use prometheus_client::encoding::*;
 
-    use crate::{ParentRef, RouteRef};
+    use crate::{BackendRef, ParentRef, RouteRef};
 
     #[derive(Clone, Debug, Hash, PartialEq, Eq)]
     pub struct Route(pub ParentRef, pub RouteRef);
 
     #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+    pub struct RouteBackend(ParentRef, RouteRef, BackendRef);
+
+    #[derive(Clone, Debug, Hash, PartialEq, Eq)]
     pub struct Rsp<P, L>(pub P, pub L);
 
     pub type RouteRsp<L> = Rsp<Route, L>;
-
     pub type HttpRouteRsp = RouteRsp<HttpRsp>;
-
     pub type GrpcRouteRsp = RouteRsp<GrpcRsp>;
+
+    pub type RouteBackendRsp<L> = Rsp<RouteBackend, L>;
+    pub type HttpRouteBackendRsp = RouteBackendRsp<HttpRsp>;
+    pub type GrpcRouteBackendRsp = RouteBackendRsp<GrpcRsp>;
 
     #[derive(Clone, Debug, Hash, PartialEq, Eq)]
     pub struct HttpRsp {
@@ -213,6 +233,29 @@ pub mod labels {
         }
     }
 
+    // === impl RouteBackend ===
+
+    impl From<(ParentRef, RouteRef, BackendRef)> for RouteBackend {
+        fn from((parent, route, backend): (ParentRef, RouteRef, BackendRef)) -> Self {
+            Self(parent, route, backend)
+        }
+    }
+
+    impl EncodeLabelSetMut for RouteBackend {
+        fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+            let Self(parent, route, backend) = self;
+            parent.encode_label_set(enc)?;
+            route.encode_label_set(enc)?;
+            backend.encode_label_set(enc)?;
+            Ok(())
+        }
+    }
+
+    impl EncodeLabelSet for RouteBackend {
+        fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+            self.encode_label_set(&mut enc)
+        }
+    }
     // === impl Rsp ===
 
     impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSetMut for Rsp<P, L> {

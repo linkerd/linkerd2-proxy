@@ -66,7 +66,7 @@ where
         + svc::Param<classify::Request>
         + svc::Param<route::extensions::Params>
         + route::metrics::MkStreamLabel,
-    route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
+    route::MatchedBackend<T, M::Summary, F>: route::filters::Apply + route::metrics::MkStreamLabel,
     // route::backend::RouteBackendMetrics: svc::ExtractParam<
     //     route::backenzd::BackendHttpMetrics,
     //     route::MatchedBackend<T, M::Summary, F>,
@@ -75,7 +75,10 @@ where
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.
     pub(super) fn layer<N, S>(
-        metrics: route::Metrics<route::MatchedRoute<T, M::Summary, F, P>>,
+        metrics: route::Metrics<
+            route::MatchedRoute<T, M::Summary, F, P>,
+            route::MatchedBackend<T, M::Summary, F>,
+        >,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.

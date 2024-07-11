@@ -7,7 +7,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 mod metrics;
 
-// pub use self::metrics::{BackendHttpMetrics, RouteBackendMetrics};
+pub use self::metrics::RouteBackendMetrics;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Backend<T, F> {
@@ -67,14 +67,15 @@ where
     F: Clone + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
-    // RouteBackendMetrics: svc::ExtractParam<BackendHttpMetrics, Self>,
+    Self: metrics::MkStreamLabel, // RouteBackendMetrics: svc::ExtractParam<BackendHttpMetrics, Self>,
 {
     /// Builds a stack that applies per-route-backend policy filters over an
     /// inner [`Concrete`] stack.
     ///
     /// This [`MatchedBackend`] must implement [`filters::Apply`] to apply these
     /// filters.
-    pub(crate) fn layer<N, S>(// _metrics: RouteBackendMetrics,
+    pub(crate) fn layer<N, S>(
+        metrics: metrics::Metrics<Self>,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
@@ -97,6 +98,7 @@ where
                      }| concrete,
                 )
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
+                .push(metrics::response_duration(metrics.responses.clone()))
                 // .push(metrics::NewBackendHttpMetrics::layer_via(metrics.clone()))
                 .push(svc::NewMapErr::layer_with(|t: &Self| {
                     let backend = t.params.concrete.backend_ref.clone();
@@ -149,6 +151,21 @@ impl<T> filters::Apply for Http<T> {
     }
 }
 
+impl<T> metrics::MkStreamLabel for Http<T> {
+    type DurationLabels = metrics::labels::RouteBackend;
+    type TotalLabels = metrics::labels::HttpRouteBackendRsp;
+    type StreamLabel = metrics::LabelHttpRouteBackendRsp;
+
+    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+        let parent = self.params.concrete.parent_ref.clone();
+        let route = self.params.route_ref.clone();
+        let backend = self.params.concrete.backend_ref.clone();
+        Some(metrics::LabelHttpRsp::from(
+            metrics::labels::RouteBackend::from((parent, route, backend)),
+        ))
+    }
+}
+
 impl<T> filters::Apply for Grpc<T> {
     #[inline]
     fn apply_request<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
@@ -157,5 +174,20 @@ impl<T> filters::Apply for Grpc<T> {
 
     fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()> {
         filters::apply_grpc_response(&self.params.filters, rsp)
+    }
+}
+
+impl<T> metrics::MkStreamLabel for Grpc<T> {
+    type DurationLabels = metrics::labels::RouteBackend;
+    type TotalLabels = metrics::labels::GrpcRouteBackendRsp;
+    type StreamLabel = metrics::LabelGrpcRouteBackendRsp;
+
+    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+        let parent = self.params.concrete.parent_ref.clone();
+        let route = self.params.route_ref.clone();
+        let backend = self.params.concrete.backend_ref.clone();
+        Some(metrics::LabelGrpcRsp::from(
+            metrics::labels::RouteBackend::from((parent, route, backend)),
+        ))
     }
 }

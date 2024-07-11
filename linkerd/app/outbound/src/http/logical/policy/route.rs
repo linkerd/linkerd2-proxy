@@ -9,7 +9,6 @@ use linkerd_app_core::{
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
-use prometheus_client::encoding::EncodeLabelSet;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 pub(crate) mod backend;
@@ -24,18 +23,32 @@ pub use self::filters::errors;
 use self::metrics::labels::Route as RouteLabels;
 
 #[derive(Clone, Debug)]
-pub struct RouteMetrics<DurL, TotL> {
+pub struct RouteMetrics<ReqDurL, ReqTotL, RspDurL, RspTotL> {
     retry: retry::RouteRetryMetrics,
-    requests: metrics::RequestMetrics<DurL, TotL>, // backend: backend::RouteBackendMetrics,
+    requests: metrics::RequestMetrics<ReqDurL, ReqTotL>,
+    backend: backend::RouteBackendMetrics<RspDurL, RspTotL>,
 }
 
-pub type Metrics<T> = RouteMetrics<
-    <T as metrics::MkStreamLabel>::DurationLabels,
-    <T as metrics::MkStreamLabel>::TotalLabels,
+pub type Metrics<R, B> = RouteMetrics<
+    <R as metrics::MkStreamLabel>::DurationLabels,
+    <R as metrics::MkStreamLabel>::TotalLabels,
+    <B as metrics::MkStreamLabel>::DurationLabels,
+    <B as metrics::MkStreamLabel>::TotalLabels,
 >;
 
-pub type HttpRouteMetrics = RouteMetrics<metrics::labels::Route, metrics::labels::HttpRouteRsp>;
-pub type GrpcRouteMetrics = RouteMetrics<metrics::labels::Route, metrics::labels::GrpcRouteRsp>;
+pub type HttpRouteMetrics = RouteMetrics<
+    metrics::labels::Route,
+    metrics::labels::HttpRouteRsp,
+    metrics::labels::RouteBackend,
+    metrics::labels::HttpRouteBackendRsp,
+>;
+
+pub type GrpcRouteMetrics = RouteMetrics<
+    metrics::labels::Route,
+    metrics::labels::GrpcRouteRsp,
+    metrics::labels::RouteBackend,
+    metrics::labels::GrpcRouteBackendRsp,
+>;
 
 /// A target type that includes a summary of exactly how a request was matched.
 /// This match state is required to apply route filters.
@@ -86,7 +99,13 @@ struct RouteError {
 
 // === impl RouteMetrics ===
 
-impl<RspL> RouteMetrics<metrics::labels::Route, metrics::labels::RouteRsp<RspL>>
+impl<RspL>
+    RouteMetrics<
+        metrics::labels::Route,
+        metrics::labels::RouteRsp<RspL>,
+        metrics::labels::RouteBackend,
+        metrics::labels::RouteBackendRsp<RspL>,
+    >
 where
     RspL:
         EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
@@ -94,14 +113,15 @@ where
     pub fn register(reg: &mut prom::Registry) -> Self {
         let requests = metrics::RequestMetrics::register(reg);
 
-        // let backend =
-        //     backend::RouteBackendMetrics::register(reg.sub_registry_with_prefix("backend"));
+        let backend =
+            backend::RouteBackendMetrics::register(reg.sub_registry_with_prefix("backend"));
 
         let retry = retry::RouteRetryMetrics::register(reg.sub_registry_with_prefix("retry"));
 
         Self {
             requests,
-            /*backend,*/ retry,
+            backend,
+            retry,
         }
     }
 
@@ -116,15 +136,21 @@ where
     // }
 }
 
-impl<DurL, TotL> Default for RouteMetrics<DurL, TotL>
+impl<RspL> Default
+    for RouteMetrics<
+        metrics::labels::Route,
+        metrics::labels::RouteRsp<RspL>,
+        metrics::labels::RouteBackend,
+        metrics::labels::RouteBackendRsp<RspL>,
+    >
 where
-    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    TotL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+    RspL:
+        EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
 {
     fn default() -> Self {
         Self {
             requests: metrics::RequestMetrics::default(),
-            // backend: backend::RouteBackendMetrics::default(),
+            backend: backend::RouteBackendMetrics::default(),
             retry: retry::RouteRetryMetrics::default(),
         }
     }
@@ -150,12 +176,13 @@ where
     Self: svc::Param<extensions::Params>,
     Self: metrics::MkStreamLabel,
     MatchedBackend<T, M, F>: filters::Apply,
+    MatchedBackend<T, M, F>: metrics::MkStreamLabel,
 {
     /// Builds a route stack that applies policy filters to requests and
     /// distributes requests over each route's backends. These [`Concrete`]
     /// backends are expected to be cached/shared by the inner stack.
     pub(crate) fn layer<N, S>(
-        metrics: Metrics<Self>,
+        metrics: Metrics<Self, MatchedBackend<T, M, F>>,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
@@ -173,7 +200,7 @@ where
             svc::stack(inner)
                 // Distribute requests across route backends, applying policies
                 // and filters for each of the route-backends.
-                .push(MatchedBackend::layer(/*metrics.backend.clone()*/))
+                .push(MatchedBackend::layer(metrics.backend.clone()))
                 .lift_new_with_target()
                 .push(NewDistribute::layer())
                 // The router does not take the backend's availability into

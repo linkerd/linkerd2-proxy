@@ -232,6 +232,19 @@ where
     }
 }
 
+impl<DurL, TotL> Default for ResponseMetrics<DurL, TotL>
+where
+    TotL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self {
+            duration: DurationFamily::new_with_constructor(MkDurationHistogram(())),
+            total: Default::default(),
+        }
+    }
+}
+
 // === impl NewRecordResponse ===
 
 impl<M, X, K, N> NewRecordResponse<M, X, K, N>
