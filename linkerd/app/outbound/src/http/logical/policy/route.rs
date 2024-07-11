@@ -1,7 +1,13 @@
 use super::super::Concrete;
 use crate::{ParentRef, RouteRef};
-use linkerd_app_core::{classify, metrics::prom, proxy::http, svc, Addr, Error, Result};
+use linkerd_app_core::{
+    classify,
+    metrics::prom::{self, EncodeLabelSetMut},
+    proxy::http,
+    svc, Addr, Error, Result,
+};
 use linkerd_distribute as distribute;
+use linkerd_http_prom::record_response::MkStreamLabel;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -9,19 +15,25 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 pub(crate) mod backend;
 pub(crate) mod extensions;
 pub(crate) mod filters;
-mod metrics;
+pub(crate) mod metrics;
 #[allow(dead_code)]
 pub(crate) mod retry;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
-use self::metrics::RouteLabels;
+use self::metrics::labels::Route as RouteLabels;
 
-#[derive(Clone, Debug, Default)]
-pub struct RouteMetrics {
+#[derive(Clone, Debug)]
+pub struct RouteMetrics<RspL> {
     retry: retry::RouteRetryMetrics,
-    backend: backend::RouteBackendMetrics,
+    request_duration: metrics::RequestDuration<RspL>, // backend: backend::RouteBackendMetrics,
 }
+
+pub type HttpRouteMetrics = RouteMetrics<metrics::labels::HttpRsp>;
+pub type GrpcRouteMetrics = RouteMetrics<metrics::labels::GrpcRsp>;
+
+#[derive(Clone, Debug)]
+pub struct ExtractRequestDurationParams<L>(metrics::RequestDuration<L>);
 
 /// A target type that includes a summary of exactly how a request was matched.
 /// This match state is required to apply route filters.
@@ -72,14 +84,23 @@ struct RouteError {
 
 // === impl RouteMetrics ===
 
-impl RouteMetrics {
+impl<RspL> RouteMetrics<RspL>
+where
+    RspL:
+        EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+{
     pub fn register(reg: &mut prom::Registry) -> Self {
-        let backend =
-            backend::RouteBackendMetrics::register(reg.sub_registry_with_prefix("backend"));
+        let route = metrics::RequestDuration::register(reg);
+
+        // let backend =
+        //     backend::RouteBackendMetrics::register(reg.sub_registry_with_prefix("backend"));
 
         let retry = retry::RouteRetryMetrics::register(reg.sub_registry_with_prefix("retry"));
 
-        Self { backend, retry }
+        Self {
+            request_duration: route,
+            /*backend,*/ retry,
+        }
     }
 
     // #[cfg(test)]
@@ -93,9 +114,22 @@ impl RouteMetrics {
     // }
 }
 
+impl<L> Default for RouteMetrics<L>
+where
+    L: EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self {
+            request_duration: metrics::RequestDuration::default(),
+            // backend: backend::RouteBackendMetrics::default(),
+            retry: retry::RouteRetryMetrics::default(),
+        }
+    }
+}
+
 // === impl MatchedRoute ===
 
-impl<T, M, F, P> MatchedRoute<T, M, F, P>
+impl<T, RspL, M, F, P> MatchedRoute<T, M, F, P>
 where
     // Parent target.
     T: Debug + Eq + Hash,
@@ -107,17 +141,21 @@ where
     F: Clone + Send + Sync + 'static,
     // Route params.
     P: Clone + Send + Sync + 'static,
+    // Response labels.
+    RspL:
+        EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
     Self: svc::Param<extensions::Params>,
+    Self: MkStreamLabel<EncodeLabelSet = metrics::labels::RouteRsp<RspL>>,
     MatchedBackend<T, M, F>: filters::Apply,
 {
     /// Builds a route stack that applies policy filters to requests and
     /// distributes requests over each route's backends. These [`Concrete`]
     /// backends are expected to be cached/shared by the inner stack.
     pub(crate) fn layer<N, S>(
-        metrics: RouteMetrics,
+        metrics: RouteMetrics<RspL>,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
@@ -135,7 +173,7 @@ where
             svc::stack(inner)
                 // Distribute requests across route backends, applying policies
                 // and filters for each of the route-backends.
-                .push(MatchedBackend::layer(metrics.backend.clone()))
+                .push(MatchedBackend::layer(/*metrics.backend.clone()*/))
                 .lift_new_with_target()
                 .push(NewDistribute::layer())
                 // The router does not take the backend's availability into
@@ -198,6 +236,30 @@ impl<T> filters::Apply for Http<T> {
     }
 }
 
+impl<T> MkStreamLabel for Http<T> {
+    type EncodeLabelSet = metrics::labels::HttpRouteRsp;
+    type StreamLabel = metrics::LabelHttpRouteRsp;
+
+    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+        let parent = self.params.parent_ref.clone();
+        let route = self.params.route_ref.clone();
+        Some(metrics::LabelHttpRsp::from(metrics::labels::Route::from((
+            parent, route,
+        ))))
+    }
+}
+
+impl<T: Clone> svc::ExtractParam<metrics::HttpRouteRequestDurationParams<Http<T>>, Http<T>>
+    for ExtractRequestDurationParams<metrics::labels::HttpRsp>
+{
+    fn extract_param(&self, target: &Http<T>) -> metrics::HttpRouteRequestDurationParams<Http<T>> {
+        metrics::HttpRouteRequestDurationParams {
+            labeler: target.clone(),
+            metric: self.0.clone(),
+        }
+    }
+}
+
 impl<T> svc::Param<extensions::Params> for Http<T> {
     fn param(&self) -> extensions::Params {
         let retry = self.params.params.retry.clone();
@@ -234,6 +296,30 @@ impl<T> filters::Apply for Grpc<T> {
     #[inline]
     fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()> {
         filters::apply_grpc_response(&self.params.filters, rsp)
+    }
+}
+
+impl<T: Clone> svc::ExtractParam<metrics::GrpcRouteRequestDurationParams<Grpc<T>>, Grpc<T>>
+    for ExtractRequestDurationParams<metrics::labels::GrpcRsp>
+{
+    fn extract_param(&self, target: &Grpc<T>) -> metrics::GrpcRouteRequestDurationParams<Grpc<T>> {
+        metrics::GrpcRouteRequestDurationParams {
+            labeler: target.clone(),
+            metric: self.0.clone(),
+        }
+    }
+}
+
+impl<T> MkStreamLabel for Grpc<T> {
+    type EncodeLabelSet = metrics::labels::GrpcRouteRsp;
+    type StreamLabel = metrics::LabelGrpcRouteRsp;
+
+    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+        let parent = self.params.parent_ref.clone();
+        let route = self.params.route_ref.clone();
+        Some(metrics::LabelGrpcRsp::from(metrics::labels::Route::from((
+            parent, route,
+        ))))
     }
 }
 

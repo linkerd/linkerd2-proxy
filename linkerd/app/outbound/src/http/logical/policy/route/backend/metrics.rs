@@ -1,10 +1,12 @@
+#![allow(warnings)]
+
 use crate::{BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{
-    metrics::prom::{self, encoding::*, EncodeLabelSetMut, Histogram},
+    metrics::prom::{self, encoding::*, EncodeLabelSetMut},
     // svc,
 };
+// use linkerd_http_prom::record_response::ResponseDuration;
 // use linkerd_http_prom::HttpMetricsFamiles;
-use prometheus_client::metrics::family::MetricConstructor;
 
 // pub type BackendHttpMetrics =
 //     linkerd_http_prom::HttpMetrics<RouteBackendLabels, RequestDurationHistogram>;
@@ -16,23 +18,24 @@ use prometheus_client::metrics::family::MetricConstructor;
 //     N,
 // >;
 
-#[derive(Clone, Debug, Default)]
-pub struct RouteBackendMetrics {
+#[derive(Debug)]
+pub struct RouteBackendMetrics<RspL> {
     // metrics: HttpMetricsFamiles<RouteBackendLabels, RequestDurationHistogram>,
+    // response_duration: ResponseDuration<RspL>,
+    _marker: std::marker::PhantomData<RspL>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RouteBackendLabels(ParentRef, RouteRef, BackendRef);
 
-#[derive(Clone, Debug, Default)]
-pub struct RequestDurationHistogram;
-
 // === impl RouteBackendMetrics ===
 
-impl RouteBackendMetrics {
-    pub fn register(_reg: &mut prom::Registry) -> Self {
+impl<RspL> RouteBackendMetrics<RspL> {
+    pub fn register(reg: &mut prom::Registry) -> Self {
+        // let response_duration = ResponseDuration::register(reg);
+        // Self { response_duration }
         Self {
-            // metrics: HttpMetricsFamiles::register(reg, RequestDurationHistogram),
+            _marker: std::marker::PhantomData,
         }
     }
 
@@ -52,6 +55,26 @@ impl RouteBackendMetrics {
 //     }
 // }
 
+impl<L> Clone for RouteBackendMetrics<L> {
+    fn clone(&self) -> Self {
+        Self {
+            // metrics: self.metrics.clone(),
+            // response_duration: self.response_duration.clone(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<L> Default for RouteBackendMetrics<L> {
+    fn default() -> Self {
+        Self {
+            // metrics: Default::default(),
+            // response_duration: Default::default(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 // === impl RouteBackendLabels ===
 
 impl EncodeLabelSetMut for RouteBackendLabels {
@@ -67,17 +90,5 @@ impl EncodeLabelSetMut for RouteBackendLabels {
 impl EncodeLabelSet for RouteBackendLabels {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
-    }
-}
-
-// === impl RequestDurationHistogram ===
-
-impl RequestDurationHistogram {
-    const BUCKETS: &'static [f64] = &[0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0];
-}
-
-impl MetricConstructor<Histogram> for RequestDurationHistogram {
-    fn new_metric(&self) -> Histogram {
-        Histogram::new(Self::BUCKETS.iter().copied())
     }
 }

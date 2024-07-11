@@ -32,8 +32,8 @@ pub struct Http<T>(T);
 #[derive(Clone, Debug, Default)]
 pub struct HttpMetrics {
     balancer: concrete::BalancerMetrics,
-    http_route: policy::RouteMetrics,
-    grpc_route: policy::RouteMetrics,
+    http_route: policy::HttpRouteMetrics,
+    grpc_route: policy::GrpcRouteMetrics,
 }
 
 pub fn spawn_routes<T>(
@@ -132,12 +132,12 @@ where
 impl HttpMetrics {
     pub fn register(registry: &mut prom::Registry) -> Self {
         let http = registry.sub_registry_with_prefix("http");
-        let http_route = policy::RouteMetrics::register(http.sub_registry_with_prefix("route"));
+        let http_route = policy::HttpRouteMetrics::register(http.sub_registry_with_prefix("route"));
         let balancer =
             concrete::BalancerMetrics::register(http.sub_registry_with_prefix("balancer"));
 
         let grpc = registry.sub_registry_with_prefix("grpc");
-        let grpc_route = policy::RouteMetrics::register(grpc.sub_registry_with_prefix("route"));
+        let grpc_route = policy::GrpcRouteMetrics::register(grpc.sub_registry_with_prefix("route"));
 
         Self {
             balancer,

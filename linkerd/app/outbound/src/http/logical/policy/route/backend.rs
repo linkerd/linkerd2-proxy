@@ -7,7 +7,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 mod metrics;
 
-pub use self::metrics::{/*BackendHttpMetrics,*/ RouteBackendMetrics};
+// pub use self::metrics::{BackendHttpMetrics, RouteBackendMetrics};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Backend<T, F> {
@@ -74,8 +74,7 @@ where
     ///
     /// This [`MatchedBackend`] must implement [`filters::Apply`] to apply these
     /// filters.
-    pub(crate) fn layer<N, S>(
-        _metrics: RouteBackendMetrics,
+    pub(crate) fn layer<N, S>(// _metrics: RouteBackendMetrics,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
