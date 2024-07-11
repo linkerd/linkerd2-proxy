@@ -4,8 +4,7 @@ use super::{
 };
 use crate::{BackendRef, EndpointRef, ParentRef, RouteRef};
 use linkerd_app_core::{
-    classify, metrics::prom::EncodeLabelSetMut, proxy::http, svc, transport::addrs::*, Addr, Error,
-    NameAddr, Result,
+    classify, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result,
 };
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
@@ -43,7 +42,7 @@ type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, 
 
 // === impl Router ===
 
-impl<T, RspL, M, F, P> Router<T, M, F, P>
+impl<T, M, F, P> Router<T, M, F, P>
 where
     // Parent target type.
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
@@ -57,9 +56,6 @@ where
     // Route policy.
     P: Debug + Eq + Hash,
     P: Clone + Send + Sync + 'static,
-    // Response labels.
-    RspL:
-        EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
     // Assert that we can route for the given match and filter types.
     Self: svc::router::SelectRoute<
         http::Request<http::BoxBody>,
@@ -67,9 +63,9 @@ where
         Error = NoRoute,
     >,
     route::MatchedRoute<T, M::Summary, F, P>: route::filters::Apply
-        + route::metrics::MkStreamLabel<EncodeLabelSet = route::metrics::labels::RouteRsp<RspL>>
         + svc::Param<classify::Request>
-        + svc::Param<route::extensions::Params>,
+        + svc::Param<route::extensions::Params>
+        + route::metrics::MkStreamLabel,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
     // route::backend::RouteBackendMetrics: svc::ExtractParam<
     //     route::backenzd::BackendHttpMetrics,
@@ -79,7 +75,7 @@ where
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.
     pub(super) fn layer<N, S>(
-        metrics: route::RouteMetrics<RspL>,
+        metrics: route::Metrics<route::MatchedRoute<T, M::Summary, F, P>>,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.

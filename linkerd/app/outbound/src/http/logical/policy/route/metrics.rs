@@ -3,7 +3,7 @@ use linkerd_http_prom::record_response::{self, StreamLabel};
 
 pub use linkerd_http_prom::record_response::MkStreamLabel;
 
-pub type RouteRequestDuration<RspL> = record_response::RequestDuration<labels::RouteRsp<RspL>>;
+pub type RequestMetrics<DurL, TotL> = record_response::RequestMetrics<DurL, TotL>;
 
 #[derive(Clone, Debug)]
 pub struct ExtractRecordDurationParams<M>(M);
@@ -13,6 +13,7 @@ pub struct ExtractRecordDurationParams<M>(M);
 pub struct LabelHttpRsp<L> {
     parent: L,
     status: Option<http::StatusCode>,
+    error: Option<labels::Error>,
 }
 
 /// Tracks gRPC streams to produce response labels.
@@ -20,6 +21,7 @@ pub struct LabelHttpRsp<L> {
 pub struct LabelGrpcRsp<L> {
     parent: L,
     status: Option<tonic::Code>,
+    error: Option<labels::Error>,
 }
 
 pub type LabelHttpRouteRsp = LabelHttpRsp<labels::Route>;
@@ -28,13 +30,14 @@ pub type LabelGrpcRouteRsp = LabelGrpcRsp<labels::Route>;
 pub type NewRecordDuration<T, M, N> =
     record_response::NewRecordResponse<T, ExtractRecordDurationParams<M>, M, N>;
 
-pub fn request_duration<T, RspL, N>(
-    metric: RouteRequestDuration<RspL>,
-) -> impl svc::Layer<N, Service = NewRecordDuration<T, RouteRequestDuration<RspL>, N>> + Clone
+pub fn request_duration<T, N>(
+    metric: RequestMetrics<T::DurationLabels, T::TotalLabels>,
+) -> impl svc::Layer<
+    N,
+    Service = NewRecordDuration<T, RequestMetrics<T::DurationLabels, T::TotalLabels>, N>,
+> + Clone
 where
-    T: Clone + MkStreamLabel<EncodeLabelSet = labels::RouteRsp<RspL>>,
-    RspL:
-        EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+    T: Clone + MkStreamLabel,
 {
     NewRecordDuration::layer_via(ExtractRecordDurationParams(metric))
 }
@@ -61,6 +64,7 @@ impl<P> From<P> for LabelHttpRsp<P> {
         Self {
             parent,
             status: None,
+            error: None,
         }
     }
 }
@@ -69,23 +73,28 @@ impl<P> StreamLabel for LabelHttpRsp<P>
 where
     P: EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
 {
-    type EncodeLabelSet = labels::Rsp<P, labels::HttpRsp>;
+    type DurationLabels = P;
+    type TotalLabels = labels::Rsp<P, labels::HttpRsp>;
 
     fn init_response<B>(&mut self, rsp: &http::Response<B>) {
         self.status = Some(rsp.status());
     }
 
-    fn end_response(
-        self,
-        res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>,
-    ) -> Self::EncodeLabelSet {
+    fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
         // TODO handle H2 errors distinctly.
-        let error = res.err().map(labels::Error::new);
+        self.error = res.err().map(labels::Error::new);
+    }
+
+    fn duration_labels(&self) -> Self::DurationLabels {
+        self.parent.clone()
+    }
+
+    fn total_labels(&self) -> Self::TotalLabels {
         labels::Rsp(
             self.parent.clone(),
             labels::HttpRsp {
                 status: self.status,
-                error,
+                error: self.error,
             },
         )
     }
@@ -98,6 +107,7 @@ impl<P> From<P> for LabelGrpcRsp<P> {
         Self {
             parent,
             status: None,
+            error: None,
         }
     }
 }
@@ -106,7 +116,8 @@ impl<P> StreamLabel for LabelGrpcRsp<P>
 where
     P: EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
 {
-    type EncodeLabelSet = labels::Rsp<P, labels::GrpcRsp>;
+    type DurationLabels = P;
+    type TotalLabels = labels::Rsp<P, labels::GrpcRsp>;
 
     fn init_response<B>(&mut self, rsp: &http::Response<B>) {
         self.status = rsp
@@ -115,11 +126,8 @@ where
             .map(|v| tonic::Code::from_bytes(v.as_bytes()));
     }
 
-    fn end_response(
-        self,
-        res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>,
-    ) -> Self::EncodeLabelSet {
-        let status = self.status.or_else(|| {
+    fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
+        self.status = self.status.or_else(|| {
             let trailers = res.ok().flatten()?;
             trailers
                 .get("grpc-status")
@@ -127,9 +135,21 @@ where
         });
 
         // TODO handle H2 errors distinctly.
-        let error = res.err().map(labels::Error::new);
+        self.error = res.err().map(labels::Error::new);
+    }
 
-        labels::Rsp(self.parent.clone(), labels::GrpcRsp { status, error })
+    fn duration_labels(&self) -> Self::DurationLabels {
+        self.parent.clone()
+    }
+
+    fn total_labels(&self) -> Self::TotalLabels {
+        labels::Rsp(
+            self.parent.clone(),
+            labels::GrpcRsp {
+                status: self.status,
+                error: self.error,
+            },
+        )
     }
 }
 
@@ -193,7 +213,7 @@ pub mod labels {
         }
     }
 
-    // === impl RouteRsp ===
+    // === impl Rsp ===
 
     impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSetMut for Rsp<P, L> {
         fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
