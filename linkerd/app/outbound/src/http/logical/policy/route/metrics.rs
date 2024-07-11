@@ -9,6 +9,7 @@ pub type RequestDurationParams<T, RspL> = record_response::Params<T, RequestDura
 pub type HttpRouteRequestDurationParams<T> = RequestDurationParams<T, labels::HttpRsp>;
 pub type GrpcRouteRequestDurationParams<T> = RequestDurationParams<T, labels::GrpcRsp>;
 
+/// Tracks HTTP streams to produce
 #[derive(Clone, Debug)]
 pub struct LabelHttpRsp<L> {
     parent: L,
@@ -47,9 +48,10 @@ where
 
     fn end_response(
         self,
-        trailers: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>,
+        res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>,
     ) -> Self::EncodeLabelSet {
-        let error = trailers.err().map(labels::Error::new);
+        // TODO handle H2 errors distinctly.
+        let error = res.err().map(labels::Error::new);
         labels::Rsp(
             self.parent.clone(),
             labels::HttpRsp {
@@ -86,22 +88,23 @@ where
 
     fn end_response(
         self,
-        trailers: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>,
+        res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>,
     ) -> Self::EncodeLabelSet {
         let status = self.status.or_else(|| {
+            let trailers = res.ok().flatten()?;
             trailers
-                .ok()
-                .flatten()?
                 .get("grpc-status")
                 .map(|v| tonic::Code::from_bytes(v.as_bytes()))
         });
 
-        let error = trailers.err().map(labels::Error::new);
+        // TODO handle H2 errors distinctly.
+        let error = res.err().map(labels::Error::new);
 
         labels::Rsp(self.parent.clone(), labels::GrpcRsp { status, error })
     }
 }
 
+/// Prometheus label types.
 pub mod labels {
     use linkerd_app_core::metrics::prom::EncodeLabelSetMut;
     use linkerd_app_core::Error as BoxError;
@@ -205,24 +208,24 @@ pub mod labels {
 
             (
                 "grpc_status",
-                match status {
-                    Some(tonic::Code::Ok) => "ok",
-                    Some(tonic::Code::Cancelled) => "cancelled",
-                    Some(tonic::Code::Unknown) | None => "unknown",
-                    Some(tonic::Code::InvalidArgument) => "invalid_argument",
-                    Some(tonic::Code::DeadlineExceeded) => "deadline_exceeded",
-                    Some(tonic::Code::NotFound) => "not_found",
-                    Some(tonic::Code::AlreadyExists) => "already_exists",
-                    Some(tonic::Code::PermissionDenied) => "permission_denied",
-                    Some(tonic::Code::ResourceExhausted) => "resource-exhausted",
-                    Some(tonic::Code::FailedPrecondition) => "failed-precondition",
-                    Some(tonic::Code::Aborted) => "aborted",
-                    Some(tonic::Code::OutOfRange) => "out_of_range",
-                    Some(tonic::Code::Unimplemented) => "unimplemented",
-                    Some(tonic::Code::Internal) => "internal",
-                    Some(tonic::Code::Unavailable) => "unavailable",
-                    Some(tonic::Code::DataLoss) => "data_loss",
-                    Some(tonic::Code::Unauthenticated) => "unauthenticated",
+                match status.unwrap_or(tonic::Code::Unknown) {
+                    tonic::Code::Ok => "OK",
+                    tonic::Code::Cancelled => "CANCELLED",
+                    tonic::Code::InvalidArgument => "INVALID_ARGUMENT",
+                    tonic::Code::DeadlineExceeded => "DEADLINE_EXCEEDED",
+                    tonic::Code::NotFound => "NOT_FOUND",
+                    tonic::Code::AlreadyExists => "ALREADY_EXISTS",
+                    tonic::Code::PermissionDenied => "PERMISSION_DENIED",
+                    tonic::Code::ResourceExhausted => "RESOURCE_EXHAUSTED",
+                    tonic::Code::FailedPrecondition => "FAILED_PRECONDITION",
+                    tonic::Code::Aborted => "ABORTED",
+                    tonic::Code::OutOfRange => "OUT_OF_RANGE",
+                    tonic::Code::Unimplemented => "UNIMPLEMENTED",
+                    tonic::Code::Internal => "INTERNAL",
+                    tonic::Code::Unavailable => "UNAVAILABLE",
+                    tonic::Code::DataLoss => "DATA_LOSS",
+                    tonic::Code::Unauthenticated => "UNAUTHENTICATED",
+                    _ => "UNKNOWN",
                 },
             )
                 .encode(enc.encode_label())?;
