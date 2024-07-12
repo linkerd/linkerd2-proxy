@@ -1,13 +1,12 @@
 use super::{super::Concrete, filters};
 use crate::{BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{proxy::http, svc, Error, Result};
+use linkerd_http_prom::record_response::MkStreamLabel;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-mod metrics;
-
-pub use self::metrics::RouteBackendMetrics;
+pub(super) mod metrics;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Backend<T, F> {
@@ -21,6 +20,8 @@ pub(crate) type Http<T> =
     MatchedBackend<T, http_route::http::r#match::RequestMatch, policy::http::Filter>;
 pub(crate) type Grpc<T> =
     MatchedBackend<T, http_route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
+
+pub type Metrics<T> = metrics::RouteBackendMetrics<<T as MkStreamLabel>::StreamLabel>;
 
 /// Wraps errors with backend metadata.
 #[derive(Debug, thiserror::Error)]
@@ -75,7 +76,7 @@ where
     /// This [`MatchedBackend`] must implement [`filters::Apply`] to apply these
     /// filters.
     pub(crate) fn layer<N, S>(
-        metrics: metrics::Metrics<Self>,
+        metrics: Metrics<Self>,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.

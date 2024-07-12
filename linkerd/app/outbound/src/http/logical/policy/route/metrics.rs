@@ -1,12 +1,23 @@
-use linkerd_app_core::{metrics::prom::EncodeLabelSetMut, svc};
+use super::{backend::metrics as backend, retry};
+use linkerd_app_core::{
+    metrics::prom::{self, EncodeLabelSetMut},
+    svc,
+};
 use linkerd_http_prom::record_response::{self, ResponseMetrics, StreamLabel};
 
 pub use linkerd_http_prom::record_response::MkStreamLabel;
 
 pub type RequestMetrics<DurL, TotL> = record_response::RequestMetrics<DurL, TotL>;
 
-#[derive(Clone, Debug)]
-pub struct ExtractRecordDurationParams<M>(M);
+#[derive(Debug)]
+pub struct RouteMetrics<R: StreamLabel, B: StreamLabel> {
+    pub(super) retry: retry::RouteRetryMetrics,
+    pub(super) requests: RequestMetrics<R::DurationLabels, R::TotalLabels>,
+    pub(super) backend: backend::RouteBackendMetrics<B>,
+}
+
+pub type HttpRouteMetrics = RouteMetrics<LabelHttpRouteRsp, LabelHttpRouteBackendRsp>;
+pub type GrpcRouteMetrics = RouteMetrics<LabelGrpcRouteRsp, LabelGrpcRouteBackendRsp>;
 
 /// Tracks HTTP streams to produce response labels.
 #[derive(Clone, Debug)]
@@ -33,6 +44,9 @@ pub type LabelGrpcRouteBackendRsp = LabelGrpcRsp<labels::RouteBackend>;
 pub type NewRecordDuration<T, M, N> =
     record_response::NewRecordResponse<T, ExtractRecordDurationParams<M>, M, N>;
 
+#[derive(Clone, Debug)]
+pub struct ExtractRecordDurationParams<M>(M);
+
 pub fn request_duration<T, N>(
     metric: RequestMetrics<T::DurationLabels, T::TotalLabels>,
 ) -> impl svc::Layer<
@@ -55,6 +69,55 @@ where
     T: Clone + MkStreamLabel,
 {
     NewRecordDuration::layer_via(ExtractRecordDurationParams(metric))
+}
+
+// === impl RouteMetrics ===
+
+impl<R: StreamLabel, B: StreamLabel> Default for RouteMetrics<R, B> {
+    fn default() -> Self {
+        Self {
+            requests: Default::default(),
+            backend: Default::default(),
+            retry: Default::default(),
+        }
+    }
+}
+
+impl<R: StreamLabel, B: StreamLabel> Clone for RouteMetrics<R, B> {
+    fn clone(&self) -> Self {
+        Self {
+            requests: self.requests.clone(),
+            backend: self.backend.clone(),
+            retry: self.retry.clone(),
+        }
+    }
+}
+
+impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
+    pub fn register(reg: &mut prom::Registry) -> Self {
+        let requests = RequestMetrics::register(reg);
+
+        let backend =
+            backend::RouteBackendMetrics::register(reg.sub_registry_with_prefix("backend"));
+
+        let retry = retry::RouteRetryMetrics::register(reg.sub_registry_with_prefix("retry"));
+
+        Self {
+            requests,
+            backend,
+            retry,
+        }
+    }
+
+    // #[cfg(test)]
+    // pub(crate) fn backend_metrics(
+    //     &self,
+    //     p: crate::ParentRef,
+    //     r: RouteRef,
+    //     b: crate::BackendRef,
+    // ) -> backend::BackendHttpMetrics {
+    //     self.backend.get(p, r, b)
+    // }
 }
 
 // === impl ExtractRequestDurationParams ===
@@ -170,8 +233,7 @@ where
 
 /// Prometheus label types.
 pub mod labels {
-    use linkerd_app_core::metrics::prom::EncodeLabelSetMut;
-    use linkerd_app_core::Error as BoxError;
+    use linkerd_app_core::{metrics::prom::EncodeLabelSetMut, Error as BoxError};
     use prometheus_client::encoding::*;
 
     use crate::{BackendRef, ParentRef, RouteRef};

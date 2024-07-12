@@ -1,11 +1,12 @@
 #![allow(warnings)]
 
 use crate::{BackendRef, ParentRef, RouteRef};
+use futures::Stream;
 use linkerd_app_core::{
     metrics::prom::{self, encoding::*, EncodeLabelSetMut},
     // svc,
 };
-use linkerd_http_prom::record_response;
+use linkerd_http_prom::record_response::{self, StreamLabel};
 // use linkerd_http_prom::record_response::ResponseDuration;
 // use linkerd_http_prom::HttpMetricsFamiles;
 
@@ -22,22 +23,15 @@ pub use linkerd_http_prom::record_response::MkStreamLabel;
 //     N,
 // >;
 
-#[derive(Clone, Debug)]
-pub struct RouteBackendMetrics<DurL, TotL> {
+#[derive(Debug)]
+pub struct RouteBackendMetrics<L: StreamLabel> {
     // metrics: HttpMetricsFamiles<RouteBackend, RequestDurationHistogram>,
-    pub(super) responses: record_response::ResponseMetrics<DurL, TotL>,
+    pub(super) responses: record_response::ResponseMetrics<L::DurationLabels, L::TotalLabels>,
 }
-
-pub type Metrics<T> =
-    RouteBackendMetrics<<T as MkStreamLabel>::DurationLabels, <T as MkStreamLabel>::TotalLabels>;
 
 // === impl RouteBackendMetrics ===
 
-impl<RspL> RouteBackendMetrics<labels::RouteBackend, labels::RouteBackendRsp<RspL>>
-where
-    RspL:
-        EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
+impl<L: StreamLabel> RouteBackendMetrics<L> {
     pub fn register(reg: &mut prom::Registry) -> Self {
         let responses = record_response::ResponseMetrics::register(reg);
         Self { responses }
@@ -59,15 +53,20 @@ where
 //     }
 // }
 
-impl<RspL> Default for RouteBackendMetrics<labels::RouteBackend, labels::RouteBackendRsp<RspL>>
-where
-    RspL:
-        EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
+impl<L: StreamLabel> Default for RouteBackendMetrics<L> {
     fn default() -> Self {
         Self {
             // metrics: Default::default(),
             responses: Default::default(),
+        }
+    }
+}
+
+impl<L: StreamLabel> Clone for RouteBackendMetrics<L> {
+    fn clone(&self) -> Self {
+        Self {
+            // metrics: Default::default(),
+            responses: self.responses.clone(),
         }
     }
 }

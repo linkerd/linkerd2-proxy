@@ -76,13 +76,13 @@ pub struct Params<L: MkStreamLabel, M> {
     pub metric: M,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RequestMetrics<DurL, TotL> {
     duration: DurationFamily<DurL>,
     total: Family<TotL, Counter>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ResponseMetrics<DurL, TotL> {
     duration: DurationFamily<DurL>,
     total: Family<TotL, Counter>,
@@ -209,6 +209,15 @@ where
     }
 }
 
+impl<DurL, TotL> Clone for RequestMetrics<DurL, TotL> {
+    fn clone(&self) -> Self {
+        Self {
+            duration: self.duration.clone(),
+            total: self.total.clone(),
+        }
+    }
+}
+
 // === impl RequestDuration ===
 
 impl<DurL, TotL> ResponseMetrics<DurL, TotL>
@@ -241,6 +250,15 @@ where
         Self {
             duration: DurationFamily::new_with_constructor(MkDurationHistogram(())),
             total: Default::default(),
+        }
+    }
+}
+
+impl<DurL, TotL> Clone for ResponseMetrics<DurL, TotL> {
+    fn clone(&self) -> Self {
+        Self {
+            duration: self.duration.clone(),
+            total: self.total.clone(),
         }
     }
 }

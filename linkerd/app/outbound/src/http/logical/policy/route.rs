@@ -1,11 +1,6 @@
 use super::super::Concrete;
 use crate::{ParentRef, RouteRef};
-use linkerd_app_core::{
-    classify,
-    metrics::prom::{self, EncodeLabelSetMut},
-    proxy::http,
-    svc, Addr, Error, Result,
-};
+use linkerd_app_core::{classify, proxy::http, svc, Addr, Error, Result};
 use linkerd_distribute as distribute;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
@@ -22,33 +17,7 @@ pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
 use self::metrics::labels::Route as RouteLabels;
 
-#[derive(Clone, Debug)]
-pub struct RouteMetrics<ReqDurL, ReqTotL, RspDurL, RspTotL> {
-    retry: retry::RouteRetryMetrics,
-    requests: metrics::RequestMetrics<ReqDurL, ReqTotL>,
-    backend: backend::RouteBackendMetrics<RspDurL, RspTotL>,
-}
-
-pub type Metrics<R, B> = RouteMetrics<
-    <R as metrics::MkStreamLabel>::DurationLabels,
-    <R as metrics::MkStreamLabel>::TotalLabels,
-    <B as metrics::MkStreamLabel>::DurationLabels,
-    <B as metrics::MkStreamLabel>::TotalLabels,
->;
-
-pub type HttpRouteMetrics = RouteMetrics<
-    metrics::labels::Route,
-    metrics::labels::HttpRouteRsp,
-    metrics::labels::RouteBackend,
-    metrics::labels::HttpRouteBackendRsp,
->;
-
-pub type GrpcRouteMetrics = RouteMetrics<
-    metrics::labels::Route,
-    metrics::labels::GrpcRouteRsp,
-    metrics::labels::RouteBackend,
-    metrics::labels::GrpcRouteBackendRsp,
->;
+pub use self::metrics::{GrpcRouteMetrics, HttpRouteMetrics};
 
 /// A target type that includes a summary of exactly how a request was matched.
 /// This match state is required to apply route filters.
@@ -88,6 +57,11 @@ pub(crate) type Grpc<T> = MatchedRoute<
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
 
+pub type Metrics<B, R> = metrics::RouteMetrics<
+    <B as metrics::MkStreamLabel>::StreamLabel,
+    <R as metrics::MkStreamLabel>::StreamLabel,
+>;
+
 /// Wraps errors with route metadata.
 #[derive(Debug, thiserror::Error)]
 #[error("route {}: {source}", route.0)]
@@ -95,65 +69,6 @@ struct RouteError {
     route: RouteRef,
     #[source]
     source: Error,
-}
-
-// === impl RouteMetrics ===
-
-impl<RspL>
-    RouteMetrics<
-        metrics::labels::Route,
-        metrics::labels::RouteRsp<RspL>,
-        metrics::labels::RouteBackend,
-        metrics::labels::RouteBackendRsp<RspL>,
-    >
-where
-    RspL:
-        EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
-    pub fn register(reg: &mut prom::Registry) -> Self {
-        let requests = metrics::RequestMetrics::register(reg);
-
-        let backend =
-            backend::RouteBackendMetrics::register(reg.sub_registry_with_prefix("backend"));
-
-        let retry = retry::RouteRetryMetrics::register(reg.sub_registry_with_prefix("retry"));
-
-        Self {
-            requests,
-            backend,
-            retry,
-        }
-    }
-
-    // #[cfg(test)]
-    // pub(crate) fn backend_metrics(
-    //     &self,
-    //     p: crate::ParentRef,
-    //     r: RouteRef,
-    //     b: crate::BackendRef,
-    // ) -> backend::BackendHttpMetrics {
-    //     self.backend.get(p, r, b)
-    // }
-}
-
-impl<RspL> Default
-    for RouteMetrics<
-        metrics::labels::Route,
-        metrics::labels::RouteRsp<RspL>,
-        metrics::labels::RouteBackend,
-        metrics::labels::RouteBackendRsp<RspL>,
-    >
-where
-    RspL:
-        EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
-    fn default() -> Self {
-        Self {
-            requests: metrics::RequestMetrics::default(),
-            backend: backend::RouteBackendMetrics::default(),
-            retry: retry::RouteRetryMetrics::default(),
-        }
-    }
 }
 
 // === impl MatchedRoute ===
