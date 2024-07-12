@@ -64,7 +64,8 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         let retry = configure_retry(req.headers_mut(), self.params.retry.clone());
-        let timeouts = configure_timeouts(req.headers_mut(), self.params.timeouts.clone());
+        let mut timeouts = configure_timeouts(req.headers_mut(), self.params.timeouts.clone());
+        timeouts.response_headers = retry.as_ref().and_then(|r| r.timeout);
         tracing::debug!(?retry, ?timeouts, "Setting extensions");
 
         if let Some(retry) = retry {
@@ -122,7 +123,7 @@ fn configure_retry(req: &mut http::HeaderMap, orig: Option<RetryPolicy>) -> Opti
                 timeout,
                 retryable_http_statuses,
                 retryable_grpc_statuses,
-                max_retries: retry_limit.unwrap_or(3),
+                max_retries: retry_limit.unwrap_or(1),
                 max_request_bytes: 64 * 1024,
                 backoff: Some(ExponentialBackoff::new_unchecked(
                     std::time::Duration::from_millis(25),
@@ -150,10 +151,10 @@ fn configure_timeouts(
             .ok()
             .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
     });
-    let response_timeout = user_response_timeout.or(orig.response).or(timeout);
+    let response_timeout = user_response_timeout.or(orig.response);
 
     http::StreamTimeouts {
-        response_headers: response_timeout,
+        response_headers: None,
         response_end: response_timeout,
         idle: orig.idle,
         limit: timeout.map(Into::into),
