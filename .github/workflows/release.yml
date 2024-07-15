@@ -84,7 +84,7 @@ jobs:
         if: github.event_name == 'pull_request'
       - id: changed
         if: github.event_name == 'pull_request'
-        uses: tj-actions/changed-files@d6babd6899969df1a11d14c368283ea4436bca78
+        uses: tj-actions/changed-files@cc733854b1f224978ef800d29e4709d5ee2883e4
         with:
           files: |
             .github/workflows/release.yml
@@ -150,7 +150,7 @@ jobs:
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} rustup
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} build
       - run: just arch=${{ matrix.arch }} libc=${{ matrix.libc }} profile=${{ needs.meta.outputs.profile }} package
-      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+      - uses: actions/upload-artifact@0b2256b8c012f0828dc542b3febcab082c67f72b
         with:
           name: ${{ matrix.arch }}-artifacts
           path: target/package/*
@@ -188,7 +188,7 @@ jobs:
       - if: needs.meta.outputs.publish == 'true'
         run: git push origin "$TAG"
       - if: needs.meta.outputs.publish == 'true'
-        uses: softprops/action-gh-release@69320dbe05506a9a39fc8ae11030b214ec2d1f87
+        uses: softprops/action-gh-release@a74c6b72af54cfa997e81df42d94703d6313a2d0
         with:
           name: ${{ env.VERSION }}
           tag_name: ${{ env.TAG }}
