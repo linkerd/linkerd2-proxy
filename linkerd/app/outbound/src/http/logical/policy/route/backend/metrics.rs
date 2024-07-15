@@ -24,9 +24,9 @@ pub struct RouteBackendMetrics<L: StreamLabel> {
 // === impl RouteBackendMetrics ===
 
 impl<L: StreamLabel> RouteBackendMetrics<L> {
-    pub fn register(reg: &mut prom::Registry) -> Self {
+    pub fn register(reg: &mut prom::Registry, histo: impl IntoIterator<Item = f64>) -> Self {
         let requests = RequestCountFamilies::register(reg);
-        let responses = record_response::ResponseMetrics::register(reg);
+        let responses = record_response::ResponseMetrics::register(reg, histo);
         Self {
             requests,
             responses,

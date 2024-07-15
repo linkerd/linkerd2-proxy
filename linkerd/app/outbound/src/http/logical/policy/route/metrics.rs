@@ -79,6 +79,22 @@ where
 
 // === impl RouteMetrics ===
 
+impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
+    // There are two histograms for which we need to register metrics: request
+    // durations, measured on routes, and response durations, measured on
+    // route-backends.
+    //
+    // Response duration is probably the more meaninful metric
+    // operationally--and it includes more backend metadata--so we opt to
+    // preserve higher fidelity for response durations (especially for lower
+    // values).
+    //
+    // We elide several buckets for request durations to be conservative about
+    // the costs of tracking these two largely overlapping histograms
+    const REQUEST_BUCKETS: &'static [f64] = &[0.05, 0.5, 1.0, 10.0];
+    const RESPONSE_BUCKETS: &'static [f64] = &[0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 10.0];
+}
+
 impl<R: StreamLabel, B: StreamLabel> Default for RouteMetrics<R, B> {
     fn default() -> Self {
         Self {
@@ -101,10 +117,12 @@ impl<R: StreamLabel, B: StreamLabel> Clone for RouteMetrics<R, B> {
 
 impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
     pub fn register(reg: &mut prom::Registry) -> Self {
-        let requests = RequestMetrics::register(reg);
+        let requests = RequestMetrics::register(reg, Self::REQUEST_BUCKETS.iter().copied());
 
-        let backend =
-            backend::RouteBackendMetrics::register(reg.sub_registry_with_prefix("backend"));
+        let backend = backend::RouteBackendMetrics::register(
+            reg.sub_registry_with_prefix("backend"),
+            Self::RESPONSE_BUCKETS.iter().copied(),
+        );
 
         let retry = retry::RouteRetryMetrics::register(reg.sub_registry_with_prefix("retry"));
 

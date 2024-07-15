@@ -14,6 +14,7 @@ use prometheus_client::{
 use std::{
     future::Future,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 use tokio::{sync::oneshot, time};
@@ -187,8 +188,8 @@ struct ResponseState<L: StreamLabel> {
 
 type DurationFamily<L> = Family<L, Histogram, MkDurationHistogram>;
 
-#[derive(Clone, Debug, Default)]
-struct MkDurationHistogram(());
+#[derive(Clone, Debug)]
+struct MkDurationHistogram(Arc<[f64]>);
 
 // === impl RequestDuration ===
 
@@ -197,8 +198,9 @@ where
     AggL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
     DetL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
 {
-    pub fn register(reg: &mut Registry) -> Self {
-        let duration = DurationFamily::new_with_constructor(MkDurationHistogram(()));
+    pub fn register(reg: &mut Registry, histo: impl IntoIterator<Item = f64>) -> Self {
+        let duration =
+            DurationFamily::new_with_constructor(MkDurationHistogram(histo.into_iter().collect()));
         reg.register_with_unit(
             "request_duration",
             "The time between request initialization and response completion",
@@ -224,7 +226,7 @@ where
 {
     fn default() -> Self {
         Self {
-            duration: DurationFamily::new_with_constructor(MkDurationHistogram(())),
+            duration: DurationFamily::new_with_constructor(MkDurationHistogram(Arc::new([]))),
             total: Default::default(),
         }
     }
@@ -246,8 +248,9 @@ where
     AggL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
     DetL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
 {
-    pub fn register(reg: &mut Registry) -> Self {
-        let duration = DurationFamily::new_with_constructor(MkDurationHistogram(()));
+    pub fn register(reg: &mut Registry, histo: impl IntoIterator<Item = f64>) -> Self {
+        let duration =
+            DurationFamily::new_with_constructor(MkDurationHistogram(histo.into_iter().collect()));
         reg.register_with_unit(
             "response_duration",
             "The time between request completion and response completion",
@@ -269,7 +272,7 @@ where
 {
     fn default() -> Self {
         Self {
-            duration: DurationFamily::new_with_constructor(MkDurationHistogram(())),
+            duration: DurationFamily::new_with_constructor(MkDurationHistogram(Arc::new([]))),
             total: Default::default(),
         }
     }
@@ -590,12 +593,8 @@ where
 
 // === impl MkDurationHistogram ===
 
-impl MkDurationHistogram {
-    const BUCKETS: &'static [f64] = &[0.025, 0.1, 0.25, 1.0, 2.5, 10.0, 25.0];
-}
-
 impl MetricConstructor<Histogram> for MkDurationHistogram {
     fn new_metric(&self) -> Histogram {
-        Histogram::new(Self::BUCKETS.iter().copied())
+        Histogram::new(self.0.iter().copied())
     }
 }
