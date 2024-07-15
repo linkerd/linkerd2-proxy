@@ -1008,7 +1008,7 @@ fn parse_default_policy(
         "all-authenticated" => {
             Ok(inbound::policy::defaults::all_authenticated(detect_timeout).into())
         }
-        "all-unauthenticated" => {
+        "all-unauthenticated" | "audit" => {
             Ok(inbound::policy::defaults::all_unauthenticated(detect_timeout).into())
         }
 
