@@ -60,16 +60,6 @@ where
 #[derive(Clone, Debug)]
 pub struct ExtractRequestCount(RequestCountFamilies<labels::RouteBackend>);
 
-impl<T> svc::ExtractParam<RequestCount, T> for ExtractRequestCount
-where
-    T: svc::Param<ParentRef> + svc::Param<RouteRef> + svc::Param<BackendRef>,
-{
-    fn extract_param(&self, t: &T) -> RequestCount {
-        self.0
-            .metrics(&labels::RouteBackend(t.param(), t.param(), t.param()))
-    }
-}
-
 // === impl RouteBackendMetrics ===
 
 impl<L: StreamLabel> RouteBackendMetrics<L> {
@@ -100,8 +90,20 @@ impl<L: StreamLabel> Default for RouteBackendMetrics<L> {
 impl<L: StreamLabel> Clone for RouteBackendMetrics<L> {
     fn clone(&self) -> Self {
         Self {
-            requests: Default::default(),
+            requests: self.requests.clone(),
             responses: self.responses.clone(),
         }
+    }
+}
+
+// === impl ExtractRequestCount ===
+
+impl<T> svc::ExtractParam<RequestCount, T> for ExtractRequestCount
+where
+    T: svc::Param<ParentRef> + svc::Param<RouteRef> + svc::Param<BackendRef>,
+{
+    fn extract_param(&self, t: &T) -> RequestCount {
+        self.0
+            .metrics(&labels::RouteBackend(t.param(), t.param(), t.param()))
     }
 }
