@@ -183,8 +183,16 @@ where
     }
 
     fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
-        // TODO handle H2 errors distinctly.
-        self.error = res.err().map(labels::Error::new);
+        if let Err(e) = res {
+            match labels::Error::new_or_status(e) {
+                Ok(l) => self.error = Some(l),
+                Err(code) => match http::StatusCode::from_u16(code) {
+                    Ok(s) => self.status = Some(s),
+                    // This is kind of pathological, so mark it as an unkown error.
+                    Err(_) => self.error = Some(labels::Error::Unknown),
+                },
+            }
+        }
     }
 
     fn aggregate_labels(&self) -> Self::AggregateLabels {
@@ -229,15 +237,18 @@ where
     }
 
     fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
-        self.status = self.status.or_else(|| {
-            let trailers = res.ok().flatten()?;
-            trailers
-                .get("grpc-status")
-                .map(|v| tonic::Code::from_bytes(v.as_bytes()))
-        });
-
-        // TODO handle H2 errors distinctly.
-        self.error = res.err().map(labels::Error::new);
+        match res {
+            Ok(Some(trailers)) => {
+                self.status = trailers
+                    .get("grpc-status")
+                    .map(|v| tonic::Code::from_bytes(v.as_bytes()));
+            }
+            Ok(None) => {}
+            Err(e) => match labels::Error::new_or_status(e) {
+                Ok(l) => self.error = Some(l),
+                Err(code) => self.status = Some(tonic::Code::from_i32(i32::from(code))),
+            },
+        }
     }
 
     fn aggregate_labels(&self) -> Self::AggregateLabels {

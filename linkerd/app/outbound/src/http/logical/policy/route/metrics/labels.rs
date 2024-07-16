@@ -1,5 +1,5 @@
 //! Prometheus label types.
-use linkerd_app_core::{metrics::prom::EncodeLabelSetMut, Error as BoxError};
+use linkerd_app_core::{errors, metrics::prom::EncodeLabelSetMut, Error as BoxError};
 use prometheus_client::encoding::*;
 
 use crate::{BackendRef, ParentRef, RouteRef};
@@ -35,6 +35,15 @@ pub struct GrpcRsp {
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Error {
+    FailFast,
+    LoadShed,
+    Timeout,
+    Cancel,
+    Refused,
+    EnhanceYourCalm,
+    Reset,
+    GoAway,
+    Io,
     Unknown,
 }
 
@@ -166,8 +175,57 @@ impl EncodeLabelSet for GrpcRsp {
 // === impl Error ===
 
 impl Error {
-    pub fn new(_err: &BoxError) -> Self {
-        Self::Unknown
+    pub fn new_or_status(error: &BoxError) -> Result<Self, u16> {
+        use super::super::super::errors as policy;
+        use crate::http::{
+            self,
+            h2::{H2Error, Reason},
+        };
+
+        // No available backend can be found for a request.
+        if errors::is_caused_by::<errors::FailFastError>(&**error) {
+            return Ok(Self::FailFast);
+        }
+        if errors::is_caused_by::<errors::LoadShedError>(&**error) {
+            return Ok(Self::LoadShed);
+        }
+
+        if errors::is_caused_by::<http::stream_timeouts::ResponseTimeoutError>(&**error) {
+            return Ok(Self::Timeout);
+        }
+
+        if let Some(policy::HttpRouteRedirect { status, .. }) = errors::cause_ref(&**error) {
+            return Err(status.as_u16());
+        }
+
+        // Policy-driven request failures.
+        if let Some(policy::HttpRouteInjectedFailure { status, .. }) = errors::cause_ref(&**error) {
+            return Err(status.as_u16());
+        }
+        if let Some(policy::GrpcRouteInjectedFailure { code, .. }) = errors::cause_ref(&**error) {
+            return Err(*code);
+        }
+
+        // HTTP/2 errors.
+        if let Some(h2e) = errors::cause_ref::<H2Error>(&**error) {
+            if h2e.is_reset() {
+                match h2e.reason() {
+                    Some(Reason::CANCEL) => return Ok(Self::Cancel),
+                    Some(Reason::REFUSED_STREAM) => return Ok(Self::Refused),
+                    Some(Reason::ENHANCE_YOUR_CALM) => return Ok(Self::EnhanceYourCalm),
+                    _ => return Ok(Self::Reset),
+                }
+            }
+            if h2e.is_go_away() {
+                return Ok(Self::GoAway);
+            }
+            if h2e.is_io() {
+                return Ok(Self::Io);
+            }
+        }
+
+        tracing::debug!(?error, "Unlabeled error");
+        Ok(Self::Unknown)
     }
 }
 
@@ -175,6 +233,15 @@ impl EncodeLabelValue for Error {
     fn encode(&self, enc: &mut LabelValueEncoder<'_>) -> std::fmt::Result {
         use std::fmt::Write;
         match self {
+            Self::FailFast => enc.write_str("fail_fast"),
+            Self::LoadShed => enc.write_str("load_shed"),
+            Self::Timeout => enc.write_str("timeout"),
+            Self::Cancel => enc.write_str("cancel"),
+            Self::Refused => enc.write_str("refused"),
+            Self::EnhanceYourCalm => enc.write_str("enhance_your_calm"),
+            Self::Reset => enc.write_str("reset"),
+            Self::GoAway => enc.write_str("go_away"),
+            Self::Io => enc.write_str("io"),
             Self::Unknown => enc.write_str("unknown"),
         }
     }
