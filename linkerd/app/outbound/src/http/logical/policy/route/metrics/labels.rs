@@ -233,16 +233,16 @@ impl EncodeLabelValue for Error {
     fn encode(&self, enc: &mut LabelValueEncoder<'_>) -> std::fmt::Result {
         use std::fmt::Write;
         match self {
-            Self::FailFast => enc.write_str("fail_fast"),
-            Self::LoadShed => enc.write_str("load_shed"),
-            Self::Timeout => enc.write_str("timeout"),
-            Self::Cancel => enc.write_str("cancel"),
-            Self::Refused => enc.write_str("refused"),
-            Self::EnhanceYourCalm => enc.write_str("enhance_your_calm"),
-            Self::Reset => enc.write_str("reset"),
-            Self::GoAway => enc.write_str("go_away"),
-            Self::Io => enc.write_str("io"),
-            Self::Unknown => enc.write_str("unknown"),
+            Self::FailFast => enc.write_str("FAIL_FAST"),
+            Self::LoadShed => enc.write_str("LOAD_SHED"),
+            Self::Timeout => enc.write_str("TIMEOUT"),
+            Self::Cancel => enc.write_str("CANCEL"),
+            Self::Refused => enc.write_str("REFUSED"),
+            Self::EnhanceYourCalm => enc.write_str("ENHANCE_YOUR_CALM"),
+            Self::Reset => enc.write_str("RESET"),
+            Self::GoAway => enc.write_str("GO_AWAY"),
+            Self::Io => enc.write_str("IO"),
+            Self::Unknown => enc.write_str("UNKNOWN"),
         }
     }
 }
