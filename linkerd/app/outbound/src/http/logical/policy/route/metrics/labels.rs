@@ -8,7 +8,7 @@ use crate::{BackendRef, ParentRef, RouteRef};
 pub struct Route(pub ParentRef, pub RouteRef);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct RouteBackend(ParentRef, RouteRef, BackendRef);
+pub struct RouteBackend(pub ParentRef, pub RouteRef, pub BackendRef);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Rsp<P, L>(pub P, pub L);

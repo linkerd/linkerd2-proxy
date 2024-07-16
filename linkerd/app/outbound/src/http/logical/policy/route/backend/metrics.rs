@@ -4,11 +4,11 @@ use crate::{BackendRef, ParentRef, RouteRef};
 use futures::Stream;
 use linkerd_app_core::{
     metrics::prom::{self, encoding::*, EncodeLabelSetMut},
-    // svc,
+    svc,
 };
 use linkerd_http_prom::{
-    record_response::{self, StreamLabel},
-    RequestCountFamilies,
+    record_response::{self, NewResponseDuration, StreamLabel},
+    NewCountRequests, RequestCount, RequestCountFamilies,
 };
 
 pub use super::super::metrics::*;
@@ -17,8 +17,57 @@ pub use linkerd_http_prom::record_response::MkStreamLabel;
 #[derive(Debug)]
 pub struct RouteBackendMetrics<L: StreamLabel> {
     requests: RequestCountFamilies<labels::RouteBackend>,
-    pub(super) responses:
-        record_response::ResponseMetrics<L::AggregateLabels, L::DetailedSummaryLabels>,
+    responses: ResponseMetrics<L>,
+}
+
+type ResponseMetrics<L> = record_response::ResponseMetrics<
+    <L as StreamLabel>::AggregateLabels,
+    <L as StreamLabel>::DetailedSummaryLabels,
+>;
+
+pub fn layer<T, N>(
+    metrics: &RouteBackendMetrics<T::StreamLabel>,
+) -> impl svc::Layer<
+    N,
+    Service = NewCountRequests<
+        ExtractRequestCount,
+        NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>,
+    >,
+> + Clone
+where
+    T: MkStreamLabel,
+    N: svc::NewService<T>,
+    NewCountRequests<
+        ExtractRequestCount,
+        NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>,
+    >: svc::NewService<T>,
+    NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>:
+        svc::NewService<T>,
+{
+    let RouteBackendMetrics {
+        requests,
+        responses,
+    } = metrics.clone();
+    svc::layer::mk(move |inner| {
+        use svc::Layer;
+        NewCountRequests::layer_via(ExtractRequestCount(requests.clone())).layer(
+            NewRecordDuration::layer_via(ExtractRecordDurationParams(responses.clone()))
+                .layer(inner),
+        )
+    })
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtractRequestCount(RequestCountFamilies<labels::RouteBackend>);
+
+impl<T> svc::ExtractParam<RequestCount, T> for ExtractRequestCount
+where
+    T: svc::Param<ParentRef> + svc::Param<RouteRef> + svc::Param<BackendRef>,
+{
+    fn extract_param(&self, t: &T) -> RequestCount {
+        self.0
+            .metrics(&labels::RouteBackend(t.param(), t.param(), t.param()))
+    }
 }
 
 // === impl RouteBackendMetrics ===

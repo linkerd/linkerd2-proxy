@@ -127,7 +127,7 @@ where
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
-                .push(metrics::request_duration(metrics.requests.clone()))
+                .push(metrics::layer(metrics.requests.clone()))
                 // Configure a classifier to use in the endpoint stack.
                 // FIXME(ver) move this into NewSetExtensions
                 .push(classify::NewClassify::layer())

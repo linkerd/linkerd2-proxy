@@ -99,8 +99,7 @@ where
                      }| concrete,
                 )
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                .push(metrics::response_duration(metrics.responses.clone()))
-                // .push(metrics::NewBackendHttpMetrics::layer_via(metrics.clone()))
+                .push(metrics::layer(&metrics))
                 .push(svc::NewMapErr::layer_with(|t: &Self| {
                     let backend = t.params.concrete.backend_ref.clone();
                     move |source| {

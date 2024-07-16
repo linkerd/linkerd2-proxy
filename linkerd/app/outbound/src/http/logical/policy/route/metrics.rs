@@ -3,7 +3,7 @@ use linkerd_app_core::{
     metrics::prom::{self, EncodeLabelSetMut},
     svc,
 };
-use linkerd_http_prom::record_response::{self, ResponseMetrics, StreamLabel};
+use linkerd_http_prom::record_response::{self, StreamLabel};
 
 pub use linkerd_http_prom::record_response::MkStreamLabel;
 
@@ -47,29 +47,13 @@ pub type NewRecordDuration<T, M, N> =
     record_response::NewRecordResponse<T, ExtractRecordDurationParams<M>, M, N>;
 
 #[derive(Clone, Debug)]
-pub struct ExtractRecordDurationParams<M>(M);
+pub struct ExtractRecordDurationParams<M>(pub M);
 
-pub fn request_duration<T, N>(
+pub fn layer<T, N>(
     metric: RequestMetrics<T::AggregateLabels, T::DetailedSummaryLabels>,
 ) -> impl svc::Layer<
     N,
     Service = NewRecordDuration<T, RequestMetrics<T::AggregateLabels, T::DetailedSummaryLabels>, N>,
-> + Clone
-where
-    T: Clone + MkStreamLabel,
-{
-    NewRecordDuration::layer_via(ExtractRecordDurationParams(metric))
-}
-
-pub fn response_duration<T, N>(
-    metric: ResponseMetrics<T::AggregateLabels, T::DetailedSummaryLabels>,
-) -> impl svc::Layer<
-    N,
-    Service = NewRecordDuration<
-        T,
-        ResponseMetrics<T::AggregateLabels, T::DetailedSummaryLabels>,
-        N,
-    >,
 > + Clone
 where
     T: Clone + MkStreamLabel,
