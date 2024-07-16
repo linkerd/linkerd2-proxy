@@ -115,12 +115,6 @@ where
     }
 }
 
-// impl<T, M, F> svc::Param<http::ResponseTimeout> for MatchedBackend<T, M, F> {
-//     fn param(&self) -> http::ResponseTimeout {
-//         http::ResponseTimeout(self.params.request_timeout)
-//     }
-// }
-
 impl<T, M, F> svc::Param<ParentRef> for MatchedBackend<T, M, F> {
     fn param(&self) -> ParentRef {
         self.params.concrete.parent_ref.clone()
