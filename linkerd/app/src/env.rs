@@ -1008,7 +1008,7 @@ fn parse_default_policy(
         "all-authenticated" => {
             Ok(inbound::policy::defaults::all_authenticated(detect_timeout).into())
         }
-        "all-unauthenticated" | "audit" => {
+        "all-unauthenticated" => {
             Ok(inbound::policy::defaults::all_unauthenticated(detect_timeout).into())
         }
 
@@ -1024,6 +1024,8 @@ fn parse_default_policy(
             detect_timeout,
         )
         .into()),
+
+        "audit" => Ok(inbound::policy::defaults::audit(detect_timeout).into()),
 
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
     }
