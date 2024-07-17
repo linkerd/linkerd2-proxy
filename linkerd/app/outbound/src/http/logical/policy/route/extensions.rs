@@ -186,7 +186,9 @@ fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {
                 }
                 if let Some((start, end)) = cond.split_once('-') {
                     if let (Some(s), Some(e)) = (to_code(start), to_code(end)) {
-                        return Some(s..=e);
+                        if s <= e {
+                            return Some(s..=e);
+                        }
                     }
                 }
 
