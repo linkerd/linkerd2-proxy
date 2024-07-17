@@ -13,6 +13,7 @@ pub type Rule = http::Rule<Policy>;
 pub struct RouteParams {
     pub timeouts: Timeouts,
     pub retry: Option<Retry>,
+    pub allow_l5d_request_headers: bool,
 }
 
 // TODO: keepalive settings, etc.
@@ -270,13 +271,15 @@ pub mod proto {
         meta: &Arc<Meta>,
         proto: outbound::http_route::Rule,
     ) -> Result<Rule, InvalidHttpRoute> {
+        #[allow(deprecated)]
         let outbound::http_route::Rule {
             matches,
             backends,
             filters,
             timeouts,
             retry,
-            ..
+            allow_l5d_request_headers,
+            request_timeout: _,
         } = proto;
 
         let matches = matches
@@ -293,7 +296,7 @@ pub mod proto {
             .ok_or(InvalidHttpRoute::Missing("distribution"))?
             .try_into()?;
 
-        let params = RouteParams::try_from_proto(timeouts, retry)?;
+        let params = RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers)?;
 
         Ok(Rule {
             matches,
@@ -310,6 +313,7 @@ pub mod proto {
         fn try_from_proto(
             timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
             retry: Option<http_route::Retry>,
+            allow_l5d_request_headers: bool,
         ) -> Result<Self, InvalidHttpRoute> {
             Ok(Self {
                 retry: retry.map(Retry::try_from).transpose()?,
@@ -317,6 +321,7 @@ pub mod proto {
                     .map(Timeouts::try_from)
                     .transpose()?
                     .unwrap_or_default(),
+                allow_l5d_request_headers,
             })
         }
     }

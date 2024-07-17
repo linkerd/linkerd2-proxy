@@ -7,6 +7,7 @@ use std::task::{Context, Poll};
 pub struct Params {
     pub retry: Option<RetryPolicy>,
     pub timeouts: policy::http::Timeouts,
+    pub allow_l5d_request_headers: bool,
 }
 
 // A request extension that marks the number of times a request has been
@@ -63,8 +64,8 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        let retry = configure_retry(req.headers_mut(), self.params.retry.clone());
-        let mut timeouts = configure_timeouts(req.headers_mut(), self.params.timeouts.clone());
+        let retry = self.configure_retry(req.headers_mut());
+        let mut timeouts = self.configure_timeouts(req.headers_mut());
         timeouts.response_headers = retry.as_ref().and_then(|r| r.timeout);
         tracing::debug!(?retry, ?timeouts, "Setting extensions");
 
@@ -84,80 +85,94 @@ where
         self.inner.call(req)
     }
 }
+impl<S> SetExtensions<S> {
+    fn configure_retry(&self, req: &mut http::HeaderMap) -> Option<RetryPolicy> {
+        if !self.params.allow_l5d_request_headers {
+            return self.params.retry.clone();
+        }
 
-fn configure_retry(req: &mut http::HeaderMap, orig: Option<RetryPolicy>) -> Option<RetryPolicy> {
-    let user_retry_http = req
-        .remove("l5d-retry-http")
-        .and_then(|val| val.to_str().ok().and_then(parse_http_conditions));
-    let user_retry_grpc = req
-        .remove("l5d-retry-grpc")
-        .and_then(|val| val.to_str().ok().and_then(parse_grpc_conditions));
-    let user_retry_limit = req
-        .remove("l5d-retry-limit")
-        .and_then(|val| val.to_str().ok().and_then(|v| v.parse::<usize>().ok()));
-    let user_retry_timeout = req.remove("l5d-retry-timeout").and_then(|val| {
-        val.to_str()
-            .ok()
-            .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
-    });
-
-    if let Some(retry) = orig {
-        return Some(RetryPolicy {
-            timeout: user_retry_timeout.or(retry.timeout),
-            retryable_http_statuses: user_retry_http.or(retry.retryable_http_statuses.clone()),
-            retryable_grpc_statuses: user_retry_grpc.or(retry.retryable_grpc_statuses.clone()),
-            max_retries: user_retry_limit.unwrap_or(retry.max_retries),
-            ..retry
+        let user_retry_http = req
+            .remove("l5d-retry-http")
+            .and_then(|val| val.to_str().ok().and_then(parse_http_conditions));
+        let user_retry_grpc = req
+            .remove("l5d-retry-grpc")
+            .and_then(|val| val.to_str().ok().and_then(parse_grpc_conditions));
+        let user_retry_limit = req
+            .remove("l5d-retry-limit")
+            .and_then(|val| val.to_str().ok().and_then(|v| v.parse::<usize>().ok()));
+        let user_retry_timeout = req.remove("l5d-retry-timeout").and_then(|val| {
+            val.to_str()
+                .ok()
+                .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
         });
-    }
 
-    match (
-        user_retry_http,
-        user_retry_grpc,
-        user_retry_limit,
-        user_retry_timeout,
-    ) {
-        (None, None, None, None) => None,
-        (retryable_http_statuses, retryable_grpc_statuses, retry_limit, timeout) => {
-            Some(RetryPolicy {
-                timeout,
-                retryable_http_statuses,
-                retryable_grpc_statuses,
-                max_retries: retry_limit.unwrap_or(1),
-                max_request_bytes: 64 * 1024,
-                backoff: Some(ExponentialBackoff::new_unchecked(
-                    std::time::Duration::from_millis(25),
-                    std::time::Duration::from_millis(250),
-                    1.0,
-                )),
-            })
+        if let Some(retry) = self.params.retry.clone() {
+            return Some(RetryPolicy {
+                timeout: user_retry_timeout.or(retry.timeout),
+                retryable_http_statuses: user_retry_http.or(retry.retryable_http_statuses.clone()),
+                retryable_grpc_statuses: user_retry_grpc.or(retry.retryable_grpc_statuses.clone()),
+                max_retries: user_retry_limit.unwrap_or(retry.max_retries),
+                ..retry
+            });
+        }
+
+        match (
+            user_retry_http,
+            user_retry_grpc,
+            user_retry_limit,
+            user_retry_timeout,
+        ) {
+            (None, None, None, None) => None,
+            (retryable_http_statuses, retryable_grpc_statuses, retry_limit, timeout) => {
+                Some(RetryPolicy {
+                    timeout,
+                    retryable_http_statuses,
+                    retryable_grpc_statuses,
+                    max_retries: retry_limit.unwrap_or(1),
+                    max_request_bytes: 64 * 1024,
+                    backoff: Some(ExponentialBackoff::new_unchecked(
+                        std::time::Duration::from_millis(25),
+                        std::time::Duration::from_millis(250),
+                        1.0,
+                    )),
+                })
+            }
         }
     }
-}
 
-fn configure_timeouts(
-    req: &mut http::HeaderMap,
-    orig: policy::http::Timeouts,
-) -> http::StreamTimeouts {
-    let user_timeout = req.remove("l5d-timeout").and_then(|val| {
-        val.to_str()
-            .ok()
-            .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
-    });
-    let timeout = user_timeout.or(orig.request);
+    fn configure_timeouts(&self, req: &mut http::HeaderMap) -> http::StreamTimeouts {
+        let user_timeout = self
+            .params
+            .allow_l5d_request_headers
+            .then(|| {
+                req.remove("l5d-timeout").and_then(|val| {
+                    val.to_str()
+                        .ok()
+                        .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
+                })
+            })
+            .flatten();
+        let timeout = user_timeout.or(self.params.timeouts.request);
 
-    let user_response_timeout = req.remove("l5d-response-timeout").and_then(|val| {
-        val.to_str()
-            .ok()
-            .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
-    });
-    let response_timeout = user_response_timeout.or(orig.response);
+        let user_response_timeout = self
+            .params
+            .allow_l5d_request_headers
+            .then(|| {
+                req.remove("l5d-response-timeout").and_then(|val| {
+                    val.to_str()
+                        .ok()
+                        .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
+                })
+            })
+            .flatten();
+        let response_timeout = user_response_timeout.or(self.params.timeouts.response);
 
-    http::StreamTimeouts {
-        response_headers: None,
-        response_end: response_timeout,
-        idle: orig.idle,
-        limit: timeout.map(Into::into),
+        http::StreamTimeouts {
+            response_headers: None,
+            response_end: response_timeout,
+            idle: self.params.timeouts.idle,
+            limit: timeout.map(Into::into),
+        }
     }
 }
 

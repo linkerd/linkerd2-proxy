@@ -13,6 +13,7 @@ pub type Rule = grpc::Rule<Policy>;
 pub struct RouteParams {
     pub timeouts: crate::http::Timeouts,
     pub retry: Option<Retry>,
+    pub allow_l5d_request_headers: bool,
 }
 
 // TODO HTTP2 settings
@@ -232,13 +233,15 @@ pub mod proto {
         meta: &Arc<Meta>,
         proto: outbound::grpc_route::Rule,
     ) -> Result<Rule, InvalidGrpcRoute> {
+        #[allow(deprecated)]
         let outbound::grpc_route::Rule {
             matches,
             backends,
             filters,
             timeouts,
             retry,
-            ..
+            allow_l5d_request_headers,
+            request_timeout: _,
         } = proto;
 
         let matches = matches
@@ -255,7 +258,7 @@ pub mod proto {
             .ok_or(InvalidGrpcRoute::Missing("distribution"))?
             .try_into()?;
 
-        let params = RouteParams::try_from_proto(timeouts, retry)?;
+        let params = RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers)?;
 
         Ok(Rule {
             matches,
@@ -272,6 +275,7 @@ pub mod proto {
         fn try_from_proto(
             timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
             retry: Option<grpc_route::Retry>,
+            allow_l5d_request_headers: bool,
         ) -> Result<Self, InvalidGrpcRoute> {
             Ok(Self {
                 retry: retry.map(Retry::try_from).transpose()?,
@@ -279,6 +283,7 @@ pub mod proto {
                     .map(crate::http::Timeouts::try_from)
                     .transpose()?
                     .unwrap_or_default(),
+                allow_l5d_request_headers,
             })
         }
     }

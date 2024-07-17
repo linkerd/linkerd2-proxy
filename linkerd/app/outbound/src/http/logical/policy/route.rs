@@ -206,6 +206,7 @@ impl<T> svc::Param<extensions::Params> for Http<T> {
                 retryable_http_statuses: Some(r.status_ranges.clone()),
                 retryable_grpc_statuses: None,
             }),
+            allow_l5d_request_headers: self.params.params.allow_l5d_request_headers,
         }
     }
 }
@@ -259,6 +260,7 @@ impl<T> svc::Param<extensions::Params> for Grpc<T> {
                 retryable_http_statuses: None,
                 retryable_grpc_statuses: Some(r.codes.clone()),
             }),
+            allow_l5d_request_headers: self.params.params.allow_l5d_request_headers,
         }
     }
 }
