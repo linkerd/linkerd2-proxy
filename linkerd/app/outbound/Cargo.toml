@@ -35,6 +35,7 @@ linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
 linkerd-distribute = { path = "../../distribute" }
 linkerd-http-classify = { path = "../../http/classify" }
+linkerd-http-prom = { path = "../../http/prom" }
 linkerd-http-retry = { path = "../../http/retry" }
 linkerd-http-route = { path = "../../http/route" }
 linkerd-identity = { path = "../../identity" }
@@ -49,6 +50,7 @@ linkerd-tonic-watch = { path = "../../tonic-watch" }
 [dev-dependencies]
 hyper = { version = "0.14", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test", features = ["client-policy"] }
+linkerd-http-prom = { path = "../../http/prom", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [

@@ -42,7 +42,7 @@ type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, 
 
 // === impl Router ===
 
-impl<T, M, F, E> Router<T, M, F, E>
+impl<T, M, F, P> Router<T, M, F, P>
 where
     // Parent target type.
     T: Clone + Debug + Eq + Hash + Send + Sync + 'static,
@@ -53,24 +53,26 @@ where
     // Request filter.
     F: Debug + Eq + Hash,
     F: Clone + Send + Sync + 'static,
-    // Failure policy.
-    E: Debug + Eq + Hash,
-    E: Clone + Send + Sync + 'static,
+    // Route policy.
+    P: Debug + Eq + Hash,
+    P: Clone + Send + Sync + 'static,
     // Assert that we can route for the given match and filter types.
     Self: svc::router::SelectRoute<
         http::Request<http::BoxBody>,
-        Key = route::MatchedRoute<T, M::Summary, F, E>,
+        Key = route::MatchedRoute<T, M::Summary, F, P>,
         Error = NoRoute,
     >,
-    route::MatchedRoute<T, M::Summary, F, E>: route::filters::Apply + svc::Param<classify::Request>,
-    route::MatchedBackend<T, M::Summary, F>: route::filters::Apply,
-    route::backend::RouteBackendMetrics:
-        svc::ExtractParam<route::backend::RequestCount, route::MatchedBackend<T, M::Summary, F>>,
+    route::MatchedRoute<T, M::Summary, F, P>:
+        route::filters::Apply + svc::Param<classify::Request> + route::metrics::MkStreamLabel,
+    route::MatchedBackend<T, M::Summary, F>: route::filters::Apply + route::metrics::MkStreamLabel,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.
     pub(super) fn layer<N, S>(
-        metrics: route::RouteMetrics,
+        metrics: route::Metrics<
+            route::MatchedRoute<T, M::Summary, F, P>,
+            route::MatchedBackend<T, M::Summary, F>,
+        >,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
@@ -100,14 +102,14 @@ where
     }
 }
 
-impl<T, M, F, E> From<(Params<M, F, E>, T)> for Router<T, M, F, E>
+impl<T, M, F, P> From<(Params<M, F, P>, T)> for Router<T, M, F, P>
 where
     T: Eq + Hash + Clone + Debug,
     M: Clone,
     F: Clone,
-    E: Clone,
+    P: Clone,
 {
-    fn from((rts, parent): (Params<M, F, E>, T)) -> Self {
+    fn from((rts, parent): (Params<M, F, P>, T)) -> Self {
         let Params {
             addr,
             meta: parent_ref,
@@ -118,6 +120,7 @@ where
 
         let mk_concrete = {
             let parent = parent.clone();
+            let parent_ref = parent_ref.clone();
             move |backend_ref: BackendRef, target: concrete::Dispatch| {
                 // XXX With policies we don't have a top-level authority name at
                 // the moment. So, instead, we use the concrete addr used for
@@ -189,23 +192,29 @@ where
             }
         };
 
-        let mk_policy = |policy::RoutePolicy::<F, E> {
-                             meta,
-                             filters,
-                             distribution,
-                             failure_policy,
-                             request_timeout,
-                         }| {
-            let route_ref = RouteRef(meta);
-            let distribution = mk_distribution(&route_ref, &distribution);
-            route::Route {
-                addr: addr.clone(),
-                parent: parent.clone(),
-                route_ref,
-                filters,
-                failure_policy,
-                distribution,
-                request_timeout,
+        let mk_policy = {
+            let addr = addr.clone();
+            let parent = parent.clone();
+            let parent_ref = parent_ref.clone();
+            move |policy::RoutePolicy::<F, P> {
+                      meta,
+                      filters,
+                      distribution,
+                      failure_policy,
+                      request_timeout,
+                  }| {
+                let route_ref = RouteRef(meta);
+                let distribution = mk_distribution(&route_ref, &distribution);
+                route::Route {
+                    addr: addr.clone(),
+                    parent: parent.clone(),
+                    parent_ref: parent_ref.clone(),
+                    route_ref,
+                    filters,
+                    distribution,
+                    failure_policy,
+                    request_timeout,
+                }
             }
         };
 
@@ -274,7 +283,7 @@ where
     }
 }
 
-impl<T, M, F, E> svc::Param<LogicalAddr> for Router<T, M, F, E>
+impl<T, M, F, P> svc::Param<LogicalAddr> for Router<T, M, F, P>
 where
     T: Eq + Hash + Clone + Debug,
 {
@@ -283,7 +292,7 @@ where
     }
 }
 
-impl<T, M, F, E> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F, E>
+impl<T, M, F, P> svc::Param<distribute::Backends<Concrete<T>>> for Router<T, M, F, P>
 where
     T: Eq + Hash + Clone + Debug,
 {
