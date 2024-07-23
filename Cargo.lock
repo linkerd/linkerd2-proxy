@@ -1882,6 +1882,7 @@ dependencies = [
  "linkerd-proxy-balance",
  "linkerd-stack",
  "linkerd-tracing",
+ "parking_lot",
  "pin-project",
  "rand",
  "thiserror",

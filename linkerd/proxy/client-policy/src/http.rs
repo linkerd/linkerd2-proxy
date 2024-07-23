@@ -1,12 +1,17 @@
 use crate::FailureAccrual;
 use linkerd_http_route::http;
-use std::{ops::RangeInclusive, sync::Arc};
+use std::{ops::RangeInclusive, sync::Arc, time};
 
 pub use linkerd_http_route::http::{filter, find, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter, StatusRanges>;
+pub type Policy = crate::RoutePolicy<Filter, RouteParams>;
 pub type Route = http::Route<Policy>;
 pub type Rule = http::Rule<Policy>;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct RouteParams {
+    pub timeouts: Timeouts,
+}
 
 // TODO: keepalive settings, etc.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -38,6 +43,13 @@ pub enum Filter {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct StatusRanges(pub Arc<[RangeInclusive<u16>]>);
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Timeouts {
+    pub response: Option<time::Duration>,
+    pub idle: Option<time::Duration>,
+    pub request: Option<time::Duration>,
+}
+
 pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
     Route {
         hosts: vec![],
@@ -47,8 +59,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
-                failure_policy: StatusRanges::default(),
-                request_timeout: None,
+                params: RouteParams::default(),
             },
         }],
     }
@@ -92,6 +103,8 @@ impl Default for StatusRanges {
     }
 }
 
+// === impl Timeouts ===
+
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
@@ -130,11 +143,11 @@ pub mod proto {
         #[error("invalid failure accrual policy: {0}")]
         Breaker(#[from] InvalidFailureAccrual),
 
+        #[error("invalid request timeout: {0}")]
+        RequestTimeout(#[from] prost_types::DurationError),
+
         #[error("missing {0}")]
         Missing(&'static str),
-
-        #[error("invalid request timeout: {0}")]
-        Timeout(#[from] prost_types::DurationError),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -218,6 +231,7 @@ pub mod proto {
         meta: &Arc<Meta>,
         proto: outbound::http_route::Rule,
     ) -> Result<Rule, InvalidHttpRoute> {
+        #[allow(deprecated)]
         let outbound::http_route::Rule {
             matches,
             backends,
@@ -239,9 +253,8 @@ pub mod proto {
             .ok_or(InvalidHttpRoute::Missing("distribution"))?
             .try_into()?;
 
-        let request_timeout = request_timeout
-            .map(std::time::Duration::try_from)
-            .transpose()?;
+        let mut params = RouteParams::default();
+        params.timeouts.request = request_timeout.map(TryInto::try_into).transpose()?;
 
         Ok(Rule {
             matches,
@@ -249,8 +262,7 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
-                failure_policy: StatusRanges::default(),
-                request_timeout,
+                params,
             },
         })
     }
@@ -301,13 +313,11 @@ pub mod proto {
         type Error = InvalidBackend;
         fn try_from(
             http_route::RouteBackend {
-                backend,
-                filters,
-                request_timeout,
+                backend, filters, ..
             }: http_route::RouteBackend,
         ) -> Result<Self, Self::Error> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-            RouteBackend::try_from_proto(backend, filters, request_timeout)
+            RouteBackend::try_from_proto(backend, filters)
         }
     }
 

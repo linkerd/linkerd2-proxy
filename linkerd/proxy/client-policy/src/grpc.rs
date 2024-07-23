@@ -4,9 +4,14 @@ use std::sync::Arc;
 
 pub use linkerd_http_route::grpc::{filter, find, r#match, RouteMatch};
 
-pub type Policy = crate::RoutePolicy<Filter, Codes>;
+pub type Policy = crate::RoutePolicy<Filter, RouteParams>;
 pub type Route = grpc::Route<Policy>;
 pub type Rule = grpc::Rule<Policy>;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct RouteParams {
+    pub timeouts: crate::http::Timeouts,
+}
 
 // TODO HTTP2 settings
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -14,6 +19,7 @@ pub struct Grpc {
     pub routes: Arc<[Route]>,
 
     /// Configures how endpoints accrue observed failures.
+    // TODO(ver) Move this to backends and scope to endpoints.
     pub failure_accrual: FailureAccrual,
 }
 
@@ -36,8 +42,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 meta: crate::Meta::new_default("default"),
                 filters: Arc::new([]),
                 distribution,
-                failure_policy: Codes::default(),
-                request_timeout: None,
+                params: Default::default(),
             },
         }],
     }
@@ -102,7 +107,6 @@ pub mod proto {
             r#match::host::{proto::InvalidHostMatch, MatchHost},
         },
     };
-    use std::time::Duration;
 
     #[derive(Debug, thiserror::Error)]
     pub enum InvalidGrpcRoute {
@@ -121,14 +125,14 @@ pub mod proto {
         #[error("invalid filter: {0}")]
         Filter(#[from] InvalidFilter),
 
-        #[error("missing {0}")]
-        Missing(&'static str),
-
         #[error("invalid failure accrual policy: {0}")]
         Breaker(#[from] InvalidFailureAccrual),
 
-        #[error("invalid duration: {0}")]
-        Duration(#[from] prost_types::DurationError),
+        #[error("invalid request timeout: {0}")]
+        RequestTimeout(#[from] prost_types::DurationError),
+
+        #[error("missing {0}")]
+        Missing(&'static str),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -199,6 +203,7 @@ pub mod proto {
         meta: &Arc<Meta>,
         proto: outbound::grpc_route::Rule,
     ) -> Result<Rule, InvalidGrpcRoute> {
+        #[allow(deprecated)]
         let outbound::grpc_route::Rule {
             matches,
             backends,
@@ -220,7 +225,8 @@ pub mod proto {
             .ok_or(InvalidGrpcRoute::Missing("distribution"))?
             .try_into()?;
 
-        let request_timeout = request_timeout.map(Duration::try_from).transpose()?;
+        let mut params = RouteParams::default();
+        params.timeouts.request = request_timeout.map(TryInto::try_into).transpose()?;
 
         Ok(Rule {
             matches,
@@ -228,8 +234,7 @@ pub mod proto {
                 meta: meta.clone(),
                 filters,
                 distribution,
-                failure_policy: Codes::default(),
-                request_timeout,
+                params,
             },
         })
     }
@@ -280,13 +285,11 @@ pub mod proto {
         type Error = InvalidBackend;
         fn try_from(
             grpc_route::RouteBackend {
-                backend,
-                filters,
-                request_timeout,
+                backend, filters, ..
             }: grpc_route::RouteBackend,
         ) -> Result<RouteBackend<Filter>, InvalidBackend> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-            RouteBackend::try_from_proto(backend, filters, request_timeout)
+            RouteBackend::try_from_proto(backend, filters)
         }
     }
 

@@ -29,6 +29,7 @@ hyper = { version = "0.14", features = [
     "runtime",
 ] }
 hyper-balance = { path = "../../../hyper-balance" }
+parking_lot = "0.12"
 pin-project = "1"
 rand = "0.8"
 thiserror = "1"

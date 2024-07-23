@@ -7,6 +7,7 @@ use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 pub(crate) mod backend;
+pub(crate) mod extensions;
 pub(crate) mod filters;
 pub(crate) mod metrics;
 
@@ -27,28 +28,28 @@ pub(crate) struct Matched<M, P> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct Route<T, F, E> {
+pub(crate) struct Route<T, F, P> {
     pub(super) parent: T,
     pub(super) addr: Addr,
     pub(super) parent_ref: ParentRef,
     pub(super) route_ref: RouteRef,
     pub(super) filters: Arc<[F]>,
     pub(super) distribution: BackendDistribution<T, F>,
-    pub(super) failure_policy: E,
+    pub(super) params: P,
 }
 
-pub(crate) type MatchedRoute<T, M, F, E> = Matched<M, Route<T, F, E>>;
+pub(crate) type MatchedRoute<T, M, F, P> = Matched<M, Route<T, F, P>>;
 pub(crate) type Http<T> = MatchedRoute<
     T,
     http_route::http::r#match::RequestMatch,
     policy::http::Filter,
-    policy::http::StatusRanges,
+    policy::http::RouteParams,
 >;
 pub(crate) type Grpc<T> = MatchedRoute<
     T,
     http_route::grpc::r#match::RouteMatch,
     policy::grpc::Filter,
-    policy::grpc::Codes,
+    policy::grpc::RouteParams,
 >;
 
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
@@ -70,7 +71,7 @@ struct RouteError {
 
 // === impl MatchedRoute ===
 
-impl<T, M, F, E> MatchedRoute<T, M, F, E>
+impl<T, M, F, P> MatchedRoute<T, M, F, P>
 where
     // Parent target.
     T: Debug + Eq + Hash,
@@ -80,11 +81,12 @@ where
     // Request filter.
     F: Debug + Eq + Hash,
     F: Clone + Send + Sync + 'static,
-    // Failure policy.
-    E: Clone + Send + Sync + 'static,
+    // Route params.
+    P: Clone + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
+    Self: svc::Param<extensions::Params>,
     Self: metrics::MkStreamLabel,
     MatchedBackend<T, M, F>: filters::Apply,
     MatchedBackend<T, M, F>: metrics::MkStreamLabel,
@@ -119,9 +121,11 @@ where
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
+                // Set request extensions based on the route configuration
+                .push(extensions::NewSetExtensions::layer())
                 .push(metrics::layer(&metrics.requests))
                 // Configure a classifier to use in the endpoint stack.
-                // FIXME(ver) move this into NewSetExtensions
+                // TODO(ver) move this into NewSetExtensions?
                 .push(classify::NewClassify::layer())
                 .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();
@@ -179,6 +183,14 @@ impl<T> metrics::MkStreamLabel for Http<T> {
     }
 }
 
+impl<T> svc::Param<extensions::Params> for Http<T> {
+    fn param(&self) -> extensions::Params {
+        extensions::Params {
+            timeouts: self.params.params.timeouts.clone(),
+        }
+    }
+}
+
 impl<T> svc::Param<classify::Request> for Http<T> {
     fn param(&self) -> classify::Request {
         classify::Request::ClientPolicy(classify::ClientPolicy::Http(
@@ -212,6 +224,14 @@ impl<T> metrics::MkStreamLabel for Grpc<T> {
         Some(metrics::LabelGrpcRsp::from(metrics::labels::Route::from((
             parent, route,
         ))))
+    }
+}
+
+impl<T> svc::Param<extensions::Params> for Grpc<T> {
+    fn param(&self) -> extensions::Params {
+        extensions::Params {
+            timeouts: self.params.params.timeouts.clone(),
+        }
     }
 }
 

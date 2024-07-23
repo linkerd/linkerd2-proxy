@@ -1,14 +1,19 @@
-use super::*;
+use super::{policy, Outbound, ParentRef, Routes};
 use crate::test_util::*;
-use ::http::StatusCode;
 use linkerd_app_core::{
-    errors, exp_backoff::ExponentialBackoff, svc::NewService, svc::ServiceExt, trace,
+    errors,
+    exp_backoff::ExponentialBackoff,
+    proxy::http::{self, BoxBody, HttpBody, StatusCode},
+    svc::{self, NewService, ServiceExt},
+    trace,
+    transport::addrs::*,
+    Error, NameAddr, Result,
 };
 use linkerd_proxy_client_policy as client_policy;
 use parking_lot::Mutex;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::{task, time};
-use tracing::Instrument;
+use tokio::{sync::watch, task, time};
+use tracing::{info, Instrument};
 
 const AUTHORITY: &str = "logical.test.svc.cluster.local";
 const PORT: u16 = 666;
@@ -16,7 +21,9 @@ const PORT: u16 = 666;
 type Request = http::Request<http::BoxBody>;
 type Response = http::Response<http::BoxBody>;
 
-#[tokio::test(flavor = "current_thread")]
+mod timeouts;
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn routes() {
     let _trace = trace::test::trace_init();
 
@@ -50,7 +57,7 @@ async fn routes() {
     let svc = stack.new_service(target);
 
     handle.allow(1);
-    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    let rsp = send_req(svc.clone(), http_get());
     serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
     assert_eq!(
         rsp.await.expect("request must succeed").status(),
@@ -107,17 +114,17 @@ async fn consecutive_failures_accrue() {
     };
     let svc = stack.new_service(target);
 
-    tracing::info!("Sending good request");
+    info!("Sending good request");
     handle.allow(1);
-    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    let rsp = send_req(svc.clone(), http_get());
     serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
     assert_rsp(rsp, StatusCode::OK, "good").await;
 
     // fail 3 requests so that we hit the consecutive failures accrual limit
     for i in 1..=3 {
-        tracing::info!("Sending bad request {i}/3");
+        info!("Sending bad request {i}/3");
         handle.allow(1);
-        let rsp = send_req(svc.clone(), http::Request::get("/"));
+        let rsp = send_req(svc.clone(), http_get());
         serve_req(
             &mut handle,
             mk_rsp(StatusCode::INTERNAL_SERVER_ERROR, "bad"),
@@ -128,10 +135,10 @@ async fn consecutive_failures_accrue() {
 
     // Ensure that the error is because of the breaker, and not because the
     // underlying service doesn't poll ready.
-    tracing::info!("Sending request while in failfast");
+    info!("Sending request while in failfast");
     handle.allow(1);
     // We are now in failfast.
-    let error = send_req(svc.clone(), http::Request::get("/"))
+    let error = send_req(svc.clone(), http_get())
         .await
         .expect_err("service should be in failfast");
     assert!(
@@ -139,8 +146,8 @@ async fn consecutive_failures_accrue() {
         "service should be in failfast"
     );
 
-    tracing::info!("Sending request while in loadshed");
-    let error = send_req(svc.clone(), http::Request::get("/"))
+    info!("Sending request while in loadshed");
+    let error = send_req(svc.clone(), http_get())
         .await
         .expect_err("service should be in failfast");
     assert!(
@@ -150,14 +157,14 @@ async fn consecutive_failures_accrue() {
 
     // After the probation period, a subsequent request should be failed by
     // hitting the service.
-    tracing::info!("Waiting for probation");
+    info!("Waiting for probation");
     backoffs.next().await;
     task::yield_now().await;
 
-    tracing::info!("Sending a bad request while in probation");
+    info!("Sending a bad request while in probation");
     handle.allow(1);
-    let rsp = send_req(svc.clone(), http::Request::get("/"));
-    tracing::info!("Serving response");
+    let rsp = send_req(svc.clone(), http_get());
+    info!("Serving response");
     tokio::time::timeout(
         time::Duration::from_secs(10),
         serve_req(
@@ -170,9 +177,9 @@ async fn consecutive_failures_accrue() {
     assert_rsp(rsp, StatusCode::INTERNAL_SERVER_ERROR, "bad").await;
 
     // We are now in failfast.
-    tracing::info!("Sending a failfast request while the circuit is broken");
+    info!("Sending a failfast request while the circuit is broken");
     handle.allow(1);
-    let error = send_req(svc.clone(), http::Request::get("/"))
+    let error = send_req(svc.clone(), http_get())
         .await
         .expect_err("service should be in failfast");
     assert!(
@@ -181,14 +188,14 @@ async fn consecutive_failures_accrue() {
     );
 
     // Wait out the probation period again
-    tracing::info!("Waiting for probation again");
+    info!("Waiting for probation again");
     backoffs.next().await;
     task::yield_now().await;
 
     // The probe request succeeds
-    tracing::info!("Sending a good request while in probation");
+    info!("Sending a good request while in probation");
     handle.allow(1);
-    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    let rsp = send_req(svc.clone(), http_get());
     tokio::time::timeout(
         time::Duration::from_secs(10),
         serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")),
@@ -198,9 +205,9 @@ async fn consecutive_failures_accrue() {
     assert_rsp(rsp, StatusCode::OK, "good").await;
 
     // The gate is now open again
-    tracing::info!("Sending a final good request");
+    info!("Sending a final good request");
     handle.allow(1);
-    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    let rsp = send_req(svc.clone(), http_get());
     tokio::time::timeout(
         time::Duration::from_secs(10),
         serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")),
@@ -274,15 +281,15 @@ async fn balancer_doesnt_select_tripped_breakers() {
     while failed < 3 {
         handle1.allow(1);
         handle2.allow(1);
-        tracing::info!(failed);
-        let rsp = send_req(svc.clone(), http::Request::get("/"));
+        info!(failed);
+        let rsp = send_req(svc.clone(), http_get());
         let (expected_status, expected_body) = tokio::select! {
             _ = serve_req(&mut handle1, mk_rsp(StatusCode::OK, "endpoint 1")) => {
-                tracing::info!("Balancer selected good endpoint");
+                info!("Balancer selected good endpoint");
                 (StatusCode::OK, "endpoint 1")
             }
             _ = serve_req(&mut handle2, mk_rsp(StatusCode::INTERNAL_SERVER_ERROR, "endpoint 2")) => {
-                tracing::info!("Balancer selected bad endpoint");
+                info!("Balancer selected bad endpoint");
                 failed += 1;
                 (StatusCode::INTERNAL_SERVER_ERROR, "endpoint 2")
             }
@@ -293,7 +300,7 @@ async fn balancer_doesnt_select_tripped_breakers() {
 
     handle1.allow(1);
     handle2.allow(1);
-    let rsp = send_req(svc.clone(), http::Request::get("/"));
+    let rsp = send_req(svc.clone(), http_get());
     // The load balancer will select endpoint 1, because endpoint 2 isn't ready.
     serve_req(&mut handle1, mk_rsp(StatusCode::OK, "endpoint 1")).await;
     assert_rsp(rsp, StatusCode::OK, "endpoint 1").await;
@@ -302,73 +309,13 @@ async fn balancer_doesnt_select_tripped_breakers() {
     for _ in 0..8 {
         handle1.allow(1);
         handle2.allow(1);
-        let rsp = send_req(svc.clone(), http::Request::get("/"));
+        let rsp = send_req(svc.clone(), http_get());
         serve_req(&mut handle1, mk_rsp(StatusCode::OK, "endpoint 1")).await;
         assert_rsp(rsp, StatusCode::OK, "endpoint 1").await;
     }
 }
 
-// XXX(ver): Route request timeouts will be reintroduced.
-#[tokio::test(flavor = "current_thread")]
-#[ignore]
-async fn route_request_timeout() {
-    tokio::time::pause();
-    let _trace = trace::test::trace_init();
-    const REQUEST_TIMEOUT: Duration = std::time::Duration::from_secs(2);
-
-    let addr = SocketAddr::new([192, 0, 2, 41].into(), PORT);
-    let dest: NameAddr = format!("{AUTHORITY}:{PORT}")
-        .parse::<NameAddr>()
-        .expect("dest addr is valid");
-    let (svc, mut handle) = tower_test::mock::pair();
-    let connect = HttpConnect::default().service(addr, svc);
-    let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
-    let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt, &mut Default::default())
-        .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(resolve)
-        .into_inner();
-
-    let (_route_tx, routes) = {
-        let backend = default_backend(&dest);
-        // Set a request timeout for the route, and no backend request timeout
-        // on the backend.
-        let route = timeout_route(backend.clone(), Some(REQUEST_TIMEOUT), None);
-        watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
-            addr: dest.into(),
-            meta: ParentRef(client_policy::Meta::new_default("parent")),
-            backends: Arc::new([backend]),
-            routes: Arc::new([route]),
-            failure_accrual: client_policy::FailureAccrual::None,
-        })))
-    };
-    let target = Target {
-        num: 1,
-        version: http::Version::H2,
-        routes,
-    };
-    let svc = stack.new_service(target);
-
-    handle.allow(1);
-    let rsp = send_req(svc.clone(), http::Request::get("/"));
-    serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
-    assert_eq!(
-        rsp.await.expect("request must succeed").status(),
-        http::StatusCode::OK
-    );
-
-    // now, time out...
-    let rsp = send_req(svc.clone(), http::Request::get("/"));
-    tokio::time::sleep(REQUEST_TIMEOUT).await;
-    let error = rsp.await.expect_err("request must fail with a timeout");
-    assert!(
-        error.is::<LogicalError>(),
-        "error must originate in the logical stack"
-    );
-    assert!(errors::is_caused_by::<http::timeout::ResponseTimeoutError>(
-        error.as_ref()
-    ));
-}
+// === Utils ===
 
 #[derive(Clone, Debug)]
 struct Target {
@@ -435,14 +382,15 @@ impl<T: svc::Param<Remote<ServerAddr>>> svc::NewService<T> for HttpConnect {
     }
 }
 
+// ===
+
 #[track_caller]
 fn send_req(
     svc: impl svc::Service<Request, Response = Response, Error = Error, Future = impl Send + 'static>
         + Send
         + 'static,
-    builder: ::http::request::Builder,
-) -> impl Future<Output = Result<Response, Error>> + Send + 'static {
-    let mut req = builder.body(http::BoxBody::default()).unwrap();
+    mut req: ::http::Request<BoxBody>,
+) -> impl Future<Output = Result<Response>> + Send + 'static {
     let span = tracing::info_span!(
         "send_req",
         "{} {} {:?}",
@@ -474,7 +422,7 @@ fn mk_rsp(status: StatusCode, body: impl ToString) -> Response {
 }
 
 async fn assert_rsp<T: std::fmt::Debug>(
-    rsp: impl Future<Output = Result<Response, Error>>,
+    rsp: impl Future<Output = Result<Response>>,
     status: StatusCode,
     expected_body: T,
 ) where
@@ -489,14 +437,53 @@ async fn assert_rsp<T: std::fmt::Debug>(
 }
 
 async fn serve_req(handle: &mut tower_test::mock::Handle<Request, Response>, rsp: Response) {
-    tracing::debug!("Awaiting request");
-    let (req, send_rsp) = handle
+    serve_delayed(Duration::ZERO, handle, Ok(rsp)).await;
+}
+
+async fn serve_delayed(
+    delay: Duration,
+    handle: &mut tower_test::mock::Handle<Request, Response>,
+    rsp: Result<Response>,
+) {
+    let (mut req, tx) = handle
         .next_request()
         .await
         .expect("service must receive request");
     tracing::debug!(?req, "Received request");
-    send_rsp.send_response(rsp);
-    tracing::debug!(?req, "Response sent");
+
+    // Ensure the whole request is processed.
+    if !req.body().is_end_stream() {
+        while let Some(res) = req.body_mut().data().await {
+            res.expect("request body must not error");
+        }
+    }
+    if !req.body().is_end_stream() {
+        req.body_mut()
+            .trailers()
+            .await
+            .expect("request body must not error");
+    }
+    drop(req);
+
+    tokio::spawn(
+        async move {
+            if delay > Duration::ZERO {
+                tracing::debug!(?delay, "Sleeping");
+                tokio::time::sleep(delay).await;
+            }
+
+            tracing::debug!(?rsp, "Sending response");
+            match rsp {
+                Ok(rsp) => tx.send_response(rsp),
+                Err(e) => tx.send_error(e),
+            }
+        }
+        .in_current_span(),
+    );
+}
+
+fn http_get() -> http::Request<BoxBody> {
+    http::Request::get("/").body(Default::default()).unwrap()
 }
 
 fn default_backend(path: impl ToString) -> client_policy::Backend {
@@ -535,42 +522,10 @@ fn default_route(backend: client_policy::Backend) -> client_policy::http::Route 
             policy: Policy {
                 meta: Meta::new_default("test_route"),
                 filters: NO_FILTERS.clone(),
-                failure_policy: Default::default(),
-                request_timeout: None,
+                params: http::RouteParams::default(),
                 distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                     filters: NO_FILTERS.clone(),
                     backend,
-                    request_timeout: None,
-                }])),
-            },
-        }],
-    }
-}
-
-fn timeout_route(
-    backend: client_policy::Backend,
-    route_timeout: Option<Duration>,
-    backend_timeout: Option<Duration>,
-) -> client_policy::http::Route {
-    use client_policy::{
-        http::{self, Filter, Policy, Route, Rule},
-        Meta, RouteBackend, RouteDistribution,
-    };
-    use once_cell::sync::Lazy;
-    static NO_FILTERS: Lazy<Arc<[Filter]>> = Lazy::new(|| Arc::new([]));
-    Route {
-        hosts: vec![],
-        rules: vec![Rule {
-            matches: vec![http::r#match::MatchRequest::default()],
-            policy: Policy {
-                meta: Meta::new_default("test_route"),
-                filters: NO_FILTERS.clone(),
-                failure_policy: Default::default(),
-                request_timeout: route_timeout,
-                distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
-                    filters: NO_FILTERS.clone(),
-                    backend,
-                    request_timeout: backend_timeout,
                 }])),
             },
         }],
