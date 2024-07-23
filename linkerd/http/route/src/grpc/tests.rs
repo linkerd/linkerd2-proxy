@@ -13,6 +13,25 @@ impl Default for Policy {
     }
 }
 
+#[test]
+fn default() {
+    let rts = vec![Route {
+        hosts: vec![],
+        rules: vec![Rule {
+            matches: vec![MatchRoute::default()],
+            policy: Policy::Expected,
+        }],
+    }];
+
+    let req = http::Request::builder()
+        .method(http::Method::POST)
+        .uri("http://foo.example.com/foo/bar")
+        .body(())
+        .unwrap();
+    let (_, policy) = find(&rts, &req).expect("must match");
+    assert_eq!(*policy, Policy::Expected, "incorrect rule matched");
+}
+
 /// Given two equivalent routes, choose the explicit hostname match and not
 /// the wildcard.
 #[test]
