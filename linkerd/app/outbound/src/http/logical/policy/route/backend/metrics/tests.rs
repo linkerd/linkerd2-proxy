@@ -313,7 +313,6 @@ fn mock_http_route_backend_metrics(
             r#match,
             params: Backend {
                 route_ref: route_ref.clone(),
-                request_timeout: None,
                 filters: [].into(),
                 concrete: Concrete {
                     target: concrete::Dispatch::Forward(
@@ -371,7 +370,6 @@ fn mock_grpc_route_backend_metrics(
             r#match,
             params: Backend {
                 route_ref: route_ref.clone(),
-                request_timeout: None,
                 filters: [].into(),
                 concrete: Concrete {
                     target: concrete::Dispatch::Forward(
