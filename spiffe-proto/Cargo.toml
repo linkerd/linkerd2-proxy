@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 bytes = "1"
-prost = "0.12"
+prost = "0.13"
 prost-types = "0.12"
 
 [dependencies.tonic]
