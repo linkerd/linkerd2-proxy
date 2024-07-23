@@ -10,7 +10,6 @@ pub(crate) mod backend;
 pub(crate) mod extensions;
 pub(crate) mod filters;
 pub(crate) mod metrics;
-#[allow(dead_code)]
 pub(crate) mod retry;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
@@ -57,9 +56,9 @@ pub(crate) type Grpc<T> = MatchedRoute<
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
 
-pub type Metrics<B, R> = metrics::RouteMetrics<
-    <B as metrics::MkStreamLabel>::StreamLabel,
+pub type Metrics<R, B> = metrics::RouteMetrics<
     <R as metrics::MkStreamLabel>::StreamLabel,
+    <B as metrics::MkStreamLabel>::StreamLabel,
 >;
 
 /// Wraps errors with route metadata.
@@ -127,7 +126,7 @@ where
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
-                .push(metrics::layer(metrics.requests.clone()))
+                .push(metrics::layer(&metrics.requests))
                 // Configure a classifier to use in the endpoint stack.
                 // FIXME(ver) move this into NewSetExtensions
                 .push(classify::NewClassify::layer())
@@ -159,12 +158,6 @@ impl<T: Clone, M, F, P> svc::Param<RouteLabels> for MatchedRoute<T, M, F, P> {
     }
 }
 
-// impl<T, M, F, P> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, M, F, P> {
-//     fn param(&self) -> http::timeout::ResponseTimeout {
-//         http::timeout::ResponseTimeout(self.params.request_timeout)
-//     }
-// }
-
 // === impl Http ===
 
 impl<T> filters::Apply for Http<T> {
@@ -180,8 +173,8 @@ impl<T> filters::Apply for Http<T> {
 }
 
 impl<T> metrics::MkStreamLabel for Http<T> {
-    type AggregateLabels = metrics::labels::Route;
-    type DetailedSummaryLabels = metrics::labels::HttpRouteRsp;
+    type StatusLabels = metrics::labels::HttpRouteRsp;
+    type DurationLabels = metrics::labels::Route;
     type StreamLabel = metrics::LabelHttpRouteRsp;
 
     fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
@@ -234,8 +227,8 @@ impl<T> filters::Apply for Grpc<T> {
 }
 
 impl<T> metrics::MkStreamLabel for Grpc<T> {
-    type AggregateLabels = metrics::labels::Route;
-    type DetailedSummaryLabels = metrics::labels::GrpcRouteRsp;
+    type StatusLabels = metrics::labels::GrpcRouteRsp;
+    type DurationLabels = metrics::labels::Route;
     type StreamLabel = metrics::LabelGrpcRouteRsp;
 
     fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
@@ -253,7 +246,7 @@ impl<T> svc::Param<extensions::Params> for Grpc<T> {
         extensions::Params {
             timeouts: self.params.params.timeouts.clone(),
             retry: retry.map(|r| retry::RetryPolicy {
-                max_retries: r.max_retries,
+                max_retries: r.max_retries as _,
                 max_request_bytes: r.max_request_bytes,
                 timeout: r.timeout,
                 backoff: r.backoff,

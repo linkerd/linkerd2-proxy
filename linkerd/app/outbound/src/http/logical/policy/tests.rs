@@ -125,17 +125,17 @@ async fn header_based_route() {
         failure_accrual: Default::default(),
     });
 
-    let metrics = RouteMetrics::default();
+    let metrics = HttpRouteMetrics::default();
     let router = Policy::layer(metrics.clone(), Default::default())
         .layer(inner)
         .new_service(Policy::from((routes, ())));
 
-    let default_reqs = metrics.backend_metrics(
+    let default_reqs = metrics.backend_request_count(
         parent_ref.clone(),
         default_route_ref.clone(),
         default_backend_ref.clone(),
     );
-    let special_reqs = metrics.backend_metrics(
+    let special_reqs = metrics.backend_request_count(
         parent_ref.clone(),
         special_route_ref.clone(),
         special_backend_ref.clone(),

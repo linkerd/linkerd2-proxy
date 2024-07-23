@@ -55,6 +55,7 @@ tokio-test = "0.4"
 tower-test = "0.4"
 
 linkerd-app-test = { path = "../test", features = ["client-policy"] }
+linkerd-http-prom = { path = "../../http/prom", features = ["test-util"] }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 linkerd-meshtls = { path = "../../meshtls", features = ["rustls"] }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", features = [

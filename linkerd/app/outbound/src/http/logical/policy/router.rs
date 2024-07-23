@@ -67,10 +67,6 @@ where
         + svc::Param<route::extensions::Params>
         + route::metrics::MkStreamLabel,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply + route::metrics::MkStreamLabel,
-    // route::backend::RouteBackendMetrics: svc::ExtractParam<
-    //     route::backenzd::BackendHttpMetrics,
-    //     route::MatchedBackend<T, M::Summary, F>,
-    // >,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.
@@ -215,8 +211,8 @@ where
                     parent_ref: parent_ref.clone(),
                     route_ref,
                     filters,
-                    params,
                     distribution,
+                    params,
                 }
             }
         };

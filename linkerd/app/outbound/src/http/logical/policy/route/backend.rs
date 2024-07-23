@@ -68,7 +68,7 @@ where
     F: Clone + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
-    Self: metrics::MkStreamLabel, // RouteBackendMetrics: svc::ExtractParam<BackendHttpMetrics, Self>,
+    Self: metrics::MkStreamLabel,
 {
     /// Builds a stack that applies per-route-backend policy filters over an
     /// inner [`Concrete`] stack.
@@ -146,8 +146,8 @@ impl<T> filters::Apply for Http<T> {
 }
 
 impl<T> metrics::MkStreamLabel for Http<T> {
-    type AggregateLabels = metrics::labels::RouteBackend;
-    type DetailedSummaryLabels = metrics::labels::HttpRouteBackendRsp;
+    type StatusLabels = metrics::labels::HttpRouteBackendRsp;
+    type DurationLabels = metrics::labels::RouteBackend;
     type StreamLabel = metrics::LabelHttpRouteBackendRsp;
 
     fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
@@ -172,8 +172,8 @@ impl<T> filters::Apply for Grpc<T> {
 }
 
 impl<T> metrics::MkStreamLabel for Grpc<T> {
-    type AggregateLabels = metrics::labels::RouteBackend;
-    type DetailedSummaryLabels = metrics::labels::GrpcRouteBackendRsp;
+    type StatusLabels = metrics::labels::GrpcRouteBackendRsp;
+    type DurationLabels = metrics::labels::RouteBackend;
     type StreamLabel = metrics::LabelGrpcRouteBackendRsp;
 
     fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {

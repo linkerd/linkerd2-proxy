@@ -9,7 +9,6 @@ use prometheus_client::{
         family::{Family, MetricConstructor},
         histogram::Histogram,
     },
-    registry::{Registry, Unit},
 };
 use std::{
     future::Future,
@@ -19,10 +18,21 @@ use std::{
 };
 use tokio::{sync::oneshot, time};
 
+mod request;
+mod response;
+
+pub use self::{
+    request::{NewRequestDuration, RecordRequestDuration, RequestMetrics},
+    response::{NewResponseDuration, RecordResponseDuration, ResponseMetrics},
+};
+
+/// A strategy for labeling request/responses streams for status and duration
+/// metrics.
+///
+/// This is specifically to support higher-cardinality status counters and
+/// lower-cardinality stream duration histograms.
 pub trait MkStreamLabel {
-    /// Labels used to encode detailed summary metrics for a request-response
-    /// streams.
-    type DetailedSummaryLabels: EncodeLabelSet
+    type DurationLabels: EncodeLabelSet
         + Clone
         + Eq
         + std::fmt::Debug
@@ -30,9 +40,7 @@ pub trait MkStreamLabel {
         + Send
         + Sync
         + 'static;
-    /// Labels used to encode histogram buckets -- these should be less detailed
-    /// than `TotalLabels` to avoid cardinality explosion.
-    type AggregateLabels: EncodeLabelSet
+    type StatusLabels: EncodeLabelSet
         + Clone
         + Eq
         + std::fmt::Debug
@@ -42,8 +50,8 @@ pub trait MkStreamLabel {
         + 'static;
 
     type StreamLabel: StreamLabel<
-        DetailedSummaryLabels = Self::DetailedSummaryLabels,
-        AggregateLabels = Self::AggregateLabels,
+        DurationLabels = Self::DurationLabels,
+        StatusLabels = Self::StatusLabels,
     >;
 
     /// Returns None when the request should not be recorded.
@@ -51,7 +59,7 @@ pub trait MkStreamLabel {
 }
 
 pub trait StreamLabel: Send + 'static {
-    type DetailedSummaryLabels: EncodeLabelSet
+    type DurationLabels: EncodeLabelSet
         + Clone
         + Eq
         + std::fmt::Debug
@@ -59,7 +67,7 @@ pub trait StreamLabel: Send + 'static {
         + Send
         + Sync
         + 'static;
-    type AggregateLabels: EncodeLabelSet
+    type StatusLabels: EncodeLabelSet
         + Clone
         + Eq
         + std::fmt::Debug
@@ -71,27 +79,14 @@ pub trait StreamLabel: Send + 'static {
     fn init_response<B>(&mut self, rsp: &http::Response<B>);
     fn end_response(&mut self, trailers: Result<Option<&http::HeaderMap>, &Error>);
 
-    fn aggregate_labels(&self) -> Self::AggregateLabels;
-    fn detailed_summary_labels(&self) -> Self::DetailedSummaryLabels;
+    fn status_labels(&self) -> Self::StatusLabels;
+    fn duration_labels(&self) -> Self::DurationLabels;
 }
 
 /// A set of parameters that can be used to construct a `RecordResponse` layer.
 pub struct Params<L: MkStreamLabel, M> {
     pub labeler: L,
     pub metric: M,
-}
-
-/// Metrics type that tracks completed requests.
-#[derive(Debug)]
-pub struct RequestMetrics<AggL, DetL> {
-    duration: DurationFamily<AggL>,
-    total: Family<DetL, Counter>,
-}
-
-#[derive(Debug)]
-pub struct ResponseMetrics<AggL, DetL> {
-    duration: DurationFamily<AggL>,
-    total: Family<DetL, Counter>,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -115,44 +110,6 @@ pub struct RecordResponse<L, M, S> {
     metric: M,
 }
 
-pub type NewRequestDuration<L, X, N> = NewRecordResponse<
-    L,
-    X,
-    RequestMetrics<
-        <L as MkStreamLabel>::AggregateLabels,
-        <L as MkStreamLabel>::DetailedSummaryLabels,
-    >,
-    N,
->;
-
-pub type RecordRequestDuration<L, S> = RecordResponse<
-    L,
-    RequestMetrics<
-        <L as MkStreamLabel>::AggregateLabels,
-        <L as MkStreamLabel>::DetailedSummaryLabels,
-    >,
-    S,
->;
-
-pub type NewResponseDuration<L, X, N> = NewRecordResponse<
-    L,
-    X,
-    ResponseMetrics<
-        <L as MkStreamLabel>::AggregateLabels,
-        <L as MkStreamLabel>::DetailedSummaryLabels,
-    >,
-    N,
->;
-
-pub type RecordResponseDuration<L, S> = RecordResponse<
-    L,
-    ResponseMetrics<
-        <L as MkStreamLabel>::AggregateLabels,
-        <L as MkStreamLabel>::DetailedSummaryLabels,
-    >,
-    S,
->;
-
 #[pin_project::pin_project]
 pub struct ResponseFuture<L, F>
 where
@@ -161,14 +118,6 @@ where
     #[pin]
     inner: F,
     state: Option<ResponseState<L>>,
-}
-
-/// Notifies the response body when the request body is flushed.
-#[pin_project::pin_project(PinnedDrop)]
-struct RequestBody<B> {
-    #[pin]
-    inner: B,
-    flushed: Option<oneshot::Sender<time::Instant>>,
 }
 
 /// Notifies the response labeler when the response body is flushed.
@@ -181,8 +130,8 @@ struct ResponseBody<L: StreamLabel> {
 
 struct ResponseState<L: StreamLabel> {
     labeler: L,
-    total: Family<L::DetailedSummaryLabels, Counter>,
-    duration: DurationFamily<L::AggregateLabels>,
+    statuses: Family<L::StatusLabels, Counter>,
+    duration: DurationFamily<L::DurationLabels>,
     start: oneshot::Receiver<time::Instant>,
 }
 
@@ -191,99 +140,11 @@ type DurationFamily<L> = Family<L, Histogram, MkDurationHistogram>;
 #[derive(Clone, Debug)]
 struct MkDurationHistogram(Arc<[f64]>);
 
-// === impl RequestDuration ===
+// === impl MkDurationHistogram ===
 
-impl<AggL, DetL> RequestMetrics<AggL, DetL>
-where
-    AggL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    DetL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
-    pub fn register(reg: &mut Registry, histo: impl IntoIterator<Item = f64>) -> Self {
-        let duration =
-            DurationFamily::new_with_constructor(MkDurationHistogram(histo.into_iter().collect()));
-        reg.register_with_unit(
-            "request_duration",
-            "The time between request initialization and response completion",
-            Unit::Seconds,
-            duration.clone(),
-        );
-
-        let total = Family::default();
-        reg.register(
-            "requests",
-            "Completed request-response streams",
-            total.clone(),
-        );
-
-        Self { duration, total }
-    }
-}
-
-impl<AggL, DetL> Default for RequestMetrics<AggL, DetL>
-where
-    DetL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    AggL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
-    fn default() -> Self {
-        Self {
-            duration: DurationFamily::new_with_constructor(MkDurationHistogram(Arc::new([]))),
-            total: Default::default(),
-        }
-    }
-}
-
-impl<AggL, DetL> Clone for RequestMetrics<AggL, DetL> {
-    fn clone(&self) -> Self {
-        Self {
-            duration: self.duration.clone(),
-            total: self.total.clone(),
-        }
-    }
-}
-
-// === impl RequestDuration ===
-
-impl<AggL, DetL> ResponseMetrics<AggL, DetL>
-where
-    AggL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    DetL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
-    pub fn register(reg: &mut Registry, histo: impl IntoIterator<Item = f64>) -> Self {
-        let duration =
-            DurationFamily::new_with_constructor(MkDurationHistogram(histo.into_iter().collect()));
-        reg.register_with_unit(
-            "response_duration",
-            "The time between request completion and response completion",
-            Unit::Seconds,
-            duration.clone(),
-        );
-
-        let total = Family::default();
-        reg.register("responses", "Completed responses", total.clone());
-
-        Self { duration, total }
-    }
-}
-
-impl<AggL, DetL> Default for ResponseMetrics<AggL, DetL>
-where
-    DetL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    AggL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
-    fn default() -> Self {
-        Self {
-            duration: DurationFamily::new_with_constructor(MkDurationHistogram(Arc::new([]))),
-            total: Default::default(),
-        }
-    }
-}
-
-impl<AggL, DetL> Clone for ResponseMetrics<AggL, DetL> {
-    fn clone(&self) -> Self {
-        Self {
-            duration: self.duration.clone(),
-            total: self.total.clone(),
-        }
+impl MetricConstructor<Histogram> for MkDurationHistogram {
+    fn new_metric(&self) -> Histogram {
+        Histogram::new(self.0.iter().copied())
     }
 }
 
@@ -348,79 +209,6 @@ where
     }
 }
 
-impl<ReqB, L, S> svc::Service<http::Request<ReqB>> for RecordRequestDuration<L, S>
-where
-    L: MkStreamLabel,
-    S: svc::Service<http::Request<ReqB>, Response = http::Response<BoxBody>, Error = Error>,
-{
-    type Response = http::Response<BoxBody>;
-    type Error = S::Error;
-    type Future = ResponseFuture<L::StreamLabel, S::Future>;
-
-    #[inline]
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: http::Request<ReqB>) -> Self::Future {
-        let state = self.labeler.mk_stream_labeler(&req).map(|labeler| {
-            let RequestMetrics { total, duration } = self.metric.clone();
-            let (tx, start) = oneshot::channel();
-            tx.send(time::Instant::now()).unwrap();
-            ResponseState {
-                labeler,
-                start,
-                duration,
-                total,
-            }
-        });
-
-        let inner = self.inner.call(req);
-        ResponseFuture { state, inner }
-    }
-}
-
-impl<M, S> svc::Service<http::Request<BoxBody>> for RecordResponseDuration<M, S>
-where
-    M: MkStreamLabel,
-    S: svc::Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>,
-{
-    type Response = http::Response<BoxBody>;
-    type Error = Error;
-    type Future = ResponseFuture<M::StreamLabel, S::Future>;
-
-    #[inline]
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, mut req: http::Request<BoxBody>) -> Self::Future {
-        // If there's a labeler, wrap the request body to record the time that
-        // the respond flushes.
-        let state = if let Some(labeler) = self.labeler.mk_stream_labeler(&req) {
-            let (tx, start) = oneshot::channel();
-            req = req.map(|inner| {
-                BoxBody::new(RequestBody {
-                    inner,
-                    flushed: Some(tx),
-                })
-            });
-            let ResponseMetrics { duration, total } = self.metric.clone();
-            Some(ResponseState {
-                labeler,
-                start,
-                duration,
-                total,
-            })
-        } else {
-            None
-        };
-
-        let inner = self.inner.call(req);
-        ResponseFuture { state, inner }
-    }
-}
-
 // === impl ResponseFuture ===
 
 impl<L, F> Future for ResponseFuture<L, F>
@@ -453,56 +241,6 @@ where
                 end_stream(&mut state, Err(&error));
                 Poll::Ready(Err(error))
             }
-        }
-    }
-}
-
-// === impl ResponseBody ===
-
-impl<B> http_body::Body for RequestBody<B>
-where
-    B: http_body::Body,
-{
-    type Data = B::Data;
-    type Error = B::Error;
-
-    fn poll_data(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, B::Error>>> {
-        let mut this = self.project();
-        let res = futures::ready!(this.inner.as_mut().poll_data(cx));
-        if (*this.inner).is_end_stream() {
-            if let Some(tx) = this.flushed.take() {
-                let _ = tx.send(time::Instant::now());
-            }
-        }
-        Poll::Ready(res)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, B::Error>> {
-        let this = self.project();
-        let res = futures::ready!(this.inner.poll_trailers(cx));
-        if let Some(tx) = this.flushed.take() {
-            let _ = tx.send(time::Instant::now());
-        }
-        Poll::Ready(res)
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
-    }
-}
-
-#[pin_project::pinned_drop]
-impl<B> PinnedDrop for RequestBody<B> {
-    fn drop(self: Pin<&mut Self>) {
-        let this = self.project();
-        if let Some(tx) = this.flushed.take() {
-            let _ = tx.send(time::Instant::now());
         }
     }
 }
@@ -546,38 +284,6 @@ where
     }
 }
 
-fn end_stream<L>(
-    state: &mut Option<ResponseState<L>>,
-    res: Result<Option<&http::HeaderMap>, &Error>,
-) where
-    L: StreamLabel,
-{
-    let Some(ResponseState {
-        duration,
-        total,
-        mut start,
-        mut labeler,
-    }) = state.take()
-    else {
-        return;
-    };
-
-    labeler.end_response(res);
-
-    total
-        .get_or_create(&labeler.detailed_summary_labels())
-        .inc();
-
-    let elapsed = if let Ok(start) = start.try_recv() {
-        time::Instant::now().saturating_duration_since(start)
-    } else {
-        time::Duration::ZERO
-    };
-    duration
-        .get_or_create(&labeler.aggregate_labels())
-        .observe(elapsed.as_secs_f64());
-}
-
 #[pin_project::pinned_drop]
 impl<L> PinnedDrop for ResponseBody<L>
 where
@@ -591,10 +297,32 @@ where
     }
 }
 
-// === impl MkDurationHistogram ===
+fn end_stream<L>(
+    state: &mut Option<ResponseState<L>>,
+    res: Result<Option<&http::HeaderMap>, &Error>,
+) where
+    L: StreamLabel,
+{
+    let Some(ResponseState {
+        duration,
+        statuses: total,
+        mut start,
+        mut labeler,
+    }) = state.take()
+    else {
+        return;
+    };
 
-impl MetricConstructor<Histogram> for MkDurationHistogram {
-    fn new_metric(&self) -> Histogram {
-        Histogram::new(self.0.iter().copied())
-    }
+    labeler.end_response(res);
+
+    total.get_or_create(&labeler.status_labels()).inc();
+
+    let elapsed = if let Ok(start) = start.try_recv() {
+        time::Instant::now().saturating_duration_since(start)
+    } else {
+        time::Duration::ZERO
+    };
+    duration
+        .get_or_create(&labeler.duration_labels())
+        .observe(elapsed.as_secs_f64());
 }

@@ -177,10 +177,7 @@ impl EncodeLabelSet for GrpcRsp {
 impl Error {
     pub fn new_or_status(error: &BoxError) -> Result<Self, u16> {
         use super::super::super::errors as policy;
-        use crate::http::{
-            self,
-            h2::{H2Error, Reason},
-        };
+        use crate::http::h2::{H2Error, Reason};
 
         // No available backend can be found for a request.
         if errors::is_caused_by::<errors::FailFastError>(&**error) {
@@ -188,10 +185,6 @@ impl Error {
         }
         if errors::is_caused_by::<errors::LoadShedError>(&**error) {
             return Ok(Self::LoadShed);
-        }
-
-        if errors::is_caused_by::<http::stream_timeouts::ResponseTimeoutError>(&**error) {
-            return Ok(Self::Timeout);
         }
 
         if let Some(policy::HttpRouteRedirect { status, .. }) = errors::cause_ref(&**error) {

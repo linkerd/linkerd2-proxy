@@ -8,13 +8,20 @@ use linkerd_http_prom::record_response::{self, StreamLabel};
 pub use linkerd_http_prom::record_response::MkStreamLabel;
 
 pub mod labels;
+#[cfg(test)]
+pub(super) mod test_util;
+#[cfg(test)]
+mod tests;
 
-pub type RequestMetrics<AggL, DetL> = record_response::RequestMetrics<AggL, DetL>;
+pub type RequestMetrics<R> = record_response::RequestMetrics<
+    <R as StreamLabel>::DurationLabels,
+    <R as StreamLabel>::StatusLabels,
+>;
 
 #[derive(Debug)]
 pub struct RouteMetrics<R: StreamLabel, B: StreamLabel> {
     pub(super) retry: retry::RouteRetryMetrics,
-    pub(super) requests: RequestMetrics<R::AggregateLabels, R::DetailedSummaryLabels>,
+    pub(super) requests: RequestMetrics<R>,
     pub(super) backend: backend::RouteBackendMetrics<B>,
 }
 
@@ -50,15 +57,12 @@ pub type NewRecordDuration<T, M, N> =
 pub struct ExtractRecordDurationParams<M>(pub M);
 
 pub fn layer<T, N>(
-    metric: RequestMetrics<T::AggregateLabels, T::DetailedSummaryLabels>,
-) -> impl svc::Layer<
-    N,
-    Service = NewRecordDuration<T, RequestMetrics<T::AggregateLabels, T::DetailedSummaryLabels>, N>,
-> + Clone
+    metrics: &RequestMetrics<T::StreamLabel>,
+) -> impl svc::Layer<N, Service = NewRecordDuration<T, RequestMetrics<T::StreamLabel>, N>> + Clone
 where
     T: Clone + MkStreamLabel,
 {
-    NewRecordDuration::layer_via(ExtractRecordDurationParams(metric))
+    NewRecordDuration::layer_via(ExtractRecordDurationParams(metrics.clone()))
 }
 
 // === impl RouteMetrics ===
@@ -101,7 +105,7 @@ impl<R: StreamLabel, B: StreamLabel> Clone for RouteMetrics<R, B> {
 
 impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
     pub fn register(reg: &mut prom::Registry) -> Self {
-        let requests = RequestMetrics::register(reg, Self::REQUEST_BUCKETS.iter().copied());
+        let requests = RequestMetrics::<R>::register(reg, Self::REQUEST_BUCKETS.iter().copied());
 
         let backend = backend::RouteBackendMetrics::register(
             reg.sub_registry_with_prefix("backend"),
@@ -117,15 +121,16 @@ impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
         }
     }
 
-    // #[cfg(test)]
-    // pub(crate) fn backend_metrics(
-    //     &self,
-    //     p: crate::ParentRef,
-    //     r: RouteRef,
-    //     b: crate::BackendRef,
-    // ) -> backend::BackendHttpMetrics {
-    //     self.backend.get(p, r, b)
-    // }
+    #[cfg(feature = "fixme")]
+    #[cfg(test)]
+    pub(crate) fn backend_request_count(
+        &self,
+        p: crate::ParentRef,
+        r: crate::RouteRef,
+        b: crate::BackendRef,
+    ) -> linkerd_http_prom::RequestCount {
+        self.backend.backend_request_count(p, r, b)
+    }
 }
 
 // === impl ExtractRequestDurationParams ===
@@ -159,8 +164,8 @@ impl<P> StreamLabel for LabelHttpRsp<P>
 where
     P: EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
 {
-    type AggregateLabels = P;
-    type DetailedSummaryLabels = labels::Rsp<P, labels::HttpRsp>;
+    type StatusLabels = labels::Rsp<P, labels::HttpRsp>;
+    type DurationLabels = P;
 
     fn init_response<B>(&mut self, rsp: &http::Response<B>) {
         self.status = Some(rsp.status());
@@ -179,11 +184,7 @@ where
         }
     }
 
-    fn aggregate_labels(&self) -> Self::AggregateLabels {
-        self.parent.clone()
-    }
-
-    fn detailed_summary_labels(&self) -> Self::DetailedSummaryLabels {
+    fn status_labels(&self) -> Self::StatusLabels {
         labels::Rsp(
             self.parent.clone(),
             labels::HttpRsp {
@@ -191,6 +192,10 @@ where
                 error: self.error,
             },
         )
+    }
+
+    fn duration_labels(&self) -> Self::DurationLabels {
+        self.parent.clone()
     }
 }
 
@@ -210,8 +215,8 @@ impl<P> StreamLabel for LabelGrpcRsp<P>
 where
     P: EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
 {
-    type AggregateLabels = P;
-    type DetailedSummaryLabels = labels::Rsp<P, labels::GrpcRsp>;
+    type StatusLabels = labels::Rsp<P, labels::GrpcRsp>;
+    type DurationLabels = P;
 
     fn init_response<B>(&mut self, rsp: &http::Response<B>) {
         self.status = rsp
@@ -235,11 +240,7 @@ where
         }
     }
 
-    fn aggregate_labels(&self) -> Self::AggregateLabels {
-        self.parent.clone()
-    }
-
-    fn detailed_summary_labels(&self) -> Self::DetailedSummaryLabels {
+    fn status_labels(&self) -> Self::StatusLabels {
         labels::Rsp(
             self.parent.clone(),
             labels::GrpcRsp {
@@ -247,5 +248,9 @@ where
                 error: self.error,
             },
         )
+    }
+
+    fn duration_labels(&self) -> Self::DurationLabels {
+        self.parent.clone()
     }
 }

@@ -14,6 +14,9 @@ use linkerd_http_prom::{
 pub use super::super::metrics::*;
 pub use linkerd_http_prom::record_response::MkStreamLabel;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug)]
 pub struct RouteBackendMetrics<L: StreamLabel> {
     requests: RequestCountFamilies<labels::RouteBackend>,
@@ -21,8 +24,8 @@ pub struct RouteBackendMetrics<L: StreamLabel> {
 }
 
 type ResponseMetrics<L> = record_response::ResponseMetrics<
-    <L as StreamLabel>::AggregateLabels,
-    <L as StreamLabel>::DetailedSummaryLabels,
+    <L as StreamLabel>::DurationLabels,
+    <L as StreamLabel>::StatusLabels,
 >;
 
 pub fn layer<T, N>(
@@ -72,10 +75,20 @@ impl<L: StreamLabel> RouteBackendMetrics<L> {
         }
     }
 
-    // #[cfg(test)]
-    // pub(crate) fn get(&self, p: ParentRef, r: RouteRef, b: BackendRef) -> BackendHttpMetrics {
-    //     self.metrics.metrics(&RouteBackend(p, r, b))
-    // }
+    #[cfg(test)]
+    pub(crate) fn backend_request_count(
+        &self,
+        p: ParentRef,
+        r: RouteRef,
+        b: BackendRef,
+    ) -> linkerd_http_prom::RequestCount {
+        self.requests.metrics(&labels::RouteBackend(p, r, b))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn get_statuses(&self, l: &L::StatusLabels) -> prom::Counter {
+        self.responses.get_statuses(l)
+    }
 }
 
 impl<L: StreamLabel> Default for RouteBackendMetrics<L> {
