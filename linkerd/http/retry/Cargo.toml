@@ -15,6 +15,7 @@ parking_lot = "0.12"
 tracing = "0.1"
 thiserror = "1"
 
+linkerd-http-box = { path = "../box" }
 linkerd-error = { path = "../../error" }
 linkerd-stack = { path = "../../stack" }
 

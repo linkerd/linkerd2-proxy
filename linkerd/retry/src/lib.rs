@@ -2,12 +2,12 @@
 #![forbid(unsafe_code)]
 
 use futures::future;
-use linkerd_error::Error;
+use linkerd_error::{Error, Result};
 use linkerd_stack::{
     layer::{self, Layer},
-    proxy::{Proxy, ProxyService},
+    proxy::Proxy,
     util::AndThen,
-    Either, NewService, Oneshot, Service, ServiceExt,
+    Either, NewService, Service,
 };
 use std::{
     future::Future,
@@ -25,8 +25,8 @@ pub trait NewPolicy<T> {
 
 /// An extension to [`tower::retry::Policy`] that adds a method to prepare a
 /// request to be retried, possibly changing its type.
-pub trait PrepareRetry<Req, Rsp, E>:
-    tower::retry::Policy<Self::RetryRequest, Self::RetryResponse, E>
+pub trait PrepareRetry<Req, Rsp>:
+    tower::retry::Policy<Self::RetryRequest, Self::RetryResponse, Error>
 {
     /// A request type that can be retried.
     ///
@@ -44,7 +44,7 @@ pub trait PrepareRetry<Req, Rsp, E>:
     ///
     /// If this retry policy doesn't need to asynchronously modify the response
     /// type, this can be `futures::future::Ready`;
-    type ResponseFuture: Future<Output = Result<Self::RetryResponse, E>>;
+    type ResponseFuture: Future<Output = Result<Self::RetryResponse>>;
 
     /// Prepare an initial request for a potential retry.
     ///
@@ -55,7 +55,7 @@ pub trait PrepareRetry<Req, Rsp, E>:
     /// If retrying requires a specific request type other than the input type
     /// to this policy, this function may transform the request into a request
     /// of that type.
-    fn prepare_request(&self, req: Req) -> Either<Self::RetryRequest, Req>;
+    fn prepare_request(self, req: Req) -> Either<(Self, Self::RetryRequest), Req>;
 
     /// Prepare a response for a potential retry.
     ///
@@ -80,48 +80,6 @@ pub struct Retry<P, S, O> {
     policy: Option<P>,
     inner: S,
     proxy: O,
-}
-
-#[derive(Clone, Debug)]
-pub struct NewRetryLayer<P, O = ()> {
-    new_policy: P,
-    proxy: O,
-}
-
-// === impl NewRetryLayer ===
-pub fn layer<P>(new_policy: P) -> NewRetryLayer<P> {
-    NewRetryLayer {
-        new_policy,
-        proxy: (),
-    }
-}
-
-impl<P, O, N> Layer<N> for NewRetryLayer<P, O>
-where
-    P: Clone,
-    O: Clone,
-{
-    type Service = NewRetry<P, N, O>;
-    fn layer(&self, inner: N) -> Self::Service {
-        NewRetry {
-            inner,
-            new_policy: self.new_policy.clone(),
-            proxy: self.proxy.clone(),
-        }
-    }
-}
-
-impl<P> NewRetryLayer<P, ()> {
-    /// Adds a [`Proxy`] that will be applied to both the inner service and the
-    /// retry service.
-    ///
-    /// By default, this is the identity proxy, and does nothing.
-    pub fn with_proxy<O>(self, proxy: O) -> NewRetryLayer<P, O> {
-        NewRetryLayer {
-            new_policy: self.new_policy,
-            proxy,
-        }
-    }
 }
 
 // === impl NewRetry ===
@@ -164,7 +122,7 @@ type RetrySvc<P, S, R, F> = tower::retry::Retry<P, AndThen<S, fn(R) -> F>>;
 
 impl<P, S, O, Req, Fut, Rsp> Service<Req> for Retry<P, S, O>
 where
-    P: PrepareRetry<Req, Rsp, Error> + Clone,
+    P: PrepareRetry<Req, Rsp> + Clone + std::fmt::Debug,
     S: Service<Req, Response = Rsp, Future = Fut, Error = Error>,
     S: Service<P::RetryRequest, Response = Rsp, Future = Fut, Error = Error>,
     S: Clone,
@@ -183,7 +141,7 @@ where
     type Error = Error;
     type Future = future::Either<
         <O as Proxy<Req, S>>::Future,
-        Oneshot<ProxyService<O, RetrySvc<P, S, Rsp, P::ResponseFuture>>, P::RetryRequest>,
+        <O as Proxy<P::RetryRequest, RetrySvc<P, S, Rsp, P::ResponseFuture>>>::Future,
     >;
 
     #[inline]
@@ -192,24 +150,30 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        trace!(retryable = %self.policy.is_some());
-
-        let policy = match self.policy.as_ref() {
+        let (policy, req) = match self.policy.clone() {
+            Some(p) => match p.prepare_request(req) {
+                Either::A(req) => req,
+                Either::B(req) => {
+                    return future::Either::Left(self.proxy.proxy(&mut self.inner, req))
+                }
+            },
             None => return future::Either::Left(self.proxy.proxy(&mut self.inner, req)),
-            Some(p) => p,
         };
+        trace!(retryable = true, ?policy);
 
-        let retry_req = match policy.prepare_request(req) {
-            Either::A(retry_req) => retry_req,
-            Either::B(req) => return future::Either::Left(self.proxy.proxy(&mut self.inner, req)),
-        };
+        // Take the inner service, replacing it with a clone. This allows the
+        // readiness from poll_ready
+        let pending = self.inner.clone();
+        let ready = std::mem::replace(&mut self.inner, pending);
 
-        let inner = AndThen::new(
-            self.inner.clone(),
-            P::prepare_response as fn(Rsp) -> P::ResponseFuture,
-        );
-        let retry = tower::retry::Retry::new(policy.clone(), inner);
-        let retry = self.proxy.clone().into_service(retry);
-        future::Either::Right(retry.oneshot(retry_req))
+        // Wrap response bodies (e.g. with WithTrailers) so the retry policy can
+        // interact with it.
+        let inner = AndThen::new(ready, P::prepare_response as fn(Rsp) -> P::ResponseFuture);
+
+        // Retry::poll_ready is just a pass-through to the inner service, so we
+        // can rely on the fact that we've taken the ready inner service handle.
+        let mut inner = tower::retry::Retry::new(policy, inner);
+
+        future::Either::Right(self.proxy.proxy(&mut inner, req))
     }
 }
