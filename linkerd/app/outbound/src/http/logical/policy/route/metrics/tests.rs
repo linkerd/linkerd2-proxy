@@ -266,9 +266,8 @@ pub fn mock_http_route_metrics(
                 policy: policy::http::Policy {
                     meta: route_ref.0.clone(),
                     filters: [].into(),
-                    request_timeout: None,
-                    failure_policy: Default::default(),
                     distribution: policy::RouteDistribution::Empty,
+                    params: policy::http::RouteParams::default(),
                 },
             }],
         }],
@@ -286,9 +285,9 @@ pub fn mock_http_route_metrics(
                 addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
                 parent_ref: parent_ref.clone(),
                 route_ref: route_ref.clone(),
-                failure_policy: Default::default(),
                 filters: [].into(),
                 distribution: Default::default(),
+                params: policy::http::RouteParams::default(),
             },
         });
 
@@ -313,9 +312,8 @@ pub fn mock_grpc_route_metrics(
                 policy: policy::grpc::Policy {
                     meta: route_ref.0.clone(),
                     filters: [].into(),
-                    request_timeout: None,
-                    failure_policy: Default::default(),
                     distribution: policy::RouteDistribution::Empty,
+                    params: policy::grpc::RouteParams::default(),
                 },
             }],
         }],
@@ -333,9 +331,9 @@ pub fn mock_grpc_route_metrics(
                 addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
                 parent_ref: parent_ref.clone(),
                 route_ref: route_ref.clone(),
-                failure_policy: Default::default(),
                 filters: [].into(),
                 distribution: Default::default(),
+                params: policy::grpc::RouteParams::default(),
             },
         });
 

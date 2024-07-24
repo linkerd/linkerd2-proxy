@@ -121,6 +121,24 @@ impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
         use super::logical::policy::errors as policy;
 
+        // No available backend can be found for a request.
+        if errors::is_caused_by::<errors::FailFastError>(&*error) {
+            // XXX(ver) This should probably be SERVICE_UNAVAILABLE, because
+            // this is basically no different from a LoadShedError, but that
+            // would be a change in behavior.
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
+        }
+        if errors::is_caused_by::<errors::LoadShedError>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::unavailable(error));
+        }
+
+        // Handle policy-driven timeouts.
+        if errors::is_caused_by::<http::stream_timeouts::ResponseTimeoutError>(&*error) {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout_nonfatal(
+                error,
+            ));
+        }
+
         // A profile configured request timeout was encountered.
         if errors::is_caused_by::<http::ResponseTimeoutError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
@@ -132,16 +150,6 @@ impl errors::HttpRescue<Error> for ServerRescue {
             return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }
 
-        // No available backend can be found for a request.
-        if errors::is_caused_by::<errors::FailFastError>(&*error) {
-            // XXX(ver) This should probably be SERVICE_UNAVAILABLE, because
-            // this is basically no different from a LoadShedError, but that
-            // would be a change in behavior.
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(error));
-        }
-        if errors::is_caused_by::<errors::LoadShedError>(&*error) {
-            return Ok(errors::SyntheticHttpResponse::unavailable(error));
-        }
         if errors::is_caused_by::<super::concrete::DispatcherFailed>(&*error) {
             return Ok(errors::SyntheticHttpResponse::bad_gateway(error));
         }

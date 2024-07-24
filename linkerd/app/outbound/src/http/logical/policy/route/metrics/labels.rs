@@ -1,5 +1,5 @@
 //! Prometheus label types.
-use linkerd_app_core::{errors, metrics::prom::EncodeLabelSetMut, Error as BoxError};
+use linkerd_app_core::{errors, metrics::prom::EncodeLabelSetMut, proxy::http, Error as BoxError};
 use prometheus_client::encoding::*;
 
 use crate::{BackendRef, ParentRef, RouteRef};
@@ -37,7 +37,10 @@ pub struct GrpcRsp {
 pub enum Error {
     FailFast,
     LoadShed,
-    Timeout,
+    RequestTimeout,
+    ResponseHeadersTimeout,
+    ResponseStreamTimeout,
+    IdleTimeout,
     Cancel,
     Refused,
     EnhanceYourCalm,
@@ -199,6 +202,23 @@ impl Error {
             return Err(*code);
         }
 
+        use http::stream_timeouts::{
+            ResponseHeadersTimeoutError, ResponseStreamTimeoutError, StreamDeadlineError,
+            StreamIdleError,
+        };
+        if errors::is_caused_by::<ResponseHeadersTimeoutError>(&**error) {
+            return Ok(Self::ResponseHeadersTimeout);
+        }
+        if errors::is_caused_by::<ResponseStreamTimeoutError>(&**error) {
+            return Ok(Self::ResponseStreamTimeout);
+        }
+        if errors::is_caused_by::<StreamDeadlineError>(&**error) {
+            return Ok(Self::RequestTimeout);
+        }
+        if errors::is_caused_by::<StreamIdleError>(&**error) {
+            return Ok(Self::IdleTimeout);
+        }
+
         // HTTP/2 errors.
         if let Some(h2e) = errors::cause_ref::<H2Error>(&**error) {
             if h2e.is_reset() {
@@ -228,7 +248,10 @@ impl EncodeLabelValue for Error {
         match self {
             Self::FailFast => enc.write_str("FAIL_FAST"),
             Self::LoadShed => enc.write_str("LOAD_SHED"),
-            Self::Timeout => enc.write_str("TIMEOUT"),
+            Self::RequestTimeout => enc.write_str("REQUEST_TIMEOUT"),
+            Self::ResponseHeadersTimeout => enc.write_str("RESPONSE_HEADERS_TIMEOUT"),
+            Self::ResponseStreamTimeout => enc.write_str("RESPONSE_STREAM_TIMEOUT"),
+            Self::IdleTimeout => enc.write_str("IDLE_TIMEOUT"),
             Self::Cancel => enc.write_str("CANCEL"),
             Self::Refused => enc.write_str("REFUSED"),
             Self::EnhanceYourCalm => enc.write_str("ENHANCE_YOUR_CALM"),

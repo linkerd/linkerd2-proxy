@@ -21,9 +21,9 @@ pub struct Params<M, F, E> {
 }
 
 pub type HttpParams =
-    Params<http_route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>;
+    Params<http_route::http::MatchRequest, policy::http::Filter, policy::http::RouteParams>;
 pub type GrpcParams =
-    Params<http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>;
+    Params<http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::RouteParams>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
@@ -34,9 +34,9 @@ pub(crate) struct Router<T: Clone + Debug + Eq + Hash, M, F, E> {
 }
 
 pub(super) type Http<T> =
-    Router<T, http_route::http::MatchRequest, policy::http::Filter, policy::http::StatusRanges>;
+    Router<T, http_route::http::MatchRequest, policy::http::Filter, policy::http::RouteParams>;
 pub(super) type Grpc<T> =
-    Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::Codes>;
+    Router<T, http_route::grpc::MatchRoute, policy::grpc::Filter, policy::grpc::RouteParams>;
 
 type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
 
@@ -62,8 +62,10 @@ where
         Key = route::MatchedRoute<T, M::Summary, F, P>,
         Error = NoRoute,
     >,
-    route::MatchedRoute<T, M::Summary, F, P>:
-        route::filters::Apply + svc::Param<classify::Request> + route::metrics::MkStreamLabel,
+    route::MatchedRoute<T, M::Summary, F, P>: route::filters::Apply
+        + svc::Param<classify::Request>
+        + svc::Param<route::extensions::Params>
+        + route::metrics::MkStreamLabel,
     route::MatchedBackend<T, M::Summary, F>: route::filters::Apply + route::metrics::MkStreamLabel,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
@@ -199,8 +201,7 @@ where
                       meta,
                       filters,
                       distribution,
-                      failure_policy,
-                      request_timeout: _,
+                      params,
                   }| {
                 let route_ref = RouteRef(meta);
                 let distribution = mk_distribution(&route_ref, &distribution);
@@ -211,7 +212,7 @@ where
                     route_ref,
                     filters,
                     distribution,
-                    failure_policy,
+                    params,
                 }
             }
         };

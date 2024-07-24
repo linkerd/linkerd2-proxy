@@ -20,6 +20,7 @@ pub mod orig_proto;
 mod override_authority;
 mod retain;
 mod server;
+pub mod stream_timeouts;
 pub mod strip_header;
 pub mod timeout;
 pub mod upgrade;
@@ -39,12 +40,13 @@ pub use self::{
     override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,
     server::{NewServeHttp, Params as ServerParams, ServeHttp},
+    stream_timeouts::{EnforceTimeouts, StreamTimeouts},
     strip_header::StripHeader,
     timeout::{NewTimeout, ResponseTimeout, ResponseTimeoutError},
     version::Version,
 };
 pub use http::{
-    header::{self, HeaderName, HeaderValue},
+    header::{self, HeaderMap, HeaderName, HeaderValue},
     uri, Method, Request, Response, StatusCode,
 };
 pub use hyper::body::HttpBody;

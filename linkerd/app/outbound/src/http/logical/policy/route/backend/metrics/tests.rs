@@ -296,9 +296,8 @@ fn mock_http_route_backend_metrics(
                 policy: policy::http::Policy {
                     meta: route_ref.0.clone(),
                     filters: [].into(),
-                    request_timeout: None,
-                    failure_policy: Default::default(),
                     distribution: policy::RouteDistribution::Empty,
+                    params: Default::default(),
                 },
             }],
         }],
@@ -353,9 +352,8 @@ fn mock_grpc_route_backend_metrics(
                 policy: policy::grpc::Policy {
                     meta: route_ref.0.clone(),
                     filters: [].into(),
-                    request_timeout: None,
-                    failure_policy: Default::default(),
                     distribution: policy::RouteDistribution::Empty,
+                    params: Default::default(),
                 },
             }],
         }],
