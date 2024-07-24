@@ -15,13 +15,14 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{sync::watch, task, time};
 use tracing::{info, Instrument};
 
+mod retries;
+mod timeouts;
+
 const AUTHORITY: &str = "logical.test.svc.cluster.local";
 const PORT: u16 = 666;
 
 type Request = http::Request<http::BoxBody>;
 type Response = http::Response<http::BoxBody>;
-
-mod timeouts;
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn routes() {
@@ -418,6 +419,21 @@ fn mk_rsp(status: StatusCode, body: impl ToString) -> Response {
     http::Response::builder()
         .status(status)
         .body(http::BoxBody::new(body.to_string()))
+        .unwrap()
+}
+
+fn mk_grpc_rsp(code: tonic::Code) -> Response {
+    http::Response::builder()
+        .version(::http::Version::HTTP_2)
+        .header(
+            "content-type",
+            http::HeaderValue::from_static("application/grpc"),
+        )
+        .body(BoxBody::new(MockBody::trailers(async move {
+            let mut trls = http::HeaderMap::default();
+            trls.insert("grpc-status", (code as u8).to_string().parse().unwrap());
+            Ok(Some(trls))
+        })))
         .unwrap()
 }
 

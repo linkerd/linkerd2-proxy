@@ -50,7 +50,7 @@ pub struct ResponseWithPeekTrailers<S>(pub(crate) S);
 // === impl WithTrailers ===
 
 impl<B: Body> PeekTrailersBody<B> {
-    pub fn trailers(&self) -> Option<&http::HeaderMap> {
+    pub fn peek_trailers(&self) -> Option<&http::HeaderMap> {
         self.trailers
             .as_ref()
             .and_then(|trls| trls.as_ref().ok()?.as_ref())
@@ -73,6 +73,7 @@ impl<B: Body> PeekTrailersBody<B> {
         // If the response doesn't have a body stream, also skip trying to read
         // a trailers frame.
         if rsp.is_end_stream() {
+            tracing::debug!("Skipping trailers for empty body");
             return Either::Left(future::ready(Self::no_trailers(rsp)));
         }
 
@@ -93,6 +94,7 @@ impl<B: Body> PeekTrailersBody<B> {
             trailers: None,
         };
 
+        tracing::debug!("Buffering first data frame");
         if let Some(data) = body.inner.data().await {
             // The body has data; stop waiting for trailers.
             body.first_data = Some(data);
@@ -110,6 +112,9 @@ impl<B: Body> PeekTrailersBody<B> {
             // Okay, `poll_data` has returned `None`, so there are no data
             // frames left. Let's see if there's trailers...
             body.trailers = Some(body.inner.trailers().await);
+        }
+        if body.trailers.is_some() {
+            tracing::debug!("Buffered trailers frame");
         }
 
         http::Response::from_parts(parts, body)

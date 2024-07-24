@@ -1,4 +1,5 @@
 use crate::FailureAccrual;
+use linkerd_exp_backoff::ExponentialBackoff;
 use linkerd_http_route::http;
 use std::{ops::RangeInclusive, sync::Arc, time};
 
@@ -11,6 +12,7 @@ pub type Rule = http::Rule<Policy>;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct RouteParams {
     pub timeouts: Timeouts,
+    pub retry: Option<Retry>,
 }
 
 // TODO: keepalive settings, etc.
@@ -38,6 +40,15 @@ pub enum Filter {
     RequestHeaders(filter::ModifyHeader),
     ResponseHeaders(filter::ModifyHeader),
     InternalError(&'static str),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Retry {
+    pub max_retries: u16,
+    pub max_request_bytes: usize,
+    pub status_ranges: StatusRanges,
+    pub timeout: Option<time::Duration>,
+    pub backoff: Option<ExponentialBackoff>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
