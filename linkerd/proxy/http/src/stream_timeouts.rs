@@ -67,6 +67,9 @@ pub enum ResponseTimeoutError {
     Headers(#[from] ResponseHeadersTimeoutError),
 
     #[error(transparent)]
+    Response(#[from] ResponseStreamTimeoutError),
+
+    #[error(transparent)]
     Lifetime(#[from] StreamDeadlineError),
 }
 
@@ -241,13 +244,22 @@ where
                 *this.request_flushed = None;
                 *this.request_flushed_at = Some(start);
 
-                if let Some(timeout) = this.timeouts.response_headers {
+                let timeout = match (this.timeouts.response_headers, this.timeouts.response_end) {
+                    (Some(eoh), eos) if eoh < eos.unwrap_or_default() => Some((
+                        eoh,
+                        ResponseTimeoutError::from(ResponseHeadersTimeoutError(eoh)),
+                    )),
+                    (_, Some(eos)) => Some((eos, ResponseStreamTimeoutError(eos).into())),
+                    _ => None,
+                };
+                if let Some((timeout, error)) = timeout {
+                    tracing::debug!(?timeout);
                     let headers_by = start + timeout;
                     if let Some(deadline) = this.deadline.as_mut().as_pin_mut() {
                         if headers_by < deadline.sleep.deadline() {
                             tracing::trace!(?timeout, "Updating response headers deadline");
                             let dl = deadline.project();
-                            *dl.error = ResponseHeadersTimeoutError(timeout).into();
+                            *dl.error = error;
                             dl.sleep.reset(headers_by);
                         } else {
                             tracing::trace!("Using original stream deadline");
@@ -256,7 +268,7 @@ where
                         tracing::trace!(?timeout, "Setting response headers deadline");
                         this.deadline.set(Some(Deadline {
                             sleep: time::sleep_until(headers_by),
-                            error: ResponseHeadersTimeoutError(timeout).into(),
+                            error,
                         }));
                     }
                 }
@@ -301,11 +313,17 @@ where
         let start = this.request_flushed_at.unwrap_or_else(time::Instant::now);
         let timeout = match (this.timeouts.response_end, this.timeouts.limit) {
             (Some(eos), Some(lim)) if start + eos < lim.deadline => {
+                tracing::debug!(?eos, "Setting response stream timeout");
                 Some((start + eos, ResponseStreamTimeoutError(eos).into()))
             }
-            (Some(_), Some(lim)) => Some((lim.deadline, StreamDeadlineError(lim.lifetime).into())),
-            (Some(eos), None) => Some((start + eos, ResponseStreamTimeoutError(eos).into())),
-            (None, Some(lim)) => Some((lim.deadline, StreamDeadlineError(lim.lifetime).into())),
+            (Some(eos), None) => {
+                tracing::debug!(?eos, "Setting response stream timeout");
+                Some((start + eos, ResponseStreamTimeoutError(eos).into()))
+            }
+            (_, Some(lim)) => {
+                tracing::debug!("Using stream deadline");
+                Some((lim.deadline, StreamDeadlineError(lim.lifetime).into()))
+            }
             (None, None) => None,
         };
 

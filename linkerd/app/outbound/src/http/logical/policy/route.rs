@@ -128,7 +128,7 @@ where
                 .push(extensions::NewSetExtensions::layer())
                 .push(metrics::layer(&metrics.requests))
                 // Configure a classifier to use in the endpoint stack.
-                // FIXME(ver) move this into NewSetExtensions
+                // TODO(ver) move this into NewSetExtensions?
                 .push(classify::NewClassify::layer())
                 .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();

@@ -155,6 +155,9 @@ pub mod proto {
         #[error("invalid failure accrual policy: {0}")]
         Breaker(#[from] InvalidFailureAccrual),
 
+        #[error("invalid request timeout: {0}")]
+        RequestTimeout(#[from] prost_types::DurationError),
+
         #[error("missing {0}")]
         Missing(&'static str),
 
