@@ -46,42 +46,42 @@ pub struct EnforceTimeouts<S> {
 }
 
 #[derive(Clone, Copy, Debug, Error)]
-#[error("timed out waiting for response headers: {0:?}")]
+#[error("response header timeout: {0:?}")]
 pub struct ResponseHeadersTimeoutError(time::Duration);
 
 #[derive(Clone, Copy, Debug, Error)]
-#[error("timed out waiting for response stream: {0:?}")]
+#[error("response stream timeout: {0:?}")]
 pub struct ResponseStreamTimeoutError(time::Duration);
 
 #[derive(Clone, Copy, Debug, Error)]
-#[error("stream deadline met: {0:?}")]
+#[error("request timeout: {0:?}")]
 pub struct StreamDeadlineError(time::Duration);
 
 #[derive(Clone, Copy, Debug, Error)]
-#[error("stream timed out due to idleness: {0:?}")]
+#[error("idle timeout: {0:?}")]
 pub struct StreamIdleError(time::Duration);
 
 #[derive(Clone, Copy, Debug, Error)]
 pub enum ResponseTimeoutError {
-    #[error(transparent)]
+    #[error("timed out waiting for response headers: {0}")]
     Headers(#[from] ResponseHeadersTimeoutError),
 
-    #[error(transparent)]
+    #[error("timed out waiting for response headers: {0}")]
     Response(#[from] ResponseStreamTimeoutError),
 
-    #[error(transparent)]
+    #[error("timed out waiting for response headers: {0}")]
     Lifetime(#[from] StreamDeadlineError),
 }
 
 #[derive(Clone, Copy, Debug, Error)]
 pub enum BodyTimeoutError {
-    #[error(transparent)]
+    #[error("timed out processing response stream: {0}")]
     Response(#[from] ResponseStreamTimeoutError),
 
-    #[error(transparent)]
+    #[error("timed out processing response stream: {0}")]
     Lifetime(#[from] StreamDeadlineError),
 
-    #[error(transparent)]
+    #[error("timed out processing response stream: {0}")]
     Idle(#[from] StreamIdleError),
 }
 
@@ -245,7 +245,11 @@ where
                 *this.request_flushed_at = Some(start);
 
                 let timeout = match (this.timeouts.response_headers, this.timeouts.response_end) {
-                    (Some(eoh), eos) if eoh < eos.unwrap_or_default() => Some((
+                    (Some(eoh), Some(eos)) if eoh < eos => Some((
+                        eoh,
+                        ResponseTimeoutError::from(ResponseHeadersTimeoutError(eoh)),
+                    )),
+                    (Some(eoh), _) => Some((
                         eoh,
                         ResponseTimeoutError::from(ResponseHeadersTimeoutError(eoh)),
                     )),
