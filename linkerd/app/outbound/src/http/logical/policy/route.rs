@@ -35,7 +35,6 @@ pub(crate) struct Route<T, F, E> {
     pub(super) filters: Arc<[F]>,
     pub(super) distribution: BackendDistribution<T, F>,
     pub(super) failure_policy: E,
-    pub(super) request_timeout: Option<std::time::Duration>,
 }
 
 pub(crate) type MatchedRoute<T, M, F, E> = Matched<M, Route<T, F, E>>;
@@ -120,7 +119,6 @@ where
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                .push(http::NewTimeout::layer())
                 .push(metrics::layer(&metrics.requests))
                 // Configure a classifier to use in the endpoint stack.
                 // FIXME(ver) move this into NewSetExtensions
@@ -150,12 +148,6 @@ impl<T: Clone, M, F, P> svc::Param<RouteLabels> for MatchedRoute<T, M, F, P> {
             self.params.parent_ref.clone(),
             self.params.route_ref.clone(),
         )
-    }
-}
-
-impl<T, M, F, P> svc::Param<http::timeout::ResponseTimeout> for MatchedRoute<T, M, F, P> {
-    fn param(&self) -> http::timeout::ResponseTimeout {
-        http::timeout::ResponseTimeout(self.params.request_timeout)
     }
 }
 
