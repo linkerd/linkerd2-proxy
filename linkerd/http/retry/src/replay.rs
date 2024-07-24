@@ -2,6 +2,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
 use http_body::{Body, SizeHint};
 use linkerd_error::Error;
+use linkerd_http_box::BoxBody;
 use parking_lot::Mutex;
 use std::{collections::VecDeque, io::IoSlice, pin::Pin, sync::Arc, task::Context, task::Poll};
 use thiserror::Error;
@@ -18,7 +19,7 @@ use thiserror::Error;
 /// The buffered data can then be used to retry the request if the original
 /// request fails.
 #[derive(Debug)]
-pub struct ReplayBody<B> {
+pub struct ReplayBody<B = BoxBody> {
     /// Buffered state owned by this body if it is actively being polled. If
     /// this body has been polled and no other body owned the state, this will
     /// be `Some`.

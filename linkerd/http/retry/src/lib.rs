@@ -1,7 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
+pub mod peek_trailers;
 pub mod replay;
-pub mod with_trailers;
 
-pub use self::{replay::ReplayBody, with_trailers::WithTrailers};
+pub use self::{peek_trailers::PeekTrailersBody, replay::ReplayBody};
