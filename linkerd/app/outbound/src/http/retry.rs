@@ -89,7 +89,7 @@ where
                 let is_failure = classify::Request::from(self.response_classes.clone())
                     .classify(req)
                     .start(rsp)
-                    .eos(rsp.body().trailers())
+                    .eos(rsp.body().peek_trailers())
                     .is_failure();
                 // did the body exceed the maximum length limit?
                 let exceeded_max_len = req.body().is_capped();

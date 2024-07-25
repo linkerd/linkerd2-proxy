@@ -12,11 +12,15 @@ futures = { version = "0.3", default-features = false }
 http-body = "0.4"
 http = "0.2"
 parking_lot = "0.12"
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.4", features = ["retry"] }
 tracing = "0.1"
 thiserror = "1"
 
 linkerd-http-box = { path = "../box" }
 linkerd-error = { path = "../../error" }
+linkerd-exp-backoff = { path = "../../exp-backoff" }
+linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
 
 [dev-dependencies]

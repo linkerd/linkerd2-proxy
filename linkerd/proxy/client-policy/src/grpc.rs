@@ -1,6 +1,7 @@
 use crate::FailureAccrual;
+use linkerd_exp_backoff::ExponentialBackoff;
 use linkerd_http_route::{grpc, http};
-use std::sync::Arc;
+use std::{sync::Arc, time};
 
 pub use linkerd_http_route::grpc::{filter, find, r#match, RouteMatch};
 
@@ -11,6 +12,7 @@ pub type Rule = grpc::Rule<Policy>;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct RouteParams {
     pub timeouts: crate::http::Timeouts,
+    pub retry: Option<Retry>,
 }
 
 // TODO HTTP2 settings
@@ -28,6 +30,15 @@ pub enum Filter {
     InjectFailure(filter::InjectFailure),
     RequestHeaders(http::filter::ModifyHeader),
     InternalError(&'static str),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Retry {
+    pub max_retries: usize,
+    pub max_request_bytes: usize,
+    pub codes: Codes,
+    pub timeout: Option<time::Duration>,
+    pub backoff: Option<ExponentialBackoff>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

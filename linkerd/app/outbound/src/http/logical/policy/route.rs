@@ -10,6 +10,7 @@ pub(crate) mod backend;
 pub(crate) mod extensions;
 pub(crate) mod filters;
 pub(crate) mod metrics;
+pub(crate) mod retry;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
@@ -121,7 +122,8 @@ where
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                // Set request extensions based on the route configuration
+                .push(retry::NewHttpRetry::layer(metrics.retry.clone()))
+                // Set request extensions based on the route configuration.
                 .push(extensions::NewSetExtensions::layer())
                 .push(metrics::layer(&metrics.requests))
                 // Configure a classifier to use in the endpoint stack.
@@ -185,8 +187,17 @@ impl<T> metrics::MkStreamLabel for Http<T> {
 
 impl<T> svc::Param<extensions::Params> for Http<T> {
     fn param(&self) -> extensions::Params {
+        let retry = self.params.params.retry.clone();
         extensions::Params {
             timeouts: self.params.params.timeouts.clone(),
+            retry: retry.map(|r| retry::RetryPolicy {
+                max_retries: r.max_retries as _,
+                max_request_bytes: r.max_request_bytes,
+                timeout: r.timeout,
+                backoff: r.backoff,
+                retryable_http_statuses: Some(r.status_ranges),
+                retryable_grpc_statuses: None,
+            }),
         }
     }
 }
@@ -229,8 +240,17 @@ impl<T> metrics::MkStreamLabel for Grpc<T> {
 
 impl<T> svc::Param<extensions::Params> for Grpc<T> {
     fn param(&self) -> extensions::Params {
+        let retry = self.params.params.retry.clone();
         extensions::Params {
             timeouts: self.params.params.timeouts.clone(),
+            retry: retry.map(|r| retry::RetryPolicy {
+                max_retries: r.max_retries as _,
+                max_request_bytes: r.max_request_bytes,
+                timeout: r.timeout,
+                backoff: r.backoff,
+                retryable_http_statuses: None,
+                retryable_grpc_statuses: Some(r.codes),
+            }),
         }
     }
 }

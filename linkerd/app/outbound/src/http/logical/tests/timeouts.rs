@@ -332,21 +332,22 @@ fn mock(timeouts: Timeouts) -> (svc::BoxCloneHttp, Handle) {
 
 fn mk_route(backend: client_policy::Backend, timeouts: Timeouts) -> client_policy::http::Route {
     use client_policy::{
-        http::{self, Filter, Policy, Route, Rule},
+        http::{self, Policy, Route, Rule},
         Meta, RouteBackend, RouteDistribution,
     };
-    use once_cell::sync::Lazy;
-    static NO_FILTERS: Lazy<Arc<[Filter]>> = Lazy::new(|| Arc::new([]));
     Route {
         hosts: vec![],
         rules: vec![Rule {
             matches: vec![http::r#match::MatchRequest::default()],
             policy: Policy {
                 meta: Meta::new_default("timeout-route"),
-                filters: NO_FILTERS.clone(),
-                params: http::RouteParams { timeouts },
+                filters: [].into(),
+                params: http::RouteParams {
+                    timeouts,
+                    ..Default::default()
+                },
                 distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
-                    filters: NO_FILTERS.clone(),
+                    filters: [].into(),
                     backend,
                 }])),
             },

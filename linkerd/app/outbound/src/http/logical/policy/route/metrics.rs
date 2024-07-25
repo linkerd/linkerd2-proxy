@@ -1,4 +1,4 @@
-use super::backend::metrics as backend;
+use super::{backend::metrics as backend, retry};
 use linkerd_app_core::{
     metrics::prom::{self, EncodeLabelSetMut},
     svc,
@@ -20,6 +20,7 @@ pub type RequestMetrics<R> = record_response::RequestMetrics<
 
 #[derive(Debug)]
 pub struct RouteMetrics<R: StreamLabel, B: StreamLabel> {
+    pub(super) retry: retry::RouteRetryMetrics,
     pub(super) requests: RequestMetrics<R>,
     pub(super) backend: backend::RouteBackendMetrics<B>,
 }
@@ -87,6 +88,7 @@ impl<R: StreamLabel, B: StreamLabel> Default for RouteMetrics<R, B> {
         Self {
             requests: Default::default(),
             backend: Default::default(),
+            retry: Default::default(),
         }
     }
 }
@@ -96,6 +98,7 @@ impl<R: StreamLabel, B: StreamLabel> Clone for RouteMetrics<R, B> {
         Self {
             requests: self.requests.clone(),
             backend: self.backend.clone(),
+            retry: self.retry.clone(),
         }
     }
 }
@@ -108,7 +111,14 @@ impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
             reg.sub_registry_with_prefix("backend"),
             Self::RESPONSE_BUCKETS.iter().copied(),
         );
-        Self { requests, backend }
+
+        let retry = retry::RouteRetryMetrics::register(reg.sub_registry_with_prefix("retry"));
+
+        Self {
+            requests,
+            backend,
+            retry,
+        }
     }
 
     #[cfg(test)]
