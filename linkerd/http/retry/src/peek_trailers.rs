@@ -4,19 +4,19 @@ use futures::{
 };
 use http_body::Body;
 use linkerd_http_box::BoxBody;
+use linkerd_stack::Service;
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
-use tower::Service;
 
 /// An HTTP body that allows inspecting the body's trailers, if a `TRAILERS`
 /// frame was the first frame after the initial headers frame.
 ///
 /// If the first frame of the body stream was *not* a `TRAILERS` frame, this
 /// behaves identically to a normal body.
-pub struct TrailersBody<B: Body = BoxBody> {
+pub struct PeekTrailersBody<B: Body = BoxBody> {
     inner: B,
 
     /// The first DATA frame received from the inner body, or an error that
@@ -39,24 +39,24 @@ pub struct TrailersBody<B: Body = BoxBody> {
     trailers: Option<Result<Option<http::HeaderMap>, B::Error>>,
 }
 
-pub type WithTrailersFuture<B> = Either<
-    futures::future::Ready<http::Response<TrailersBody<B>>>,
-    Pin<Box<dyn Future<Output = http::Response<TrailersBody<B>>> + Send + 'static>>,
+pub type WithPeekTrailersBody<B> = Either<
+    futures::future::Ready<http::Response<PeekTrailersBody<B>>>,
+    Pin<Box<dyn Future<Output = http::Response<PeekTrailersBody<B>>> + Send + 'static>>,
 >;
 
 #[derive(Clone, Debug)]
-pub struct ResponseWithTrailers<S>(pub(crate) S);
+pub struct ResponseWithPeekTrailers<S>(pub(crate) S);
 
 // === impl WithTrailers ===
 
-impl<B: Body> TrailersBody<B> {
-    pub fn trailers(&self) -> Option<&http::HeaderMap> {
+impl<B: Body> PeekTrailersBody<B> {
+    pub fn peek_trailers(&self) -> Option<&http::HeaderMap> {
         self.trailers
             .as_ref()
             .and_then(|trls| trls.as_ref().ok()?.as_ref())
     }
 
-    pub fn map_response(rsp: http::Response<B>) -> WithTrailersFuture<B>
+    pub fn map_response(rsp: http::Response<B>) -> WithPeekTrailersBody<B>
     where
         B: Send + Unpin + 'static,
         B::Data: Send + Unpin + 'static,
@@ -73,6 +73,7 @@ impl<B: Body> TrailersBody<B> {
         // If the response doesn't have a body stream, also skip trying to read
         // a trailers frame.
         if rsp.is_end_stream() {
+            tracing::debug!("Skipping trailers for empty body");
             return Either::Left(future::ready(Self::no_trailers(rsp)));
         }
 
@@ -93,6 +94,7 @@ impl<B: Body> TrailersBody<B> {
             trailers: None,
         };
 
+        tracing::debug!("Buffering first data frame");
         if let Some(data) = body.inner.data().await {
             // The body has data; stop waiting for trailers.
             body.first_data = Some(data);
@@ -111,6 +113,9 @@ impl<B: Body> TrailersBody<B> {
             // frames left. Let's see if there's trailers...
             body.trailers = Some(body.inner.trailers().await);
         }
+        if body.trailers.is_some() {
+            tracing::debug!("Buffered trailers frame");
+        }
 
         http::Response::from_parts(parts, body)
     }
@@ -124,7 +129,7 @@ impl<B: Body> TrailersBody<B> {
     }
 }
 
-impl<B> Body for TrailersBody<B>
+impl<B> Body for PeekTrailersBody<B>
 where
     B: Body + Unpin,
     B::Data: Unpin,
@@ -184,15 +189,15 @@ where
 // === impl ResponseWithTrailers ===
 
 type WrapTrailersFuture<E> = future::Map<
-    WithTrailersFuture<BoxBody>,
-    fn(http::Response<TrailersBody>) -> Result<http::Response<TrailersBody>, E>,
+    WithPeekTrailersBody<BoxBody>,
+    fn(http::Response<PeekTrailersBody>) -> Result<http::Response<PeekTrailersBody>, E>,
 >;
 
-impl<Req, S> Service<Req> for ResponseWithTrailers<S>
+impl<Req, S> Service<Req> for ResponseWithPeekTrailers<S>
 where
     S: Service<Req, Response = http::Response<BoxBody>>,
 {
-    type Response = http::Response<TrailersBody>;
+    type Response = http::Response<PeekTrailersBody>;
     type Error = S::Error;
     type Future = future::AndThen<
         S::Future,
@@ -208,6 +213,6 @@ where
     fn call(&mut self, req: Req) -> Self::Future {
         self.0
             .call(req)
-            .and_then(|rsp| TrailersBody::map_response(rsp).map(Ok))
+            .and_then(|rsp| PeekTrailersBody::map_response(rsp).map(Ok))
     }
 }

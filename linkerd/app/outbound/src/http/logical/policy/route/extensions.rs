@@ -65,10 +65,13 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         let retry = self.configure_retry(req.headers_mut());
+
+        // Ensure that we get response headers within the retry timeout. Note
+        // that this may be cleared super::retry::RetryPolicy::set_extensions.
         let mut timeouts = self.configure_timeouts(req.headers_mut());
         timeouts.response_headers = retry.as_ref().and_then(|r| r.timeout);
-        tracing::debug!(?retry, ?timeouts, "Setting extensions");
 
+        tracing::debug!(?retry, ?timeouts, "Initializing route extensions");
         if let Some(retry) = retry {
             let _prior = req.extensions_mut().insert(retry);
             debug_assert!(_prior.is_none(), "RetryPolicy must only be configured once");
@@ -80,7 +83,8 @@ where
             "StreamTimeouts must only be configured once"
         );
 
-        req.extensions_mut().insert(Attempt(1.try_into().unwrap()));
+        let _prior = req.extensions_mut().insert(Attempt(1.try_into().unwrap()));
+        debug_assert!(_prior.is_none(), "Attempts must only be configured once");
 
         self.inner.call(req)
     }

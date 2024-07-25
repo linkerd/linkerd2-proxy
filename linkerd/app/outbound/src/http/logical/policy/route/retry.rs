@@ -5,9 +5,10 @@ use linkerd_app_core::{
     exp_backoff::ExponentialBackoff,
     is_caused_by,
     proxy::http::{self, stream_timeouts::ResponseTimeoutError},
-    svc, Error, Result,
+    svc::{self, http::h2},
+    Error, Result,
 };
-use linkerd_http_retry::{self as retry, with_trailers::TrailersBody};
+use linkerd_http_retry::{self as retry, peek_trailers::PeekTrailersBody};
 use linkerd_proxy_client_policy as policy;
 use tokio::time;
 
@@ -45,7 +46,7 @@ impl svc::Param<retry::Params> for RetryPolicy {
 impl retry::Policy for RetryPolicy {
     type Future = Either<time::Sleep, Ready<()>>;
 
-    fn is_retryable(&self, res: Result<&::http::Response<TrailersBody>, &Error>) -> bool {
+    fn is_retryable(&self, res: Result<&::http::Response<PeekTrailersBody>, &Error>) -> bool {
         let rsp = match res {
             Ok(rsp) => rsp,
             Err(error) => {
@@ -76,11 +77,15 @@ impl retry::Policy for RetryPolicy {
     }
 
     fn set_extensions(&self, dst: &mut ::http::Extensions, src: &::http::Extensions) {
-        if let Some(extensions::Attempt(n)) = src.get::<extensions::Attempt>() {
-            dst.insert(extensions::Attempt(n.saturating_add(1)));
-        }
+        let attempt = if let Some(extensions::Attempt(n)) = src.get::<extensions::Attempt>() {
+            n.saturating_add(1)
+        } else {
+            // There was an already a first attmept (the original extensions).
+            2.try_into().unwrap()
+        };
+        dst.insert(extensions::Attempt(attempt));
 
-        let retries_remain = self.max_retries > 0;
+        let retries_remain = u16::from(attempt) as usize <= self.max_retries;
         if retries_remain {
             dst.insert(self.clone());
         }
@@ -113,13 +118,17 @@ impl retry::Policy for RetryPolicy {
 }
 
 impl RetryPolicy {
-    fn grpc_status(rsp: &http::Response<TrailersBody>) -> Option<tonic::Code> {
+    fn grpc_status(rsp: &http::Response<PeekTrailersBody>) -> Option<tonic::Code> {
         if let Some(header) = rsp.headers().get("grpc-status") {
             return Some(header.to_str().ok()?.parse::<i32>().ok()?.into());
         }
 
-        let trailer = rsp.body().trailers()?.get("grpc-status")?;
-        Some(trailer.to_str().ok()?.parse::<i32>().ok()?.into())
+        let Some(trailer) = rsp.body().peek_trailers() else {
+            tracing::debug!("No trailers");
+            return None;
+        };
+        let status = trailer.get("grpc-status")?;
+        Some(status.to_str().ok()?.parse::<i32>().ok()?.into())
     }
 
     fn retryable_error(error: &Error) -> bool {
@@ -139,8 +148,15 @@ impl RetryPolicy {
             return true;
         }
 
-        // TODO h2 errors
-        // TODO connection errors
+        // HTTP/2 errors
+        if let Some(h2e) = cause_ref::<h2::H2Error>(&**error) {
+            if matches!(h2e.reason(), Some(h2::Reason::REFUSED_STREAM)) {
+                return true;
+            }
+        }
+
+        // TODO(ver) connection errors require changes to the endpoint stack so
+        // that they can be inspected. here.
 
         false
     }

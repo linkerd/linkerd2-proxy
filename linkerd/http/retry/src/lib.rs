@@ -1,10 +1,10 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
+pub mod peek_trailers;
 pub mod replay;
-pub mod with_trailers;
 
-pub use self::{replay::ReplayBody, with_trailers::TrailersBody};
+pub use self::{peek_trailers::PeekTrailersBody, replay::ReplayBody};
 pub use tower::retry::budget::Budget;
 
 use futures::{future, prelude::*};
@@ -28,7 +28,7 @@ pub trait Policy: Clone + Sized {
     type Future: Future<Output = ()> + Send + 'static;
 
     /// Determines if a response should be retried.
-    fn is_retryable(&self, result: Result<&http::Response<TrailersBody>, &Error>) -> bool;
+    fn is_retryable(&self, result: Result<&http::Response<PeekTrailersBody>, &Error>) -> bool;
 
     /// Prepare headers for the next request.
     fn set_headers(&self, dst: &mut http::HeaderMap, orig: &http::HeaderMap) {
@@ -265,6 +265,7 @@ async fn send_req_with_retries(
     let mut backup = mk_backup(&request, &policy);
     let mut result = send_req(&mut svc, request).await;
     if !policy.is_retryable(result.as_ref()) {
+        tracing::trace!("Success on first attempt");
         return result.map(|rsp| rsp.map(BoxBody::new));
     }
     if backup.body().is_capped() {
@@ -274,7 +275,7 @@ async fn send_req_with_retries(
     // The response was retryable, so continue trying to dispatch backup
     // requests.
     let mut backoff = params.backoff.map(|b| b.stream());
-    for _ in 0..params.max_retries {
+    for n in 1..=params.max_retries {
         if let Some(backoff) = backoff.as_mut() {
             backoff.next().await;
         }
@@ -282,10 +283,12 @@ async fn send_req_with_retries(
         // The service must be buffered to be cloneable; so if it's not ready,
         // then a circuit breaker is active and requests will be load shed.
         let Some(svc) = svc.ready().now_or_never().transpose()? else {
+            tracing::debug!("Retry overflow; service is not ready");
             metrics.overflow.inc();
             return result.map(|rsp| rsp.map(BoxBody::new));
         };
 
+        tracing::debug!(retry.attempt = n);
         let request = backup;
         backup = mk_backup(&request, &policy);
         metrics.requests.inc();
@@ -294,6 +297,7 @@ async fn send_req_with_retries(
             if result.is_ok() {
                 metrics.successes.inc();
             }
+            tracing::debug!("Retry success");
             return result.map(|rsp| rsp.map(BoxBody::new));
         }
         if backup.body().is_capped() {
@@ -302,6 +306,7 @@ async fn send_req_with_retries(
     }
 
     // The result is retryable but we've run out of attempts.
+    tracing::debug!("Retry limit exceeded");
     metrics.limit_exceeded.inc();
     result.map(|rsp| rsp.map(BoxBody::new))
 }
@@ -311,10 +316,11 @@ async fn send_req_with_retries(
 async fn send_req(
     svc: &mut impl Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>,
     req: http::Request<ReplayBody>,
-) -> Result<http::Response<TrailersBody>> {
+) -> Result<http::Response<PeekTrailersBody>> {
     svc.call(req.map(BoxBody::new))
         .and_then(|rsp| async move {
-            let rsp = TrailersBody::map_response(rsp).await;
+            tracing::debug!("Peeking at the response trailers");
+            let rsp = PeekTrailersBody::map_response(rsp).await;
             Ok(rsp)
         })
         .await

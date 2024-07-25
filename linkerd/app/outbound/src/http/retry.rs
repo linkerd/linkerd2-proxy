@@ -10,7 +10,7 @@ use linkerd_app_core::{
 };
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_http_retry::{
-    with_trailers::{self, TrailersBody},
+    peek_trailers::{self, PeekTrailersBody},
     ReplayBody,
 };
 use linkerd_retry as retry;
@@ -67,19 +67,20 @@ where
 
 // === impl Retry ===
 
-impl<A, B, E> retry::Policy<http::Request<ReplayBody<A>>, http::Response<TrailersBody<B>>, E>
+impl<ReqB, RspB>
+    retry::Policy<http::Request<ReplayBody<ReqB>>, http::Response<PeekTrailersBody<RspB>>, Error>
     for RetryPolicy
 where
-    A: HttpBody + Unpin,
-    A::Error: Into<Error>,
-    B: HttpBody + Unpin,
+    ReqB: HttpBody + Unpin,
+    ReqB::Error: Into<Error>,
+    RspB: HttpBody + Unpin,
 {
     type Future = future::Ready<Self>;
 
     fn retry(
         &self,
-        req: &http::Request<ReplayBody<A>>,
-        result: Result<&http::Response<TrailersBody<B>>, &E>,
+        req: &http::Request<ReplayBody<ReqB>>,
+        result: Result<&http::Response<PeekTrailersBody<RspB>>, &Error>,
     ) -> Option<Self::Future> {
         let retryable = match result {
             Err(_) => false,
@@ -88,7 +89,7 @@ where
                 let is_failure = classify::Request::from(self.response_classes.clone())
                     .classify(req)
                     .start(rsp)
-                    .eos(rsp.body().trailers())
+                    .eos(rsp.body().peek_trailers())
                     .is_failure();
                 // did the body exceed the maximum length limit?
                 let exceeded_max_len = req.body().is_capped();
@@ -114,8 +115,8 @@ where
 
     fn clone_request(
         &self,
-        req: &http::Request<ReplayBody<A>>,
-    ) -> Option<http::Request<ReplayBody<A>>> {
+        req: &http::Request<ReplayBody<ReqB>>,
+    ) -> Option<http::Request<ReplayBody<ReqB>>> {
         // Since the body is already wrapped in a ReplayBody, it must not be obviously too large to
         // buffer/clone.
         let mut clone = http::Request::new(req.body().clone());
@@ -138,25 +139,27 @@ where
     }
 }
 
-impl<A, B> retry::PrepareRetry<http::Request<A>, http::Response<B>> for RetryPolicy
+impl<ReqB, RspB> retry::PrepareRetry<http::Request<ReqB>, http::Response<RspB>> for RetryPolicy
 where
-    A: HttpBody + Unpin,
-    A::Error: Into<Error>,
-    B: HttpBody + Unpin + Send + 'static,
-    B::Data: Unpin + Send,
-    B::Error: Unpin + Send,
+    ReqB: HttpBody + Unpin,
+    ReqB::Error: Into<Error>,
+    RspB: HttpBody + Unpin + Send + 'static,
+    RspB::Data: Unpin + Send,
+    RspB::Error: Unpin + Send,
 {
-    type RetryRequest = http::Request<ReplayBody<A>>;
-    type RetryResponse = http::Response<TrailersBody<B>>;
+    type RetryRequest = http::Request<ReplayBody<ReqB>>;
+    type RetryResponse = http::Response<PeekTrailersBody<RspB>>;
     type ResponseFuture = future::Map<
-        with_trailers::WithTrailersFuture<B>,
-        fn(http::Response<TrailersBody<B>>) -> Result<http::Response<TrailersBody<B>>>,
+        peek_trailers::WithPeekTrailersBody<RspB>,
+        fn(
+            http::Response<PeekTrailersBody<RspB>>,
+        ) -> Result<http::Response<PeekTrailersBody<RspB>>>,
     >;
 
     fn prepare_request(
         self,
-        req: http::Request<A>,
-    ) -> Either<(Self, Self::RetryRequest), http::Request<A>> {
+        req: http::Request<ReqB>,
+    ) -> Either<(Self, Self::RetryRequest), http::Request<ReqB>> {
         let (head, body) = req.into_parts();
         let replay_body = match ReplayBody::try_new(body, MAX_BUFFERED_BYTES) {
             Ok(body) => body,
@@ -176,7 +179,7 @@ where
 
     /// If the response is HTTP/2, return a future that checks for a `TRAILERS`
     /// frame immediately after the first frame of the response.
-    fn prepare_response(rsp: http::Response<B>) -> Self::ResponseFuture {
-        TrailersBody::map_response(rsp).map(Ok)
+    fn prepare_response(rsp: http::Response<RspB>) -> Self::ResponseFuture {
+        PeekTrailersBody::map_response(rsp).map(Ok)
     }
 }
