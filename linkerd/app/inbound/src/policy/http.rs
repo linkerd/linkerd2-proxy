@@ -203,7 +203,7 @@ impl<T, N> HttpPolicyService<T, N> {
             .find(|a| super::is_authorized(a, self.connection.client, &self.connection.tls))
         {
             Some(authz) => {
-                if authz.meta.name() == "audit" {
+                if authz.meta.is_audit() {
                     tracing::info!(
                         server.group = %labels.server.0.group(),
                         server.kind = %labels.server.0.kind(),

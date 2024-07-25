@@ -39,6 +39,10 @@ impl Meta {
             Self::Resource { group, .. } => group,
         }
     }
+
+    pub fn is_audit(&self) -> bool {
+        self.kind() == "default" && self.name() == "audit"
+    }
 }
 
 impl std::cmp::PartialEq for Meta {

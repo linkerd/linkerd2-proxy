@@ -194,7 +194,7 @@ fn check_authorized(
     {
         for authz in &**authzs {
             if super::is_authorized(authz, client_addr, tls) {
-                if authz.meta.name() == "audit" {
+                if authz.meta.is_audit() {
                     tracing::info!(
                         server.group = %server.meta.group(),
                         server.kind = %server.meta.kind(),
