@@ -159,6 +159,37 @@ pub mod proto {
 
         #[error("missing {0}")]
         Missing(&'static str),
+
+        #[error(transparent)]
+        Timeout(#[from] InvalidTimeouts),
+
+        #[error(transparent)]
+        Retry(#[from] InvalidRetry),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidRetry {
+        #[error("invalid max-retries: {0}")]
+        MaxRetries(u32),
+
+        #[error("invalid condition")]
+        Condition,
+
+        #[error("invalid timeout: {0}")]
+        Timeout(#[from] prost_types::DurationError),
+
+        #[error("invalid backoff: {0}")]
+        Backoff(#[from] crate::proto::InvalidBackoff),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidTimeouts {
+        #[error("invalid response timeout: {0}")]
+        Response(prost_types::DurationError),
+        #[error("invalid idle timeout: {0}")]
+        Idle(prost_types::DurationError),
+        #[error("invalid request timeout: {0}")]
+        Request(prost_types::DurationError),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -247,6 +278,9 @@ pub mod proto {
             matches,
             backends,
             filters,
+            timeouts,
+            retry,
+            allow_l5d_request_headers,
             request_timeout,
         } = proto;
 
@@ -264,8 +298,9 @@ pub mod proto {
             .ok_or(InvalidHttpRoute::Missing("distribution"))?
             .try_into()?;
 
-        let mut params = RouteParams::default();
-        params.timeouts.request = request_timeout.map(TryInto::try_into).transpose()?;
+        let mut params = RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers)?;
+        let legacy = request_timeout.map(TryInto::try_into).transpose()?;
+        params.timeouts.request = params.timeouts.request.or(legacy);
 
         Ok(Rule {
             matches,
@@ -276,6 +311,85 @@ pub mod proto {
                 params,
             },
         })
+    }
+
+    impl RouteParams {
+        fn try_from_proto(
+            timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
+            retry: Option<http_route::Retry>,
+            _allow_l5d_request_headers: bool,
+        ) -> Result<Self, InvalidHttpRoute> {
+            Ok(Self {
+                retry: retry.map(Retry::try_from).transpose()?,
+                timeouts: timeouts
+                    .map(Timeouts::try_from)
+                    .transpose()?
+                    .unwrap_or_default(),
+            })
+        }
+    }
+
+    impl TryFrom<linkerd2_proxy_api::http_route::Timeouts> for Timeouts {
+        type Error = InvalidTimeouts;
+        fn try_from(
+            timeouts: linkerd2_proxy_api::http_route::Timeouts,
+        ) -> Result<Self, Self::Error> {
+            Ok(Self {
+                response: timeouts
+                    .response
+                    .map(time::Duration::try_from)
+                    .transpose()
+                    .map_err(InvalidTimeouts::Response)?,
+                idle: timeouts
+                    .idle
+                    .map(time::Duration::try_from)
+                    .transpose()
+                    .map_err(InvalidTimeouts::Response)?,
+                request: timeouts
+                    .request
+                    .map(time::Duration::try_from)
+                    .transpose()
+                    .map_err(InvalidTimeouts::Request)?,
+            })
+        }
+    }
+
+    impl TryFrom<outbound::http_route::Retry> for Retry {
+        type Error = InvalidRetry;
+        fn try_from(retry: outbound::http_route::Retry) -> Result<Self, Self::Error> {
+            fn range(
+                r: outbound::http_route::retry::conditions::StatusRange,
+            ) -> Result<RangeInclusive<u16>, InvalidRetry> {
+                let Ok(start) = u16::try_from(r.start) else {
+                    return Err(InvalidRetry::Condition);
+                };
+                let Ok(end) = u16::try_from(r.end) else {
+                    return Err(InvalidRetry::Condition);
+                };
+                if start == 0 || end == 0 || end > 599 || start > end {
+                    return Err(InvalidRetry::Condition);
+                }
+                Ok(start..=end)
+            }
+
+            let status_ranges = StatusRanges(
+                retry
+                    .conditions
+                    .ok_or(InvalidRetry::Condition)?
+                    .status_ranges
+                    .into_iter()
+                    .map(range)
+                    .collect::<Result<_, _>>()?,
+            );
+            Ok(Self {
+                status_ranges,
+                max_retries: u16::try_from(retry.max_retries)
+                    .map_err(|_| InvalidRetry::MaxRetries(retry.max_retries))?,
+                max_request_bytes: retry.max_request_bytes as _,
+                backoff: retry.backoff.map(crate::proto::try_backoff).transpose()?,
+                timeout: retry.timeout.map(time::Duration::try_from).transpose()?,
+            })
+        }
     }
 
     impl TryFrom<http_route::Distribution> for RouteDistribution<Filter> {

@@ -20,7 +20,7 @@ ahash = "0.8"
 bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
-linkerd2-proxy-api = { version = "0.13", features = ["outbound"] }
+linkerd2-proxy-api = { workspace = true, features = ["outbound"] }
 once_cell = "1"
 parking_lot = "0.12"
 pin-project = "1"
