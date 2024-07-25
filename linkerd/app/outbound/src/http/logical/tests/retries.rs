@@ -33,6 +33,7 @@ async fn http_5xx() {
             timeout: None,
             backoff: None,
         }),
+        ..Default::default()
     });
 
     tokio::spawn(
@@ -70,6 +71,7 @@ async fn http_5xx_limited() {
             timeout: None,
             backoff: None,
         }),
+        ..Default::default()
     });
 
     info!("Sending a request that will initially fail and then succeed");
@@ -125,6 +127,7 @@ async fn http_timeout() {
             timeout: Some(TIMEOUT / 4),
             backoff: None,
         }),
+        ..Default::default()
     });
 
     info!("Sending a request that will initially timeout and then succeed");
@@ -174,6 +177,7 @@ async fn http_timeout_on_limit() {
             timeout: Some(TIMEOUT / 4),
             backoff: None,
         }),
+        ..Default::default()
     });
 
     tokio::spawn(
@@ -225,6 +229,7 @@ async fn http_timeout_with_request_timeout() {
             timeout: Some(TIMEOUT),
             backoff: None,
         }),
+        ..Default::default()
     });
 
     info!("Sending a request that will initially timeout and then succeed");
@@ -319,6 +324,7 @@ async fn grpc_internal() {
             timeout: None,
             backoff: None,
         }),
+        ..Default::default()
     });
 
     info!("Sending a request that will initially fail and then succeed");
@@ -379,6 +385,7 @@ async fn grpc_timeout() {
             max_request_bytes: 1000,
             backoff: None,
         }),
+        ..Default::default()
     });
 
     info!("Sending a request that will initially fail and then succeed");
