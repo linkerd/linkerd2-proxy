@@ -143,10 +143,13 @@ pub mod proto {
         #[error("invalid failure accrual policy: {0}")]
         Breaker(#[from] InvalidFailureAccrual),
 
-        #[error(transparent)]
+        #[error("{0}")]
         Retry(#[from] InvalidRetry),
 
-        #[error(transparent)]
+        #[error("invalid request timeout: {0}")]
+        RequestTimeout(#[from] prost_types::DurationError),
+
+        #[error("{0}")]
         Timeout(#[from] crate::http::proto::InvalidTimeouts),
     }
 
@@ -241,7 +244,7 @@ pub mod proto {
             timeouts,
             retry,
             allow_l5d_request_headers,
-            request_timeout: _,
+            request_timeout,
         } = proto;
 
         let matches = matches
@@ -258,7 +261,9 @@ pub mod proto {
             .ok_or(InvalidGrpcRoute::Missing("distribution"))?
             .try_into()?;
 
-        let params = RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers)?;
+        let mut params = RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers)?;
+        let legacy = request_timeout.map(TryInto::try_into).transpose()?;
+        params.timeouts.request = params.timeouts.request.or(legacy);
 
         Ok(Rule {
             matches,

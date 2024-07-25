@@ -30,7 +30,7 @@ linkerd-proxy-api-resolve = { path = "../api-resolve" }
 linkerd-proxy-core = { path = "../core" }
 
 [dependencies.linkerd2-proxy-api]
-version = "0.13"
+workspace = true
 optional = true
 features = ["outbound"]
 

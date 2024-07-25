@@ -282,7 +282,7 @@ pub mod proto {
             timeouts,
             retry,
             allow_l5d_request_headers,
-            request_timeout: _,
+            request_timeout,
         } = proto;
 
         let matches = matches
@@ -299,7 +299,9 @@ pub mod proto {
             .ok_or(InvalidHttpRoute::Missing("distribution"))?
             .try_into()?;
 
-        let params = RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers)?;
+        let mut params = RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers)?;
+        let legacy = request_timeout.map(TryInto::try_into).transpose()?;
+        params.timeouts.request = params.timeouts.request.or(legacy);
 
         Ok(Rule {
             matches,

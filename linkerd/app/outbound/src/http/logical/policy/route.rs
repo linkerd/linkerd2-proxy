@@ -196,7 +196,7 @@ impl<T> svc::Param<extensions::Params> for Http<T> {
                 max_request_bytes: r.max_request_bytes,
                 timeout: r.timeout,
                 backoff: r.backoff,
-                retryable_http_statuses: Some(r.status_ranges.clone()),
+                retryable_http_statuses: Some(r.status_ranges),
                 retryable_grpc_statuses: None,
             }),
             allow_l5d_request_headers: self.params.params.allow_l5d_request_headers,
@@ -251,7 +251,7 @@ impl<T> svc::Param<extensions::Params> for Grpc<T> {
                 timeout: r.timeout,
                 backoff: r.backoff,
                 retryable_http_statuses: None,
-                retryable_grpc_statuses: Some(r.codes.clone()),
+                retryable_grpc_statuses: Some(r.codes),
             }),
             allow_l5d_request_headers: self.params.params.allow_l5d_request_headers,
         }
