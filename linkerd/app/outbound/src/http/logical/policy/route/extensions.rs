@@ -2,6 +2,7 @@ use super::retry::RetryPolicy;
 use linkerd_app_core::{config::ExponentialBackoff, proxy::http, svc};
 use linkerd_proxy_client_policy as policy;
 use std::task::{Context, Poll};
+use tokio::time;
 
 #[derive(Clone, Debug)]
 pub struct Params {
@@ -89,6 +90,7 @@ where
         self.inner.call(req)
     }
 }
+
 impl<S> SetExtensions<S> {
     fn configure_retry(&self, req: &mut http::HeaderMap) -> Option<RetryPolicy> {
         if !self.params.allow_l5d_request_headers {
@@ -145,38 +147,22 @@ impl<S> SetExtensions<S> {
     }
 
     fn configure_timeouts(&self, req: &mut http::HeaderMap) -> http::StreamTimeouts {
-        let user_timeout = self
-            .params
-            .allow_l5d_request_headers
-            .then(|| {
-                req.remove("l5d-timeout").and_then(|val| {
-                    val.to_str()
-                        .ok()
-                        .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
-                })
-            })
-            .flatten();
-        let timeout = user_timeout.or(self.params.timeouts.request);
-
-        let user_response_timeout = self
-            .params
-            .allow_l5d_request_headers
-            .then(|| {
-                req.remove("l5d-response-timeout").and_then(|val| {
-                    val.to_str()
-                        .ok()
-                        .and_then(|val| val.parse().ok().map(std::time::Duration::from_secs_f64))
-                })
-            })
-            .flatten();
-        let response_timeout = user_response_timeout.or(self.params.timeouts.response);
-
-        http::StreamTimeouts {
+        let mut timeouts = http::StreamTimeouts {
             response_headers: None,
-            response_end: response_timeout,
+            response_end: self.params.timeouts.response,
             idle: self.params.timeouts.idle,
-            limit: timeout.map(Into::into),
+            limit: self.params.timeouts.request.map(Into::into),
+        };
+        if self.params.allow_l5d_request_headers {
+            if let Some(t) = req.remove("l5d-timeout").and_then(parse_duration) {
+                timeouts.limit = Some(t.into());
+            }
+
+            if let Some(t) = req.remove("l5d-response-timeout").and_then(parse_duration) {
+                timeouts.response_end = Some(t);
+            }
         }
+        timeouts
     }
 }
 
@@ -240,4 +226,35 @@ fn parse_grpc_conditions(s: &str) -> Option<policy::grpc::Codes> {
             })
             .collect(),
     )))
+}
+
+// Copied from the policy controller so that we handle the same duration values
+// as we do in the YAML config.
+fn parse_duration(hv: http::HeaderValue) -> Option<time::Duration> {
+    #[inline]
+    fn parse(s: &str) -> Option<time::Duration> {
+        let s = s.trim();
+        let offset = s.rfind(|c: char| c.is_ascii_digit())?;
+        let (magnitude, unit) = s.split_at(offset + 1);
+        let magnitude = magnitude.parse::<u64>().ok()?;
+
+        let mul = match unit {
+            "" if magnitude == 0 => 0,
+            "ms" => 1,
+            "s" => 1000,
+            "m" => 1000 * 60,
+            "h" => 1000 * 60 * 60,
+            "d" => 1000 * 60 * 60 * 24,
+            _ => return None,
+        };
+
+        let ms = magnitude.checked_mul(mul)?;
+        Some(time::Duration::from_millis(ms))
+    }
+    let s = hv.to_str().ok()?;
+    let Some(d) = parse(s) else {
+        tracing::debug!("Invalid duration: {:?}", s);
+        return None;
+    };
+    Some(d)
 }

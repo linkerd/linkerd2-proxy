@@ -121,7 +121,6 @@ impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
         }
     }
 
-    #[cfg(feature = "fixme")]
     #[cfg(test)]
     pub(crate) fn backend_request_count(
         &self,

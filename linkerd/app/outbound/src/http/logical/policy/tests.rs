@@ -1,5 +1,3 @@
-#![cfg(feature = "FIXME: metrics")]
-
 use super::{super::concrete, *};
 use crate::ParentRef;
 use linkerd_app_core::{
@@ -140,8 +138,8 @@ async fn header_based_route() {
         special_route_ref.clone(),
         special_backend_ref.clone(),
     );
-    assert_eq!(default_reqs.requests_total().get(), 0);
-    assert_eq!(special_reqs.requests_total().get(), 0);
+    assert_eq!(default_reqs.get(), 0);
+    assert_eq!(special_reqs.get(), 0);
 
     default.allow(1);
     special.allow(1);
@@ -155,8 +153,8 @@ async fn header_based_route() {
         _ = time::sleep(time::Duration::from_secs(1)) => panic!("timed out"),
         reqrsp = default.next_request() => reqrsp.expect("request"),
     };
-    assert_eq!(default_reqs.requests_total().get(), 1);
-    assert_eq!(special_reqs.requests_total().get(), 0);
+    assert_eq!(default_reqs.get(), 1);
+    assert_eq!(special_reqs.get(), 0);
 
     default.allow(1);
     special.allow(1);
@@ -171,8 +169,8 @@ async fn header_based_route() {
         _ = time::sleep(time::Duration::from_secs(1)) => panic!("timed out"),
         reqrsp = special.next_request() => reqrsp.expect("request"),
     };
-    assert_eq!(default_reqs.requests_total().get(), 1);
-    assert_eq!(special_reqs.requests_total().get(), 1);
+    assert_eq!(default_reqs.get(), 1);
+    assert_eq!(special_reqs.get(), 1);
 
     // Hold the router to prevent inner services from being dropped.
     drop(router);

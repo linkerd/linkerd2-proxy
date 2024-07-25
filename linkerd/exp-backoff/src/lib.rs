@@ -82,19 +82,6 @@ impl ExponentialBackoff {
         }
     }
 
-    pub fn advance(&mut self) -> time::Duration {
-        if self.min == self.max {
-            return self.min;
-        }
-
-        let backoff = self.min + self.jitter(self.min, &mut thread_rng());
-        self.min = self
-            .min
-            .checked_mul(2)
-            .map_or(self.max, |v| v.min(self.max));
-        backoff.min(self.max)
-    }
-
     fn base(&self, iterations: u32) -> time::Duration {
         debug_assert!(
             self.min <= self.max,
