@@ -18,7 +18,7 @@ thiserror = "1"
 linkerd-http-route = { path = "../../http/route" }
 
 [dependencies.linkerd2-proxy-api]
-version = "0.13"
+workspace = true
 features = ["inbound"]
 optional = true
 

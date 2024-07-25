@@ -136,14 +136,35 @@ pub mod proto {
         #[error("invalid filter: {0}")]
         Filter(#[from] InvalidFilter),
 
+        #[error("missing {0}")]
+        Missing(&'static str),
+
         #[error("invalid failure accrual policy: {0}")]
         Breaker(#[from] InvalidFailureAccrual),
+
+        #[error("{0}")]
+        Retry(#[from] InvalidRetry),
 
         #[error("invalid request timeout: {0}")]
         RequestTimeout(#[from] prost_types::DurationError),
 
-        #[error("missing {0}")]
-        Missing(&'static str),
+        #[error("{0}")]
+        Timeout(#[from] crate::http::proto::InvalidTimeouts),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum InvalidRetry {
+        #[error("invalid max-retries: {0}")]
+        MaxRetries(u32),
+
+        #[error("invalid condition")]
+        Condition,
+
+        #[error("invalid timeout: {0}")]
+        Timeout(#[from] prost_types::DurationError),
+
+        #[error("invalid backoff: {0}")]
+        Backoff(#[from] crate::proto::InvalidBackoff),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -219,6 +240,9 @@ pub mod proto {
             matches,
             backends,
             filters,
+            timeouts,
+            retry,
+            allow_l5d_request_headers,
             request_timeout,
         } = proto;
 
@@ -236,8 +260,9 @@ pub mod proto {
             .ok_or(InvalidGrpcRoute::Missing("distribution"))?
             .try_into()?;
 
-        let mut params = RouteParams::default();
-        params.timeouts.request = request_timeout.map(TryInto::try_into).transpose()?;
+        let mut params = RouteParams::try_from_proto(timeouts, retry, allow_l5d_request_headers)?;
+        let legacy = request_timeout.map(TryInto::try_into).transpose()?;
+        params.timeouts.request = params.timeouts.request.or(legacy);
 
         Ok(Rule {
             matches,
@@ -248,6 +273,52 @@ pub mod proto {
                 params,
             },
         })
+    }
+
+    impl RouteParams {
+        fn try_from_proto(
+            timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
+            retry: Option<grpc_route::Retry>,
+            _allow_l5d_request_headers: bool,
+        ) -> Result<Self, InvalidGrpcRoute> {
+            Ok(Self {
+                retry: retry.map(Retry::try_from).transpose()?,
+                timeouts: timeouts
+                    .map(crate::http::Timeouts::try_from)
+                    .transpose()?
+                    .unwrap_or_default(),
+            })
+        }
+    }
+
+    impl TryFrom<outbound::grpc_route::Retry> for Retry {
+        type Error = InvalidRetry;
+
+        fn try_from(retry: outbound::grpc_route::Retry) -> Result<Self, Self::Error> {
+            let cond = retry.conditions.ok_or(InvalidRetry::Condition)?;
+            let codes = Codes(Arc::new(
+                [
+                    cond.cancelled.then_some(tonic::Code::Cancelled as u16),
+                    cond.deadine_exceeded
+                        .then_some(tonic::Code::DeadlineExceeded as u16),
+                    cond.resource_exhausted
+                        .then_some(tonic::Code::ResourceExhausted as u16),
+                    cond.internal.then_some(tonic::Code::Internal as u16),
+                    cond.unavailable.then_some(tonic::Code::Unavailable as u16),
+                ]
+                .into_iter()
+                .flatten()
+                .collect(),
+            ));
+
+            Ok(Self {
+                codes,
+                max_retries: retry.max_retries as usize,
+                max_request_bytes: retry.max_request_bytes as _,
+                backoff: retry.backoff.map(crate::proto::try_backoff).transpose()?,
+                timeout: retry.timeout.map(time::Duration::try_from).transpose()?,
+            })
+        }
     }
 
     impl TryFrom<grpc_route::Distribution> for RouteDistribution<Filter> {
