@@ -1,320 +1,24 @@
 use super::{policy, Outbound, ParentRef, Routes};
 use crate::test_util::*;
 use linkerd_app_core::{
-    errors,
-    exp_backoff::ExponentialBackoff,
     proxy::http::{self, BoxBody, HttpBody, StatusCode},
     svc::{self, NewService, ServiceExt},
-    trace,
     transport::addrs::*,
     Error, NameAddr, Result,
 };
 use linkerd_proxy_client_policy as client_policy;
 use parking_lot::Mutex;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::{sync::watch, task, time};
-use tracing::{info, Instrument};
+use tokio::sync::watch;
+use tracing::Instrument;
 
+mod basic;
+mod failure_accrual;
 mod retries;
 mod timeouts;
 
-const AUTHORITY: &str = "logical.test.svc.cluster.local";
-const PORT: u16 = 666;
-
 type Request = http::Request<http::BoxBody>;
 type Response = http::Response<http::BoxBody>;
-
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn routes() {
-    let _trace = trace::test::trace_init();
-
-    let addr = SocketAddr::new([192, 0, 2, 41].into(), PORT);
-    let dest: NameAddr = format!("{AUTHORITY}:{PORT}")
-        .parse::<NameAddr>()
-        .expect("dest addr is valid");
-    let (svc, mut handle) = tower_test::mock::pair();
-    let connect = HttpConnect::default().service(addr, svc);
-    let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
-    let (rt, _shutdown) = runtime();
-    let stack = Outbound::new(default_config(), rt, &mut Default::default())
-        .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(resolve)
-        .into_inner();
-
-    let backend = default_backend(&dest);
-    let (_route_tx, routes) =
-        watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
-            addr: dest.into(),
-            meta: ParentRef(client_policy::Meta::new_default("parent")),
-            backends: Arc::new([backend.clone()]),
-            routes: Arc::new([default_route(backend)]),
-            failure_accrual: client_policy::FailureAccrual::None,
-        })));
-    let target = Target {
-        num: 1,
-        version: http::Version::H2,
-        routes,
-    };
-    let svc = stack.new_service(target);
-
-    handle.allow(1);
-    let rsp = send_req(svc.clone(), http_get());
-    serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
-    assert_eq!(
-        rsp.await.expect("request must succeed").status(),
-        http::StatusCode::OK
-    );
-}
-
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn consecutive_failures_accrue() {
-    let _trace = trace::test::with_default_filter(format!("{},trace", trace::test::DEFAULT_LOG));
-
-    let addr = SocketAddr::new([192, 0, 2, 41].into(), PORT);
-    let dest: NameAddr = format!("{AUTHORITY}:{PORT}")
-        .parse::<NameAddr>()
-        .expect("dest addr is valid");
-    let (svc, mut handle) = tower_test::mock::pair();
-    let connect = HttpConnect::default().service(addr, svc);
-    let resolve = support::resolver().endpoint_exists(dest.clone(), addr, Default::default());
-    let (rt, _shutdown) = runtime();
-    let cfg = default_config();
-    let stack = Outbound::new(cfg.clone(), rt, &mut Default::default())
-        .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(resolve)
-        .into_inner();
-
-    let backend = default_backend(&dest);
-    // Ensure that the probe delay is longer than the failfast timeout, so that
-    // the service is only probed after it has entered failfast when the gate
-    // shuts.
-    let min_backoff = cfg.http_request_queue.failfast_timeout + Duration::from_secs(1);
-    let backoff = ExponentialBackoff::try_new(
-        min_backoff,
-        min_backoff * 6,
-        // no jitter --- ensure the test is deterministic
-        0.0,
-    )
-    .unwrap();
-    let mut backoffs = backoff.stream();
-    let (_route_tx, routes) =
-        watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
-            addr: dest.into(),
-            meta: ParentRef(client_policy::Meta::new_default("parent")),
-            backends: Arc::new([backend.clone()]),
-            routes: Arc::new([default_route(backend)]),
-            failure_accrual: client_policy::FailureAccrual::ConsecutiveFailures {
-                max_failures: 3,
-                backoff,
-            },
-        })));
-    let target = Target {
-        num: 1,
-        version: http::Version::H2,
-        routes,
-    };
-    let svc = stack.new_service(target);
-
-    info!("Sending good request");
-    handle.allow(1);
-    let rsp = send_req(svc.clone(), http_get());
-    serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")).await;
-    assert_rsp(rsp, StatusCode::OK, "good").await;
-
-    // fail 3 requests so that we hit the consecutive failures accrual limit
-    for i in 1..=3 {
-        info!("Sending bad request {i}/3");
-        handle.allow(1);
-        let rsp = send_req(svc.clone(), http_get());
-        serve_req(
-            &mut handle,
-            mk_rsp(StatusCode::INTERNAL_SERVER_ERROR, "bad"),
-        )
-        .await;
-        assert_rsp(rsp, StatusCode::INTERNAL_SERVER_ERROR, "bad").await;
-    }
-
-    // Ensure that the error is because of the breaker, and not because the
-    // underlying service doesn't poll ready.
-    info!("Sending request while in failfast");
-    handle.allow(1);
-    // We are now in failfast.
-    let error = send_req(svc.clone(), http_get())
-        .await
-        .expect_err("service should be in failfast");
-    assert!(
-        errors::is_caused_by::<errors::FailFastError>(error.as_ref()),
-        "service should be in failfast"
-    );
-
-    info!("Sending request while in loadshed");
-    let error = send_req(svc.clone(), http_get())
-        .await
-        .expect_err("service should be in failfast");
-    assert!(
-        errors::is_caused_by::<errors::LoadShedError>(error.as_ref()),
-        "service should be in failfast"
-    );
-
-    // After the probation period, a subsequent request should be failed by
-    // hitting the service.
-    info!("Waiting for probation");
-    backoffs.next().await;
-    task::yield_now().await;
-
-    info!("Sending a bad request while in probation");
-    handle.allow(1);
-    let rsp = send_req(svc.clone(), http_get());
-    info!("Serving response");
-    tokio::time::timeout(
-        time::Duration::from_secs(10),
-        serve_req(
-            &mut handle,
-            mk_rsp(StatusCode::INTERNAL_SERVER_ERROR, "bad"),
-        ),
-    )
-    .await
-    .expect("no timeouts");
-    assert_rsp(rsp, StatusCode::INTERNAL_SERVER_ERROR, "bad").await;
-
-    // We are now in failfast.
-    info!("Sending a failfast request while the circuit is broken");
-    handle.allow(1);
-    let error = send_req(svc.clone(), http_get())
-        .await
-        .expect_err("service should be in failfast");
-    assert!(
-        errors::is_caused_by::<errors::FailFastError>(error.as_ref()),
-        "service should be in failfast"
-    );
-
-    // Wait out the probation period again
-    info!("Waiting for probation again");
-    backoffs.next().await;
-    task::yield_now().await;
-
-    // The probe request succeeds
-    info!("Sending a good request while in probation");
-    handle.allow(1);
-    let rsp = send_req(svc.clone(), http_get());
-    tokio::time::timeout(
-        time::Duration::from_secs(10),
-        serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")),
-    )
-    .await
-    .expect("no timeouts");
-    assert_rsp(rsp, StatusCode::OK, "good").await;
-
-    // The gate is now open again
-    info!("Sending a final good request");
-    handle.allow(1);
-    let rsp = send_req(svc.clone(), http_get());
-    tokio::time::timeout(
-        time::Duration::from_secs(10),
-        serve_req(&mut handle, mk_rsp(StatusCode::OK, "good")),
-    )
-    .await
-    .expect("no timeouts");
-    assert_rsp(rsp, StatusCode::OK, "good").await;
-}
-
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn balancer_doesnt_select_tripped_breakers() {
-    let _trace = trace::test::with_default_filter(format!(
-        "{},linkerd_app_outbound=trace,linkerd_stack=trace,linkerd2_proxy_http_balance=trace",
-        trace::test::DEFAULT_LOG
-    ));
-
-    let addr1 = SocketAddr::new([192, 0, 2, 41].into(), PORT);
-    let addr2 = SocketAddr::new([192, 0, 2, 42].into(), PORT);
-    let dest: NameAddr = format!("{AUTHORITY}:{PORT}")
-        .parse::<NameAddr>()
-        .expect("dest addr is valid");
-    let (svc1, mut handle1) = tower_test::mock::pair();
-    let (svc2, mut handle2) = tower_test::mock::pair();
-    let connect = HttpConnect::default()
-        .service(addr1, svc1)
-        .service(addr2, svc2);
-    let resolve = support::resolver();
-    let mut dest_tx = resolve.endpoint_tx(dest.clone());
-    dest_tx
-        .add([(addr1, Default::default()), (addr2, Default::default())])
-        .unwrap();
-    let (rt, _shutdown) = runtime();
-    let cfg = default_config();
-    let stack = Outbound::new(cfg.clone(), rt, &mut Default::default())
-        .with_stack(svc::ArcNewService::new(connect))
-        .push_http_cached(resolve)
-        .into_inner();
-
-    let backend = default_backend(&dest);
-    // Ensure that the probe delay is longer than the failfast timeout, so that
-    // the service is only probed after it has entered failfast when the gate
-    // shuts.
-    let min_backoff = cfg.http_request_queue.failfast_timeout + Duration::from_secs(1);
-    let backoff = ExponentialBackoff::try_new(
-        min_backoff,
-        min_backoff * 6,
-        // no jitter --- ensure the test is deterministic
-        0.0,
-    )
-    .unwrap();
-    let (_route_tx, routes) =
-        watch::channel(Routes::Policy(policy::Params::Http(policy::HttpParams {
-            addr: dest.into(),
-            meta: ParentRef(client_policy::Meta::new_default("parent")),
-            backends: Arc::new([backend.clone()]),
-            routes: Arc::new([default_route(backend)]),
-            failure_accrual: client_policy::FailureAccrual::ConsecutiveFailures {
-                max_failures: 3,
-                backoff,
-            },
-        })));
-    let target = Target {
-        num: 1,
-        version: http::Version::H2,
-        routes,
-    };
-    let svc = stack.new_service(target);
-
-    // fail 3 requests so that we hit the consecutive failures accrual limit
-    let mut failed = 0;
-    while failed < 3 {
-        handle1.allow(1);
-        handle2.allow(1);
-        info!(failed);
-        let rsp = send_req(svc.clone(), http_get());
-        let (expected_status, expected_body) = tokio::select! {
-            _ = serve_req(&mut handle1, mk_rsp(StatusCode::OK, "endpoint 1")) => {
-                info!("Balancer selected good endpoint");
-                (StatusCode::OK, "endpoint 1")
-            }
-            _ = serve_req(&mut handle2, mk_rsp(StatusCode::INTERNAL_SERVER_ERROR, "endpoint 2")) => {
-                info!("Balancer selected bad endpoint");
-                failed += 1;
-                (StatusCode::INTERNAL_SERVER_ERROR, "endpoint 2")
-            }
-        };
-        assert_rsp(rsp, expected_status, expected_body).await;
-        task::yield_now().await;
-    }
-
-    handle1.allow(1);
-    handle2.allow(1);
-    let rsp = send_req(svc.clone(), http_get());
-    // The load balancer will select endpoint 1, because endpoint 2 isn't ready.
-    serve_req(&mut handle1, mk_rsp(StatusCode::OK, "endpoint 1")).await;
-    assert_rsp(rsp, StatusCode::OK, "endpoint 1").await;
-
-    // The load balancer should continue selecting the non-failing endpoint.
-    for _ in 0..8 {
-        handle1.allow(1);
-        handle2.allow(1);
-        let rsp = send_req(svc.clone(), http_get());
-        serve_req(&mut handle1, mk_rsp(StatusCode::OK, "endpoint 1")).await;
-        assert_rsp(rsp, StatusCode::OK, "endpoint 1").await;
-    }
-}
 
 // === Utils ===
 
@@ -383,7 +87,7 @@ impl<T: svc::Param<Remote<ServerAddr>>> svc::NewService<T> for HttpConnect {
     }
 }
 
-// ===
+// === Utils ===
 
 #[track_caller]
 fn send_req(
@@ -415,15 +119,15 @@ fn send_req(
     async move { rsp.await.expect("request task must not panic") }
 }
 
-fn mk_rsp(status: StatusCode, body: impl ToString) -> Response {
-    http::Response::builder()
+async fn mk_rsp(status: StatusCode, body: impl ToString) -> Result<Response> {
+    Ok(http::Response::builder()
         .status(status)
         .body(http::BoxBody::new(body.to_string()))
-        .unwrap()
+        .unwrap())
 }
 
-fn mk_grpc_rsp(code: tonic::Code) -> Response {
-    http::Response::builder()
+async fn mk_grpc_rsp(code: tonic::Code) -> Result<Response> {
+    Ok(http::Response::builder()
         .version(::http::Version::HTTP_2)
         .header(
             "content-type",
@@ -434,7 +138,7 @@ fn mk_grpc_rsp(code: tonic::Code) -> Response {
             trls.insert("grpc-status", (code as u8).to_string().parse().unwrap());
             Ok(Some(trls))
         })))
-        .unwrap()
+        .unwrap())
 }
 
 async fn assert_rsp<T: std::fmt::Debug>(
@@ -452,14 +156,9 @@ async fn assert_rsp<T: std::fmt::Debug>(
     assert_eq!(body, expected_body, "expected body to be {expected_body:?}");
 }
 
-async fn serve_req(handle: &mut tower_test::mock::Handle<Request, Response>, rsp: Response) {
-    serve_delayed(Duration::ZERO, handle, Ok(rsp)).await;
-}
-
-async fn serve_delayed(
-    delay: Duration,
+async fn serve(
     handle: &mut tower_test::mock::Handle<Request, Response>,
-    rsp: Result<Response>,
+    call: impl Future<Output = Result<Response>> + Send + 'static,
 ) {
     let (mut req, tx) = handle
         .next_request()
@@ -472,24 +171,20 @@ async fn serve_delayed(
         while let Some(res) = req.body_mut().data().await {
             res.expect("request body must not error");
         }
-    }
-    if !req.body().is_end_stream() {
-        req.body_mut()
-            .trailers()
-            .await
-            .expect("request body must not error");
+        if !req.body().is_end_stream() {
+            req.body_mut()
+                .trailers()
+                .await
+                .expect("request body must not error");
+        }
     }
     drop(req);
 
     tokio::spawn(
         async move {
-            if delay > Duration::ZERO {
-                tracing::debug!(?delay, "Sleeping");
-                tokio::time::sleep(delay).await;
-            }
-
-            tracing::debug!(?rsp, "Sending response");
-            match rsp {
+            let res = call.await;
+            tracing::debug!(?res, "Sending response");
+            match res {
                 Ok(rsp) => tx.send_response(rsp),
                 Err(e) => tx.send_error(e),
             }
@@ -543,6 +238,88 @@ fn default_route(backend: client_policy::Backend) -> client_policy::http::Route 
                     filters: NO_FILTERS.clone(),
                     backend,
                 }])),
+            },
+        }],
+    }
+}
+
+type Handle = tower_test::mock::Handle<Request, Response>;
+
+fn mock_http(params: client_policy::http::RouteParams) -> (svc::BoxCloneHttp, Handle) {
+    let dest = "example.com:1234".parse::<NameAddr>().unwrap();
+    let backend = default_backend(&dest);
+    let route = mk_route(backend.clone(), params);
+    mock(policy::Params::Http(policy::HttpParams {
+        addr: dest.into(),
+        meta: ParentRef(client_policy::Meta::new_default("parent")),
+        backends: Arc::new([backend]),
+        routes: Arc::new([route]),
+        failure_accrual: client_policy::FailureAccrual::None,
+    }))
+}
+
+fn mock_grpc(params: client_policy::grpc::RouteParams) -> (svc::BoxCloneHttp, Handle) {
+    let dest = "example.com:1234".parse::<NameAddr>().unwrap();
+    let backend = default_backend(&dest);
+    let route = mk_route(backend.clone(), params);
+    mock(policy::Params::Grpc(policy::GrpcParams {
+        addr: dest.into(),
+        meta: ParentRef(client_policy::Meta::new_default("parent")),
+        backends: Arc::new([backend]),
+        routes: Arc::new([route]),
+        failure_accrual: client_policy::FailureAccrual::None,
+    }))
+}
+
+fn mock(params: policy::Params) -> (svc::BoxCloneHttp, Handle) {
+    let (inner, handle) = tower_test::mock::pair();
+
+    let addr = SocketAddr::new([192, 0, 2, 41].into(), 1234);
+    let connect = HttpConnect::default().service(addr, inner);
+    let resolve = support::resolver().endpoint_exists(
+        params.addr().name_addr().unwrap().clone(),
+        addr,
+        Default::default(),
+    );
+    let (rt, shutdown) = runtime();
+    let stack = Outbound::new(default_config(), rt, &mut Default::default())
+        .with_stack(svc::ArcNewService::new(connect))
+        .push_http_cached(resolve)
+        .into_inner();
+
+    let (tx, routes) = watch::channel(Routes::Policy(params));
+    tokio::spawn(async move {
+        tx.closed().await;
+        drop(shutdown);
+    });
+
+    let svc = stack.new_service(Target {
+        num: 1,
+        version: http::Version::H2,
+        routes,
+    });
+
+    (svc, handle)
+}
+
+fn mk_route<M: Default, F, P>(
+    backend: client_policy::Backend,
+    params: P,
+) -> client_policy::route::Route<M, client_policy::RoutePolicy<F, P>> {
+    use client_policy::*;
+
+    route::Route {
+        hosts: vec![],
+        rules: vec![route::Rule {
+            matches: vec![M::default()],
+            policy: RoutePolicy {
+                meta: Meta::new_default("route"),
+                filters: [].into(),
+                distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
+                    filters: [].into(),
+                    backend,
+                }])),
+                params,
             },
         }],
     }
