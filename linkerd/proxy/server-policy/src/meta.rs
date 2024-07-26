@@ -41,7 +41,7 @@ impl Meta {
     }
 
     pub fn is_audit(&self) -> bool {
-        self.kind() == "default" && self.name() == "audit"
+        matches!(self, Self::Default { name } if name == "audit")
     }
 }
 
