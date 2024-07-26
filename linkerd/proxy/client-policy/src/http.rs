@@ -13,6 +13,7 @@ pub type Rule = http::Rule<Policy>;
 pub struct RouteParams {
     pub timeouts: Timeouts,
     pub retry: Option<Retry>,
+    pub allow_l5d_request_headers: bool,
 }
 
 // TODO: keepalive settings, etc.
@@ -317,7 +318,7 @@ pub mod proto {
         fn try_from_proto(
             timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
             retry: Option<http_route::Retry>,
-            _allow_l5d_request_headers: bool,
+            allow_l5d_request_headers: bool,
         ) -> Result<Self, InvalidHttpRoute> {
             Ok(Self {
                 retry: retry.map(Retry::try_from).transpose()?,
@@ -325,6 +326,7 @@ pub mod proto {
                     .map(Timeouts::try_from)
                     .transpose()?
                     .unwrap_or_default(),
+                allow_l5d_request_headers,
             })
         }
     }

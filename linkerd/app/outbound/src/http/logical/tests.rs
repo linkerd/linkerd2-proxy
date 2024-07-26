@@ -14,6 +14,7 @@ use tracing::Instrument;
 
 mod basic;
 mod failure_accrual;
+mod headers;
 mod retries;
 mod timeouts;
 
@@ -129,10 +130,7 @@ async fn mk_rsp(status: StatusCode, body: impl ToString) -> Result<Response> {
 async fn mk_grpc_rsp(code: tonic::Code) -> Result<Response> {
     Ok(http::Response::builder()
         .version(::http::Version::HTTP_2)
-        .header(
-            "content-type",
-            http::HeaderValue::from_static("application/grpc"),
-        )
+        .header("content-type", "application/grpc")
         .body(BoxBody::new(MockBody::trailers(async move {
             let mut trls = http::HeaderMap::default();
             trls.insert("grpc-status", (code as u8).to_string().parse().unwrap());

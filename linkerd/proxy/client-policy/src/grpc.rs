@@ -13,6 +13,7 @@ pub type Rule = grpc::Rule<Policy>;
 pub struct RouteParams {
     pub timeouts: crate::http::Timeouts,
     pub retry: Option<Retry>,
+    pub allow_l5d_request_headers: bool,
 }
 
 // TODO HTTP2 settings
@@ -279,7 +280,7 @@ pub mod proto {
         fn try_from_proto(
             timeouts: Option<linkerd2_proxy_api::http_route::Timeouts>,
             retry: Option<grpc_route::Retry>,
-            _allow_l5d_request_headers: bool,
+            allow_l5d_request_headers: bool,
         ) -> Result<Self, InvalidGrpcRoute> {
             Ok(Self {
                 retry: retry.map(Retry::try_from).transpose()?,
@@ -287,6 +288,7 @@ pub mod proto {
                     .map(crate::http::Timeouts::try_from)
                     .transpose()?
                     .unwrap_or_default(),
+                allow_l5d_request_headers,
             })
         }
     }

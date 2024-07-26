@@ -123,7 +123,8 @@ where
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 .push(retry::NewHttpRetry::layer(metrics.retry.clone()))
-                // Set request extensions based on the route configuration.
+                // Set request extensions based on the route configuration
+                // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
                 .push(metrics::layer(&metrics.requests))
                 // Configure a classifier to use in the endpoint stack.
@@ -198,6 +199,7 @@ impl<T> svc::Param<extensions::Params> for Http<T> {
                 retryable_http_statuses: Some(r.status_ranges),
                 retryable_grpc_statuses: None,
             }),
+            allow_l5d_request_headers: self.params.params.allow_l5d_request_headers,
         }
     }
 }
@@ -251,6 +253,7 @@ impl<T> svc::Param<extensions::Params> for Grpc<T> {
                 retryable_http_statuses: None,
                 retryable_grpc_statuses: Some(r.codes),
             }),
+            allow_l5d_request_headers: self.params.params.allow_l5d_request_headers,
         }
     }
 }

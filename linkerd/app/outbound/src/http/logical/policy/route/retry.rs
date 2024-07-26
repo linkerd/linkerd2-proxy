@@ -85,16 +85,13 @@ impl retry::Policy for RetryPolicy {
         };
         dst.insert(extensions::Attempt(attempt));
 
-        let retries_remain = u16::from(attempt) as usize <= self.max_retries;
-        if retries_remain {
-            dst.insert(self.clone());
-        }
-
         if let Some(mut timeouts) = src.get::<http::StreamTimeouts>().cloned() {
             // If retries are exhausted, remove the response headers timeout,
             // since we're not blocked on making a decision on a retry decision.
             // This may give the request additional time to be satisfied.
+            let retries_remain = u16::from(attempt) as usize <= self.max_retries;
             if !retries_remain {
+                tracing::debug!("Exhausted retries; removing response headers timeout");
                 timeouts.response_headers = None;
             }
             dst.insert(timeouts);
