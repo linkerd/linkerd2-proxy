@@ -194,6 +194,19 @@ fn check_authorized(
     {
         for authz in &**authzs {
             if super::is_authorized(authz, client_addr, tls) {
+                if authz.meta.is_audit() {
+                    tracing::info!(
+                        server.group = %server.meta.group(),
+                        server.kind = %server.meta.kind(),
+                        server.name = %server.meta.name(),
+                        client.tls = ?tls,
+                        client.ip = %client_addr.ip(),
+                        authz.group = %authz.meta.group(),
+                        authz.kind = %authz.meta.kind(),
+                        authz.name = %authz.meta.name(),
+                        "Request allowed",
+                    );
+                }
                 return Ok(ServerPermit::new(dst, server, authz));
             }
         }

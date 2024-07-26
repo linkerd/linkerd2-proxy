@@ -202,7 +202,25 @@ impl<T, N> HttpPolicyService<T, N> {
             .iter()
             .find(|a| super::is_authorized(a, self.connection.client, &self.connection.tls))
         {
-            Some(authz) => authz,
+            Some(authz) => {
+                if authz.meta.is_audit() {
+                    tracing::info!(
+                        server.group = %labels.server.0.group(),
+                        server.kind = %labels.server.0.kind(),
+                        server.name = %labels.server.0.name(),
+                        route.group = %labels.route.group(),
+                        route.kind = %labels.route.kind(),
+                        route.name = %labels.route.name(),
+                        client.tls = ?self.connection.tls,
+                        client.ip = %self.connection.client.ip(),
+                        authz.group = %authz.meta.group(),
+                        authz.kind = %authz.meta.kind(),
+                        authz.name = %authz.meta.name(),
+                        "Request allowed",
+                    );
+                }
+                authz
+            }
             None => {
                 tracing::info!(
                     server.group = %labels.server.0.group(),

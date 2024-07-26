@@ -1025,6 +1025,8 @@ fn parse_default_policy(
         )
         .into()),
 
+        "audit" => Ok(inbound::policy::defaults::audit(detect_timeout).into()),
+
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
     }
 }

@@ -36,6 +36,15 @@ pub fn cluster_unauthenticated(
     )
 }
 
+pub fn audit(timeout: Duration) -> ServerPolicy {
+    mk(
+        "audit",
+        all_nets(),
+        Authentication::Unauthenticated,
+        timeout,
+    )
+}
+
 pub fn all_mtls_unauthenticated(timeout: Duration) -> ServerPolicy {
     mk(
         "all-tls-unauthenticated",
