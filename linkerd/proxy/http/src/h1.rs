@@ -1,6 +1,7 @@
 use crate::{
     glue::HyperConnect,
     upgrade::{Http11Upgrade, HttpConnect},
+    TracingExecutor,
 };
 use futures::prelude::*;
 use http::{
@@ -96,6 +97,7 @@ where
             hyper::Client::builder()
                 .pool_max_idle_per_host(0)
                 .set_host(use_absolute_form)
+                .executor(TracingExecutor)
                 .build(HyperConnect::new(
                     self.connect.clone(),
                     self.target.clone(),
@@ -122,6 +124,7 @@ where
                         .pool_max_idle_per_host(self.pool.max_idle)
                         .pool_idle_timeout(self.pool.idle_timeout)
                         .set_host(use_absolute_form)
+                        .executor(TracingExecutor)
                         .build(HyperConnect::new(
                             self.connect.clone(),
                             self.target.clone(),
