@@ -729,7 +729,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http",
- "indexmap 2.2.6",
+ "indexmap 2.3.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -943,9 +943,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.2.6"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
+checksum = "de3fc2e30ba82dd1b3911c8de1ffc143c74a914a14e99514d7637e3099df5ea0"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.3",
@@ -1361,7 +1361,7 @@ name = "linkerd-distribute"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "indexmap 2.2.6",
+ "indexmap 2.3.0",
  "linkerd-stack",
  "parking_lot",
  "rand",
@@ -1732,7 +1732,7 @@ dependencies = [
  "ahash",
  "futures",
  "futures-util",
- "indexmap 2.2.6",
+ "indexmap 2.3.0",
  "linkerd-error",
  "linkerd-metrics",
  "linkerd-pool",
@@ -2594,7 +2594,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
 dependencies = [
  "fixedbitset",
- "indexmap 2.2.6",
+ "indexmap 2.3.0",
 ]
 
 [[package]]
