@@ -24,6 +24,7 @@ where
 {
     last_update: Instant,
     total: Counter,
+    response_frames_total: Counter,
     by_status: HashMap<Option<http::StatusCode>, StatusMetrics<C>>,
 }
 
@@ -82,6 +83,7 @@ impl<C: Hash + Eq> Default for Metrics<C> {
         Self {
             last_update: Instant::now(),
             total: Counter::default(),
+            response_frames_total: Counter::default(),
             by_status: HashMap::default(),
         }
     }
