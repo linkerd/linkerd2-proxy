@@ -70,7 +70,11 @@ pub struct Timeout(pub Duration);
 
 #[derive(Clone, Debug, Error)]
 #[error("TLS detection timed out")]
-pub struct ServerTlsTimeoutError(());
+pub struct ServerTlsTimeoutError;
+
+#[derive(Clone, Debug, Error)]
+#[error("Could not detect SNI")]
+pub struct CouldNotDetectSNIError;
 
 #[derive(Clone, Debug)]
 pub struct DetectTls<T, L, P, N> {
@@ -161,7 +165,7 @@ where
         let Timeout(timeout) = self.timeout;
         let detect = time::timeout(timeout, detect_sni(io));
         Box::pin(async move {
-            let (sni, io) = detect.await.map_err(|_| ServerTlsTimeoutError(()))??;
+            let (sni, io) = detect.await.map_err(|_| ServerTlsTimeoutError)??;
 
             let local_server_name = tls.param();
             let (peer, io) = match sni {
@@ -192,7 +196,7 @@ where
 }
 
 /// Peek or buffer the provided stream to determine an SNI value.
-async fn detect_sni<I>(mut io: I) -> io::Result<(Option<ServerName>, DetectIo<I>)>
+pub async fn detect_sni<I>(mut io: I) -> io::Result<(Option<ServerName>, DetectIo<I>)>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin,
 {

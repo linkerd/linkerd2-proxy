@@ -1,0 +1,25 @@
+[package]
+name = "linkerd-tls-route"
+version = "0.1.0"
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[features]
+proto = ["linkerd2-proxy-api"]
+
+[dependencies]
+regex = "1"
+rand = "0.8"
+thiserror = "1"
+tracing = "0.1"
+linkerd-tls = { path = "../" }
+linkerd-dns = { path = "../../dns" }
+
+[dependencies.linkerd2-proxy-api]
+features = ["http-route", "grpc-route", "tls-route"]
+workspace = true
+optional = true
+
+[dev-dependencies]
+maplit = "1"

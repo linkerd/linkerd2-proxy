@@ -21,11 +21,13 @@ use linkerd_app_core::{
         tap,
     },
     svc::{self, ServiceExt},
-    tls,
+    tls::ConnectMeta as TlsConnectMeta,
     transport::addrs::*,
     AddrMatch, Error, ProxyRuntime,
 };
+use linkerd_tls_route as tls_route;
 use linkerd_tonic_stream::ReceiveLimits;
+use rangemap::RangeInclusiveSet;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -46,6 +48,7 @@ mod sidecar;
 pub mod tcp;
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
+pub mod tls;
 
 pub use self::discover::{spawn_synthesized_profile_policy, synthesize_forward_policy, Discovery};
 use self::metrics::OutboundMetrics;
@@ -81,6 +84,9 @@ pub struct Config {
 
     // Whether the proxy may include informational headers on HTTP responses.
     pub emit_headers: bool,
+
+    pub tls_ports: RangeInclusiveSet<u16>,
+    pub tls_hosts: HashSet<tls_route::MatchSni>,
 }
 
 #[derive(Clone, Debug)]
@@ -99,7 +105,7 @@ struct Runtime {
     drain: drain::Watch,
 }
 
-pub type ConnectMeta = tls::ConnectMeta<Local<ClientAddr>>;
+pub type ConnectMeta = TlsConnectMeta<Local<ClientAddr>>;
 
 /// A reference to a frontend/apex resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

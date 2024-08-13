@@ -45,7 +45,14 @@ impl<N> Outbound<N> {
     where
         T: svc::Param<OrigDstAddr> + Clone + Send + 'static,
         G: svc::GetSpan<T> + Clone + Send + Sync + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
+        I: io::AsyncRead
+            + io::AsyncWrite
+            + io::PeerAddr
+            + io::Peek
+            + std::fmt::Debug
+            + Send
+            + Unpin
+            + 'static,
         N: svc::NewService<Accept, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<metrics::SensorIo<I>, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,

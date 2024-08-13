@@ -7,6 +7,7 @@ use std::{borrow::Cow, fmt, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::
 pub mod grpc;
 pub mod http;
 pub mod opaq;
+pub mod tls;
 
 pub use linkerd_http_route as route;
 pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
@@ -34,8 +35,7 @@ pub enum Protocol {
 
     Opaque(opaq::Opaque),
 
-    // TODO(ver) TLS-aware type
-    Tls(opaq::Opaque),
+    Tls(tls::Tls),
 }
 
 #[derive(Clone, Debug, Eq)]
@@ -333,6 +333,9 @@ pub mod proto {
         #[error("invalid opaque route: {0}")]
         OpaqueRoute(#[from] opaq::proto::InvalidOpaqueRoute),
 
+        #[error("invalid tls route: {0}")]
+        TlsRoute(#[from] tls::proto::InvalidTlsRoute),
+
         #[error("invalid backend: {0}")]
         Backend(#[from] InvalidBackend),
 
@@ -479,6 +482,7 @@ pub mod proto {
                 proxy_protocol::Kind::Http2(http) => Protocol::Http2(http.try_into()?),
                 proxy_protocol::Kind::Opaque(opaque) => Protocol::Opaque(opaque.try_into()?),
                 proxy_protocol::Kind::Grpc(grpc) => Protocol::Grpc(grpc.try_into()?),
+                proxy_protocol::Kind::Tls(tls) => Protocol::Tls(tls.try_into()?),
             };
 
             let mut backends = BackendSet::default();
@@ -497,9 +501,14 @@ pub mod proto {
                 | Protocol::Http2(http::Http2 { ref routes, .. }) => {
                     http::proto::fill_route_backends(routes, &mut backends);
                 }
-                Protocol::Opaque(ref p) | Protocol::Tls(ref p) => {
+                Protocol::Opaque(ref p) => {
                     p.fill_backends(&mut backends);
                 }
+
+                Protocol::Tls(tls::Tls { ref routes, .. }) => {
+                    tls::proto::fill_route_backends(routes, &mut backends);
+                }
+
                 Protocol::Grpc(ref p) => {
                     p.fill_backends(&mut backends);
                 }

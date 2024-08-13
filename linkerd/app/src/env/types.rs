@@ -1,5 +1,5 @@
 use super::ParseError;
-use linkerd_app_core::{dns, identity, Addr, IpNet};
+use linkerd_app_core::{dns, identity, tls_route, Addr, IpNet};
 use rangemap::RangeInclusiveSet;
 use std::{
     collections::HashSet,
@@ -128,6 +128,19 @@ pub(super) fn parse_port_range_set(s: &str) -> Result<RangeInclusiveSet<u16>, Pa
         }
     }
     Ok(set)
+}
+
+pub(super) fn parse_match_sni(list: &str) -> Result<HashSet<tls_route::MatchSni>, ParseError> {
+    let mut suffixes = HashSet::new();
+    for item in list.split(',') {
+        let item = item.trim();
+        if !item.is_empty() {
+            let sfx = tls_route::MatchSni::from_str(item)?;
+            suffixes.insert(sfx);
+        }
+    }
+
+    Ok(suffixes)
 }
 
 pub(super) fn parse_dns_suffixes(list: &str) -> Result<HashSet<dns::Suffix>, ParseError> {

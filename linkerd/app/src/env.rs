@@ -4,7 +4,7 @@ use linkerd_app_core::{
     config::*,
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
-    tls,
+    tls, tls_route,
     transport::{DualListenAddr, Keepalive, ListenAddr},
     AddrMatch, Conditional, IpNet,
 };
@@ -94,6 +94,8 @@ pub enum ParseError {
     InvalidTrustAnchors,
     #[error("not a valid port policy: {0}")]
     InvalidPortPolicy(String),
+    #[error(transparent)]
+    InvalidSni(#[from] tls_route::InvalidSni),
 }
 
 // Environment variables to look at when loading the configuration
@@ -116,6 +118,9 @@ const ENV_OUTBOUND_TCP_QUEUE_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_TCP_QUEUE
 const ENV_OUTBOUND_TCP_FAILFAST_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_TCP_FAILFAST_TIMEOUT";
 const ENV_OUTBOUND_HTTP_QUEUE_CAPACITY: &str = "LINKERD2_PROXY_OUTBOUND_HTTP_QUEUE_CAPACITY";
 const ENV_OUTBOUND_HTTP_FAILFAST_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_HTTP_FAILFAST_TIMEOUT";
+
+const ENV_OUTBOUND_TLS_PORTS: &str = "LINKERD2_PROXY_OUTBOUND_TLS_PORTS";
+const ENV_OUTBOUND_TLS_HOSTS: &str = "LINKERD2_PROXY_OUTBOUND_TLS_HOSTS";
 
 pub const ENV_INBOUND_DETECT_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_DETECT_TIMEOUT";
 const ENV_OUTBOUND_DETECT_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_DETECT_TIMEOUT";
@@ -527,6 +532,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let http_failfast_timeout =
             outbound_http_failfast_timeout?.unwrap_or(DEFAULT_OUTBOUND_HTTP_FAILFAST_TIMEOUT);
 
+        // Determine any pre-configured tls ports.
+        let tls_ports =
+            parse(strings, ENV_OUTBOUND_TLS_PORTS, parse_port_range_set)?.unwrap_or_default();
+        let tls_hosts =
+            parse(strings, ENV_OUTBOUND_TLS_HOSTS, parse_match_sni)?.unwrap_or_default();
+
         outbound::Config {
             ingress_mode,
             emit_headers: !disable_headers,
@@ -548,6 +559,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 capacity: http_queue_capacity,
                 failfast_timeout: http_failfast_timeout,
             },
+            tls_ports,
+            tls_hosts,
         }
     };
 

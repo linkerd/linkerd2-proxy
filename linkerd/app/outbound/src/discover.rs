@@ -3,8 +3,11 @@ use crate::{
     Outbound,
 };
 use linkerd_app_core::{errors, profiles, svc, transport::OrigDstAddr, Error};
+use linkerd_tls_route as tls_route;
 use once_cell::sync::Lazy;
+use rangemap::RangeInclusiveSet;
 use std::{
+    collections::HashSet,
     fmt::Debug,
     hash::{Hash, Hasher},
     net::SocketAddr,
@@ -73,6 +76,9 @@ impl<N> Outbound<N> {
            + Sync
            + 'static {
         let detect_timeout = self.config.proxy.detect_protocol_timeout;
+        let tls_hosts = self.config.tls_hosts.clone();
+        let tls_ports = self.config.tls_ports.clone();
+
         let queue = {
             let queue = self.config.tcp_connection_queue;
             policy::Queue {
@@ -82,6 +88,8 @@ impl<N> Outbound<N> {
         };
         svc::mk(move |OrigDstAddr(orig_dst)| {
             tracing::debug!(addr = %orig_dst, "Discover");
+            let tls_hosts = tls_hosts.clone();
+            let tls_ports = tls_ports.clone();
 
             let profile = profiles
                 .clone()
@@ -141,7 +149,13 @@ impl<N> Outbound<N> {
                 }
 
                 // Otherwise, route the request to the original destination address.
-                let policy = spawn_synthesized_origdst_policy(orig_dst, queue, detect_timeout);
+                let policy = spawn_synthesized_origdst_policy(
+                    orig_dst,
+                    queue,
+                    detect_timeout,
+                    tls_ports,
+                    tls_hosts,
+                );
                 Ok((None, policy))
             })
         })
@@ -225,6 +239,35 @@ pub fn synthesize_balance_policy(
     )
 }
 
+fn tls_policy_for_backend(
+    meta: &Arc<policy::Meta>,
+    backend: policy::Backend,
+    snis: HashSet<tls_route::MatchSni>,
+) -> ClientPolicy {
+    static NO_TLS_FILTERS: Lazy<Arc<[policy::tls::Filter]>> = Lazy::new(|| Arc::new([]));
+
+    let routes = Arc::new([policy::tls::Route {
+        snis: Vec::from_iter(snis),
+        policy: policy::tls::Policy {
+            meta: meta.clone(),
+            filters: NO_TLS_FILTERS.clone(),
+            params: Default::default(),
+            distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                policy::RouteBackend {
+                    filters: NO_TLS_FILTERS.clone(),
+                    backend: backend.clone(),
+                },
+            ])),
+        },
+    }]);
+
+    ClientPolicy {
+        parent: meta.clone(),
+        protocol: policy::Protocol::Tls(policy::tls::Tls { routes }),
+        backends: Arc::new([backend]),
+    }
+}
+
 fn policy_for_backend(
     meta: &Arc<policy::Meta>,
     timeout: Duration,
@@ -289,6 +332,8 @@ fn spawn_synthesized_origdst_policy(
     orig_dst: SocketAddr,
     queue: policy::Queue,
     detect_timeout: Duration,
+    tls_ports: RangeInclusiveSet<u16>,
+    snis: HashSet<tls_route::MatchSni>,
 ) -> watch::Receiver<policy::ClientPolicy> {
     static META: Lazy<Arc<policy::Meta>> = Lazy::new(|| {
         Arc::new(policy::Meta::Default {
@@ -296,8 +341,28 @@ fn spawn_synthesized_origdst_policy(
         })
     });
 
-    let policy =
-        synthesize_forward_policy(&META, detect_timeout, queue, orig_dst, Default::default());
+    let policy = if tls_ports.contains(&orig_dst.port()) {
+        tls_policy_for_backend(
+            &META,
+            policy::Backend {
+                meta: META.clone(),
+                queue,
+                dispatcher: policy::BackendDispatcher::Forward(orig_dst, Default::default()),
+            },
+            snis,
+        )
+    } else {
+        policy_for_backend(
+            &META,
+            detect_timeout,
+            policy::Backend {
+                meta: META.clone(),
+                queue,
+                dispatcher: policy::BackendDispatcher::Forward(orig_dst, Default::default()),
+            },
+        )
+    };
+
     tracing::debug!(?policy, "Synthesizing policy");
     let (tx, rx) = watch::channel(policy);
     tokio::spawn(async move {

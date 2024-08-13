@@ -44,6 +44,7 @@ pub use linkerd_service_profiles as profiles;
 pub use linkerd_stack_metrics as stack_metrics;
 pub use linkerd_stack_tracing as stack_tracing;
 pub use linkerd_tls as tls;
+pub use linkerd_tls_route as tls_route;
 pub use linkerd_tracing as trace;
 pub use linkerd_transport_header as transport_header;
 

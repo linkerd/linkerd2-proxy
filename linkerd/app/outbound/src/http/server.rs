@@ -71,7 +71,7 @@ impl<N> Outbound<N> {
         T: svc::Param<http::Version>,
         T: Clone + Send + Unpin + 'static,
         // Server-side socket
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + io::Peek + Send + Unpin + 'static,
         // Inner stack
         N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<

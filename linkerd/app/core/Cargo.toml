@@ -70,6 +70,7 @@ linkerd-tracing = { path = "../../tracing" }
 linkerd-transport-header = { path = "../../transport-header" }
 linkerd-transport-metrics = { path = "../../transport-metrics" }
 linkerd-tls = { path = "../../tls" }
+linkerd-tls-route = { path = "../../tls/route" }
 linkerd-trace-context = { path = "../../trace-context" }
 
 [dependencies.tower]

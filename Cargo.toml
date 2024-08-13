@@ -71,6 +71,7 @@ members = [
     "linkerd/tonic-stream",
     "linkerd/tonic-watch",
     "linkerd/tls",
+    "linkerd/tls/route",
     "linkerd/tls/test-util",
     "linkerd/tracing",
     "linkerd/transport-header",
@@ -86,4 +87,5 @@ debug = 1
 lto = true
 
 [workspace.dependencies]
-linkerd2-proxy-api = "0.14.0"
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api.git", branch = "zd/tls-routes" }
+
