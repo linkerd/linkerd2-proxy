@@ -14,6 +14,6 @@ futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
 
 [dependencies.tower]
-version = "0.4"
+version = "0.5"
 default-features = false
 features = ["util"]
