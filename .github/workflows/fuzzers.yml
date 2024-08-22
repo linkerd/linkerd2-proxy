@@ -32,7 +32,7 @@ jobs:
       - run: apt update && apt install -y jo
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: tj-actions/changed-files@c65cd883420fd2eb864698a825fc4162dd94482c
+      - uses: tj-actions/changed-files@40853de9f8ce2d6cfdc73c1b96f14e22ba44aec4
         id: changed-files
       - name: list changed crates
         id: list-changed
