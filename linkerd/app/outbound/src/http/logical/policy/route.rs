@@ -15,8 +15,7 @@ pub(crate) mod retry;
 pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
 use self::metrics::labels::Route as RouteLabels;
-
-pub use self::metrics::{GrpcRouteMetrics, HttpRouteMetrics};
+pub use self::metrics::RouteMetrics;
 
 /// A target type that includes a summary of exactly how a request was matched.
 /// This match state is required to apply route filters.
@@ -56,10 +55,7 @@ pub(crate) type Grpc<T> = MatchedRoute<
 pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, F>>;
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
 
-pub type Metrics<R, B> = metrics::RouteMetrics<
-    <R as metrics::MkStreamLabel>::StreamLabel,
-    <B as metrics::MkStreamLabel>::StreamLabel,
->;
+pub type Metrics = metrics::RouteMetrics;
 
 /// Wraps errors with route metadata.
 #[derive(Debug, thiserror::Error)]
@@ -88,15 +84,13 @@ where
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
     Self: svc::Param<extensions::Params>,
-    Self: metrics::MkStreamLabel,
     MatchedBackend<T, M, F>: filters::Apply,
-    MatchedBackend<T, M, F>: metrics::MkStreamLabel,
 {
     /// Builds a route stack that applies policy filters to requests and
     /// distributes requests over each route's backends. These [`Concrete`]
     /// backends are expected to be cached/shared by the inner stack.
     pub(crate) fn layer<N, S>(
-        metrics: Metrics<Self, MatchedBackend<T, M, F>>,
+        metrics: Metrics,
     ) -> impl svc::Layer<N, Service = svc::ArcNewCloneHttp<Self>> + Clone
     where
         // Inner stack.
@@ -126,7 +120,7 @@ where
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
-                .push(metrics::layer(&metrics.requests))
+                // .push(metrics::layer(&metrics.requests))
                 // Configure a classifier to use in the endpoint stack.
                 // TODO(ver) move this into NewSetExtensions?
                 .push(classify::NewClassify::layer())
@@ -172,20 +166,6 @@ impl<T> filters::Apply for Http<T> {
     }
 }
 
-impl<T> metrics::MkStreamLabel for Http<T> {
-    type StatusLabels = metrics::labels::HttpRouteRsp;
-    type DurationLabels = metrics::labels::Route;
-    type StreamLabel = metrics::LabelHttpRouteRsp;
-
-    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
-        let parent = self.params.parent_ref.clone();
-        let route = self.params.route_ref.clone();
-        Some(metrics::LabelHttpRsp::from(metrics::labels::Route::from((
-            parent, route,
-        ))))
-    }
-}
-
 impl<T> svc::Param<extensions::Params> for Http<T> {
     fn param(&self) -> extensions::Params {
         let retry = self.params.params.retry.clone();
@@ -223,20 +203,6 @@ impl<T> filters::Apply for Grpc<T> {
     #[inline]
     fn apply_response<B>(&self, rsp: &mut ::http::Response<B>) -> Result<()> {
         filters::apply_grpc_response(&self.params.filters, rsp)
-    }
-}
-
-impl<T> metrics::MkStreamLabel for Grpc<T> {
-    type StatusLabels = metrics::labels::GrpcRouteRsp;
-    type DurationLabels = metrics::labels::Route;
-    type StreamLabel = metrics::LabelGrpcRouteRsp;
-
-    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
-        let parent = self.params.parent_ref.clone();
-        let route = self.params.route_ref.clone();
-        Some(metrics::LabelGrpcRsp::from(metrics::labels::Route::from((
-            parent, route,
-        ))))
     }
 }
 

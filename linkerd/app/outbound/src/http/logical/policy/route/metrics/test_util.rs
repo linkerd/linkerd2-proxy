@@ -4,7 +4,7 @@ use linkerd_app_core::{
     svc::{self, http::BoxBody, Service, ServiceExt},
 };
 
-pub use crate::test_util::MockBody;
+// pub use crate::test_util::MockBody;
 
 pub async fn send_assert_incremented(
     counter: &Counter,

@@ -123,7 +123,7 @@ async fn header_based_route() {
         failure_accrual: Default::default(),
     });
 
-    let metrics = HttpRouteMetrics::default();
+    let metrics = RouteMetrics::default();
     let router = Policy::layer(metrics.clone(), Default::default())
         .layer(inner)
         .new_service(Policy::from((routes, ())));

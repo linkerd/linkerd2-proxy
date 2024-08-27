@@ -1,73 +1,28 @@
-use super::{backend::metrics as backend, retry};
-use linkerd_app_core::{
-    metrics::prom::{self, EncodeLabelSetMut},
-    svc,
-};
-use linkerd_http_prom::record_response::{self, StreamLabel};
+#![allow(warnings)]
 
-pub use linkerd_http_prom::record_response::MkStreamLabel;
+use super::{backend::metrics as backend, retry};
+use linkerd_app_core::metrics::prom;
 
 pub mod labels;
 #[cfg(test)]
 pub(super) mod test_util;
+
+#[cfg(feature = "FIXME")]
 #[cfg(test)]
 mod tests;
 
-pub type RequestMetrics<R> = record_response::RequestMetrics<
-    <R as StreamLabel>::DurationLabels,
-    <R as StreamLabel>::StatusLabels,
->;
+pub type RequestMetrics = ();
 
 #[derive(Debug)]
-pub struct RouteMetrics<R: StreamLabel, B: StreamLabel> {
+pub struct RouteMetrics {
     pub(super) retry: retry::RouteRetryMetrics,
-    pub(super) requests: RequestMetrics<R>,
-    pub(super) backend: backend::RouteBackendMetrics<B>,
-}
-
-pub type HttpRouteMetrics = RouteMetrics<LabelHttpRouteRsp, LabelHttpRouteBackendRsp>;
-pub type GrpcRouteMetrics = RouteMetrics<LabelGrpcRouteRsp, LabelGrpcRouteBackendRsp>;
-
-/// Tracks HTTP streams to produce response labels.
-#[derive(Clone, Debug)]
-pub struct LabelHttpRsp<L> {
-    parent: L,
-    status: Option<http::StatusCode>,
-    error: Option<labels::Error>,
-}
-
-/// Tracks gRPC streams to produce response labels.
-#[derive(Clone, Debug)]
-pub struct LabelGrpcRsp<L> {
-    parent: L,
-    status: Option<tonic::Code>,
-    error: Option<labels::Error>,
-}
-
-pub type LabelHttpRouteRsp = LabelHttpRsp<labels::Route>;
-pub type LabelGrpcRouteRsp = LabelGrpcRsp<labels::Route>;
-
-pub type LabelHttpRouteBackendRsp = LabelHttpRsp<labels::RouteBackend>;
-pub type LabelGrpcRouteBackendRsp = LabelGrpcRsp<labels::RouteBackend>;
-
-pub type NewRecordDuration<T, M, N> =
-    record_response::NewRecordResponse<T, ExtractRecordDurationParams<M>, M, N>;
-
-#[derive(Clone, Debug)]
-pub struct ExtractRecordDurationParams<M>(pub M);
-
-pub fn layer<T, N>(
-    metrics: &RequestMetrics<T::StreamLabel>,
-) -> impl svc::Layer<N, Service = NewRecordDuration<T, RequestMetrics<T::StreamLabel>, N>> + Clone
-where
-    T: Clone + MkStreamLabel,
-{
-    NewRecordDuration::layer_via(ExtractRecordDurationParams(metrics.clone()))
+    pub(super) requests: RequestMetrics,
+    pub(super) backend: backend::RouteBackendMetrics,
 }
 
 // === impl RouteMetrics ===
 
-impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
+impl RouteMetrics {
     // There are two histograms for which we need to register metrics: request
     // durations, measured on routes, and response durations, measured on
     // route-backends.
@@ -83,7 +38,7 @@ impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
     const RESPONSE_BUCKETS: &'static [f64] = &[0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 10.0];
 }
 
-impl<R: StreamLabel, B: StreamLabel> Default for RouteMetrics<R, B> {
+impl Default for RouteMetrics {
     fn default() -> Self {
         Self {
             requests: Default::default(),
@@ -93,7 +48,7 @@ impl<R: StreamLabel, B: StreamLabel> Default for RouteMetrics<R, B> {
     }
 }
 
-impl<R: StreamLabel, B: StreamLabel> Clone for RouteMetrics<R, B> {
+impl Clone for RouteMetrics {
     fn clone(&self) -> Self {
         Self {
             requests: self.requests.clone(),
@@ -103,9 +58,9 @@ impl<R: StreamLabel, B: StreamLabel> Clone for RouteMetrics<R, B> {
     }
 }
 
-impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
+impl RouteMetrics {
     pub fn register(reg: &mut prom::Registry) -> Self {
-        let requests = RequestMetrics::<R>::register(reg, Self::REQUEST_BUCKETS.iter().copied());
+        let requests = (); //RequestMetrics::<R>::register(reg, Self::REQUEST_BUCKETS.iter().copied());
 
         let backend = backend::RouteBackendMetrics::register(
             reg.sub_registry_with_prefix("backend"),
@@ -129,127 +84,5 @@ impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
         b: crate::BackendRef,
     ) -> linkerd_http_prom::RequestCount {
         self.backend.backend_request_count(p, r, b)
-    }
-}
-
-// === impl ExtractRequestDurationParams ===
-
-impl<T, M> svc::ExtractParam<record_response::Params<T, M>, T> for ExtractRecordDurationParams<M>
-where
-    T: Clone + MkStreamLabel,
-    M: Clone,
-{
-    fn extract_param(&self, target: &T) -> record_response::Params<T, M> {
-        record_response::Params {
-            labeler: target.clone(),
-            metric: self.0.clone(),
-        }
-    }
-}
-
-// === impl LabelHttpRsp ===
-
-impl<P> From<P> for LabelHttpRsp<P> {
-    fn from(parent: P) -> Self {
-        Self {
-            parent,
-            status: None,
-            error: None,
-        }
-    }
-}
-
-impl<P> StreamLabel for LabelHttpRsp<P>
-where
-    P: EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
-    type StatusLabels = labels::Rsp<P, labels::HttpRsp>;
-    type DurationLabels = P;
-
-    fn init_response<B>(&mut self, rsp: &http::Response<B>) {
-        self.status = Some(rsp.status());
-    }
-
-    fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
-        if let Err(e) = res {
-            match labels::Error::new_or_status(e) {
-                Ok(l) => self.error = Some(l),
-                Err(code) => match http::StatusCode::from_u16(code) {
-                    Ok(s) => self.status = Some(s),
-                    // This is kind of pathological, so mark it as an unkown error.
-                    Err(_) => self.error = Some(labels::Error::Unknown),
-                },
-            }
-        }
-    }
-
-    fn status_labels(&self) -> Self::StatusLabels {
-        labels::Rsp(
-            self.parent.clone(),
-            labels::HttpRsp {
-                status: self.status,
-                error: self.error,
-            },
-        )
-    }
-
-    fn duration_labels(&self) -> Self::DurationLabels {
-        self.parent.clone()
-    }
-}
-
-// === impl LabelGrpcRsp ===
-
-impl<P> From<P> for LabelGrpcRsp<P> {
-    fn from(parent: P) -> Self {
-        Self {
-            parent,
-            status: None,
-            error: None,
-        }
-    }
-}
-
-impl<P> StreamLabel for LabelGrpcRsp<P>
-where
-    P: EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
-    type StatusLabels = labels::Rsp<P, labels::GrpcRsp>;
-    type DurationLabels = P;
-
-    fn init_response<B>(&mut self, rsp: &http::Response<B>) {
-        self.status = rsp
-            .headers()
-            .get("grpc-status")
-            .map(|v| tonic::Code::from_bytes(v.as_bytes()));
-    }
-
-    fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
-        match res {
-            Ok(Some(trailers)) => {
-                self.status = trailers
-                    .get("grpc-status")
-                    .map(|v| tonic::Code::from_bytes(v.as_bytes()));
-            }
-            Ok(None) => {}
-            Err(e) => match labels::Error::new_or_status(e) {
-                Ok(l) => self.error = Some(l),
-                Err(code) => self.status = Some(tonic::Code::from_i32(i32::from(code))),
-            },
-        }
-    }
-
-    fn status_labels(&self) -> Self::StatusLabels {
-        labels::Rsp(
-            self.parent.clone(),
-            labels::GrpcRsp {
-                status: self.status,
-                error: self.error,
-            },
-        )
-    }
-
-    fn duration_labels(&self) -> Self::DurationLabels {
-        self.parent.clone()
     }
 }
