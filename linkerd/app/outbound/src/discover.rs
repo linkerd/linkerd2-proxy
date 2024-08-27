@@ -1,6 +1,6 @@
 use crate::{
     policy::{self, ClientPolicy},
-    Outbound,
+    BackendRef, Outbound, ParentRef, RouteRef,
 };
 use linkerd_app_core::{errors, profiles, svc, transport::OrigDstAddr, Error};
 use once_cell::sync::Lazy;
@@ -195,7 +195,7 @@ pub fn synthesize_forward_policy(
         meta,
         timeout,
         policy::Backend {
-            meta: meta.clone(),
+            meta: BackendRef(meta.clone()),
             queue,
             dispatcher: policy::BackendDispatcher::Forward(addr, metadata),
         },
@@ -213,7 +213,7 @@ pub fn synthesize_balance_policy(
         meta,
         timeout,
         policy::Backend {
-            meta: meta.clone(),
+            meta: BackendRef(meta.clone()),
             queue,
             dispatcher: policy::BackendDispatcher::BalanceP2c(
                 load,
@@ -235,7 +235,7 @@ fn policy_for_backend(
 
     let opaque = policy::opaq::Opaque {
         policy: Some(policy::opaq::Policy {
-            meta: meta.clone(),
+            meta: RouteRef(meta.clone()),
             filters: NO_OPAQ_FILTERS.clone(),
             params: Default::default(),
             distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
@@ -252,7 +252,7 @@ fn policy_for_backend(
         rules: vec![policy::http::Rule {
             matches: vec![policy::http::r#match::MatchRequest::default()],
             policy: policy::http::Policy {
-                meta: meta.clone(),
+                meta: RouteRef(meta.clone()),
                 filters: NO_HTTP_FILTERS.clone(),
                 params: Default::default(),
                 distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
@@ -279,7 +279,7 @@ fn policy_for_backend(
     };
 
     ClientPolicy {
-        parent: meta.clone(),
+        parent: ParentRef(meta.clone()),
         protocol: detect,
         backends: Arc::new([backend]),
     }

@@ -1,4 +1,4 @@
-use crate::{http, opaq, policy, Discovery, Outbound, ParentRef};
+use crate::{http, opaq, policy, Discovery, Outbound};
 use linkerd_app_core::{
     detect, errors, io, profiles,
     proxy::{
@@ -520,7 +520,7 @@ fn policy_routes(
     version: http::Version,
     policy: &policy::ClientPolicy,
 ) -> Option<http::Routes> {
-    let meta = ParentRef(policy.parent.clone());
+    let meta = policy.parent.clone();
     match policy.protocol {
         policy::Protocol::Detect {
             ref http1,

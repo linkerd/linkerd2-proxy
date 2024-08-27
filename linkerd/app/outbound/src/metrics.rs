@@ -8,7 +8,7 @@
 //! to be updated frequently or in a performance-critical area. We should probably look to use
 //! `DashMap` as we migrate other metrics registries.
 
-use crate::{policy, BackendRef, ParentRef, RouteRef};
+use crate::{policy, BackendRef, ParentRef};
 use linkerd_app_core::{
     metrics::prom::{encoding::*, EncodeLabelSetMut},
     svc,
@@ -44,8 +44,6 @@ pub struct ConcreteLabels(pub ParentRef, pub BackendRef);
 
 #[derive(Clone, Debug)]
 pub struct BalancerMetricsParams<K>(balance::MetricFamilies<K>);
-
-struct ScopedKey<'a, 'b>(&'a str, &'b str);
 
 // === impl BalancerMetricsPaarams ===
 
@@ -142,80 +140,6 @@ pub(crate) fn write_service_meta_labels(
     }
     write!(f, ",{scope}_section_name=\"{}\"", meta.section())?;
     Ok(())
-}
-
-impl EncodeLabelKey for ScopedKey<'_, '_> {
-    fn encode(&self, enc: &mut LabelKeyEncoder<'_>) -> std::fmt::Result {
-        write!(enc, "{}_{}", self.0, self.1)
-    }
-}
-
-fn prom_encode_meta_labels(
-    scope: &str,
-    meta: &policy::Meta,
-    enc: &mut LabelSetEncoder<'_>,
-) -> std::fmt::Result {
-    (ScopedKey(scope, "group"), meta.group()).encode(enc.encode_label())?;
-    (ScopedKey(scope, "kind"), meta.kind()).encode(enc.encode_label())?;
-    (ScopedKey(scope, "namespace"), meta.namespace()).encode(enc.encode_label())?;
-    (ScopedKey(scope, "name"), meta.name()).encode(enc.encode_label())?;
-    Ok(())
-}
-
-fn prom_encode_service_labels(
-    scope: &str,
-    meta: &policy::Meta,
-    enc: &mut LabelSetEncoder<'_>,
-) -> std::fmt::Result {
-    prom_encode_meta_labels(scope, meta, enc)?;
-    match meta.port() {
-        Some(port) => (ScopedKey(scope, "port"), port.to_string()).encode(enc.encode_label())?,
-        None => (ScopedKey(scope, "port"), "").encode(enc.encode_label())?,
-    }
-    (ScopedKey(scope, "section_name"), meta.section()).encode(enc.encode_label())?;
-    Ok(())
-}
-
-// === impl ParentRef ===
-
-impl ParentRef {
-    pub fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        prom_encode_service_labels("parent", &self.0, enc)
-    }
-}
-
-impl EncodeLabelSet for ParentRef {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
-    }
-}
-
-// === impl BackendRef ===
-
-impl BackendRef {
-    pub fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        prom_encode_service_labels("backend", &self.0, enc)
-    }
-}
-
-impl EncodeLabelSet for BackendRef {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
-    }
-}
-
-// === impl RouteRef ===
-
-impl RouteRef {
-    pub fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        prom_encode_meta_labels("route", &self.0, enc)
-    }
-}
-
-impl EncodeLabelSet for RouteRef {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
-    }
 }
 
 // === impl ConcreteLabels ===

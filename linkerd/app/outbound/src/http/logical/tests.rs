@@ -1,5 +1,6 @@
-use super::{policy, Outbound, ParentRef, Routes};
+use super::{policy, Routes};
 use crate::test_util::*;
+use crate::{BackendRef, Outbound, ParentRef, RouteRef};
 use linkerd_app_core::{
     proxy::http::{self, BoxBody, HttpBody, StatusCode},
     svc::{self, NewService, ServiceExt},
@@ -200,7 +201,7 @@ fn default_backend(path: impl ToString) -> client_policy::Backend {
         Backend, BackendDispatcher, EndpointDiscovery, Load, Meta, PeakEwma, Queue,
     };
     Backend {
-        meta: Meta::new_default("test"),
+        meta: BackendRef(Meta::new_default("test")),
         queue: Queue {
             capacity: 100,
             failfast_timeout: Duration::from_secs(10),
@@ -229,7 +230,7 @@ fn default_route(backend: client_policy::Backend) -> client_policy::http::Route 
         rules: vec![Rule {
             matches: vec![http::r#match::MatchRequest::default()],
             policy: Policy {
-                meta: Meta::new_default("test_route"),
+                meta: RouteRef(Meta::new_default("test_route")),
                 filters: NO_FILTERS.clone(),
                 params: http::RouteParams::default(),
                 distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
@@ -311,7 +312,7 @@ fn mk_route<M: Default, F, P>(
         rules: vec![route::Rule {
             matches: vec![M::default()],
             policy: RoutePolicy {
-                meta: Meta::new_default("route"),
+                meta: RouteRef(Meta::new_default("route")),
                 filters: [].into(),
                 distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
                     filters: [].into(),

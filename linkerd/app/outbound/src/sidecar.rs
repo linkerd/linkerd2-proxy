@@ -1,7 +1,7 @@
 use crate::{
     http, opaq, policy,
     protocol::{self, Protocol},
-    Discovery, Outbound, ParentRef,
+    Discovery, Outbound,
 };
 use linkerd_app_core::{
     io, profiles,
@@ -214,7 +214,7 @@ impl HttpSidecar {
         version: http::Version,
         policy: &policy::ClientPolicy,
     ) -> Option<http::Routes> {
-        let parent_ref = ParentRef(policy.parent.clone());
+        let parent_ref = policy.parent.clone();
 
         // If we're doing HTTP policy routing, we've previously had a
         // protocol hint that made us think that was a good idea. If the

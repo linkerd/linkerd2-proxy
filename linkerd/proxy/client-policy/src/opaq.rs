@@ -1,4 +1,4 @@
-use crate::RoutePolicy;
+use crate::{RoutePolicy, RouteRef};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Opaque {
@@ -123,7 +123,7 @@ pub(crate) mod proto {
             .try_into()?;
 
         Ok(Policy {
-            meta: meta.clone(),
+            meta: RouteRef(meta.clone()),
             filters: NO_FILTERS.clone(),
             params: (),
             distribution,

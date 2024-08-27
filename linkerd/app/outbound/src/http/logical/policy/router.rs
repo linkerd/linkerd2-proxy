@@ -143,7 +143,7 @@ where
                 policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
                 policy::EndpointDiscovery::DestinationGet { ref path },
             ) => mk_concrete(
-                BackendRef(bke.meta.clone()),
+                bke.meta.clone(),
                 concrete::Dispatch::Balance(
                     path.parse::<NameAddr>()
                         .expect("destination must be a nameaddr"),
@@ -199,13 +199,12 @@ where
                       distribution,
                       params,
                   }| {
-                let route_ref = RouteRef(meta);
-                let distribution = mk_distribution(&route_ref, &distribution);
+                let distribution = mk_distribution(&meta, &distribution);
                 route::Route {
                     addr: addr.clone(),
                     parent: parent.clone(),
                     parent_ref: parent_ref.clone(),
-                    route_ref,
+                    route_ref: meta,
                     filters,
                     distribution,
                     params,

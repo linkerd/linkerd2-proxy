@@ -56,6 +56,15 @@ pub mod prom {
             encoding::text::encode(f, self)
         }
     }
+
+    pub struct ScopedKey<'a, 'b>(pub &'a str, pub &'b str);
+
+    impl encoding::EncodeLabelKey for ScopedKey<'_, '_> {
+        fn encode(&self, enc: &mut encoding::LabelKeyEncoder<'_>) -> std::fmt::Result {
+            use std::fmt::Write;
+            write!(enc, "{}_{}", self.0, self.1)
+        }
+    }
 }
 
 #[macro_export]

@@ -1,4 +1,4 @@
-use crate::FailureAccrual;
+use crate::{FailureAccrual, RouteRef};
 use linkerd_exp_backoff::ExponentialBackoff;
 use linkerd_http_route::{grpc, http};
 use std::{sync::Arc, time};
@@ -51,7 +51,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
         rules: vec![Rule {
             matches: vec![],
             policy: Policy {
-                meta: crate::Meta::new_default("default"),
+                meta: RouteRef(crate::Meta::new_default("default")),
                 filters: Arc::new([]),
                 distribution,
                 params: Default::default(),
@@ -268,7 +268,7 @@ pub mod proto {
         Ok(Rule {
             matches,
             policy: Policy {
-                meta: meta.clone(),
+                meta: RouteRef(meta.clone()),
                 filters,
                 distribution,
                 params,

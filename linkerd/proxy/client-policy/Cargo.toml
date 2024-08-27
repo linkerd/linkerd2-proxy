@@ -7,6 +7,7 @@ edition = "2021"
 publish = false
 
 [features]
+prom = ["dep:prometheus-client", "dep:linkerd-metrics"]
 proto = [
     "linkerd-http-route/proto",
     "linkerd2-proxy-api",
@@ -19,6 +20,7 @@ ahash = "0.8"
 ipnet = "2"
 http = "0.2"
 once_cell = { version = "1" }
+prometheus-client = { version = "0.22", optional = true }
 prost-types = { version = "0.12", optional = true }
 tonic = { version = "0.10", default-features = false }
 thiserror = { version = "1", optional = true }
@@ -26,6 +28,7 @@ thiserror = { version = "1", optional = true }
 linkerd-error = { path = "../../error" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-route = { path = "../../http/route" }
+linkerd-metrics = { path = "../../metrics", optional = true }
 linkerd-proxy-api-resolve = { path = "../api-resolve" }
 linkerd-proxy-core = { path = "../core" }
 

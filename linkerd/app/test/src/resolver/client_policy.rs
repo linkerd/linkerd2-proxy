@@ -1,7 +1,7 @@
 use super::*;
 use linkerd_proxy_client_policy::{
-    http, opaq, Backend, BackendDispatcher, ClientPolicy, EndpointDiscovery, Load, Meta, PeakEwma,
-    Protocol, Queue, RouteBackend, RouteDistribution,
+    http, opaq, Backend, BackendDispatcher, BackendRef, ClientPolicy, EndpointDiscovery, Load,
+    Meta, ParentRef, PeakEwma, Protocol, Queue, RouteBackend, RouteDistribution, RouteRef,
 };
 use std::time::Duration;
 
@@ -59,7 +59,7 @@ impl ClientPolicies {
                 failfast_timeout: Duration::from_secs(10),
             };
             Backend {
-                meta: Meta::new_default("test"),
+                meta: BackendRef(Meta::new_default("test")),
                 queue,
                 dispatcher,
             }
@@ -70,7 +70,7 @@ impl ClientPolicies {
             rules: vec![linkerd_http_route::Rule {
                 matches: vec![],
                 policy: http::Policy {
-                    meta: Meta::new_default("default"),
+                    meta: RouteRef(Meta::new_default("default")),
                     filters: Arc::new([]),
                     params: Default::default(),
                     distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
@@ -93,7 +93,7 @@ impl ClientPolicies {
             },
             opaque: opaq::Opaque {
                 policy: Some(opaq::Policy {
-                    meta: Meta::new_default("default"),
+                    meta: RouteRef(Meta::new_default("default")),
                     filters: Arc::new([]),
                     params: Default::default(),
                     distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
@@ -104,7 +104,7 @@ impl ClientPolicies {
             },
         };
         let policy = ClientPolicy {
-            parent,
+            parent: ParentRef(parent),
             protocol,
             backends: Arc::new([backend]),
         };

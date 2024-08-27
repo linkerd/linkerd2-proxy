@@ -66,11 +66,11 @@ linkerd-service-profiles = { path = "../../service-profiles" }
 linkerd-stack = { path = "../../stack" }
 linkerd-stack-metrics = { path = "../../stack/metrics" }
 linkerd-stack-tracing = { path = "../../stack/tracing" }
+linkerd-trace-context = { path = "../../trace-context" }
 linkerd-tracing = { path = "../../tracing" }
 linkerd-transport-header = { path = "../../transport-header" }
 linkerd-transport-metrics = { path = "../../transport-metrics" }
 linkerd-tls = { path = "../../tls" }
-linkerd-trace-context = { path = "../../trace-context" }
 
 [dependencies.tower]
 version = "0.4"

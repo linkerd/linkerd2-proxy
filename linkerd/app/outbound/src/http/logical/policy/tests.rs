@@ -1,5 +1,5 @@
 use super::{super::concrete, *};
-use crate::ParentRef;
+use crate::{BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{
     svc::NewService,
     svc::{Layer, ServiceExt},
@@ -15,14 +15,14 @@ async fn header_based_route() {
     let _trace = trace::test::trace_init();
 
     let mk_backend = |name: &'static str| policy::Backend {
-        meta: Arc::new(policy::Meta::Resource {
+        meta: BackendRef(Arc::new(policy::Meta::Resource {
             group: "core".into(),
             kind: "Service".into(),
             namespace: "ns".into(),
             name: name.into(),
             port: NonZeroU16::new(8080),
             section: None,
-        }),
+        })),
         queue: policy::Queue {
             capacity: 10,
             failfast_timeout: time::Duration::from_secs(1),
@@ -38,14 +38,14 @@ async fn header_based_route() {
         ),
     };
     let mk_policy = |name: &'static str, backend: policy::Backend| policy::RoutePolicy {
-        meta: Arc::new(policy::Meta::Resource {
+        meta: RouteRef(Arc::new(policy::Meta::Resource {
             group: "policy.linkerd.io".into(),
             kind: "HTTPRoute".into(),
             namespace: "ns".into(),
             name: name.into(),
             port: None,
             section: None,
-        }),
+        })),
         filters: Arc::new([]),
         params: Default::default(),
         distribution: policy::RouteDistribution::FirstAvailable(Arc::new([policy::RouteBackend {
@@ -85,14 +85,14 @@ async fn header_based_route() {
     }));
 
     let default_backend = mk_backend("default");
-    let default_backend_ref = crate::BackendRef(default_backend.meta.clone());
+    let default_backend_ref = default_backend.meta.clone();
     let default_policy = mk_policy("default", default_backend.clone());
-    let default_route_ref = crate::RouteRef(default_policy.meta.clone());
+    let default_route_ref = default_policy.meta.clone();
 
     let special_backend = mk_backend("special");
     let special_policy = mk_policy("special", special_backend.clone());
-    let special_route_ref = crate::RouteRef(special_policy.meta.clone());
-    let special_backend_ref = crate::BackendRef(special_backend.meta.clone());
+    let special_route_ref = special_policy.meta.clone();
+    let special_backend_ref = special_backend.meta.clone();
 
     // Routes that configure a special header-based route and a default route.
     let routes = Params::Http(router::HttpParams {
@@ -182,7 +182,7 @@ async fn http_filter_request_headers() {
 
     let addr = ([127, 0, 0, 1], 18080).into();
     let backend = policy::Backend {
-        meta: policy::Meta::new_default("test"),
+        meta: BackendRef(policy::Meta::new_default("test")),
         queue: policy::Queue {
             capacity: 10,
             failfast_timeout: time::Duration::from_secs(1),
@@ -208,7 +208,7 @@ async fn http_filter_request_headers() {
                 rules: vec![policy::http::Rule {
                     matches: vec![route::http::MatchRequest::default()],
                     policy: policy::RoutePolicy {
-                        meta: policy::Meta::new_default("turtles"),
+                        meta: RouteRef(policy::Meta::new_default("turtles")),
                         params: Default::default(),
                         filters: Arc::new([policy::http::Filter::RequestHeaders(
                             policy::http::filter::ModifyHeader {

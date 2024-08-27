@@ -41,6 +41,7 @@ linkerd-http-route = { path = "../../http/route" }
 linkerd-identity = { path = "../../identity" }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy", features = [
+    "prom",
     "proto",
 ] }
 linkerd-retry = { path = "../../retry" }

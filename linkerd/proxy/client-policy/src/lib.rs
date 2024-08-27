@@ -7,13 +7,15 @@ use std::{borrow::Cow, fmt, hash::Hash, net::SocketAddr, num::NonZeroU16, sync::
 pub mod grpc;
 pub mod http;
 pub mod opaq;
+#[cfg(feature = "prom")]
+pub mod prom;
 
 pub use linkerd_http_route as route;
 pub use linkerd_proxy_api_resolve::Metadata as EndpointMetadata;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientPolicy {
-    pub parent: Arc<Meta>,
+    pub parent: ParentRef,
     pub protocol: Protocol,
     pub backends: Arc<[Backend]>,
 }
@@ -53,9 +55,25 @@ pub enum Meta {
     },
 }
 
+/// A reference to a frontend/apex resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ParentRef(pub Arc<Meta>);
+
+/// A reference to a route resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct RouteRef(pub Arc<Meta>);
+
+/// A reference to a backend resource, usually a service.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BackendRef(pub Arc<Meta>);
+
+/// A reference to an individual backend resource, usually a pod.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct EndpointRef(pub Arc<Meta>);
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RoutePolicy<T, P> {
-    pub meta: Arc<Meta>,
+    pub meta: RouteRef,
     pub filters: Arc<[T]>,
     pub distribution: RouteDistribution<T>,
 
@@ -82,7 +100,7 @@ pub struct RouteBackend<T> {
 // TODO(ver) how does configuration like failure accrual fit in here? What about
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Backend {
-    pub meta: Arc<Meta>,
+    pub meta: BackendRef,
     pub queue: Queue,
     pub dispatcher: BackendDispatcher,
 }
@@ -147,7 +165,7 @@ impl ClientPolicy {
                 rules: vec![http::Rule {
                     matches: vec![http::r#match::MatchRequest::default()],
                     policy: http::Policy {
-                        meta: META.clone(),
+                        meta: RouteRef(META.clone()),
                         filters: std::iter::once(http::Filter::InternalError(
                             "invalid client policy configuration",
                         ))
@@ -161,7 +179,7 @@ impl ClientPolicy {
         static BACKENDS: Lazy<Arc<[Backend]>> = Lazy::new(|| Arc::new([]));
 
         Self {
-            parent: Meta::new_default("invalid"),
+            parent: ParentRef(Meta::new_default("invalid")),
             protocol: Protocol::Detect {
                 timeout,
                 http1: http::Http1 {
@@ -192,7 +210,7 @@ impl ClientPolicy {
         static NO_BACKENDS: Lazy<Arc<[Backend]>> = Lazy::new(|| Arc::new([]));
 
         Self {
-            parent: META.clone(),
+            parent: ParentRef(META.clone()),
             protocol: Protocol::Detect {
                 timeout,
                 http1: http::Http1 {
@@ -306,6 +324,88 @@ impl fmt::Display for Meta {
 impl Default for FailureAccrual {
     fn default() -> Self {
         Self::None
+    }
+}
+
+// === impl ParentRef ===
+
+impl std::ops::Deref for ParentRef {
+    type Target = Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<EndpointRef> for ParentRef {
+    fn from(EndpointRef(meta): EndpointRef) -> Self {
+        Self(meta)
+    }
+}
+
+// === impl RouteRef ===
+
+impl std::ops::Deref for RouteRef {
+    type Target = Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+// === impl BackendRef ===
+
+impl std::ops::Deref for BackendRef {
+    type Target = Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<ParentRef> for BackendRef {
+    fn from(ParentRef(meta): ParentRef) -> Self {
+        Self(meta)
+    }
+}
+
+impl From<EndpointRef> for BackendRef {
+    fn from(EndpointRef(meta): EndpointRef) -> Self {
+        Self(meta)
+    }
+}
+
+// === impl EndpointRef ===
+
+impl std::ops::Deref for EndpointRef {
+    type Target = Meta;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl EndpointRef {
+    pub fn new(md: &linkerd_proxy_api_resolve::Metadata, port: NonZeroU16) -> Self {
+        static UNKNOWN_META: once_cell::sync::Lazy<Arc<Meta>> =
+            once_cell::sync::Lazy::new(|| Meta::new_default("unknown"));
+
+        let namespace = match md.labels().get("dst_namespace") {
+            Some(ns) => ns.clone(),
+            None => return Self(UNKNOWN_META.clone()),
+        };
+        let name = match md.labels().get("dst_pod") {
+            Some(pod) => pod.clone(),
+            None => return Self(UNKNOWN_META.clone()),
+        };
+        Self(Arc::new(Meta::Resource {
+            group: "core".to_string(),
+            kind: "Pod".to_string(),
+            namespace,
+            name,
+            section: None,
+            port: Some(port),
+        }))
     }
 }
 
@@ -506,7 +606,7 @@ pub mod proto {
             }
 
             Ok(ClientPolicy {
-                parent: Arc::new(parent),
+                parent: ParentRef(Arc::new(parent)),
                 protocol,
                 backends: backends.into_iter().collect(),
             })
@@ -671,7 +771,7 @@ pub mod proto {
             let backend = Backend {
                 queue,
                 dispatcher,
-                meta,
+                meta: BackendRef(meta),
             };
 
             Ok(backend)
