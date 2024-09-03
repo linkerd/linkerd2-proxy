@@ -22,7 +22,7 @@ default-features = false
 features = ["prost", "codegen"]
 
 [dev-dependencies.tonic-build]
-version = "0.10"
+version = "0.12"
 default-features = false
 features = ["prost"]
 
