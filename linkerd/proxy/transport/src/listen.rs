@@ -1,6 +1,6 @@
 mod dual_bind;
 
-use crate::{addrs::*, Keepalive};
+use crate::{addrs::*, Keepalive, UserTimeout};
 use dual_bind::DualBind;
 use futures::prelude::*;
 use linkerd_error::Result;
@@ -50,6 +50,10 @@ struct AcceptError(#[source] io::Error);
 struct KeepaliveError(#[source] io::Error);
 
 #[derive(Debug, Error)]
+#[error("failed to set TCP User Timeout: {0}")]
+struct UserTimeoutError(#[source] io::Error);
+
+#[derive(Debug, Error)]
 #[error("failed to obtain peer address: {0}")]
 struct PeerAddrError(#[source] io::Error);
 
@@ -67,7 +71,7 @@ impl BindTcp {
 
 impl<T> Bind<T> for BindTcp
 where
-    T: Param<ListenAddr> + Param<Keepalive>,
+    T: Param<ListenAddr> + Param<Keepalive> + Param<UserTimeout>,
 {
     type Addrs = Addrs;
     type BoundAddrs = Local<ServerAddr>;
@@ -84,10 +88,12 @@ where
         };
         let server = Local(ServerAddr(listen.local_addr()?));
         let Keepalive(keepalive) = params.param();
+        let UserTimeout(user_timeout) = params.param();
         let accept = TcpListenerStream::new(listen).map(move |res| {
             let tcp = res.map_err(AcceptError)?;
             super::set_nodelay_or_warn(&tcp);
             let tcp = super::set_keepalive_or_warn(tcp, keepalive).map_err(KeepaliveError)?;
+            let tcp = super::set_user_timeout_or_warn(tcp, user_timeout).map_err(UserTimeoutError)?;
 
             fn ipv4_mapped(orig: SocketAddr) -> SocketAddr {
                 if let SocketAddr::V6(v6) = orig {

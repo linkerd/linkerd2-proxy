@@ -201,6 +201,7 @@ impl Inbound<()> {
             // forwarding and HTTP proxying).
             let ConnectConfig {
                 ref keepalive,
+                ref user_timeout,
                 ref timeout,
                 ..
             } = config.proxy.connect;
@@ -209,7 +210,7 @@ impl Inbound<()> {
             #[error("inbound connection must not target port {0}")]
             struct Loop(u16);
 
-            svc::stack(transport::ConnectTcp::new(*keepalive))
+            svc::stack(transport::ConnectTcp::new(*keepalive, *user_timeout))
                 // Limits the time we wait for a connection to be established.
                 .push_connect_timeout(*timeout)
                 // Prevent connections that would target the inbound proxy port from looping.

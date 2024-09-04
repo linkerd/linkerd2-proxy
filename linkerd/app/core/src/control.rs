@@ -124,7 +124,11 @@ impl Config {
             }
         };
 
-        let client = svc::stack(ConnectTcp::new(self.connect.keepalive))
+        let client =
+            svc::stack(ConnectTcp::new(
+                self.connect.keepalive,
+                self.connect.user_timeout,
+            ))
             .push(tls::Client::layer(identity))
             .push_connect_timeout(self.connect.timeout)
             .push_map_target(|(_version, target)| target)

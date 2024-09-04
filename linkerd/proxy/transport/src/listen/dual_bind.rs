@@ -1,4 +1,4 @@
-use crate::{addrs::DualListenAddr, listen::Bind, Keepalive, ListenAddr};
+use crate::{addrs::DualListenAddr, listen::Bind, Keepalive, ListenAddr, UserTimeout};
 use futures::Stream;
 use linkerd_error::Result;
 use linkerd_stack::Param;
@@ -26,7 +26,7 @@ impl<B> From<B> for DualBind<B> {
 
 impl<T, B> Bind<T> for DualBind<B>
 where
-    T: Param<DualListenAddr> + Param<Keepalive> + Clone,
+    T: Param<DualListenAddr> + Param<Keepalive> + Param<UserTimeout> + Clone,
     B: Bind<Listen<T>, Io = TcpStream> + Clone + 'static,
 {
     type Addrs = B::Addrs;
@@ -58,6 +58,12 @@ where
 
 impl<T: Param<Keepalive>> Param<Keepalive> for Listen<T> {
     fn param(&self) -> Keepalive {
+        self.parent.param()
+    }
+}
+
+impl<T: Param<UserTimeout>> Param<UserTimeout> for Listen<T> {
+    fn param(&self) -> UserTimeout {
         self.parent.param()
     }
 }

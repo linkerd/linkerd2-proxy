@@ -21,7 +21,10 @@ pub struct PreventLoopback<S>(S);
 
 impl Outbound<()> {
     pub fn to_tcp_connect(&self) -> Outbound<PreventLoopback<ConnectTcp>> {
-        let connect = PreventLoopback(ConnectTcp::new(self.config.proxy.connect.keepalive));
+        let connect = PreventLoopback(ConnectTcp::new(
+            self.config.proxy.connect.keepalive,
+            self.config.proxy.connect.user_timeout,
+        ));
         self.clone().with_stack(connect)
     }
 }
