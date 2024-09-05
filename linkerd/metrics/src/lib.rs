@@ -36,7 +36,7 @@ pub mod prom {
         metrics::{
             counter::{ConstCounter, Counter},
             family::Family,
-            gauge::{ConstGauge, Gauge},
+            gauge::{Atomic as GaugeAtomic, ConstGauge, Gauge},
             histogram::Histogram,
             info::Info,
         },
