@@ -11,6 +11,15 @@ HTTP-specific implementations that rely on other proxy infrastructure
 This should probably be decomposed into smaller, decoupled crates.
 """
 
+[features]
+# FIXME: remove this
+default = ["client-policy"]
+client-policy = [
+    "dep:linkerd-metrics",
+    "dep:linkerd-proxy-client-policy",
+    "dep:tonic",
+]
+
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
@@ -34,6 +43,7 @@ pin-project = "1"
 rand = "0.8"
 thiserror = "1"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
+tonic = { version = "0.10", default-features = false, optional = true }
 tower = { version = "0.4", default-features = false }
 tracing = "0.1"
 try-lock = "0.2"
@@ -45,7 +55,11 @@ linkerd-http-box = { path = "../../http/box" }
 linkerd-http-h2 = { path = "../../http/h2" }
 linkerd-http-classify = { path = "../../http/classify" }
 linkerd-io = { path = "../../io" }
+linkerd-metrics = { path = "../../metrics", optional = true }
 linkerd-proxy-balance = { path = "../balance" }
+linkerd-proxy-client-policy = { path = "../client-policy", optional = true, features = [
+    "prom",
+] }
 linkerd-stack = { path = "../../stack" }
 
 [target.'cfg(fuzzing)'.dependencies]

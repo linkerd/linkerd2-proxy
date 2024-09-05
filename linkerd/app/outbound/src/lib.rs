@@ -242,6 +242,3 @@ pub fn trace_labels() -> HashMap<String, String> {
     l.insert("direction".to_string(), "outbound".to_string());
     l
 }
-
-static UNKNOWN_META: once_cell::sync::Lazy<Arc<policy::Meta>> =
-    once_cell::sync::Lazy::new(|| policy::Meta::new_default("unknown"));

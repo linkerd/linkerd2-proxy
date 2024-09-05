@@ -8,6 +8,7 @@ pub mod balance;
 pub mod classify;
 pub mod client;
 pub mod client_handle;
+pub mod client_policy_metrics;
 pub mod detect;
 mod executor;
 mod glue;

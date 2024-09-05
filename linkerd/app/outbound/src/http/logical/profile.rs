@@ -2,7 +2,7 @@ use super::{
     super::{concrete, retry},
     CanonicalDstHeader, Concrete, NoRoute,
 };
-use crate::{policy, BackendRef, ParentRef, UNKNOWN_META};
+use crate::{policy, BackendRef, ParentRef};
 use linkerd_app_core::{
     classify, metrics,
     proxy::http::{self, balance},
@@ -95,6 +95,9 @@ where
         })
     }
 }
+
+static UNKNOWN_META: once_cell::sync::Lazy<Arc<policy::Meta>> =
+    once_cell::sync::Lazy::new(|| policy::Meta::new_default("unknown"));
 
 impl<T> From<(Routes, T)> for Params<T>
 where

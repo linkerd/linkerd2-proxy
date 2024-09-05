@@ -1,4 +1,4 @@
-use crate::{RoutePolicy, RouteRef};
+use crate::RoutePolicy;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Opaque {
@@ -25,7 +25,7 @@ pub(crate) mod proto {
     use super::*;
     use crate::{
         proto::{BackendSet, InvalidBackend, InvalidDistribution, InvalidMeta},
-        Meta, RouteBackend, RouteDistribution,
+        Meta, RouteBackend, RouteDistribution, RouteRef,
     };
     use linkerd2_proxy_api::outbound::{self, opaque_route};
 

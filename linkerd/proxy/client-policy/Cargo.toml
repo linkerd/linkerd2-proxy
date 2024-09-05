@@ -7,12 +7,12 @@ edition = "2021"
 publish = false
 
 [features]
-prom = ["dep:prometheus-client", "dep:linkerd-metrics"]
+prom = ["dep:linkerd-metrics"]
 proto = [
     "linkerd-http-route/proto",
-    "linkerd2-proxy-api",
-    "prost-types",
-    "thiserror",
+    "dep:linkerd2-proxy-api",
+    "dep:prost-types",
+    "dep:thiserror",
 ]
 
 [dependencies]
@@ -20,7 +20,6 @@ ahash = "0.8"
 ipnet = "2"
 http = "0.2"
 once_cell = { version = "1" }
-prometheus-client = { version = "0.22", optional = true }
 prost-types = { version = "0.12", optional = true }
 tonic = { version = "0.10", default-features = false }
 thiserror = { version = "1", optional = true }

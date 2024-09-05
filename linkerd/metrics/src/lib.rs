@@ -30,8 +30,7 @@ pub use self::{
 ///
 /// This should be used for all new metrics.
 pub mod prom {
-    use std::sync::Arc;
-
+    use metrics::family;
     pub use prometheus_client::{
         metrics::{
             counter::{ConstCounter, Counter},
@@ -43,6 +42,7 @@ pub mod prom {
         registry::{Registry, Unit},
         *,
     };
+    use std::sync::Arc;
 
     pub trait EncodeLabelSetMut: encoding::EncodeLabelSet {
         fn encode_label_set(&self, dst: &mut encoding::LabelSetEncoder<'_>) -> std::fmt::Result;
@@ -64,6 +64,41 @@ pub mod prom {
             use std::fmt::Write;
             write!(enc, "{}_{}", self.0, self.1)
         }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    pub struct Labels<A, B>(pub A, pub B);
+
+    impl<A: EncodeLabelSetMut, B: EncodeLabelSetMut> EncodeLabelSetMut for Labels<A, B> {
+        fn encode_label_set(&self, dst: &mut encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+            self.0.encode_label_set(dst)?;
+            self.1.encode_label_set(dst)
+        }
+    }
+
+    impl<A: EncodeLabelSetMut, B: EncodeLabelSetMut> encoding::EncodeLabelSet for Labels<A, B> {
+        fn encode(&self, mut dst: encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
+            self.0.encode_label_set(&mut dst)?;
+            self.1.encode_label_set(&mut dst)
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct NewHistogram(pub Arc<[f64]>);
+
+    impl family::MetricConstructor<Histogram> for NewHistogram {
+        fn new_metric(&self) -> Histogram {
+            Histogram::new(self.0.iter().copied())
+        }
+    }
+
+    pub type HistogramFamily<L> = family::Family<L, Histogram, NewHistogram>;
+
+    pub fn histogram_family<L>(buckets: impl IntoIterator<Item = f64>) -> HistogramFamily<L>
+    where
+        L: Clone + std::hash::Hash + Eq,
+    {
+        family::Family::new_with_constructor(NewHistogram(buckets.into_iter().collect()))
     }
 }
 
