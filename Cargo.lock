@@ -3180,9 +3180,9 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "symbolic-common"
-version = "12.10.1"
+version = "12.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1944ea8afd197111bca0c0edea1e1f56abb3edd030e240c1035cc0e3ff51fec"
+checksum = "9c1db5ac243c7d7f8439eb3b8f0357888b37cf3732957e91383b0ad61756374e"
 dependencies = [
  "debugid",
  "memmap2",
