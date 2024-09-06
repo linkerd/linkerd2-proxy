@@ -87,6 +87,7 @@ fn mk(
 
     ServerPolicy {
         meta: Meta::new_default(name),
+        rate_limit: vec![],
         protocol,
     }
 }

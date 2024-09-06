@@ -166,6 +166,16 @@ impl SyntheticHttpResponse {
         }
     }
 
+    pub fn rate_limited(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::TOO_MANY_REQUESTS,
+            grpc_status: tonic::Code::ResourceExhausted,
+            close_connection: false,
+            message: Cow::Owned(msg.to_string()),
+            location: None,
+        }
+    }
+
     pub fn loop_detected(msg: impl ToString) -> Self {
         Self {
             http_status: http::StatusCode::LOOP_DETECTED,

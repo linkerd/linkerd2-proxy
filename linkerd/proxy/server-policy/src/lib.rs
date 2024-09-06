@@ -17,7 +17,23 @@ pub use linkerd_http_route as route;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerPolicy {
     pub protocol: Protocol,
+    pub rate_limit: Vec<RateLimit>,
     pub meta: Arc<Meta>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RateLimit {
+    pub specifiers: Vec<Specifier>,
+    pub rps: u32,
+    pub burst: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Specifier {
+    Unmeshed,
+    Meshed,
+    ClientIP,
+    ClientID,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -65,6 +81,7 @@ impl ServerPolicy {
                 }]),
                 tcp_authorizations: Arc::new([]),
             },
+            rate_limit: vec![],
         }
     }
 }
@@ -129,6 +146,7 @@ pub mod proto {
                 authorizations,
                 labels,
                 server_ips: _,
+                rate_limit,
             } = proto;
 
             let authorizations = {
@@ -178,11 +196,34 @@ pub mod proto {
                 api::proxy_protocol::Kind::Opaque(_) => Protocol::Opaque(authorizations),
             };
 
+            let rate_limit: Vec<RateLimit> = rate_limit.iter().map(|rl| {
+                let bar: Vec<RateLimit> = rl.rate_limit_groups.iter().map(|g| {
+                    let specifiers: Vec<Option<Specifier>> = g.specifiers.iter().map(|sp| {
+                        let foo = sp.specifier.as_ref().map(|sp| {
+                            match sp {
+                                api::specifiers::Specifier::Unmeshed(_) => Specifier::Unmeshed,
+                                api::specifiers::Specifier::Meshed(_) => Specifier::Meshed,
+                                api::specifiers::Specifier::ClientIp(_) => Specifier::ClientIP,
+                                api::specifiers::Specifier::ClientId(_) => Specifier::ClientID,
+                            }
+                        });
+                        foo
+                    }).collect();
+                    let specifiers = specifiers.into_iter().flatten().collect();
+                    RateLimit {
+                        specifiers,
+                        rps: g.rps,
+                        burst: g.burst,
+                    }
+                }).collect();
+                bar
+            }).collect::<Vec<_>>().into_iter().flatten().collect();
+
             // TODO Update the API to include a metadata field so that we can
             // avoid label inference.
             let meta = Meta::try_new_with_default(labels, "policy.linkerd.io", "server")?;
 
-            Ok(ServerPolicy { protocol, meta })
+            Ok(ServerPolicy { protocol, rate_limit, meta })
         }
     }
 }
