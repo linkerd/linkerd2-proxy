@@ -142,7 +142,7 @@ jobs:
       - run: just-k3d create
       - run: just k3d-load-linkerd
       - run: just linkerd-install
-      - run: just linkerd-check-contol-plane-proxy
+      - run: just linkerd-check-control-plane-proxy
         env:
           TMPDIR: ${{ runner.temp }}
 
