@@ -294,7 +294,7 @@ linkerd-uninstall:
     {{ _linkerd }} uninstall \
         | {{ _kubectl }} delete -f -
 
-linkerd-check-contol-plane-proxy:
+linkerd-check-control-plane-proxy:
     #!/usr/bin/env bash
     set -euo pipefail
     check=$(mktemp --tmpdir check-XXXX.json)
