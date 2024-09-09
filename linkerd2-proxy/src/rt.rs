@@ -65,7 +65,7 @@ pub(crate) fn build() -> Runtime {
         .expect("failed to build basic runtime!")
 }
 
-// Spawns a task to scrape metrics for the given runtime at a regular interval.
+/// Spawns a task to scrape metrics for the given runtime at a regular interval.
 ///
 /// Note that this module requires unstable tokio functionality that must be
 /// enabled via the `tokio_unstable` feature. When it is not enabled, no metrics
