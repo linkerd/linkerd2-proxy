@@ -42,7 +42,7 @@ fn main() {
         vendor = BUILD_INFO.vendor,
     );
 
-    let metrics = linkerd_metrics::prom::Registry::default();
+    let mut metrics = linkerd_metrics::prom::Registry::default();
 
     // Load configuration from the environment without binding ports.
     let config = match Config::try_from_env() {
@@ -57,6 +57,9 @@ fn main() {
     // `LINKERD2_PROXY_CORES` env or the number of available CPUs (as provided
     // by cgroups, when possible).
     rt::build().block_on(async move {
+        // Spawn a task to run in the background, exporting runtime metrics at a regular interval.
+        rt::spawn_metrics_exporter(&mut metrics);
+
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
         let shutdown_grace_period = config.shutdown_grace_period;
 
