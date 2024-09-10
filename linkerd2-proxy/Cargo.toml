@@ -18,13 +18,14 @@ pprof = ["linkerd-app/pprof"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-num_cpus = { version = "1", optional = true }
+kubert-prometheus-tokio = { version = "0.1", features = ["rt"] }
 linkerd-app = { path = "../linkerd/app" }
 linkerd-metrics = { path = "../linkerd/metrics" }
 # We don't actually use code from this crate in `main`; it's here only so we can
 # control its feature flags.
 linkerd-meshtls = { path = "../linkerd/meshtls" }
 linkerd-signal = { path = "../linkerd/signal" }
+num_cpus = { version = "1", optional = true }
 tokio = { version = "1", features = ["rt", "time", "net"] }
 tracing = "0.1"
 

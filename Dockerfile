@@ -32,7 +32,7 @@ RUN --mount=type=cache,id=cargo,target=/usr/local/cargo/registry \
 # Build the proxy.
 FROM fetch as build
 ENV CARGO_INCREMENTAL=0
-ENV RUSTFLAGS="-D warnings -A deprecated"
+ENV RUSTFLAGS="-D warnings -A deprecated --cfg tokio_unstable"
 ARG TARGETARCH="amd64"
 ARG PROFILE="release"
 ARG LINKERD2_PROXY_VERSION=""

@@ -64,3 +64,37 @@ pub(crate) fn build() -> Runtime {
         .build()
         .expect("failed to build basic runtime!")
 }
+
+/// Spawns a task to scrape metrics for the given runtime at a regular interval.
+///
+/// Note that this module requires unstable tokio functionality that must be
+/// enabled via the `tokio_unstable` feature. When it is not enabled, no metrics
+/// will be registered.
+///
+/// `RUSTFLAGS="--cfg tokio_unstable"` must be set at build-time to use this feature.
+pub fn spawn_metrics_exporter(registry: &mut linkerd_metrics::prom::Registry) {
+    #[cfg(tokio_unstable)]
+    {
+        use {std::time::Duration, tracing::Instrument};
+
+        /// The fixed interval at which tokio runtime metrics are updated.
+        //
+        //  TODO(kate): perhaps this could be configurable eventually. for now, it's hard-coded.
+        const INTERVAL: Duration = Duration::from_secs(1);
+
+        let mut interval = tokio::time::interval(INTERVAL);
+
+        let registry = registry.sub_registry_with_prefix("tokio_rt");
+        let runtime = tokio::runtime::Handle::current();
+        let metrics = kubert_prometheus_tokio::Runtime::register(registry, runtime);
+
+        tokio::spawn(
+            async move { metrics.updated(&mut interval).await }
+                .instrument(tracing::info_span!("kubert-prom-tokio-rt")),
+        );
+    }
+    #[cfg(not(tokio_unstable))]
+    {
+        tracing::debug!("Tokio runtime metrics cannot be monitored without the tokio_unstable cfg");
+    }
+}
