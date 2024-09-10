@@ -2191,6 +2191,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-tls-route"
+version = "0.1.0"
+dependencies = [
+ "linkerd-dns",
+ "linkerd-tls",
+ "rand",
+ "regex",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-tls-test-util"
 version = "0.1.0"
 

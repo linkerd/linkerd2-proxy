@@ -71,6 +71,7 @@ members = [
     "linkerd/tonic-stream",
     "linkerd/tonic-watch",
     "linkerd/tls",
+    "linkerd/tls/route",
     "linkerd/tls/test-util",
     "linkerd/tracing",
     "linkerd/transport-header",
