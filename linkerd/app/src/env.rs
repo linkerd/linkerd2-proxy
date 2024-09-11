@@ -5,7 +5,7 @@ use linkerd_app_core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
     tls,
-    transport::{DualListenAddr, Keepalive, UserTimeout, ListenAddr},
+    transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout},
     AddrMatch, Conditional, IpNet,
 };
 use std::{
@@ -380,11 +380,15 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_connect_keepalive = parse(strings, ENV_INBOUND_CONNECT_KEEPALIVE, parse_duration);
     let outbound_connect_keepalive = parse(strings, ENV_OUTBOUND_CONNECT_KEEPALIVE, parse_duration);
 
-    let inbound_accept_user_timeout = parse(strings, ENV_INBOUND_ACCEPT_USER_TIMEOUT, parse_duration);
-    let outbound_accept_user_timeout = parse(strings, ENV_OUTBOUND_ACCEPT_USER_TIMEOUT, parse_duration);
+    let inbound_accept_user_timeout =
+        parse(strings, ENV_INBOUND_ACCEPT_USER_TIMEOUT, parse_duration);
+    let outbound_accept_user_timeout =
+        parse(strings, ENV_OUTBOUND_ACCEPT_USER_TIMEOUT, parse_duration);
 
-    let inbound_connect_user_timeout = parse(strings, ENV_INBOUND_CONNECT_USER_TIMEOUT, parse_duration);
-    let outbound_connect_user_timeout = parse(strings, ENV_OUTBOUND_CONNECT_USER_TIMEOUT, parse_duration);
+    let inbound_connect_user_timeout =
+        parse(strings, ENV_INBOUND_CONNECT_USER_TIMEOUT, parse_duration);
+    let outbound_connect_user_timeout =
+        parse(strings, ENV_OUTBOUND_CONNECT_USER_TIMEOUT, parse_duration);
 
     let shutdown_grace_period = parse(strings, ENV_SHUTDOWN_GRACE_PERIOD, parse_duration);
 

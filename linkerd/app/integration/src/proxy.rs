@@ -1,7 +1,9 @@
 use super::*;
 use linkerd_app_core::{
     svc::Param,
-    transport::{listen, orig_dst, Keepalive, UserTimeout, ListenAddr, Local, OrigDstAddr, ServerAddr},
+    transport::{
+        listen, orig_dst, Keepalive, ListenAddr, Local, OrigDstAddr, ServerAddr, UserTimeout,
+    },
     Result,
 };
 use std::{collections::HashSet, thread};

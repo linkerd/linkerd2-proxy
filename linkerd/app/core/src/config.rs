@@ -2,7 +2,7 @@ pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
     proxy::http::{self, h1, h2},
     svc::{queue, CloneParam, ExtractParam, Param},
-    transport::{DualListenAddr, Keepalive, UserTimeout, ListenAddr},
+    transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout},
 };
 use std::time::Duration;
 

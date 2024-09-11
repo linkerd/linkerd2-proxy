@@ -12,12 +12,15 @@ use tracing::debug;
 #[derive(Copy, Clone, Debug)]
 pub struct ConnectTcp {
     keepalive: Keepalive,
-    user_timeout: UserTimeout
+    user_timeout: UserTimeout,
 }
 
 impl ConnectTcp {
     pub fn new(keepalive: Keepalive, user_timeout: UserTimeout) -> Self {
-        Self { keepalive, user_timeout }
+        Self {
+            keepalive,
+            user_timeout,
+        }
     }
 }
 

@@ -93,7 +93,8 @@ where
             let tcp = res.map_err(AcceptError)?;
             super::set_nodelay_or_warn(&tcp);
             let tcp = super::set_keepalive_or_warn(tcp, keepalive).map_err(KeepaliveError)?;
-            let tcp = super::set_user_timeout_or_warn(tcp, user_timeout).map_err(UserTimeoutError)?;
+            let tcp =
+                super::set_user_timeout_or_warn(tcp, user_timeout).map_err(UserTimeoutError)?;
 
             fn ipv4_mapped(orig: SocketAddr) -> SocketAddr {
                 if let SocketAddr::V6(v6) = orig {
