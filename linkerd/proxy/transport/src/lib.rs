@@ -36,6 +36,15 @@ impl From<Keepalive> for Option<Duration> {
     }
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+pub struct UserTimeout(pub Option<Duration>);
+
+impl From<UserTimeout> for Option<Duration> {
+    fn from(UserTimeout(duration): UserTimeout) -> Option<Duration> {
+        duration
+    }
+}
+
 // Misc.
 
 fn set_nodelay_or_warn(socket: &TcpStream) {
@@ -57,6 +66,21 @@ fn set_keepalive_or_warn(
         .fold(TcpKeepalive::new(), |k, t| k.with_time(t));
     if let Err(e) = sock.set_tcp_keepalive(&ka) {
         tracing::warn!("failed to set keepalive: {}", e);
+    }
+    let stream: std::net::TcpStream = socket2::Socket::into(sock);
+    tokio::net::TcpStream::from_std(stream)
+}
+
+fn set_user_timeout_or_warn(
+    tcp: TcpStream,
+    user_timeout: Option<Duration>,
+) -> io::Result<TcpStream> {
+    let sock = {
+        let stream = tokio::net::TcpStream::into_std(tcp)?;
+        socket2::Socket::from(stream)
+    };
+    if let Err(e) = sock.set_tcp_user_timeout(user_timeout) {
+        tracing::warn!("failed to set user timeout: {}", e);
     }
     let stream: std::net::TcpStream = socket2::Socket::into(sock);
     tokio::net::TcpStream::from_std(stream)

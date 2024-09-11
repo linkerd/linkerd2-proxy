@@ -11,7 +11,7 @@ use linkerd_meshtls as meshtls;
 use linkerd_proxy_transport::{
     addrs::*,
     listen::{Addrs, Bind, BindTcp},
-    ConnectTcp, Keepalive,
+    ConnectTcp, Keepalive, UserTimeout,
 };
 use linkerd_stack::{
     layer::Layer, service_fn, ExtractParam, InsertParam, NewService, Param, ServiceExt,
@@ -283,7 +283,7 @@ where
         let tls = Some(client_server_id.clone());
         let client = async move {
             let conn = tls::Client::layer(client_tls)
-                .layer(ConnectTcp::new(Keepalive(None)))
+                .layer(ConnectTcp::new(Keepalive(None), UserTimeout(None)))
                 .oneshot(Target(server_addr.into(), client_server_id))
                 .await;
             match conn {
@@ -404,6 +404,11 @@ impl Param<ListenAddr> for Server {
 impl Param<Keepalive> for Server {
     fn param(&self) -> Keepalive {
         Keepalive(None)
+    }
+}
+impl Param<UserTimeout> for Server {
+    fn param(&self) -> UserTimeout {
+        UserTimeout(None)
     }
 }
 
