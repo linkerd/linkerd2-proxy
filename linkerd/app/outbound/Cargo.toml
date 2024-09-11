@@ -28,7 +28,7 @@ prometheus-client = "0.22"
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
 tonic = { version = "0.10", default-features = false }
-tower = { version = "0.4", features = ["util"] }
+tower = { version = "0.5", features = ["util"] }
 tracing = "0.1"
 
 linkerd-app-core = { path = "../core" }

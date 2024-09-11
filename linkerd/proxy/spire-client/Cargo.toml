@@ -17,7 +17,7 @@ linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["time", "sync"] }
 tonic = "0.10"
-tower = "0.4"
+tower = "0.5"
 tracing = "0.1"
 x509-parser = "0.16.0"
 asn1 = { version = "0.6", package = "simple_asn1" }

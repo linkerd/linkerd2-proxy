@@ -73,7 +73,7 @@ linkerd-tls = { path = "../../tls" }
 linkerd-trace-context = { path = "../../trace-context" }
 
 [dependencies.tower]
-version = "0.4"
+version = "0.5"
 default-features = false
 features = ["make", "spawn-ready", "timeout", "util", "limit"]
 
