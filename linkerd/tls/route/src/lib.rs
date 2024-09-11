@@ -8,11 +8,6 @@ use linkerd_tls::ServerName;
 use r#match::SessionMatch;
 use tracing::trace;
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct SessionInfo {
-    pub sni: ServerName,
-}
-
 pub mod r#match;
 pub mod sni;
 #[cfg(test)]
@@ -51,6 +46,14 @@ pub struct Rule<P> {
 pub struct RouteMatch {
     sni: Option<SniMatch>,
     route: r#match::SessionMatch,
+}
+
+/// Provides metadata information about a TLS session. For now this contains
+/// only the SNI value but further down the line, we could add more metadata
+/// if want to support more advanced routing scenarios.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct SessionInfo {
+    pub sni: ServerName,
 }
 
 pub fn find<P>(routes: &[Route<P>], session_info: SessionInfo) -> Option<(RouteMatch, &P)> {

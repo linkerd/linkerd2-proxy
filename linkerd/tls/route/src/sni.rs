@@ -1,6 +1,13 @@
 use linkerd_dns as dns;
 use linkerd_tls::ServerName;
 
+/// Defines a way to match against SNI attributes of the TLS ClientHello
+/// message in a TLS handshake. The SNI value being matched is the equivalent
+/// of a hostname (as defined in RFC 1123) with 2 notable exceptions:
+///
+/// 1. IPs are not allowed in SNI names per RFC 6066.
+/// 2. A hostname may be prefixed with a wildcard label (`*.`). The wildcard
+///    label must appear by itself as the first label.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum MatchSni {
     Exact(String),

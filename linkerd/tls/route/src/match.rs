@@ -1,39 +1,18 @@
-use crate::{MatchSni, SessionInfo, SniMatch};
+use std::cmp::Ordering;
 
-/// Matches TLS sessions.
+use crate::SessionInfo;
+
+/// Matches TLS sessions. For now, this is a placeholder
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
-pub struct MatchSession {
-    pub sni: Option<MatchSni>,
-}
+pub struct MatchSession(());
 
-/// Summarizes a matched TLS session.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct SessionMatch {
-    sni: SniMatch,
-}
+/// Summarizes a matched TLS session. For now this is a placeholder
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Default)]
+pub struct SessionMatch(());
 
 impl MatchSession {
-    pub(crate) fn match_session(&self, info: &SessionInfo) -> Option<SessionMatch> {
-        let mut summary = SessionMatch::default();
-
-        if let Some(match_sni) = &self.sni {
-            if let Some(sni) = match_sni.summarize_match(&info.sni) {
-                summary.sni = sni;
-            } else {
-                return None;
-            }
-        }
-        Some(summary)
-    }
-}
-
-// === impl SessionMatch ===
-
-impl Default for SessionMatch {
-    fn default() -> Self {
-        Self {
-            sni: SniMatch::Exact(0),
-        }
+    pub(crate) fn match_session(&self, _: &SessionInfo) -> Option<SessionMatch> {
+        Some(SessionMatch::default())
     }
 }
 
@@ -44,7 +23,7 @@ impl std::cmp::PartialOrd for SessionMatch {
 }
 
 impl std::cmp::Ord for SessionMatch {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.sni.cmp(&other.sni)
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        Ordering::Equal
     }
 }
