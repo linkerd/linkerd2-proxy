@@ -193,6 +193,7 @@ impl Config {
             .push(tls::NewDetectTls::<identity::Server, _, _>::layer(TlsParams {
                 identity,
             }))
+            .push(tls::NewDetectSNI::layer(DETECT_TIMEOUT.into()))
             .arc_new_tcp()
             .into_inner();
 
@@ -278,13 +279,6 @@ impl Param<metrics::EndpointLabels> for Permitted {
 }
 
 // === TlsParams ===
-
-impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
-    #[inline]
-    fn extract_param(&self, _: &T) -> tls::server::Timeout {
-        tls::server::Timeout(DETECT_TIMEOUT)
-    }
-}
 
 impl<T> ExtractParam<identity::Server, T> for TlsParams {
     #[inline]

@@ -70,15 +70,12 @@ pub struct ClientInfo {
     pub local_addr: OrigDstAddr,
 }
 
-type TlsIo<I> = tls::server::Io<identity::ServerIo<tls::server::DetectIo<I>>, I>;
+type TlsIo<I> = tls::server::Io<identity::ServerIo<tls::detect_sni::DetectIo<I>>, I>;
 type FwdIo<I> = SensorIo<io::PrefixedIo<TlsIo<I>>>;
 pub type GatewayIo<I> = FwdIo<I>;
 
 #[derive(Clone)]
-struct TlsParams {
-    timeout: tls::server::Timeout,
-    identity: identity::Server,
-}
+struct TlsParams(identity::Server);
 
 impl<N> Inbound<N> {
     /// Builds a stack that handles connections that target the proxy's inbound port
@@ -220,11 +217,9 @@ impl<N> Inbound<N> {
                 })
                 .push(svc::ArcNewService::layer())
                 .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
-                    TlsParams {
-                        timeout: tls::server::Timeout(detect_timeout),
-                        identity,
-                    },
+                    TlsParams(identity),
                 ))
+                .push(tls::NewDetectSNI::layer(detect_timeout.into()))
                 .arc_new_tcp()
         })
     }
@@ -453,17 +448,10 @@ impl From<RefusedNoHeader> for Error {
 
 // === TlsParams ===
 
-impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
-    #[inline]
-    fn extract_param(&self, _: &T) -> tls::server::Timeout {
-        self.timeout
-    }
-}
-
 impl<T> ExtractParam<identity::Server, T> for TlsParams {
     #[inline]
     fn extract_param(&self, _: &T) -> identity::Server {
-        self.identity.clone()
+        self.0.clone()
     }
 }
 

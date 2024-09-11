@@ -155,7 +155,7 @@ pub async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match(mode: 
 
 type ServerConn<T, I> = (
     (tls::ConditionalServerTls, T),
-    io::EitherIo<meshtls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
+    io::EitherIo<meshtls::ServerIo<tls::detect_sni::DetectIo<I>>, tls::detect_sni::DetectIo<I>>,
 );
 
 fn load(
@@ -228,31 +228,34 @@ where
         // Saves the result of every connection.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerTls, SR>>();
 
-        let detect = tls::NewDetectTls::<meshtls::Server, _, _>::new(
-            ServerParams {
-                identity: server_tls,
-            },
-            move |meta: (tls::ConditionalServerTls, Addrs)| {
-                let server = server.clone();
-                let sender = sender.clone();
-                let tls = meta.0.clone().map(Into::into);
-                service_fn(move |conn| {
+        let detect = tls::NewDetectSNI::new(
+            tls::NewDetectTls::<meshtls::Server, _, _>::new(
+                ServerParams {
+                    identity: server_tls,
+                },
+                move |meta: (tls::ConditionalServerTls, Addrs)| {
                     let server = server.clone();
                     let sender = sender.clone();
-                    let tls = Some(tls.clone());
-                    let future = server((meta.clone(), conn));
-                    Box::pin(
-                        async move {
-                            let result = future.await;
-                            sender
-                                .send(Transported { tls, result })
-                                .expect("send result");
-                            Ok::<(), Infallible>(())
-                        }
-                        .instrument(tracing::info_span!("test_svc")),
-                    )
-                })
-            },
+                    let tls = meta.0.clone().map(Into::into);
+                    service_fn(move |conn| {
+                        let server = server.clone();
+                        let sender = sender.clone();
+                        let tls = Some(tls.clone());
+                        let future = server((meta.clone(), conn));
+                        Box::pin(
+                            async move {
+                                let result = future.await;
+                                sender
+                                    .send(Transported { tls, result })
+                                    .expect("send result");
+                                Ok::<(), Infallible>(())
+                            }
+                            .instrument(tracing::info_span!("test_svc")),
+                        )
+                    })
+                },
+            ),
+            Duration::from_secs(10).into(),
         );
 
         let (listen_addr, listen) = BindTcp::default().bind(&Server).expect("must bind");
@@ -408,12 +411,6 @@ impl Param<Keepalive> for Server {
 }
 
 // === impl ServerParams ===
-
-impl<T> ExtractParam<tls::server::Timeout, T> for ServerParams {
-    fn extract_param(&self, _: &T) -> tls::server::Timeout {
-        tls::server::Timeout(Duration::from_secs(10))
-    }
-}
 
 impl<T> ExtractParam<meshtls::Server, T> for ServerParams {
     fn extract_param(&self, _: &T) -> meshtls::Server {

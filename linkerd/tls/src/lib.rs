@@ -2,10 +2,12 @@
 #![forbid(unsafe_code)]
 
 pub mod client;
+pub mod detect_sni;
 pub mod server;
 
 pub use self::{
     client::{Client, ClientTls, ConditionalClientTls, ConnectMeta, NoClientTls, ServerId},
+    detect_sni::NewDetectSNI,
     server::{ClientId, ConditionalServerTls, NewDetectTls, NoServerTls, ServerTls},
 };
 

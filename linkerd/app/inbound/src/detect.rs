@@ -52,12 +52,9 @@ struct Detect {
 struct ConfigureHttpDetect;
 
 #[derive(Clone)]
-struct TlsParams {
-    timeout: tls::server::Timeout,
-    identity: identity::Server,
-}
+struct TlsParams(identity::Server);
 
-type TlsIo<I> = tls::server::Io<identity::ServerIo<tls::server::DetectIo<I>>, I>;
+type TlsIo<I> = tls::server::Io<identity::ServerIo<tls::detect_sni::DetectIo<I>>, I>;
 
 // === impl Inbound ===
 
@@ -244,11 +241,9 @@ impl<I> Inbound<svc::ArcNewTcp<Tls, TlsIo<I>>> {
                 )
                 .arc_new_tcp()
                 .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
-                    TlsParams {
-                        timeout: tls::server::Timeout(detect_timeout),
-                        identity: rt.identity.server(),
-                    },
+                    TlsParams(rt.identity.server()),
                 ))
+                .push(tls::NewDetectSNI::layer(detect_timeout.into()))
                 .arc_new_tcp()
                 .push_switch(
                     // Check the policy for this port and check whether
@@ -420,17 +415,10 @@ impl svc::Param<transport::labels::Key> for Http {
 
 // === TlsParams ===
 
-impl<T> svc::ExtractParam<tls::server::Timeout, T> for TlsParams {
-    #[inline]
-    fn extract_param(&self, _: &T) -> tls::server::Timeout {
-        self.timeout
-    }
-}
-
 impl<T> svc::ExtractParam<identity::Server, T> for TlsParams {
     #[inline]
     fn extract_param(&self, _: &T) -> identity::Server {
-        self.identity.clone()
+        self.0.clone()
     }
 }
 
