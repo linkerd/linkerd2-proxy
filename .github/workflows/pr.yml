@@ -5,7 +5,7 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
-  RUSTFLAGS: "-D warnings -D deprecated -C debuginfo=0"
+  RUSTFLAGS: "-D warnings -D deprecated --cfg tokio_unstable -C debuginfo=0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
@@ -142,7 +142,7 @@ jobs:
       - run: just-k3d create
       - run: just k3d-load-linkerd
       - run: just linkerd-install
-      - run: just linkerd-check-contol-plane-proxy
+      - run: just linkerd-check-control-plane-proxy
         env:
           TMPDIR: ${{ runner.temp }}
 

@@ -110,7 +110,8 @@ impl Settings {
         S: Send + Sync,
     {
         let fmt = tracing_subscriber::fmt::format()
-            .with_timer(self.timer())
+            // Always use absolute system time instead of uptime in JSON.
+            .with_timer(tracing_subscriber::fmt::time::SystemTime)
             .with_thread_ids(!self.is_test)
             // Configure the formatter to output JSON logs.
             .json()

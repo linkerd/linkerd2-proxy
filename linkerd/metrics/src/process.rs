@@ -15,6 +15,14 @@ pub fn register(reg: &mut prom::Registry) {
         prom::ConstGauge::new(start_time_from_epoch.as_secs_f64()),
     );
 
+    let clock_time_ts = prom::Gauge::<f64, ClockMetric>::default();
+    reg.register_with_unit(
+        "clock_time",
+        "Current system time for this proxy",
+        prom::Unit::Seconds,
+        clock_time_ts,
+    );
+
     reg.register_collector(Box::new(ProcessCollector {
         start_time,
         #[cfg(target_os = "linux")]
@@ -53,6 +61,44 @@ impl prom::collector::Collector for ProcessCollector {
         self.system.encode(encoder)?;
 
         Ok(())
+    }
+}
+
+// Metric that always reports the current system time on a call to [`get`].
+#[derive(Copy, Clone, Debug, Default)]
+struct ClockMetric;
+
+impl prom::GaugeAtomic<f64> for ClockMetric {
+    fn inc(&self) -> f64 {
+        self.get()
+    }
+
+    fn inc_by(&self, _v: f64) -> f64 {
+        self.get()
+    }
+
+    fn dec(&self) -> f64 {
+        self.get()
+    }
+
+    fn dec_by(&self, _v: f64) -> f64 {
+        self.get()
+    }
+
+    fn set(&self, _v: f64) -> f64 {
+        self.get()
+    }
+
+    fn get(&self) -> f64 {
+        match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(elapsed) => elapsed.as_secs_f64().floor(),
+            Err(e) => {
+                tracing::warn!(
+                    "System time is before the UNIX epoch; reporting negative timestamp"
+                );
+                -e.duration().as_secs_f64().floor()
+            }
+        }
     }
 }
 
