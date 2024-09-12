@@ -1865,6 +1865,7 @@ dependencies = [
  "linkerd-http-route",
  "linkerd-proxy-api-resolve",
  "linkerd-proxy-core",
+ "linkerd-tls-route",
  "linkerd2-proxy-api",
  "maplit",
  "once_cell",
