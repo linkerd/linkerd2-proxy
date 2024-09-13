@@ -9,7 +9,7 @@ use linkerd_app_core::{
     transport::{addrs::AddrPair, listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use std::{collections::HashSet, pin::Pin, time::Duration};
+use std::{collections::HashSet, pin::Pin};
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
@@ -37,8 +37,6 @@ pub enum Tap {
 struct TlsParams {
     identity: identity::Server,
 }
-
-const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl Config {
     pub fn build<B>(
@@ -85,7 +83,6 @@ impl Config {
                     .push(tls::NewDetectTls::<identity::Server, _, _>::layer(
                         TlsParams { identity },
                     ))
-                    .push(tls::NewDetectSNI::layer(DETECT_TIMEOUT.into()))
                     .check_new_service::<B::Addrs, _>()
                     .into_inner();
 
@@ -111,6 +108,13 @@ impl Tap {
 }
 
 // === TlsParams ===
+
+impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> tls::server::Timeout {
+        tls::server::Timeout(std::time::Duration::from_secs(1))
+    }
+}
 
 impl<T> ExtractParam<identity::Server, T> for TlsParams {
     #[inline]

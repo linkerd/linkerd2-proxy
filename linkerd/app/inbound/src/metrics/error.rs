@@ -42,7 +42,7 @@ impl ErrorKind {
             Some(ErrorKind::FailFast)
         } else if err.is::<std::io::Error>() {
             Some(ErrorKind::Io)
-        } else if err.is::<tls::detect_sni::DetectSniTimeoutError>() {
+        } else if err.is::<tls::server::ServerTlsTimeoutError>() {
             Some(ErrorKind::TlsDetectTimeout)
         } else if err.is::<GatewayDomainInvalid>() {
             Some(ErrorKind::GatewayDomainInvalid)
