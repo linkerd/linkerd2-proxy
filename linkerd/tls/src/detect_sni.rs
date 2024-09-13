@@ -99,7 +99,7 @@ where
         Box::pin(async move {
             let (sni, io) = detect.await.map_err(|_| DetectSniTimeoutError(()))??;
 
-            debug!("detected SNI: {:?}", sni);
+            println!("detected SNI: {:?}", sni);
             let svc = new_accept.new_service((target, sni));
             svc.oneshot(io).await.map_err(Into::into)
         })
