@@ -64,11 +64,14 @@ pub fn find<P>(routes: &[Route<P>], session_info: SessionInfo) -> Option<(RouteM
         let sni = if rt.snis.is_empty() {
             None
         } else {
-            trace!(%session_info.sni, "matching sni");
-            rt.snis
+            let session_sni = &session_info.sni;
+            trace!(%session_sni, "matching sni");
+            let sni_match = rt
+                .snis
                 .iter()
-                .filter_map(|a| a.summarize_match(&session_info.sni))
-                .max()
+                .filter_map(|a| a.summarize_match(session_sni))
+                .max()?;
+            Some(sni_match)
         };
 
         trace!(rules = %rt.rules.len());

@@ -99,3 +99,93 @@ impl std::cmp::Ord for SniMatch {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact() {
+        let m = "example.com"
+            .parse::<MatchSni>()
+            .expect("example.com parses");
+        assert_eq!(m, MatchSni::Exact("example.com".to_string()));
+        assert_eq!(
+            m.summarize_match(&"example.com".parse().unwrap()),
+            Some(SniMatch::Exact("example.com".len()))
+        );
+        assert_eq!(
+            m.summarize_match(&"example.com.".parse().unwrap()),
+            Some(SniMatch::Exact("example.com".len()))
+        );
+        assert_eq!(m.summarize_match(&"foo.example.com".parse().unwrap()), None);
+
+        let m = "example.com."
+            .parse::<MatchSni>()
+            .expect("example.com parses");
+        assert_eq!(m, MatchSni::Exact("example.com.".to_string()));
+        assert_eq!(m.summarize_match(&"example.com".parse().unwrap()), None,);
+        assert_eq!(
+            m.summarize_match(&"example.com.".parse().unwrap()),
+            Some(SniMatch::Exact("example.com.".len()))
+        );
+    }
+
+    #[test]
+    fn suffix() {
+        let m = "*.example.com"
+            .parse::<MatchSni>()
+            .expect("*.example.com parses");
+        assert_eq!(
+            m,
+            MatchSni::Suffix(vec!["com".to_string(), "example".to_string()])
+        );
+
+        assert_eq!(m.summarize_match(&"example.com".parse().unwrap()), None);
+        assert_eq!(
+            m.summarize_match(&"foo.example.com".parse().unwrap()),
+            Some(SniMatch::Suffix(".example.com".len()))
+        );
+        assert_eq!(
+            m.summarize_match(&"foo.example.com".parse().unwrap()),
+            Some(SniMatch::Suffix(".example.com".len()))
+        );
+        assert_eq!(
+            m.summarize_match(&"bar.foo.example.com".parse().unwrap()),
+            Some(SniMatch::Suffix(".example.com".len()))
+        );
+
+        let m = "*.example.com."
+            .parse::<MatchSni>()
+            .expect("*.example.com. parses");
+        assert_eq!(
+            m,
+            MatchSni::Suffix(vec![
+                "".to_string(),
+                "com".to_string(),
+                "example".to_string()
+            ])
+        );
+        assert_eq!(
+            m.summarize_match(&"bar.foo.example.com".parse().unwrap()),
+            None
+        );
+        assert_eq!(
+            m.summarize_match(&"bar.foo.example.com.".parse().unwrap()),
+            Some(SniMatch::Suffix(".example.com.".len()))
+        );
+    }
+
+    #[test]
+    fn cmp() {
+        assert!(SniMatch::Exact("example.com".len()) > SniMatch::Suffix(".example.com".len()));
+        assert!(SniMatch::Exact("foo.example.com".len()) > SniMatch::Exact("example.com".len()));
+        assert!(
+            SniMatch::Suffix(".foo.example.com".len()) > SniMatch::Suffix(".example.com".len())
+        );
+        assert_eq!(
+            SniMatch::Suffix(".foo.example.com".len()),
+            SniMatch::Suffix(".bar.example.com".len())
+        );
+    }
+}
