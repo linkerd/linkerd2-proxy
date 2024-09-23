@@ -1,11 +1,5 @@
-#![allow(warnings)]
-
 use crate::{BackendRef, ParentRef, RouteRef};
-use futures::Stream;
-use linkerd_app_core::{
-    metrics::prom::{self, encoding::*, EncodeLabelSetMut},
-    svc,
-};
+use linkerd_app_core::{metrics::prom, svc};
 use linkerd_http_prom::{
     record_response::{self, NewResponseDuration, StreamLabel},
     NewCountRequests, RequestCount, RequestCountFamilies,

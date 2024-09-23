@@ -5,10 +5,8 @@ use super::{
     LabelGrpcRouteBackendRsp, LabelHttpRouteBackendRsp, RouteBackendMetrics,
 };
 use crate::http::{concrete, logical::Concrete};
-use linkerd2_proxy_api::outbound::backend;
 use linkerd_app_core::{
-    metrics::prom::Counter,
-    svc::{self, http::BoxBody, Layer, NewService, Service, ServiceExt},
+    svc::{self, http::BoxBody, Layer, NewService},
     transport::{Remote, ServerAddr},
 };
 use linkerd_proxy_client_policy as policy;
