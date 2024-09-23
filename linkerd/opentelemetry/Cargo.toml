@@ -1,0 +1,24 @@
+[package]
+name = "linkerd-opentelemetry"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+http = "0.2"
+http-body = "0.4"
+linkerd-error = { path = "../error" }
+linkerd-metrics = { path = "../metrics" }
+opentelemetry = { version = "0.23", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.23", default-features = false, features = ["trace"] }
+opentelemetry-proto = { path = "../../opentelemetry-proto" }
+tonic = { version = "0.10", default-features = false, features = [
+    "prost",
+    "codegen",
+] }
+tokio = { version = "1", features = ["macros", "sync", "time"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tracing = "0.1"
