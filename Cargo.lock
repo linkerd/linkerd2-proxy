@@ -1751,6 +1751,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-opentelemetry"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "http-body",
+ "linkerd-error",
+ "linkerd-metrics",
+ "opentelemetry",
+ "opentelemetry-proto",
+ "opentelemetry_sdk",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-pool"
 version = "0.1.0"
 dependencies = [
