@@ -5,7 +5,7 @@ use linkerd_app_core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
     tls,
-    transport::{DualListenAddr, Keepalive, ListenAddr},
+    transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout},
     AddrMatch, Conditional, IpNet,
 };
 use std::{
@@ -128,6 +128,12 @@ const ENV_OUTBOUND_ACCEPT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_KEEP
 
 const ENV_INBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_INBOUND_CONNECT_KEEPALIVE";
 const ENV_OUTBOUND_CONNECT_KEEPALIVE: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_KEEPALIVE";
+
+const ENV_INBOUND_ACCEPT_USER_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_ACCEPT_USER_TIMEOUT";
+const ENV_OUTBOUND_ACCEPT_USER_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_ACCEPT_USER_TIMEOUT";
+
+const ENV_INBOUND_CONNECT_USER_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_CONNECT_USER_TIMEOUT";
+const ENV_OUTBOUND_CONNECT_USER_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_CONNECT_USER_TIMEOUT";
 
 const ENV_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str = "LINKERD2_PROXY_MAX_IDLE_CONNS_PER_ENDPOINT";
 const ENV_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str =
@@ -374,6 +380,16 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_connect_keepalive = parse(strings, ENV_INBOUND_CONNECT_KEEPALIVE, parse_duration);
     let outbound_connect_keepalive = parse(strings, ENV_OUTBOUND_CONNECT_KEEPALIVE, parse_duration);
 
+    let inbound_accept_user_timeout =
+        parse(strings, ENV_INBOUND_ACCEPT_USER_TIMEOUT, parse_duration);
+    let outbound_accept_user_timeout =
+        parse(strings, ENV_OUTBOUND_ACCEPT_USER_TIMEOUT, parse_duration);
+
+    let inbound_connect_user_timeout =
+        parse(strings, ENV_INBOUND_CONNECT_USER_TIMEOUT, parse_duration);
+    let outbound_connect_user_timeout =
+        parse(strings, ENV_OUTBOUND_CONNECT_USER_TIMEOUT, parse_duration);
+
     let shutdown_grace_period = parse(strings, ENV_SHUTDOWN_GRACE_PERIOD, parse_duration);
 
     let inbound_discovery_idle_timeout =
@@ -477,9 +493,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         };
 
         let keepalive = Keepalive(outbound_accept_keepalive?);
+        let user_timeout = UserTimeout(outbound_accept_user_timeout?);
         let server = ServerConfig {
             addr,
             keepalive,
+            user_timeout,
             http2: http2::parse_server(strings, "LINKERD2_PROXY_OUTBOUND_SERVER_HTTP2")?,
         };
         let discovery_idle_timeout =
@@ -487,6 +505,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let max_idle =
             outbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
         let keepalive = Keepalive(outbound_connect_keepalive?);
+        let user_timeout = UserTimeout(outbound_connect_user_timeout?);
         let connection_pool_timeout = parse(
             strings,
             ENV_OUTBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT,
@@ -495,6 +514,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
         let connect = ConnectConfig {
             keepalive,
+            user_timeout,
             timeout: outbound_connect_timeout?.unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
             backoff: parse_backoff(
                 strings,
@@ -565,9 +585,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             None,
         );
         let keepalive = Keepalive(inbound_accept_keepalive?);
+        let user_timeout = UserTimeout(inbound_accept_user_timeout?);
         let server = ServerConfig {
             addr,
             keepalive,
+            user_timeout,
             http2: http2::parse_server(strings, "LINKERD2_PROXY_INBOUND_SERVER_HTTP2")?,
         };
         let discovery_idle_timeout =
@@ -581,8 +603,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         )?
         .unwrap_or(DEFAULT_INBOUND_HTTP1_CONNECTION_POOL_IDLE_TIMEOUT);
         let keepalive = Keepalive(inbound_connect_keepalive?);
+        let user_timeout = UserTimeout(inbound_connect_user_timeout?);
         let connect = ConnectConfig {
             keepalive,
+            user_timeout,
             timeout: inbound_connect_timeout?.unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
             backoff: parse_backoff(
                 strings,
@@ -769,6 +793,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         server: ServerConfig {
             addr: DualListenAddr(admin_listener_addr, None),
             keepalive: inbound.proxy.server.keepalive,
+            user_timeout: inbound.proxy.server.user_timeout,
             http2: inbound.proxy.server.http2.clone(),
         },
 
@@ -829,6 +854,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             config: ServerConfig {
                 addr: DualListenAddr(addr, None),
                 keepalive: inbound.proxy.server.keepalive,
+                user_timeout: inbound.proxy.server.user_timeout,
                 http2: inbound.proxy.server.http2.clone(),
             },
         })

@@ -1,4 +1,4 @@
-use crate::{ClientAddr, Keepalive, Local, Remote, ServerAddr};
+use crate::{ClientAddr, Keepalive, Local, Remote, ServerAddr, UserTimeout};
 use linkerd_io as io;
 use linkerd_stack::{Param, Service};
 use std::{
@@ -12,11 +12,15 @@ use tracing::debug;
 #[derive(Copy, Clone, Debug)]
 pub struct ConnectTcp {
     keepalive: Keepalive,
+    user_timeout: UserTimeout,
 }
 
 impl ConnectTcp {
-    pub fn new(keepalive: Keepalive) -> Self {
-        Self { keepalive }
+    pub fn new(keepalive: Keepalive, user_timeout: UserTimeout) -> Self {
+        Self {
+            keepalive,
+            user_timeout,
+        }
     }
 }
 
@@ -31,12 +35,14 @@ impl<T: Param<Remote<ServerAddr>>> Service<T> for ConnectTcp {
 
     fn call(&mut self, t: T) -> Self::Future {
         let Keepalive(keepalive) = self.keepalive;
+        let UserTimeout(user_timeout) = self.user_timeout;
         let Remote(ServerAddr(addr)) = t.param();
         debug!(server.addr = %addr, "Connecting");
         Box::pin(async move {
             let io = TcpStream::connect(&addr).await?;
             super::set_nodelay_or_warn(&io);
             let io = super::set_keepalive_or_warn(io, keepalive)?;
+            let io = super::set_user_timeout_or_warn(io, user_timeout)?;
             let local_addr = io.local_addr()?;
             debug!(
                 local.addr = %local_addr,

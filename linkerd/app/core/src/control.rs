@@ -124,13 +124,16 @@ impl Config {
             }
         };
 
-        let client = svc::stack(ConnectTcp::new(self.connect.keepalive))
-            .push(tls::Client::layer(identity))
-            .push_connect_timeout(self.connect.timeout)
-            .push_map_target(|(_version, target)| target)
-            .push(self::client::layer(self.connect.http2))
-            .push_on_service(svc::MapErr::layer_boxed())
-            .into_new_service();
+        let client = svc::stack(ConnectTcp::new(
+            self.connect.keepalive,
+            self.connect.user_timeout,
+        ))
+        .push(tls::Client::layer(identity))
+        .push_connect_timeout(self.connect.timeout)
+        .push_map_target(|(_version, target)| target)
+        .push(self::client::layer(self.connect.http2))
+        .push_on_service(svc::MapErr::layer_boxed())
+        .into_new_service();
 
         let endpoint = client
             // Ensure that connection is driven independently of the load

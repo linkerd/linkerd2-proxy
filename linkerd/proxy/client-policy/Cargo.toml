@@ -26,6 +26,7 @@ thiserror = { version = "1", optional = true }
 linkerd-error = { path = "../../error" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-route = { path = "../../http/route" }
+linkerd-tls-route = { path = "../../tls/route" }
 linkerd-proxy-api-resolve = { path = "../api-resolve" }
 linkerd-proxy-core = { path = "../core" }
 
