@@ -44,7 +44,7 @@ impl<T: Clone, F> Clone for Backend<T, F> {
     }
 }
 
-// === impl Matched ===
+// === impl MatchedBackend ===
 
 impl<M, T, F, P> From<(Backend<T, F>, super::MatchedRoute<T, M, F, P>)>
     for MatchedBackend<T, M, F>
@@ -133,6 +133,8 @@ impl<T, M, F> svc::Param<BackendRef> for MatchedBackend<T, M, F> {
     }
 }
 
+// === impl Http ===
+
 impl<T> filters::Apply for Http<T> {
     #[inline]
     fn apply_request<B>(&self, req: &mut ::http::Request<B>) -> Result<()> {
@@ -159,6 +161,8 @@ impl<T> metrics::MkStreamLabel for Http<T> {
         ))
     }
 }
+
+// === impl Grpc ===
 
 impl<T> filters::Apply for Grpc<T> {
     #[inline]
