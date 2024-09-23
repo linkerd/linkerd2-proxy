@@ -78,6 +78,7 @@ members = [
     "linkerd/transport-metrics",
     "linkerd2-proxy",
     "opencensus-proto",
+    "opentelemetry-proto",
     "spiffe-proto",
     "tools",
 ]
