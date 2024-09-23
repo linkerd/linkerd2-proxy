@@ -1,3 +1,5 @@
+//! A Tower middleware for counting requests processed by a service.
+
 use linkerd_stack as svc;
 use prometheus_client::{
     encoding::EncodeLabelSet,
@@ -6,18 +8,29 @@ use prometheus_client::{
 };
 use std::task::{Context, Poll};
 
+/// A [`Family`] of counters with `L`-encoded labels.
+///
+/// See [`EncodeLabelSet`] for more information about encoding labels.
 #[derive(Clone, Debug)]
 pub struct RequestCountFamilies<L>(Family<L, Counter>);
 
+// A single [`Counter`] that tracks the number of requests.
 #[derive(Clone, Debug)]
 pub struct RequestCount(Counter);
 
+/// A [`NewService<T>`][svc::NewService] that creates [`RequestCount`] services.
 #[derive(Clone, Debug)]
 pub struct NewCountRequests<X, N> {
+    /// The inner [`NewService<T>`][svc::NewService].
     inner: N,
+    /// The [`ExtractParam<P, T>`][svc::ExtractParam] strategy for obtaining our parameters.
     extract: X,
 }
 
+/// Counts requests for an inner `S`-typed [`Service`][svc::Service].
+///
+/// This will increment its counter when [`call()`][svc::Service::call]ed, before calling the inner
+/// service.
 #[derive(Clone, Debug)]
 pub struct CountRequests<S> {
     inner: S,
@@ -31,6 +44,10 @@ impl<X: Clone, N> NewCountRequests<X, N> {
         Self { extract, inner }
     }
 
+    /// Returns a [`Layer`] that counts requests.
+    ///
+    /// This uses an `X`-typed [`ExtractParam`] implementation to extract [`RequestCount`] from a
+    /// `T`-typed target.
     pub fn layer_via(extract: X) -> impl svc::layer::Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self::new(extract.clone(), inner))
     }
@@ -72,6 +89,7 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        // We received a request! Increment the counter and then call the inner service `S`.
         self.requests.inc();
         self.inner.call(req)
     }
@@ -94,6 +112,7 @@ where
     L: EncodeLabelSet + std::fmt::Debug + std::hash::Hash,
     L: Eq + Clone + Send + Sync + 'static,
 {
+    /// Registers this family of counters with the given [`Registry`].
     pub fn register(registry: &mut Registry) -> Self {
         let requests = Family::default();
         registry.register(
@@ -104,6 +123,7 @@ where
         Self(requests)
     }
 
+    /// Returns a [`RequestCount`] for the given label set.
     pub fn metrics(&self, labels: &L) -> RequestCount {
         RequestCount(self.0.get_or_create(labels).clone())
     }
@@ -112,6 +132,7 @@ where
 // === impl RequestCount ===
 
 impl RequestCount {
+    /// Returns the current value of the counter.
     pub fn get(&self) -> u64 {
         self.0.get()
     }
