@@ -93,8 +93,17 @@ where
                     .is_failure();
                 // did the body exceed the maximum length limit?
                 let exceeded_max_len = req.body().is_capped();
-                let retryable = is_failure && !exceeded_max_len;
-                tracing::trace!(is_failure, exceeded_max_len, retryable);
+                let retryable = if let Some(false) = exceeded_max_len {
+                    // If the body hasn't exceeded our length limit, we should
+                    // retry the request if it's a failure of some sort.
+                    is_failure
+                } else {
+                    // We received a response before the request body was fully
+                    // finished streaming. To be safe, we will consider this
+                    // as an unretryable request.
+                    false
+                };
+                tracing::trace!(is_failure, ?exceeded_max_len, retryable);
                 retryable
             }
         };

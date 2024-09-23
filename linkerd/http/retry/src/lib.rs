@@ -268,8 +268,13 @@ async fn send_req_with_retries(
         tracing::trace!("Success on first attempt");
         return result.map(|rsp| rsp.map(BoxBody::new));
     }
-    if backup.body().is_capped() {
-        return result.map(|rsp| rsp.map(BoxBody::new));
+    match backup.body().is_capped() {
+        // The body completely fit into the retry buffer, so we can retry.
+        Some(false) => {}
+        // The body was either too large, or we received an early response
+        // before the request body was completed read. We cannot safely
+        // attempt to send this request again.
+        None | Some(true) => return result.map(|rsp| rsp.map(BoxBody::new)),
     }
 
     // The response was retryable, so continue trying to dispatch backup
@@ -300,8 +305,9 @@ async fn send_req_with_retries(
             tracing::debug!("Retry success");
             return result.map(|rsp| rsp.map(BoxBody::new));
         }
-        if backup.body().is_capped() {
-            return result.map(|rsp| rsp.map(BoxBody::new));
+        match backup.body().is_capped() {
+            Some(false) => {}
+            None | Some(true) => return result.map(|rsp| rsp.map(BoxBody::new)),
         }
     }
 
