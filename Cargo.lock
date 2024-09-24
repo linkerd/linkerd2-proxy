@@ -1759,7 +1759,7 @@ dependencies = [
  "http-body",
  "linkerd-error",
  "linkerd-metrics",
- "opentelemetry",
+ "opentelemetry 0.25.0",
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "tokio",
@@ -2638,10 +2638,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "803801d3d3b71cd026851a53f974ea03df3d179cb758b260136a6c9e22e196af"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+ "js-sys",
+ "once_cell",
+ "pin-project-lite",
+ "thiserror",
+]
+
+[[package]]
 name = "opentelemetry-proto"
 version = "0.1.0"
 dependencies = [
- "opentelemetry",
+ "opentelemetry 0.25.0",
  "opentelemetry_sdk",
  "prost",
  "tonic",
@@ -2660,7 +2674,7 @@ dependencies = [
  "futures-util",
  "lazy_static",
  "once_cell",
- "opentelemetry",
+ "opentelemetry 0.23.0",
  "ordered-float",
  "percent-encoding",
  "rand",
