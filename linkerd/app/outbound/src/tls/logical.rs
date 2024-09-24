@@ -8,6 +8,9 @@ use tokio::sync::watch;
 pub mod route;
 pub mod router;
 
+#[cfg(test)]
+mod tests;
+
 /// Indicates the address used for logical routing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LogicalAddr(pub Addr);

@@ -1335,6 +1335,7 @@ dependencies = [
  "prometheus-client",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "tokio-test",
  "tonic",
  "tower",
