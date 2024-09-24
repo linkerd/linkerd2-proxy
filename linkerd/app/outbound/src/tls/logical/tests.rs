@@ -92,7 +92,7 @@ impl svc::Param<watch::Receiver<Routes>> for Target {
 
 impl ConnectTcp {
     fn add_server(&mut self, s: MockServer) {
-        self.srvs.lock().insert(s.addr.clone(), s);
+        self.srvs.lock().insert(s.addr, s);
     }
 }
 
@@ -114,7 +114,7 @@ impl<T: svc::Param<Remote<ServerAddr>>> svc::Service<T> for ConnectTcp {
             .expect("tried to connect to an unexpected address");
 
         assert_eq!(addr, mock.addr);
-        let local = Local(ClientAddr(addr.into()));
+        let local = Local(ClientAddr(addr));
         future::ok::<_, support::io::Error>((mock.io.build(), local))
     }
 }
@@ -163,7 +163,7 @@ fn default_backend(addr: SocketAddr) -> client_policy::Backend {
             capacity: 100,
             failfast_timeout: Duration::from_secs(10),
         },
-        dispatcher: BackendDispatcher::Forward(addr.into(), EndpointMetadata::default()),
+        dispatcher: BackendDispatcher::Forward(addr, EndpointMetadata::default()),
     }
 }
 
