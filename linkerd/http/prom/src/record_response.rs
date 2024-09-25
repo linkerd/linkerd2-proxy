@@ -128,15 +128,28 @@ struct ResponseBody<L: StreamLabel> {
     state: Option<ResponseState<L>>,
 }
 
+/// Inner state used by [`ResponseFuture`] and [`ResponseBody`].
+///
+/// This is used to update Prometheus metrics across the response's lifecycle.
+///
+/// This is generic across an `L`-typed [`StreamLabel`], which bears responsibility for labelling
+/// responses according to their status code and duration.
 struct ResponseState<L: StreamLabel> {
     labeler: L,
+    /// The family of [`Counter`]s tracking response status code.
     statuses: Family<L::StatusLabels, Counter>,
+    /// The family of [`Histogram`]s tracking response durations.
     duration: DurationFamily<L::DurationLabels>,
+    /// Receives a timestamp noting when the service received a request.
     start: oneshot::Receiver<time::Instant>,
 }
 
+/// A family of labeled duration histograms.
 type DurationFamily<L> = Family<L, Histogram, MkDurationHistogram>;
 
+/// Creates new [`Histogram`]s.
+///
+/// See [`MkDurationHistogram::new_metric()`].
 #[derive(Clone, Debug)]
 struct MkDurationHistogram(Arc<[f64]>);
 
@@ -216,11 +229,16 @@ where
     L: StreamLabel,
     F: Future<Output = Result<http::Response<BoxBody>, Error>>,
 {
-    type Output = Result<http::Response<BoxBody>, Error>;
+    /// A [`ResponseFuture`] produces the same response as its inner `F`-typed future.
+    type Output = F::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
+
+        // Poll the inner future, returning if it isn't ready yet.
         let res = futures::ready!(this.inner.poll(cx)).map_err(Into::into);
+
+        // We got a response back! Take our state, and examine the output.
         let mut state = this.state.take();
         match res {
             Ok(rsp) => {
@@ -228,6 +246,7 @@ where
                     labeler.init_response(&rsp);
                 }
 
+                // Break the response into parts, and call `end_stream` if the body is empty.
                 let (head, inner) = rsp.into_parts();
                 if inner.is_end_stream() {
                     end_stream(&mut state, Ok(None));

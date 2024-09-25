@@ -16,6 +16,7 @@ use tokio::{sync::oneshot, time};
 
 use super::{DurationFamily, MkDurationHistogram, MkStreamLabel};
 
+/// Metrics type that tracks completed responses.
 #[derive(Debug)]
 pub struct ResponseMetrics<DurL, StatL> {
     duration: DurationFamily<DurL>,
