@@ -221,7 +221,6 @@ mod tests {
             events: SpanEvents::default(),
             links: SpanLinks::default(),
             status: Status::Unset,
-            resource: Default::default(),
             instrumentation_lib: InstrumentationLibrary::builder(instrumentation_name).build(),
         }
     }
