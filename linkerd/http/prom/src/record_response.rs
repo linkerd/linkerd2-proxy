@@ -32,27 +32,7 @@ pub use self::{
 /// This is specifically to support higher-cardinality status counters and
 /// lower-cardinality stream duration histograms.
 pub trait MkStreamLabel {
-    type DurationLabels: EncodeLabelSet
-        + Clone
-        + Eq
-        + std::fmt::Debug
-        + std::hash::Hash
-        + Send
-        + Sync
-        + 'static;
-    type StatusLabels: EncodeLabelSet
-        + Clone
-        + Eq
-        + std::fmt::Debug
-        + std::hash::Hash
-        + Send
-        + Sync
-        + 'static;
-
-    type StreamLabel: StreamLabel<
-        DurationLabels = Self::DurationLabels,
-        StatusLabels = Self::StatusLabels,
-    >;
+    type StreamLabel: StreamLabel;
 
     /// Returns None when the request should not be recorded.
     fn mk_stream_labeler<B>(&self, req: &http::Request<B>) -> Option<Self::StreamLabel>;

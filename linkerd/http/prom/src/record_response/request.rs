@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::{sync::oneshot, time};
 
-use super::{DurationFamily, MkDurationHistogram, MkStreamLabel};
+use super::{DurationFamily, MkDurationHistogram, MkStreamLabel, StreamLabel};
 
 /// Metrics type that tracks completed requests.
 #[derive(Debug)]
@@ -25,13 +25,19 @@ pub struct RequestMetrics<DurL, StatL> {
 pub type NewRequestDuration<L, X, N> = super::NewRecordResponse<
     L,
     X,
-    RequestMetrics<<L as MkStreamLabel>::DurationLabels, <L as MkStreamLabel>::StatusLabels>,
+    RequestMetrics<
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::DurationLabels,
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::StatusLabels,
+    >,
     N,
 >;
 
 pub type RecordRequestDuration<L, S> = super::RecordResponse<
     L,
-    RequestMetrics<<L as MkStreamLabel>::DurationLabels, <L as MkStreamLabel>::StatusLabels>,
+    RequestMetrics<
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::DurationLabels,
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::StatusLabels,
+    >,
     S,
 >;
 
