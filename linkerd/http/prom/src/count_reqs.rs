@@ -44,10 +44,10 @@ impl<X: Clone, N> NewCountRequests<X, N> {
         Self { extract, inner }
     }
 
-    /// Returns a [`Layer`] that counts requests.
+    /// Returns a [`Layer<S>`][svc::layer::Layer] that counts requests.
     ///
-    /// This uses an `X`-typed [`ExtractParam`] implementation to extract [`RequestCount`] from a
-    /// `T`-typed target.
+    /// This uses an `X`-typed [`ExtractParam<P, T>`][svc::ExtractParam] implementation to extract
+    /// [`RequestCount`] from a `T`-typed target.
     pub fn layer_via(extract: X) -> impl svc::layer::Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self::new(extract.clone(), inner))
     }
