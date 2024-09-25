@@ -1,9 +1,13 @@
 [package]
 name = "linkerd-http-prom"
 version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2021"
 publish = false
 license = "Apache-2.0"
+description = """
+Tower middleware for Prometheus metrics.
+"""
 
 [features]
 test-util = []
