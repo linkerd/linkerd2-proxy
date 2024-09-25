@@ -13,14 +13,6 @@ pub struct RouteBackend(pub ParentRef, pub RouteRef, pub BackendRef);
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Rsp<P, L>(pub P, pub L);
 
-pub type RouteRsp<L> = Rsp<Route, L>;
-pub type HttpRouteRsp = RouteRsp<HttpRsp>;
-pub type GrpcRouteRsp = RouteRsp<GrpcRsp>;
-
-pub type RouteBackendRsp<L> = Rsp<RouteBackend, L>;
-pub type HttpRouteBackendRsp = RouteBackendRsp<HttpRsp>;
-pub type GrpcRouteBackendRsp = RouteBackendRsp<GrpcRsp>;
-
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct HttpRsp {
     pub status: Option<http::StatusCode>,

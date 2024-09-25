@@ -148,8 +148,6 @@ impl<T> filters::Apply for Http<T> {
 }
 
 impl<T> metrics::MkStreamLabel for Http<T> {
-    type StatusLabels = metrics::labels::HttpRouteBackendRsp;
-    type DurationLabels = metrics::labels::RouteBackend;
     type StreamLabel = metrics::LabelHttpRouteBackendRsp;
 
     fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
@@ -176,8 +174,6 @@ impl<T> filters::Apply for Grpc<T> {
 }
 
 impl<T> metrics::MkStreamLabel for Grpc<T> {
-    type StatusLabels = metrics::labels::GrpcRouteBackendRsp;
-    type DurationLabels = metrics::labels::RouteBackend;
     type StreamLabel = metrics::LabelGrpcRouteBackendRsp;
 
     fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {

@@ -14,7 +14,7 @@ use std::{
 };
 use tokio::{sync::oneshot, time};
 
-use super::{DurationFamily, MkDurationHistogram, MkStreamLabel};
+use super::{DurationFamily, MkDurationHistogram, MkStreamLabel, StreamLabel};
 
 #[derive(Debug)]
 pub struct ResponseMetrics<DurL, StatL> {
@@ -25,13 +25,19 @@ pub struct ResponseMetrics<DurL, StatL> {
 pub type NewResponseDuration<L, X, N> = super::NewRecordResponse<
     L,
     X,
-    ResponseMetrics<<L as MkStreamLabel>::DurationLabels, <L as MkStreamLabel>::StatusLabels>,
+    ResponseMetrics<
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::DurationLabels,
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::StatusLabels,
+    >,
     N,
 >;
 
 pub type RecordResponseDuration<L, S> = super::RecordResponse<
     L,
-    ResponseMetrics<<L as MkStreamLabel>::DurationLabels, <L as MkStreamLabel>::StatusLabels>,
+    ResponseMetrics<
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::DurationLabels,
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::StatusLabels,
+    >,
     S,
 >;
 
