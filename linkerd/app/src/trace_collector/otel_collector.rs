@@ -16,6 +16,7 @@ use tracing::Instrument;
 pub(super) fn create_collector<S>(
     addr: ControlAddr,
     hostname: Option<String>,
+    service_name: String,
     attributes: HashMap<String, String>,
     svc: S,
     legacy_metrics: metrics::Registry,
@@ -35,7 +36,7 @@ where
     resources
         .attributes
         .0
-        .push(crate::trace_collector::SERVICE_NAME.with_key("service.name"));
+        .push(service_name.with_key("service.name"));
     resources
         .attributes
         .0

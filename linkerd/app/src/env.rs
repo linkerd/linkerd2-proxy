@@ -148,6 +148,7 @@ const ENV_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS: &str =
 
 const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 const ENV_TRACE_PROTOCOL: &str = "LINKERD2_PROXY_TRACE_PROTOCOL";
+const ENV_TRACE_SERVICE_NAME: &str = "LINKERD2_PROXY_TRACE_SERVICE_NAME";
 
 /// Constrains which destination names may be used for profile/route discovery.
 ///
@@ -432,6 +433,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let trace_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
     let trace_protocol = strings.get(ENV_TRACE_PROTOCOL);
+    let trace_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
 
     let trace_collector_addr = parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
 
@@ -842,9 +844,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 .flatten()
                 .unwrap_or_default();
 
+            let trace_service_name = trace_service_name.ok().flatten();
+
             trace_collector::Config::Enabled(Box::new(trace_collector::EnabledConfig {
                 attributes,
                 hostname: hostname?,
+                service_name: trace_service_name,
                 control: ControlConfig {
                     addr,
                     connect,

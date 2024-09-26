@@ -12,6 +12,7 @@ use tracing::Instrument;
 pub(super) fn create_collector<S>(
     addr: ControlAddr,
     hostname: Option<String>,
+    service_name: String,
     attributes: HashMap<String, String>,
     svc: S,
     legacy_metrics: metrics::Registry,
@@ -35,9 +36,7 @@ where
                 pid: std::process::id(),
                 start_timestamp: Some(SystemTime::now().into()),
             }),
-            service_info: Some(oc::ServiceInfo {
-                name: crate::trace_collector::SERVICE_NAME.to_string(),
-            }),
+            service_info: Some(oc::ServiceInfo { name: service_name }),
             attributes,
             ..oc::Node::default()
         };
