@@ -24,6 +24,7 @@ pub struct EnabledConfig {
     pub control: control::Config,
     pub attributes: HashMap<String, String>,
     pub hostname: Option<String>,
+    pub service_name: Option<String>,
     pub kind: CollectorProtocol,
 }
 
@@ -78,11 +79,15 @@ impl Config {
                     .control
                     .build(dns, client_metrics, control_metrics, identity)
                     .new_service(());
+                let svc_name = inner
+                    .service_name
+                    .unwrap_or_else(|| SERVICE_NAME.to_string());
 
                 let collector = match inner.kind {
                     CollectorProtocol::OpenCensus => oc_collector::create_collector(
                         addr.clone(),
                         inner.hostname,
+                        svc_name,
                         inner.attributes,
                         svc,
                         legacy_oc_metrics,
@@ -90,6 +95,7 @@ impl Config {
                     CollectorProtocol::OpenTelemetry => otel_collector::create_collector(
                         addr.clone(),
                         inner.hostname,
+                        svc_name,
                         inner.attributes,
                         svc,
                         legacy_otel_metrics,
