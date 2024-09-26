@@ -147,6 +147,8 @@ const ENV_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS: &str =
 
 pub const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 
+pub const ENV_TRACE_SERVICE_NAME: &str = "LINKERD2_PROXY_TRACE_SERVICE_NAME";
+
 /// Constrains which destination names may be used for profile/route discovery.
 ///
 /// The value is a comma-separated list of domain name suffixes that may be
@@ -391,6 +393,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         parse(strings, ENV_OUTBOUND_CONNECT_USER_TIMEOUT, parse_duration);
 
     let shutdown_grace_period = parse(strings, ENV_SHUTDOWN_GRACE_PERIOD, parse_duration);
+
+    let proxy_tracing_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
 
     let inbound_discovery_idle_timeout =
         parse(strings, ENV_INBOUND_DISCOVERY_IDLE_TIMEOUT, parse_duration);
@@ -836,6 +840,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             oc_collector::Config::Enabled(Box::new(oc_collector::EnabledConfig {
                 attributes,
                 hostname: hostname?,
+                service_name: proxy_tracing_service_name?,
                 control: ControlConfig {
                     addr,
                     connect,
