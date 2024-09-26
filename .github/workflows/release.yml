@@ -80,7 +80,7 @@ jobs:
             echo archs='["amd64", "arm64", "arm"]'
           ) >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938
         if: github.event_name == 'pull_request'
       - id: changed
         if: github.event_name == 'pull_request'
@@ -140,7 +140,7 @@ jobs:
     steps:
       - name: Configure git
         run: git config --global --add safe.directory "$PWD" # actions/runner#2033
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938
         with:
           ref: ${{ needs.meta.outputs.ref }}
       - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84
@@ -174,7 +174,7 @@ jobs:
           git config --global user.name "$GITHUB_USERNAME"
           git config --global user.email "$GITHUB_USERNAME"@users.noreply.github.com
       # Tag the release.
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938
         with:
           token: ${{ secrets.LINKERD2_PROXY_GITHUB_TOKEN || github.token }}
           ref: ${{ needs.meta.outputs.ref }}
