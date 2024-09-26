@@ -28,7 +28,7 @@ jobs:
     continue-on-error: true
     steps:
       - run: rustup toolchain install --profile=minimal beta
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938
       - run: git config --global --add safe.directory "$PWD" # actions/runner#2033
       - run: just toolchain=beta fetch
       - run: just toolchain=beta build
