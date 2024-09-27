@@ -31,14 +31,14 @@ pub use self::{
 ///
 /// This is specifically to support higher-cardinality status counters and
 /// lower-cardinality stream duration histograms.
-pub trait MkStreamLabel {
-    type StreamLabel: StreamLabel;
+pub trait MkStreamLabel<ReqB, RespB> {
+    type StreamLabel: StreamLabel<RespB>;
 
     /// Returns None when the request should not be recorded.
-    fn mk_stream_labeler<B>(&self, req: &http::Request<B>) -> Option<Self::StreamLabel>;
+    fn mk_stream_labeler(&self, req: &http::Request<ReqB>) -> Option<Self::StreamLabel>;
 }
 
-pub trait StreamLabel: Send + 'static {
+pub trait StreamLabel<RespB>: Send + 'static {
     type DurationLabels: EncodeLabelSet
         + Clone
         + Eq
@@ -56,7 +56,7 @@ pub trait StreamLabel: Send + 'static {
         + Sync
         + 'static;
 
-    fn init_response<B>(&mut self, rsp: &http::Response<B>);
+    fn init_response(&mut self, rsp: &http::Response<RespB>);
     fn end_response(&mut self, trailers: Result<Option<&http::HeaderMap>, &Error>);
 
     fn status_labels(&self) -> Self::StatusLabels;
@@ -64,9 +64,11 @@ pub trait StreamLabel: Send + 'static {
 }
 
 /// A set of parameters that can be used to construct a `RecordResponse` layer.
-pub struct Params<L: MkStreamLabel, M> {
+pub struct Params<L: MkStreamLabel<ReqB, RespB>, M, ReqB, RespB> {
     pub labeler: L,
     pub metric: M,
+    // Parameters are generic over their
+    _marker: std::marker::PhantomData<(ReqB, RespB)>,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -76,10 +78,11 @@ pub struct RequestCancelled(());
 /// Builds RecordResponse instances by extracing M-typed parameters from stack
 /// targets
 #[derive(Clone, Debug)]
-pub struct NewRecordResponse<L, X, M, N> {
+pub struct NewRecordResponse<L, X, M, N, ReqB, RespB> {
     inner: N,
     extract: X,
-    _marker: std::marker::PhantomData<fn() -> (L, M)>,
+    _metrics_marker: std::marker::PhantomData<fn() -> (L, M)>,
+    _body_marker: std::marker::PhantomData<(ReqB, RespB)>,
 }
 
 /// A Service that can record a request/response durations.
@@ -91,21 +94,21 @@ pub struct RecordResponse<L, M, S> {
 }
 
 #[pin_project::pin_project]
-pub struct ResponseFuture<L, F>
+pub struct ResponseFuture<L, F, B>
 where
-    L: StreamLabel,
+    L: StreamLabel<B>,
 {
     #[pin]
     inner: F,
-    state: Option<ResponseState<L>>,
+    state: Option<ResponseState<L, B>>,
 }
 
 /// Notifies the response labeler when the response body is flushed.
 #[pin_project::pin_project(PinnedDrop)]
-struct ResponseBody<L: StreamLabel> {
+struct ResponseBody<L: StreamLabel<BoxBody>> {
     #[pin]
     inner: BoxBody,
-    state: Option<ResponseState<L>>,
+    state: Option<ResponseState<L, BoxBody>>,
 }
 
 /// Inner state used by [`ResponseFuture`] and [`ResponseBody`].
@@ -114,7 +117,7 @@ struct ResponseBody<L: StreamLabel> {
 ///
 /// This is generic across an `L`-typed [`StreamLabel`], which bears responsibility for labelling
 /// responses according to their status code and duration.
-struct ResponseState<L: StreamLabel> {
+struct ResponseState<L: StreamLabel<B>, B> {
     labeler: L,
     /// The family of [`Counter`]s tracking response status code.
     statuses: Family<L::StatusLabels, Counter>,
@@ -143,15 +146,16 @@ impl MetricConstructor<Histogram> for MkDurationHistogram {
 
 // === impl NewRecordResponse ===
 
-impl<M, X, K, N> NewRecordResponse<M, X, K, N>
+impl<M, X, K, N, ReqB, RespB> NewRecordResponse<M, X, K, N, ReqB, RespB>
 where
-    M: MkStreamLabel,
+    M: MkStreamLabel<ReqB, RespB>,
 {
     pub fn new(extract: X, inner: N) -> Self {
         Self {
             extract,
             inner,
-            _marker: std::marker::PhantomData,
+            _metrics_marker: std::marker::PhantomData,
+            _body_marker: std::marker::PhantomData,
         }
     }
 
@@ -163,50 +167,43 @@ where
     }
 }
 
-impl<M, K, N> NewRecordResponse<M, (), K, N>
+impl<M, K, N, ReqB, RespB> NewRecordResponse<M, (), K, N, ReqB, RespB>
 where
-    M: MkStreamLabel,
+    M: MkStreamLabel<ReqB, RespB>,
 {
     pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone {
         Self::layer_via(())
     }
 }
 
-impl<T, L, X, M, N> svc::NewService<T> for NewRecordResponse<L, X, M, N>
+impl<T, L, X, M, N, ReqB, RespB> svc::NewService<T> for NewRecordResponse<L, X, M, N, ReqB, RespB>
 where
-    L: MkStreamLabel,
-    X: svc::ExtractParam<Params<L, M>, T>,
+    L: MkStreamLabel<ReqB, RespB>,
+    X: svc::ExtractParam<Params<L, M, ReqB, RespB>, T>,
     N: svc::NewService<T>,
 {
     type Service = RecordResponse<L, M, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let Params { labeler, metric } = self.extract.extract_param(&target);
-        let inner = self.inner.new_service(target);
-        RecordResponse::new(labeler, metric, inner)
-    }
-}
-
-// === impl RecordResponse ===
-
-impl<L, M, S> RecordResponse<L, M, S>
-where
-    L: MkStreamLabel,
-{
-    pub(crate) fn new(labeler: L, metric: M, inner: S) -> Self {
-        Self {
-            inner,
+        let Params {
             labeler,
             metric,
+            _marker,
+        } = self.extract.extract_param(&target);
+        let inner = self.inner.new_service(target);
+        RecordResponse {
+            labeler,
+            metric,
+            inner,
         }
     }
 }
 
 // === impl ResponseFuture ===
 
-impl<L, F> Future for ResponseFuture<L, F>
+impl<L, F> Future for ResponseFuture<L, F, BoxBody>
 where
-    L: StreamLabel,
+    L: StreamLabel<BoxBody>,
     F: Future<Output = Result<http::Response<BoxBody>, Error>>,
 {
     /// A [`ResponseFuture`] produces the same response as its inner `F`-typed future.
@@ -248,7 +245,7 @@ where
 
 impl<L> http_body::Body for ResponseBody<L>
 where
-    L: StreamLabel,
+    L: StreamLabel<BoxBody>,
 {
     type Data = <BoxBody as http_body::Body>::Data;
     type Error = Error;
@@ -286,7 +283,7 @@ where
 #[pin_project::pinned_drop]
 impl<L> PinnedDrop for ResponseBody<L>
 where
-    L: StreamLabel,
+    L: StreamLabel<BoxBody>,
 {
     fn drop(self: Pin<&mut Self>) {
         let this = self.project();
@@ -296,11 +293,11 @@ where
     }
 }
 
-fn end_stream<L>(
-    state: &mut Option<ResponseState<L>>,
+fn end_stream<L, B>(
+    state: &mut Option<ResponseState<L, B>>,
     res: Result<Option<&http::HeaderMap>, &Error>,
 ) where
-    L: StreamLabel,
+    L: StreamLabel<B>,
 {
     let Some(ResponseState {
         duration,
