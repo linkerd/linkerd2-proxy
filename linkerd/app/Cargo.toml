@@ -25,6 +25,7 @@ linkerd-app-inbound = { path = "./inbound" }
 linkerd-app-outbound = { path = "./outbound" }
 linkerd-error = { path = "../error" }
 linkerd-opencensus = { path = "../opencensus" }
+linkerd-opentelemetry = { path = "../opentelemetry" }
 linkerd-tonic-stream = { path = "../tonic-stream" }
 rangemap = "1"
 regex = "1"

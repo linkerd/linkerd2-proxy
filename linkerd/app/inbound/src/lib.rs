@@ -18,11 +18,13 @@ mod server;
 #[cfg(any(test, feature = "test-util", fuzzing))]
 pub mod test_util;
 
+#[cfg(fuzzing)]
+pub use self::http::fuzz as http_fuzz;
 pub use self::{metrics::InboundMetrics, policy::DefaultPolicy};
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig, QueueConfig},
     drain,
-    http_tracing::OpenCensusSink,
+    http_tracing::SpanSink,
     identity, io,
     proxy::{tap, tcp},
     svc,
@@ -32,9 +34,6 @@ use linkerd_app_core::{
 use std::{fmt::Debug, time::Duration};
 use thiserror::Error;
 use tracing::debug_span;
-
-#[cfg(fuzzing)]
-pub use self::http::fuzz as http_fuzz;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -67,7 +66,7 @@ struct Runtime {
     metrics: InboundMetrics,
     identity: identity::creds::Receiver,
     tap: tap::Registry,
-    span_sink: OpenCensusSink,
+    span_sink: Option<SpanSink>,
     drain: drain::Watch,
 }
 

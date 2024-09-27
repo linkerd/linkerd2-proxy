@@ -40,6 +40,7 @@ pub use linkerd_http_metrics as http_metrics;
 pub use linkerd_idle_cache as idle_cache;
 pub use linkerd_io as io;
 pub use linkerd_opencensus as opencensus;
+pub use linkerd_opentelemetry as opentelemetry;
 pub use linkerd_service_profiles as profiles;
 pub use linkerd_stack_metrics as stack_metrics;
 pub use linkerd_stack_tracing as stack_tracing;
@@ -65,7 +66,7 @@ pub struct ProxyRuntime {
     pub identity: identity::creds::Receiver,
     pub metrics: metrics::Proxy,
     pub tap: proxy::tap::Registry,
-    pub span_sink: http_tracing::OpenCensusSink,
+    pub span_sink: Option<http_tracing::SpanSink>,
     pub drain: drain::Watch,
 }
 

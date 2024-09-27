@@ -47,7 +47,7 @@ impl<T> Outbound<svc::ArcNewCloneHttp<T>> {
                 .check_new_service::<T, http::Request<_>>()
                 .push(ServerRescue::layer(config.emit_headers))
                 .check_new_service::<T, http::Request<_>>()
-                // Initiates OpenCensus tracing.
+                // Initiates OpenTelemetry tracing.
                 .push_on_service(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                 .push_on_service(http::BoxResponse::layer())
                 // Convert origin form HTTP/1 URIs to absolute form for Hyper's

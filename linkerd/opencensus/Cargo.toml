@@ -12,6 +12,7 @@ http = "0.2"
 http-body = "0.4"
 linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
+linkerd-trace-context = { path = "../trace-context" }
 opencensus-proto = { path = "../../opencensus-proto" }
 tonic = { version = "0.10", default-features = false, features = [
     "prost",

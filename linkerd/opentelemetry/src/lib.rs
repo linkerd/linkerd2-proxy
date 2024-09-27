@@ -6,17 +6,26 @@ pub mod metrics;
 use futures::stream::{Stream, StreamExt};
 use http_body::Body as HttpBody;
 use linkerd_error::Error;
+use linkerd_trace_context as trace_context;
 use metrics::Registry;
+pub use opentelemetry as otel;
+use opentelemetry::trace::{
+    SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState,
+};
+use opentelemetry::KeyValue;
 pub use opentelemetry_proto as proto;
 use opentelemetry_proto::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
 use opentelemetry_proto::proto::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::proto::trace::v1::ResourceSpans;
 use opentelemetry_proto::transform::common::ResourceAttributesWithSchema;
 use opentelemetry_proto::transform::trace::group_spans_by_resource_and_scope;
+pub use opentelemetry_sdk as sdk;
 pub use opentelemetry_sdk::export::trace::SpanData;
+use opentelemetry_sdk::trace::SpanLinks;
 use tokio::{sync::mpsc, time};
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
-use tracing::{debug, trace};
+use trace_context::export::ExportSpan;
+use tracing::{debug, info, trace};
 
 pub async fn export_spans<T, S>(
     client: T,
@@ -28,7 +37,7 @@ pub async fn export_spans<T, S>(
     T::Error: Into<Error>,
     T::ResponseBody: Default + HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
-    S: Stream<Item = SpanData> + Unpin,
+    S: Stream<Item = ExportSpan> + Unpin,
 {
     debug!("Span exporter running");
     SpanExporter::new(client, spans, resource, metrics)
@@ -55,7 +64,7 @@ where
     T::Error: Into<Error>,
     T::ResponseBody: Default + HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
-    S: Stream<Item = SpanData> + Unpin,
+    S: Stream<Item = ExportSpan> + Unpin,
 {
     const MAX_BATCH_SIZE: usize = 1000;
     const MAX_BATCH_IDLE: time::Duration = time::Duration::from_secs(10);
@@ -189,6 +198,14 @@ where
                 res = span_stream.next() => match res {
                     Some(span) => {
                         trace!(?span, "Adding to batch");
+                        let span = match convert_span(span) {
+                            Ok(span) => span,
+                            Err(error) => {
+                                info!(%error, "Span dropped");
+                                continue;
+                            }
+                        };
+
                         input_accum.push(span);
                     }
                     None => break Err(SpanRxClosed),
@@ -209,4 +226,37 @@ where
 
         res
     }
+}
+
+fn convert_span(span: ExportSpan) -> Result<SpanData, Error> {
+    let ExportSpan { span, kind, labels } = span;
+
+    let mut attributes = Vec::<KeyValue>::new();
+    for (k, v) in labels.iter() {
+        attributes.push(KeyValue::new(k.clone(), v.clone()));
+    }
+    let is_remote = kind != trace_context::export::SpanKind::Client;
+    Ok(SpanData {
+        parent_span_id: SpanId::from_bytes(span.parent_id.into_bytes()?),
+        span_kind: match kind {
+            trace_context::export::SpanKind::Server => SpanKind::Server,
+            trace_context::export::SpanKind::Client => SpanKind::Client,
+        },
+        name: span.span_name.into(),
+        start_time: span.start,
+        end_time: span.end,
+        attributes,
+        dropped_attributes_count: 0,
+        links: SpanLinks::default(),
+        status: Status::Unset, // TODO: this is gRPC status; we must read response trailers to populate this
+        span_context: SpanContext::new(
+            TraceId::from_bytes(span.trace_id.into_bytes()?),
+            SpanId::from_bytes(span.span_id.into_bytes()?),
+            TraceFlags::default(),
+            is_remote,
+            TraceState::NONE,
+        ),
+        events: Default::default(),
+        instrumentation_lib: Default::default(),
+    })
 }
