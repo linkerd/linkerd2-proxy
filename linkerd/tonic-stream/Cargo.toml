@@ -10,7 +10,7 @@ publish = false
 futures = { version = "0.3", default-features = false }
 linkerd-stack = { path = "../stack" }
 pin-project = "1"
-tonic = { version = "0.10", default-features = false }
+tonic = { version = "0.12", default-features = false }
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 

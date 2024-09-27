@@ -16,7 +16,7 @@ linkerd-tonic-watch = { path = "../../tonic-watch" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["time", "sync"] }
-tonic = "0.10"
+tonic = "0.12"
 tower = "0.4"
 tracing = "0.1"
 x509-parser = "0.16.0"
