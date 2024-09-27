@@ -47,6 +47,7 @@ linkerd-io = { path = "../../io" }
 linkerd-meshtls = { path = "../../meshtls", default-features = false }
 linkerd-metrics = { path = "../../metrics", features = ["process", "stack"] }
 linkerd-opencensus = { path = "../../opencensus" }
+linkerd-opentelemetry = { path = "../../opentelemetry" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd-proxy-balance = { path = "../../proxy/balance" }
 linkerd-proxy-core = { path = "../../proxy/core" }

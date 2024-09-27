@@ -9,7 +9,7 @@
 pub use crate::transport::labels::{TargetAddr, TlsAccept};
 use crate::{
     classify::Class,
-    control, http_metrics, opencensus, profiles, stack_metrics,
+    control, http_metrics, opencensus, opentelemetry, profiles, stack_metrics,
     svc::Param,
     tls,
     transport::{self, labels::TlsConnect},
@@ -39,6 +39,7 @@ pub struct Metrics {
     pub proxy: Proxy,
     pub control: ControlHttp,
     pub opencensus: opencensus::metrics::Registry,
+    pub opentelemetry: opentelemetry::metrics::Registry,
 }
 
 #[derive(Clone, Debug)]
@@ -191,11 +192,13 @@ impl Metrics {
         };
 
         let (opencensus, opencensus_report) = opencensus::metrics::new();
+        let (opentelemetry, opentelemetry_report) = opentelemetry::metrics::new();
 
         let metrics = Metrics {
             proxy,
             control,
             opencensus,
+            opentelemetry,
         };
 
         let report = endpoint_report
@@ -205,6 +208,7 @@ impl Metrics {
             .and_report(control_report)
             .and_report(transport_report)
             .and_report(opencensus_report)
+            .and_report(opentelemetry_report)
             .and_report(stack);
 
         (metrics, report)

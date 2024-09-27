@@ -12,6 +12,7 @@ http = "0.2"
 http-body = "0.4"
 linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
+linkerd-trace-context = { path = "../trace-context" }
 opentelemetry = { version = "0.25", default-features = false, features = ["trace"] }
 opentelemetry_sdk = { version = "0.25", default-features = false, features = ["trace"] }
 opentelemetry-proto = { path = "../../opentelemetry-proto" }

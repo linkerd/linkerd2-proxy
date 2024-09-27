@@ -7,10 +7,10 @@
 pub mod dst;
 pub mod env;
 pub mod identity;
-pub mod oc_collector;
 pub mod policy;
 pub mod spire;
 pub mod tap;
+pub mod trace_collector;
 
 pub use self::metrics::Metrics;
 use futures::{future, Future, FutureExt};
@@ -60,7 +60,7 @@ pub struct Config {
     pub policy: policy::Config,
     pub admin: admin::Config,
     pub tap: tap::Config,
-    pub oc_collector: oc_collector::Config,
+    pub trace_collector: trace_collector::Config,
 
     /// Grace period for graceful shutdowns.
     ///
@@ -75,7 +75,7 @@ pub struct App {
     dst: ControlAddr,
     identity: identity::Identity,
     inbound_addr: Local<ServerAddr>,
-    oc_collector: oc_collector::OcCollector,
+    trace_collector: trace_collector::TraceCollector,
     outbound_addr: Local<ServerAddr>,
     outbound_addr_additional: Option<Local<ServerAddr>>,
     start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
@@ -123,7 +123,7 @@ impl Config {
             policy,
             identity,
             inbound,
-            oc_collector,
+            trace_collector,
             outbound,
             gateway,
             tap,
@@ -188,16 +188,27 @@ impl Config {
             })
         }?;
 
-        debug!(config = ?oc_collector, "Building client");
-        let oc_collector = {
-            let control_metrics =
-                ControlMetrics::register(registry.sub_registry_with_prefix("opencensus"));
+        debug!(config = ?trace_collector, "Building client");
+        let trace_collector = {
+            let control_metrics = if let Some(prefix) = trace_collector.metrics_prefix() {
+                ControlMetrics::register(registry.sub_registry_with_prefix(prefix))
+            } else {
+                ControlMetrics::register(&mut prom::Registry::default())
+            };
             let identity = identity.receiver().new_client();
             let dns = dns.resolver;
             let client_metrics = metrics.control.clone();
-            let metrics = metrics.opencensus;
-            info_span!("opencensus").in_scope(|| {
-                oc_collector.build(identity, dns, metrics, control_metrics, client_metrics)
+            let otel_metrics = metrics.opentelemetry;
+            let oc_metrics = metrics.opencensus;
+            info_span!("tracing").in_scope(|| {
+                trace_collector.build(
+                    identity,
+                    dns,
+                    oc_metrics,
+                    otel_metrics,
+                    control_metrics,
+                    client_metrics,
+                )
             })
         }?;
 
@@ -205,7 +216,7 @@ impl Config {
             identity: identity.receiver(),
             metrics: metrics.proxy,
             tap: tap.registry(),
-            span_sink: oc_collector.span_sink(),
+            span_sink: trace_collector.span_sink(),
             drain: drain_rx.clone(),
         };
         let inbound = Inbound::new(inbound, runtime.clone());
@@ -309,7 +320,7 @@ impl Config {
             drain: drain_tx,
             identity,
             inbound_addr,
-            oc_collector,
+            trace_collector,
             outbound_addr,
             outbound_addr_additional,
             start_proxy,
@@ -369,10 +380,10 @@ impl App {
         self.identity.receiver().local_id().clone()
     }
 
-    pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
-        match self.oc_collector {
-            oc_collector::OcCollector::Disabled { .. } => None,
-            oc_collector::OcCollector::Enabled(ref oc) => Some(&oc.addr),
+    pub fn tracing_addr(&self) -> Option<&ControlAddr> {
+        match self.trace_collector {
+            trace_collector::TraceCollector::Disabled { .. } => None,
+            crate::trace_collector::TraceCollector::Enabled(ref oc) => Some(&oc.addr),
         }
     }
 
@@ -381,7 +392,7 @@ impl App {
             admin,
             drain,
             identity,
-            oc_collector,
+            trace_collector: collector,
             start_proxy,
             tap,
             ..
@@ -446,8 +457,8 @@ impl App {
                             tokio::spawn(serve.instrument(info_span!("tap").or_current()));
                         }
 
-                        if let oc_collector::OcCollector::Enabled(oc) = oc_collector {
-                            tokio::spawn(oc.task.instrument(info_span!("opencensus").or_current()));
+                        if let trace_collector::TraceCollector::Enabled(collector) = collector {
+                            tokio::spawn(collector.task.instrument(info_span!("tracing")));
                         }
 
                         // we don't care if the admin shutdown channel is

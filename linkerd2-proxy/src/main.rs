@@ -108,14 +108,11 @@ fn main() {
             ),
         }
 
-        if let Some(oc) = app.opencensus_addr() {
-            match oc.identity.value() {
-                None => info!("OpenCensus tracing collector at {}", oc.addr),
+        if let Some(tracing) = app.tracing_addr() {
+            match tracing.identity.value() {
+                None => info!("Tracing collector at {}", tracing.addr),
                 Some(tls) => {
-                    info!(
-                        "OpenCensus tracing collector at {} ({})",
-                        oc.addr, tls.server_id
-                    )
+                    info!("Tracing collector at {} ({})", tracing.addr, tls.server_id)
                 }
             }
         }
