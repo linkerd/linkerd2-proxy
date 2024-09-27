@@ -23,23 +23,21 @@ pub struct ResponseMetrics<DurL, StatL> {
     statuses: Family<StatL, Counter>,
 }
 
-pub type NewResponseDuration<L, X, N, ReqB, RespB> = super::NewRecordResponse<
+pub type NewResponseDuration<L, X, N> = super::NewRecordResponse<
     L,
     X,
     ResponseMetrics<
-        <<L as MkStreamLabel<ReqB, RespB>>::StreamLabel as StreamLabel<RespB>>::DurationLabels,
-        <<L as MkStreamLabel<ReqB, RespB>>::StreamLabel as StreamLabel<RespB>>::StatusLabels,
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::DurationLabels,
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::StatusLabels,
     >,
     N,
-    ReqB,
-    RespB,
 >;
 
-pub type RecordResponseDuration<L, S, ReqB, RespB> = super::RecordResponse<
+pub type RecordResponseDuration<L, S> = super::RecordResponse<
     L,
     ResponseMetrics<
-        <<L as MkStreamLabel<ReqB, RespB>>::StreamLabel as StreamLabel<RespB>>::DurationLabels,
-        <<L as MkStreamLabel<ReqB, RespB>>::StreamLabel as StreamLabel<RespB>>::StatusLabels,
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::DurationLabels,
+        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::StatusLabels,
     >,
     S,
 >;
@@ -109,14 +107,14 @@ impl<DurL, StatL> Clone for ResponseMetrics<DurL, StatL> {
     }
 }
 
-impl<M, S> svc::Service<http::Request<BoxBody>> for RecordResponseDuration<M, S, BoxBody, BoxBody>
+impl<M, S> svc::Service<http::Request<BoxBody>> for RecordResponseDuration<M, S>
 where
-    M: MkStreamLabel<BoxBody, BoxBody>,
+    M: MkStreamLabel,
     S: svc::Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>,
 {
     type Response = http::Response<BoxBody>;
     type Error = Error;
-    type Future = super::ResponseFuture<M::StreamLabel, S::Future, BoxBody>;
+    type Future = super::ResponseFuture<M::StreamLabel, S::Future>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
