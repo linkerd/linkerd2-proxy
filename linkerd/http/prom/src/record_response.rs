@@ -79,7 +79,7 @@ pub struct RequestCancelled(());
 pub struct NewRecordResponse<L, X, M, N> {
     inner: N,
     extract: X,
-    _marker: std::marker::PhantomData<fn() -> (L, M)>,
+    _marker: std::marker::PhantomData<(L, M)>,
 }
 
 /// A Service that can record a request/response durations.
