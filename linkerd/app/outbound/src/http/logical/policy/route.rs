@@ -175,7 +175,7 @@ impl<T> filters::Apply for Http<T> {
 impl<T> metrics::MkStreamLabel for Http<T> {
     type StreamLabel = metrics::LabelHttpRouteRsp;
 
-    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+    fn mk_stream_labeler(&self, _: &::http::request::Parts) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
         Some(metrics::LabelHttpRsp::from(metrics::labels::Route::from((
@@ -227,7 +227,7 @@ impl<T> filters::Apply for Grpc<T> {
 impl<T> metrics::MkStreamLabel for Grpc<T> {
     type StreamLabel = metrics::LabelGrpcRouteRsp;
 
-    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+    fn mk_stream_labeler(&self, _: &::http::request::Parts) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
         Some(metrics::LabelGrpcRsp::from(metrics::labels::Route::from((

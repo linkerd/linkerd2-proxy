@@ -182,8 +182,8 @@ where
     type StatusLabels = labels::Rsp<P, labels::HttpRsp>;
     type DurationLabels = P;
 
-    fn init_response<B>(&mut self, rsp: &http::Response<B>) {
-        self.status = Some(rsp.status());
+    fn init_response(&mut self, rsp: &http::response::Parts) {
+        self.status = Some(rsp.status);
     }
 
     fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
@@ -233,9 +233,9 @@ where
     type StatusLabels = labels::Rsp<P, labels::GrpcRsp>;
     type DurationLabels = P;
 
-    fn init_response<B>(&mut self, rsp: &http::Response<B>) {
+    fn init_response(&mut self, rsp: &http::response::Parts) {
         self.status = rsp
-            .headers()
+            .headers
             .get("grpc-status")
             .map(|v| tonic::Code::from_bytes(v.as_bytes()));
     }
