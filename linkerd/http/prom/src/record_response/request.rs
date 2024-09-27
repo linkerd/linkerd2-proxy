@@ -120,7 +120,8 @@ where
     }
 
     fn call(&mut self, req: http::Request<ReqB>) -> Self::Future {
-        let state = self.labeler.mk_stream_labeler(&req).map(|labeler| {
+        let (parts, body) = req.into_parts();
+        let state = self.labeler.mk_stream_labeler(&parts).map(|labeler| {
             let (tx, start) = oneshot::channel();
             tx.send(time::Instant::now()).unwrap();
             let RequestMetrics { statuses, duration } = self.metric.clone();
@@ -132,6 +133,7 @@ where
             }
         });
 
+        let req = http::Request::from_parts(parts, body);
         let inner = self.inner.call(req);
         super::ResponseFuture { state, inner }
     }

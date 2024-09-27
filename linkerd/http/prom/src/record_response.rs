@@ -35,7 +35,7 @@ pub trait MkStreamLabel<ReqB, RespB> {
     type StreamLabel: StreamLabel<RespB>;
 
     /// Returns None when the request should not be recorded.
-    fn mk_stream_labeler(&self, req: &http::Request<ReqB>) -> Option<Self::StreamLabel>;
+    fn mk_stream_labeler(&self, req: &http::request::Parts) -> Option<Self::StreamLabel>;
 }
 
 pub trait StreamLabel<RespB>: Send + 'static {
@@ -56,7 +56,7 @@ pub trait StreamLabel<RespB>: Send + 'static {
         + Sync
         + 'static;
 
-    fn init_response(&mut self, rsp: &http::Response<RespB>);
+    fn init_response(&mut self, rsp: &http::response::Parts);
     fn end_response(&mut self, trailers: Result<Option<&http::HeaderMap>, &Error>);
 
     fn status_labels(&self) -> Self::StatusLabels;
@@ -219,12 +219,12 @@ where
         let mut state = this.state.take();
         match res {
             Ok(rsp) => {
+                let (head, inner) = rsp.into_parts();
                 if let Some(ResponseState { labeler, .. }) = state.as_mut() {
-                    labeler.init_response(&rsp);
+                    labeler.init_response(&head);
                 }
 
-                // Break the response into parts, and call `end_stream` if the body is empty.
-                let (head, inner) = rsp.into_parts();
+                // Call `end_stream` if the body is empty.
                 if inner.is_end_stream() {
                     end_stream(&mut state, Ok(None));
                 }

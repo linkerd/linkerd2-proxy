@@ -123,16 +123,15 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, mut req: http::Request<BoxBody>) -> Self::Future {
+    fn call(&mut self, req: http::Request<BoxBody>) -> Self::Future {
         // If there's a labeler, wrap the request body to record the time that
         // the respond flushes.
-        let state = if let Some(labeler) = self.labeler.mk_stream_labeler(&req) {
+        let (parts, mut body) = req.into_parts();
+        let state = if let Some(labeler) = self.labeler.mk_stream_labeler(&parts) {
             let (tx, start) = oneshot::channel();
-            req = req.map(|inner| {
-                BoxBody::new(RequestBody {
-                    inner,
-                    flushed: Some(tx),
-                })
+            body = BoxBody::new(RequestBody {
+                inner: body,
+                flushed: Some(tx),
             });
             let ResponseMetrics { duration, statuses } = self.metric.clone();
             Some(super::ResponseState {
@@ -145,6 +144,7 @@ where
             None
         };
 
+        let req = http::Request::from_parts(parts, body);
         let inner = self.inner.call(req);
         super::ResponseFuture { state, inner }
     }
