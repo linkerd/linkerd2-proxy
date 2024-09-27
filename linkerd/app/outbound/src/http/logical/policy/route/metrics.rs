@@ -29,18 +29,34 @@ pub type HttpRouteMetrics = RouteMetrics<LabelHttpRouteRsp, LabelHttpRouteBacken
 pub type GrpcRouteMetrics = RouteMetrics<LabelGrpcRouteRsp, LabelGrpcRouteBackendRsp>;
 
 /// Tracks HTTP streams to produce response labels.
+///
+/// Provides a [`StreamLabel`] implementation to label response streams on both logical routes and
+/// concrete backends.
 #[derive(Clone, Debug)]
 pub struct LabelHttpRsp<L> {
+    /// The parent set of labels to which this response stream belongs.
     parent: L,
+    /// The response's HTTP status code.
     status: Option<http::StatusCode>,
+    /// The category of error, if applicable.
+    ///
+    /// This is `None` when no error occured.
     error: Option<labels::Error>,
 }
 
 /// Tracks gRPC streams to produce response labels.
+///
+/// Provides a [`StreamLabel`] implementation to label response streams on both logical routes and
+/// concrete backends.
 #[derive(Clone, Debug)]
 pub struct LabelGrpcRsp<L> {
+    /// The parent set of labels to which this response stream belongs.
     parent: L,
+    /// The response's gRPC status code.
     status: Option<tonic::Code>,
+    /// The category of error, if applicable.
+    ///
+    /// This is `None` when no error occured.
     error: Option<labels::Error>,
 }
 
