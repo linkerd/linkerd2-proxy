@@ -32,6 +32,7 @@ pub type GrpcRouteMetrics = RouteMetrics<LabelGrpcRouteRsp, LabelGrpcRouteBacken
 #[derive(Clone, Debug)]
 pub struct LabelHttpRsp<L> {
     parent: L,
+    hostname: Option<String>,
     status: Option<http::StatusCode>,
     error: Option<labels::Error>,
 }
@@ -149,10 +150,11 @@ where
 
 // === impl LabelHttpRsp ===
 
-impl<P> From<P> for LabelHttpRsp<P> {
-    fn from(parent: P) -> Self {
+impl<P> LabelHttpRsp<P> {
+    pub fn new(parent: P, hostname: Option<String>) -> Self {
         Self {
             parent,
+            hostname: None,
             status: None,
             error: None,
         }
@@ -184,11 +186,20 @@ where
     }
 
     fn status_labels(&self) -> Self::StatusLabels {
+        let Self {
+            ref parent,
+            ref hostname,
+            status,
+            error,
+        } = *self;
+        let hostname = hostname.to_owned();
+
         labels::Rsp(
-            self.parent.clone(),
+            parent.clone(),
             labels::HttpRsp {
-                status: self.status,
-                error: self.error,
+                hostname,
+                status,
+                error,
             },
         )
     }

@@ -177,12 +177,15 @@ impl<T> metrics::MkStreamLabel for Http<T> {
     type DurationLabels = metrics::labels::Route;
     type StreamLabel = metrics::LabelHttpRouteRsp;
 
-    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+    fn mk_stream_labeler<B>(&self, req: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
-        Some(metrics::LabelHttpRsp::from(metrics::labels::Route::from((
-            parent, route,
-        ))))
+        let hostname = req.uri().host().map(str::to_owned);
+
+        Some(metrics::LabelHttpRsp::new(
+            metrics::labels::Route::from((parent, route)),
+            hostname,
+        ))
     }
 }
 
@@ -234,6 +237,7 @@ impl<T> metrics::MkStreamLabel for Grpc<T> {
     fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
+
         Some(metrics::LabelGrpcRsp::from(metrics::labels::Route::from((
             parent, route,
         ))))

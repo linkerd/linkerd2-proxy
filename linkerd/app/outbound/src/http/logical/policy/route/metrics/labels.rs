@@ -23,6 +23,9 @@ pub type GrpcRouteBackendRsp = RouteBackendRsp<GrpcRsp>;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct HttpRsp {
+    // TODO(kate): this could be `url::Host`, to skip IPv4/IPv6 addresses. this could help with
+    // cardinality if we would like to only record named addresses.
+    pub hostname: Option<String>,
     pub status: Option<http::StatusCode>,
     pub error: Option<Error>,
 }
@@ -118,8 +121,13 @@ impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSet for Rsp<P, L> {
 
 impl EncodeLabelSetMut for HttpRsp {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        let Self { status, error } = self;
+        let Self {
+            hostname,
+            status,
+            error,
+        } = self;
 
+        ("hostname", hostname.as_deref().unwrap_or("unknown")).encode(enc.encode_label())?;
         ("http_status", status.map(|c| c.as_u16())).encode(enc.encode_label())?;
         ("error", *error).encode(enc.encode_label())?;
 
