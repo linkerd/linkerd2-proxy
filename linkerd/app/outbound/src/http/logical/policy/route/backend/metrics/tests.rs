@@ -1,10 +1,16 @@
 use super::{
     super::{Backend, Grpc, Http},
-    labels,
-    test_util::*,
-    LabelGrpcRouteBackendRsp, LabelHttpRouteBackendRsp, RouteBackendMetrics,
+    RouteBackendMetrics,
 };
-use crate::http::{concrete, logical::Concrete};
+use crate::http::{
+    concrete,
+    logical::{
+        policy::route::metrics::{
+            labels, test_util::*, LabelGrpcRouteBackendRsp, LabelHttpRouteBackendRsp,
+        },
+        Concrete,
+    },
+};
 use linkerd_app_core::{
     svc::{self, http::BoxBody, Layer, NewService},
     transport::{Remote, ServerAddr},
