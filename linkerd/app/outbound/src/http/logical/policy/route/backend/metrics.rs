@@ -7,7 +7,7 @@ use crate::{
 use linkerd_app_core::{metrics::prom, svc};
 use linkerd_http_prom::{
     count_reqs::{NewCountRequests, RequestCount, RequestCountFamilies},
-    record_response::{self, MkStreamLabel, NewResponseDuration, StreamLabel},
+    record_response::{self, MkStreamLabel, NewResponseDuration, ResponseMetrics, StreamLabel},
 };
 
 #[cfg(test)]
@@ -18,11 +18,6 @@ pub struct RouteBackendMetrics<L: StreamLabel> {
     requests: RequestCountFamilies<labels::RouteBackend>,
     responses: ResponseMetrics<L>,
 }
-
-type ResponseMetrics<L> = record_response::ResponseMetrics<
-    <L as StreamLabel>::DurationLabels,
-    <L as StreamLabel>::StatusLabels,
->;
 
 pub fn layer<T, N>(
     metrics: &RouteBackendMetrics<T::StreamLabel>,

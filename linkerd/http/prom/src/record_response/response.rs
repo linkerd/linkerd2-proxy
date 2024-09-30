@@ -3,7 +3,6 @@ use linkerd_http_box::BoxBody;
 use linkerd_metrics::prom::Counter;
 use linkerd_stack as svc;
 use prometheus_client::{
-    encoding::EncodeLabelSet,
     metrics::family::Family,
     registry::{Registry, Unit},
 };
@@ -18,29 +17,16 @@ use super::{DurationFamily, MkDurationHistogram, MkStreamLabel, StreamLabel};
 
 /// Metrics type that tracks completed responses.
 #[derive(Debug)]
-pub struct ResponseMetrics<DurL, StatL> {
-    duration: DurationFamily<DurL>,
-    statuses: Family<StatL, Counter>,
+pub struct ResponseMetrics<L: StreamLabel> {
+    duration: DurationFamily<L::DurationLabels>,
+    statuses: Family<L::StatusLabels, Counter>,
 }
 
-pub type NewResponseDuration<L, X, N> = super::NewRecordResponse<
-    L,
-    X,
-    ResponseMetrics<
-        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::DurationLabels,
-        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::StatusLabels,
-    >,
-    N,
->;
+pub type NewResponseDuration<L, X, N> =
+    super::NewRecordResponse<L, X, ResponseMetrics<<L as MkStreamLabel>::StreamLabel>, N>;
 
-pub type RecordResponseDuration<L, S> = super::RecordResponse<
-    L,
-    ResponseMetrics<
-        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::DurationLabels,
-        <<L as MkStreamLabel>::StreamLabel as StreamLabel>::StatusLabels,
-    >,
-    S,
->;
+pub type RecordResponseDuration<L, S> =
+    super::RecordResponse<L, ResponseMetrics<<L as MkStreamLabel>::StreamLabel>, S>;
 
 /// Notifies the response body when the request body is flushed.
 #[pin_project::pin_project(PinnedDrop)]
@@ -52,10 +38,9 @@ struct RequestBody<B> {
 
 // === impl ResponseMetrics ===
 
-impl<DurL, StatL> ResponseMetrics<DurL, StatL>
+impl<L> ResponseMetrics<L>
 where
-    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    StatL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+    L: StreamLabel,
 {
     pub fn register(reg: &mut Registry, histo: impl IntoIterator<Item = f64>) -> Self {
         let duration =
@@ -75,21 +60,16 @@ where
 }
 
 #[cfg(feature = "test-util")]
-impl<DurL, StatL> ResponseMetrics<DurL, StatL>
+impl<L> ResponseMetrics<L>
 where
-    StatL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
+    L: StreamLabel,
 {
-    pub fn get_statuses(&self, labels: &StatL) -> Counter {
+    pub fn get_statuses(&self, labels: &L::StatusLabels) -> Counter {
         (*self.statuses.get_or_create(labels)).clone()
     }
 }
 
-impl<DurL, StatL> Default for ResponseMetrics<DurL, StatL>
-where
-    StatL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
+impl<L: StreamLabel> Default for ResponseMetrics<L> {
     fn default() -> Self {
         Self {
             duration: DurationFamily::new_with_constructor(MkDurationHistogram(Arc::new([]))),
@@ -98,7 +78,7 @@ where
     }
 }
 
-impl<DurL, StatL> Clone for ResponseMetrics<DurL, StatL> {
+impl<L: StreamLabel> Clone for ResponseMetrics<L> {
     fn clone(&self) -> Self {
         Self {
             duration: self.duration.clone(),

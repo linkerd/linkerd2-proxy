@@ -3,18 +3,13 @@ use linkerd_app_core::{
     metrics::prom::{self, EncodeLabelSetMut},
     svc,
 };
-use linkerd_http_prom::record_response::{self, MkStreamLabel, StreamLabel};
+use linkerd_http_prom::record_response::{self, MkStreamLabel, RequestMetrics, StreamLabel};
 
 pub mod labels;
 #[cfg(test)]
 pub(super) mod test_util;
 #[cfg(test)]
 mod tests;
-
-pub type RequestMetrics<R> = record_response::RequestMetrics<
-    <R as StreamLabel>::DurationLabels,
-    <R as StreamLabel>::StatusLabels,
->;
 
 #[derive(Debug)]
 pub struct RouteMetrics<R: StreamLabel, B: StreamLabel> {
@@ -141,7 +136,7 @@ impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
         p: crate::ParentRef,
         r: crate::RouteRef,
         b: crate::BackendRef,
-    ) -> linkerd_http_prom::RequestCount {
+    ) -> linkerd_http_prom::count_reqs::RequestCount {
         self.backend.backend_request_count(p, r, b)
     }
 }
