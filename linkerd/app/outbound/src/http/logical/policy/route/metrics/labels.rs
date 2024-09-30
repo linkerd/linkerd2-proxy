@@ -1,30 +1,44 @@
 //! Prometheus label types.
+//!
+//! This submodule contains types that implement [`EncodeLabelSet`], [`EncodeLabelSetMut`], and
+//! [`EncodeLabelValue`]. These may be used to work with a labeled
+//! [`Family`][prometheus_client::metrics::family::Family] of metrics.
+//!
+//! Use [`Family::get_or_create()`][prometheus_client::metrics::family::Family::get_or_create]
+//! to retrieve, or create should it not exist, a metric with a given set of label values.
+
 use linkerd_app_core::{errors, metrics::prom::EncodeLabelSetMut, proxy::http, Error as BoxError};
 use prometheus_client::encoding::*;
 
 use crate::{BackendRef, ParentRef, RouteRef};
 
+/// Prometheus labels for a route resource, usually a service.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Route(pub ParentRef, pub RouteRef);
 
+/// Prometheus labels for a backend resource.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RouteBackend(pub ParentRef, pub RouteRef, pub BackendRef);
 
+/// Prometheus labels for a route's response.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Rsp<P, L>(pub P, pub L);
 
+/// Prometheus labels for an HTTP response.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct HttpRsp {
     pub status: Option<http::StatusCode>,
     pub error: Option<Error>,
 }
 
+/// Prometheus labels for a gRPC response.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct GrpcRsp {
     pub status: Option<tonic::Code>,
     pub error: Option<Error>,
 }
 
+/// Prometheus labels representing an error.
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Error {
     FailFast,
@@ -170,6 +184,7 @@ impl EncodeLabelSet for GrpcRsp {
 // === impl Error ===
 
 impl Error {
+    /// Returns an [`Error`] or a status code, given a boxed error.
     pub fn new_or_status(error: &BoxError) -> Result<Self, u16> {
         use super::super::super::errors as policy;
         use crate::http::h2::{H2Error, Reason};
