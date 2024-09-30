@@ -1,7 +1,7 @@
 use super::{super::Concrete, filters};
 use crate::{BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{proxy::http, svc, Error, Result};
-use linkerd_http_prom::record_response::MkStreamLabel;
+use linkerd_http_prom as http_prom;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -21,7 +21,7 @@ pub(crate) type Http<T> =
 pub(crate) type Grpc<T> =
     MatchedBackend<T, http_route::grpc::r#match::RouteMatch, policy::grpc::Filter>;
 
-pub type Metrics<T> = metrics::RouteBackendMetrics<<T as MkStreamLabel>::StreamLabel>;
+pub type Metrics<T> = metrics::RouteBackendMetrics<<T as http_prom::MkStreamLabel>::StreamLabel>;
 
 /// Wraps errors with backend metadata.
 #[derive(Debug, thiserror::Error)]
@@ -68,7 +68,7 @@ where
     F: Clone + Send + Sync + 'static,
     // Assert that filters can be applied.
     Self: filters::Apply,
-    Self: metrics::MkStreamLabel,
+    Self: http_prom::MkStreamLabel,
 {
     /// Builds a stack that applies per-route-backend policy filters over an
     /// inner [`Concrete`] stack.
@@ -147,7 +147,7 @@ impl<T> filters::Apply for Http<T> {
     }
 }
 
-impl<T> metrics::MkStreamLabel for Http<T> {
+impl<T> http_prom::MkStreamLabel for Http<T> {
     type StreamLabel = metrics::LabelHttpRouteBackendRsp;
 
     fn mk_stream_labeler(&self, _: &::http::request::Parts) -> Option<Self::StreamLabel> {
@@ -173,7 +173,7 @@ impl<T> filters::Apply for Grpc<T> {
     }
 }
 
-impl<T> metrics::MkStreamLabel for Grpc<T> {
+impl<T> http_prom::MkStreamLabel for Grpc<T> {
     type StreamLabel = metrics::LabelGrpcRouteBackendRsp;
 
     fn mk_stream_labeler(&self, _: &::http::request::Parts) -> Option<Self::StreamLabel> {

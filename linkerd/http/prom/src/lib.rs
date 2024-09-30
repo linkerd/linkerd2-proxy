@@ -4,4 +4,7 @@
 mod count_reqs;
 pub mod record_response;
 
-pub use self::count_reqs::{CountRequests, NewCountRequests, RequestCount, RequestCountFamilies};
+pub use self::{
+    count_reqs::{CountRequests, NewCountRequests, RequestCount, RequestCountFamilies},
+    record_response::{MkStreamLabel, StreamLabel},
+};

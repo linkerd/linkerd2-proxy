@@ -1,12 +1,11 @@
 use crate::{BackendRef, ParentRef, RouteRef};
 use linkerd_app_core::{metrics::prom, svc};
 use linkerd_http_prom::{
-    record_response::{self, NewResponseDuration, StreamLabel},
+    record_response::{self, MkStreamLabel, NewResponseDuration, StreamLabel},
     NewCountRequests, RequestCount, RequestCountFamilies,
 };
 
 pub use super::super::metrics::*;
-pub use linkerd_http_prom::record_response::MkStreamLabel;
 
 #[cfg(test)]
 mod tests;

@@ -7,6 +7,7 @@ use linkerd_app_core::{
     classify, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result,
 };
 use linkerd_distribute as distribute;
+use linkerd_http_prom as http_prom;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -65,8 +66,8 @@ where
     route::MatchedRoute<T, M::Summary, F, P>: route::filters::Apply
         + svc::Param<classify::Request>
         + svc::Param<route::extensions::Params>
-        + route::metrics::MkStreamLabel,
-    route::MatchedBackend<T, M::Summary, F>: route::filters::Apply + route::metrics::MkStreamLabel,
+        + http_prom::MkStreamLabel,
+    route::MatchedBackend<T, M::Summary, F>: route::filters::Apply + http_prom::MkStreamLabel,
 {
     /// Builds a stack that applies routes to distribute requests over a cached
     /// set of inner services so that.

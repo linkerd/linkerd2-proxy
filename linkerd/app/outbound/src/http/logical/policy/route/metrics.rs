@@ -3,9 +3,7 @@ use linkerd_app_core::{
     metrics::prom::{self, EncodeLabelSetMut},
     svc,
 };
-use linkerd_http_prom::record_response::{self, StreamLabel};
-
-pub use linkerd_http_prom::record_response::MkStreamLabel;
+use linkerd_http_prom::record_response::{self, MkStreamLabel, StreamLabel};
 
 pub mod labels;
 #[cfg(test)]
