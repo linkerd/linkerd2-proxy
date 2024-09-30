@@ -6,8 +6,8 @@ use crate::{
 };
 use linkerd_app_core::{metrics::prom, svc};
 use linkerd_http_prom::{
+    count_reqs::{NewCountRequests, RequestCount, RequestCountFamilies},
     record_response::{self, MkStreamLabel, NewResponseDuration, StreamLabel},
-    NewCountRequests, RequestCount, RequestCountFamilies,
 };
 
 #[cfg(test)]
@@ -77,7 +77,7 @@ impl<L: StreamLabel> RouteBackendMetrics<L> {
         p: ParentRef,
         r: RouteRef,
         b: BackendRef,
-    ) -> linkerd_http_prom::RequestCount {
+    ) -> RequestCount {
         self.requests.metrics(&labels::RouteBackend(p, r, b))
     }
 
