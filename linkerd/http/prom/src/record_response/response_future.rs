@@ -29,7 +29,7 @@ struct ResponseBody<L: StreamLabel> {
     state: Option<ResponseState<L>>,
 }
 
-/// Inner state used by [`ResponseFuture`] and [`ResponseBody`].
+/// Inner state used by [`ResponseFuture`].
 ///
 /// This is used to update Prometheus metrics across the response's lifecycle.
 ///
