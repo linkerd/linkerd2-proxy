@@ -163,7 +163,7 @@ impl<P> StreamLabel for LabelHttpRsp<P>
 where
     P: EncodeLabelSetMut + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
 {
-    type StatusLabels = labels::Rsp<P, labels::HttpRsp>;
+    type StatusLabels = labels::HttpRouteRsp;
     type DurationLabels = P;
 
     fn init_response<B>(&mut self, rsp: &http::Response<B>) {

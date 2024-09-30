@@ -14,7 +14,13 @@ pub struct RouteBackend(pub ParentRef, pub RouteRef, pub BackendRef);
 pub struct Rsp<P, L>(pub P, pub L);
 
 pub type RouteRsp<L> = Rsp<Route, L>;
-pub type HttpRouteRsp = RouteRsp<HttpRsp>;
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct HttpRouteRsp {
+    route: Route,
+    rsp: HttpRsp,
+    // TODO(kate): replace this with a type that wraps `url`'s host.
+    // hostname: String
+}
 pub type GrpcRouteRsp = RouteRsp<GrpcRsp>;
 
 pub type RouteBackendRsp<L> = Rsp<RouteBackend, L>;
@@ -109,6 +115,23 @@ impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSetMut for Rsp<P, L>
 }
 
 impl<P: EncodeLabelSetMut, L: EncodeLabelSetMut> EncodeLabelSet for Rsp<P, L> {
+    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl HttpRouteRsp ===
+
+impl EncodeLabelSetMut for HttpRouteRsp {
+    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        let Self { route, rsp } = self;
+        route.encode_label_set(enc)?;
+        rsp.encode_label_set(enc)?;
+        Ok(())
+    }
+}
+
+impl EncodeLabelSet for HttpRouteRsp {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
     }
