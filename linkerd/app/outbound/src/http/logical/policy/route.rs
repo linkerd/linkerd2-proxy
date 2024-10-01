@@ -163,6 +163,9 @@ impl<T: Clone, M, F, P> svc::Param<HttpRouteLabels> for MatchedRoute<T, M, F, P>
         HttpRouteLabels(
             self.params.parent_ref.clone(),
             self.params.route_ref.clone(),
+            // we do not know the hostname at instantiation time for the stack. this is found
+            // later when we are creating our labeler.
+            None,
         )
     }
 }
@@ -186,11 +189,11 @@ impl<T> metrics::MkStreamLabel for Http<T> {
     type DurationLabels = metrics::labels::HttpRoute;
     type StreamLabel = metrics::LabelHttpRouteRsp;
 
-    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+    fn mk_stream_labeler<B>(&self, req: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
         Some(metrics::LabelHttpRsp::from(
-            metrics::labels::HttpRoute::from((parent, route)),
+            metrics::labels::HttpRoute::from((parent, route, req.uri().host().map(str::to_owned))),
         ))
     }
 }

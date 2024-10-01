@@ -5,7 +5,8 @@ use prometheus_client::encoding::*;
 use crate::{BackendRef, ParentRef, RouteRef};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct HttpRoute(pub ParentRef, pub RouteRef);
+pub struct HttpRoute(pub ParentRef, pub RouteRef, pub Option<Host>);
+type Host = String; // TODO(kate): use `url::Host` rather than bare strings.
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct GrpcRoute(pub ParentRef, pub RouteRef);
@@ -54,17 +55,18 @@ pub enum Error {
 
 // === impl HttpRoute ===
 
-impl From<(ParentRef, RouteRef)> for HttpRoute {
-    fn from((parent, route): (ParentRef, RouteRef)) -> Self {
-        Self(parent, route)
+impl From<(ParentRef, RouteRef, Option<Host>)> for HttpRoute {
+    fn from((parent, route, host): (ParentRef, RouteRef, Option<Host>)) -> Self {
+        Self(parent, route, host)
     }
 }
 
 impl EncodeLabelSetMut for HttpRoute {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        let Self(parent, route) = self;
+        let Self(parent, route, host) = self;
         parent.encode_label_set(enc)?;
         route.encode_label_set(enc)?;
+        ("hostname", host.as_deref().unwrap_or("unknown")).encode(enc.encode_label())?;
         Ok(())
     }
 }

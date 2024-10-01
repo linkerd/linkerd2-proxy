@@ -18,7 +18,7 @@ async fn http_request_statuses() {
 
     // Send one request and ensure it's counted.
     let ok = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::HttpRoute(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: None,
@@ -37,7 +37,7 @@ async fn http_request_statuses() {
     // Send another request and ensure it's counted with a different response
     // status.
     let no_content = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::HttpRoute(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::NO_CONTENT),
             error: None,
@@ -61,7 +61,7 @@ async fn http_request_statuses() {
 
     // Emit a response with an error and ensure it's counted.
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::HttpRoute(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: None,
             error: Some(labels::Error::Unknown),
@@ -75,7 +75,7 @@ async fn http_request_statuses() {
     // Emit a successful response with a body that fails and ensure that both
     // the status and error are recorded.
     let mixed = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref, route_ref),
+        labels::HttpRoute(parent_ref, route_ref, None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: Some(labels::Error::Unknown),
@@ -110,7 +110,7 @@ async fn grpc_request_statuses_ok() {
 
     // Send one request and ensure it's counted.
     let ok = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
         labels::GrpcRsp {
             status: Some(tonic::Code::Ok),
             error: None,
@@ -152,7 +152,7 @@ async fn grpc_request_statuses_not_found() {
     // Send another request and ensure it's counted with a different response
     // status.
     let not_found = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
         labels::GrpcRsp {
             status: Some(tonic::Code::NotFound),
             error: None,
@@ -192,7 +192,7 @@ async fn grpc_request_statuses_error_response() {
     let (mut svc, mut handle) = mock_grpc_route_metrics(&metrics, &parent_ref, &route_ref);
 
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
         labels::GrpcRsp {
             status: None,
             error: Some(labels::Error::Unknown),
@@ -222,7 +222,7 @@ async fn grpc_request_statuses_error_body() {
     let (mut svc, mut handle) = mock_grpc_route_metrics(&metrics, &parent_ref, &route_ref);
 
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
         labels::GrpcRsp {
             status: None,
             error: Some(labels::Error::Unknown),
