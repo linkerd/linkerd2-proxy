@@ -14,7 +14,7 @@ pub(crate) mod retry;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
-use self::metrics::labels::Route as RouteLabels;
+use self::metrics::labels::{GrpcRoute as GrpcRouteLabels, HttpRoute as HttpRouteLabels};
 
 pub use self::metrics::{GrpcRouteMetrics, HttpRouteMetrics};
 
@@ -149,9 +149,18 @@ impl<T: Clone, M, F, P> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T
     }
 }
 
-impl<T: Clone, M, F, P> svc::Param<RouteLabels> for MatchedRoute<T, M, F, P> {
-    fn param(&self) -> RouteLabels {
-        RouteLabels(
+impl<T: Clone, M, F, P> svc::Param<GrpcRouteLabels> for MatchedRoute<T, M, F, P> {
+    fn param(&self) -> GrpcRouteLabels {
+        GrpcRouteLabels(
+            self.params.parent_ref.clone(),
+            self.params.route_ref.clone(),
+        )
+    }
+}
+
+impl<T: Clone, M, F, P> svc::Param<HttpRouteLabels> for MatchedRoute<T, M, F, P> {
+    fn param(&self) -> HttpRouteLabels {
+        HttpRouteLabels(
             self.params.parent_ref.clone(),
             self.params.route_ref.clone(),
         )
@@ -174,15 +183,15 @@ impl<T> filters::Apply for Http<T> {
 
 impl<T> metrics::MkStreamLabel for Http<T> {
     type StatusLabels = metrics::labels::HttpRouteRsp;
-    type DurationLabels = metrics::labels::Route;
+    type DurationLabels = metrics::labels::HttpRoute;
     type StreamLabel = metrics::LabelHttpRouteRsp;
 
     fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
-        Some(metrics::LabelHttpRsp::from(metrics::labels::Route::from((
-            parent, route,
-        ))))
+        Some(metrics::LabelHttpRsp::from(
+            metrics::labels::HttpRoute::from((parent, route)),
+        ))
     }
 }
 
@@ -228,15 +237,15 @@ impl<T> filters::Apply for Grpc<T> {
 
 impl<T> metrics::MkStreamLabel for Grpc<T> {
     type StatusLabels = metrics::labels::GrpcRouteRsp;
-    type DurationLabels = metrics::labels::Route;
+    type DurationLabels = metrics::labels::GrpcRoute;
     type StreamLabel = metrics::LabelGrpcRouteRsp;
 
     fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
-        Some(metrics::LabelGrpcRsp::from(metrics::labels::Route::from((
-            parent, route,
-        ))))
+        Some(metrics::LabelGrpcRsp::from(
+            metrics::labels::GrpcRoute::from((parent, route)),
+        ))
     }
 }
 

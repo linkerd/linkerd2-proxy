@@ -5,7 +5,10 @@ use prometheus_client::encoding::*;
 use crate::{BackendRef, ParentRef, RouteRef};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Route(pub ParentRef, pub RouteRef);
+pub struct HttpRoute(pub ParentRef, pub RouteRef);
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct GrpcRoute(pub ParentRef, pub RouteRef);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RouteBackend(pub ParentRef, pub RouteRef, pub BackendRef);
@@ -13,9 +16,8 @@ pub struct RouteBackend(pub ParentRef, pub RouteRef, pub BackendRef);
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Rsp<P, L>(pub P, pub L);
 
-pub type RouteRsp<L> = Rsp<Route, L>;
-pub type HttpRouteRsp = RouteRsp<HttpRsp>;
-pub type GrpcRouteRsp = RouteRsp<GrpcRsp>;
+pub type HttpRouteRsp = Rsp<HttpRoute, HttpRsp>;
+pub type GrpcRouteRsp = Rsp<GrpcRoute, GrpcRsp>;
 
 pub type RouteBackendRsp<L> = Rsp<RouteBackend, L>;
 pub type HttpRouteBackendRsp = RouteBackendRsp<HttpRsp>;
@@ -50,15 +52,15 @@ pub enum Error {
     Unknown,
 }
 
-// === impl Route ===
+// === impl HttpRoute ===
 
-impl From<(ParentRef, RouteRef)> for Route {
+impl From<(ParentRef, RouteRef)> for HttpRoute {
     fn from((parent, route): (ParentRef, RouteRef)) -> Self {
         Self(parent, route)
     }
 }
 
-impl EncodeLabelSetMut for Route {
+impl EncodeLabelSetMut for HttpRoute {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         let Self(parent, route) = self;
         parent.encode_label_set(enc)?;
@@ -67,7 +69,30 @@ impl EncodeLabelSetMut for Route {
     }
 }
 
-impl EncodeLabelSet for Route {
+impl EncodeLabelSet for HttpRoute {
+    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl GrpcRoute ===
+
+impl From<(ParentRef, RouteRef)> for GrpcRoute {
+    fn from((parent, route): (ParentRef, RouteRef)) -> Self {
+        Self(parent, route)
+    }
+}
+
+impl EncodeLabelSetMut for GrpcRoute {
+    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        let Self(parent, route) = self;
+        parent.encode_label_set(enc)?;
+        route.encode_label_set(enc)?;
+        Ok(())
+    }
+}
+
+impl EncodeLabelSet for GrpcRoute {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
     }
