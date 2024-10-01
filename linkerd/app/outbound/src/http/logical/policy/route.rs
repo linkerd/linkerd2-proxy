@@ -14,7 +14,6 @@ pub(crate) mod retry;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
-use self::metrics::labels::{GrpcRoute as GrpcRouteLabels, HttpRoute as HttpRouteLabels};
 
 pub use self::metrics::{GrpcRouteMetrics, HttpRouteMetrics};
 
@@ -124,9 +123,20 @@ where
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                .push(retry::NewHttpRetry::layer(metrics.retry.clone()))
-                .check_new::<Self>()
+                .push({
+                    let mk_extract = |rt: &Self| {
+                        let Route {
+                            parent_ref,
+                            route_ref,
+                            ..
+                        } = &rt.params;
+                        retry::RetryLabelExtract(parent_ref.clone(), route_ref.clone())
+                    };
+                    let metrics = metrics.retry.clone();
+                    retry::NewHttpRetry::layer_via_mk(mk_extract, metrics)
+                })
                 .check_new_service::<Self, http::Request<linkerd_app_core::proxy::http::BoxBody>>()
+                .check_new::<Self>()
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
@@ -136,7 +146,7 @@ where
                 // Configure a classifier to use in the endpoint stack.
                 // TODO(ver) move this into NewSetExtensions?
                 .push(classify::NewClassify::layer())
-                .push(svc::NewMapErr::layer_with(|rt: &Self| {
+                .push(svc::NewMapErr::<_, _, _>::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();
                     move |source| RouteError {
                         route: route.clone(),
@@ -152,27 +162,6 @@ where
 impl<T: Clone, M, F, P> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T, M, F, P> {
     fn param(&self) -> BackendDistribution<T, F> {
         self.params.distribution.clone()
-    }
-}
-
-impl<T: Clone, M, F, P> svc::Param<GrpcRouteLabels> for MatchedRoute<T, M, F, P> {
-    fn param(&self) -> GrpcRouteLabels {
-        GrpcRouteLabels(
-            self.params.parent_ref.clone(),
-            self.params.route_ref.clone(),
-        )
-    }
-}
-
-impl<T: Clone, M, F, P> svc::Param<HttpRouteLabels> for MatchedRoute<T, M, F, P> {
-    fn param(&self) -> HttpRouteLabels {
-        HttpRouteLabels(
-            self.params.parent_ref.clone(),
-            self.params.route_ref.clone(),
-            // we do not know the hostname at instantiation time for the stack. this is found
-            // later when we are creating our labeler.
-            None,
-        )
     }
 }
 

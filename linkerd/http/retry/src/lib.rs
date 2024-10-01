@@ -12,7 +12,7 @@ use linkerd_error::{Error, Result};
 use linkerd_exp_backoff::ExponentialBackoff;
 use linkerd_http_box::BoxBody;
 use linkerd_metrics::prom;
-use linkerd_stack::{layer, NewService, Param, Service};
+use linkerd_stack::{layer, ExtractParam, NewService, Param, Service};
 use std::{
     future::Future,
     hash::Hash,
@@ -47,19 +47,21 @@ pub struct Params {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewHttpRetry<P, L: Clone, N> {
+pub struct NewHttpRetry<P, L: Clone, F, X, N> {
     inner: N,
     metrics: MetricFamilies<L>,
-    _marker: PhantomData<fn() -> P>,
+    mk_extract: F,
+    _marker: PhantomData<fn() -> (X, P)>,
 }
 
 /// A Retry middleware that attempts to extract a `P` typed request extension to
 /// instrument retries. When the request extension is not set, requests are not
 /// retried.
 #[derive(Clone, Debug)]
-pub struct HttpRetry<P, S> {
+pub struct HttpRetry<P, L: Clone, X, S> {
     inner: S,
-    metrics: Metrics,
+    metrics: MetricFamilies<L>,
+    extract: X,
     _marker: PhantomData<fn() -> P>,
 }
 
@@ -81,31 +83,45 @@ struct Metrics {
 
 // === impl NewHttpRetry ===
 
-impl<P, L: Clone, N> NewHttpRetry<P, L, N> {
-    pub fn layer(metrics: MetricFamilies<L>) -> impl layer::Layer<N, Service = Self> + Clone {
+impl<P, X, L: Clone, F: Clone, N> NewHttpRetry<P, L, F, X, N> {
+    pub fn layer_via_mk(
+        mk_extract: F,
+        metrics: MetricFamilies<L>,
+    ) -> impl tower::layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
+            mk_extract: mk_extract.clone(),
             metrics: metrics.clone(),
             _marker: PhantomData,
         })
     }
 }
 
-impl<T, P, L, N> NewService<T> for NewHttpRetry<P, L, N>
+impl<T, X, P, L, F, N> NewService<T> for NewHttpRetry<P, L, F, X, N>
 where
-    T: Param<L>,
     P: Policy,
     L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
+    F: Fn(&T) -> X + Clone,
     N: NewService<T>,
 {
-    type Service = HttpRetry<P, N::Service>;
+    type Service = HttpRetry<P, L, X, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let labels: L = target.param();
-        let metrics = self.metrics.metrics(&labels);
-        HttpRetry {
-            inner: self.inner.new_service(target),
+        let Self {
+            inner,
             metrics,
+            mk_extract,
+            _marker,
+        } = self;
+
+        let metrics = metrics.clone();
+        let extract = mk_extract(&target);
+        let svc = inner.new_service(target);
+
+        HttpRetry {
+            inner: svc,
+            metrics,
+            extract,
             _marker: PhantomData,
         }
     }
@@ -179,21 +195,13 @@ where
 
 // === impl HttpRetry ===
 
-impl<P, N> HttpRetry<P, N> {
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy {
-        layer::mk(|inner| Self {
-            inner,
-            metrics: Metrics::default(),
-            _marker: PhantomData,
-        })
-    }
-}
-
-impl<P, S> Service<http::Request<BoxBody>> for HttpRetry<P, S>
+impl<P, L, X, S> Service<http::Request<BoxBody>> for HttpRetry<P, L, X, S>
 where
     P: Policy,
     P: Param<Params>,
     P: Clone + Send + Sync + std::fmt::Debug + 'static,
+    L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
+    X: ExtractParam<L, http::Request<BoxBody>>,
     S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>
         + Clone
         + Send
@@ -223,6 +231,8 @@ where
         };
 
         let params = policy.param();
+        let labels = self.extract.extract_param(&req);
+        let metrics = self.metrics.metrics(&labels);
 
         // Since this request is retryable, we need to setup the request body to
         // be buffered/cloneable. If the request body is too large to be cloned,
@@ -248,7 +258,7 @@ where
         // can rely on the fact that we've taken the ready inner service handle.
         let pending = self.inner.clone();
         let svc = std::mem::replace(&mut self.inner, pending);
-        let call = send_req_with_retries(svc, req, policy, self.metrics.clone(), params);
+        let call = send_req_with_retries(svc, req, policy, metrics, params);
         future::Either::Right(Box::pin(call))
     }
 }
