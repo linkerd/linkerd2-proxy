@@ -169,8 +169,8 @@ impl RetryPolicy {
 impl<B> ExtractParam<RouteLabels, http::Request<B>> for RetryLabelExtract {
     fn extract_param(&self, t: &http::Request<B>) -> RouteLabels {
         let Self(parent, route) = self;
-        let host = t.uri().host().map(ToOwned::to_owned);
+        let host = t.uri().host();
 
-        RouteLabels(parent.clone(), route.clone(), host)
+        RouteLabels::new(parent.clone(), route.clone(), host)
     }
 }

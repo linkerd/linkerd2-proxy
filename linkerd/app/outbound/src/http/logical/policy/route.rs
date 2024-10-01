@@ -188,7 +188,7 @@ impl<T> metrics::MkStreamLabel for Http<T> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
         Some(metrics::LabelHttpRsp::from(
-            metrics::labels::HttpRoute::from((parent, route, req.uri().host().map(str::to_owned))),
+            metrics::labels::HttpRoute::new(parent, route, req.uri().host()),
         ))
     }
 }

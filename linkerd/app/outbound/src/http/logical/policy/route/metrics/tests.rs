@@ -18,7 +18,7 @@ async fn http_request_statuses() {
 
     // Send one request and ensure it's counted.
     let ok = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute(parent_ref.clone(), route_ref.clone(), None),
+        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: None,
@@ -37,7 +37,7 @@ async fn http_request_statuses() {
     // Send another request and ensure it's counted with a different response
     // status.
     let no_content = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute(parent_ref.clone(), route_ref.clone(), None),
+        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::NO_CONTENT),
             error: None,
@@ -61,7 +61,7 @@ async fn http_request_statuses() {
 
     // Emit a response with an error and ensure it's counted.
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute(parent_ref.clone(), route_ref.clone(), None),
+        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: None,
             error: Some(labels::Error::Unknown),
@@ -75,7 +75,7 @@ async fn http_request_statuses() {
     // Emit a successful response with a body that fails and ensure that both
     // the status and error are recorded.
     let mixed = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute(parent_ref, route_ref, None),
+        labels::HttpRoute::new(parent_ref, route_ref, None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: Some(labels::Error::Unknown),
@@ -106,6 +106,7 @@ async fn http_request_hostnames() {
     const URI_1_2: &str = "https://great.website/another/index.html";
     const HOST_2: &str = "different.website";
     const URI_2: &str = "https://different.website/index.html";
+    const URI_3: &str = "https://[3fff::]/index.html";
 
     let _trace = linkerd_tracing::test::trace_init();
 
@@ -114,9 +115,9 @@ async fn http_request_hostnames() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_http_route_metrics(&metrics, &parent_ref, &route_ref);
 
-    let get_counter = |host: &str, status: Option<http::StatusCode>| {
+    let get_counter = |host: Option<&str>, status: Option<http::StatusCode>| {
         metrics.get_statuses(&labels::Rsp(
-            labels::HttpRoute(parent_ref.clone(), route_ref.clone(), Some(host.to_owned())),
+            labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), host),
             labels::HttpRsp {
                 status,
                 error: None,
@@ -124,9 +125,10 @@ async fn http_request_hostnames() {
         ))
     };
 
-    let host1_ok = get_counter(HOST_1, Some(http::StatusCode::OK));
-    let host1_teapot = get_counter(HOST_1, Some(http::StatusCode::IM_A_TEAPOT));
-    let host2_ok = get_counter(HOST_2, Some(http::StatusCode::OK));
+    let host1_ok = get_counter(Some(HOST_1), Some(http::StatusCode::OK));
+    let host1_teapot = get_counter(Some(HOST_1), Some(http::StatusCode::IM_A_TEAPOT));
+    let host2_ok = get_counter(Some(HOST_2), Some(http::StatusCode::OK));
+    let unlabeled_ok = get_counter(None, Some(http::StatusCode::OK));
 
     // Send one request and ensure it's counted.
     send_assert_incremented(
@@ -196,6 +198,26 @@ async fn http_request_hostnames() {
     assert_eq!(host1_ok.get(), 1);
     assert_eq!(host1_teapot.get(), 1);
     assert_eq!(host2_ok.get(), 1);
+
+    // Send a request to a url with an ip address host component, show that it is not labeled.
+    send_assert_incremented(
+        &unlabeled_ok,
+        &mut handle,
+        &mut svc,
+        http::Request::builder()
+            .uri(URI_3)
+            .body(BoxBody::default())
+            .unwrap(),
+        |tx| {
+            tx.send_response(
+                http::Response::builder()
+                    .status(200)
+                    .body(BoxBody::default())
+                    .unwrap(),
+            )
+        },
+    )
+    .await;
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
