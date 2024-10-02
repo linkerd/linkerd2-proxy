@@ -314,3 +314,13 @@ _linkerd-ready:
     {{ _kubectl }} wait pod --for=condition=ready \
         --namespace=linkerd --selector='linkerd.io/control-plane-component' \
         --timeout=1m
+
+#
+# Dev Container
+#
+
+devcontainer-up:
+    devcontainer.js up --workspace-folder=.
+
+devcontainer-exec container-id *args:
+    devcontainer.js exec --container-id={{ container-id }} {{ args }}
