@@ -1,6 +1,7 @@
 use super::*;
 use crate::{http, tcp, test_util::*};
 use ::http::header::{CONNECTION, UPGRADE};
+use linkerd_app_core::metrics::OutboundZoneLocality;
 use linkerd_app_core::{
     io,
     proxy::api_resolve::ProtocolHint,
@@ -300,6 +301,7 @@ impl svc::Param<metrics::OutboundEndpointLabels> for Endpoint {
         metrics::OutboundEndpointLabels {
             authority: None,
             labels: None,
+            zone_locality: OutboundZoneLocality::Unknown,
             server_id: self.param(),
             target_addr: self.addr.into(),
         }

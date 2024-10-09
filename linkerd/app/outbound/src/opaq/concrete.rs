@@ -2,6 +2,7 @@ use crate::{metrics::BalancerMetricsParams, stack_labels, BackendRef, Outbound, 
 use linkerd_app_core::{
     config::QueueConfig,
     drain, io,
+    metrics::OutboundZoneLocality,
     metrics::{
         self,
         prom::{self, EncodeLabelSetMut},
@@ -323,9 +324,16 @@ where
         metrics::OutboundEndpointLabels {
             authority,
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
+            zone_locality: self.param(),
             server_id: self.param(),
             target_addr: self.addr.into(),
         }
+    }
+}
+
+impl<T> svc::Param<OutboundZoneLocality> for Endpoint<T> {
+    fn param(&self) -> OutboundZoneLocality {
+        OutboundZoneLocality::new(&self.metadata)
     }
 }
 

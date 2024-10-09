@@ -5,6 +5,7 @@ mod client;
 mod report;
 mod sensor;
 mod server;
+pub mod zone;
 
 pub use self::{
     client::Client,
