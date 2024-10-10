@@ -30,6 +30,13 @@ where
         )
     }
 
+    fn response_frames_total(&self) -> Metric<'_, Prefixed<'_, &'static str>, Counter> {
+        Metric::new(
+            self.prefix_key("response_frames_total"),
+            "Total number of chunks sent through HTTP as the response.",
+        )
+    }
+
     fn response_latency_ms(
         &self,
     ) -> Metric<'_, Prefixed<'_, &'static str>, Histogram<latency::Ms>> {
@@ -127,6 +134,10 @@ where
         let metric = self.request_total();
         metric.fmt_help(f)?;
         Self::fmt_by_target(&registry, f, metric, |s| &s.total)?;
+
+        let metric = self.response_frames_total();
+        metric.fmt_help(f)?;
+        Self::fmt_by_target(&registry, f, metric, |s| &s.response_frames_total)?;
 
         if self.include_latencies {
             let metric = self.response_latency_ms();
