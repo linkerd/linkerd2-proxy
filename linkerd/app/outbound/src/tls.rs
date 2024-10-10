@@ -7,7 +7,7 @@ use linkerd_app_core::{
         core::Resolve,
     },
     svc,
-    tls::{NewDetectSni, ServerName},
+    tls::{NewDetectRequiredSni, ServerName},
     transport::addrs::*,
     Error,
 };
@@ -98,7 +98,9 @@ impl<C> Outbound<C> {
                     // Use a dedicated target type to configure parameters for
                     // the TLS stack. It also helps narrow the cache key.
                     .push_map_target(|(sni, parent): (ServerName, T)| Tls { sni, parent })
-                    .push(NewDetectSni::layer(config.proxy.detect_protocol_timeout))
+                    .push(NewDetectRequiredSni::layer(
+                        config.proxy.detect_protocol_timeout,
+                    ))
                     .arc_new_clone_tcp()
             })
     }

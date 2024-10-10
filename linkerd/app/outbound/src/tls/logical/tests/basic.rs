@@ -2,7 +2,7 @@ use super::*;
 use crate::tls::Tls;
 use linkerd_app_core::{
     svc::ServiceExt,
-    tls::{NewDetectSni, ServerName},
+    tls::{NewDetectRequiredSni, ServerName},
     trace, NameAddr,
 };
 use linkerd_proxy_client_policy as client_policy;
@@ -35,7 +35,7 @@ async fn routes() {
         .map_stack(|config, _rt, stk| {
             stk.push_new_idle_cached(config.discovery_idle_timeout)
                 .push_map_target(|(sni, parent): (ServerName, _)| Tls { sni, parent })
-                .push(NewDetectSni::layer(Duration::from_secs(1)))
+                .push(NewDetectRequiredSni::layer(Duration::from_secs(1)))
                 .arc_new_clone_tcp()
         })
         .into_inner();

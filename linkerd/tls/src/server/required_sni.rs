@@ -22,20 +22,32 @@ pub struct SniDetectionTimeoutError;
 #[error("Could not find SNI")]
 pub struct NoSniFoundError;
 
+/// A NewService that instruments an inner stack with knowledge of the
+/// connection's TLS ServerName (i.e. from an SNI header).
+///
+/// This differs from the parent module's NewDetectTls in a a few ways:
+///
+/// - It requires that all connections have an SNI.
+/// - It assumes that these connections may not be terminated locally, so there
+///   is no concept of a local server name.
+/// - There are no special affordances for mutually authenticated TLS, so we
+///   make no attempt to detect the client's identity.
+/// - The detection timeout is fixed and cannot vary per target (for
+///   convenience, to reduce needless boilerplate).
 #[derive(Clone, Debug)]
-pub struct NewDetectSni<N> {
+pub struct NewDetectRequiredSni<N> {
     inner: N,
     timeout: time::Duration,
 }
 
 #[derive(Clone, Debug)]
-pub struct DetectSni<T, N> {
+pub struct DetectRequiredSni<T, N> {
     target: T,
     inner: N,
     timeout: time::Duration,
 }
 
-impl<N> NewDetectSni<N> {
+impl<N> NewDetectRequiredSni<N> {
     fn new(timeout: time::Duration, inner: N) -> Self {
         Self { inner, timeout }
     }
@@ -45,20 +57,20 @@ impl<N> NewDetectSni<N> {
     }
 }
 
-impl<T, N> NewService<T> for NewDetectSni<N>
+impl<T, N> NewService<T> for NewDetectRequiredSni<N>
 where
     N: Clone,
 {
-    type Service = DetectSni<T, N>;
+    type Service = DetectRequiredSni<T, N>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        DetectSni::new(self.timeout, target, self.inner.clone())
+        DetectRequiredSni::new(self.timeout, target, self.inner.clone())
     }
 }
 
 // === impl DetectSni ===
 
-impl<T, N> DetectSni<T, N> {
+impl<T, N> DetectRequiredSni<T, N> {
     fn new(timeout: time::Duration, target: T, inner: N) -> Self {
         Self {
             target,
@@ -68,7 +80,7 @@ impl<T, N> DetectSni<T, N> {
     }
 }
 
-impl<T, I, N, S> Service<I> for DetectSni<T, N>
+impl<T, I, N, S> Service<I> for DetectRequiredSni<T, N>
 where
     T: Clone + Send + Sync + 'static,
     I: io::AsyncRead + io::Peek + io::AsyncWrite + Send + Sync + Unpin + 'static,
@@ -93,10 +105,10 @@ where
         // Detect the SNI from a ClientHello (or timeout).
         let detect = time::timeout(self.timeout, detect_sni(io));
         Box::pin(async move {
-            let (sni, io) = detect.await.map_err(|_| SniDetectionTimeoutError)??;
-            let sni = sni.ok_or(NoSniFoundError)?;
-
+            let (res, io) = detect.await.map_err(|_| SniDetectionTimeoutError)??;
+            let sni = res.ok_or(NoSniFoundError)?;
             debug!(?sni, "Detected TLS");
+
             let svc = new_accept.new_service((sni, target));
             svc.oneshot(io).await.map_err(Into::into)
         })
