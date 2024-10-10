@@ -230,6 +230,8 @@ where
             return future::Either::Left(self.inner.call(req));
         };
 
+        // TODO(kate): extract the params, metrics, and labels. in the future, we would like to
+        // avoid this middleware needing to know about Prometheus labels.
         let params = policy.param();
         let labels = self.extract.extract_param(&req);
         let metrics = self.metrics.metrics(&labels);

@@ -124,6 +124,8 @@ where
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
                 .push({
+                    // TODO(kate): extracting route labels like this should ideally live somewhere
+                    // else, like e.g. the `SetExtensions` middleware.
                     let mk_extract = |rt: &Self| {
                         let Route {
                             parent_ref,
