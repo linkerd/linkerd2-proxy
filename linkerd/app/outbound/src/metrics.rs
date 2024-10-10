@@ -37,6 +37,7 @@ pub struct OutboundMetrics {
 pub(crate) struct PromMetrics {
     pub(crate) http: crate::http::HttpMetrics,
     pub(crate) opaq: crate::opaq::OpaqMetrics,
+    pub(crate) tls: crate::tls::TlsMetrics,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -90,7 +91,9 @@ impl PromMetrics {
 
         let opaq = crate::opaq::OpaqMetrics::register(registry.sub_registry_with_prefix("tcp"));
 
-        Self { http, opaq }
+        let tls = crate::tls::TlsMetrics::register(registry.sub_registry_with_prefix("tls"));
+
+        Self { http, opaq, tls }
     }
 }
 
