@@ -117,7 +117,7 @@ where
                 .lift_new_with_target()
                 .push(NewDistribute::layer())
                 .check_new::<Self>()
-                .check_new_service::<Self, http::Request<linkerd_app_core::proxy::http::BoxBody>>()
+                .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // The router does not take the backend's availability into
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
@@ -135,14 +135,14 @@ where
                     let metrics = metrics.retry.clone();
                     retry::NewHttpRetry::layer_via_mk(mk_extract, metrics)
                 })
-                .check_new_service::<Self, http::Request<linkerd_app_core::proxy::http::BoxBody>>()
                 .check_new::<Self>()
+                .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
                 .push(metrics::layer(&metrics.requests))
                 .check_new::<Self>()
-                .check_new_service::<Self, http::Request<linkerd_app_core::proxy::http::BoxBody>>()
+                .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // Configure a classifier to use in the endpoint stack.
                 // TODO(ver) move this into NewSetExtensions?
                 .push(classify::NewClassify::layer())
