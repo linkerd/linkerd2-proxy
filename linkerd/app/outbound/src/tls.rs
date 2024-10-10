@@ -7,7 +7,7 @@ use linkerd_app_core::{
         core::Resolve,
     },
     svc,
-    tls::{self, detect_sni::NewDetectSni, server::Timeout, ServerName},
+    tls::{NewDetectRequiredSni, ServerName},
     transport::addrs::*,
     Error,
 };
@@ -24,9 +24,6 @@ struct Tls<T> {
     sni: ServerName,
     parent: T,
 }
-
-#[derive(Clone)]
-struct DetectParams(Timeout);
 
 pub fn spawn_routes<T>(
     mut route_rx: watch::Receiver<T>,
@@ -97,13 +94,13 @@ impl<C> Outbound<C> {
             .push_tls_concrete(resolve)
             .push_tls_logical()
             .map_stack(|config, _rt, stk| {
-                let detect_timeout = Timeout(config.proxy.detect_protocol_timeout);
-
                 stk.push_new_idle_cached(config.discovery_idle_timeout)
                     // Use a dedicated target type to configure parameters for
                     // the TLS stack. It also helps narrow the cache key.
                     .push_map_target(|(sni, parent): (ServerName, T)| Tls { sni, parent })
-                    .push(NewDetectSni::layer(DetectParams(detect_timeout)))
+                    .push(NewDetectRequiredSni::layer(
+                        config.proxy.detect_protocol_timeout,
+                    ))
                     .arc_new_clone_tcp()
             })
     }
@@ -123,24 +120,6 @@ where
 {
     fn param(&self) -> watch::Receiver<logical::Routes> {
         self.parent.param()
-    }
-}
-
-// === impl DetectParams ===
-
-impl<T> svc::ExtractParam<tls::server::Timeout, T> for DetectParams {
-    #[inline]
-    fn extract_param(&self, _: &T) -> tls::server::Timeout {
-        self.0
-    }
-}
-
-impl<T> svc::InsertParam<ServerName, T> for DetectParams {
-    type Target = (ServerName, T);
-
-    #[inline]
-    fn insert_param(&self, sni: ServerName, target: T) -> Self::Target {
-        (sni, target)
     }
 }
 
