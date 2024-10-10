@@ -44,8 +44,8 @@ pub struct LabelGrpcRsp<L> {
     error: Option<labels::Error>,
 }
 
-pub type LabelHttpRouteRsp = LabelHttpRsp<labels::Route>;
-pub type LabelGrpcRouteRsp = LabelGrpcRsp<labels::Route>;
+pub type LabelHttpRouteRsp = LabelHttpRsp<labels::HttpRoute>;
+pub type LabelGrpcRouteRsp = LabelGrpcRsp<labels::GrpcRoute>;
 
 pub type LabelHttpRouteBackendRsp = LabelHttpRsp<labels::RouteBackend>;
 pub type LabelGrpcRouteBackendRsp = LabelGrpcRsp<labels::RouteBackend>;

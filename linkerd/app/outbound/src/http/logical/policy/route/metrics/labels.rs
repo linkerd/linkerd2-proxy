@@ -5,7 +5,14 @@ use prometheus_client::encoding::*;
 use crate::{BackendRef, ParentRef, RouteRef};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Route(pub ParentRef, pub RouteRef);
+pub struct HttpRoute {
+    parent: ParentRef,
+    route: RouteRef,
+    host: Option<String>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct GrpcRoute(pub ParentRef, pub RouteRef);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RouteBackend(pub ParentRef, pub RouteRef, pub BackendRef);
@@ -13,9 +20,8 @@ pub struct RouteBackend(pub ParentRef, pub RouteRef, pub BackendRef);
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Rsp<P, L>(pub P, pub L);
 
-pub type RouteRsp<L> = Rsp<Route, L>;
-pub type HttpRouteRsp = RouteRsp<HttpRsp>;
-pub type GrpcRouteRsp = RouteRsp<GrpcRsp>;
+pub type HttpRouteRsp = Rsp<HttpRoute, HttpRsp>;
+pub type GrpcRouteRsp = Rsp<GrpcRoute, GrpcRsp>;
 
 pub type RouteBackendRsp<L> = Rsp<RouteBackend, L>;
 pub type HttpRouteBackendRsp = RouteBackendRsp<HttpRsp>;
@@ -50,15 +56,55 @@ pub enum Error {
     Unknown,
 }
 
-// === impl Route ===
+// === impl HttpRoute ===
 
-impl From<(ParentRef, RouteRef)> for Route {
+impl HttpRoute {
+    pub fn new(parent: ParentRef, route: RouteRef, host: Option<&str>) -> Self {
+        let host = match host.and_then(|h| url::Host::parse(h).ok()) {
+            Some(url::Host::Domain(s)) => Some(s),
+            // Refrain from emitting label values for url's whose host component are a IPv4
+            // or IPv6 address, to help prevent label cardinality from becoming too noisy.
+            None | Some(url::Host::Ipv4(_) | url::Host::Ipv6(_)) => None,
+        };
+
+        Self {
+            parent,
+            route,
+            host,
+        }
+    }
+}
+
+impl EncodeLabelSetMut for HttpRoute {
+    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
+        let Self {
+            parent,
+            route,
+            host,
+        } = self;
+        parent.encode_label_set(enc)?;
+        route.encode_label_set(enc)?;
+        ("hostname", host.as_deref()).encode(enc.encode_label())?;
+
+        Ok(())
+    }
+}
+
+impl EncodeLabelSet for HttpRoute {
+    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
+        self.encode_label_set(&mut enc)
+    }
+}
+
+// === impl GrpcRoute ===
+
+impl From<(ParentRef, RouteRef)> for GrpcRoute {
     fn from((parent, route): (ParentRef, RouteRef)) -> Self {
         Self(parent, route)
     }
 }
 
-impl EncodeLabelSetMut for Route {
+impl EncodeLabelSetMut for GrpcRoute {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         let Self(parent, route) = self;
         parent.encode_label_set(enc)?;
@@ -67,7 +113,7 @@ impl EncodeLabelSetMut for Route {
     }
 }
 
-impl EncodeLabelSet for Route {
+impl EncodeLabelSet for GrpcRoute {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
     }

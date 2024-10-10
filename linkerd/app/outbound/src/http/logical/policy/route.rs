@@ -14,7 +14,6 @@ pub(crate) mod retry;
 
 pub(crate) use self::backend::{Backend, MatchedBackend};
 pub use self::filters::errors;
-use self::metrics::labels::Route as RouteLabels;
 
 pub use self::metrics::{GrpcRouteMetrics, HttpRouteMetrics};
 
@@ -117,16 +116,33 @@ where
                 .push(MatchedBackend::layer(metrics.backend.clone()))
                 .lift_new_with_target()
                 .push(NewDistribute::layer())
+                .check_new::<Self>()
+                .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // The router does not take the backend's availability into
                 // consideration, so we must eagerly fail requests to prevent
                 // leaking tasks onto the runtime.
                 .push_on_service(svc::LoadShed::layer())
                 .push(filters::NewApplyFilters::<Self, _, _>::layer())
-                .push(retry::NewHttpRetry::layer(metrics.retry.clone()))
+                .push({
+                    let mk_extract = |rt: &Self| {
+                        let Route {
+                            parent_ref,
+                            route_ref,
+                            ..
+                        } = &rt.params;
+                        retry::RetryLabelExtract(parent_ref.clone(), route_ref.clone())
+                    };
+                    let metrics = metrics.retry.clone();
+                    retry::NewHttpRetry::layer_via_mk(mk_extract, metrics)
+                })
+                .check_new::<Self>()
+                .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
                 .push(metrics::layer(&metrics.requests))
+                .check_new::<Self>()
+                .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // Configure a classifier to use in the endpoint stack.
                 // TODO(ver) move this into NewSetExtensions?
                 .push(classify::NewClassify::layer())
@@ -149,15 +165,6 @@ impl<T: Clone, M, F, P> svc::Param<BackendDistribution<T, F>> for MatchedRoute<T
     }
 }
 
-impl<T: Clone, M, F, P> svc::Param<RouteLabels> for MatchedRoute<T, M, F, P> {
-    fn param(&self) -> RouteLabels {
-        RouteLabels(
-            self.params.parent_ref.clone(),
-            self.params.route_ref.clone(),
-        )
-    }
-}
-
 // === impl Http ===
 
 impl<T> filters::Apply for Http<T> {
@@ -174,15 +181,15 @@ impl<T> filters::Apply for Http<T> {
 
 impl<T> metrics::MkStreamLabel for Http<T> {
     type StatusLabels = metrics::labels::HttpRouteRsp;
-    type DurationLabels = metrics::labels::Route;
+    type DurationLabels = metrics::labels::HttpRoute;
     type StreamLabel = metrics::LabelHttpRouteRsp;
 
-    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+    fn mk_stream_labeler<B>(&self, req: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
-        Some(metrics::LabelHttpRsp::from(metrics::labels::Route::from((
-            parent, route,
-        ))))
+        Some(metrics::LabelHttpRsp::from(
+            metrics::labels::HttpRoute::new(parent, route, req.uri().host()),
+        ))
     }
 }
 
@@ -228,15 +235,15 @@ impl<T> filters::Apply for Grpc<T> {
 
 impl<T> metrics::MkStreamLabel for Grpc<T> {
     type StatusLabels = metrics::labels::GrpcRouteRsp;
-    type DurationLabels = metrics::labels::Route;
+    type DurationLabels = metrics::labels::GrpcRoute;
     type StreamLabel = metrics::LabelGrpcRouteRsp;
 
     fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
-        Some(metrics::LabelGrpcRsp::from(metrics::labels::Route::from((
-            parent, route,
-        ))))
+        Some(metrics::LabelGrpcRsp::from(
+            metrics::labels::GrpcRoute::from((parent, route)),
+        ))
     }
 }
 

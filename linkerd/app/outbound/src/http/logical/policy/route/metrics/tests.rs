@@ -18,7 +18,7 @@ async fn http_request_statuses() {
 
     // Send one request and ensure it's counted.
     let ok = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: None,
@@ -37,7 +37,7 @@ async fn http_request_statuses() {
     // Send another request and ensure it's counted with a different response
     // status.
     let no_content = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: Some(http::StatusCode::NO_CONTENT),
             error: None,
@@ -61,7 +61,7 @@ async fn http_request_statuses() {
 
     // Emit a response with an error and ensure it's counted.
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), None),
         labels::HttpRsp {
             status: None,
             error: Some(labels::Error::Unknown),
@@ -75,7 +75,7 @@ async fn http_request_statuses() {
     // Emit a successful response with a body that fails and ensure that both
     // the status and error are recorded.
     let mixed = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref, route_ref),
+        labels::HttpRoute::new(parent_ref, route_ref, None),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: Some(labels::Error::Unknown),
@@ -100,6 +100,127 @@ async fn http_request_statuses() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn http_request_hostnames() {
+    const HOST_1: &str = "great.website";
+    const URI_1_1: &str = "https://great.website/path/to/index.html#fragment";
+    const URI_1_2: &str = "https://great.website/another/index.html";
+    const HOST_2: &str = "different.website";
+    const URI_2: &str = "https://different.website/index.html";
+    const URI_3: &str = "https://[3fff::]/index.html";
+
+    let _trace = linkerd_tracing::test::trace_init();
+
+    let metrics = super::HttpRouteMetrics::default().requests;
+    let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
+    let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
+    let (mut svc, mut handle) = mock_http_route_metrics(&metrics, &parent_ref, &route_ref);
+
+    let get_counter = |host: Option<&str>, status: Option<http::StatusCode>| {
+        metrics.get_statuses(&labels::Rsp(
+            labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), host),
+            labels::HttpRsp {
+                status,
+                error: None,
+            },
+        ))
+    };
+
+    let host1_ok = get_counter(Some(HOST_1), Some(http::StatusCode::OK));
+    let host1_teapot = get_counter(Some(HOST_1), Some(http::StatusCode::IM_A_TEAPOT));
+    let host2_ok = get_counter(Some(HOST_2), Some(http::StatusCode::OK));
+    let unlabeled_ok = get_counter(None, Some(http::StatusCode::OK));
+
+    // Send one request and ensure it's counted.
+    send_assert_incremented(
+        &host1_ok,
+        &mut handle,
+        &mut svc,
+        http::Request::builder()
+            .uri(URI_1_1)
+            .body(BoxBody::default())
+            .unwrap(),
+        |tx| {
+            tx.send_response(
+                http::Response::builder()
+                    .status(200)
+                    .body(BoxBody::default())
+                    .unwrap(),
+            )
+        },
+    )
+    .await;
+    assert_eq!(host1_ok.get(), 1);
+    assert_eq!(host1_teapot.get(), 0);
+    assert_eq!(host2_ok.get(), 0);
+
+    // Send another request to a different path on the same host.
+    send_assert_incremented(
+        &host1_teapot,
+        &mut handle,
+        &mut svc,
+        http::Request::builder()
+            .uri(URI_1_2)
+            .body(BoxBody::default())
+            .unwrap(),
+        |tx| {
+            tx.send_response(
+                http::Response::builder()
+                    .status(418)
+                    .body(BoxBody::default())
+                    .unwrap(),
+            )
+        },
+    )
+    .await;
+    assert_eq!(host1_ok.get(), 1);
+    assert_eq!(host1_teapot.get(), 1);
+    assert_eq!(host2_ok.get(), 0);
+
+    // Send a request to a different host.
+    send_assert_incremented(
+        &host2_ok,
+        &mut handle,
+        &mut svc,
+        http::Request::builder()
+            .uri(URI_2)
+            .body(BoxBody::default())
+            .unwrap(),
+        |tx| {
+            tx.send_response(
+                http::Response::builder()
+                    .status(200)
+                    .body(BoxBody::default())
+                    .unwrap(),
+            )
+        },
+    )
+    .await;
+    assert_eq!(host1_ok.get(), 1);
+    assert_eq!(host1_teapot.get(), 1);
+    assert_eq!(host2_ok.get(), 1);
+
+    // Send a request to a url with an ip address host component, show that it is not labeled.
+    send_assert_incremented(
+        &unlabeled_ok,
+        &mut handle,
+        &mut svc,
+        http::Request::builder()
+            .uri(URI_3)
+            .body(BoxBody::default())
+            .unwrap(),
+        |tx| {
+            tx.send_response(
+                http::Response::builder()
+                    .status(200)
+                    .body(BoxBody::default())
+                    .unwrap(),
+            )
+        },
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn grpc_request_statuses_ok() {
     let _trace = linkerd_tracing::test::trace_init();
 
@@ -110,7 +231,7 @@ async fn grpc_request_statuses_ok() {
 
     // Send one request and ensure it's counted.
     let ok = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
         labels::GrpcRsp {
             status: Some(tonic::Code::Ok),
             error: None,
@@ -152,7 +273,7 @@ async fn grpc_request_statuses_not_found() {
     // Send another request and ensure it's counted with a different response
     // status.
     let not_found = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
         labels::GrpcRsp {
             status: Some(tonic::Code::NotFound),
             error: None,
@@ -192,7 +313,7 @@ async fn grpc_request_statuses_error_response() {
     let (mut svc, mut handle) = mock_grpc_route_metrics(&metrics, &parent_ref, &route_ref);
 
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
         labels::GrpcRsp {
             status: None,
             error: Some(labels::Error::Unknown),
@@ -222,7 +343,7 @@ async fn grpc_request_statuses_error_body() {
     let (mut svc, mut handle) = mock_grpc_route_metrics(&metrics, &parent_ref, &route_ref);
 
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::Route(parent_ref.clone(), route_ref.clone()),
+        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
         labels::GrpcRsp {
             status: None,
             error: Some(labels::Error::Unknown),

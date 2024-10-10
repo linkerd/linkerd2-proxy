@@ -30,6 +30,7 @@ tokio = { version = "1", features = ["sync"] }
 tonic = { version = "0.10", default-features = false }
 tower = { version = "0.4", features = ["util"] }
 tracing = "0.1"
+url = "2.5"
 
 linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
