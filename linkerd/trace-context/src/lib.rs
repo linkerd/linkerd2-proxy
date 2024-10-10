@@ -1,6 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
+pub mod export;
 mod propagation;
 mod service;
 
@@ -17,6 +18,27 @@ const SPAN_ID_LEN: usize = 8;
 
 #[derive(Debug, Default)]
 pub struct Id(Vec<u8>);
+
+#[derive(Debug, Error)]
+#[error("ID '{:?} should have {} bytes, but it has {}", self.id, self.expected_size, self.actual_size)]
+pub struct IdLengthError {
+    id: Vec<u8>,
+    expected_size: usize,
+    actual_size: usize,
+}
+
+impl Id {
+    pub fn into_bytes<const N: usize>(self) -> Result<[u8; N], IdLengthError> {
+        self.as_ref().try_into().map_err(|_| {
+            let bytes: Vec<u8> = self.into();
+            IdLengthError {
+                expected_size: N,
+                actual_size: bytes.len(),
+                id: bytes,
+            }
+        })
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct Flags(u8);

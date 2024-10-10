@@ -1,8 +1,9 @@
-use crate::{dns, gateway, identity, inbound, oc_collector, outbound, policy, spire};
+use crate::{dns, gateway, identity, inbound, outbound, policy, spire, trace_collector};
 use linkerd_app_core::{
     addr,
     config::*,
     control::{Config as ControlConfig, ControlAddr},
+    http_tracing::CollectorProtocol,
     proxy::http::{h1, h2},
     tls,
     transport::{DualListenAddr, Keepalive, ListenAddr, UserTimeout},
@@ -19,7 +20,7 @@ use tracing::{debug, error, info, warn};
 
 mod control;
 mod http2;
-mod opencensus;
+mod trace;
 mod types;
 
 use self::types::*;
@@ -145,7 +146,9 @@ pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLI
 const ENV_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS: &str =
     "LINKERD2_PROXY_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS";
 
-pub const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
+const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
+const ENV_TRACE_PROTOCOL: &str = "LINKERD2_PROXY_TRACE_PROTOCOL";
+const ENV_TRACE_SERVICE_NAME: &str = "LINKERD2_PROXY_TRACE_SERVICE_NAME";
 
 /// Constrains which destination names may be used for profile/route discovery.
 ///
@@ -428,7 +431,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let hostname = strings.get(ENV_HOSTNAME);
 
-    let oc_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
+    let trace_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
+    let trace_protocol = strings.get(ENV_TRACE_PROTOCOL);
+    let trace_service_name = strings.get(ENV_TRACE_SERVICE_NAME);
 
     let trace_collector_addr = parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
 
@@ -813,8 +818,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             .into(),
     };
 
-    let oc_collector = match trace_collector_addr? {
-        None => oc_collector::Config::Disabled,
+    let trace_collector = match trace_collector_addr? {
+        None => trace_collector::Config::Disabled,
         Some(addr) => {
             let connect = if addr.addr.is_loopback() {
                 inbound.proxy.connect.clone()
@@ -826,16 +831,25 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             } else {
                 outbound.http_request_queue.failfast_timeout
             };
-            let attributes = oc_attributes_file_path
+            let attributes = trace_attributes_file_path
                 .map(|path| match path.and_then(|p| p.parse::<PathBuf>().ok()) {
-                    Some(path) => opencensus::read_trace_attributes(&path),
+                    Some(path) => trace::read_trace_attributes(&path),
                     None => HashMap::new(),
                 })
                 .unwrap_or_default();
 
-            oc_collector::Config::Enabled(Box::new(oc_collector::EnabledConfig {
+            let trace_protocol = trace_protocol
+                .map(|proto| proto.and_then(|p| p.parse::<CollectorProtocol>().ok()))
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+
+            let trace_service_name = trace_service_name.ok().flatten();
+
+            trace_collector::Config::Enabled(Box::new(trace_collector::EnabledConfig {
                 attributes,
                 hostname: hostname?,
+                service_name: trace_service_name,
                 control: ControlConfig {
                     addr,
                     connect,
@@ -844,6 +858,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         failfast_timeout,
                     },
                 },
+                kind: trace_protocol,
             }))
         }
     };
@@ -923,7 +938,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         dns,
         dst,
         tap,
-        oc_collector,
+        trace_collector,
         policy,
         identity,
         outbound,

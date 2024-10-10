@@ -136,23 +136,19 @@ impl<B: Body> ReplayBody<B> {
         state.get_or_insert_with(|| shared.lock().take().expect("missing body state"))
     }
 
-    /// Returns `true` if the body previously exceeded the configured maximum
+    /// Returns `Some(true)` if the body previously exceeded the configured maximum
     /// length limit.
     ///
     /// If this is true, the body is now empty, and the request should *not* be
     /// retried with this body.
-    pub fn is_capped(&self) -> bool {
+    ///
+    /// If this is `None`, another clone has currently acquired the state, and is
+    /// still being polled.
+    pub fn is_capped(&self) -> Option<bool> {
         self.state
             .as_ref()
             .map(BodyState::is_capped)
-            .unwrap_or_else(|| {
-                self.shared
-                    .body
-                    .lock()
-                    .as_ref()
-                    .expect("if our `state` was `None`, the shared state must be `Some`")
-                    .is_capped()
-            })
+            .or_else(|| self.shared.body.lock().as_ref().map(BodyState::is_capped))
     }
 }
 

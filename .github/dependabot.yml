@@ -24,6 +24,10 @@ updates:
       - dependency-name: "wasm-bindgen"
       - dependency-name: "web-sys"
       - dependency-name: "windows*"
+    groups:
+      opentelemetry:
+        patterns:
+          - "opentelemetry*"
 
   - package-ecosystem: cargo
     directory: /linkerd/addr/fuzz

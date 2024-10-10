@@ -41,6 +41,7 @@ members = [
     "linkerd/meshtls/verifier",
     "linkerd/metrics",
     "linkerd/opencensus",
+    "linkerd/opentelemetry",
     "linkerd/pool",
     "linkerd/pool/mock",
     "linkerd/pool/p2c",
@@ -78,6 +79,7 @@ members = [
     "linkerd/transport-metrics",
     "linkerd2-proxy",
     "opencensus-proto",
+    "opentelemetry-proto",
     "spiffe-proto",
     "tools",
 ]

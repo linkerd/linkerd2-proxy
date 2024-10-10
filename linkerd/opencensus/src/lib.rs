@@ -6,17 +6,19 @@ pub mod metrics;
 use futures::stream::{Stream, StreamExt};
 use http_body::Body as HttpBody;
 use linkerd_error::Error;
+use linkerd_trace_context::export::{ExportSpan, SpanKind};
 use metrics::Registry;
 pub use opencensus_proto as proto;
 use opencensus_proto::agent::common::v1::Node;
 use opencensus_proto::agent::trace::v1::{
     trace_service_client::TraceServiceClient, ExportTraceServiceRequest,
 };
-use opencensus_proto::trace::v1::Span;
+use opencensus_proto::trace::v1::{Span, TruncatableString};
+use std::collections::HashMap;
 use tokio::{sync::mpsc, time};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 pub async fn export_spans<T, S>(client: T, node: Node, spans: S, metrics: Registry)
 where
@@ -24,7 +26,7 @@ where
     T::Error: Into<Error>,
     T::ResponseBody: Default + HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
-    S: Stream<Item = Span> + Unpin,
+    S: Stream<Item = ExportSpan> + Unpin,
 {
     debug!("Span exporter running");
     SpanExporter::new(client, node, spans, metrics).run().await
@@ -49,7 +51,7 @@ where
     T::Error: Into<Error>,
     T::ResponseBody: Default + HttpBody<Data = tonic::codegen::Bytes> + Send + 'static,
     <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
-    S: Stream<Item = Span> + Unpin,
+    S: Stream<Item = ExportSpan> + Unpin,
 {
     const MAX_BATCH_SIZE: usize = 1000;
     const MAX_BATCH_IDLE: time::Duration = time::Duration::from_secs(10);
@@ -175,6 +177,13 @@ where
                 res = spans.next() => match res {
                     Some(span) => {
                         trace!(?span, "Adding to batch");
+                        let span = match convert_span(span) {
+                            Ok(span) => span,
+                            Err(error) => {
+                                info!(%error, "Span dropped");
+                                continue;
+                            }
+                        };
                         accum.push(span);
                     }
                     None => return Err(SpanRxClosed),
@@ -190,5 +199,63 @@ where
                 }
             }
         }
+    }
+}
+
+fn convert_span(span: ExportSpan) -> Result<Span, Error> {
+    use proto::trace::v1 as oc;
+
+    let ExportSpan {
+        mut span,
+        kind,
+        labels,
+    } = span;
+
+    let mut attributes = HashMap::<String, oc::AttributeValue>::new();
+    for (k, v) in labels.iter() {
+        attributes.insert(
+            k.clone(),
+            oc::AttributeValue {
+                value: Some(oc::attribute_value::Value::StringValue(truncatable(
+                    v.clone(),
+                ))),
+            },
+        );
+    }
+    for (k, v) in span.labels.drain() {
+        attributes.insert(
+            k.to_string(),
+            oc::AttributeValue {
+                value: Some(oc::attribute_value::Value::StringValue(truncatable(v))),
+            },
+        );
+    }
+    Ok(Span {
+        trace_id: span.trace_id.into_bytes::<16>()?.to_vec(),
+        span_id: span.span_id.into_bytes::<8>()?.to_vec(),
+        tracestate: None,
+        parent_span_id: span.parent_id.into_bytes::<8>()?.to_vec(),
+        name: Some(truncatable(span.span_name)),
+        kind: kind as i32,
+        start_time: Some(span.start.into()),
+        end_time: Some(span.end.into()),
+        attributes: Some(oc::span::Attributes {
+            attribute_map: attributes,
+            dropped_attributes_count: 0,
+        }),
+        stack_trace: None,
+        time_events: None,
+        links: None,
+        status: None, // TODO: this is gRPC status; we must read response trailers to populate this
+        resource: None,
+        same_process_as_parent_span: Some(kind == SpanKind::Client),
+        child_span_count: None,
+    })
+}
+
+fn truncatable(value: String) -> TruncatableString {
+    TruncatableString {
+        value,
+        truncated_byte_count: 0,
     }
 }

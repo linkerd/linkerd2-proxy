@@ -1,0 +1,25 @@
+[package]
+name = "opentelemetry-proto"
+version = "0.1.0"
+authors = ["The OpenTelemetry Authors"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+description = """
+gRPC bindings for OpenTelemetry.
+
+Vendored from https://github.com/open-telemetry/opentelemetry-rust/.
+"""
+
+[dependencies]
+tonic = { version = "0.10", features = ["codegen", "prost", "transport"] }
+prost = "0.12"
+opentelemetry = { version = "0.26", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.26", default-features = false, features = ["trace"] }
+
+[dev-dependencies]
+opentelemetry = { version = "0.26", default-features = false, features = ["trace", "testing"] }
+tonic-build = { version = "0.10", default-features = false, features = ["prost"] }
+
+[lib]
+doctest = false

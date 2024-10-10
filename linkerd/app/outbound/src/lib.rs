@@ -6,11 +6,11 @@
 #![allow(opaque_hidden_inferred_bound)]
 #![forbid(unsafe_code)]
 
+use linkerd_app_core::http_tracing::SpanSink;
 use linkerd_app_core::{
     config::{ProxyConfig, QueueConfig},
     drain,
     exp_backoff::ExponentialBackoff,
-    http_tracing::OpenCensusSink,
     identity, io,
     metrics::prom,
     profiles,
@@ -96,7 +96,7 @@ struct Runtime {
     metrics: OutboundMetrics,
     identity: identity::NewClient,
     tap: tap::Registry,
-    span_sink: OpenCensusSink,
+    span_sink: Option<SpanSink>,
     drain: drain::Watch,
 }
 
