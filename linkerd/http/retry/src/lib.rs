@@ -47,21 +47,21 @@ pub struct Params {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewHttpRetry<P, L: Clone, F, X, N> {
+pub struct NewHttpRetry<P, L: Clone, F, ReqX, N> {
     inner: N,
     metrics: MetricFamilies<L>,
     mk_extract: F,
-    _marker: PhantomData<fn() -> (X, P)>,
+    _marker: PhantomData<fn() -> (ReqX, P)>,
 }
 
 /// A Retry middleware that attempts to extract a `P` typed request extension to
 /// instrument retries. When the request extension is not set, requests are not
 /// retried.
 #[derive(Clone, Debug)]
-pub struct HttpRetry<P, L: Clone, X, S> {
+pub struct HttpRetry<P, L: Clone, ReqX, S> {
     inner: S,
     metrics: MetricFamilies<L>,
-    extract: X,
+    extract: ReqX,
     _marker: PhantomData<fn() -> P>,
 }
 
@@ -83,7 +83,7 @@ struct Metrics {
 
 // === impl NewHttpRetry ===
 
-impl<P, X, L: Clone, F: Clone, N> NewHttpRetry<P, L, F, X, N> {
+impl<P, L: Clone, F: Clone, ReqX, N> NewHttpRetry<P, L, F, ReqX, N> {
     pub fn layer_via_mk(
         mk_extract: F,
         metrics: MetricFamilies<L>,
@@ -97,14 +97,14 @@ impl<P, X, L: Clone, F: Clone, N> NewHttpRetry<P, L, F, X, N> {
     }
 }
 
-impl<T, X, P, L, F, N> NewService<T> for NewHttpRetry<P, L, F, X, N>
+impl<T, P, L, F, ReqX, N> NewService<T> for NewHttpRetry<P, L, F, ReqX, N>
 where
     P: Policy,
     L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
-    F: Fn(&T) -> X + Clone,
+    F: Fn(&T) -> ReqX + Clone,
     N: NewService<T>,
 {
-    type Service = HttpRetry<P, L, X, N::Service>;
+    type Service = HttpRetry<P, L, ReqX, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let Self {
@@ -195,13 +195,13 @@ where
 
 // === impl HttpRetry ===
 
-impl<P, L, X, S> Service<http::Request<BoxBody>> for HttpRetry<P, L, X, S>
+impl<P, L, ReqX, S> Service<http::Request<BoxBody>> for HttpRetry<P, L, ReqX, S>
 where
     P: Policy,
     P: Param<Params>,
     P: Clone + Send + Sync + std::fmt::Debug + 'static,
     L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
-    X: ExtractParam<L, http::Request<BoxBody>>,
+    ReqX: ExtractParam<L, http::Request<BoxBody>>,
     S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>
         + Clone
         + Send
