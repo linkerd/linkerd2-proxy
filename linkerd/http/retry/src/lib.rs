@@ -47,10 +47,10 @@ pub struct Params {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewHttpRetry<P, L: Clone, F, ReqX, N> {
+pub struct NewHttpRetry<P, L: Clone, X, ReqX, N> {
     inner: N,
     metrics: MetricFamilies<L>,
-    mk_extract: F,
+    extract: X,
     _marker: PhantomData<fn() -> (ReqX, P)>,
 }
 
@@ -83,25 +83,25 @@ struct Metrics {
 
 // === impl NewHttpRetry ===
 
-impl<P, L: Clone, F: Clone, ReqX, N> NewHttpRetry<P, L, F, ReqX, N> {
+impl<P, L: Clone, X: Clone, ReqX, N> NewHttpRetry<P, L, X, ReqX, N> {
     pub fn layer_via_mk(
-        mk_extract: F,
+        extract: X,
         metrics: MetricFamilies<L>,
     ) -> impl tower::layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
-            mk_extract: mk_extract.clone(),
+            extract: extract.clone(),
             metrics: metrics.clone(),
             _marker: PhantomData,
         })
     }
 }
 
-impl<T, P, L, F, ReqX, N> NewService<T> for NewHttpRetry<P, L, F, ReqX, N>
+impl<T, P, L, X, ReqX, N> NewService<T> for NewHttpRetry<P, L, X, ReqX, N>
 where
     P: Policy,
     L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
-    F: Fn(&T) -> ReqX + Clone,
+    X: Clone + ExtractParam<ReqX, T>,
     N: NewService<T>,
 {
     type Service = HttpRetry<P, L, ReqX, N::Service>;
@@ -110,12 +110,12 @@ where
         let Self {
             inner,
             metrics,
-            mk_extract,
+            extract,
             _marker,
         } = self;
 
         let metrics = metrics.clone();
-        let extract = mk_extract(&target);
+        let extract = extract.extract_param(&target);
         let svc = inner.new_service(target);
 
         HttpRetry {
