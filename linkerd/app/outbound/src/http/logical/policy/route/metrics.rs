@@ -3,20 +3,13 @@ use linkerd_app_core::{
     metrics::prom::{self, EncodeLabelSetMut},
     svc,
 };
-use linkerd_http_prom::record_response::{self, StreamLabel};
-
-pub use linkerd_http_prom::record_response::MkStreamLabel;
+use linkerd_http_prom::record_response::{self, MkStreamLabel, RequestMetrics, StreamLabel};
 
 pub mod labels;
 #[cfg(test)]
 pub(super) mod test_util;
 #[cfg(test)]
 mod tests;
-
-pub type RequestMetrics<R> = record_response::RequestMetrics<
-    <R as StreamLabel>::DurationLabels,
-    <R as StreamLabel>::StatusLabels,
->;
 
 #[derive(Debug)]
 pub struct RouteMetrics<R: StreamLabel, B: StreamLabel> {
@@ -29,18 +22,34 @@ pub type HttpRouteMetrics = RouteMetrics<LabelHttpRouteRsp, LabelHttpRouteBacken
 pub type GrpcRouteMetrics = RouteMetrics<LabelGrpcRouteRsp, LabelGrpcRouteBackendRsp>;
 
 /// Tracks HTTP streams to produce response labels.
+///
+/// Provides a [`StreamLabel`] implementation to label response streams on both logical routes and
+/// concrete backends.
 #[derive(Clone, Debug)]
 pub struct LabelHttpRsp<L> {
+    /// The parent set of labels to which this response stream belongs.
     parent: L,
+    /// The response's HTTP status code.
     status: Option<http::StatusCode>,
+    /// The category of error, if applicable.
+    ///
+    /// This is `None` when no error occured.
     error: Option<labels::Error>,
 }
 
 /// Tracks gRPC streams to produce response labels.
+///
+/// Provides a [`StreamLabel`] implementation to label response streams on both logical routes and
+/// concrete backends.
 #[derive(Clone, Debug)]
 pub struct LabelGrpcRsp<L> {
+    /// The parent set of labels to which this response stream belongs.
     parent: L,
+    /// The response's gRPC status code.
     status: Option<tonic::Code>,
+    /// The category of error, if applicable.
+    ///
+    /// This is `None` when no error occured.
     error: Option<labels::Error>,
 }
 
@@ -127,7 +136,7 @@ impl<R: StreamLabel, B: StreamLabel> RouteMetrics<R, B> {
         p: crate::ParentRef,
         r: crate::RouteRef,
         b: crate::BackendRef,
-    ) -> linkerd_http_prom::RequestCount {
+    ) -> linkerd_http_prom::count_reqs::RequestCount {
         self.backend.backend_request_count(p, r, b)
     }
 }
@@ -166,8 +175,8 @@ where
     type StatusLabels = labels::Rsp<P, labels::HttpRsp>;
     type DurationLabels = P;
 
-    fn init_response<B>(&mut self, rsp: &http::Response<B>) {
-        self.status = Some(rsp.status());
+    fn init_response(&mut self, rsp: &http::response::Parts) {
+        self.status = Some(rsp.status);
     }
 
     fn end_response(&mut self, res: Result<Option<&http::HeaderMap>, &linkerd_app_core::Error>) {
@@ -217,9 +226,9 @@ where
     type StatusLabels = labels::Rsp<P, labels::GrpcRsp>;
     type DurationLabels = P;
 
-    fn init_response<B>(&mut self, rsp: &http::Response<B>) {
+    fn init_response(&mut self, rsp: &http::response::Parts) {
         self.status = rsp
-            .headers()
+            .headers
             .get("grpc-status")
             .map(|v| tonic::Code::from_bytes(v.as_bytes()));
     }

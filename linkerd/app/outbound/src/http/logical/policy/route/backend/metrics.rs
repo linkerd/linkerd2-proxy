@@ -1,12 +1,14 @@
-use crate::{BackendRef, ParentRef, RouteRef};
+use crate::{
+    http::logical::policy::route::metrics::{
+        labels, ExtractRecordDurationParams, NewRecordDuration,
+    },
+    BackendRef, ParentRef, RouteRef,
+};
 use linkerd_app_core::{metrics::prom, svc};
 use linkerd_http_prom::{
-    record_response::{self, NewResponseDuration, StreamLabel},
-    NewCountRequests, RequestCount, RequestCountFamilies,
+    count_reqs::{NewCountRequests, RequestCount, RequestCountFamilies},
+    record_response::{self, MkStreamLabel, NewResponseDuration, ResponseMetrics, StreamLabel},
 };
-
-pub use super::super::metrics::*;
-pub use linkerd_http_prom::record_response::MkStreamLabel;
 
 #[cfg(test)]
 mod tests;
@@ -16,11 +18,6 @@ pub struct RouteBackendMetrics<L: StreamLabel> {
     requests: RequestCountFamilies<labels::RouteBackend>,
     responses: ResponseMetrics<L>,
 }
-
-type ResponseMetrics<L> = record_response::ResponseMetrics<
-    <L as StreamLabel>::DurationLabels,
-    <L as StreamLabel>::StatusLabels,
->;
 
 pub fn layer<T, N>(
     metrics: &RouteBackendMetrics<T::StreamLabel>,
@@ -75,7 +72,7 @@ impl<L: StreamLabel> RouteBackendMetrics<L> {
         p: ParentRef,
         r: RouteRef,
         b: BackendRef,
-    ) -> linkerd_http_prom::RequestCount {
+    ) -> RequestCount {
         self.requests.metrics(&labels::RouteBackend(p, r, b))
     }
 

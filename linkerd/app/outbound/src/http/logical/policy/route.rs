@@ -2,6 +2,7 @@ use super::super::Concrete;
 use crate::{ParentRef, RouteRef};
 use linkerd_app_core::{classify, proxy::http, svc, Addr, Error, Result};
 use linkerd_distribute as distribute;
+use linkerd_http_prom as http_prom;
 use linkerd_http_route as http_route;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -57,8 +58,8 @@ pub(crate) type BackendDistribution<T, F> = distribute::Distribution<Backend<T, 
 pub(crate) type NewDistribute<T, F, N> = distribute::NewDistribute<Backend<T, F>, (), N>;
 
 pub type Metrics<R, B> = metrics::RouteMetrics<
-    <R as metrics::MkStreamLabel>::StreamLabel,
-    <B as metrics::MkStreamLabel>::StreamLabel,
+    <R as http_prom::MkStreamLabel>::StreamLabel,
+    <B as http_prom::MkStreamLabel>::StreamLabel,
 >;
 
 /// Wraps errors with route metadata.
@@ -88,9 +89,9 @@ where
     Self: filters::Apply,
     Self: svc::Param<classify::Request>,
     Self: svc::Param<extensions::Params>,
-    Self: metrics::MkStreamLabel,
+    Self: http_prom::MkStreamLabel,
     MatchedBackend<T, M, F>: filters::Apply,
-    MatchedBackend<T, M, F>: metrics::MkStreamLabel,
+    MatchedBackend<T, M, F>: http_prom::MkStreamLabel,
 {
     /// Builds a route stack that applies policy filters to requests and
     /// distributes requests over each route's backends. These [`Concrete`]
@@ -172,12 +173,10 @@ impl<T> filters::Apply for Http<T> {
     }
 }
 
-impl<T> metrics::MkStreamLabel for Http<T> {
-    type StatusLabels = metrics::labels::HttpRouteRsp;
-    type DurationLabels = metrics::labels::Route;
+impl<T> http_prom::MkStreamLabel for Http<T> {
     type StreamLabel = metrics::LabelHttpRouteRsp;
 
-    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+    fn mk_stream_labeler(&self, _: &::http::request::Parts) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
         Some(metrics::LabelHttpRsp::from(metrics::labels::Route::from((
@@ -226,12 +225,10 @@ impl<T> filters::Apply for Grpc<T> {
     }
 }
 
-impl<T> metrics::MkStreamLabel for Grpc<T> {
-    type StatusLabels = metrics::labels::GrpcRouteRsp;
-    type DurationLabels = metrics::labels::Route;
+impl<T> http_prom::MkStreamLabel for Grpc<T> {
     type StreamLabel = metrics::LabelGrpcRouteRsp;
 
-    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+    fn mk_stream_labeler(&self, _: &::http::request::Parts) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
         Some(metrics::LabelGrpcRsp::from(metrics::labels::Route::from((

@@ -3,7 +3,6 @@ use linkerd_http_box::BoxBody;
 use linkerd_metrics::prom::Counter;
 use linkerd_stack as svc;
 use prometheus_client::{
-    encoding::EncodeLabelSet,
     metrics::family::Family,
     registry::{Registry, Unit},
 };
@@ -13,35 +12,24 @@ use std::{
 };
 use tokio::{sync::oneshot, time};
 
-use super::{DurationFamily, MkDurationHistogram, MkStreamLabel};
+use super::{DurationFamily, MkDurationHistogram, MkStreamLabel, StreamLabel};
 
 /// Metrics type that tracks completed requests.
 #[derive(Debug)]
-pub struct RequestMetrics<DurL, StatL> {
-    duration: DurationFamily<DurL>,
-    statuses: Family<StatL, Counter>,
+pub struct RequestMetrics<L: StreamLabel> {
+    duration: DurationFamily<L::DurationLabels>,
+    statuses: Family<L::StatusLabels, Counter>,
 }
 
-pub type NewRequestDuration<L, X, N> = super::NewRecordResponse<
-    L,
-    X,
-    RequestMetrics<<L as MkStreamLabel>::DurationLabels, <L as MkStreamLabel>::StatusLabels>,
-    N,
->;
+pub type NewRequestDuration<L, X, N> =
+    super::NewRecordResponse<L, X, RequestMetrics<<L as MkStreamLabel>::StreamLabel>, N>;
 
-pub type RecordRequestDuration<L, S> = super::RecordResponse<
-    L,
-    RequestMetrics<<L as MkStreamLabel>::DurationLabels, <L as MkStreamLabel>::StatusLabels>,
-    S,
->;
+pub type RecordRequestDuration<L, S> =
+    super::RecordResponse<L, RequestMetrics<<L as MkStreamLabel>::StreamLabel>, S>;
 
 // === impl RequestMetrics ===
 
-impl<DurL, StatL> RequestMetrics<DurL, StatL>
-where
-    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    StatL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
+impl<L: StreamLabel> RequestMetrics<L> {
     pub fn register(reg: &mut Registry, histo: impl IntoIterator<Item = f64>) -> Self {
         let duration =
             DurationFamily::new_with_constructor(MkDurationHistogram(histo.into_iter().collect()));
@@ -64,21 +52,13 @@ where
 }
 
 #[cfg(feature = "test-util")]
-impl<DurL, StatL> RequestMetrics<DurL, StatL>
-where
-    StatL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
-    pub fn get_statuses(&self, labels: &StatL) -> Counter {
+impl<L: StreamLabel> RequestMetrics<L> {
+    pub fn get_statuses(&self, labels: &L::StatusLabels) -> Counter {
         (*self.statuses.get_or_create(labels)).clone()
     }
 }
 
-impl<DurL, StatL> Default for RequestMetrics<DurL, StatL>
-where
-    StatL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-    DurL: EncodeLabelSet + Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
-{
+impl<L: StreamLabel> Default for RequestMetrics<L> {
     fn default() -> Self {
         Self {
             duration: DurationFamily::new_with_constructor(MkDurationHistogram(Arc::new([]))),
@@ -87,7 +67,7 @@ where
     }
 }
 
-impl<DurL, StatL> Clone for RequestMetrics<DurL, StatL> {
+impl<L: StreamLabel> Clone for RequestMetrics<L> {
     fn clone(&self) -> Self {
         Self {
             duration: self.duration.clone(),
@@ -99,6 +79,7 @@ impl<DurL, StatL> Clone for RequestMetrics<DurL, StatL> {
 impl<ReqB, L, S> svc::Service<http::Request<ReqB>> for RecordRequestDuration<L, S>
 where
     L: MkStreamLabel,
+    L::StreamLabel: StreamLabel,
     S: svc::Service<http::Request<ReqB>, Response = http::Response<BoxBody>, Error = Error>,
 {
     type Response = http::Response<BoxBody>;
@@ -111,7 +92,8 @@ where
     }
 
     fn call(&mut self, req: http::Request<ReqB>) -> Self::Future {
-        let state = self.labeler.mk_stream_labeler(&req).map(|labeler| {
+        let (parts, body) = req.into_parts();
+        let state = self.labeler.mk_stream_labeler(&parts).map(|labeler| {
             let (tx, start) = oneshot::channel();
             tx.send(time::Instant::now()).unwrap();
             let RequestMetrics { statuses, duration } = self.metric.clone();
@@ -123,6 +105,7 @@ where
             }
         });
 
+        let req = http::Request::from_parts(parts, body);
         let inner = self.inner.call(req);
         super::ResponseFuture { state, inner }
     }
