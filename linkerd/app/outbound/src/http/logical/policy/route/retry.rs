@@ -1,4 +1,4 @@
-use super::{extensions, metrics::labels::HttpRoute as RouteLabels};
+use super::{extensions, metrics::labels::Route as RouteLabels};
 use crate::{ParentRef, RouteRef};
 use futures::future::{Either, Ready};
 use linkerd_app_core::{

@@ -7,7 +7,7 @@ use prometheus_client::encoding::*;
 use crate::{BackendRef, ParentRef, RouteRef};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct HttpRoute {
+pub struct Route {
     parent: ParentRef,
     route: RouteRef,
     name: Option<dns::Name>,
@@ -22,8 +22,9 @@ pub struct RouteBackend(pub ParentRef, pub RouteRef, pub BackendRef);
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Rsp<P, L>(pub P, pub L);
 
-pub type HttpRouteRsp = Rsp<HttpRoute, HttpRsp>;
-pub type GrpcRouteRsp = Rsp<GrpcRoute, GrpcRsp>;
+pub type RouteRsp<L> = Rsp<Route, L>;
+pub type HttpRouteRsp = RouteRsp<HttpRsp>;
+pub type GrpcRouteRsp = RouteRsp<GrpcRsp>;
 
 pub type RouteBackendRsp<L> = Rsp<RouteBackend, L>;
 pub type HttpRouteBackendRsp = RouteBackendRsp<HttpRsp>;
@@ -58,9 +59,9 @@ pub enum Error {
     Unknown,
 }
 
-// === impl HttpRoute ===
+// === impl Route ===
 
-impl HttpRoute {
+impl Route {
     pub fn new(parent: ParentRef, route: RouteRef, uri: &http::uri::Uri) -> Self {
         let name = uri
             .host()
@@ -89,7 +90,7 @@ impl HttpRoute {
     }
 }
 
-impl EncodeLabelSetMut for HttpRoute {
+impl EncodeLabelSetMut for Route {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
         let Self {
             parent,
@@ -105,30 +106,7 @@ impl EncodeLabelSetMut for HttpRoute {
     }
 }
 
-impl EncodeLabelSet for HttpRoute {
-    fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
-        self.encode_label_set(&mut enc)
-    }
-}
-
-// === impl GrpcRoute ===
-
-impl From<(ParentRef, RouteRef)> for GrpcRoute {
-    fn from((parent, route): (ParentRef, RouteRef)) -> Self {
-        Self(parent, route)
-    }
-}
-
-impl EncodeLabelSetMut for GrpcRoute {
-    fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        let Self(parent, route) = self;
-        parent.encode_label_set(enc)?;
-        route.encode_label_set(enc)?;
-        Ok(())
-    }
-}
-
-impl EncodeLabelSet for GrpcRoute {
+impl EncodeLabelSet for Route {
     fn encode(&self, mut enc: LabelSetEncoder<'_>) -> std::fmt::Result {
         self.encode_label_set(&mut enc)
     }

@@ -181,15 +181,17 @@ impl<T> filters::Apply for Http<T> {
 
 impl<T> metrics::MkStreamLabel for Http<T> {
     type StatusLabels = metrics::labels::HttpRouteRsp;
-    type DurationLabels = metrics::labels::HttpRoute;
+    type DurationLabels = metrics::labels::Route;
     type StreamLabel = metrics::LabelHttpRouteRsp;
 
     fn mk_stream_labeler<B>(&self, req: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
-        Some(metrics::LabelHttpRsp::from(
-            metrics::labels::HttpRoute::new(parent, route, req.uri()),
-        ))
+        Some(metrics::LabelHttpRsp::from(metrics::labels::Route::new(
+            parent,
+            route,
+            req.uri(),
+        )))
     }
 }
 
@@ -235,15 +237,17 @@ impl<T> filters::Apply for Grpc<T> {
 
 impl<T> metrics::MkStreamLabel for Grpc<T> {
     type StatusLabels = metrics::labels::GrpcRouteRsp;
-    type DurationLabels = metrics::labels::GrpcRoute;
+    type DurationLabels = metrics::labels::Route;
     type StreamLabel = metrics::LabelGrpcRouteRsp;
 
-    fn mk_stream_labeler<B>(&self, _: &::http::Request<B>) -> Option<Self::StreamLabel> {
+    fn mk_stream_labeler<B>(&self, req: &::http::Request<B>) -> Option<Self::StreamLabel> {
         let parent = self.params.parent_ref.clone();
         let route = self.params.route_ref.clone();
-        Some(metrics::LabelGrpcRsp::from(
-            metrics::labels::GrpcRoute::from((parent, route)),
-        ))
+        Some(metrics::LabelGrpcRsp::from(metrics::labels::Route::new(
+            parent,
+            route,
+            req.uri(),
+        )))
     }
 }
 

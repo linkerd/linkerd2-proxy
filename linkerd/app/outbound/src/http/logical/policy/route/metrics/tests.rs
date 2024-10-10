@@ -25,7 +25,7 @@ async fn http_request_statuses() {
 
     // Send one request and ensure it's counted.
     let ok = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
+        labels::Route::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: None,
@@ -44,7 +44,7 @@ async fn http_request_statuses() {
     // Send another request and ensure it's counted with a different response
     // status.
     let no_content = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
+        labels::Route::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
         labels::HttpRsp {
             status: Some(http::StatusCode::NO_CONTENT),
             error: None,
@@ -68,7 +68,7 @@ async fn http_request_statuses() {
 
     // Emit a response with an error and ensure it's counted.
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
+        labels::Route::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
         labels::HttpRsp {
             status: None,
             error: Some(labels::Error::Unknown),
@@ -82,7 +82,7 @@ async fn http_request_statuses() {
     // Emit a successful response with a body that fails and ensure that both
     // the status and error are recorded.
     let mixed = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute::new(parent_ref, route_ref, &Uri::default()),
+        labels::Route::new(parent_ref, route_ref, &Uri::default()),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: Some(labels::Error::Unknown),
@@ -124,7 +124,7 @@ async fn http_request_hostnames() {
 
     let get_counter = |host: Option<&'static str>, status: Option<http::StatusCode>| {
         metrics.get_statuses(&labels::Rsp(
-            labels::HttpRoute::new_with_name(
+            labels::Route::new_with_name(
                 parent_ref.clone(),
                 route_ref.clone(),
                 host.map(str::parse::<dns::Name>).map(Result::unwrap),
@@ -242,7 +242,11 @@ async fn grpc_request_statuses_ok() {
 
     // Send one request and ensure it's counted.
     let ok = metrics.get_statuses(&labels::Rsp(
-        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
+        labels::Route::new(
+            parent_ref.clone(),
+            route_ref.clone(),
+            &Uri::from_static(MOCK_GRPC_REQ_URI),
+        ),
         labels::GrpcRsp {
             status: Some(tonic::Code::Ok),
             error: None,
@@ -284,7 +288,11 @@ async fn grpc_request_statuses_not_found() {
     // Send another request and ensure it's counted with a different response
     // status.
     let not_found = metrics.get_statuses(&labels::Rsp(
-        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
+        labels::Route::new(
+            parent_ref.clone(),
+            route_ref.clone(),
+            &Uri::from_static(MOCK_GRPC_REQ_URI),
+        ),
         labels::GrpcRsp {
             status: Some(tonic::Code::NotFound),
             error: None,
@@ -324,7 +332,11 @@ async fn grpc_request_statuses_error_response() {
     let (mut svc, mut handle) = mock_grpc_route_metrics(&metrics, &parent_ref, &route_ref);
 
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
+        labels::Route::new(
+            parent_ref.clone(),
+            route_ref.clone(),
+            &Uri::from_static(MOCK_GRPC_REQ_URI),
+        ),
         labels::GrpcRsp {
             status: None,
             error: Some(labels::Error::Unknown),
@@ -354,7 +366,11 @@ async fn grpc_request_statuses_error_body() {
     let (mut svc, mut handle) = mock_grpc_route_metrics(&metrics, &parent_ref, &route_ref);
 
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::GrpcRoute(parent_ref.clone(), route_ref.clone()),
+        labels::Route::new(
+            parent_ref.clone(),
+            route_ref.clone(),
+            &Uri::from_static(MOCK_GRPC_REQ_URI),
+        ),
         labels::GrpcRsp {
             status: None,
             error: Some(labels::Error::Unknown),
@@ -383,6 +399,8 @@ async fn grpc_request_statuses_error_body() {
 }
 
 // === Utils ===
+
+const MOCK_GRPC_REQ_URI: &str = "http://host/svc/method";
 
 pub fn mock_http_route_metrics(
     metrics: &RequestMetrics<LabelHttpRouteRsp>,
@@ -433,7 +451,7 @@ pub fn mock_grpc_route_metrics(
 ) -> (svc::BoxHttp, Handle) {
     let req = http::Request::builder()
         .method("POST")
-        .uri("http://host/svc/method")
+        .uri(MOCK_GRPC_REQ_URI)
         .body(())
         .unwrap();
     let (r#match, _) = policy::route::find(
