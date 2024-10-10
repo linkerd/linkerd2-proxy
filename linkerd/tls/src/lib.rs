@@ -7,7 +7,7 @@ pub mod server;
 
 pub use self::{
     client::{Client, ClientTls, ConditionalClientTls, ConnectMeta, NoClientTls, ServerId},
-    detect_sni::NewDetectSni,
+    detect_sni::{DetectSni, NewDetectSni},
     server::{ClientId, ConditionalServerTls, NewDetectTls, NoServerTls, ServerTls},
 };
 

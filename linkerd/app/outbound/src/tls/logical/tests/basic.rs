@@ -35,7 +35,7 @@ async fn routes() {
         .map_stack(|config, _rt, stk| {
             stk.push_new_idle_cached(config.discovery_idle_timeout)
                 .push_map_target(|(sni, parent): (ServerName, _)| Tls { sni, parent })
-                .push(NewDetectSni::layer(DetectParams))
+                .push(NewDetectSni::layer(Duration::from_secs(1)))
                 .arc_new_clone_tcp()
         })
         .into_inner();

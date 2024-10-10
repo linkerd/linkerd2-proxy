@@ -1,10 +1,10 @@
 use crate::{
-    server::{detect_sni, DetectIo, Timeout},
+    server::{detect_sni, DetectIo},
     ServerName,
 };
 use linkerd_error::Error;
 use linkerd_io as io;
-use linkerd_stack::{layer, ExtractParam, NewService, Service, ServiceExt};
+use linkerd_stack::{layer, NewService, Service, ServiceExt};
 use std::{
     future::Future,
     pin::Pin,
@@ -23,44 +23,47 @@ pub struct SniDetectionTimeoutError;
 pub struct NoSniFoundError;
 
 #[derive(Clone, Debug)]
-pub struct NewDetectSni<P, N> {
-    params: P,
+pub struct NewDetectSni<N> {
     inner: N,
+    timeout: time::Duration,
 }
 
 #[derive(Clone, Debug)]
 pub struct DetectSni<T, N> {
     target: T,
     inner: N,
-    timeout: Timeout,
+    timeout: time::Duration,
 }
 
-impl<P, N> NewDetectSni<P, N> {
-    pub fn new(params: P, inner: N) -> Self {
-        Self { inner, params }
+impl<N> NewDetectSni<N> {
+    fn new(timeout: time::Duration, inner: N) -> Self {
+        Self { inner, timeout }
     }
 
-    pub fn layer(params: P) -> impl layer::Layer<N, Service = Self> + Clone
-    where
-        P: Clone,
-    {
-        layer::mk(move |inner| Self::new(params.clone(), inner))
+    pub fn layer(timeout: time::Duration) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(timeout, inner))
     }
 }
 
-impl<T, P, N> NewService<T> for NewDetectSni<P, N>
+impl<T, N> NewService<T> for NewDetectSni<N>
 where
-    P: ExtractParam<Timeout, T> + Clone,
     N: Clone,
 {
     type Service = DetectSni<T, N>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let timeout = self.params.extract_param(&target);
-        DetectSni {
+        DetectSni::new(self.timeout, target, self.inner.clone())
+    }
+}
+
+// === impl DetectSni ===
+
+impl<T, N> DetectSni<T, N> {
+    fn new(timeout: time::Duration, target: T, inner: N) -> Self {
+        Self {
             target,
+            inner,
             timeout,
-            inner: self.inner.clone(),
         }
     }
 }
@@ -88,13 +91,12 @@ where
         let new_accept = self.inner.clone();
 
         // Detect the SNI from a ClientHello (or timeout).
-        let Timeout(timeout) = self.timeout;
-        let detect = time::timeout(timeout, detect_sni(io));
+        let detect = time::timeout(self.timeout, detect_sni(io));
         Box::pin(async move {
             let (sni, io) = detect.await.map_err(|_| SniDetectionTimeoutError)??;
             let sni = sni.ok_or(NoSniFoundError)?;
 
-            debug!("detected SNI: {:?}", sni);
+            debug!(?sni, "Detected TLS");
             let svc = new_accept.new_service((sni, target));
             svc.oneshot(io).await.map_err(Into::into)
         })

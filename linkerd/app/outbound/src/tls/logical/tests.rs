@@ -3,7 +3,6 @@ use crate::test_util::*;
 use linkerd_app_core::{
     io,
     svc::{self, NewService},
-    tls,
     transport::addrs::*,
     Result,
 };
@@ -41,9 +40,6 @@ struct MockServer {
 struct ConnectTcp {
     srvs: Arc<Mutex<HashMap<SocketAddr, MockServer>>>,
 }
-
-#[derive(Clone)]
-struct DetectParams;
 
 // === impl MockServer ===
 
@@ -116,15 +112,6 @@ impl<T: svc::Param<Remote<ServerAddr>>> svc::Service<T> for ConnectTcp {
         assert_eq!(addr, mock.addr);
         let local = Local(ClientAddr(addr));
         future::ok::<_, support::io::Error>((mock.io.build(), local))
-    }
-}
-
-// === impl DetectParams ===
-
-impl<T> svc::ExtractParam<tls::server::Timeout, T> for DetectParams {
-    #[inline]
-    fn extract_param(&self, _: &T) -> tls::server::Timeout {
-        tls::server::Timeout(Duration::from_secs(1))
     }
 }
 
