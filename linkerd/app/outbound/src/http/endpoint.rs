@@ -7,6 +7,7 @@ use super::{
 use crate::{tcp::tagged_transport, Outbound};
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
+    metrics::OutboundZoneLocality,
     proxy::{api_resolve::ProtocolHint, http, tap},
     svc::{self, ExtractParam},
     tls,
@@ -234,6 +235,13 @@ impl<T: svc::Param<Option<http::AuthorityOverride>>> svc::Param<Option<http::Aut
 impl<T: svc::Param<transport::labels::Key>> svc::Param<transport::labels::Key> for Connect<T> {
     #[inline]
     fn param(&self) -> transport::labels::Key {
+        self.inner.param()
+    }
+}
+
+impl<T: svc::Param<OutboundZoneLocality>> svc::Param<OutboundZoneLocality> for Connect<T> {
+    #[inline]
+    fn param(&self) -> OutboundZoneLocality {
         self.inner.param()
     }
 }

@@ -9,14 +9,13 @@
 pub use crate::transport::labels::{TargetAddr, TlsAccept};
 use crate::{
     classify::Class,
-    control, http_metrics, opencensus, opentelemetry, profiles, stack_metrics,
-    svc::Param,
-    tls,
+    control, http_metrics, opencensus, opentelemetry, profiles, proxy, stack_metrics, svc, tls,
     transport::{self, labels::TlsConnect},
 };
 use linkerd_addr::Addr;
 pub use linkerd_metrics::*;
 use linkerd_proxy_server_policy as policy;
+use prometheus_client::encoding::EncodeLabelValue;
 use std::{
     fmt::{self, Write},
     net::SocketAddr,
@@ -102,7 +101,30 @@ pub struct OutboundEndpointLabels {
     pub server_id: tls::ConditionalClientTls,
     pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
+    pub zone_locality: OutboundZoneLocality,
     pub target_addr: SocketAddr,
+}
+
+#[derive(Debug, Copy, Clone, Default, Hash, Eq, PartialEq, EncodeLabelValue)]
+pub enum OutboundZoneLocality {
+    #[default]
+    Unknown,
+    Local,
+    Remote,
+}
+
+impl OutboundZoneLocality {
+    pub fn new(metadata: &proxy::api_resolve::Metadata) -> Self {
+        if let Some(is_zone_local) = metadata.is_zone_local() {
+            if is_zone_local {
+                OutboundZoneLocality::Local
+            } else {
+                OutboundZoneLocality::Remote
+            }
+        } else {
+            OutboundZoneLocality::Unknown
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -217,7 +239,7 @@ impl Metrics {
 
 // === impl CtlLabels ===
 
-impl Param<ControlLabels> for control::ControlAddr {
+impl svc::Param<ControlLabels> for control::ControlAddr {
     fn param(&self) -> ControlLabels {
         ControlLabels {
             addr: self.addr.clone(),
@@ -358,6 +380,12 @@ impl FmtLabels for RouteAuthzLabels {
             self.authz.kind(),
             self.authz.name(),
         )
+    }
+}
+
+impl svc::Param<OutboundZoneLocality> for OutboundEndpointLabels {
+    fn param(&self) -> OutboundZoneLocality {
+        self.zone_locality
     }
 }
 
