@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod client;
-pub mod detect_sni;
+mod detect_sni;
 pub mod server;
 
 pub use self::{
