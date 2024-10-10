@@ -146,7 +146,7 @@ where
                 // Configure a classifier to use in the endpoint stack.
                 // TODO(ver) move this into NewSetExtensions?
                 .push(classify::NewClassify::layer())
-                .push(svc::NewMapErr::<_, _, _>::layer_with(|rt: &Self| {
+                .push(svc::NewMapErr::layer_with(|rt: &Self| {
                     let route = rt.params.route_ref.clone();
                     move |source| RouteError {
                         route: route.clone(),
