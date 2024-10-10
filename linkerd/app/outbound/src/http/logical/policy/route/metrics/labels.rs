@@ -10,7 +10,7 @@ use crate::{BackendRef, ParentRef, RouteRef};
 pub struct Route {
     parent: ParentRef,
     route: RouteRef,
-    name: Option<dns::Name>,
+    hostname: Option<dns::Name>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -63,7 +63,7 @@ pub enum Error {
 
 impl Route {
     pub fn new(parent: ParentRef, route: RouteRef, uri: &http::uri::Uri) -> Self {
-        let name = uri
+        let hostname = uri
             .host()
             .map(str::as_bytes)
             .map(dns::Name::try_from_ascii)
@@ -72,7 +72,7 @@ impl Route {
         Self {
             parent,
             route,
-            name,
+            hostname,
         }
     }
 
@@ -80,12 +80,12 @@ impl Route {
     pub(super) fn new_with_name(
         parent: ParentRef,
         route: RouteRef,
-        name: Option<dns::Name>,
+        hostname: Option<dns::Name>,
     ) -> Self {
         Self {
             parent,
             route,
-            name,
+            hostname,
         }
     }
 }
@@ -95,12 +95,12 @@ impl EncodeLabelSetMut for Route {
         let Self {
             parent,
             route,
-            name,
+            hostname,
         } = self;
 
         parent.encode_label_set(enc)?;
         route.encode_label_set(enc)?;
-        ("hostname", name.as_deref()).encode(enc.encode_label())?;
+        ("hostname", hostname.as_deref()).encode(enc.encode_label())?;
 
         Ok(())
     }
