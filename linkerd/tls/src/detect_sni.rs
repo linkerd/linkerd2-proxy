@@ -4,7 +4,7 @@ use crate::{
 };
 use linkerd_error::Error;
 use linkerd_io as io;
-use linkerd_stack::{layer, ExtractParam, InsertParam, NewService, Service, ServiceExt};
+use linkerd_stack::{layer, ExtractParam, NewService, Service, ServiceExt};
 use std::{
     future::Future,
     pin::Pin,
@@ -29,11 +29,10 @@ pub struct NewDetectSni<P, N> {
 }
 
 #[derive(Clone, Debug)]
-pub struct DetectSni<T, P, N> {
+pub struct DetectSni<T, N> {
     target: T,
     inner: N,
     timeout: Timeout,
-    params: P,
 }
 
 impl<P, N> NewDetectSni<P, N> {
@@ -54,7 +53,7 @@ where
     P: ExtractParam<Timeout, T> + Clone,
     N: Clone,
 {
-    type Service = DetectSni<T, P, N>;
+    type Service = DetectSni<T, N>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let timeout = self.params.extract_param(&target);
@@ -62,18 +61,15 @@ where
             target,
             timeout,
             inner: self.inner.clone(),
-            params: self.params.clone(),
         }
     }
 }
 
-impl<T, P, I, N, S> Service<I> for DetectSni<T, P, N>
+impl<T, I, N, S> Service<I> for DetectSni<T, N>
 where
     T: Clone + Send + Sync + 'static,
-    P: InsertParam<ServerName, T> + Clone + Send + Sync + 'static,
-    P::Target: Send + 'static,
     I: io::AsyncRead + io::Peek + io::AsyncWrite + Send + Sync + Unpin + 'static,
-    N: NewService<P::Target, Service = S> + Clone + Send + 'static,
+    N: NewService<(ServerName, T), Service = S> + Clone + Send + 'static,
     S: Service<DetectIo<I>> + Send,
     S::Error: Into<Error>,
     S::Future: Send,
@@ -90,7 +86,6 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         let target = self.target.clone();
         let new_accept = self.inner.clone();
-        let params = self.params.clone();
 
         // Detect the SNI from a ClientHello (or timeout).
         let Timeout(timeout) = self.timeout;
@@ -100,7 +95,7 @@ where
             let sni = sni.ok_or(NoSniFoundError)?;
 
             debug!("detected SNI: {:?}", sni);
-            let svc = new_accept.new_service(params.insert_param(sni, target));
+            let svc = new_accept.new_service((sni, target));
             svc.oneshot(io).await.map_err(Into::into)
         })
     }

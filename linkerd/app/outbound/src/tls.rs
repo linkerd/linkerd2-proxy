@@ -135,15 +135,6 @@ impl<T> svc::ExtractParam<tls::server::Timeout, T> for DetectParams {
     }
 }
 
-impl<T> svc::InsertParam<ServerName, T> for DetectParams {
-    type Target = (ServerName, T);
-
-    #[inline]
-    fn insert_param(&self, sni: ServerName, target: T) -> Self::Target {
-        (sni, target)
-    }
-}
-
 // === impl TlsMetrics ===
 
 impl TlsMetrics {

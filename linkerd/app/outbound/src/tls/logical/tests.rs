@@ -128,15 +128,6 @@ impl<T> svc::ExtractParam<tls::server::Timeout, T> for DetectParams {
     }
 }
 
-impl<T> svc::InsertParam<tls::ServerName, T> for DetectParams {
-    type Target = (tls::ServerName, T);
-
-    #[inline]
-    fn insert_param(&self, sni: tls::ServerName, target: T) -> Self::Target {
-        (sni, target)
-    }
-}
-
 fn spawn_io(
     client_hello: Vec<u8>,
 ) -> (
