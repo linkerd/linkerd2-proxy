@@ -384,6 +384,7 @@ async fn grpc_request_statuses_error_body() {
 
 // === Utils ===
 
+// XXX(kate): this is where we mock an http service.
 pub fn mock_http_route_metrics(
     metrics: &RequestMetrics<LabelHttpRouteRsp>,
     parent_ref: &crate::ParentRef,

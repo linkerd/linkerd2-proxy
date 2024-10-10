@@ -17,8 +17,7 @@ use tokio::time;
 #[derive(Copy, Clone, Debug)]
 pub struct IsRetry(());
 
-pub type NewHttpRetry<F, N> =
-    retry::NewHttpRetry<RetryPolicy, RouteLabels, F, RetryLabelExtract, N>;
+pub type NewHttpRetry<F, N> = retry::NewHttpRetry<RetryPolicy, RouteLabels, F, N>;
 
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
@@ -30,9 +29,6 @@ pub struct RetryPolicy {
     pub max_request_bytes: usize,
     pub backoff: Option<ExponentialBackoff>,
 }
-
-#[derive(Clone, Debug)]
-pub struct RetryLabelExtract(pub ParentRef, pub RouteRef);
 
 pub type RouteRetryMetrics = retry::MetricFamilies<RouteLabels>;
 
@@ -81,6 +77,7 @@ impl retry::Policy for RetryPolicy {
         false
     }
 
+    // XXX(kate): this sets the retry extensions.
     fn set_extensions(&self, dst: &mut ::http::Extensions, src: &::http::Extensions) {
         let attempt = if let Some(extensions::Attempt(n)) = src.get::<extensions::Attempt>() {
             n.saturating_add(1)
@@ -89,6 +86,10 @@ impl retry::Policy for RetryPolicy {
             2.try_into().unwrap()
         };
         dst.insert(extensions::Attempt(attempt));
+
+        if let Some(name) = src.get::<extensions::DnsName>().cloned() {
+            dst.insert(name);
+        }
 
         if let Some(mut timeouts) = src.get::<http::StreamTimeouts>().cloned() {
             // If retries are exhausted, remove the response headers timeout,

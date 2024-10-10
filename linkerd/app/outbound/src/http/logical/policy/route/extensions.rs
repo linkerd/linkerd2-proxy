@@ -1,5 +1,5 @@
 use super::retry::RetryPolicy;
-use linkerd_app_core::{config::ExponentialBackoff, proxy::http, svc};
+use linkerd_app_core::{config::ExponentialBackoff, dns, proxy::http, svc};
 use linkerd_proxy_client_policy as policy;
 use std::task::{Context, Poll};
 use tokio::time;
@@ -15,6 +15,12 @@ pub struct Params {
 // attempted.
 #[derive(Clone, Debug)]
 pub struct Attempt(pub std::num::NonZeroU16);
+
+// XXX(kate); our new request extension.
+/// A request extension that holds the DNS [`Name`][dns::Name] in the request URI.
+///
+/// This will only be set if the request URI targets an authority with a valid domain name.
+pub struct DnsName(Option<dns::Name>);
 
 #[derive(Clone, Debug)]
 pub struct NewSetExtensions<N> {
@@ -86,6 +92,10 @@ where
 
         let _prior = req.extensions_mut().insert(Attempt(1.try_into().unwrap()));
         debug_assert!(_prior.is_none(), "Attempts must only be configured once");
+
+        let name = parse_name(req.uri());
+        let _extract = req.extensions_mut().insert(name);
+        debug_assert!(_extract.is_none(), "DnsName must only be configured once");
 
         self.inner.call(req)
     }
@@ -169,6 +179,16 @@ impl<S> SetExtensions<S> {
 
         timeouts
     }
+}
+
+fn parse_name(uri: &http::uri::Uri) -> DnsName {
+    let name = uri
+        .host()
+        .map(str::as_bytes)
+        .map(dns::Name::try_from_ascii)
+        .and_then(Result::ok);
+
+    DnsName(name)
 }
 
 fn parse_http_conditions(s: &str) -> Option<policy::http::StatusRanges> {

@@ -230,6 +230,7 @@ where
             return future::Either::Left(self.inner.call(req));
         };
 
+        // XXX(kate): this is where we extract labels out of the request.
         let params = policy.param();
         let labels = self.extract.extract_param(&req);
         let metrics = self.metrics.metrics(&labels);
