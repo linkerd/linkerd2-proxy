@@ -1,5 +1,7 @@
 //! Prometheus label types.
-use linkerd_app_core::{errors, metrics::prom::EncodeLabelSetMut, proxy::http, Error as BoxError};
+use linkerd_app_core::{
+    dns, errors, metrics::prom::EncodeLabelSetMut, proxy::http, Error as BoxError,
+};
 use prometheus_client::encoding::*;
 
 use crate::{BackendRef, ParentRef, RouteRef};
@@ -8,7 +10,7 @@ use crate::{BackendRef, ParentRef, RouteRef};
 pub struct HttpRoute {
     parent: ParentRef,
     route: RouteRef,
-    host: Option<String>,
+    name: Option<dns::Name>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -59,18 +61,30 @@ pub enum Error {
 // === impl HttpRoute ===
 
 impl HttpRoute {
-    pub fn new(parent: ParentRef, route: RouteRef, host: Option<&str>) -> Self {
-        let host = match host.and_then(|h| url::Host::parse(h).ok()) {
-            Some(url::Host::Domain(s)) => Some(s),
-            // Refrain from emitting label values for url's whose host component are a IPv4
-            // or IPv6 address, to help prevent label cardinality from becoming too noisy.
-            None | Some(url::Host::Ipv4(_) | url::Host::Ipv6(_)) => None,
-        };
+    pub fn new(parent: ParentRef, route: RouteRef, uri: &http::uri::Uri) -> Self {
+        let name = uri
+            .host()
+            .map(str::as_bytes)
+            .map(dns::Name::try_from_ascii)
+            .and_then(Result::ok);
 
         Self {
             parent,
             route,
-            host,
+            name,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_with_name(
+        parent: ParentRef,
+        route: RouteRef,
+        name: Option<dns::Name>,
+    ) -> Self {
+        Self {
+            parent,
+            route,
+            name,
         }
     }
 }
@@ -80,11 +94,12 @@ impl EncodeLabelSetMut for HttpRoute {
         let Self {
             parent,
             route,
-            host,
+            name,
         } = self;
+
         parent.encode_label_set(enc)?;
         route.encode_label_set(enc)?;
-        ("hostname", host.as_deref()).encode(enc.encode_label())?;
+        ("hostname", name.as_deref()).encode(enc.encode_label())?;
 
         Ok(())
     }

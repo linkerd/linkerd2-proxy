@@ -4,7 +4,14 @@ use super::{
     test_util::*,
     LabelGrpcRouteRsp, LabelHttpRouteRsp, RequestMetrics,
 };
-use linkerd_app_core::svc::{self, http::BoxBody, Layer, NewService};
+use linkerd_app_core::{
+    dns,
+    svc::{
+        self,
+        http::{uri::Uri, BoxBody},
+        Layer, NewService,
+    },
+};
 use linkerd_proxy_client_policy as policy;
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -18,7 +25,7 @@ async fn http_request_statuses() {
 
     // Send one request and ensure it's counted.
     let ok = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), None),
+        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: None,
@@ -37,7 +44,7 @@ async fn http_request_statuses() {
     // Send another request and ensure it's counted with a different response
     // status.
     let no_content = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), None),
+        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
         labels::HttpRsp {
             status: Some(http::StatusCode::NO_CONTENT),
             error: None,
@@ -61,7 +68,7 @@ async fn http_request_statuses() {
 
     // Emit a response with an error and ensure it's counted.
     let unknown = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), None),
+        labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), &Uri::default()),
         labels::HttpRsp {
             status: None,
             error: Some(labels::Error::Unknown),
@@ -75,7 +82,7 @@ async fn http_request_statuses() {
     // Emit a successful response with a body that fails and ensure that both
     // the status and error are recorded.
     let mixed = metrics.get_statuses(&labels::Rsp(
-        labels::HttpRoute::new(parent_ref, route_ref, None),
+        labels::HttpRoute::new(parent_ref, route_ref, &Uri::default()),
         labels::HttpRsp {
             status: Some(http::StatusCode::OK),
             error: Some(labels::Error::Unknown),
@@ -115,9 +122,13 @@ async fn http_request_hostnames() {
     let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
     let (mut svc, mut handle) = mock_http_route_metrics(&metrics, &parent_ref, &route_ref);
 
-    let get_counter = |host: Option<&str>, status: Option<http::StatusCode>| {
+    let get_counter = |host: Option<&'static str>, status: Option<http::StatusCode>| {
         metrics.get_statuses(&labels::Rsp(
-            labels::HttpRoute::new(parent_ref.clone(), route_ref.clone(), host),
+            labels::HttpRoute::new_with_name(
+                parent_ref.clone(),
+                route_ref.clone(),
+                host.map(str::parse::<dns::Name>).map(Result::unwrap),
+            ),
             labels::HttpRsp {
                 status,
                 error: None,
