@@ -47,21 +47,19 @@ pub struct Params {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewHttpRetry<P, L: Clone, X, ReqX, N> {
+pub struct NewHttpRetry<P, L: Clone, N> {
     inner: N,
     metrics: MetricFamilies<L>,
-    extract: X,
-    _marker: PhantomData<fn() -> (ReqX, P)>,
+    _marker: PhantomData<fn() -> P>,
 }
 
 /// A Retry middleware that attempts to extract a `P` typed request extension to
 /// instrument retries. When the request extension is not set, requests are not
 /// retried.
 #[derive(Clone, Debug)]
-pub struct HttpRetry<P, L: Clone, ReqX, S> {
+pub struct HttpRetry<P, S> {
     inner: S,
-    metrics: MetricFamilies<L>,
-    extract: ReqX,
+    metrics: Metrics,
     _marker: PhantomData<fn() -> P>,
 }
 
@@ -74,7 +72,7 @@ pub struct MetricFamilies<L: Clone> {
 }
 
 #[derive(Clone, Debug, Default)]
-struct Metrics {
+pub struct Metrics {
     requests: prom::Counter,
     successes: prom::Counter,
     limit_exceeded: prom::Counter,
@@ -84,10 +82,7 @@ struct Metrics {
 // === impl NewHttpRetry ===
 
 impl<P, L: Clone, X: Clone, ReqX, N> NewHttpRetry<P, L, X, ReqX, N> {
-    pub fn layer_via_mk(
-        extract: X,
-        metrics: MetricFamilies<L>,
-    ) -> impl tower::layer::Layer<N, Service = Self> + Clone {
+    pub fn layer_via(extract: X) -> impl tower::layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
             extract: extract.clone(),
@@ -97,14 +92,12 @@ impl<P, L: Clone, X: Clone, ReqX, N> NewHttpRetry<P, L, X, ReqX, N> {
     }
 }
 
-impl<T, P, L, X, ReqX, N> NewService<T> for NewHttpRetry<P, L, X, ReqX, N>
+impl<T, P, L, N> NewService<T> for NewHttpRetry<P, L, N>
 where
     P: Policy,
-    L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
-    X: Clone + ExtractParam<ReqX, T>,
     N: NewService<T>,
 {
-    type Service = HttpRetry<P, L, ReqX, N::Service>;
+    type Service = HttpRetry<P, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
         let Self {
@@ -195,13 +188,13 @@ where
 
 // === impl HttpRetry ===
 
-impl<P, L, ReqX, S> Service<http::Request<BoxBody>> for HttpRetry<P, L, ReqX, S>
+impl<P, L, ReqX, S> Service<http::Request<BoxBody>> for HttpRetry<P, S>
 where
     P: Policy,
     P: Param<Params>,
+    P: Param<Metrics>,
     P: Clone + Send + Sync + std::fmt::Debug + 'static,
     L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
-    ReqX: ExtractParam<L, http::Request<BoxBody>>,
     S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>
         + Clone
         + Send
@@ -232,8 +225,7 @@ where
 
         // XXX(kate): this is where we extract labels out of the request.
         let params = policy.param();
-        let labels = self.extract.extract_param(&req);
-        let metrics = self.metrics.metrics(&labels);
+        let metrics = policy.param();
 
         // Since this request is retryable, we need to setup the request body to
         // be buffered/cloneable. If the request body is too large to be cloned,

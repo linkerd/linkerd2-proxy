@@ -28,6 +28,7 @@ pub struct RetryPolicy {
     pub max_retries: usize,
     pub max_request_bytes: usize,
     pub backoff: Option<ExponentialBackoff>,
+    // XXX(kate,oliver): this is where we would hang a `Metrics` with its labels
 }
 
 pub type RouteRetryMetrics = retry::MetricFamilies<RouteLabels>;
@@ -43,6 +44,7 @@ impl svc::Param<retry::Params> for RetryPolicy {
         }
     }
 }
+// XXX(kate,oliver): this is where we would hang a `Metrics` with its labels
 
 impl retry::Policy for RetryPolicy {
     type Future = Either<time::Sleep, Ready<()>>;
