@@ -1356,7 +1356,6 @@ dependencies = [
  "tower",
  "tower-test",
  "tracing",
- "url",
 ]
 
 [[package]]
