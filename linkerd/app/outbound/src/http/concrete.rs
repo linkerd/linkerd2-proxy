@@ -2,10 +2,14 @@
 //! and distributes HTTP requests among them.
 
 use super::{balance::EwmaConfig, client, handle_proxy_error_headers};
-use crate::{http, stack_labels, BackendRef, Outbound, ParentRef};
+use crate::{
+    http, stack_labels,
+    zone::{tcp_zone_labels, TcpZoneLabels},
+    BackendRef, Outbound, ParentRef,
+};
 use linkerd_app_core::{
     config::{ConnectConfig, QueueConfig},
-    metrics::{prefix_labels, EndpointLabels, OutboundEndpointLabels},
+    metrics::{prefix_labels, EndpointLabels, OutboundEndpointLabels, OutboundZoneLocality},
     profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
@@ -212,9 +216,22 @@ where
         OutboundEndpointLabels {
             authority: self.parent.param(),
             labels: prefix_labels("dst", self.metadata.labels().iter()),
+            zone_locality: self.param(),
             server_id: self.param(),
             target_addr: self.addr.into(),
         }
+    }
+}
+
+impl<T> svc::Param<OutboundZoneLocality> for Endpoint<T> {
+    fn param(&self) -> OutboundZoneLocality {
+        OutboundZoneLocality::new(&self.metadata)
+    }
+}
+
+impl<T> svc::Param<TcpZoneLabels> for Endpoint<T> {
+    fn param(&self) -> TcpZoneLabels {
+        tcp_zone_labels(self.param())
     }
 }
 

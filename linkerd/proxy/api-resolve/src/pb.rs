@@ -24,6 +24,16 @@ pub fn to_addr_meta(
         .chain(pb.metric_labels.iter())
         .map(|(k, v)| (k.clone(), v.clone()));
 
+    let zone_locality = pb.metric_labels.get("zone_locality").and_then(|locality| {
+        if locality.eq_ignore_ascii_case("local") {
+            Some(true)
+        } else if locality.eq_ignore_ascii_case("remote") {
+            Some(false)
+        } else {
+            None
+        }
+    });
+
     let mut proto_hint = ProtocolHint::Unknown;
     let mut tagged_transport_port = None;
     if let Some(hint) = pb.protocol_hint {
@@ -51,6 +61,7 @@ pub fn to_addr_meta(
         authority_override,
         pb.weight,
         http2,
+        zone_locality,
     );
     Some((addr, meta))
 }
@@ -206,8 +217,10 @@ fn to_http2_client_params(pb: Http2ClientParams) -> linkerd_http_h2::ClientParam
 #[cfg(test)]
 mod tests {
     use super::*;
-    use linkerd2_proxy_api::destination::tls_identity::{
-        DnsLikeIdentity, Strategy, UriLikeIdentity,
+    use linkerd2_proxy_api::{
+        destination::tls_identity::{DnsLikeIdentity, Strategy, UriLikeIdentity},
+        net::ip_address::Ip,
+        net::IpAddress,
     };
     use linkerd_identity as id;
 
@@ -392,5 +405,65 @@ mod tests {
                 ..Default::default()
             }),
         );
+    }
+
+    #[test]
+    fn zone_locality() {
+        let addr = WeightedAddr {
+            addr: Some(TcpAddress {
+                ip: Some(IpAddress {
+                    ip: Some(Ip::Ipv4(0)),
+                }),
+                port: 0,
+            }),
+            weight: 0,
+            metric_labels: Default::default(),
+            tls_identity: None,
+            protocol_hint: None,
+            authority_override: None,
+            http2: None,
+        };
+
+        let (_, meta) = to_addr_meta(addr.clone(), &HashMap::new()).unwrap();
+        assert_eq!(meta.is_zone_local(), None);
+
+        let (_, meta) = to_addr_meta(
+            WeightedAddr {
+                metric_labels: HashMap::from_iter([(
+                    "zone_locality".to_string(),
+                    "local".to_string(),
+                )]),
+                ..addr.clone()
+            },
+            &HashMap::new(),
+        )
+        .unwrap();
+        assert_eq!(meta.is_zone_local(), Some(true));
+
+        let (_, meta) = to_addr_meta(
+            WeightedAddr {
+                metric_labels: HashMap::from_iter([(
+                    "zone_locality".to_string(),
+                    "remote".to_string(),
+                )]),
+                ..addr.clone()
+            },
+            &HashMap::new(),
+        )
+        .unwrap();
+        assert_eq!(meta.is_zone_local(), Some(false));
+
+        let (_, meta) = to_addr_meta(
+            WeightedAddr {
+                metric_labels: HashMap::from_iter([(
+                    "zone_locality".to_string(),
+                    "garbage".to_string(),
+                )]),
+                ..addr.clone()
+            },
+            &HashMap::new(),
+        )
+        .unwrap();
+        assert_eq!(meta.is_zone_local(), None);
     }
 }
