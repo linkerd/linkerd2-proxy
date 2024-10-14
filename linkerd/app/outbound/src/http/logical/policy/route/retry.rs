@@ -17,8 +17,7 @@ use tokio::time;
 #[derive(Copy, Clone, Debug)]
 pub struct IsRetry(());
 
-pub type NewHttpRetry<F, N> =
-    retry::NewHttpRetry<RetryPolicy, RouteLabels, F, RetryLabelExtract, N>;
+pub type NewHttpRetry<N> = retry::NewHttpRetry<RetryPolicy, N>;
 
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
@@ -29,12 +28,11 @@ pub struct RetryPolicy {
     pub max_retries: usize,
     pub max_request_bytes: usize,
     pub backoff: Option<ExponentialBackoff>,
+
+    pub metrics: retry::Metrics,
 }
 
-#[derive(Clone, Debug)]
-pub struct RetryLabelExtract(pub ParentRef, pub RouteRef);
-
-pub type RouteRetryMetrics = retry::MetricFamilies<RouteLabels>;
+pub type RouteRetryMetricFamilies = retry::MetricFamilies<RouteLabels>;
 
 // === impl RetryPolicy ===
 
@@ -45,6 +43,12 @@ impl svc::Param<retry::Params> for RetryPolicy {
             max_request_bytes: self.max_request_bytes,
             backoff: self.backoff,
         }
+    }
+}
+
+impl svc::Param<retry::Metrics> for RetryPolicy {
+    fn param(&self) -> retry::Metrics {
+        self.metrics.clone()
     }
 }
 
@@ -161,16 +165,5 @@ impl RetryPolicy {
         // that they can be inspected. here.
 
         false
-    }
-}
-
-// === impl RetryLabelExtract ===
-
-impl<B> ExtractParam<RouteLabels, http::Request<B>> for RetryLabelExtract {
-    fn extract_param(&self, t: &http::Request<B>) -> RouteLabels {
-        let Self(parent, route) = self;
-        let uri = t.uri();
-
-        RouteLabels::new(parent.clone(), route.clone(), uri)
     }
 }

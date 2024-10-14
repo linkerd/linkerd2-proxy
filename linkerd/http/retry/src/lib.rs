@@ -12,7 +12,7 @@ use linkerd_error::{Error, Result};
 use linkerd_exp_backoff::ExponentialBackoff;
 use linkerd_http_box::BoxBody;
 use linkerd_metrics::prom;
-use linkerd_stack::{layer, ExtractParam, NewService, Param, Service};
+use linkerd_stack::{layer, NewService, Param, Service};
 use std::{
     future::Future,
     hash::Hash,
@@ -47,21 +47,17 @@ pub struct Params {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewHttpRetry<P, L: Clone, X, ReqX, N> {
+pub struct NewHttpRetry<P, N> {
     inner: N,
-    metrics: MetricFamilies<L>,
-    extract: X,
-    _marker: PhantomData<fn() -> (ReqX, P)>,
+    _marker: PhantomData<fn() -> P>,
 }
 
 /// A Retry middleware that attempts to extract a `P` typed request extension to
 /// instrument retries. When the request extension is not set, requests are not
 /// retried.
 #[derive(Clone, Debug)]
-pub struct HttpRetry<P, L: Clone, ReqX, S> {
+pub struct HttpRetry<P, S> {
     inner: S,
-    metrics: MetricFamilies<L>,
-    extract: ReqX,
     _marker: PhantomData<fn() -> P>,
 }
 
@@ -74,7 +70,7 @@ pub struct MetricFamilies<L: Clone> {
 }
 
 #[derive(Clone, Debug, Default)]
-struct Metrics {
+pub struct Metrics {
     requests: prom::Counter,
     successes: prom::Counter,
     limit_exceeded: prom::Counter,
@@ -83,45 +79,29 @@ struct Metrics {
 
 // === impl NewHttpRetry ===
 
-impl<P, L: Clone, X: Clone, ReqX, N> NewHttpRetry<P, L, X, ReqX, N> {
-    pub fn layer_via_mk(
-        extract: X,
-        metrics: MetricFamilies<L>,
-    ) -> impl tower::layer::Layer<N, Service = Self> + Clone {
+impl<P, N> NewHttpRetry<P, N> {
+    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
-            extract: extract.clone(),
-            metrics: metrics.clone(),
             _marker: PhantomData,
         })
     }
 }
 
-impl<T, P, L, X, ReqX, N> NewService<T> for NewHttpRetry<P, L, X, ReqX, N>
+impl<T, P, N> NewService<T> for NewHttpRetry<P, N>
 where
     P: Policy,
-    L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
-    X: Clone + ExtractParam<ReqX, T>,
     N: NewService<T>,
 {
-    type Service = HttpRetry<P, L, ReqX, N::Service>;
+    type Service = HttpRetry<P, N::Service>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let Self {
-            inner,
-            metrics,
-            extract,
-            _marker,
-        } = self;
+        let Self { inner, _marker } = self;
 
-        let metrics = metrics.clone();
-        let extract = extract.extract_param(&target);
         let svc = inner.new_service(target);
 
         HttpRetry {
             inner: svc,
-            metrics,
-            extract,
             _marker: PhantomData,
         }
     }
@@ -179,7 +159,7 @@ where
         }
     }
 
-    fn metrics(&self, labels: &L) -> Metrics {
+    pub fn metrics(&self, labels: &L) -> Metrics {
         let requests = (*self.requests.get_or_create(labels)).clone();
         let successes = (*self.successes.get_or_create(labels)).clone();
         let limit_exceeded = (*self.limit_exceeded.get_or_create(labels)).clone();
@@ -195,13 +175,12 @@ where
 
 // === impl HttpRetry ===
 
-impl<P, L, ReqX, S> Service<http::Request<BoxBody>> for HttpRetry<P, L, ReqX, S>
+impl<P, S> Service<http::Request<BoxBody>> for HttpRetry<P, S>
 where
     P: Policy,
     P: Param<Params>,
+    P: Param<Metrics>,
     P: Clone + Send + Sync + std::fmt::Debug + 'static,
-    L: Clone + std::fmt::Debug + Hash + Eq + Send + Sync + prom::encoding::EncodeLabelSet + 'static,
-    ReqX: ExtractParam<L, http::Request<BoxBody>>,
     S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>, Error = Error>
         + Clone
         + Send
@@ -230,9 +209,8 @@ where
             return future::Either::Left(self.inner.call(req));
         };
 
-        let params = policy.param();
-        let labels = self.extract.extract_param(&req);
-        let metrics = self.metrics.metrics(&labels);
+        let params: Params = policy.param();
+        let metrics: Metrics = policy.param();
 
         // Since this request is retryable, we need to setup the request body to
         // be buffered/cloneable. If the request body is too large to be cloned,

@@ -1,4 +1,4 @@
-use super::retry::RetryPolicy;
+use super::retry::{RetryPolicy, RouteRetryMetricFamilies};
 use linkerd_app_core::{config::ExponentialBackoff, proxy::http, svc};
 use linkerd_proxy_client_policy as policy;
 use std::task::{Context, Poll};
@@ -7,6 +7,7 @@ use tokio::time;
 #[derive(Clone, Debug)]
 pub struct Params {
     pub retry: Option<RetryPolicy>,
+    pub retry_metric_families: RouteRetryMetricFamilies,
     pub timeouts: policy::http::Timeouts,
     pub allow_l5d_request_headers: bool,
 }
@@ -65,6 +66,8 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+        let (mut parts, body) = req.into_parts();
+
         let retry = self.configure_retry(req.headers_mut());
 
         // Ensure that we get response headers within the retry timeout. Note
@@ -87,6 +90,7 @@ where
         let _prior = req.extensions_mut().insert(Attempt(1.try_into().unwrap()));
         debug_assert!(_prior.is_none(), "Attempts must only be configured once");
 
+        let req = http::Request::from_parts(parts, body);
         self.inner.call(req)
     }
 }
@@ -128,6 +132,7 @@ impl<S> SetExtensions<S> {
             (retryable_http_statuses, retryable_grpc_statuses, retry_limit, timeout) => {
                 Some(RetryPolicy {
                     timeout,
+                    metrics: self.metrics,
                     retryable_http_statuses,
                     retryable_grpc_statuses,
                     max_retries: retry_limit.unwrap_or(1),
