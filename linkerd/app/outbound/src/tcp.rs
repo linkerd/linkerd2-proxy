@@ -1,3 +1,4 @@
+pub use self::connect::Connect;
 use crate::Outbound;
 use linkerd_app_core::{
     io, svc,
@@ -8,9 +9,6 @@ use linkerd_app_core::{
 mod connect;
 mod endpoint;
 pub mod tagged_transport;
-
-pub use self::connect::Connect;
-pub use linkerd_app_core::proxy::tcp::Forward;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Accept {

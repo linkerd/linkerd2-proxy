@@ -27,6 +27,7 @@ pub struct Metadata {
     authority_override: Option<Authority>,
 
     http2: HTTP2ClientParams,
+    is_zone_local: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -53,11 +54,13 @@ impl Default for Metadata {
             tagged_transport_port: None,
             protocol_hint: ProtocolHint::Unknown,
             http2: HTTP2ClientParams::default(),
+            is_zone_local: None,
         }
     }
 }
 
 impl Metadata {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         labels: impl IntoIterator<Item = (String, String)>,
         protocol_hint: ProtocolHint,
@@ -66,6 +69,7 @@ impl Metadata {
         authority_override: Option<Authority>,
         weight: u32,
         http2: HTTP2ClientParams,
+        is_zone_local: Option<bool>,
     ) -> Self {
         Self {
             labels: labels.into_iter().collect::<BTreeMap<_, _>>().into(),
@@ -75,6 +79,7 @@ impl Metadata {
             authority_override,
             weight,
             http2,
+            is_zone_local,
         }
     }
 
@@ -85,6 +90,10 @@ impl Metadata {
     /// Returns the endpoint's labels from the destination service, if it has them.
     pub fn labels(&self) -> Labels {
         self.labels.clone()
+    }
+
+    pub fn is_zone_local(&self) -> Option<bool> {
+        self.is_zone_local
     }
 
     pub fn protocol_hint(&self) -> ProtocolHint {
