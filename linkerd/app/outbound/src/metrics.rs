@@ -38,6 +38,7 @@ pub(crate) struct PromMetrics {
     pub(crate) http: crate::http::HttpMetrics,
     pub(crate) opaq: crate::opaq::OpaqMetrics,
     pub(crate) tls: crate::tls::TlsMetrics,
+    pub(crate) zone: crate::zone::TcpZoneMetrics,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -48,7 +49,7 @@ pub struct BalancerMetricsParams<K>(balance::MetricFamilies<K>);
 
 struct ScopedKey<'a, 'b>(&'a str, &'b str);
 
-// === impl BalancerMetricsPaarams ===
+// === impl BalancerMetricsParams ===
 
 impl<K> BalancerMetricsParams<K>
 where
@@ -81,6 +82,7 @@ where
         Self(balance::MetricFamilies::default())
     }
 }
+
 // === impl PromMetrics ===
 
 impl PromMetrics {
@@ -90,10 +92,15 @@ impl PromMetrics {
         let http = crate::http::HttpMetrics::register(registry);
 
         let opaq = crate::opaq::OpaqMetrics::register(registry.sub_registry_with_prefix("tcp"));
-
+        let zone = crate::zone::TcpZoneMetrics::register(registry.sub_registry_with_prefix("tcp"));
         let tls = crate::tls::TlsMetrics::register(registry.sub_registry_with_prefix("tls"));
 
-        Self { http, opaq, tls }
+        Self {
+            http,
+            opaq,
+            tls,
+            zone,
+        }
     }
 }
 

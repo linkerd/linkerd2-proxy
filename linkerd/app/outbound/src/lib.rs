@@ -47,6 +47,7 @@ pub mod tcp;
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
 pub mod tls;
+mod zone;
 
 pub use self::discover::{spawn_synthesized_profile_policy, synthesize_forward_policy, Discovery};
 use self::metrics::OutboundMetrics;

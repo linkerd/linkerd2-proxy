@@ -1,5 +1,5 @@
 use super::{tagged_transport::TaggedTransport, *};
-use crate::ConnectMeta;
+use crate::{zone::TcpZoneLabels, ConnectMeta};
 use linkerd_app_core::{proxy::http, tls, transport_header::SessionProtocol};
 
 impl<C> Outbound<C> {
@@ -22,6 +22,7 @@ impl<C> Outbound<C> {
         T: svc::Param<Option<http::AuthorityOverride>>,
         T: svc::Param<Option<SessionProtocol>>,
         T: svc::Param<transport::labels::Key>,
+        T: svc::Param<TcpZoneLabels>,
         // Connector stack.
         C: svc::MakeConnection<Connect, Metadata = Local<ClientAddr>, Error = io::Error>,
         C: Clone + Send + 'static,
@@ -44,6 +45,9 @@ impl<C> Outbound<C> {
                 .push(svc::stack::BoxFuture::layer())
                 .push(transport::metrics::Client::layer(
                     rt.metrics.proxy.transport.clone(),
+                ))
+                .push(transport::metrics::zone::client::ZoneMetricsClient::layer(
+                    rt.metrics.prom.zone.clone(),
                 ))
         })
     }
