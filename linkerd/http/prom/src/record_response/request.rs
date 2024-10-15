@@ -72,6 +72,9 @@ where
     pub fn get_statuses(&self, labels: &StatL) -> Counter {
         (*self.statuses.get_or_create(labels)).clone()
     }
+
+    // TODO(kate): it'd be nice if we could avoid creating a time series if it does not exist,
+    // so that tests can confirm that certain label sets do not exist within the family.
 }
 
 impl<DurL, StatL> Default for RequestMetrics<DurL, StatL>

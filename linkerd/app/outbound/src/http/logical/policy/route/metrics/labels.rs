@@ -1,11 +1,17 @@
 //! Prometheus label types.
-use linkerd_app_core::{errors, metrics::prom::EncodeLabelSetMut, proxy::http, Error as BoxError};
+use linkerd_app_core::{
+    dns, errors, metrics::prom::EncodeLabelSetMut, proxy::http, Error as BoxError,
+};
 use prometheus_client::encoding::*;
 
 use crate::{BackendRef, ParentRef, RouteRef};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Route(pub ParentRef, pub RouteRef);
+pub struct Route {
+    parent: ParentRef,
+    route: RouteRef,
+    hostname: Option<dns::Name>,
+}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RouteBackend(pub ParentRef, pub RouteRef, pub BackendRef);
@@ -52,17 +58,47 @@ pub enum Error {
 
 // === impl Route ===
 
-impl From<(ParentRef, RouteRef)> for Route {
-    fn from((parent, route): (ParentRef, RouteRef)) -> Self {
-        Self(parent, route)
+impl Route {
+    pub fn new(parent: ParentRef, route: RouteRef, uri: &http::uri::Uri) -> Self {
+        let hostname = uri
+            .host()
+            .map(str::as_bytes)
+            .map(dns::Name::try_from_ascii)
+            .and_then(Result::ok);
+
+        Self {
+            parent,
+            route,
+            hostname,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_with_name(
+        parent: ParentRef,
+        route: RouteRef,
+        hostname: Option<dns::Name>,
+    ) -> Self {
+        Self {
+            parent,
+            route,
+            hostname,
+        }
     }
 }
 
 impl EncodeLabelSetMut for Route {
     fn encode_label_set(&self, enc: &mut LabelSetEncoder<'_>) -> std::fmt::Result {
-        let Self(parent, route) = self;
+        let Self {
+            parent,
+            route,
+            hostname,
+        } = self;
+
         parent.encode_label_set(enc)?;
         route.encode_label_set(enc)?;
+        ("hostname", hostname.as_deref()).encode(enc.encode_label())?;
+
         Ok(())
     }
 }
