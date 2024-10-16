@@ -7,6 +7,7 @@ use http_body::Body;
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use linkerd_stack::{self as svc, layer::Layer, ExtractParam, NewService, Service};
+use std::{future::Future, pin::Pin};
 
 /// A [`NewService<T>`] that creates [`RecordBodyData`] services.
 #[derive(Clone, Debug)]
@@ -63,16 +64,14 @@ where
 impl<ReqB, RespB, S> Service<Request<ReqB>> for RecordBodyData<S>
 where
     S: Service<Request<ReqB>, Response = Response<RespB>>,
+    S::Future: Send + 'static,
     RespB: Body + Send + 'static,
     RespB::Data: Send + 'static,
     RespB::Error: Into<Error>,
 {
     type Response = Response<BoxBody>;
     type Error = S::Error;
-    type Future = futures::future::MapOk<
-        S::Future,
-        Box<dyn FnOnce(Response<RespB>) -> Self::Response + Send + 'static>,
-    >;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     #[inline]
     fn poll_ready(
@@ -83,13 +82,13 @@ where
     }
 
     fn call(&mut self, req: Request<ReqB>) -> Self::Future {
-        use futures::TryFutureExt;
+        use futures::{FutureExt, TryFutureExt};
 
         let Self { inner, metrics } = self;
         let metrics = metrics.clone();
         let instrument = Box::new(|resp| Self::instrument_response(resp, metrics));
 
-        inner.call(req).map_ok(instrument)
+        inner.call(req).map_ok(instrument).boxed()
     }
 }
 
