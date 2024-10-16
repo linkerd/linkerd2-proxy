@@ -1,4 +1,4 @@
-use crate::policy::AllowPolicy;
+use crate::policy::{self, AllowPolicy};
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     svc::{self, ServiceExt},
@@ -47,7 +47,6 @@ where
     type Service = HttpLocalRateLimitService<T, N>;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let client = target.param();
         let tls = target.param();
         let policy: AllowPolicy = target.param();
         HttpLocalRateLimitService {
@@ -62,7 +61,7 @@ where
 impl<B, T, N, S> svc::Service<::http::Request<B>> for HttpLocalRateLimitService<T, N>
 where
     T: Clone,
-    N: svc::NewService<(HttpRoutePermit, T), Service = S>,
+    N: svc::NewService<(policy::HttpRoutePermit, T), Service = S>,
     S: svc::Service<::http::Request<B>>,
     S::Error: Into<Error>,
 {
@@ -70,11 +69,11 @@ where
     type Error = Error;
     type Future = future::Either<
         future::ErrInto<svc::stack::Oneshot<S, ::http::Request<B>>, Error>,
-        future::Ready<Result<Self::Response>>,
+        future::Ready<Result<Self::Response, Error>>,
     >;
 
     #[inline]
-    fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<()>> {
+    fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), Error>> {
         task::Poll::Ready(Ok(()))
     }
 
