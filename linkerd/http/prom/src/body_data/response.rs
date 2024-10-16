@@ -74,6 +74,7 @@ where
         Box<dyn FnOnce(Response<RespB>) -> Self::Response + Send + 'static>,
     >;
 
+    #[inline]
     fn poll_ready(
         &mut self,
         cx: &mut std::task::Context<'_>,
