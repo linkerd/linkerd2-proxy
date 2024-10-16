@@ -63,6 +63,7 @@ where
         Poll::Ready(data)
     }
 
+    #[inline]
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -70,10 +71,12 @@ where
         self.project().inner.poll_trailers(cx)
     }
 
+    #[inline]
     fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }
 
+    #[inline]
     fn size_hint(&self) -> SizeHint {
         self.inner.size_hint()
     }
