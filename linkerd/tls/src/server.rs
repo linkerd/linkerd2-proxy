@@ -1,4 +1,5 @@
 mod client_hello;
+mod required_sni;
 
 use crate::{NegotiatedProtocol, ServerName};
 use bytes::BytesMut;
@@ -17,6 +18,8 @@ use std::{
 use thiserror::Error;
 use tokio::time::{self, Duration};
 use tracing::{debug, trace, warn};
+
+pub use self::required_sni::{NewDetectRequiredSni, NoSniFoundError, SniDetectionTimeoutError};
 
 /// Describes the authenticated identity of a remote client.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -65,6 +68,7 @@ pub struct NewDetectTls<L, P, N> {
     _local_identity: std::marker::PhantomData<fn() -> L>,
 }
 
+/// A param type used to indicate the timeout after which detection should fail.
 #[derive(Copy, Clone, Debug)]
 pub struct Timeout(pub Duration);
 

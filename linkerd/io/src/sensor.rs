@@ -1,4 +1,4 @@
-use crate::{IoSlice, PeerAddr, Poll};
+use crate::{IoSlice, Peek, PeerAddr, Poll};
 use futures::ready;
 use linkerd_errno::Errno;
 use pin_project::pin_project;
@@ -80,5 +80,12 @@ impl<T: AsyncRead + AsyncWrite, S: Sensor> AsyncWrite for SensorIo<T, S> {
 impl<T: PeerAddr, S> PeerAddr for SensorIo<T, S> {
     fn peer_addr(&self) -> Result<std::net::SocketAddr> {
         self.io.peer_addr()
+    }
+}
+
+#[async_trait::async_trait]
+impl<I: Peek + Send + Sync, S: Sensor + Sync> Peek for SensorIo<I, S> {
+    async fn peek(&self, buf: &mut [u8]) -> Result<usize> {
+        self.io.peek(buf).await
     }
 }

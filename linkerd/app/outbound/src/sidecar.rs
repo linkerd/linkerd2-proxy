@@ -1,7 +1,7 @@
 use crate::{
     http, opaq, policy,
     protocol::{self, Protocol},
-    Discovery, Outbound, ParentRef,
+    tls, Discovery, Outbound, ParentRef,
 };
 use linkerd_app_core::{
     io, profiles,
@@ -32,6 +32,12 @@ struct HttpSidecar {
     routes: watch::Receiver<http::Routes>,
 }
 
+#[derive(Clone, Debug)]
+struct TlsSidecar {
+    orig_dst: OrigDstAddr,
+    routes: watch::Receiver<tls::Routes>,
+}
+
 // === impl Outbound ===
 
 impl Outbound<()> {
@@ -53,6 +59,12 @@ impl Outbound<()> {
         R::Resolution: Unpin,
     {
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
+        let tls = self
+            .to_tcp_connect()
+            .push_tls_cached(resolve.clone())
+            .into_stack()
+            .push_map_target(TlsSidecar::from)
+            .arc_new_clone_tcp();
 
         let http = self
             .to_tcp_connect()
@@ -64,7 +76,8 @@ impl Outbound<()> {
             .push_map_target(HttpSidecar::from)
             .arc_new_clone_http();
 
-        opaq.push_protocol(http.into_inner())
+        opaq.clone()
+            .push_protocol(http.into_inner(), tls.into_inner())
             // Use a dedicated target type to bind discovery results to the
             // outbound sidecar stack configuration.
             .map_stack(move |_, _, stk| stk.push_map_target(Sidecar::from))
@@ -131,7 +144,8 @@ impl svc::Param<Protocol> for Sidecar {
         match self.policy.borrow().protocol {
             policy::Protocol::Http1(_) => Protocol::Http1,
             policy::Protocol::Http2(_) | policy::Protocol::Grpc(_) => Protocol::Http2,
-            policy::Protocol::Opaque(_) | policy::Protocol::Tls(_) => Protocol::Opaque,
+            policy::Protocol::Opaque(_) => Protocol::Opaque,
+            policy::Protocol::Tls(_) => Protocol::Tls,
             policy::Protocol::Detect { .. } => Protocol::Detect,
         }
     }
@@ -324,5 +338,64 @@ impl std::hash::Hash for HttpSidecar {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.orig_dst.hash(state);
         self.version.hash(state);
+    }
+}
+
+// === impl TlsSidecar ===
+
+impl From<Sidecar> for TlsSidecar {
+    fn from(parent: Sidecar) -> Self {
+        let orig_dst = parent.orig_dst;
+        let mut policy = parent.policy.clone();
+
+        let init = Self::mk_policy_routes(orig_dst, &policy.borrow_and_update())
+            .expect("initial policy must be tls");
+        let routes = tls::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
+            Self::mk_policy_routes(orig_dst, policy)
+        });
+        TlsSidecar { orig_dst, routes }
+    }
+}
+
+impl TlsSidecar {
+    fn mk_policy_routes(
+        OrigDstAddr(orig_dst): OrigDstAddr,
+        policy: &policy::ClientPolicy,
+    ) -> Option<tls::Routes> {
+        let parent_ref = ParentRef(policy.parent.clone());
+        let routes = match policy.protocol {
+            policy::Protocol::Tls(policy::tls::Tls { ref routes }) => routes.clone(),
+            _ => {
+                tracing::info!("Ignoring a discovery update that changed a route from TLS");
+                return None;
+            }
+        };
+
+        Some(tls::Routes {
+            addr: orig_dst.into(),
+            meta: parent_ref,
+            routes,
+            backends: policy.backends.clone(),
+        })
+    }
+}
+
+impl svc::Param<watch::Receiver<tls::Routes>> for TlsSidecar {
+    fn param(&self) -> watch::Receiver<tls::Routes> {
+        self.routes.clone()
+    }
+}
+
+impl std::cmp::PartialEq for TlsSidecar {
+    fn eq(&self, other: &Self) -> bool {
+        self.orig_dst == other.orig_dst
+    }
+}
+
+impl std::cmp::Eq for TlsSidecar {}
+
+impl std::hash::Hash for TlsSidecar {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.orig_dst.hash(state);
     }
 }
