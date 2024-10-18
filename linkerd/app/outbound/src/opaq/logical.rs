@@ -1,24 +1,47 @@
 use super::concrete;
-use crate::Outbound;
+use crate::{policy::Receiver, Outbound, ParentRef};
 use linkerd_app_core::{
-    io,
+    io, profiles,
     profiles::{self, Profile},
     proxy::{api_resolve::Metadata, tcp::balance},
     svc,
     transport::addrs::*,
-    Error, Infallible, NameAddr,
+    Addr, Error, Infallible, NameAddr,
 };
 use linkerd_distribute as distribute;
-use std::{fmt::Debug, hash::Hash, time};
+use linkerd_proxy_client_policy as policy;
+use std::{fmt::Debug, hash::Hash, sync::Arc, time};
 use tokio::sync::watch;
 
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Debug)]
-pub enum Logical {
-    Route(NameAddr, profiles::Receiver),
-    Forward(Remote<ServerAddr>, Metadata),
+/// Configures the flavor of TCP routing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Routes {
+    /// Policy routes.
+    Policy(PolicyRoutes),
+
+    /// Service profile routes.
+    Profile(ProfileRoutes),
+
+    /// Fallback endpoint forwarding.
+    // TODO(ver) Remove this variant when policy routes are fully wired up.
+    Endpoint(Remote<ServerAddr>, Metadata),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ProfileRoutes {
+    pub addr: Addr,
+    pub targets: Arc<[profiles::Target]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PolicyRoutes {
+    pub addr: Addr,
+    pub meta: ParentRef,
+    pub routes: policy::opaq::Opaque,
+    pub backends: Arc<[policy::Backend]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -39,6 +62,7 @@ pub struct LogicalError {
     source: Error,
 }
 
+//
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Params<T: Eq + Hash + Clone + Debug> {
     parent: T,
@@ -46,22 +70,9 @@ struct Params<T: Eq + Hash + Clone + Debug> {
     backends: distribute::Backends<Concrete<T>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct RouteParams<T> {
-    parent: T,
-    distribution: Distribution<T>,
-}
-
 type NewBackendCache<T, N, S> = distribute::NewBackendCache<Concrete<T>, (), N, S>;
 type NewDistribute<T, N> = distribute::NewDistribute<Concrete<T>, (), N>;
 type Distribution<T> = distribute::Distribution<Concrete<T>>;
-
-#[derive(Clone, Debug)]
-struct Routable<T> {
-    parent: T,
-    addr: NameAddr,
-    profile: profiles::Receiver,
-}
 
 // === impl Outbound ===
 
@@ -115,14 +126,18 @@ impl<N> Outbound<N> {
                 .clone()
                 // Share the concrete stack with each router stack.
                 .lift_new()
-                // Rebuild this router stack every time the profile changes.
+                // Rebuild this router stack every time the watch change.
                 .push_on_service(router)
-                .push(svc::NewSpawnWatch::<Profile, _>::layer_into::<Params<T>>())
+                .push(svc::NewSpawnWatch::<Routes, _>::layer_into::<Params<T>>())
                 .push(svc::NewMapErr::layer_from_target::<LogicalError, _>())
                 .push_switch(
                     |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Logical::Route(addr, profile) => svc::Either::A(Routable {
+                            Logical::Policy(addr, policy) => svc::Either::A(Routes::Policy(
+                                addr,
+                                profile,
+                            }),
+                            Logical::Profile(addr, profile) => svc::Either::A(Routes {
                                 addr,
                                 parent,
                                 profile,
@@ -142,7 +157,7 @@ impl<N> Outbound<N> {
 
 // === impl Routable ===
 
-impl<T> svc::Param<watch::Receiver<profiles::Profile>> for Routable<T> {
+impl<T> svc::Param<watch::Receiver<profiles::Profile>> for Routes<T> {
     fn param(&self) -> watch::Receiver<profiles::Profile> {
         self.profile.clone().into()
     }
@@ -150,11 +165,11 @@ impl<T> svc::Param<watch::Receiver<profiles::Profile>> for Routable<T> {
 
 // === impl Params ===
 
-impl<T> From<(Profile, Routable<T>)> for Params<T>
+impl<T> From<(Profile, Routes<T>)> for Params<T>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    fn from((profile, routable): (Profile, Routable<T>)) -> Self {
+    fn from((profile, routable): (Profile, Routes<T>)) -> Self {
         const EWMA: balance::EwmaConfig = balance::EwmaConfig {
             default_rtt: time::Duration::from_millis(30),
             decay: time::Duration::from_secs(10),
@@ -250,8 +265,8 @@ impl<T: Clone> svc::Param<Distribution<T>> for RouteParams<T> {
 
 // === impl LogicalError ===
 
-impl<T> From<(&Routable<T>, Error)> for LogicalError {
-    fn from((target, source): (&Routable<T>, Error)) -> Self {
+impl<T> From<(&Routes<T>, Error)> for LogicalError {
+    fn from((target, source): (&Routes<T>, Error)) -> Self {
         Self {
             addr: target.addr.clone(),
             source,
@@ -289,7 +304,7 @@ impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
 impl std::cmp::PartialEq for Logical {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Route(laddr, _), Self::Route(raddr, _)) => laddr == raddr,
+            (Self::Profile(laddr, _), Self::Profile(raddr, _)) => laddr == raddr,
             (Self::Forward(laddr, lmeta), Self::Forward(raddr, rmeta)) => {
                 laddr == raddr && lmeta == rmeta
             }
@@ -303,8 +318,11 @@ impl std::cmp::Eq for Logical {}
 impl std::hash::Hash for Logical {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            Self::Route(addr, _) => {
+            Self::Profile(addr, _) => {
                 addr.hash(state);
+            }
+            Self::Policy(p) => {
+                p.hash(state);
             }
             Self::Forward(addr, meta) => {
                 addr.hash(state);

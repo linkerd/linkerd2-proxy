@@ -627,7 +627,7 @@ where
     fn param(&self) -> opaq::Logical {
         if let Some(profile) = svc::Param::<Option<profiles::Receiver>>::param(&self.0) {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaq::Logical::Route(addr, profile);
+                return opaq::Logical::Profile(addr, profile);
             }
 
             if let Some((addr, metadata)) = profile.endpoint() {

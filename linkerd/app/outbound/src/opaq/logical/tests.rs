@@ -21,7 +21,7 @@ async fn forward() {
         addr: Some(profiles::LogicalAddr(laddr.clone())),
         ..Default::default()
     });
-    let logical = Logical::Route(laddr.clone(), rx.into());
+    let logical = Logical::Profile(laddr.clone(), rx.into());
 
     // The resolution resolves a single endpoint.
     let ep_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
@@ -72,7 +72,7 @@ async fn balances() {
         addr: Some(profiles::LogicalAddr(laddr.clone())),
         ..Default::default()
     });
-    let logical = Logical::Route(laddr.clone(), rx.into());
+    let logical = Logical::Profile(laddr.clone(), rx.into());
 
     // The resolution resolves a single endpoint.
     let ep0_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);

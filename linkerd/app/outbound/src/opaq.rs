@@ -12,11 +12,12 @@ use linkerd_app_core::{
     Error,
 };
 use std::{fmt::Debug, hash::Hash};
+use tokio::sync::watch;
 
 mod concrete;
 mod logical;
 
-pub use self::logical::Logical;
+pub use self::logical::{Logical, PolicyRoutes, ProfileRoutes, Routes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Opaq(Logical);
@@ -24,6 +25,50 @@ struct Opaq(Logical);
 #[derive(Clone, Debug, Default)]
 pub struct OpaqMetrics {
     balance: concrete::BalancerMetrics,
+}
+
+pub fn spawn_routes<T>(
+    mut route_rx: watch::Receiver<T>,
+    init: Routes,
+    mut mk: impl FnMut(&T) -> Option<Routes> + Send + Sync + 'static,
+) -> watch::Receiver<Routes>
+where
+    T: Send + Sync + 'static,
+{
+    let (tx, rx) = watch::channel(init);
+
+    tokio::spawn(async move {
+        loop {
+            let res = tokio::select! {
+                biased;
+                _ = tx.closed() => return,
+                res = route_rx.changed() => res,
+            };
+
+            if res.is_err() {
+                // Drop the `tx` sender when the profile sender is
+                // dropped.
+                return;
+            }
+
+            if let Some(routes) = (mk)(&*route_rx.borrow_and_update()) {
+                if tx.send(routes).is_err() {
+                    // Drop the `tx` sender when all of its receivers are dropped.
+                    return;
+                }
+            }
+        }
+    });
+
+    rx
+}
+
+pub fn spawn_routes_default(addr: Remote<ServerAddr>) -> watch::Receiver<Routes> {
+    let (tx, rx) = watch::channel(Routes::Endpoint(addr, Default::default()));
+    tokio::spawn(async move {
+        tx.closed().await;
+    });
+    rx
 }
 
 // === impl Outbound ===
@@ -74,7 +119,7 @@ impl svc::Param<Logical> for Opaq {
 impl svc::Param<Option<profiles::Receiver>> for Opaq {
     fn param(&self) -> Option<profiles::Receiver> {
         match self.0.param() {
-            Logical::Route(_, rx) => Some(rx),
+            Logical::Profile(_, rx) => Some(rx),
             _ => None,
         }
     }

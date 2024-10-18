@@ -32,12 +32,22 @@ struct HttpSidecar {
     routes: watch::Receiver<http::Routes>,
 }
 
+<<<<<<< HEAD
 #[derive(Clone, Debug)]
 struct TlsSidecar {
     orig_dst: OrigDstAddr,
     routes: watch::Receiver<tls::Routes>,
 }
 
+||||||| parent of 829d65406 (wip)
+=======
+#[derive(Clone, Debug)]
+struct OpaqSidecar {
+    orig_dst: OrigDstAddr,
+    routes: watch::Receiver<opaq::Routes>,
+}
+
+>>>>>>> 829d65406 (wip)
 // === impl Outbound ===
 
 impl Outbound<()> {
@@ -58,6 +68,7 @@ impl Outbound<()> {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,
     {
+<<<<<<< HEAD
         let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
         let tls = self
             .to_tcp_connect()
@@ -65,6 +76,15 @@ impl Outbound<()> {
             .into_stack()
             .push_map_target(TlsSidecar::from)
             .arc_new_clone_tcp();
+||||||| parent of 829d65406 (wip)
+        let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
+=======
+        let opaq = self
+            .to_tcp_connect()
+            .push_opaq_cached(resolve.clone())
+            .into_stack()
+            .push_map_target(OpaqSidecar::from);
+>>>>>>> 829d65406 (wip)
 
         let http = self
             .to_tcp_connect()
@@ -155,7 +175,7 @@ impl svc::Param<opaq::Logical> for Sidecar {
     fn param(&self) -> opaq::Logical {
         if let Some(profile) = self.profile.clone() {
             if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaq::Logical::Route(addr, profile);
+                return opaq::Logical::Profile(addr, profile);
             }
 
             if let Some((addr, metadata)) = profile.endpoint() {
@@ -338,6 +358,79 @@ impl std::hash::Hash for HttpSidecar {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.orig_dst.hash(state);
         self.version.hash(state);
+    }
+}
+
+// === impl OpaqSidecar ===
+
+impl From<Sidecar> for OpaqSidecar {
+    fn from(parent: Sidecar) -> Self {
+        let orig_dst = parent.orig_dst;
+        let mut policy = parent.policy.clone();
+
+        if let Some(mut profile) = parent.profile.clone().map(watch::Receiver::from) {
+            // Only use service profiles if there are novel target
+            // overrides.
+            if if !profile.targets.is_empty() {
+                tracing::debug!("Using ServiceProfile");
+                let init = Self::mk_profile_routes(addr.clone(), &profile.borrow_and_update());
+                let routes =
+                    opaq::spawn_routes(profile, init, move |profile: &profiles::Profile| {
+                        Some(Self::mk_profile_routes(addr.clone(), profile))
+                    });
+                return OpaqSidecar {
+                    orig_dst,
+                    routes,
+                };
+            }
+        }
+
+        tracing::debug!("Using ClientPolicy routes");
+        let init = Self::mk_policy_routes(orig_dst, &policy.borrow_and_update())
+            .expect("initial policy must not be opaque");
+        let routes = opaq::spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
+            Self::mk_policy_routes(orig_dst, policy)
+        });
+        OpaqSidecar { orig_dst, routes }
+    }
+}
+
+impl OpaqSidecar {
+    fn mk_policy_routes(
+        OrigDstAddr(orig_dst): OrigDstAddr,
+        policy: &policy::ClientPolicy,
+    ) -> Option<opaq::Routes> {
+        let parent_ref = ParentRef(policy.parent.clone());
+
+        // If we're doing HTTP policy routing, we've previously had a
+        // protocol hint that made us think that was a good idea. If the
+        // protocol changes but remains HTTP-ish, we propagate those
+        // changes. If the protocol flips to an opaque protocol, we ignore
+        // the protocol update.
+        let routes = match policy.protocol {
+            policy::Protocol::Detect { ref opaque, .. } => opaque.clone(),
+            policy::Protocol::Opaque(ref routes) => routes.clone(),
+            _ => {
+                tracing::info!(
+                    "Ignoring a discovery update that changed a route from opaque to HTTP"
+                );
+                return None;
+            }
+        };
+
+        Some(opaq::Routes::Policy(opaq::PolicyRoutes {
+                addr: orig_dst.into(),
+                meta: parent_ref,
+                routes,
+                backends: policy.backends.clone(),
+        }))
+    }
+
+    fn mk_profile_routes(
+        profiles::LogicalAddr(addr): profiles::LogicalAddr,
+        profile: &profiles::Profile,
+    ) -> http::Routes {
+        opaq::Routes::Profile(opaq::ProfileRoutes { addr, targets: profile.targets.clone() })
     }
 }
 
