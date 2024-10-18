@@ -21,7 +21,7 @@ use linkerd_app_core::{
         tap,
     },
     svc::{self, ServiceExt},
-    tls,
+    tls::ConnectMeta as TlsConnectMeta,
     transport::addrs::*,
     AddrMatch, Error, ProxyRuntime,
 };
@@ -46,6 +46,7 @@ mod sidecar;
 pub mod tcp;
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
+pub mod tls;
 mod zone;
 
 pub use self::discover::{spawn_synthesized_profile_policy, synthesize_forward_policy, Discovery};
@@ -100,7 +101,7 @@ struct Runtime {
     drain: drain::Watch,
 }
 
-pub type ConnectMeta = tls::ConnectMeta<Local<ClientAddr>>;
+pub type ConnectMeta = TlsConnectMeta<Local<ClientAddr>>;
 
 /// A reference to a frontend/apex resource, usually a service.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

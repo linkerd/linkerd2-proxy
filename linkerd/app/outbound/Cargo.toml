@@ -44,12 +44,14 @@ linkerd-proxy-client-policy = { path = "../../proxy/client-policy", features = [
     "proto",
 ] }
 linkerd-retry = { path = "../../retry" }
+linkerd-tls-route = { path = "../../tls/route" }
 linkerd-tonic-stream = { path = "../../tonic-stream" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 
 [dev-dependencies]
 hyper = { version = "0.14", features = ["http1", "http2"] }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
+tokio-rustls = "0.24"
 tokio-test = "0.4"
 tower-test = "0.4"
 

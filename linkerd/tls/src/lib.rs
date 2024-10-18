@@ -2,12 +2,14 @@
 #![forbid(unsafe_code)]
 
 pub mod client;
-pub mod detect_sni;
 pub mod server;
 
 pub use self::{
     client::{Client, ClientTls, ConditionalClientTls, ConnectMeta, NoClientTls, ServerId},
-    server::{ClientId, ConditionalServerTls, NewDetectTls, NoServerTls, ServerTls},
+    server::{
+        ClientId, ConditionalServerTls, NewDetectRequiredSni, NewDetectTls, NoServerTls,
+        NoSniFoundError, ServerTls, SniDetectionTimeoutError,
+    },
 };
 
 use linkerd_dns_name as dns;
