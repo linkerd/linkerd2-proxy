@@ -38,13 +38,13 @@ linkerd-http-classify = { path = "../../http/classify" }
 linkerd-http-prom = { path = "../../http/prom" }
 linkerd-http-retry = { path = "../../http/retry" }
 linkerd-http-route = { path = "../../http/route" }
-linkerd-tls-route = { path = "../../tls/route" }
 linkerd-identity = { path = "../../identity" }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy", features = [
     "proto",
 ] }
 linkerd-retry = { path = "../../retry" }
+linkerd-tls-route = { path = "../../tls/route" }
 linkerd-tonic-stream = { path = "../../tonic-stream" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 

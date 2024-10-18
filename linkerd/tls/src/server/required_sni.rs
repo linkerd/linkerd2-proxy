@@ -47,6 +47,8 @@ pub struct DetectRequiredSni<T, N> {
     timeout: time::Duration,
 }
 
+// === impl NewDetectRequiredSni ===
+
 impl<N> NewDetectRequiredSni<N> {
     fn new(timeout: time::Duration, inner: N) -> Self {
         Self { inner, timeout }
@@ -68,7 +70,7 @@ where
     }
 }
 
-// === impl DetectSni ===
+// === impl DetectRequiredSni ===
 
 impl<T, N> DetectRequiredSni<T, N> {
     fn new(timeout: time::Duration, target: T, inner: N) -> Self {

@@ -11,17 +11,6 @@ pub(crate) struct Backend<T> {
     pub(crate) concrete: Concrete<T>,
 }
 
-// === impl Backend ===
-
-impl<T: Clone> Clone for Backend<T> {
-    fn clone(&self) -> Self {
-        Self {
-            route_ref: self.route_ref.clone(),
-            concrete: self.concrete.clone(),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct MatchedRoute<T> {
     pub(super) r#match: tls_route::RouteMatch,
@@ -47,6 +36,17 @@ struct RouteError {
     route: RouteRef,
     #[source]
     source: Error,
+}
+
+// === impl Backend ===
+
+impl<T: Clone> Clone for Backend<T> {
+    fn clone(&self) -> Self {
+        Self {
+            route_ref: self.route_ref.clone(),
+            concrete: self.concrete.clone(),
+        }
+    }
 }
 
 // === impl MatchedRoute ===

@@ -69,7 +69,7 @@ pub struct TlsMetrics {
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
-    /// Builds a stack that proxies tls connections.
+    /// Builds a stack that proxies TLS connections.
     ///
     /// This stack uses caching so that a router/load-balancer may be reused
     /// across multiple connections.

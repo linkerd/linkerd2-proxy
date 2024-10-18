@@ -32,10 +32,12 @@ use tracing::info_span;
 pub enum Dispatch {
     Balance(NameAddr, balance::EwmaConfig),
     Forward(Remote<ServerAddr>, Metadata),
-    Fail { message: Arc<str> },
+    /// A backend dispatcher that explicitly fails all requests.
+    Fail {
+        message: Arc<str>,
+    },
 }
 
-/// A backend dispatcher explicitly fails all requests.
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct DispatcherFailed(Arc<str>);
