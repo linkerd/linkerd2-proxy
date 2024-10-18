@@ -32,22 +32,18 @@ struct HttpSidecar {
     routes: watch::Receiver<http::Routes>,
 }
 
-<<<<<<< HEAD
-#[derive(Clone, Debug)]
-struct TlsSidecar {
-    orig_dst: OrigDstAddr,
-    routes: watch::Receiver<tls::Routes>,
-}
-
-||||||| parent of 829d65406 (wip)
-=======
 #[derive(Clone, Debug)]
 struct OpaqSidecar {
     orig_dst: OrigDstAddr,
     routes: watch::Receiver<opaq::Routes>,
 }
 
->>>>>>> 829d65406 (wip)
+#[derive(Clone, Debug)]
+struct TlsSidecar {
+    orig_dst: OrigDstAddr,
+    routes: watch::Receiver<tls::Routes>,
+}
+
 // === impl Outbound ===
 
 impl Outbound<()> {
@@ -68,23 +64,19 @@ impl Outbound<()> {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Unpin,
     {
-<<<<<<< HEAD
-        let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
+        let opaq = self
+            .to_tcp_connect()
+            .push_opaq_cached(resolve.clone())
+            .into_stack()
+            .push_map_target(OpaqSidecar::from)
+            .arc_new_clone_tcp();
+
         let tls = self
             .to_tcp_connect()
             .push_tls_cached(resolve.clone())
             .into_stack()
             .push_map_target(TlsSidecar::from)
             .arc_new_clone_tcp();
-||||||| parent of 829d65406 (wip)
-        let opaq = self.to_tcp_connect().push_opaq_cached(resolve.clone());
-=======
-        let opaq = self
-            .to_tcp_connect()
-            .push_opaq_cached(resolve.clone())
-            .into_stack()
-            .push_map_target(OpaqSidecar::from);
->>>>>>> 829d65406 (wip)
 
         let http = self
             .to_tcp_connect()
@@ -369,19 +361,17 @@ impl From<Sidecar> for OpaqSidecar {
         let mut policy = parent.policy.clone();
 
         if let Some(mut profile) = parent.profile.clone().map(watch::Receiver::from) {
+            if let Some(addr, meta) = profile.borrow().endpoint.is_empty() {}
             // Only use service profiles if there are novel target
             // overrides.
-            if if !profile.targets.is_empty() {
+            if !profile.borrow().targets.is_empty() {
                 tracing::debug!("Using ServiceProfile");
                 let init = Self::mk_profile_routes(addr.clone(), &profile.borrow_and_update());
                 let routes =
                     opaq::spawn_routes(profile, init, move |profile: &profiles::Profile| {
                         Some(Self::mk_profile_routes(addr.clone(), profile))
                     });
-                return OpaqSidecar {
-                    orig_dst,
-                    routes,
-                };
+                return OpaqSidecar { orig_dst, routes };
             }
         }
 
@@ -419,10 +409,10 @@ impl OpaqSidecar {
         };
 
         Some(opaq::Routes::Policy(opaq::PolicyRoutes {
-                addr: orig_dst.into(),
-                meta: parent_ref,
-                routes,
-                backends: policy.backends.clone(),
+            addr: orig_dst.into(),
+            meta: parent_ref,
+            routes,
+            backends: policy.backends.clone(),
         }))
     }
 
@@ -430,7 +420,16 @@ impl OpaqSidecar {
         profiles::LogicalAddr(addr): profiles::LogicalAddr,
         profile: &profiles::Profile,
     ) -> http::Routes {
-        opaq::Routes::Profile(opaq::ProfileRoutes { addr, targets: profile.targets.clone() })
+        opaq::Routes::Profile(opaq::ProfileRoutes {
+            addr,
+            targets: profile.targets.clone(),
+        })
+    }
+}
+
+impl svc::Param<watch::Receiver<tls::Routes>> for OpaqSidecar {
+    fn param(&self) -> watch::Receiver<tls::Routes> {
+        self.routes.clone()
     }
 }
 
