@@ -36,7 +36,7 @@ pub struct HttpMetrics {
     grpc_route: policy::GrpcRouteMetrics,
 }
 
-pub(crate) fn spawn_routes<T>(
+pub fn spawn_routes<T>(
     mut route_rx: watch::Receiver<T>,
     init: Routes,
     mut mk: impl FnMut(&T) -> Option<Routes> + Send + Sync + 'static,
@@ -72,7 +72,7 @@ where
     rx
 }
 
-pub(crate) fn spawn_routes_default(addr: Remote<ServerAddr>) -> watch::Receiver<Routes> {
+pub fn spawn_routes_default(addr: Remote<ServerAddr>) -> watch::Receiver<Routes> {
     let (tx, rx) = watch::channel(Routes::Endpoint(addr, Default::default()));
     tokio::spawn(async move {
         tx.closed().await;

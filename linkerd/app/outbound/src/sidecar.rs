@@ -133,18 +133,6 @@ impl svc::Param<Remote<ServerAddr>> for Sidecar {
     }
 }
 
-impl svc::Param<Option<profiles::LogicalAddr>> for Sidecar {
-    fn param(&self) -> Option<profiles::LogicalAddr> {
-        self.profile.clone()?.logical_addr()
-    }
-}
-
-impl svc::Param<Option<profiles::Receiver>> for Sidecar {
-    fn param(&self) -> Option<profiles::Receiver> {
-        self.profile.clone()
-    }
-}
-
 impl svc::Param<Protocol> for Sidecar {
     fn param(&self) -> Protocol {
         if let Some(rx) = svc::Param::<Option<profiles::Receiver>>::param(self) {
@@ -160,23 +148,6 @@ impl svc::Param<Protocol> for Sidecar {
             policy::Protocol::Tls(_) => Protocol::Tls,
             policy::Protocol::Detect { .. } => Protocol::Detect,
         }
-    }
-}
-
-impl svc::Param<opaq::Logical> for Sidecar {
-    fn param(&self) -> opaq::Logical {
-        if let Some(profile) = self.profile.clone() {
-            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaq::Logical::Profile(addr, profile);
-            }
-
-            if let Some((addr, metadata)) = profile.endpoint() {
-                return opaq::Logical::Forward(Remote(ServerAddr(addr)), metadata);
-            }
-        }
-
-        let OrigDstAddr(addr) = self.orig_dst;
-        opaq::Logical::Forward(Remote(ServerAddr(addr)), Default::default())
     }
 }
 
@@ -361,17 +332,18 @@ impl From<Sidecar> for OpaqSidecar {
         let mut policy = parent.policy.clone();
 
         if let Some(mut profile) = parent.profile.clone().map(watch::Receiver::from) {
-            if let Some(addr, meta) = profile.borrow().endpoint.is_empty() {}
             // Only use service profiles if there are novel target
             // overrides.
-            if !profile.borrow().targets.is_empty() {
-                tracing::debug!("Using ServiceProfile");
-                let init = Self::mk_profile_routes(addr.clone(), &profile.borrow_and_update());
-                let routes =
-                    opaq::spawn_routes(profile, init, move |profile: &profiles::Profile| {
-                        Some(Self::mk_profile_routes(addr.clone(), profile))
-                    });
-                return OpaqSidecar { orig_dst, routes };
+            if let Some(addr) = profile.borrow().addr.clone() {
+                if !profile.borrow().targets.is_empty() {
+                    tracing::debug!(?addr, "Using ServiceProfile");
+                    let init = Self::mk_profile_routes(addr.clone(), &profile.borrow_and_update());
+                    let routes =
+                        opaq::spawn_routes(profile, init, move |profile: &profiles::Profile| {
+                            Some(Self::mk_profile_routes(addr.clone(), profile))
+                        });
+                    return OpaqSidecar { orig_dst, routes };
+                }
             }
         }
 

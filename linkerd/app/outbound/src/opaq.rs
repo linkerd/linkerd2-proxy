@@ -17,10 +17,10 @@ use tokio::sync::watch;
 mod concrete;
 mod logical;
 
-pub use self::logical::{Logical, PolicyRoutes, ProfileRoutes, Routes};
+pub use self::logical::{PolicyRoutes, ProfileRoutes, Routes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Opaq(Logical);
+struct Opaq(watch::Receiver<Routes>);
 
 #[derive(Clone, Debug, Default)]
 pub struct OpaqMetrics {
@@ -63,14 +63,6 @@ where
     rx
 }
 
-pub(crate) fn spawn_routes_default(addr: Remote<ServerAddr>) -> watch::Receiver<Routes> {
-    let (tx, rx) = watch::channel(Routes::Endpoint(addr, Default::default()));
-    tokio::spawn(async move {
-        tx.closed().await;
-    });
-    rx
-}
-
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
@@ -81,7 +73,7 @@ impl<C> Outbound<C> {
     pub fn push_opaq_cached<T, I, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneTcp<T, I>>
     where
         // Opaque target
-        T: svc::Param<Logical>,
+        T: svc::Param<watch::Receiver<Routes>>,
         T: Clone + Send + Sync + 'static,
         // Server-side connection
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,

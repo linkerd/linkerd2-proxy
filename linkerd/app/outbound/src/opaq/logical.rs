@@ -1,12 +1,6 @@
 use super::concrete;
 use crate::{Outbound, ParentRef};
-use linkerd_app_core::{
-    io, profiles,
-    proxy::{api_resolve::Metadata, tcp::balance},
-    svc,
-    transport::addrs::*,
-    Addr, Error, Infallible, NameAddr,
-};
+use linkerd_app_core::{io, profiles, proxy::tcp::balance, svc, Addr, Error, NameAddr};
 use linkerd_distribute as distribute;
 use linkerd_proxy_client_policy as policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc, time};
@@ -23,10 +17,6 @@ pub enum Routes {
 
     /// Service profile routes.
     Profile(ProfileRoutes),
-
-    /// Fallback endpoint forwarding.
-    // TODO(ver) Remove this variant when policy routes are fully wired up.
-    Endpoint(Remote<ServerAddr>, Metadata),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -93,7 +83,7 @@ impl<N> Outbound<N> {
     pub fn push_opaq_logical<T, I, NSvc>(self) -> Outbound<svc::ArcNewCloneTcp<T, I>>
     where
         // Opaque logical target.
-        T: svc::Param<Routes>,
+        T: svc::Param<watch::Receiver<Routes>>,
         T: Eq + Hash + Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,

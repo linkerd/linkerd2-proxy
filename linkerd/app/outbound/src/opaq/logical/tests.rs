@@ -5,6 +5,7 @@ use linkerd_app_core::{
     errors::{self, FailFastError},
     io::AsyncReadExt,
     svc::{NewService, ServiceExt},
+    transport::addrs::*,
 };
 use std::net::SocketAddr;
 use tokio::time;
@@ -17,11 +18,11 @@ async fn forward() {
 
     // We create a logical target to be resolved to endpoints.
     let laddr = "xyz.example.com:4444".parse::<NameAddr>().unwrap();
-    let (_tx, rx) = tokio::sync::watch::channel(Profile {
+    let (_tx, rx) = tokio::sync::watch::channel(profiles::Profile {
         addr: Some(profiles::LogicalAddr(laddr.clone())),
         ..Default::default()
     });
-    let logical = Logical::Profile(laddr.clone(), rx.into());
+    let logical = Logical::Policy(laddr.clone(), rx.into());
 
     // The resolution resolves a single endpoint.
     let ep_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
@@ -31,7 +32,7 @@ async fn forward() {
     // Build the TCP logical stack with a mocked connector.
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt, &mut Default::default())
-        .with_stack(svc::mk(move |ep: concrete::Endpoint<Concrete<Logical>>| {
+        .with_stack(svc::mk(move |ep: concrete::Endpoint<Concrete<Routes>>| {
             let Remote(ServerAddr(ea)) = svc::Param::param(&ep);
             assert_eq!(ea, ep_addr);
             let mut io = support::io();
@@ -68,11 +69,13 @@ async fn balances() {
 
     // We create a logical target to be resolved to endpoints.
     let laddr = "xyz.example.com:4444".parse::<NameAddr>().unwrap();
-    let (_tx, rx) = tokio::sync::watch::channel(Profile {
+    let (_tx, rx) = tokio::sync::watch::channel(profiles::Profile {
         addr: Some(profiles::LogicalAddr(laddr.clone())),
         ..Default::default()
     });
-    let logical = Logical::Profile(laddr.clone(), rx.into());
+    let logical = Routes::Policy(ProfileRoutes {
+        addr: laddr.clone(),
+    });
 
     // The resolution resolves a single endpoint.
     let ep0_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
@@ -86,7 +89,7 @@ async fn balances() {
     let (rt, _shutdown) = runtime();
     let svc = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(svc::mk(
-            move |ep: concrete::Endpoint<Concrete<Logical>>| match svc::Param::param(&ep) {
+            move |ep: concrete::Endpoint<Concrete<Routes>>| match svc::Param::param(&ep) {
                 Remote(ServerAddr(addr)) if addr == ep0_addr => {
                     tracing::debug!(%addr, "writing ep0");
                     let mut io = support::io();
