@@ -11,6 +11,7 @@ mod accept;
 mod detect;
 pub mod direct;
 mod http;
+mod limit;
 mod metrics;
 pub mod policy;
 mod server;

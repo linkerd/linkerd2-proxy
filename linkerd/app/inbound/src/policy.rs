@@ -1,7 +1,7 @@
 mod api;
 mod config;
 pub mod defaults;
-mod http;
+pub mod http;
 mod store;
 mod tcp;
 
@@ -90,6 +90,7 @@ impl From<DefaultPolicy> for ServerPolicy {
             DefaultPolicy::Allow(p) => p,
             DefaultPolicy::Deny => ServerPolicy {
                 protocol: Protocol::Opaque(Arc::new([])),
+                rate_limit: vec![],
                 meta: Meta::new_default("deny"),
             },
         }

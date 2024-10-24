@@ -4,15 +4,18 @@ use crate::{
     policy::{AllowPolicy, HttpRoutePermit},
 };
 use futures::{future, TryFutureExt};
+use governor::{clock::DefaultClock, middleware::NoOpMiddleware, Quota, RateLimiter, state::{direct::NotKeyed, InMemoryState}};
 use linkerd_app_core::{
     metrics::{RouteAuthzLabels, RouteLabels},
     svc::{self, ServiceExt},
-    tls,
+    tls::{self, ClientId, ServerTls},
     transport::{ClientAddr, OrigDstAddr, Remote},
-    Error, Result,
+    Error, Result, Conditional,
 };
-use linkerd_proxy_server_policy::{grpc, http, route::RouteMatch};
-use std::{sync::Arc, task};
+use linkerd_identity::Id;
+use linkerd_proxy_server_policy::{grpc, http, route::RouteMatch, RateLimit, Specifier};
+use std::{collections::HashMap, hash::{Hash, Hasher}, num::NonZeroU32, sync::{Arc, Mutex}, task, time::Duration};
+use thiserror::Error;
 
 #[cfg(test)]
 mod tests;
@@ -27,6 +30,7 @@ mod tests;
 #[derive(Clone, Debug)]
 pub struct NewHttpPolicy<N> {
     metrics: HttpAuthzMetrics,
+    rate_limit_groups: Arc<Mutex<HashMap<RateLimitClientGroup, RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>>,
     inner: N,
 }
 
@@ -36,6 +40,7 @@ pub struct HttpPolicyService<T, N> {
     connection: ConnectionMeta,
     policy: AllowPolicy,
     metrics: HttpAuthzMetrics,
+    rate_limit_groups: Arc<Mutex<HashMap<RateLimitClientGroup, RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>>,
     inner: N,
 }
 
@@ -83,12 +88,49 @@ pub struct GrpcRouteInjectedFailure {
 #[error("invalid server policy: {0}")]
 pub struct HttpInvalidPolicy(&'static str);
 
+#[derive(Debug, Error)]
+#[error("too many requests")]
+pub struct RateLimitError(());
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct RateLimitClientGroup {
+    pub meshed: Option<bool>,
+    pub client_id: Option<String>,
+    pub client_ip: Option<std::net::IpAddr>,
+    pub quota: QuotaExt,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuotaExt(Quota);
+
+impl Hash for QuotaExt {
+   fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.burst_size().hash(state);
+        self.0.replenish_interval().hash(state);
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Rate {
+    pub num: u32,
+    pub per: Duration,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum State {
+    // The service has hit its limit
+    Limited,
+    Ready,
+}
+
 // === impl NewHttpPolicy ===
 
 impl<N> NewHttpPolicy<N> {
     pub fn layer(metrics: HttpAuthzMetrics) -> impl svc::layer::Layer<N, Service = Self> + Clone {
+        let rate_limit_groups = Arc::new(Mutex::new(HashMap::<RateLimitClientGroup, RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>::new()));
         svc::layer::mk(move |inner| Self {
             metrics: metrics.clone(),
+            rate_limit_groups: Arc::clone(&rate_limit_groups),
             inner,
         })
     }
@@ -113,6 +155,7 @@ where
             policy,
             connection: ConnectionMeta { client, dst, tls },
             metrics: self.metrics.clone(),
+            rate_limit_groups: self.rate_limit_groups.clone(),
             inner: self.inner.clone(),
         }
     }
@@ -155,6 +198,14 @@ where
     }
 
     fn call(&mut self, mut req: ::http::Request<B>) -> Self::Future {
+        if let Some(group) = self.get_rate_limit_client_group() {
+            if let Some(rate_limiter) = self.rate_limit_groups.lock().unwrap().get_mut(&group) {
+                if let Err(_) = rate_limiter.check() {
+                        return future::Either::Right(future::err(RateLimitError(()).into()));
+                }
+            }
+        }
+
         // Find an appropriate route for the request and ensure that it's
         // authorized.
         let permit = match self.policy.routes() {
@@ -286,6 +337,173 @@ impl<T, N> HttpPolicyService<T, N> {
         self.metrics
             .route_not_found(labels, self.connection.dst, self.connection.tls.clone());
         HttpRouteNotFound(()).into()
+    }
+
+    fn get_rate_limit_client_group(&self) -> Option<RateLimitClientGroup> {
+        let rate_limit: &Vec<RateLimit> = &self.policy.server.borrow().rate_limit;
+        tracing::info!("*** get_rate_limit_client_group: {:?}", rate_limit);
+
+        // Connection is meshed
+        if let Some(client_id) = self.get_client_id() {
+            // [ClientID] or [Meshed, ClientID]
+            for rl in rate_limit {
+                if !rl.specifiers.contains(&Specifier::ClientID) {
+                    continue;
+                }
+
+                let mut quota = Quota::per_second(NonZeroU32::new(rl.rps).unwrap());
+                if let Some(burst) = rl.burst {
+                    quota = quota.allow_burst(NonZeroU32::new(burst).unwrap());
+                }
+                let key = RateLimitClientGroup {
+                    meshed: Some(true),
+                    client_id: Some(client_id.to_owned()),
+                    client_ip: None,
+                    quota: QuotaExt(quota),
+                };
+                self.update_rate_limiter(key.clone());
+                return Some(key);
+            }
+
+            // [Meshed, ClientIP]
+            for rl in rate_limit {
+                if !rl.specifiers.contains(&Specifier::Meshed) || !rl.specifiers.contains(&Specifier::ClientIP) {
+                    continue;
+                }
+
+                let mut quota = Quota::per_second(NonZeroU32::new(rl.rps).unwrap());
+                if let Some(burst) = rl.burst {
+                    quota = quota.allow_burst(NonZeroU32::new(burst).unwrap());
+                }
+                let key = RateLimitClientGroup {
+                    meshed: Some(true),
+                    client_id: None,
+                    client_ip: Some(self.connection.client.ip()),
+                    quota: QuotaExt(quota),
+                };
+                self.update_rate_limiter(key.clone());
+                return Some(key);
+            }
+
+            // [Meshed]
+            for rl in rate_limit {
+                if !rl.specifiers.contains(&Specifier::Meshed) {
+                    continue;
+                }
+
+                let mut quota = Quota::per_second(NonZeroU32::new(rl.rps).unwrap());
+                if let Some(burst) = rl.burst {
+                    quota = quota.allow_burst(NonZeroU32::new(burst).unwrap());
+                }
+                let key = RateLimitClientGroup {
+                    meshed: Some(true),
+                    client_id: None,
+                    client_ip: None,
+                    quota: QuotaExt(quota),
+                };
+                self.update_rate_limiter(key.clone());
+                return Some(key);
+            }
+        } else {
+            // Connection is unmeshed
+
+            // [Unmeshed, ClientIP]
+            for rl in rate_limit {
+                if !rl.specifiers.contains(&Specifier::Unmeshed) || !rl.specifiers.contains(&Specifier::ClientIP) {
+                    continue;
+                }
+
+                let mut quota = Quota::per_second(NonZeroU32::new(rl.rps).unwrap());
+                if let Some(burst) = rl.burst {
+                    quota = quota.allow_burst(NonZeroU32::new(burst).unwrap());
+                }
+                let key = RateLimitClientGroup {
+                    meshed: Some(false),
+                    client_id: None,
+                    client_ip: Some(self.connection.client.ip()),
+                    quota: QuotaExt(quota),
+                };
+                self.update_rate_limiter(key.clone());
+                return Some(key);
+            }
+
+            // [Unmeshed]
+            for rl in rate_limit {
+                if !rl.specifiers.contains(&Specifier::Unmeshed) {
+                    continue;
+                }
+
+                let mut quota = Quota::per_second(NonZeroU32::new(rl.rps).unwrap());
+                if let Some(burst) = rl.burst {
+                    quota = quota.allow_burst(NonZeroU32::new(burst).unwrap());
+                }
+                let key = RateLimitClientGroup {
+                    meshed: Some(false),
+                    client_id: None,
+                    client_ip: None,
+                    quota: QuotaExt(quota),
+                };
+                self.update_rate_limiter(key.clone());
+                return Some(key);
+            }
+        }
+
+        // [ClientIP]
+        for rl in rate_limit {
+            if rl.specifiers != vec![Specifier::ClientIP] {
+                continue;
+            }
+
+            let mut quota = Quota::per_second(NonZeroU32::new(rl.rps).unwrap());
+            if let Some(burst) = rl.burst {
+                quota = quota.allow_burst(NonZeroU32::new(burst).unwrap());
+            }
+            let key = RateLimitClientGroup {
+                meshed: None,
+                client_id: None,
+                client_ip: Some(self.connection.client.ip()),
+                quota: QuotaExt(quota),
+            };
+            self.update_rate_limiter(key.clone());
+            return Some(key);
+        }
+
+        // [] (catch-all)
+        for rl in rate_limit {
+            if !rl.specifiers.is_empty() {
+                continue;
+            }
+
+            let mut quota = Quota::per_second(NonZeroU32::new(rl.rps).unwrap());
+            if let Some(burst) = rl.burst {
+                quota = quota.allow_burst(NonZeroU32::new(burst).unwrap());
+            }
+            let key = RateLimitClientGroup {
+                meshed: None,
+                client_id: None,
+                client_ip: None,
+                quota: QuotaExt(quota),
+            };
+            self.update_rate_limiter(key.clone());
+            return Some(key);
+        }
+
+        None
+    }
+
+    fn update_rate_limiter(&self, key: RateLimitClientGroup) {
+        let mut groups = self.rate_limit_groups.lock().unwrap();
+        groups.entry(key.clone()).or_insert_with(|| {
+            tracing::info!("** update_rate_imit_acct NEW RateLimitClientGroup with {:?}", key.clone().quota.0);
+            RateLimiter::direct(key.clone().quota.0)
+        });
+    }
+
+    fn get_client_id(&self) -> Option<&str> {
+        match &self.connection.tls {
+            Conditional::Some(ServerTls::Established{client_id: Some(ClientId(Id::Dns(dns_name))), ..}) => Some(dns_name.as_str()),
+            _ => None,
+        }
     }
 }
 

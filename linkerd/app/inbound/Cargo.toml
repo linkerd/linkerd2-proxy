@@ -21,8 +21,12 @@ test-util = [
 bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
+governor = { version = "0.6", features = ["std"] }
 linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
+linkerd-dns-name = { path = "../../dns/name" }
+linkerd-error = { path = "../../error" }
+linkerd-identity = { path = "../../identity" }
 linkerd-http-access-log = { path = "../../http/access-log" }
 linkerd-idle-cache = { path = "../../idle-cache" }
 linkerd-meshtls = { path = "../../meshtls", optional = true }
