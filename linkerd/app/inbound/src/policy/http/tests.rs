@@ -29,6 +29,7 @@ macro_rules! new_svc {
                     kind: "Server".into(),
                     name: "testsrv".into(),
                 }),
+                local_rate_limit: Arc::new(Default::default()),
             },
         );
         let svc = HttpPolicyService {
@@ -197,6 +198,7 @@ async fn http_route() {
                 },
             ],
         }])),
+        local_rate_limit: Arc::new(Default::default()),
     })
     .expect("must send");
 

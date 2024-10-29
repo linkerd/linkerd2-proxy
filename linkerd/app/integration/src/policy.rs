@@ -45,6 +45,7 @@ pub fn all_unauthenticated() -> inbound::Server {
                 inbound::proxy_protocol::Detect {
                     timeout: Some(Duration::from_secs(10).try_into().unwrap()),
                     http_routes: vec![],
+                    http_local_rate_limit: None,
                 },
             )),
         }),

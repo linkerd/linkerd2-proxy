@@ -90,3 +90,6 @@ lto = true
 
 [workspace.dependencies]
 linkerd2-proxy-api = "0.14.0"
+
+[patch.crates-io]
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api.git", branch = "alpeb/v0.14.0-rate-limiting" }

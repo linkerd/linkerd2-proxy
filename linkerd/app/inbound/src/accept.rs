@@ -138,6 +138,7 @@ mod tests {
                     kind: "server".into(),
                     name: "testsrv".into(),
                 }),
+                local_rate_limit: Default::default(),
             },
             None,
         );
