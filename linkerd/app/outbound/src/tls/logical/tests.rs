@@ -167,6 +167,7 @@ fn sni_route(backend: client_policy::Backend, sni: sni::MatchSni) -> client_poli
                 }])),
             },
         }],
+        forbidden: false,
     }
 }
 

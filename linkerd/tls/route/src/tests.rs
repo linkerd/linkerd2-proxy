@@ -23,6 +23,7 @@ fn sni_precedence() {
                 policy: Policy::Unexpected,
                 matches: vec![],
             }],
+            forbidden: false,
         },
         Route {
             snis: vec!["foo.example.com".parse().unwrap()],
@@ -30,6 +31,7 @@ fn sni_precedence() {
                 policy: Policy::Expected,
                 matches: vec![],
             }],
+            forbidden: false,
         },
     ];
 
@@ -54,11 +56,13 @@ fn first_identical_wins() {
                 Rule::default(),
             ],
             snis: vec![],
+            forbidden: false,
         },
         // Redundant route.
         Route {
             rules: vec![Rule::default()],
             snis: vec![],
+            forbidden: false,
         },
     ];
 
@@ -78,6 +82,7 @@ fn no_match_suffix() {
             policy: Policy::Unexpected,
             matches: vec![],
         }],
+        forbidden: false,
     }];
 
     let si = SessionInfo {
@@ -95,6 +100,7 @@ fn no_match_exact() {
             policy: Policy::Unexpected,
             matches: vec![],
         }],
+        forbidden: false,
     }];
 
     let si = SessionInfo {

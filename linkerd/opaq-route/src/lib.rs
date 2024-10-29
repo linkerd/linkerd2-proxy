@@ -34,13 +34,13 @@ pub struct RouteMatch {
 
 pub fn find<P>(routes: &[Route<P>]) -> Option<(RouteMatch, &P)> {
     trace!(routes = ?routes.len(), "Finding matching route");
-    best(routes.iter().filter_map(|rt| {
-        Some((
+    best(routes.iter().map(|rt| {
+        (
             RouteMatch {
                 route: SessionMatch::default(),
             },
             &rt.policy,
-        ))
+        )
     }))
 }
 
