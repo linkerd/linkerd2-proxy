@@ -1,11 +1,16 @@
-use crate::RoutePolicy;
+use linkerd_opaq_route as opaq;
+use std::sync::Arc;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub use linkerd_opaq_route::{find, RouteMatch};
+
+pub type Policy = crate::RoutePolicy<Filter, ()>;
+pub type Route = opaq::Route<Policy>;
+pub type Rule = opaq::Rule<Policy>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Opaque {
-    pub policy: Option<Policy>,
+    pub routes: Arc<[Route]>,
 }
-
-pub type Policy = RoutePolicy<Filter, ()>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct NonIoErrors;
@@ -47,11 +52,6 @@ pub(crate) mod proto {
         #[error("an opaque route must have exactly one rule, but {0} were provided")]
         OnlyOneRule(usize),
 
-        /// Note: this restriction may be removed in the future, if a way of
-        /// actually matching rules for opaque routes is added.
-        #[error("a `ProxyProtocol::Opaque` must have exactly one route, but {0} were provided")]
-        OnlyOneRoute(usize),
-
         #[error("no filters can be configured on opaque routes yet")]
         NoFilters,
 
@@ -59,59 +59,44 @@ pub(crate) mod proto {
         Missing(&'static str),
     }
 
+    pub(crate) fn fill_route_backends(rts: &[Route], set: &mut BackendSet) {
+        for Route { ref policy, .. } in rts {
+            policy.distribution.fill_backends(set);
+        }
+    }
+
     impl TryFrom<outbound::proxy_protocol::Opaque> for Opaque {
         type Error = InvalidOpaqueRoute;
         fn try_from(proto: outbound::proxy_protocol::Opaque) -> Result<Self, Self::Error> {
-            if proto.routes.len() != 1 {
-                return Err(InvalidOpaqueRoute::OnlyOneRoute(proto.routes.len()));
-            }
-
-            proto
+            let routes = proto
                 .routes
                 .into_iter()
-                .next()
-                .ok_or(InvalidOpaqueRoute::OnlyOneRoute(0))?
-                .try_into()
+                .map(try_route)
+                .collect::<Result<Arc<[_]>, _>>()?;
+
+            Ok(Self { routes })
         }
     }
 
-    impl TryFrom<outbound::OpaqueRoute> for Opaque {
-        type Error = InvalidOpaqueRoute;
+    fn try_route(
+        outbound::OpaqueRoute { metadata, rules }: outbound::OpaqueRoute,
+    ) -> Result<Route, InvalidOpaqueRoute> {
+        let meta = Arc::new(
+            metadata
+                .ok_or(InvalidMeta("missing metadata"))?
+                .try_into()?,
+        );
 
-        fn try_from(
-            outbound::OpaqueRoute { metadata, rules }: outbound::OpaqueRoute,
-        ) -> Result<Self, Self::Error> {
-            let meta = Arc::new(
-                metadata
-                    .ok_or(InvalidMeta("missing metadata"))?
-                    .try_into()?,
-            );
-
-            // Currently, opaque rules have no match expressions, so if there's
-            // more than one rule, we have no way of determining which one to
-            // use. Therefore, require that there's exactly one rule.
-            if rules.len() != 1 {
-                return Err(InvalidOpaqueRoute::OnlyOneRule(rules.len()));
-            }
-
-            let policy = rules
-                .into_iter()
-                .map(|rule| try_rule(&meta, rule))
-                .next()
-                .ok_or(InvalidOpaqueRoute::OnlyOneRule(0))??;
-
-            Ok(Self {
-                policy: Some(policy),
-            })
+        // Currently, opaque rules have no match expressions, so if there's
+        // more than one rule, we have no way of determining which one to
+        // use. Therefore, require that there's exactly one rule.
+        if rules.len() != 1 {
+            return Err(InvalidOpaqueRoute::OnlyOneRule(rules.len()));
         }
-    }
 
-    impl Opaque {
-        pub(crate) fn fill_backends(&self, set: &mut BackendSet) {
-            for p in &self.policy {
-                p.distribution.fill_backends(set);
-            }
-        }
+        let rule = rules.first().cloned().expect("already checked");
+        let policy = try_rule(&meta, rule)?;
+        Ok(Route { policy })
     }
 
     fn try_rule(

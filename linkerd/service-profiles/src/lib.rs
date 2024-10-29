@@ -193,6 +193,12 @@ impl Profile {
     pub fn has_routes_or_targets(&self) -> bool {
         !self.http_routes.is_empty() || !self.targets.is_empty()
     }
+
+    /// Returns `true` if this profile provides configuration that should
+    /// override opaque client policy configuration.
+    pub fn has_targets(&self) -> bool {
+        !self.targets.is_empty()
+    }
 }
 
 // === impl LookupAddr ===

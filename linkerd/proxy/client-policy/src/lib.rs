@@ -175,7 +175,7 @@ impl ClientPolicy {
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
                     // policy to fail conns?
-                    policy: None,
+                    routes: std::sync::Arc::new([]),
                 },
             },
             backends: BACKENDS.clone(),
@@ -206,7 +206,7 @@ impl ClientPolicy {
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
                     // policy to fail conns?
-                    policy: None,
+                    routes: std::sync::Arc::new([]),
                 },
             },
             backends: NO_BACKENDS.clone(),
@@ -491,14 +491,14 @@ pub mod proto {
                 } => {
                     http::proto::fill_route_backends(&http1.routes, &mut backends);
                     http::proto::fill_route_backends(&http2.routes, &mut backends);
-                    opaque.fill_backends(&mut backends);
+                    opaq::proto::fill_route_backends(&opaque.routes, &mut backends);
                 }
                 Protocol::Http1(http::Http1 { ref routes, .. })
                 | Protocol::Http2(http::Http2 { ref routes, .. }) => {
                     http::proto::fill_route_backends(routes, &mut backends);
                 }
                 Protocol::Opaque(ref p) => {
-                    p.fill_backends(&mut backends);
+                    opaq::proto::fill_route_backends(&p.routes, &mut backends);
                 }
                 Protocol::Tls(ref p) => {
                     p.fill_backends(&mut backends);

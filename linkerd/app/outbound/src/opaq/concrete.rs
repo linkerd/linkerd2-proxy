@@ -1,5 +1,6 @@
 use crate::{
     metrics::BalancerMetricsParams,
+    opaq::LogicalAddr,
     stack_labels,
     zone::{tcp_zone_labels, TcpZoneLabels},
     BackendRef, Outbound, ParentRef,
@@ -12,7 +13,6 @@ use linkerd_app_core::{
         prom::{self, EncodeLabelSetMut},
         OutboundZoneLocality,
     },
-    profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -23,7 +23,7 @@ use linkerd_app_core::{
     tls,
     transport::{self, addrs::*},
     transport_header::SessionProtocol,
-    Error, Infallible, NameAddr,
+    Addr, Error, Infallible, NameAddr,
 };
 use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tracing::info_span;
@@ -31,9 +31,17 @@ use tracing::info_span;
 /// Parameter configuring dispatcher behavior.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Dispatch {
-    Balance(NameAddr, NameAddr, balance::EwmaConfig),
+    Balance(Addr, NameAddr, balance::EwmaConfig),
     Forward(Remote<ServerAddr>, Metadata),
+    /// A backend dispatcher that explicitly fails all requests.
+    Fail {
+        message: Arc<str>,
+    },
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct DispatcherFailed(Arc<str>);
 
 /// Wraps errors encountered in this module.
 #[derive(Debug, thiserror::Error)]
@@ -58,7 +66,7 @@ pub type BalancerMetrics = BalancerMetricsParams<ConcreteLabels>;
 /// A target configuring a load balancer stack.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Balance<T> {
-    logical: NameAddr,
+    logical: Addr,
     concrete: NameAddr,
     ewma: balance::EwmaConfig,
     queue: QueueConfig,
@@ -118,8 +126,9 @@ impl<C> Outbound<C> {
         >,
     >
     where
-        // Logical target.c
+        // Logical target
         T: svc::Param<Dispatch>,
+        T: svc::Param<LogicalAddr>,
         T: Clone + Debug + Send + Sync + 'static,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
@@ -163,6 +172,10 @@ impl<C> Outbound<C> {
                 )
                 .instrument(|e: &Endpoint<T>| info_span!("endpoint", addr = %e.addr));
 
+            let fail = svc::ArcNewService::new(|message: Arc<str>| {
+                svc::mk(move |_| futures::future::ready(Err(DispatcherFailed(message.clone()))))
+            });
+
             let inbound_ips = config.inbound_ips.clone();
             let balance = endpoint
                 .push_map_target(
@@ -192,25 +205,32 @@ impl<C> Outbound<C> {
                 .instrument(|t: &Balance<T>| info_span!("balance", addr = %t.concrete));
 
             balance
+                .push_switch(Ok::<_, Infallible>, forward.into_inner())
                 .push_switch(
                     move |parent: T| -> Result<_, Infallible> {
                         Ok(match parent.param() {
-                            Dispatch::Balance(logical, concrete, ewma) => svc::Either::A(Balance {
-                                logical,
-                                concrete,
-                                ewma,
-                                queue,
-                                parent,
-                            }),
-                            Dispatch::Forward(addr, meta) => svc::Either::B(Endpoint {
-                                addr,
-                                is_local: false,
-                                metadata: meta,
-                                parent,
-                            }),
+                            Dispatch::Balance(logical, concrete, ewma) => {
+                                svc::Either::A(svc::Either::A(Balance {
+                                    logical,
+                                    concrete,
+                                    ewma,
+                                    queue,
+                                    parent,
+                                }))
+                            }
+
+                            Dispatch::Forward(addr, meta) => {
+                                svc::Either::A(svc::Either::B(Endpoint {
+                                    addr,
+                                    is_local: false,
+                                    metadata: meta,
+                                    parent,
+                                }))
+                            }
+                            Dispatch::Fail { message } => svc::Either::B(message),
                         })
                     },
-                    forward.into_inner(),
+                    svc::stack(fail).check_new_clone().into_inner(),
                 )
                 .push_on_service(tcp::Forward::layer())
                 .push_on_service(drain::Retain::layer(rt.drain.clone()))
@@ -309,7 +329,7 @@ impl<T> svc::Param<Option<SessionProtocol>> for Endpoint<T> {
 
 impl<T> svc::Param<transport::labels::Key> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<LogicalAddr>,
 {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::OutboundClient(self.param())
@@ -318,14 +338,14 @@ where
 
 impl<T> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<LogicalAddr>,
 {
     fn param(&self) -> metrics::OutboundEndpointLabels {
-        let authority = self
-            .parent
-            .param()
-            .as_ref()
-            .map(|profiles::LogicalAddr(a)| a.as_http_authority());
+        let authority = match self.parent.param() {
+            LogicalAddr(Addr::Name(name)) => Some(name.as_http_authority()),
+            LogicalAddr(Addr::Socket(_)) => None,
+        };
+
         metrics::OutboundEndpointLabels {
             authority,
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
@@ -350,7 +370,7 @@ impl<T> svc::Param<TcpZoneLabels> for Endpoint<T> {
 
 impl<T> svc::Param<metrics::EndpointLabels> for Endpoint<T>
 where
-    T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<LogicalAddr>,
 {
     fn param(&self) -> metrics::EndpointLabels {
         metrics::EndpointLabels::from(svc::Param::<metrics::OutboundEndpointLabels>::param(self))
