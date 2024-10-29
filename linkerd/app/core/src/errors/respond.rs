@@ -120,7 +120,7 @@ impl SyntheticHttpResponse {
         Self {
             close_connection: true,
             http_status: http::StatusCode::GATEWAY_TIMEOUT,
-            grpc_status: tonic::Code::Unavailable,
+            grpc_status: tonic::Code::DeadlineExceeded,
             message: Cow::Owned(msg.to_string()),
             location: None,
         }
@@ -130,7 +130,7 @@ impl SyntheticHttpResponse {
         Self {
             close_connection: false,
             http_status: http::StatusCode::GATEWAY_TIMEOUT,
-            grpc_status: tonic::Code::Unavailable,
+            grpc_status: tonic::Code::DeadlineExceeded,
             message: Cow::Owned(msg.to_string()),
             location: None,
         }
