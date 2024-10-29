@@ -7,11 +7,10 @@ use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     metrics::{RouteAuthzLabels, RouteLabels},
     svc::{self, ServiceExt},
-    tls::{self, ClientId, ServerTls},
+    tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
-    Conditional, Error, Result,
+    Error, Result,
 };
-use linkerd_identity::Id;
 use linkerd_proxy_server_policy::{grpc, http, route::RouteMatch};
 use std::{sync::Arc, task};
 
@@ -83,10 +82,6 @@ pub struct GrpcRouteInjectedFailure {
 #[derive(Debug, thiserror::Error)]
 #[error("invalid server policy: {0}")]
 pub struct HttpInvalidPolicy(&'static str);
-
-#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
-#[error("too many requests")]
-pub struct RateLimitError(());
 
 // === impl NewHttpPolicy ===
 
@@ -160,10 +155,6 @@ where
     }
 
     fn call(&mut self, mut req: ::http::Request<B>) -> Self::Future {
-        if self.rate_limit().is_err() {
-            return future::Either::Right(future::err(RateLimitError(()).into()));
-        }
-
         // Find an appropriate route for the request and ensure that it's
         // authorized.
         let permit = match self.policy.routes() {
@@ -295,54 +286,6 @@ impl<T, N> HttpPolicyService<T, N> {
         self.metrics
             .route_not_found(labels, self.connection.dst, self.connection.tls.clone());
         HttpRouteNotFound(()).into()
-    }
-
-    fn rate_limit(&self) -> std::result::Result<(), ()> {
-        let arc_rl = self.policy.borrow().local_rate_limit.clone();
-        let rl = Arc::clone(&arc_rl);
-
-        if let Some(lim) = &rl.total {
-            if lim.check().is_err() {
-                tracing::info!("Global rate limit exceeded");
-                return Err(());
-            }
-        }
-
-        let client_id = self.get_client_id().unwrap_or("UNKNOWN");
-        let mut has_err = false;
-        let _ = &rl
-            .overrides
-            .iter()
-            .filter(|lim| lim.ids.contains(&client_id.to_string()))
-            .for_each(|lim| {
-                if lim.rate_limit.check_key(&lim.ids).is_err() {
-                    tracing::info!("Override rate limit exceeded");
-                    has_err = true;
-                }
-            });
-
-        if has_err {
-            return Err(());
-        }
-
-        if let Some(lim) = &rl.identity {
-            if lim.check_key(&client_id.to_string()).is_err() {
-                tracing::info!("Identity rate limit exceeded");
-                return Err(());
-            }
-        }
-
-        Ok(())
-    }
-
-    fn get_client_id(&self) -> Option<&str> {
-        match &self.connection.tls {
-            Conditional::Some(ServerTls::Established {
-                client_id: Some(ClientId(Id::Dns(dns_name))),
-                ..
-            }) => Some(dns_name.as_str()),
-            _ => None,
-        }
     }
 }
 

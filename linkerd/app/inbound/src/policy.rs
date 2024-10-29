@@ -2,6 +2,7 @@ mod api;
 mod config;
 pub mod defaults;
 pub mod http;
+pub mod http_local_rate_limit;
 mod store;
 mod tcp;
 

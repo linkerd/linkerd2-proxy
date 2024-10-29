@@ -203,7 +203,7 @@ impl errors::HttpRescue<Error> for ServerRescue {
             ));
         }
 
-        if errors::is_caused_by::<policy::http::RateLimitError>(&*error) {
+        if errors::is_caused_by::<policy::http_local_rate_limit::RateLimitError>(&*error) {
             return Ok(errors::SyntheticHttpResponse::rate_limited(error));
         }
 

@@ -241,6 +241,8 @@ impl<C> Inbound<C> {
                 .check_new_service::<(policy::HttpRoutePermit, T), http::Request<http::BoxBody>>()
                 .push(svc::ArcNewService::layer())
                 .push(policy::NewHttpPolicy::layer(rt.metrics.http_authz.clone()))
+                .push(svc::ArcNewService::layer())
+                .push(policy::http_local_rate_limit::NewHttpLocalRateLimit::layer())
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()
