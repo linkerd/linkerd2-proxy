@@ -2,11 +2,11 @@ use super::{
     super::{concrete, retry},
     CanonicalDstHeader, Concrete, NoRoute,
 };
-use crate::{policy, BackendRef, ParentRef, UNKNOWN_META};
+use crate::{service_meta, BackendRef, ParentRef, UNKNOWN_META};
 use linkerd_app_core::{
     classify, metrics,
     proxy::http::{self, balance},
-    svc, Error, NameAddr,
+    svc, Error,
 };
 use linkerd_distribute as distribute;
 use std::{fmt::Debug, hash::Hash, sync::Arc, time};
@@ -106,26 +106,6 @@ where
             routes,
             targets,
         } = routes;
-
-        fn service_meta(addr: &NameAddr) -> Option<Arc<policy::Meta>> {
-            let mut parts = addr.name().split('.');
-
-            let name = parts.next()?;
-            let namespace = parts.next()?;
-
-            if !parts.next()?.eq_ignore_ascii_case("svc") {
-                return None;
-            }
-
-            Some(Arc::new(policy::Meta::Resource {
-                group: "core".to_string(),
-                kind: "Service".to_string(),
-                namespace: namespace.to_string(),
-                name: name.to_string(),
-                section: None,
-                port: Some(addr.port().try_into().ok()?),
-            }))
-        }
 
         let parent_meta = service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone());
 

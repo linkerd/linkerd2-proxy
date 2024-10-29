@@ -2,7 +2,7 @@ mod http;
 mod tcp;
 
 pub(crate) use self::{http::Http, tcp::Tcp};
-use crate::http::IdentityRequired;
+use crate::{http::IdentityRequired, opaq, tls};
 use linkerd_app_core::{
     errors::{FailFastError, LoadShedError},
     metrics::FmtLabels,
@@ -19,6 +19,8 @@ enum ErrorKind {
     ResponseTimeout,
     Unexpected,
     LoadShed,
+    ForbiddenTcpRoute,
+    ForbiddenTlsRoute,
 }
 
 // === impl ErrorKind ===
@@ -35,6 +37,10 @@ impl ErrorKind {
             ErrorKind::ResponseTimeout
         } else if err.is::<LoadShedError>() {
             ErrorKind::LoadShed
+        } else if err.is::<opaq::ForbiddenRoute>() {
+            ErrorKind::ForbiddenTcpRoute
+        } else if err.is::<tls::ForbiddenRoute>() {
+            ErrorKind::ForbiddenTlsRoute
         } else if let Some(e) = err.source() {
             Self::mk(e)
         } else {
@@ -54,6 +60,8 @@ impl FmtLabels for ErrorKind {
                 ErrorKind::IdentityRequired => "identity required",
                 ErrorKind::Io => "i/o",
                 ErrorKind::ResponseTimeout => "response timeout",
+                ErrorKind::ForbiddenTlsRoute => "forbidden TLS route",
+                ErrorKind::ForbiddenTcpRoute => "forbidden TCP route",
                 ErrorKind::Unexpected => "unexpected",
             }
         )

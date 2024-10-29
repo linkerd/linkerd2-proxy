@@ -45,6 +45,7 @@ linkerd-proxy-client-policy = { path = "../../proxy/client-policy", features = [
 ] }
 linkerd-retry = { path = "../../retry" }
 linkerd-tls-route = { path = "../../tls/route" }
+linkerd-opaq-route = { path = "../../opaq-route" }
 linkerd-tonic-stream = { path = "../../tonic-stream" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 

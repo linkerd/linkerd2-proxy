@@ -2,7 +2,7 @@ use super::super::Concrete;
 use crate::{ParentRef, RouteRef};
 use linkerd_app_core::{io, svc, Addr, Error};
 use linkerd_distribute as distribute;
-use linkerd_tls_route as tls_route;
+use linkerd_opaq_route as opaq_route;
 use std::{fmt::Debug, hash::Hash};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -13,7 +13,7 @@ pub(crate) struct Backend<T> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct MatchedRoute<T> {
-    pub(super) r#match: tls_route::RouteMatch,
+    pub(super) r#match: opaq_route::RouteMatch,
     pub(super) params: Route<T>,
 }
 
@@ -29,7 +29,7 @@ pub(crate) struct Route<T> {
 
 /// Indicates that traffic is not allowed to pass through a route
 #[derive(Debug, thiserror::Error)]
-#[error("forbidden tls route")]
+#[error("forbidden tcp route")]
 pub(crate) struct ForbiddenRoute;
 
 pub(crate) type BackendDistribution<T> = distribute::Distribution<Backend<T>>;

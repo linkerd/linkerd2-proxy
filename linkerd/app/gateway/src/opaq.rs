@@ -3,8 +3,13 @@ use inbound::{GatewayAddr, GatewayDomainInvalid};
 use linkerd_app_core::{io, profiles, svc, tls, transport::addrs::*, Error};
 use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
+use tokio::sync::watch;
 
-pub type Target = outbound::opaq::Logical;
+#[derive(Clone, Debug)]
+pub struct Target {
+    orig_dst: OrigDstAddr,
+    routes: watch::Receiver<outbound::opaq::Routes>,
+}
 
 impl Gateway {
     /// Wrap the provided outbound opaque stack with inbound authorization and
@@ -33,22 +38,59 @@ impl Gateway {
             .push_filter(
                 |(_, opaq): (_, Opaq<T>)| -> Result<_, GatewayDomainInvalid> {
                     // Fail connections were not resolved.
-                    let profile = svc::Param::<Option<profiles::Receiver>>::param(&*opaq)
-                        .ok_or(GatewayDomainInvalid)?;
-                    if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                        Ok(outbound::opaq::Logical::Route(addr, profile))
-                    } else if let Some((addr, metadata)) = profile.endpoint() {
-                        Ok(outbound::opaq::Logical::Forward(
-                            Remote(ServerAddr(addr)),
-                            metadata,
-                        ))
-                    } else {
-                        Err(GatewayDomainInvalid)
-                    }
+                    Target::try_from(opaq)
                 },
             )
             // Authorize connections to the gateway.
             .push(self.inbound.authorize_tcp())
             .arc_new_tcp()
+    }
+}
+
+impl<T> TryFrom<Opaq<T>> for Target
+where
+    T: svc::Param<OrigDstAddr>,
+{
+    type Error = GatewayDomainInvalid;
+
+    fn try_from(opaq: Opaq<T>) -> Result<Self, Self::Error> {
+        let profile = svc::Param::<Option<profiles::Receiver>>::param(&*opaq);
+        let policy = svc::Param::<outbound::policy::Receiver>::param(&*opaq);
+        let orig_dst = svc::Param::<OrigDstAddr>::param(&*opaq);
+        // we error if there is no profiles resolution
+        if profile.is_none() {
+            return Err(GatewayDomainInvalid);
+        }
+
+        let routes = outbound::opaq::routes_from_discovery(*orig_dst, profile, policy);
+
+        Ok(Target { orig_dst, routes })
+    }
+}
+
+impl svc::Param<outbound::opaq::LogicalAddr> for Target {
+    fn param(&self) -> outbound::opaq::LogicalAddr {
+        let routes = self.routes.borrow();
+        outbound::opaq::LogicalAddr(routes.addr.clone())
+    }
+}
+
+impl svc::Param<watch::Receiver<outbound::opaq::Routes>> for Target {
+    fn param(&self) -> watch::Receiver<outbound::opaq::Routes> {
+        self.routes.clone()
+    }
+}
+
+impl PartialEq for Target {
+    fn eq(&self, other: &Self) -> bool {
+        self.orig_dst == other.orig_dst
+    }
+}
+
+impl Eq for Target {}
+
+impl std::hash::Hash for Target {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.orig_dst.hash(state);
     }
 }

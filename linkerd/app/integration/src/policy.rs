@@ -167,11 +167,13 @@ pub fn outbound_default_opaque_route(dst: impl ToString) -> outbound::OpaqueRout
                     distribution::FirstAvailable {
                         backends: vec![opaque_route::RouteBackend {
                             backend: Some(backend(dst)),
+                            invalid: None,
                         }],
                     },
                 )),
             }),
         }],
+        error: None,
     }
 }
 

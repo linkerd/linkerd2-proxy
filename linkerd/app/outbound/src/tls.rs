@@ -17,6 +17,7 @@ use tokio::sync::watch;
 mod concrete;
 mod logical;
 
+pub(crate) use self::logical::route::ForbiddenRoute;
 pub use self::logical::{Concrete, Routes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

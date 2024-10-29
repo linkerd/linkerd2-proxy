@@ -23,7 +23,7 @@ use linkerd_app_core::{
     svc::{self, ServiceExt},
     tls::ConnectMeta as TlsConnectMeta,
     transport::addrs::*,
-    AddrMatch, Error, ProxyRuntime,
+    AddrMatch, Error, NameAddr, ProxyRuntime,
 };
 use linkerd_tonic_stream::ReceiveLimits;
 use std::{
@@ -342,3 +342,23 @@ impl EndpointRef {
 
 static UNKNOWN_META: once_cell::sync::Lazy<Arc<policy::Meta>> =
     once_cell::sync::Lazy::new(|| policy::Meta::new_default("unknown"));
+
+pub(crate) fn service_meta(addr: &NameAddr) -> Option<Arc<policy::Meta>> {
+    let mut parts = addr.name().split('.');
+
+    let name = parts.next()?;
+    let namespace = parts.next()?;
+
+    if !parts.next()?.eq_ignore_ascii_case("svc") {
+        return None;
+    }
+
+    Some(Arc::new(policy::Meta::Resource {
+        group: "core".to_string(),
+        kind: "Service".to_string(),
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        section: None,
+        port: Some(addr.port().try_into().ok()?),
+    }))
+}

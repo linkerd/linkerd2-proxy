@@ -22,8 +22,11 @@ struct Http<T> {
     version: http::Version,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Opaq<T>(Discovery<T>);
+#[derive(Clone, Debug)]
+struct Opaq {
+    orig_dst: OrigDstAddr,
+    routes: watch::Receiver<opaq::Routes>,
+}
 
 #[derive(Clone, Debug)]
 struct SelectTarget<T>(Http<T>);
@@ -91,7 +94,7 @@ impl Outbound<()> {
             let discover = discover.clone();
             self.to_tcp_connect()
                 .push_opaq_cached(resolve.clone())
-                .map_stack(|_, _, stk| stk.push_map_target(Opaq))
+                .map_stack(|_, _, stk| stk.push_map_target(Opaq::from))
                 .push_discover(svc::mk(move |OrigDstAddr(addr)| {
                     discover.clone().oneshot(DiscoverAddr(addr.into()))
                 }))
@@ -600,42 +603,43 @@ impl std::hash::Hash for Logical {
     }
 }
 
-// === impl Opaq ===
-
-impl<T> std::ops::Deref for Opaq<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl svc::Param<opaq::LogicalAddr> for Opaq {
+    fn param(&self) -> opaq::LogicalAddr {
+        let routes = self.routes.borrow();
+        opaq::LogicalAddr(routes.addr.clone())
     }
 }
 
-impl<T> svc::Param<Remote<ServerAddr>> for Opaq<T>
+impl<T> From<Discovery<T>> for Opaq
 where
-    T: svc::Param<OrigDstAddr>,
+    T: svc::Param<OrigDstAddr> + Clone,
 {
-    fn param(&self) -> Remote<ServerAddr> {
-        let OrigDstAddr(addr) = (*self.0).param();
-        Remote(ServerAddr(addr))
+    fn from(discovery: Discovery<T>) -> Self {
+        let policy = svc::Param::<policy::Receiver>::param(&discovery);
+        let profile = svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&discovery);
+        let orig_dst: OrigDstAddr = discovery.param();
+        let routes = opaq::routes_from_discovery(*orig_dst, profile.map(Into::into), policy);
+        Self { routes, orig_dst }
     }
 }
 
-impl<T> svc::Param<opaq::Logical> for Opaq<T>
-where
-    T: svc::Param<OrigDstAddr>,
-{
-    fn param(&self) -> opaq::Logical {
-        if let Some(profile) = svc::Param::<Option<profiles::Receiver>>::param(&self.0) {
-            if let Some(profiles::LogicalAddr(addr)) = profile.logical_addr() {
-                return opaq::Logical::Route(addr, profile);
-            }
+impl PartialEq for Opaq {
+    fn eq(&self, other: &Self) -> bool {
+        self.orig_dst == other.orig_dst
+    }
+}
 
-            if let Some((addr, metadata)) = profile.endpoint() {
-                return opaq::Logical::Forward(Remote(ServerAddr(addr)), metadata);
-            }
-        }
+impl Eq for Opaq {}
 
-        opaq::Logical::Forward(self.param(), Default::default())
+impl std::hash::Hash for Opaq {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.orig_dst.hash(state);
+    }
+}
+
+impl svc::Param<watch::Receiver<opaq::Routes>> for Opaq {
+    fn param(&self) -> watch::Receiver<opaq::Routes> {
+        self.routes.clone()
     }
 }
 

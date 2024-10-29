@@ -26,6 +26,9 @@ pub struct Route<P> {
 
     /// Must not be empty.
     pub rules: Vec<Rule<P>>,
+
+    /// Indicates that traffic should not pass through this route
+    pub forbidden: bool,
 }
 
 /// Policies for a given set of route matches.

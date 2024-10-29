@@ -373,7 +373,7 @@ pub mod proto {
             }: grpc_route::RouteBackend,
         ) -> Result<RouteBackend<Filter>, InvalidBackend> {
             let backend = backend.ok_or(InvalidBackend::Missing("backend"))?;
-            RouteBackend::try_from_proto(backend, filters)
+            RouteBackend::try_from_proto(backend, filters, None)
         }
     }
 

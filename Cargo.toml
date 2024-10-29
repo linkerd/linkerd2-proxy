@@ -40,6 +40,7 @@ members = [
     "linkerd/meshtls/rustls",
     "linkerd/meshtls/verifier",
     "linkerd/metrics",
+    "linkerd/opaq-route",
     "linkerd/opencensus",
     "linkerd/opentelemetry",
     "linkerd/pool",
@@ -89,4 +90,4 @@ debug = 1
 lto = true
 
 [workspace.dependencies]
-linkerd2-proxy-api = "0.14.0"
+linkerd2-proxy-api = { git = 'https://github.com/linkerd/linkerd2-proxy-api', rev = 'c5648ae2a1e405cc6b8aca20522356ebdf20f1ea' }

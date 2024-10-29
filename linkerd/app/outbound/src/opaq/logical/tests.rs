@@ -1,13 +1,23 @@
-use super::*;
+use super::{client_policy as policy, *};
+use crate::opaq::{self, policy::Receiver as PolicyReceiver};
 use crate::test_util::*;
 use io::AsyncWriteExt;
 use linkerd_app_core::{
     errors::{self, FailFastError},
     io::AsyncReadExt,
+    profiles,
     svc::{NewService, ServiceExt},
+    transport::{ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    NameAddr,
 };
 use std::net::SocketAddr;
-use tokio::time;
+use tokio::{sync::watch, time};
+
+#[derive(Clone, Debug)]
+struct Target {
+    orig_dst: OrigDstAddr,
+    routes: watch::Receiver<opaq::Routes>,
+}
 
 /// Tests that the logical stack forwards connections to services with a single endpoint.
 #[tokio::test]
@@ -17,11 +27,10 @@ async fn forward() {
 
     // We create a logical target to be resolved to endpoints.
     let laddr = "xyz.example.com:4444".parse::<NameAddr>().unwrap();
-    let (_tx, rx) = tokio::sync::watch::channel(Profile {
-        addr: Some(profiles::LogicalAddr(laddr.clone())),
-        ..Default::default()
-    });
-    let logical = Logical::Route(laddr.clone(), rx.into());
+    let original_dst = OrigDstAddr("1.2.3.4:444".parse().unwrap());
+
+    let (_tx, policy_rx) = watch::channel(default_service_policy(laddr.clone()));
+    let target = Target::new(policy_rx, None, original_dst);
 
     // The resolution resolves a single endpoint.
     let ep_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
@@ -31,7 +40,7 @@ async fn forward() {
     // Build the TCP logical stack with a mocked connector.
     let (rt, _shutdown) = runtime();
     let stack = Outbound::new(default_config(), rt, &mut Default::default())
-        .with_stack(svc::mk(move |ep: concrete::Endpoint<Concrete<Logical>>| {
+        .with_stack(svc::mk(move |ep: concrete::Endpoint<Concrete<Target>>| {
             let Remote(ServerAddr(ea)) = svc::Param::param(&ep);
             assert_eq!(ea, ep_addr);
             let mut io = support::io();
@@ -47,7 +56,7 @@ async fn forward() {
     let mut io = support::io();
     io.read(b"hola").write(b"mundo");
     stack
-        .new_service(logical.clone())
+        .new_service(target.clone())
         .oneshot(io.build())
         .await
         .expect("forwarding must not fail");
@@ -68,11 +77,10 @@ async fn balances() {
 
     // We create a logical target to be resolved to endpoints.
     let laddr = "xyz.example.com:4444".parse::<NameAddr>().unwrap();
-    let (_tx, rx) = tokio::sync::watch::channel(Profile {
-        addr: Some(profiles::LogicalAddr(laddr.clone())),
-        ..Default::default()
-    });
-    let logical = Logical::Route(laddr.clone(), rx.into());
+    let original_dst = OrigDstAddr("1.2.3.4:444".parse().unwrap());
+
+    let (_tx, policy_rx) = watch::channel(default_service_policy(laddr.clone()));
+    let target = Target::new(policy_rx, None, original_dst);
 
     // The resolution resolves a single endpoint.
     let ep0_addr = SocketAddr::new([192, 0, 2, 30].into(), 3333);
@@ -86,7 +94,7 @@ async fn balances() {
     let (rt, _shutdown) = runtime();
     let svc = Outbound::new(default_config(), rt, &mut Default::default())
         .with_stack(svc::mk(
-            move |ep: concrete::Endpoint<Concrete<Logical>>| match svc::Param::param(&ep) {
+            move |ep: concrete::Endpoint<Concrete<Target>>| match svc::Param::param(&ep) {
                 Remote(ServerAddr(addr)) if addr == ep0_addr => {
                     tracing::debug!(%addr, "writing ep0");
                     let mut io = support::io();
@@ -107,7 +115,7 @@ async fn balances() {
         .push_opaq_concrete(resolve)
         .push_opaq_logical()
         .into_inner()
-        .new_service(logical);
+        .new_service(target);
 
     // We add a single endpoint to the balancer and it is used:
 
@@ -202,4 +210,93 @@ fn spawn_io() -> (
         Ok(buf)
     });
     (server_io, task)
+}
+
+fn default_service_policy(addr: NameAddr) -> policy::ClientPolicy {
+    let meta = policy::Meta::new_default("test");
+    let queue = {
+        policy::Queue {
+            capacity: 100,
+            failfast_timeout: std::time::Duration::from_secs(3),
+        }
+    };
+
+    let load = policy::Load::PeakEwma(policy::PeakEwma {
+        default_rtt: std::time::Duration::from_millis(30),
+        decay: std::time::Duration::from_secs(10),
+    });
+
+    let backend = policy::Backend {
+        meta: meta.clone(),
+        queue,
+        dispatcher: policy::BackendDispatcher::BalanceP2c(
+            load,
+            policy::EndpointDiscovery::DestinationGet {
+                path: addr.to_string(),
+            },
+        ),
+    };
+
+    let opaque = policy::opaq::Opaque {
+        routes: Arc::new([policy::opaq::Route {
+            policy: policy::opaq::Policy {
+                distribution: policy::RouteDistribution::FirstAvailable(Arc::new([
+                    policy::RouteBackend {
+                        backend: backend.clone(),
+                        filters: Arc::new([]),
+                    },
+                ])),
+                filters: Arc::new([]),
+                meta: meta.clone(),
+                params: (),
+            },
+            forbidden: false,
+        }]),
+    };
+
+    policy::ClientPolicy {
+        parent: meta,
+        protocol: policy::Protocol::Opaque(opaque),
+        backends: Arc::new([backend]),
+    }
+}
+
+// === impl Target ===
+
+impl Target {
+    pub fn new(
+        policy: PolicyReceiver,
+        profile: Option<profiles::Receiver>,
+        orig_dst: OrigDstAddr,
+    ) -> Self {
+        let routes = opaq::routes_from_discovery(*orig_dst, profile, policy);
+        Self { orig_dst, routes }
+    }
+}
+
+impl svc::Param<watch::Receiver<opaq::Routes>> for Target {
+    fn param(&self) -> watch::Receiver<opaq::Routes> {
+        self.routes.clone()
+    }
+}
+
+impl std::cmp::PartialEq for Target {
+    fn eq(&self, other: &Self) -> bool {
+        self.orig_dst == other.orig_dst
+    }
+}
+
+impl std::cmp::Eq for Target {}
+
+impl std::hash::Hash for Target {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.orig_dst.hash(state);
+    }
+}
+
+impl svc::Param<opaq::LogicalAddr> for Target {
+    fn param(&self) -> opaq::LogicalAddr {
+        let routes = self.routes.borrow();
+        opaq::LogicalAddr(routes.addr.clone())
+    }
 }

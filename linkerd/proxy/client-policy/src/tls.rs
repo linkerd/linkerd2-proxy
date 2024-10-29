@@ -27,6 +27,7 @@ pub fn default(distribution: crate::RouteDistribution<Filter>) -> Route {
                 distribution,
             },
         }],
+        forbidden: false,
     }
 }
 

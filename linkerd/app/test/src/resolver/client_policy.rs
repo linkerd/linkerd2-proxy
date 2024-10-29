@@ -81,6 +81,19 @@ impl ClientPolicies {
             }],
         }]);
 
+        let opaq_routes = Arc::new([opaq::Route {
+            policy: opaq::Policy {
+                meta: Meta::new_default("default"),
+                filters: Arc::new([]),
+                params: Default::default(),
+                distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
+                    filters: Arc::new([]),
+                    backend: backend.clone(),
+                }])),
+            },
+            forbidden: false,
+        }]);
+
         let protocol = Protocol::Detect {
             timeout: Duration::from_secs(10),
             http1: http::Http1 {
@@ -92,15 +105,7 @@ impl ClientPolicies {
                 failure_accrual: Default::default(),
             },
             opaque: opaq::Opaque {
-                policy: Some(opaq::Policy {
-                    meta: Meta::new_default("default"),
-                    filters: Arc::new([]),
-                    params: Default::default(),
-                    distribution: RouteDistribution::FirstAvailable(Arc::new([RouteBackend {
-                        filters: Arc::new([]),
-                        backend: backend.clone(),
-                    }])),
-                }),
+                routes: opaq_routes,
             },
         };
         let policy = ClientPolicy {

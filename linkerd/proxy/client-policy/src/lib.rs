@@ -175,7 +175,7 @@ impl ClientPolicy {
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
                     // policy to fail conns?
-                    policy: None,
+                    routes: std::sync::Arc::new([]),
                 },
             },
             backends: BACKENDS.clone(),
@@ -206,7 +206,7 @@ impl ClientPolicy {
                 opaque: opaq::Opaque {
                     // TODO(eliza): eventually, can we configure the opaque
                     // policy to fail conns?
-                    policy: None,
+                    routes: std::sync::Arc::new([]),
                 },
             },
             backends: NO_BACKENDS.clone(),
@@ -314,7 +314,10 @@ pub mod proto {
     use super::*;
     use linkerd2_proxy_api::{
         meta,
-        outbound::{self, backend::BalanceP2c},
+        outbound::{
+            self,
+            backend::{self, balance_p2c, BalanceP2c},
+        },
     };
     use linkerd_error::Error;
     use linkerd_proxy_api_resolve::pb as resolve;
@@ -479,6 +482,7 @@ pub mod proto {
                 proxy_protocol::Kind::Http2(http) => Protocol::Http2(http.try_into()?),
                 proxy_protocol::Kind::Opaque(opaque) => Protocol::Opaque(opaque.try_into()?),
                 proxy_protocol::Kind::Grpc(grpc) => Protocol::Grpc(grpc.try_into()?),
+                proxy_protocol::Kind::Tls(_) => return Err(InvalidPolicy::Protocol("tls")), // TODO: support TLS
             };
 
             let mut backends = BackendSet::default();
@@ -491,14 +495,14 @@ pub mod proto {
                 } => {
                     http::proto::fill_route_backends(&http1.routes, &mut backends);
                     http::proto::fill_route_backends(&http2.routes, &mut backends);
-                    opaque.fill_backends(&mut backends);
+                    opaq::proto::fill_route_backends(&opaque.routes, &mut backends);
                 }
                 Protocol::Http1(http::Http1 { ref routes, .. })
                 | Protocol::Http2(http::Http2 { ref routes, .. }) => {
                     http::proto::fill_route_backends(routes, &mut backends);
                 }
                 Protocol::Opaque(ref p) => {
-                    p.fill_backends(&mut backends);
+                    opaq::proto::fill_route_backends(&p.routes, &mut backends);
                 }
                 Protocol::Tls(ref p) => {
                     p.fill_backends(&mut backends);
@@ -590,12 +594,13 @@ pub mod proto {
         pub(crate) fn try_from_proto<U>(
             backend: outbound::Backend,
             filters: impl IntoIterator<Item = U>,
+            invalid: Option<String>,
         ) -> Result<Self, InvalidBackend>
         where
             T: TryFrom<U>,
             T::Error: Into<Error>,
         {
-            let backend = Backend::try_from(backend)?;
+            let backend = Backend::try_from_proto(backend, invalid)?;
             let filters = filters
                 .into_iter()
                 .map(T::try_from)
@@ -606,11 +611,13 @@ pub mod proto {
         }
     }
 
-    impl TryFrom<outbound::Backend> for Backend {
-        type Error = InvalidBackend;
-        fn try_from(backend: outbound::Backend) -> Result<Self, InvalidBackend> {
-            use outbound::backend::{self, balance_p2c};
+    // === impl Backend ===
 
+    impl Backend {
+        fn try_from_proto(
+            backend: outbound::Backend,
+            invalid: Option<String>,
+        ) -> Result<Backend, InvalidBackend> {
             fn duration(
                 field: &'static str,
                 duration: Option<prost_types::Duration>,
@@ -629,37 +636,43 @@ pub mod proto {
                 Arc::new(meta)
             };
 
-            let dispatcher = match backend.kind {
-                Some(backend::Kind::Balancer(BalanceP2c { discovery, load })) => {
-                    let discovery = discovery
-                        .ok_or(InvalidBackend::Missing("balancer discovery"))?
-                        .try_into()?;
-                    let load = match load.ok_or(InvalidBackend::Missing("balancer load"))? {
-                        balance_p2c::Load::PeakEwma(balance_p2c::PeakEwma {
-                            default_rtt,
-                            decay,
-                        }) => Load::PeakEwma(PeakEwma {
-                            default_rtt: duration("peak EWMA default RTT", default_rtt)?,
-                            decay: duration("peak EWMA decay", decay)?,
-                        }),
-                    };
-                    BackendDispatcher::BalanceP2c(load, discovery)
+            let dispatcher = if let Some(invalid) = invalid {
+                BackendDispatcher::Fail {
+                    message: invalid.into(),
                 }
-                Some(backend::Kind::Forward(ep)) => {
-                    let (addr, meta) = resolve::to_addr_meta(ep, &Default::default())
-                        .ok_or(InvalidBackend::ForwardAddr)?;
-                    BackendDispatcher::Forward(addr, meta)
-                }
-                None => {
-                    let message = format!(
-                        "backend for {} {}{}{} has no dispatcher",
-                        meta.kind(),
-                        meta.namespace(),
-                        if meta.namespace() != "" { "/" } else { "" },
-                        meta.name()
-                    )
-                    .into();
-                    BackendDispatcher::Fail { message }
+            } else {
+                match backend.kind {
+                    Some(backend::Kind::Balancer(BalanceP2c { discovery, load })) => {
+                        let discovery = discovery
+                            .ok_or(InvalidBackend::Missing("balancer discovery"))?
+                            .try_into()?;
+                        let load = match load.ok_or(InvalidBackend::Missing("balancer load"))? {
+                            balance_p2c::Load::PeakEwma(balance_p2c::PeakEwma {
+                                default_rtt,
+                                decay,
+                            }) => Load::PeakEwma(PeakEwma {
+                                default_rtt: duration("peak EWMA default RTT", default_rtt)?,
+                                decay: duration("peak EWMA decay", decay)?,
+                            }),
+                        };
+                        BackendDispatcher::BalanceP2c(load, discovery)
+                    }
+                    Some(backend::Kind::Forward(ep)) => {
+                        let (addr, meta) = resolve::to_addr_meta(ep, &Default::default())
+                            .ok_or(InvalidBackend::ForwardAddr)?;
+                        BackendDispatcher::Forward(addr, meta)
+                    }
+                    None => {
+                        let message = format!(
+                            "backend for {} {}{}{} has no dispatcher",
+                            meta.kind(),
+                            meta.namespace(),
+                            if meta.namespace() != "" { "/" } else { "" },
+                            meta.name()
+                        )
+                        .into();
+                        BackendDispatcher::Fail { message }
+                    }
                 }
             };
 
