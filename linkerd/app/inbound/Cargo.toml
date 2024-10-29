@@ -24,6 +24,7 @@ futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-app-test = { path = "../test", optional = true }
 linkerd-http-access-log = { path = "../../http/access-log" }
+linkerd-identity = { path = "../../identity" }
 linkerd-idle-cache = { path = "../../idle-cache" }
 linkerd-meshtls = { path = "../../meshtls", optional = true }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true }

@@ -1,7 +1,7 @@
 mod api;
 mod config;
 pub mod defaults;
-mod http;
+pub mod http;
 mod store;
 mod tcp;
 
