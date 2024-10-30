@@ -380,12 +380,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-utils"
-version = "0.8.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22ec99545bb0ed0ea7bb9b8e1e9122ea386ff8a48c0922e43f36d45ab09e0e80"
-
-[[package]]
 name = "crypto-common"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -758,7 +752,6 @@ dependencies = [
  "nonzero_ext",
  "parking_lot",
  "portable-atomic",
- "quanta",
  "rand",
  "smallvec",
  "spinning_top",
@@ -2047,6 +2040,7 @@ dependencies = [
  "http",
  "ipnet",
  "linkerd-http-route",
+ "linkerd-identity",
  "linkerd2-proxy-api",
  "maplit",
  "prost-types",
@@ -2417,7 +2411,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.14.0"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api.git?branch=alpeb/v0.14.0-rate-limiting#903aeafd8c2e60790b5de0de7aee28f31964fce2"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api.git?branch=alpeb/v0.14.0-rate-limiting#3c666ecd4665e0f21ef609583bf926446b92b11d"
 dependencies = [
  "h2",
  "http",
@@ -2970,21 +2964,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quanta"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e5167a477619228a0b284fac2674e3c388cba90631d7b7de620e6f1fcd08da5"
-dependencies = [
- "crossbeam-utils",
- "libc",
- "once_cell",
- "raw-cpuid",
- "wasi",
- "web-sys",
- "winapi",
-]
-
-[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3043,15 +3022,6 @@ name = "rangemap"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60fcc7d6849342eff22c4350c8b9a989ee8ceabc4b481253e8946b9fe83d684"
-
-[[package]]
-name = "raw-cpuid"
-version = "11.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ab240315c661615f2ee9f0f2cd32d5a7343a84d5ebcccb99d46e6637565e7b0"
-dependencies = [
- "bitflags 2.4.2",
-]
 
 [[package]]
 name = "rcgen"
@@ -3944,16 +3914,6 @@ name = "wasm-bindgen-shared"
 version = "0.2.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c62a0a307cb4a311d3a07867860911ca130c3494e8c2719593806c08bc5d0484"
-
-[[package]]
-name = "web-sys"
-version = "0.3.70"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26fdeaafd9bd129f65e7c031593c24d62186301e0c72c8978fa1678be7d532c0"
-dependencies = [
- "js-sys",
- "wasm-bindgen",
-]
 
 [[package]]
 name = "widestring"

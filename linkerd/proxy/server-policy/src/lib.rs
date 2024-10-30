@@ -1,7 +1,7 @@
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]
 #![forbid(unsafe_code)]
 
-use local_rate_limit::HttpLocalRateLimit;
+use local_rate_limit::LocalRateLimit;
 use std::{hash::Hash, sync::Arc, time};
 
 pub mod authz;
@@ -20,7 +20,7 @@ pub use linkerd_http_route as route;
 pub struct ServerPolicy {
     pub protocol: Protocol,
     pub meta: Arc<Meta>,
-    pub local_rate_limit: Arc<HttpLocalRateLimit>,
+    pub local_rate_limit: Arc<LocalRateLimit>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -68,7 +68,7 @@ impl ServerPolicy {
                 }]),
                 tcp_authorizations: Arc::new([]),
             },
-            local_rate_limit: Arc::new(HttpLocalRateLimit::default()),
+            local_rate_limit: Arc::new(LocalRateLimit::default()),
         }
     }
 }

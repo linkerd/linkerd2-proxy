@@ -1,70 +1,103 @@
 use governor::{
     clock::DefaultClock,
-    state::{keyed::DefaultKeyedStateStore, InMemoryState, NotKeyed, RateLimiter},
-    Quota,
+    state::{keyed::HashMapStateStore, InMemoryState, RateLimiter, StateStore},
 };
-use std::num::NonZeroU32;
+use linkerd_identity::Id;
+use std::{collections::HashMap, num::NonZeroU32, sync::Arc};
 
 #[derive(Debug, Default)]
-pub struct HttpLocalRateLimit {
-    pub total: Option<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
-    pub identity: Option<RateLimiter<String, DefaultKeyedStateStore<String>, DefaultClock>>,
-    pub overrides: Vec<HttpLocalRateLimitOverride>,
+pub struct LocalRateLimit {
+    total: Option<RateLimit<InMemoryState>>,
+    per_identity: Option<RateLimit<HashMapStateStore<Option<Id>>>>,
+    overrides: HashMap<Id, Arc<RateLimit<InMemoryState>>>,
 }
-
 #[derive(Debug)]
-pub struct HttpLocalRateLimitOverride {
-    pub ids: Vec<String>,
-    pub rate_limit: RateLimiter<Vec<String>, DefaultKeyedStateStore<Vec<String>>, DefaultClock>,
+struct RateLimit<S: StateStore> {
+    rps: NonZeroU32,
+    limiter: RateLimiter<S::Key, S, DefaultClock>,
+}
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum RateLimitError {
+    #[error("total rate limit exceeded: {0}rps")]
+    Total(NonZeroU32),
+    #[error("per-identity rate limit exceeded: {0}rps")]
+    PerIdentity(NonZeroU32),
+    #[error("override rate limit exceeded: {0}rps")]
+    Override(NonZeroU32),
 }
 
-impl Default for HttpLocalRateLimitOverride {
-    fn default() -> Self {
-        Self {
-            ids: vec![],
-            rate_limit: RateLimiter::keyed(Quota::per_second(NonZeroU32::new(1).unwrap())),
+impl LocalRateLimit {
+    pub fn check(&self, id: Option<&Id>) -> Result<(), RateLimitError> {
+        if let Some(lim) = &self.total {
+            if lim.limiter.check().is_err() {
+                return Err(RateLimitError::Total(lim.rps));
+            }
         }
+
+        if let Some(id) = id {
+            if let Some(lim) = self.overrides.get(id) {
+                if lim.limiter.check().is_err() {
+                    return Err(RateLimitError::Override(lim.rps));
+                }
+                return Ok(());
+            }
+        }
+
+        if let Some(lim) = &self.per_identity {
+            if lim.limiter.check_key(&id.cloned()).is_err() {
+                return Err(RateLimitError::PerIdentity(lim.rps));
+            }
+        }
+
+        Ok(())
     }
 }
 
 #[cfg(feature = "proto")]
 pub mod proto {
     use super::*;
-    use linkerd2_proxy_api::inbound::{self as api};
+    use governor::Quota;
+    use linkerd2_proxy_api::inbound as api;
 
-    impl From<api::HttpLocalRateLimit> for HttpLocalRateLimit {
+    impl From<api::HttpLocalRateLimit> for LocalRateLimit {
         fn from(proto: api::HttpLocalRateLimit) -> Self {
-            let total = proto.total.map(|lim| {
-                let quota = Quota::per_second(NonZeroU32::new(lim.requests_per_second).unwrap());
-                RateLimiter::direct(quota)
+            let total = proto.total.and_then(|lim| {
+                let rps = NonZeroU32::new(lim.requests_per_second)?;
+                let limiter = RateLimiter::direct(Quota::per_second(rps));
+                Some(RateLimit { rps, limiter })
             });
-
-            let identity = proto.identity.map(|lim| {
-                let quota = Quota::per_second(NonZeroU32::new(lim.requests_per_second).unwrap());
-                RateLimiter::keyed(quota)
+            let per_identity = proto.identity.and_then(|lim| {
+                let rps = NonZeroU32::new(lim.requests_per_second)?;
+                let limiter = RateLimiter::hashmap(Quota::per_second(rps));
+                Some(RateLimit { rps, limiter })
             });
-
             let overrides = proto
                 .overrides
                 .into_iter()
                 .flat_map(|ovr| {
-                    ovr.limit.map(|lim| {
-                        let ids = ovr
-                            .clients
-                            .into_iter()
-                            .flat_map(|cl| cl.identities.into_iter().map(|id| id.name))
-                            .collect();
-                        let quota =
-                            Quota::per_second(NonZeroU32::new(lim.requests_per_second).unwrap());
-                        let rate_limit = RateLimiter::keyed(quota);
-                        HttpLocalRateLimitOverride { ids, rate_limit }
-                    })
+                    let Some(lim) = ovr.limit else {
+                        return vec![];
+                    };
+                    let Some(rps) = NonZeroU32::new(lim.requests_per_second) else {
+                        return vec![];
+                    };
+                    let limiter = RateLimiter::direct(Quota::per_second(rps));
+                    let limit = Arc::new(RateLimit { rps, limiter });
+                    ovr.clients
+                        .into_iter()
+                        .flat_map(|cl| {
+                            cl.identities
+                                .into_iter()
+                                .filter_map(|id| id.name.parse::<Id>().ok())
+                        })
+                        .map(move |id| (id, limit.clone()))
+                        .collect::<Vec<(Id, Arc<RateLimit<InMemoryState>>)>>()
                 })
-                .collect();
+                .collect::<HashMap<Id, Arc<RateLimit<InMemoryState>>>>();
 
             Self {
                 total,
-                identity,
+                per_identity,
                 overrides,
             }
         }

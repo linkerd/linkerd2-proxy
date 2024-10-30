@@ -10,13 +10,14 @@ publish = false
 proto = ["linkerd-http-route/proto", "linkerd2-proxy-api", "prost-types"]
 
 [dependencies]
-governor = { version = "0.6", default-features = false, features = ["std", "jitter", "quanta"] }
+governor = { version = "0.6", default-features = false, features = ["std", "jitter"] }
 ipnet = "2"
 http = "0.2"
 prost-types = { version = "0.12", optional = true }
 thiserror = "1"
 
 linkerd-http-route = { path = "../../http/route" }
+linkerd-identity = { path = "../../identity" }
 
 [dependencies.linkerd2-proxy-api]
 workspace = true
