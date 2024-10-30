@@ -9,7 +9,7 @@ use linkerd_app_core::{
     svc::{self, ServiceExt},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
-    Error, Result,
+    Conditional, Error, Result,
 };
 use linkerd_proxy_server_policy::{grpc, http, route::RouteMatch};
 use std::{sync::Arc, task};
@@ -171,6 +171,8 @@ where
             }
         };
 
+        try_fut!(self.check_rate_limit());
+
         future::Either::Left(
             self.inner
                 .new_service((permit, self.target.clone()))
@@ -286,6 +288,21 @@ impl<T, N> HttpPolicyService<T, N> {
         self.metrics
             .route_not_found(labels, self.connection.dst, self.connection.tls.clone());
         HttpRouteNotFound(()).into()
+    }
+
+    fn check_rate_limit(&self) -> Result<()> {
+        let id = match self.connection.tls {
+            Conditional::Some(tls::ServerTls::Established {
+                client_id: Some(tls::ClientId(ref id)),
+                ..
+            }) => Some(id),
+            _ => None,
+        };
+        self.policy
+            .borrow()
+            .local_rate_limit
+            .check(id)
+            .map_err(Into::into)
     }
 }
 
