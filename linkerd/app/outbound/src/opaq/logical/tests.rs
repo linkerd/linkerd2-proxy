@@ -16,6 +16,7 @@ use tokio::{sync::watch, time};
 #[derive(Clone, Debug)]
 struct Target {
     orig_dst: OrigDstAddr,
+    profiles_logical: Option<profiles::LogicalAddr>,
     routes: watch::Receiver<opaq::Routes>,
 }
 
@@ -268,8 +269,12 @@ impl Target {
         profile: Option<profiles::Receiver>,
         orig_dst: OrigDstAddr,
     ) -> Self {
-        let routes = opaq::routes_from_discovery(*orig_dst, profile, policy);
-        Self { orig_dst, routes }
+        let (routes, profiles_logical) = opaq::routes_from_discovery(*orig_dst, profile, policy);
+        Self {
+            orig_dst,
+            profiles_logical,
+            routes,
+        }
     }
 }
 
@@ -293,9 +298,8 @@ impl std::hash::Hash for Target {
     }
 }
 
-impl svc::Param<opaq::LogicalAddr> for Target {
-    fn param(&self) -> opaq::LogicalAddr {
-        let routes = self.routes.borrow();
-        opaq::LogicalAddr(routes.addr.clone())
+impl svc::Param<Option<profiles::LogicalAddr>> for Target {
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        self.profiles_logical.clone()
     }
 }
