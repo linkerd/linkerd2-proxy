@@ -13,7 +13,6 @@ mod glue;
 pub mod h1;
 pub mod h2;
 mod header_from_target;
-pub mod insert;
 pub mod normalize_uri;
 pub mod orig_proto;
 mod override_authority;
@@ -48,6 +47,7 @@ pub use http::{
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
 pub use linkerd_http_executor::TracingExecutor;
+pub use linkerd_http_insert as insert;
 pub use linkerd_http_version::{self as version, Version};
 
 #[derive(Clone, Debug)]
