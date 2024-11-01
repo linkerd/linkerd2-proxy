@@ -1,4 +1,4 @@
-use http_body::Body;
+use http_body::{Body, Frame};
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use linkerd_metrics::prom::Counter;
@@ -254,31 +254,39 @@ where
     type Data = <BoxBody as http_body::Body>::Data;
     type Error = Error;
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Error>>> {
-        let mut this = self.project();
-        let res =
-            futures::ready!(this.inner.as_mut().poll_data(cx)).map(|res| res.map_err(Into::into));
-        if let Some(Err(error)) = res.as_ref() {
-            end_stream(this.state, Err(error));
-        } else if (*this.inner).is_end_stream() {
-            end_stream(this.state, Ok(None));
-        }
-        Poll::Ready(res)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Error>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, Error>>> {
         let this = self.project();
-        let res = futures::ready!(this.inner.poll_trailers(cx)).map_err(Into::into);
-        end_stream(this.state, res.as_ref().map(Option::as_ref));
-        Poll::Ready(res)
+        let mut inner = this.inner;
+        let state = this.state;
+
+        // Poll the inner body for the next frame, check if the stream is now finished.
+        let frame =
+            futures::ready!(inner.as_mut().poll_frame(cx)).map(|res| res.map_err(Into::into));
+        let eos = inner.is_end_stream();
+
+        // Update telemetry if the end of the stream has been reached:
+        match frame.as_ref() {
+            // 1. The stream is over if a `None` has been yielded, or if an error occurred.
+            None => end_stream(state, Ok(None)),
+            Some(Err(error)) => end_stream(state, Err(error)),
+            // 2. If we have a frame, check if it this is a trailers frame, or if the stream
+            //    is now marked as complete.
+            Some(Ok(frame)) => {
+                if let trailers @ Some(_) = frame.trailers_ref() {
+                    end_stream(state, Ok(trailers))
+                } else if eos {
+                    end_stream(state, Ok(None))
+                }
+            }
+        }
+
+        Poll::Ready(frame)
     }
 
+    #[inline]
     fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }

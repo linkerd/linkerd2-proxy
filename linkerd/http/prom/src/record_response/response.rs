@@ -1,3 +1,4 @@
+use http_body::Frame;
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use linkerd_metrics::prom::Counter;
@@ -150,32 +151,29 @@ where
     type Data = B::Data;
     type Error = B::Error;
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, B::Error>>> {
-        let mut this = self.project();
-        let res = futures::ready!(this.inner.as_mut().poll_data(cx));
-        if (*this.inner).is_end_stream() {
-            if let Some(tx) = this.flushed.take() {
+    ) -> Poll<Option<Result<Frame<Self::Data>, B::Error>>> {
+        let this = self.project();
+        let mut inner = this.inner;
+        let flushed = this.flushed;
+
+        // Poll the inner body for the next frame, check if the stream is now finished.
+        let frame = futures::ready!(inner.as_mut().poll_frame(cx));
+        let eos = inner.is_end_stream();
+
+        // Send a timestamp if the end of the stream has been reached.
+        if eos || frame.is_none() {
+            if let Some(tx) = flushed.take() {
                 let _ = tx.send(time::Instant::now());
             }
         }
-        Poll::Ready(res)
+
+        Poll::Ready(frame)
     }
 
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, B::Error>> {
-        let this = self.project();
-        let res = futures::ready!(this.inner.poll_trailers(cx));
-        if let Some(tx) = this.flushed.take() {
-            let _ = tx.send(time::Instant::now());
-        }
-        Poll::Ready(res)
-    }
-
+    #[inline]
     fn is_end_stream(&self) -> bool {
         self.inner.is_end_stream()
     }

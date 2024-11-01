@@ -1782,8 +1782,8 @@ name = "linkerd-http-prom"
 version = "0.1.0"
 dependencies = [
  "futures",
- "http 0.2.11",
- "http-body 0.4.6",
+ "http 1.1.0",
+ "http-body 1.0.1",
  "linkerd-error",
  "linkerd-http-box",
  "linkerd-metrics",
