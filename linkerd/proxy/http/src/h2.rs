@@ -1,4 +1,4 @@
-use crate::executor::TracingExecutor;
+use crate::TracingExecutor;
 use futures::prelude::*;
 use hyper::{
     body::HttpBody,
