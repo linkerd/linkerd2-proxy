@@ -1,6 +1,6 @@
 use super::{
     super::{concrete, Concrete},
-    route, LogicalAddr, NoRoute,
+    route, NoRoute,
 };
 use crate::{BackendRef, EndpointRef, RouteRef};
 use linkerd_app_core::{io, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result};
@@ -72,14 +72,13 @@ where
             }
         };
 
-        let mk_dispatch = move |bke: &policy::Backend, addr: Addr| match bke.dispatcher {
+        let mk_dispatch = move |bke: &policy::Backend| match bke.dispatcher {
             policy::BackendDispatcher::BalanceP2c(
                 policy::Load::PeakEwma(policy::PeakEwma { decay, default_rtt }),
                 policy::EndpointDiscovery::DestinationGet { ref path },
             ) => mk_concrete(
                 BackendRef(bke.meta.clone()),
                 concrete::Dispatch::Balance(
-                    addr,
                     path.parse::<NameAddr>()
                         .expect("destination must be a nameaddr"),
                     http::balance::EwmaConfig { decay, default_rtt },
@@ -98,46 +97,42 @@ where
         };
 
         let mk_route_backend =
-            |route_ref: &RouteRef, rb: &policy::RouteBackend<policy::opaq::Filter>, addr: Addr| {
-                let concrete = mk_dispatch(&rb.backend, addr);
+            |route_ref: &RouteRef, rb: &policy::RouteBackend<policy::opaq::Filter>| {
+                let concrete = mk_dispatch(&rb.backend);
                 route::Backend {
                     route_ref: route_ref.clone(),
                     concrete,
                 }
             };
 
-        let mk_distribution = |rr: &RouteRef,
-                               d: &policy::RouteDistribution<policy::opaq::Filter>,
-                               addr: Addr| match d {
-            policy::RouteDistribution::Empty => route::BackendDistribution::Empty,
-            policy::RouteDistribution::FirstAvailable(backends) => {
-                route::BackendDistribution::first_available(
-                    backends
-                        .iter()
-                        .map(|b| mk_route_backend(rr, b, addr.clone())),
-                )
-            }
-            policy::RouteDistribution::RandomAvailable(backends) => {
-                route::BackendDistribution::random_available(
-                    backends
-                        .iter()
-                        .map(|(rb, weight)| (mk_route_backend(rr, rb, addr.clone()), *weight)),
-                )
-                .expect("distribution must be valid")
-            }
-        };
+        let mk_distribution =
+            |rr: &RouteRef, d: &policy::RouteDistribution<policy::opaq::Filter>| match d {
+                policy::RouteDistribution::Empty => route::BackendDistribution::Empty,
+                policy::RouteDistribution::FirstAvailable(backends) => {
+                    route::BackendDistribution::first_available(
+                        backends.iter().map(|b| mk_route_backend(rr, b)),
+                    )
+                }
+                policy::RouteDistribution::RandomAvailable(backends) => {
+                    route::BackendDistribution::random_available(
+                        backends
+                            .iter()
+                            .map(|(rb, weight)| (mk_route_backend(rr, rb), *weight)),
+                    )
+                    .expect("distribution must be valid")
+                }
+            };
 
         let mk_policy =
             |policy::RoutePolicy::<policy::opaq::Filter, ()> {
                  meta, distribution, ..
-             },
-             addr: Addr| {
+             }| {
                 let route_ref = RouteRef(meta);
                 let parent_ref = parent_ref.clone();
 
-                let distribution = mk_distribution(&route_ref, &distribution, addr.clone());
+                let distribution = mk_distribution(&route_ref, &distribution);
                 route::Route {
-                    addr,
+                    addr: addr.clone(),
                     parent: parent.clone(),
                     parent_ref: parent_ref.clone(),
                     route_ref,
@@ -148,14 +143,11 @@ where
         let routes = routes
             .iter()
             .map(|route| opaq_route::Route {
-                policy: mk_policy(route.policy.clone(), addr.clone()),
+                policy: mk_policy(route.policy.clone()),
             })
             .collect();
 
-        let backends = backends
-            .iter()
-            .map(|b| mk_dispatch(b, addr.clone()))
-            .collect();
+        let backends = backends.iter().map(mk_dispatch).collect();
 
         Self {
             routes,
@@ -186,12 +178,12 @@ where
     }
 }
 
-impl<T> svc::Param<LogicalAddr> for Router<T>
+impl<T> svc::Param<Addr> for Router<T>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    fn param(&self) -> LogicalAddr {
-        LogicalAddr(self.addr.clone())
+    fn param(&self) -> Addr {
+        self.addr.clone()
     }
 }
 

@@ -8,6 +8,8 @@ use tokio::sync::watch;
 #[derive(Clone, Debug)]
 pub struct Target {
     orig_dst: OrigDstAddr,
+    // this value is present only if we are using profiles for discovery
+    profiles_logical: Option<profiles::LogicalAddr>,
     routes: watch::Receiver<outbound::opaq::Routes>,
 }
 
@@ -62,16 +64,19 @@ where
             return Err(GatewayDomainInvalid);
         }
 
-        let routes = outbound::opaq::routes_from_discovery(*orig_dst, profile, policy);
-
-        Ok(Target { orig_dst, routes })
+        let (routes, profiles_logical) =
+            outbound::opaq::routes_from_discovery(*orig_dst, profile, policy);
+        Ok(Target {
+            orig_dst,
+            profiles_logical,
+            routes,
+        })
     }
 }
 
-impl svc::Param<outbound::opaq::LogicalAddr> for Target {
-    fn param(&self) -> outbound::opaq::LogicalAddr {
-        let routes = self.routes.borrow();
-        outbound::opaq::LogicalAddr(routes.addr.clone())
+impl svc::Param<Option<profiles::LogicalAddr>> for Target {
+    fn param(&self) -> Option<profiles::LogicalAddr> {
+        self.profiles_logical.clone()
     }
 }
 

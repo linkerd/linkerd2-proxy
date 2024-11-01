@@ -17,7 +17,7 @@ use tokio::sync::watch;
 mod concrete;
 mod logical;
 
-pub use self::logical::{Concrete, LogicalAddr, Routes};
+pub use self::logical::{Concrete, Routes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Opaq<T>(T);
@@ -37,7 +37,7 @@ impl<C> Outbound<C> {
     pub fn push_opaq_cached<T, I, R>(self, resolve: R) -> Outbound<svc::ArcNewCloneTcp<T, I>>
     where
         // Opaque target
-        T: svc::Param<LogicalAddr>,
+        T: svc::Param<Option<profiles::LogicalAddr>>,
         T: Clone + Debug + PartialEq + Eq + Hash + Send + Sync + 'static,
         T: svc::Param<watch::Receiver<Routes>>,
         // Server-side connection
@@ -67,11 +67,11 @@ impl<C> Outbound<C> {
 
 // === impl Opaq ===
 
-impl<T> svc::Param<LogicalAddr> for Opaq<T>
+impl<T> svc::Param<Option<profiles::LogicalAddr>> for Opaq<T>
 where
-    T: svc::Param<LogicalAddr>,
+    T: svc::Param<Option<profiles::LogicalAddr>>,
 {
-    fn param(&self) -> LogicalAddr {
+    fn param(&self) -> Option<profiles::LogicalAddr> {
         self.0.param()
     }
 }
@@ -114,23 +114,33 @@ pub fn routes_from_discovery(
     orig_dst: SocketAddr,
     profile: Option<profiles::Receiver>,
     mut policy: policy::Receiver,
-) -> watch::Receiver<Routes> {
+) -> (watch::Receiver<Routes>, Option<profiles::LogicalAddr>) {
     if let Some(mut profile) = profile.map(watch::Receiver::from) {
         if let Some(addr) = should_override_opaq_policy(&profile) {
             tracing::debug!("Using ServiceProfile");
-            let init = routes_from_profile(addr.clone(), &profile.borrow_and_update());
-            return spawn_routes(profile, init, move |profile: &profiles::Profile| {
-                Some(routes_from_profile(addr.clone(), profile))
+            let init = routes_from_profile(orig_dst, addr.clone(), &profile.borrow_and_update());
+
+            let profiles_addr = addr.clone();
+            let routes = spawn_routes(profile, init, move |profile: &profiles::Profile| {
+                Some(routes_from_profile(
+                    orig_dst,
+                    profiles_addr.clone(),
+                    profile,
+                ))
             });
+            return (routes, Some(addr));
         }
     }
 
     tracing::debug!("Using ClientPolicy routes");
     let init = routes_from_policy(orig_dst, &policy.borrow_and_update())
         .expect("initial policy must be opaque");
-    spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
-        routes_from_policy(orig_dst, policy)
-    })
+    (
+        spawn_routes(policy, init, move |policy: &policy::ClientPolicy| {
+            routes_from_policy(orig_dst, policy)
+        }),
+        None,
+    )
 }
 
 fn routes_from_policy(orig_dst: SocketAddr, policy: &policy::ClientPolicy) -> Option<Routes> {
@@ -153,7 +163,11 @@ fn routes_from_policy(orig_dst: SocketAddr, policy: &policy::ClientPolicy) -> Op
     })
 }
 
-fn routes_from_profile(addr: profiles::LogicalAddr, profile: &profiles::Profile) -> Routes {
+fn routes_from_profile(
+    orig_dst: SocketAddr,
+    profiles_addr: profiles::LogicalAddr,
+    profile: &profiles::Profile,
+) -> Routes {
     // TODO: make configurable
     let queue = {
         policy::Queue {
@@ -167,7 +181,7 @@ fn routes_from_profile(addr: profiles::LogicalAddr, profile: &profiles::Profile)
         decay: std::time::Duration::from_secs(10),
     });
 
-    let parent_meta = service_meta(&addr).unwrap_or_else(|| UNKNOWN_META.clone());
+    let parent_meta = service_meta(&profiles_addr).unwrap_or_else(|| UNKNOWN_META.clone());
 
     let backends: Vec<(policy::RouteBackend<policy::opaq::Filter>, u32)> = profile
         .targets
@@ -204,7 +218,7 @@ fn routes_from_profile(addr: profiles::LogicalAddr, profile: &profiles::Profile)
     };
 
     Routes {
-        addr: addr.0.into(),
+        addr: orig_dst.into(),
         backends: backends.into_iter().map(|(b, _)| b.backend).collect(),
         meta: ParentRef(parent_meta),
         routes: std::sync::Arc::new([route]),
