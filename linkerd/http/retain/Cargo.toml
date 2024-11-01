@@ -1,0 +1,20 @@
+[package]
+name = "linkerd-http-retain"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+description = """
+Tower middleware to manage service lifecycles.
+
+This is mostly intended to support cache eviction.
+"""
+
+[dependencies]
+http = "0.2"
+http-body = "0.4"
+pin-project = "1"
+tower = { version = "0.4", default-features = false }
+
+linkerd-stack = { path = "../../stack" }

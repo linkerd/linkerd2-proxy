@@ -1,5 +1,7 @@
-//! Provides a middleware that holds an inner service as long as responses are
-//! being processed.
+//! Tower middleware to manage service lifecycles.
+//!
+//! Provides a [`Retain<S, B>`] middleware that holds an inner service as long as responses are
+//! being processed. This is mostly intended to support cache eviction.
 
 use linkerd_stack::layer;
 use pin_project::pin_project;
