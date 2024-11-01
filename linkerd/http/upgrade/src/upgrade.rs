@@ -162,6 +162,7 @@ impl Drop for Inner {
 }
 
 // === impl Service ===
+
 impl<S> Service<S> {
     pub fn new(service: S, upgrade_drain_signal: drain::Watch) -> Self {
         Self {

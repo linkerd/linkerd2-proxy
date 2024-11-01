@@ -47,6 +47,7 @@ pub struct HyperConnectFuture<F> {
     inner: F,
     absolute_form: bool,
 }
+
 // === impl UpgradeBody ===
 
 impl HttpBody for UpgradeBody {
@@ -107,7 +108,7 @@ impl From<hyper::Body> for UpgradeBody {
 }
 
 impl UpgradeBody {
-    pub(crate) fn new(
+    pub fn new(
         body: hyper::Body,
         upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
     ) -> Self {
@@ -129,7 +130,7 @@ impl PinnedDrop for UpgradeBody {
 // === impl HyperConnect ===
 
 impl<C, T> HyperConnect<C, T> {
-    pub(super) fn new(connect: C, target: T, absolute_form: bool) -> Self {
+    pub fn new(connect: C, target: T, absolute_form: bool) -> Self {
         HyperConnect {
             connect,
             target,
@@ -140,7 +141,7 @@ impl<C, T> HyperConnect<C, T> {
 
 impl<C, T> Service<hyper::Uri> for HyperConnect<C, T>
 where
-    C: MakeConnection<(crate::Version, T)> + Clone + Send + Sync,
+    C: MakeConnection<(linkerd_http_version::Version, T)> + Clone + Send + Sync,
     C::Connection: Unpin + Send,
     C::Future: Unpin + Send + 'static,
     T: Clone + Send + Sync,
@@ -157,7 +158,7 @@ where
         HyperConnectFuture {
             inner: self
                 .connect
-                .connect((crate::Version::Http1, self.target.clone())),
+                .connect((linkerd_http_version::Version::Http1, self.target.clone())),
             absolute_form: self.absolute_form,
         }
     }
