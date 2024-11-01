@@ -15,7 +15,7 @@ test_util = []
 [dependencies]
 deflate = { version = "1", features = ["gzip"] }
 http = "0.2"
-hyper = { version = "0.14", features = ["http1", "http2"] }
+hyper = { version = "0.14", features = ["http1", "http2"] } # XXX(kate)
 linkerd-stack = { path = "../stack", optional = true }
 linkerd-system = { path = "../system", optional = true }
 parking_lot = "0.12"

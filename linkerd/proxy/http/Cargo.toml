@@ -20,7 +20,7 @@ h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
 httparse = "1"
-hyper = { version = "0.14", features = [
+hyper = { version = "0.14", features = [ # XXX(kate)
     "client",
     "http1",
     "http2",
