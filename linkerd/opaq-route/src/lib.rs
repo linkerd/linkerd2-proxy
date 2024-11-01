@@ -1,4 +1,4 @@
-//! An TLS route matching library for Linkerd to support the TLSRoute
+//! An TCP route matching library for Linkerd to support the TCPRoute
 //! Kubernetes Gateway API types.
 
 #![deny(rust_2018_idioms, clippy::disallowed_methods, clippy::disallowed_types)]

@@ -40,12 +40,12 @@ linkerd-http-retry = { path = "../../http/retry" }
 linkerd-http-route = { path = "../../http/route" }
 linkerd-identity = { path = "../../identity" }
 linkerd-meshtls-rustls = { path = "../../meshtls/rustls", optional = true }
+linkerd-opaq-route = { path = "../../opaq-route" }
 linkerd-proxy-client-policy = { path = "../../proxy/client-policy", features = [
     "proto",
 ] }
 linkerd-retry = { path = "../../retry" }
 linkerd-tls-route = { path = "../../tls/route" }
-linkerd-opaq-route = { path = "../../opaq-route" }
 linkerd-tonic-stream = { path = "../../tonic-stream" }
 linkerd-tonic-watch = { path = "../../tonic-watch" }
 
