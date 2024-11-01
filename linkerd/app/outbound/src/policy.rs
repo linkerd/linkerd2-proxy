@@ -1,8 +1,9 @@
+pub use linkerd_proxy_client_policy::*;
+
 use linkerd_app_core::{
     svc::{self, ServiceExt},
     Addr, Error,
 };
-pub use linkerd_proxy_client_policy::*;
 use std::future::Future;
 use tokio::sync::watch;
 
