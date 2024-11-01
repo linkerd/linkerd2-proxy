@@ -37,6 +37,7 @@ members = [
     "linkerd/http/retry",
     "linkerd/http/route",
     "linkerd/http/stream-timeouts",
+    "linkerd/http/upgrade",
     "linkerd/http/version",
     "linkerd/identity",
     "linkerd/idle-cache",

@@ -1856,6 +1856,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-http-upgrade"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "drain",
+ "futures",
+ "http",
+ "http-body",
+ "hyper",
+ "linkerd-duplex",
+ "linkerd-error",
+ "linkerd-http-version",
+ "linkerd-io",
+ "linkerd-stack",
+ "pin-project",
+ "tokio",
+ "tower",
+ "tracing",
+ "try-lock",
+]
+
+[[package]]
 name = "linkerd-http-version"
 version = "0.1.0"
 dependencies = [
@@ -2228,6 +2250,7 @@ dependencies = [
  "linkerd-http-override-authority",
  "linkerd-http-retain",
  "linkerd-http-stream-timeouts",
+ "linkerd-http-upgrade",
  "linkerd-http-version",
  "linkerd-io",
  "linkerd-proxy-balance",

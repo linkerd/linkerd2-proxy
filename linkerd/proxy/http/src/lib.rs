@@ -8,7 +8,6 @@ pub mod balance;
 pub mod client;
 pub mod client_handle;
 pub mod detect;
-mod glue;
 pub mod h1;
 pub mod h2;
 mod header_from_target;
@@ -17,7 +16,6 @@ pub mod orig_proto;
 mod server;
 pub mod strip_header;
 pub mod timeout;
-pub mod upgrade;
 
 pub use self::{
     balance::NewBalance,
@@ -45,6 +43,7 @@ pub use linkerd_http_insert as insert;
 pub use linkerd_http_override_authority::{AuthorityOverride, NewOverrideAuthority};
 pub use linkerd_http_retain::{self as retain, Retain};
 pub use linkerd_http_stream_timeouts::{self as stream_timeouts, EnforceTimeouts, StreamTimeouts};
+pub use linkerd_http_upgrade as upgrade;
 pub use linkerd_http_version::{self as version, Version};
 
 #[derive(Clone, Debug)]
@@ -89,26 +88,4 @@ where
 {
     let v = req.headers().get(header)?;
     v.to_str().ok()?.parse().ok()
-}
-
-fn strip_connection_headers(headers: &mut http::HeaderMap) {
-    if let Some(val) = headers.remove(header::CONNECTION) {
-        if let Ok(conn_header) = val.to_str() {
-            // A `Connection` header may have a comma-separated list of
-            // names of other headers that are meant for only this specific
-            // connection.
-            //
-            // Iterate these names and remove them as headers.
-            for name in conn_header.split(',') {
-                let name = name.trim();
-                headers.remove(name);
-            }
-        }
-    }
-
-    // Additionally, strip these "connection-level" headers always, since
-    // they are otherwise illegal if upgraded to HTTP2.
-    headers.remove(header::UPGRADE);
-    headers.remove("proxy-connection");
-    headers.remove("keep-alive");
 }

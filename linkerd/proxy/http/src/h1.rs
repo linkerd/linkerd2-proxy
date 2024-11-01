@@ -1,8 +1,4 @@
-use crate::{
-    glue::HyperConnect,
-    upgrade::{Http11Upgrade, HttpConnect},
-    TracingExecutor,
-};
+use crate::TracingExecutor;
 use futures::prelude::*;
 use http::{
     header::{CONTENT_LENGTH, TRANSFER_ENCODING},
@@ -10,6 +6,10 @@ use http::{
 };
 use linkerd_error::{Error, Result};
 use linkerd_http_box::BoxBody;
+use linkerd_http_upgrade::{
+    glue::HyperConnect,
+    upgrade::{Http11Upgrade, HttpConnect},
+};
 use linkerd_stack::MakeConnection;
 use std::{pin::Pin, time::Duration};
 use tracing::{debug, trace};
@@ -161,7 +161,7 @@ where
                     upgrade.insert_half(hyper::upgrade::on(&mut rsp));
                 }
             } else {
-                crate::strip_connection_headers(rsp.headers_mut());
+                linkerd_http_upgrade::strip_connection_headers(rsp.headers_mut());
             }
 
             rsp.map(BoxBody::new)

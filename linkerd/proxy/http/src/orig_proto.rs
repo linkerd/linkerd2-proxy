@@ -1,4 +1,4 @@
-use super::{h1, h2, upgrade};
+use super::{h1, h2};
 use futures::prelude::*;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
 use hyper::body::HttpBody;
@@ -71,7 +71,11 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         debug_assert!(req.version() != http::Version::HTTP_2);
-        if req.extensions().get::<upgrade::Http11Upgrade>().is_some() {
+        if req
+            .extensions()
+            .get::<linkerd_http_upgrade::upgrade::Http11Upgrade>()
+            .is_some()
+        {
             debug!("Skipping orig-proto upgrade due to HTTP/1.1 upgrade");
             return Box::pin(self.http1.request(req).map_ok(|rsp| rsp.map(BoxBody::new)));
         }
