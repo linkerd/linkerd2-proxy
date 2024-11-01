@@ -31,6 +31,7 @@ members = [
     "linkerd/http/h2",
     "linkerd/http/insert",
     "linkerd/http/metrics",
+    "linkerd/http/override-authority",
     "linkerd/http/prom",
     "linkerd/http/retain",
     "linkerd/http/retry",

@@ -123,7 +123,7 @@ where
                 };
 
                 trace!(%authority, "Normalizing URI");
-                crate::set_authority(req.uri_mut(), authority);
+                linkerd_http_override_authority::set_authority(req.uri_mut(), authority);
             }
         }
 
