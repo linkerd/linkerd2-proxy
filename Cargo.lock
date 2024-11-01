@@ -1723,6 +1723,17 @@ name = "linkerd-http-h2"
 version = "0.1.0"
 
 [[package]]
+name = "linkerd-http-insert"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "linkerd-stack",
+ "pin-project",
+ "tower",
+]
+
+[[package]]
 name = "linkerd-http-metrics"
 version = "0.1.0"
 dependencies = [
@@ -2166,6 +2177,7 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-http-executor",
  "linkerd-http-h2",
+ "linkerd-http-insert",
  "linkerd-http-version",
  "linkerd-io",
  "linkerd-proxy-balance",

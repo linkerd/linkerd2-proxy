@@ -1,0 +1,18 @@
+[package]
+name = "linkerd-http-insert"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+description = """
+Tower middleware to insert parameters into HTTP extensions.
+"""
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+http = "0.2"
+pin-project = "1"
+tower = { version = "0.4", default-features = false }
+
+linkerd-stack = { path = "../../stack" }
