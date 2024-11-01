@@ -132,7 +132,7 @@ where
                             route_ref,
                             ..
                         } = &rt.params;
-                        retry::RetryLabelExtract(parent_ref.clone(), route_ref.clone())
+                        metrics::labels::RouteLabelExtract(parent_ref.clone(), route_ref.clone())
                     };
                     let metrics = metrics.retry.clone();
                     retry::NewHttpRetry::layer_via_mk(mk_extract, metrics)

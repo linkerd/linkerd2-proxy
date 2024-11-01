@@ -1,12 +1,14 @@
-use super::{extensions, metrics::labels::Route as RouteLabels};
-use crate::{ParentRef, RouteRef};
+use super::{
+    extensions,
+    metrics::labels::{Route as RouteLabels, RouteLabelExtract},
+};
 use futures::future::{Either, Ready};
 use linkerd_app_core::{
     cause_ref, classify,
     exp_backoff::ExponentialBackoff,
     is_caused_by,
     proxy::http::{self, stream_timeouts::ResponseTimeoutError},
-    svc::{self, http::h2, ExtractParam},
+    svc::{self, http::h2},
     Error, Result,
 };
 use linkerd_http_retry::{self as retry, peek_trailers::PeekTrailersBody};
@@ -18,7 +20,7 @@ use tokio::time;
 pub struct IsRetry(());
 
 pub type NewHttpRetry<F, N> =
-    retry::NewHttpRetry<RetryPolicy, RouteLabels, F, RetryLabelExtract, N>;
+    retry::NewHttpRetry<RetryPolicy, RouteLabels, F, RouteLabelExtract, N>;
 
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
@@ -30,9 +32,6 @@ pub struct RetryPolicy {
     pub max_request_bytes: usize,
     pub backoff: Option<ExponentialBackoff>,
 }
-
-#[derive(Clone, Debug)]
-pub struct RetryLabelExtract(pub ParentRef, pub RouteRef);
 
 pub type RouteRetryMetrics = retry::MetricFamilies<RouteLabels>;
 
@@ -161,16 +160,5 @@ impl RetryPolicy {
         // that they can be inspected. here.
 
         false
-    }
-}
-
-// === impl RetryLabelExtract ===
-
-impl<B> ExtractParam<RouteLabels, http::Request<B>> for RetryLabelExtract {
-    fn extract_param(&self, t: &http::Request<B>) -> RouteLabels {
-        let Self(parent, route) = self;
-        let uri = t.uri();
-
-        RouteLabels::new(parent.clone(), route.clone(), uri)
     }
 }
