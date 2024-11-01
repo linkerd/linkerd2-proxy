@@ -1,3 +1,7 @@
+//! Tower middleware to insert parameters into HTTP extensions.
+//!
+//! See [`NewInsert<P, N>`] and [`NewResponseInsert<P, N>`].
+
 use futures::{Future, TryFuture};
 use linkerd_stack::{layer, NewService, Param, Proxy};
 use std::{
@@ -6,11 +10,16 @@ use std::{
     task::{Context, Poll},
 };
 
+/// Lazily yields a value.
+///
+/// This is used by the [`Insert<S, L, V>`] and [`ResponseInsert<S, L, V>`] middleware to yield
+/// parameters.
 pub trait Lazy<V>: Clone {
+    /// Returns a `V`-typed value.
     fn value(&self) -> V;
 }
 
-/// Wraps an HTTP `Service` so that a `P`-typed `Param` is cloned into each
+/// Wraps an HTTP `NewService` so that a `P`-typed `Param` is cloned into each
 /// request's extensions.
 #[derive(Debug)]
 pub struct NewInsert<P, N> {
@@ -18,7 +27,7 @@ pub struct NewInsert<P, N> {
     _marker: PhantomData<fn() -> P>,
 }
 
-/// Wraps an HTTP `Service` so that a `P`-typed `Param` is cloned into each
+/// Wraps an HTTP `NewService` so that a `P`-typed `Param` is cloned into each
 /// response's extensions.
 #[derive(Debug)]
 pub struct NewResponseInsert<P, N> {
@@ -26,21 +35,27 @@ pub struct NewResponseInsert<P, N> {
     _marker: PhantomData<fn() -> P>,
 }
 
+/// Wraps an HTTP `Service` so that a `P`-typed `Param` is cloned into each
+/// request's extensions.
 pub struct Insert<S, L, V> {
     inner: S,
     lazy: L,
     _marker: PhantomData<fn() -> V>,
 }
 
+/// Wraps an HTTP `Service` so that a `P`-typed `Param` is cloned into each
+/// response's extensions.
 pub struct ResponseInsert<S, L, V> {
     inner: S,
     lazy: L,
     _marker: PhantomData<fn() -> V>,
 }
 
+/// A [`Lazy`] function.
 #[derive(Clone, Debug)]
 pub struct FnLazy<F>(F);
 
+/// A [`Lazy`] value.
 #[derive(Clone, Debug)]
 pub struct ValLazy<V>(V);
 
@@ -56,6 +71,9 @@ pub struct ResponseInsertFuture<F, L, V, B> {
 // === impl NewInsert ===
 
 impl<P, N> NewInsert<P, N> {
+    /// Returns a [`Layer<N, S>`][tower::layer::Layer].
+    ///
+    /// This layer inserts a `P` parameter into the request extensions.
     pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Copy {
         layer::mk(|inner| Self {
             inner,
@@ -91,6 +109,9 @@ impl<N: Clone, P> Clone for NewInsert<P, N> {
 // === impl NewResponseInsert ===
 
 impl<P, N> NewResponseInsert<P, N> {
+    /// Returns a [`Layer<N, S>`][tower::layer::Layer].
+    ///
+    /// This layer inserts a `P` parameter into the response extensions.
     pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Copy {
         layer::mk(|inner| Self {
             inner,
