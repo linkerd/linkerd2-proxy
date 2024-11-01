@@ -3,6 +3,16 @@
 
 use linkerd_error::Error;
 
+pub use self::{
+    channel::{BroadcastClassification, NewBroadcastClassification, Tx},
+    gate::{NewClassifyGate, NewClassifyGateSet},
+    insert::{InsertClassifyResponse, NewInsertClassifyResponse},
+};
+
+pub mod channel;
+pub mod gate;
+mod insert;
+
 /// Determines how a request's response should be classified.
 pub trait Classify {
     type Class: Clone + Send + Sync + 'static;

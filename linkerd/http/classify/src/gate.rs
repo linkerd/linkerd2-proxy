@@ -1,4 +1,4 @@
-use crate::classify::{BroadcastClassification, ClassifyResponse};
+use crate::{channel::BroadcastClassification, ClassifyResponse};
 use linkerd_stack::{gate, layer, ExtractParam, Gate, NewService};
 use std::marker::PhantomData;
 use tokio::sync::mpsc;

@@ -207,10 +207,10 @@ where
 
 // === impl ResponseBody ===
 
-impl<C, B> hyper::body::HttpBody for ResponseBody<C, B>
+impl<C, B> http_body::Body for ResponseBody<C, B>
 where
     C: ClassifyEos + Unpin,
-    B: hyper::body::HttpBody<Error = Error>,
+    B: http_body::Body<Error = Error>,
 {
     type Data = B::Data;
     type Error = B::Error;

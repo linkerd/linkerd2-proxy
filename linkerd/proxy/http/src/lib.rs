@@ -5,7 +5,6 @@ use http::{header::AsHeaderName, uri::Authority};
 use linkerd_error::Error;
 
 pub mod balance;
-pub mod classify;
 pub mod client;
 pub mod client_handle;
 pub mod detect;
@@ -46,6 +45,7 @@ pub use http::{
 };
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
+pub use linkerd_http_classify as classify;
 pub use linkerd_http_executor::TracingExecutor;
 pub use linkerd_http_insert as insert;
 pub use linkerd_http_version::{self as version, Version};
