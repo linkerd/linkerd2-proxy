@@ -110,7 +110,7 @@ impl<L: StreamLabel> RouteBackendMetrics<L> {
         &self,
         l: &labels::RouteBackend,
     ) -> linkerd_http_prom::body_data::response::BodyDataMetrics {
-        self.body_metrics.get(l)
+        self.body_metrics.metrics(l)
     }
 }
 
@@ -156,6 +156,6 @@ where
         let Self(families) = self;
         let labels = labels::RouteBackend(t.param(), t.param(), t.param());
 
-        families.get(&labels)
+        families.metrics(&labels)
     }
 }

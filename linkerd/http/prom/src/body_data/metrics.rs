@@ -77,7 +77,7 @@ where
     }
 
     /// Returns the [`BodyDataMetrics`] for the given label set.
-    pub fn get(&self, labels: &L) -> BodyDataMetrics {
+    pub fn metrics(&self, labels: &L) -> BodyDataMetrics {
         let Self {
             resp_body_frames_total,
             resp_body_frames_bytes,
