@@ -1764,6 +1764,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-http-override-authority"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "linkerd-stack",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-http-prom"
 version = "0.1.0"
 dependencies = [
@@ -2215,6 +2225,7 @@ dependencies = [
  "linkerd-http-executor",
  "linkerd-http-h2",
  "linkerd-http-insert",
+ "linkerd-http-override-authority",
  "linkerd-http-retain",
  "linkerd-http-stream-timeouts",
  "linkerd-http-version",
