@@ -32,6 +32,7 @@ members = [
     "linkerd/http/insert",
     "linkerd/http/metrics",
     "linkerd/http/prom",
+    "linkerd/http/retain",
     "linkerd/http/retry",
     "linkerd/http/route",
     "linkerd/http/version",

@@ -1783,6 +1783,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-http-retain"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "http-body",
+ "linkerd-stack",
+ "pin-project",
+ "tower",
+]
+
+[[package]]
 name = "linkerd-http-retry"
 version = "0.1.0"
 dependencies = [
@@ -2188,6 +2199,7 @@ dependencies = [
  "linkerd-http-executor",
  "linkerd-http-h2",
  "linkerd-http-insert",
+ "linkerd-http-retain",
  "linkerd-http-version",
  "linkerd-io",
  "linkerd-proxy-balance",
