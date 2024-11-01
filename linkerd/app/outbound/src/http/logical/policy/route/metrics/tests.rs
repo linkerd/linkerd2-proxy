@@ -92,9 +92,7 @@ async fn http_request_statuses() {
         tx.send_response(
             http::Response::builder()
                 .status(200)
-                .body(BoxBody::new(MockBody::new(async {
-                    Err("a spooky ghost".into())
-                })))
+                .body(BoxBody::new(MockBody::error("a spooky ghost")))
                 .unwrap(),
         )
     })
@@ -388,9 +386,7 @@ async fn grpc_request_statuses_error_body() {
         |tx| {
             tx.send_response(
                 http::Response::builder()
-                    .body(BoxBody::new(MockBody::new(async {
-                        Err("a spooky ghost".into())
-                    })))
+                    .body(BoxBody::new(MockBody::error("a spooky ghost")))
                     .unwrap(),
             )
         },

@@ -104,6 +104,13 @@ mod mock_body {
             Self::new(fut)
         }
 
+        /// Returns a [`MockBody`] that yields an error when polled.
+        pub fn error(msg: &'static str) -> Self {
+            let err = Err(msg.into());
+            let fut = futures::future::ready(err);
+            Self::new(fut)
+        }
+
         pub fn trailers(
             trailers: impl Future<Output = Result<Option<http::HeaderMap>>> + Send + 'static,
         ) -> Self {
