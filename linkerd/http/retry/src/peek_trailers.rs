@@ -2,7 +2,7 @@ use futures::{
     future::{self, Either},
     FutureExt, TryFutureExt,
 };
-use http_body::Body;
+use http_body::{Body, Frame};
 use linkerd_http_box::BoxBody;
 use linkerd_stack::Service;
 use std::{
@@ -17,26 +17,12 @@ use std::{
 /// If the first frame of the body stream was *not* a `TRAILERS` frame, this
 /// behaves identically to a normal body.
 pub struct PeekTrailersBody<B: Body = BoxBody> {
+    /// The inner body type.
     inner: B,
-
-    /// The first DATA frame received from the inner body, or an error that
-    /// occurred while polling for data.
+    /// The first frame received from the inner body.
     ///
-    /// If this is `None`, then the body has completed without any DATA frames.
-    first_data: Option<Result<B::Data, B::Error>>,
-
-    /// The inner body's trailers, if it was terminated by a `TRAILERS` frame
-    /// after 0-1 DATA frames, or an error if polling for trailers failed.
-    ///
-    /// Yes, this is a bit of a complex type, so let's break it down:
-    /// - the outer `Option` indicates whether any trailers were received by
-    ///   `WithTrailers`; if it's `None`, then we don't *know* if the response
-    ///   had trailers, as it is not yet complete.
-    /// - the inner `Result` and `Option` are the `Result` and `Option` returned
-    ///   by `HttpBody::trailers` on the inner body. If this is `Ok(None)`, then
-    ///   the body has terminated without trailers --- it is *known* to not have
-    ///   trailers.
-    trailers: Option<Result<Option<http::HeaderMap>, B::Error>>,
+    /// This may be a DATA frame or a TRAILERS frame.
+    peek: Option<Result<Frame<B::Data>, B::Error>>,
 }
 
 pub type WithPeekTrailersBody<B> = Either<
@@ -50,10 +36,12 @@ pub struct ResponseWithPeekTrailers<S>(pub(crate) S);
 // === impl WithTrailers ===
 
 impl<B: Body> PeekTrailersBody<B> {
+    /// Returns a reference to the body's trailers.
     pub fn peek_trailers(&self) -> Option<&http::HeaderMap> {
-        self.trailers
-            .as_ref()
-            .and_then(|trls| trls.as_ref().ok()?.as_ref())
+        match self.peek {
+            Some(Ok(frame)) => frame.trailers_ref(),
+            _ => None,
+        }
     }
 
     pub fn map_response(rsp: http::Response<B>) -> WithPeekTrailersBody<B>
@@ -87,44 +75,20 @@ impl<B: Body> PeekTrailersBody<B> {
         B::Data: Send + Unpin,
         B::Error: Send,
     {
-        let (parts, body) = rsp.into_parts();
-        let mut body = Self {
-            inner: body,
-            first_data: None,
-            trailers: None,
-        };
+        let (parts, mut body) = rsp.into_parts();
 
-        tracing::debug!("Buffering first data frame");
-        if let Some(data) = body.inner.data().await {
-            // The body has data; stop waiting for trailers.
-            body.first_data = Some(data);
+        use http_body_util::BodyExt;
+        tracing::debug!("Buffering first frame");
+        let peek = body.frame().await;
 
-            // Peek to see if there's immediately a trailers frame, and grab
-            // it if so. Otherwise, bail.
-            // XXX(eliza): the documentation for the `http::Body` trait says
-            // that `poll_trailers` should only be called after `poll_data`
-            // returns `None`...but, in practice, I'm fairly sure that this just
-            // means that it *will not return `Ready`* until there are no data
-            // frames left, which is fine for us here, because we `now_or_never`
-            // it.
-            body.trailers = body.inner.trailers().now_or_never();
-        } else {
-            // Okay, `poll_data` has returned `None`, so there are no data
-            // frames left. Let's see if there's trailers...
-            body.trailers = Some(body.inner.trailers().await);
-        }
-        if body.trailers.is_some() {
-            tracing::debug!("Buffered trailers frame");
-        }
-
-        http::Response::from_parts(parts, body)
+        http::Response::from_parts(parts, Self { inner: body, peek })
     }
 
+    /// Returns a response with a disabled [`PeekTrailersBody`].
     fn no_trailers(rsp: http::Response<B>) -> http::Response<Self> {
         rsp.map(|inner| Self {
             inner,
-            first_data: None,
-            trailers: None,
+            peek: None, // Refrain from awaiting the first frame.
         })
     }
 }
@@ -138,48 +102,43 @@ where
     type Data = B::Data;
     type Error = B::Error;
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let this = self.get_mut();
-        if let Some(first_data) = this.first_data.take() {
-            return Poll::Ready(Some(first_data));
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let Self { mut inner, peek } = self.get_mut();
+
+        // If a frame is buffered, yield it.
+        if let frame @ Some(_) = peek.take() {
+            return Poll::Ready(frame);
         }
 
-        Pin::new(&mut this.inner).poll_data(cx)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let this = self.get_mut();
-        if let Some(trailers) = this.trailers.take() {
-            return Poll::Ready(trailers);
-        }
-
-        Pin::new(&mut this.inner).poll_trailers(cx)
+        Pin::new(&mut inner).poll_frame(cx)
     }
 
     #[inline]
     fn is_end_stream(&self) -> bool {
-        self.first_data.is_none() && self.trailers.is_none() && self.inner.is_end_stream()
+        let Self { inner, peek } = self;
+
+        // Is a frame buffered? Has inner body has reached its end?
+        peek.is_none() && inner.is_end_stream()
     }
 
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         use bytes::Buf;
 
-        let mut hint = self.inner.size_hint();
-        // If we're holding onto a chunk of data, add its length to the inner
-        // `Body`'s size hint.
-        if let Some(Ok(chunk)) = self.first_data.as_ref() {
-            let buffered = chunk.remaining() as u64;
-            if let Some(upper) = hint.upper() {
-                hint.set_upper(upper + buffered);
+        let Self { inner, peek } = self;
+        let mut hint = inner.size_hint();
+
+        // If we're holding onto a chunk of data, add its length to the inner `Body`'s size hint.
+        if let Some(Ok(frame)) = peek.as_ref() {
+            if let Some(buffered) = frame.data_ref().map(|data| data.remaining() as u64) {
+                if let Some(upper) = hint.upper() {
+                    hint.set_upper(upper + buffered);
+                }
+                hint.set_lower(hint.lower() + buffered);
             }
-            hint.set_lower(hint.lower() + buffered);
         }
 
         hint

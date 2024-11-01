@@ -9,8 +9,9 @@ publish = false
 [dependencies]
 bytes = "1"
 futures = { version = "0.3", default-features = false }
-http-body = "0.4"
-http = "0.2"
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
 parking_lot = "0.12"
 tokio = { version = "1", features = ["macros", "rt"] }
 tower = { version = "0.4", features = ["retry"] }
@@ -24,6 +25,6 @@ linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
 
 [dev-dependencies]
-hyper = "0.14" # XXX(kate)
+hyper = "1" # XXX(kate)
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["macros", "rt"] }
