@@ -56,13 +56,20 @@ pub type NewRecordDuration<T, M, N> =
 #[derive(Clone, Debug)]
 pub struct ExtractRecordDurationParams<M>(pub M);
 
-pub fn layer<T, N>(
-    metrics: &RequestMetrics<T::StreamLabel>,
-) -> impl svc::Layer<N, Service = NewRecordDuration<T, RequestMetrics<T::StreamLabel>, N>> + Clone
+pub fn layer<R, B, N>(
+    metrics: &RouteMetrics<R::StreamLabel, B::StreamLabel>,
+) -> impl svc::Layer<N, Service = NewRecordDuration<R, RequestMetrics<R::StreamLabel>, N>> + Clone
 where
-    T: Clone + MkStreamLabel,
+    R: Clone + MkStreamLabel,
+    B: Clone + MkStreamLabel,
 {
-    NewRecordDuration::layer_via(ExtractRecordDurationParams(metrics.clone()))
+    let RouteMetrics {
+        retry: _,
+        requests,
+        backend: _,
+    } = metrics;
+
+    NewRecordDuration::layer_via(ExtractRecordDurationParams(requests.clone()))
 }
 
 // === impl RouteMetrics ===

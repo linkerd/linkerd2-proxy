@@ -142,7 +142,7 @@ where
                 // Set request extensions based on the route configuration
                 // AND/OR headers
                 .push(extensions::NewSetExtensions::layer())
-                .push(metrics::layer(&metrics.requests))
+                .push(metrics::layer::<Self, MatchedBackend<T, M, F>, _>(&metrics))
                 .check_new::<Self>()
                 .check_new_service::<Self, http::Request<http::BoxBody>>()
                 // Configure a classifier to use in the endpoint stack.
