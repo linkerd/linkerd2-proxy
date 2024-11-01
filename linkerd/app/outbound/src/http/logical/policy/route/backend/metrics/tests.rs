@@ -148,11 +148,7 @@ async fn grpc_request_statuses_ok() {
         |tx| {
             tx.send_response(
                 http::Response::builder()
-                    .body(BoxBody::new(MockBody::trailers(async move {
-                        let mut trailers = http::HeaderMap::new();
-                        trailers.insert("grpc-status", http::HeaderValue::from_static("0"));
-                        Ok(Some(trailers))
-                    })))
+                    .body(BoxBody::new(MockBody::grpc_status(0)))
                     .unwrap(),
             )
         },
@@ -191,11 +187,7 @@ async fn grpc_request_statuses_not_found() {
         |tx| {
             tx.send_response(
                 http::Response::builder()
-                    .body(BoxBody::new(MockBody::trailers(async move {
-                        let mut trailers = http::HeaderMap::new();
-                        trailers.insert("grpc-status", http::HeaderValue::from_static("5"));
-                        Ok(Some(trailers))
-                    })))
+                    .body(BoxBody::new(MockBody::grpc_status(5)))
                     .unwrap(),
             )
         },

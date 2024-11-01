@@ -131,11 +131,7 @@ async fn mk_grpc_rsp(code: tonic::Code) -> Result<Response> {
     Ok(http::Response::builder()
         .version(::http::Version::HTTP_2)
         .header("content-type", "application/grpc")
-        .body(BoxBody::new(MockBody::trailers(async move {
-            let mut trls = http::HeaderMap::default();
-            trls.insert("grpc-status", (code as u8).to_string().parse().unwrap());
-            Ok(Some(trls))
-        })))
+        .body(BoxBody::new(MockBody::grpc_status(code as u8)))
         .unwrap())
 }
 
