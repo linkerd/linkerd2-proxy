@@ -5,9 +5,11 @@ use super::{
     LabelGrpcRouteBackendRsp, LabelHttpRouteBackendRsp, RouteBackendMetrics,
 };
 use crate::http::{concrete, logical::Concrete};
+use bytes::Buf;
 use linkerd_app_core::{
     svc::{self, http::BoxBody, Layer, NewService},
     transport::{Remote, ServerAddr},
+    Error,
 };
 use linkerd_proxy_client_policy as policy;
 
@@ -114,6 +116,128 @@ async fn http_request_statuses() {
     assert_eq!(ok.get(), 1);
     assert_eq!(no_content.get(), 1);
     assert_eq!(mixed.get(), 1);
+}
+
+/// Tests that metrics count frames in the backend response body.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn body_data_layer_records_frames() -> Result<(), Error> {
+    use http_body::Body;
+    use linkerd_app_core::proxy::http;
+    use linkerd_http_prom::body_data::response::BodyDataMetrics;
+    use tower::{Service, ServiceExt};
+
+    let _trace = linkerd_tracing::test::trace_init();
+
+    let metrics = super::RouteBackendMetrics::default();
+    let parent_ref = crate::ParentRef(policy::Meta::new_default("parent"));
+    let route_ref = crate::RouteRef(policy::Meta::new_default("route"));
+    let backend_ref = crate::BackendRef(policy::Meta::new_default("backend"));
+
+    let (mut svc, mut handle) =
+        mock_http_route_backend_metrics(&metrics, &parent_ref, &route_ref, &backend_ref);
+    handle.allow(1);
+
+    // Create a request.
+    let req = {
+        let empty = hyper::Body::empty();
+        let body = BoxBody::new(empty);
+        http::Request::builder().method("DOOT").body(body).unwrap()
+    };
+
+    // Call the service once it is ready to accept a request.
+    tracing::info!("calling service");
+    svc.ready().await.expect("ready");
+    let call = svc.call(req);
+    let (req, send_resp) = handle.next_request().await.unwrap();
+    debug_assert_eq!(req.method().as_str(), "DOOT");
+
+    // Acquire the counters for this backend.
+    tracing::info!("acquiring response body metrics");
+    let labels = labels::RouteBackend(parent_ref.clone(), route_ref.clone(), backend_ref.clone());
+    let BodyDataMetrics {
+        frames_total,
+        frames_bytes,
+    } = metrics.get_response_body_metrics(&labels);
+
+    // Before we've sent a response, the counter should be zero.
+    assert_eq!(frames_total.get(), 0);
+    assert_eq!(frames_bytes.get(), 0);
+
+    // Create a response whose body is backed by a channel that we can send chunks to, send it.
+    tracing::info!("sending response");
+    let mut resp_tx = {
+        let (tx, body) = hyper::Body::channel();
+        let body = BoxBody::new(body);
+        let resp = http::Response::builder()
+            .status(http::StatusCode::IM_A_TEAPOT)
+            .body(body)
+            .unwrap();
+        send_resp.send_response(resp);
+        tx
+    };
+
+    // Before we've sent any bytes, the counter should be zero.
+    assert_eq!(frames_total.get(), 0);
+    assert_eq!(frames_bytes.get(), 0);
+
+    // On the client end, poll our call future and await the response.
+    tracing::info!("polling service future");
+    let (parts, body) = call.await?.into_parts();
+    debug_assert_eq!(parts.status, 418);
+
+    let mut body = Box::pin(body);
+
+    /// Returns the next chunk from a boxed body.
+    async fn read_chunk(body: &mut std::pin::Pin<Box<BoxBody>>) -> Result<Vec<u8>, Error> {
+        use std::task::{Context, Poll};
+        let mut ctx = Context::from_waker(futures_util::task::noop_waker_ref());
+        let data = match body.as_mut().poll_data(&mut ctx) {
+            Poll::Ready(Some(Ok(d))) => d,
+            _ => panic!("next chunk should be ready"),
+        };
+        let chunk = data.chunk().to_vec();
+        Ok(chunk)
+    }
+
+    {
+        // Send a chunk, confirm that our counters are incremented.
+        tracing::info!("sending first chunk");
+        resp_tx.send_data("hello".into()).await?;
+        let chunk = read_chunk(&mut body).await?;
+        debug_assert_eq!("hello".as_bytes(), chunk, "should get same value back out");
+        assert_eq!(frames_total.get(), 1);
+        assert_eq!(frames_bytes.get(), 5);
+    }
+
+    {
+        // Send another chunk, confirm that our counters are incremented once more.
+        tracing::info!("sending second chunk");
+        resp_tx.send_data(", world!".into()).await?;
+        let chunk = read_chunk(&mut body).await?;
+        debug_assert_eq!(
+            ", world!".as_bytes(),
+            chunk,
+            "should get same value back out"
+        );
+        assert_eq!(frames_total.get(), 2);
+        assert_eq!(frames_bytes.get(), 5 + 8);
+    }
+
+    {
+        // Close the body, show that the counters remain at the same values.
+        use std::task::{Context, Poll};
+        tracing::info!("closing response body");
+        drop(resp_tx);
+        let mut ctx = Context::from_waker(futures_util::task::noop_waker_ref());
+        match body.as_mut().poll_data(&mut ctx) {
+            Poll::Ready(None) => {}
+            _ => panic!("got unexpected poll result"),
+        };
+        assert_eq!(frames_total.get(), 2);
+        assert_eq!(frames_bytes.get(), 5 + 8);
+    }
+
+    Ok(())
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
