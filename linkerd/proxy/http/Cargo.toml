@@ -46,6 +46,7 @@ linkerd-http-classify = { path = "../../http/classify" }
 linkerd-http-executor = { path = "../../http/executor" }
 linkerd-http-h2 = { path = "../../http/h2" }
 linkerd-http-insert = { path = "../../http/insert" }
+linkerd-http-override-authority = { path = "../../http/override-authority" }
 linkerd-http-version = { path = "../../http/version" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-balance = { path = "../balance" }

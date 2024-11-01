@@ -85,7 +85,7 @@ members = [
     "opencensus-proto",
     "opentelemetry-proto",
     "spiffe-proto",
-    "tools",
+    "tools", "linkerd/http/override-authority",
 ]
 
 [profile.release]

@@ -1,4 +1,7 @@
-use http::{header::AsHeaderName, uri::Authority};
+use http::{
+    header::AsHeaderName,
+    uri::{self, Authority},
+};
 use linkerd_stack::{layer, NewService, Param};
 use std::{
     fmt,
@@ -21,6 +24,27 @@ pub struct OverrideAuthority<S, H> {
     authority: Option<Authority>,
     headers_to_strip: Arc<Vec<H>>,
     inner: S,
+}
+
+/// Sets the [`Authority`][uri::Authority] of the given URI.
+pub fn set_authority(uri: &mut uri::Uri, auth: Authority) {
+    let mut parts = uri::Parts::from(std::mem::take(uri));
+
+    parts.authority = Some(auth);
+
+    // If this was an origin-form target (path only),
+    // then we can't *only* set the authority, as that's
+    // an illegal target (such as `example.com/docs`).
+    //
+    // But don't set a scheme if this was authority-form (CONNECT),
+    // since that would change its meaning (like `https://example.com`).
+    if parts.path_and_query.is_some() {
+        parts.scheme = Some(http::uri::Scheme::HTTP);
+    }
+
+    let new = http::uri::Uri::from_parts(parts).expect("absolute uri");
+
+    *uri = new;
 }
 
 // === impl NewOverrideAuthority ===

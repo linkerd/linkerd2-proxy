@@ -15,7 +15,6 @@ pub mod h2;
 mod header_from_target;
 pub mod normalize_uri;
 pub mod orig_proto;
-mod override_authority;
 mod retain;
 mod server;
 pub mod stream_timeouts;
@@ -33,7 +32,6 @@ pub use self::{
     detect::DetectHttp,
     header_from_target::NewHeaderFromTarget,
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
-    override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,
     server::{NewServeHttp, Params as ServerParams, ServeHttp},
     stream_timeouts::{EnforceTimeouts, StreamTimeouts},
@@ -48,6 +46,7 @@ pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseResponse};
 pub use linkerd_http_executor::TracingExecutor;
 pub use linkerd_http_insert as insert;
+pub use linkerd_http_override_authority::{AuthorityOverride, NewOverrideAuthority};
 pub use linkerd_http_version::{self as version, Version};
 
 #[derive(Clone, Debug)]
@@ -92,26 +91,6 @@ where
 {
     let v = req.headers().get(header)?;
     v.to_str().ok()?.parse().ok()
-}
-
-fn set_authority(uri: &mut uri::Uri, auth: uri::Authority) {
-    let mut parts = uri::Parts::from(std::mem::take(uri));
-
-    parts.authority = Some(auth);
-
-    // If this was an origin-form target (path only),
-    // then we can't *only* set the authority, as that's
-    // an illegal target (such as `example.com/docs`).
-    //
-    // But don't set a scheme if this was authority-form (CONNECT),
-    // since that would change its meaning (like `https://example.com`).
-    if parts.path_and_query.is_some() {
-        parts.scheme = Some(http::uri::Scheme::HTTP);
-    }
-
-    let new = http::uri::Uri::from_parts(parts).expect("absolute uri");
-
-    *uri = new;
 }
 
 fn strip_connection_headers(headers: &mut http::HeaderMap) {
