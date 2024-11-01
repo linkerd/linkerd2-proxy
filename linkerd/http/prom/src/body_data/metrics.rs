@@ -2,6 +2,14 @@
 
 use linkerd_metrics::prom::{self, Counter, Family, Registry};
 
+/// Counters for request body frames.
+pub struct RequestBodyFamilies<L> {
+    /// Counts the number of request body frames.
+    req_body_frames_total: Family<L, Counter>,
+    /// Counts the total number of bytes in request body frames.
+    req_body_frames_bytes: Family<L, Counter>,
+}
+
 /// Counters for response body frames.
 #[derive(Clone, Debug)]
 pub struct ResponseBodyFamilies<L> {
@@ -18,6 +26,79 @@ pub struct BodyDataMetrics {
     pub frames_total: Counter,
     /// Counts the total number of bytes in request body frames.
     pub frames_bytes: Counter,
+}
+
+// === impl RequestBodyFamilies ===
+
+impl<L> Default for RequestBodyFamilies<L>
+where
+    L: Clone + std::hash::Hash + Eq,
+{
+    fn default() -> Self {
+        Self {
+            req_body_frames_total: Default::default(),
+            req_body_frames_bytes: Default::default(),
+        }
+    }
+}
+
+impl<L> RequestBodyFamilies<L>
+where
+    L: prom::encoding::EncodeLabelSet
+        + std::fmt::Debug
+        + std::hash::Hash
+        + Eq
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+{
+    const REQ_BODY_FRAMES_TOTAL_NAME: &'static str = "req_body_frames_total";
+    const REQ_BODY_FRAMES_TOTAL_HELP: &'static str =
+        "Counts the number of frames in request bodies.";
+
+    const REQ_BODY_FRAMES_BYTES_NAME: &'static str = "req_body_frames_bytes";
+    const REQ_BODY_FRAMES_BYTES_HELP: &'static str =
+        "Counts the total number of bytes in request bodies.";
+
+    /// Registers and returns a new family of body data metrics.
+    pub fn register(registry: &mut Registry) -> Self {
+        let req_body_frames_total = Family::default();
+        registry.register(
+            Self::REQ_BODY_FRAMES_TOTAL_NAME,
+            Self::REQ_BODY_FRAMES_TOTAL_HELP,
+            req_body_frames_total.clone(),
+        );
+
+        let req_body_frames_bytes = Family::default();
+        registry.register_with_unit(
+            Self::REQ_BODY_FRAMES_BYTES_NAME,
+            Self::REQ_BODY_FRAMES_BYTES_HELP,
+            prom::Unit::Bytes,
+            req_body_frames_bytes.clone(),
+        );
+
+        Self {
+            req_body_frames_total,
+            req_body_frames_bytes,
+        }
+    }
+
+    /// Returns the [`BodyDataMetrics`] for the given label set.
+    pub fn get(&self, labels: &L) -> BodyDataMetrics {
+        let Self {
+            req_body_frames_total,
+            req_body_frames_bytes,
+        } = self;
+
+        let frames_total = req_body_frames_total.get_or_create(labels).clone();
+        let frames_bytes = req_body_frames_bytes.get_or_create(labels).clone();
+
+        BodyDataMetrics {
+            frames_total,
+            frames_bytes,
+        }
+    }
 }
 
 // === impl ResponseBodyFamilies ===
