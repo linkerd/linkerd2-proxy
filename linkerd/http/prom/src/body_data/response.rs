@@ -34,7 +34,7 @@ impl<X: Clone, N> NewRecordBodyData<X, N> {
     ///
     /// This uses an `X`-typed [`ExtractParam<P, T>`] implementation to extract service parameters
     /// from a `T`-typed target.
-    pub fn layer_via(extract: X) -> impl Layer<N, Service = Self> {
+    pub fn layer_via(extract: X) -> impl Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self {
             extract: extract.clone(),
             inner,
