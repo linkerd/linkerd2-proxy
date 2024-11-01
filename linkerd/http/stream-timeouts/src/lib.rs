@@ -1,3 +1,7 @@
+//! Tower middleware to express deadlines on streams.
+//!
+//! See [`EnforceTimeouts<S>`].
+
 use futures::FutureExt;
 use linkerd_error::{Error, Result};
 use linkerd_stack as svc;
@@ -345,9 +349,9 @@ where
 
 // === impl RequestBody ===
 
-impl<B> crate::HttpBody for RequestBody<B>
+impl<B> http_body::Body for RequestBody<B>
 where
-    B: crate::HttpBody<Error = Error>,
+    B: http_body::Body<Error = Error>,
 {
     type Data = B::Data;
     type Error = Error;
@@ -405,9 +409,9 @@ where
 
 // === impl ResponseBody ===
 
-impl<B> crate::HttpBody for ResponseBody<B>
+impl<B> http_body::Body for ResponseBody<B>
 where
-    B: crate::HttpBody<Error = Error>,
+    B: http_body::Body<Error = Error>,
 {
     type Data = B::Data;
     type Error = Error;

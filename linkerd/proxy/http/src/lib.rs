@@ -16,7 +16,6 @@ pub mod normalize_uri;
 pub mod orig_proto;
 mod override_authority;
 mod server;
-pub mod stream_timeouts;
 pub mod strip_header;
 pub mod timeout;
 pub mod upgrade;
@@ -33,7 +32,6 @@ pub use self::{
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     override_authority::{AuthorityOverride, NewOverrideAuthority},
     server::{NewServeHttp, Params as ServerParams, ServeHttp},
-    stream_timeouts::{EnforceTimeouts, StreamTimeouts},
     strip_header::StripHeader,
     timeout::{NewTimeout, ResponseTimeout, ResponseTimeoutError},
 };
@@ -47,6 +45,7 @@ pub use linkerd_http_classify as classify;
 pub use linkerd_http_executor::TracingExecutor;
 pub use linkerd_http_insert as insert;
 pub use linkerd_http_retain::{self as retain, Retain};
+pub use linkerd_http_stream_timeouts::{self as stream_timeouts, EnforceTimeouts, StreamTimeouts};
 pub use linkerd_http_version::{self as version, Version};
 
 #[derive(Clone, Debug)]
