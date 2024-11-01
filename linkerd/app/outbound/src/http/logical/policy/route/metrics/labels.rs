@@ -215,6 +215,26 @@ impl EncodeLabelSet for GrpcRsp {
     }
 }
 
+// === impl MatchedRoute ===
+
+impl<T, M, F, P> super::super::MatchedRoute<T, M, F, P> {
+    /// Returns a [`RouteLabelExtract`].
+    ///
+    /// The extractor returned by this function provides a [`ExtractParam<P, T>`] implementation
+    /// that can be used to acquire the route-level labels corresponding to a given outbound
+    /// request.
+    pub(crate) fn label_extractor(&self) -> RouteLabelExtract {
+        use super::super::Route;
+        let Route {
+            parent_ref,
+            route_ref,
+            ..
+        } = &self.params;
+
+        RouteLabelExtract(parent_ref.clone(), route_ref.clone())
+    }
+}
+
 // === impl RouteLabelExtract ===
 
 impl<B> ExtractParam<Route, http::Request<B>> for RouteLabelExtract {
