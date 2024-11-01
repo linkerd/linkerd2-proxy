@@ -7,6 +7,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-http = "0.2"
+http = "1"
 
 linkerd-error = { path = "../../error" }
