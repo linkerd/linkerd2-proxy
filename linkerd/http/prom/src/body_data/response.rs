@@ -86,20 +86,9 @@ where
 
         let Self { inner, metrics } = self;
         let metrics = metrics.clone();
-        let instrument = Box::new(|resp| Self::instrument_response(resp, metrics));
-
-        inner.call(req).map_ok(instrument).boxed()
-    }
-}
-
-impl<S> RecordBodyData<S> {
-    fn instrument_response<B>(resp: Response<B>, metrics: BodyDataMetrics) -> Response<BoxBody>
-    where
-        B: Body + Send + 'static,
-        B::Data: Send + 'static,
-        B::Error: Into<Error>,
-    {
-        resp.map(|b| super::body::Body::new(b, metrics))
-            .map(BoxBody::new)
+        inner
+            .call(req)
+            .map_ok(|rsp| rsp.map(|b| BoxBody::new(super::body::Body::new(b, metrics))))
+            .boxed()
     }
 }
