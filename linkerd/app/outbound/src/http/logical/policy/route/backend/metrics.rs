@@ -38,20 +38,6 @@ pub fn layer<T, N>(
 > + Clone
 where
     T: MkStreamLabel,
-    N: svc::NewService<T>,
-    NewRecordBodyData<
-        ExtractRecordBodyDataParams,
-        NewCountRequests<
-            ExtractRequestCount,
-            NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>,
-        >,
-    >: svc::NewService<T>,
-    NewCountRequests<
-        ExtractRequestCount,
-        NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>,
-    >: svc::NewService<T>,
-    NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>:
-        svc::NewService<T>,
 {
     let RouteBackendMetrics {
         requests,
@@ -59,15 +45,15 @@ where
         body_metrics,
     } = metrics.clone();
 
-    svc::layer::mk(move |inner| {
-        use svc::Layer;
-        NewRecordBodyData::layer_via(ExtractRecordBodyDataParams(body_metrics.clone())).layer(
-            NewCountRequests::layer_via(ExtractRequestCount(requests.clone())).layer(
-                NewRecordDuration::layer_via(ExtractRecordDurationParams(responses.clone()))
-                    .layer(inner),
-            ),
-        )
-    })
+    let requests = NewCountRequests::layer_via(ExtractRequestCount(requests.clone()));
+    let responses = NewRecordDuration::layer_via(ExtractRecordDurationParams(responses.clone()));
+    let body_metrics =
+        NewRecordBodyData::layer_via(ExtractRecordBodyDataParams(body_metrics.clone()));
+
+    svc::layers()
+        .push(responses)
+        .push(requests)
+        .push(body_metrics)
 }
 
 #[derive(Clone, Debug)]
