@@ -1,5 +1,6 @@
+use bytes::Bytes;
 use deflate::{write::GzEncoder, CompressionOptions};
-use hyper::Body;
+use http_body::Body;
 use std::io::Write;
 use tracing::trace;
 
@@ -33,7 +34,7 @@ impl<M> Serve<M> {
 }
 
 impl<M: FmtMetrics> Serve<M> {
-    pub fn serve<B>(&self, req: http::Request<B>) -> std::io::Result<http::Response<Body>> {
+    pub fn serve<B>(&self, req: http::Request<B>) -> std::io::Result<http::Response<impl Body>> {
         if Self::is_gzip(&req) {
             trace!("gzipping metrics");
             let mut writer = GzEncoder::new(Vec::<u8>::new(), CompressionOptions::fast());
@@ -46,9 +47,10 @@ impl<M: FmtMetrics> Serve<M> {
         } else {
             let mut writer = Vec::<u8>::new();
             write!(&mut writer, "{}", self.metrics.as_display())?;
+            let body = http_body_util::Full::new(Bytes::from(writer));
             Ok(http::Response::builder()
                 .header(http::header::CONTENT_TYPE, "text/plain")
-                .body(Body::from(writer))
+                .body(body)
                 .expect("Response must be valid"))
         }
     }

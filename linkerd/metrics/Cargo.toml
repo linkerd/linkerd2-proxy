@@ -13,9 +13,11 @@ stack = ["linkerd-stack"]
 test_util = []
 
 [dependencies]
+bytes = "1"
 deflate = { version = "1", features = ["gzip"] }
-http = "0.2"
-hyper = { version = "0.14", features = ["http1", "http2"] } # XXX(kate)
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
 linkerd-stack = { path = "../stack", optional = true }
 linkerd-system = { path = "../system", optional = true }
 parking_lot = "0.12"

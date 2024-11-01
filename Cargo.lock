@@ -1954,9 +1954,11 @@ dependencies = [
 name = "linkerd-metrics"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "deflate",
- "http 0.2.11",
- "hyper 0.14.28",
+ "http 1.1.0",
+ "http-body 1.0.1",
+ "http-body-util",
  "linkerd-stack",
  "linkerd-system",
  "parking_lot",
