@@ -1,9 +1,9 @@
 use ahash::AHashSet;
 use rand::distributions::WeightedError;
-use std::{collections::HashMap, fmt::Debug, hash::Hash, sync::Arc};
+use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 use crate::{
-    keys::{KeyId, UnweightedKeys, WeightedKey},
+    keys::{UnweightedKeys, WeightedKey},
     WeightedKeys,
 };
 
@@ -87,22 +87,5 @@ impl<K> Distribution<K> {
 
         weighted_keys.validate_weights()?;
         Ok(Self::RandomAvailable(Arc::new(weighted_keys)))
-    }
-
-    pub(crate) fn make_svc_from_keys<T>(
-        &self,
-        mut make_svc: impl FnMut(&K) -> T,
-    ) -> HashMap<KeyId, T> {
-        match self {
-            Distribution::Empty => HashMap::new(),
-            Distribution::FirstAvailable(keys) => keys
-                .iter()
-                .map(|&id| (id, make_svc(keys.get(id))))
-                .collect(),
-            Distribution::RandomAvailable(keys) => keys
-                .iter()
-                .map(|&id| (id, make_svc(&keys.get(id).key)))
-                .collect(),
-        }
     }
 }

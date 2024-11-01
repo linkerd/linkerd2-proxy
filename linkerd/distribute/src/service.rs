@@ -38,11 +38,28 @@ enum Selection<K> {
 
 impl<K: Hash + Eq, S> Distribute<K, S> {
     pub(crate) fn new(dist: Distribution<K>, make_svc: impl FnMut(&K) -> S) -> Self {
-        let backends = dist.make_svc_from_keys(make_svc);
+        let backends = Self::make_backends(&dist, make_svc);
         Self {
             backends,
             selection: dist.into(),
             ready_idx: None,
+        }
+    }
+
+    fn make_backends(
+        dist: &Distribution<K>,
+        mut make_svc: impl FnMut(&K) -> S,
+    ) -> HashMap<KeyId, S> {
+        match dist {
+            Distribution::Empty => HashMap::new(),
+            Distribution::FirstAvailable(keys) => keys
+                .iter()
+                .map(|&id| (id, make_svc(keys.get(id))))
+                .collect(),
+            Distribution::RandomAvailable(keys) => keys
+                .iter()
+                .map(|&id| (id, make_svc(&keys.get(id).key)))
+                .collect(),
         }
     }
 }
