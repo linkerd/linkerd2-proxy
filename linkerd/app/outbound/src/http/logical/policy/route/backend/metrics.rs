@@ -24,18 +24,18 @@ type ResponseMetrics<L> = record_response::ResponseMetrics<
     <L as StreamLabel>::StatusLabels,
 >;
 
+type MetricsLayer<T, N> = BodyDataLayer<RequestLayer<ResponseLayer<T, N>>>;
+type BodyDataLayer<N> = NewRecordBodyData<ExtractRecordBodyDataParams, N>;
+type RequestLayer<N> = NewCountRequests<ExtractRequestCount, N>;
+type ResponseLayer<T, N> = NewResponseDuration<
+    T,
+    ExtractRecordDurationParams<ResponseMetrics<<T as MkStreamLabel>::StreamLabel>>,
+    N,
+>;
+
 pub fn layer<T, N>(
     metrics: &RouteBackendMetrics<T::StreamLabel>,
-) -> impl svc::Layer<
-    N,
-    Service = NewRecordBodyData<
-        ExtractRecordBodyDataParams,
-        NewCountRequests<
-            ExtractRequestCount,
-            NewResponseDuration<T, ExtractRecordDurationParams<ResponseMetrics<T::StreamLabel>>, N>,
-        >,
-    >,
-> + Clone
+) -> impl svc::Layer<N, Service = MetricsLayer<T, N>> + Clone
 where
     T: MkStreamLabel,
 {
