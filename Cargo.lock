@@ -1830,6 +1830,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-http-stream-timeouts"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "http-body",
+ "linkerd-error",
+ "linkerd-stack",
+ "parking_lot",
+ "pin-project",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-http-version"
 version = "0.1.0"
 dependencies = [
@@ -2200,6 +2216,7 @@ dependencies = [
  "linkerd-http-h2",
  "linkerd-http-insert",
  "linkerd-http-retain",
+ "linkerd-http-stream-timeouts",
  "linkerd-http-version",
  "linkerd-io",
  "linkerd-proxy-balance",

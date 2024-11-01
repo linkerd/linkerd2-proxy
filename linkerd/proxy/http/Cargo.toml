@@ -47,6 +47,7 @@ linkerd-http-executor = { path = "../../http/executor" }
 linkerd-http-h2 = { path = "../../http/h2" }
 linkerd-http-insert = { path = "../../http/insert" }
 linkerd-http-retain = { path = "../../http/retain" }
+linkerd-http-stream-timeouts = { path = "../../http/stream-timeouts" }
 linkerd-http-version = { path = "../../http/version" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-balance = { path = "../balance" }
