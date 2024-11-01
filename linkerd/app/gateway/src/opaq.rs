@@ -65,7 +65,7 @@ where
         }
 
         let (routes, profiles_logical) =
-            outbound::opaq::routes_from_discovery(*orig_dst, profile, policy);
+            outbound::opaq::routes_from_discovery(orig_dst, profile, policy);
         Ok(Target {
             orig_dst,
             profiles_logical,

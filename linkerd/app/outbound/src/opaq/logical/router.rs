@@ -2,8 +2,8 @@ use super::{
     super::{concrete, Concrete},
     route, NoRoute,
 };
-use crate::{BackendRef, EndpointRef, RouteRef};
-use linkerd_app_core::{io, proxy::http, svc, transport::addrs::*, Addr, Error, NameAddr, Result};
+use crate::{BackendRef, EndpointRef, RouteRef, ServerAddr};
+use linkerd_app_core::{io, proxy::http, svc, transport::addrs::*, Error, NameAddr, Result};
 use linkerd_distribute as distribute;
 use linkerd_opaq_route as opaq_route;
 use linkerd_proxy_client_policy as policy;
@@ -12,7 +12,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Router<T: Clone + Debug + Eq + Hash> {
     pub(super) parent: T,
-    pub(super) addr: Addr,
+    pub(super) addr: ServerAddr,
     pub(super) routes: Arc<[opaq_route::Route<route::Route<T>>]>,
     pub(super) backends: distribute::Backends<Concrete<T>>,
 }
@@ -132,7 +132,7 @@ where
 
                 let distribution = mk_distribution(&route_ref, &distribution);
                 route::Route {
-                    addr: addr.clone(),
+                    addr,
                     parent: parent.clone(),
                     parent_ref: parent_ref.clone(),
                     route_ref,
@@ -178,12 +178,12 @@ where
     }
 }
 
-impl<T> svc::Param<Addr> for Router<T>
+impl<T> svc::Param<ServerAddr> for Router<T>
 where
     T: Eq + Hash + Clone + Debug,
 {
-    fn param(&self) -> Addr {
-        self.addr.clone()
+    fn param(&self) -> ServerAddr {
+        self.addr
     }
 }
 

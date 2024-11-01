@@ -398,7 +398,7 @@ impl From<Sidecar> for OpaqSidecar {
     fn from(parent: Sidecar) -> Self {
         let orig_dst = parent.orig_dst;
         let (routes, profiles_logical) =
-            opaq::routes_from_discovery(*orig_dst, parent.profile, parent.policy);
+            opaq::routes_from_discovery(orig_dst, parent.profile, parent.policy);
         OpaqSidecar {
             orig_dst,
             profiles_logical,

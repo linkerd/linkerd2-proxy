@@ -620,7 +620,7 @@ where
         let profile = svc::Param::<Option<watch::Receiver<profiles::Profile>>>::param(&discovery);
         let orig_dst: OrigDstAddr = discovery.param();
         let (routes, profiles_logical) =
-            opaq::routes_from_discovery(*orig_dst, profile.map(Into::into), policy);
+            opaq::routes_from_discovery(orig_dst, profile.map(Into::into), policy);
         Self {
             routes,
             profiles_logical,

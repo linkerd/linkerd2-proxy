@@ -11,7 +11,7 @@ use linkerd_app_core::{
     transport::addrs::*,
     Error,
 };
-use std::{fmt::Debug, hash::Hash, net::SocketAddr};
+use std::{fmt::Debug, hash::Hash};
 use tokio::sync::watch;
 
 mod concrete;
@@ -111,7 +111,7 @@ fn should_override_opaq_policy(
 /// in order to support traffic splits. Everything else should be delivered through client
 /// policy.
 pub fn routes_from_discovery(
-    orig_dst: SocketAddr,
+    orig_dst: OrigDstAddr,
     profile: Option<profiles::Receiver>,
     mut policy: policy::Receiver,
 ) -> (watch::Receiver<Routes>, Option<profiles::LogicalAddr>) {
@@ -143,7 +143,7 @@ pub fn routes_from_discovery(
     )
 }
 
-fn routes_from_policy(orig_dst: SocketAddr, policy: &policy::ClientPolicy) -> Option<Routes> {
+fn routes_from_policy(orig_dst: OrigDstAddr, policy: &policy::ClientPolicy) -> Option<Routes> {
     let parent_ref = ParentRef(policy.parent.clone());
     let routes = match policy.protocol {
         policy::Protocol::Opaque(policy::opaq::Opaque { ref routes }) => routes.clone(),
@@ -164,7 +164,7 @@ fn routes_from_policy(orig_dst: SocketAddr, policy: &policy::ClientPolicy) -> Op
 }
 
 fn routes_from_profile(
-    orig_dst: SocketAddr,
+    orig_dst: OrigDstAddr,
     profiles_addr: profiles::LogicalAddr,
     profile: &profiles::Profile,
 ) -> Routes {

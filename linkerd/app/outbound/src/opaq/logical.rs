@@ -1,6 +1,6 @@
 use super::concrete;
-use crate::{BackendRef, Outbound, ParentRef};
-use linkerd_app_core::{io, profiles, svc, Addr, Error};
+use crate::{BackendRef, Outbound, ParentRef, ServerAddr};
+use linkerd_app_core::{io, profiles, svc, Error};
 use linkerd_proxy_client_policy as client_policy;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 use tokio::sync::watch;
@@ -13,7 +13,7 @@ mod tests;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Routes {
-    pub addr: Addr,
+    pub addr: ServerAddr,
     pub meta: ParentRef,
     pub routes: Arc<[client_policy::opaq::Route]>,
     pub backends: Arc<[client_policy::Backend]>,
@@ -34,7 +34,7 @@ pub struct NoRoute;
 #[derive(Debug, thiserror::Error)]
 #[error("logical service {addr}: {source}")]
 pub struct LogicalError {
-    addr: Addr,
+    addr: ServerAddr,
     #[source]
     source: Error,
 }

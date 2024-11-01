@@ -269,7 +269,7 @@ impl Target {
         profile: Option<profiles::Receiver>,
         orig_dst: OrigDstAddr,
     ) -> Self {
-        let (routes, profiles_logical) = opaq::routes_from_discovery(*orig_dst, profile, policy);
+        let (routes, profiles_logical) = opaq::routes_from_discovery(orig_dst, profile, policy);
         Self {
             orig_dst,
             profiles_logical,

@@ -133,6 +133,12 @@ impl fmt::Display for ServerAddr {
     }
 }
 
+impl From<OrigDstAddr> for ServerAddr {
+    fn from(OrigDstAddr(addr): OrigDstAddr) -> ServerAddr {
+        ServerAddr(addr)
+    }
+}
+
 impl ServerAddr {
     pub fn ip(&self) -> IpAddr {
         self.0.ip()
