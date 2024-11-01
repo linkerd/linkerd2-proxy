@@ -98,6 +98,12 @@ mod mock_body {
             }
         }
 
+        /// Returns a [`MockBody`] that never yields any data.
+        pub fn pending() -> Self {
+            let fut = futures::future::pending();
+            Self::new(fut)
+        }
+
         pub fn trailers(
             trailers: impl Future<Output = Result<Option<http::HeaderMap>>> + Send + 'static,
         ) -> Self {
