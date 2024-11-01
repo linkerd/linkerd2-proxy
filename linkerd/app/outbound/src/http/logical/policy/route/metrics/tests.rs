@@ -2,7 +2,8 @@ use super::{
     super::{Grpc, Http, Route},
     labels,
     test_util::*,
-    LabelGrpcRouteRsp, LabelHttpRouteRsp, RequestMetrics,
+    LabelGrpcRouteBackendRsp, LabelGrpcRouteRsp, LabelHttpRouteBackendRsp, LabelHttpRouteRsp,
+    RequestMetrics, RouteMetrics,
 };
 use linkerd_app_core::{
     dns,
@@ -403,7 +404,7 @@ async fn grpc_request_statuses_error_body() {
 const MOCK_GRPC_REQ_URI: &str = "http://host/svc/method";
 
 pub fn mock_http_route_metrics(
-    metrics: &RequestMetrics<LabelHttpRouteRsp>,
+    metrics: &RouteMetrics<LabelHttpRouteRsp, LabelHttpRouteBackendRsp>,
     parent_ref: &crate::ParentRef,
     route_ref: &crate::RouteRef,
 ) -> (svc::BoxHttp, Handle) {
@@ -426,26 +427,37 @@ pub fn mock_http_route_metrics(
     .expect("find default route");
 
     let (tx, handle) = tower_test::mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
-    let svc = super::layer(metrics)
-        .layer(move |_t: Http<()>| tx.clone())
-        .new_service(Http {
-            r#match,
-            params: Route {
-                parent: (),
-                addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
-                parent_ref: parent_ref.clone(),
-                route_ref: route_ref.clone(),
-                filters: [].into(),
-                distribution: Default::default(),
-                params: policy::http::RouteParams::default(),
-            },
-        });
+    let svc = super::layer::<
+        super::super::Matched<
+            linkerd_proxy_client_policy::http::r#match::RequestMatch,
+            super::super::Route<
+                (),
+                linkerd_proxy_client_policy::http::Filter,
+                linkerd_proxy_client_policy::http::RouteParams,
+            >,
+        >,
+        _,
+        _,
+    >(metrics)
+    .layer(move |_t: Http<()>| tx.clone())
+    .new_service(Http {
+        r#match,
+        params: Route {
+            parent: (),
+            addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
+            parent_ref: parent_ref.clone(),
+            route_ref: route_ref.clone(),
+            filters: [].into(),
+            distribution: Default::default(),
+            params: policy::http::RouteParams::default(),
+        },
+    });
 
     (svc::BoxHttp::new(svc), handle)
 }
 
 pub fn mock_grpc_route_metrics(
-    metrics: &RequestMetrics<LabelGrpcRouteRsp>,
+    metrics: &RouteMetrics<LabelGrpcRouteRsp, LabelGrpcRouteBackendRsp>,
     parent_ref: &crate::ParentRef,
     route_ref: &crate::RouteRef,
 ) -> (svc::BoxHttp, Handle) {
@@ -472,20 +484,31 @@ pub fn mock_grpc_route_metrics(
     .expect("find default route");
 
     let (tx, handle) = tower_test::mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
-    let svc = super::layer(metrics)
-        .layer(move |_t: Grpc<()>| tx.clone())
-        .new_service(Grpc {
-            r#match,
-            params: Route {
-                parent: (),
-                addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
-                parent_ref: parent_ref.clone(),
-                route_ref: route_ref.clone(),
-                filters: [].into(),
-                distribution: Default::default(),
-                params: policy::grpc::RouteParams::default(),
-            },
-        });
+    let svc = super::layer::<
+        super::super::Matched<
+            linkerd_proxy_client_policy::grpc::r#match::RouteMatch,
+            super::super::Route<
+                (),
+                linkerd_proxy_client_policy::grpc::Filter,
+                linkerd_proxy_client_policy::grpc::RouteParams,
+            >,
+        >,
+        B,
+        _,
+    >(metrics)
+    .layer(move |_t: Grpc<()>| tx.clone())
+    .new_service(Grpc {
+        r#match,
+        params: Route {
+            parent: (),
+            addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
+            parent_ref: parent_ref.clone(),
+            route_ref: route_ref.clone(),
+            filters: [].into(),
+            distribution: Default::default(),
+            params: policy::grpc::RouteParams::default(),
+        },
+    });
 
     (svc::BoxHttp::new(svc), handle)
 }
