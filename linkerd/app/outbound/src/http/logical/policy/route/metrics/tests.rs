@@ -2,7 +2,7 @@ use super::{
     super::{Grpc, Http, Route},
     labels,
     test_util::*,
-    LabelGrpcRouteRsp, LabelHttpRouteRsp, RequestMetrics,
+    LabelGrpcRouteRsp, LabelHttpRouteBackendRsp, LabelHttpRouteRsp, RequestMetrics, RouteMetrics,
 };
 use linkerd_app_core::{
     dns,
@@ -403,7 +403,7 @@ async fn grpc_request_statuses_error_body() {
 const MOCK_GRPC_REQ_URI: &str = "http://host/svc/method";
 
 pub fn mock_http_route_metrics(
-    metrics: &RequestMetrics<LabelHttpRouteRsp>,
+    metrics: &RouteMetrics<LabelHttpRouteRsp, LabelHttpRouteBackendRsp>,
     parent_ref: &crate::ParentRef,
     route_ref: &crate::RouteRef,
 ) -> (svc::BoxHttp, Handle) {
@@ -426,20 +426,24 @@ pub fn mock_http_route_metrics(
     .expect("find default route");
 
     let (tx, handle) = tower_test::mock::pair::<http::Request<BoxBody>, http::Response<BoxBody>>();
-    let svc = super::layer(metrics)
-        .layer(move |_t: Http<()>| tx.clone())
-        .new_service(Http {
-            r#match,
-            params: Route {
-                parent: (),
-                addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
-                parent_ref: parent_ref.clone(),
-                route_ref: route_ref.clone(),
-                filters: [].into(),
-                distribution: Default::default(),
-                params: policy::http::RouteParams::default(),
-            },
-        });
+    let svc = super::layer::<
+        super::super::MatchedRoute<_, _, _, _>,
+        super::super::MatchedBackend<Http<_>, _, _>,
+        _,
+    >(metrics)
+    .layer(move |_t: Http<()>| tx.clone())
+    .new_service(Http {
+        r#match,
+        params: Route {
+            parent: (),
+            addr: std::net::SocketAddr::new([0, 0, 0, 0].into(), 8080).into(),
+            parent_ref: parent_ref.clone(),
+            route_ref: route_ref.clone(),
+            filters: [].into(),
+            distribution: Default::default(),
+            params: policy::http::RouteParams::default(),
+        },
+    });
 
     (svc::BoxHttp::new(svc), handle)
 }
