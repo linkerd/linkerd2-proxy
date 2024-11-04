@@ -221,7 +221,7 @@ fn routes_from_profile(
         addr: orig_dst.into(),
         backends: backends.into_iter().map(|(b, _)| b.backend).collect(),
         meta: ParentRef(parent_meta),
-        routes: std::sync::Arc::new([route]),
+        routes: Some(route),
     }
 }
 

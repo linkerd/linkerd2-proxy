@@ -7,13 +7,13 @@ use linkerd_app_core::{io, proxy::http, svc, transport::addrs::*, Error, NameAdd
 use linkerd_distribute as distribute;
 use linkerd_opaq_route as opaq_route;
 use linkerd_proxy_client_policy as policy;
-use std::{fmt::Debug, hash::Hash, sync::Arc};
+use std::{fmt::Debug, hash::Hash};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Router<T: Clone + Debug + Eq + Hash> {
     pub(super) parent: T,
     pub(super) addr: ServerAddr,
-    pub(super) routes: Arc<[opaq_route::Route<route::Route<T>>]>,
+    pub(super) routes: Option<opaq_route::Route<route::Route<T>>>,
     pub(super) backends: distribute::Backends<Concrete<T>>,
 }
 
@@ -140,12 +140,9 @@ where
                 }
             };
 
-        let routes = routes
-            .iter()
-            .map(|route| opaq_route::Route {
-                policy: mk_policy(route.policy.clone()),
-            })
-            .collect();
+        let routes = routes.as_ref().map(|route| opaq_route::Route {
+            policy: mk_policy(route.policy.clone()),
+        });
 
         let backends = backends.iter().map(mk_dispatch).collect();
 
@@ -167,14 +164,13 @@ where
 
     fn select(&self, _: &I) -> Result<Self::Key, Self::Error> {
         tracing::trace!("Selecting Opaq route");
-        let (r#match, params) = policy::opaq::find(&self.routes).ok_or(NoRoute)?;
+        let Some(ref route) = self.routes else {
+            return Err(NoRoute);
+        };
+        let params = route.policy.clone();
         tracing::debug!(meta = ?params.route_ref, "Selected route");
-        tracing::trace!(?r#match);
 
-        Ok(route::MatchedRoute {
-            r#match,
-            params: params.clone(),
-        })
+        Ok(route::MatchedRoute { params })
     }
 }
 

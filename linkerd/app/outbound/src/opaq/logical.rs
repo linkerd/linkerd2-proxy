@@ -15,7 +15,7 @@ mod tests;
 pub struct Routes {
     pub addr: ServerAddr,
     pub meta: ParentRef,
-    pub routes: Arc<[client_policy::opaq::Route]>,
+    pub routes: Option<client_policy::opaq::Route>,
     pub backends: Arc<[client_policy::Backend]>,
 }
 

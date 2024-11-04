@@ -2,7 +2,6 @@ use super::super::Concrete;
 use crate::{ParentRef, RouteRef, ServerAddr};
 use linkerd_app_core::{io, svc, Error};
 use linkerd_distribute as distribute;
-use linkerd_opaq_route as opaq_route;
 use std::{fmt::Debug, hash::Hash};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -13,7 +12,6 @@ pub(crate) struct Backend<T> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct MatchedRoute<T> {
-    pub(super) r#match: opaq_route::RouteMatch,
     pub(super) params: Route<T>,
 }
 

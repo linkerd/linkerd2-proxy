@@ -172,11 +172,9 @@ impl ClientPolicy {
                     routes: HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
                 },
-                opaque: opaq::Opaque {
-                    // TODO(eliza): eventually, can we configure the opaque
-                    // policy to fail conns?
-                    routes: std::sync::Arc::new([]),
-                },
+                // TODO(ver): Include a route with a filter that emits errors
+                // for connections.
+                opaque: opaq::Opaque { routes: None },
             },
             backends: BACKENDS.clone(),
         }
@@ -203,11 +201,7 @@ impl ClientPolicy {
                     routes: NO_HTTP_ROUTES.clone(),
                     failure_accrual: Default::default(),
                 },
-                opaque: opaq::Opaque {
-                    // TODO(eliza): eventually, can we configure the opaque
-                    // policy to fail conns?
-                    routes: std::sync::Arc::new([]),
-                },
+                opaque: opaq::Opaque { routes: None },
             },
             backends: NO_BACKENDS.clone(),
         }
@@ -491,14 +485,14 @@ pub mod proto {
                 } => {
                     http::proto::fill_route_backends(&http1.routes, &mut backends);
                     http::proto::fill_route_backends(&http2.routes, &mut backends);
-                    opaq::proto::fill_route_backends(&opaque.routes, &mut backends);
+                    opaq::proto::fill_route_backends(opaque.routes.as_ref(), &mut backends);
                 }
                 Protocol::Http1(http::Http1 { ref routes, .. })
                 | Protocol::Http2(http::Http2 { ref routes, .. }) => {
                     http::proto::fill_route_backends(routes, &mut backends);
                 }
                 Protocol::Opaque(ref p) => {
-                    opaq::proto::fill_route_backends(&p.routes, &mut backends);
+                    opaq::proto::fill_route_backends(p.routes.as_ref(), &mut backends);
                 }
                 Protocol::Tls(ref p) => {
                     p.fill_backends(&mut backends);
