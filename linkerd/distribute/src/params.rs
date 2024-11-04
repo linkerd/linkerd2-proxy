@@ -1,6 +1,11 @@
 use ahash::AHashSet;
-use rand::distributions::{WeightedError, WeightedIndex};
-use std::{fmt::Debug, hash::Hash, sync::Arc};
+use rand::distributions::WeightedError;
+use std::{collections::HashMap, fmt::Debug, hash::Hash, sync::Arc};
+
+use crate::{
+    keys::{KeyId, UnweightedKeys, WeightedKey},
+    WeightedKeys,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backends<K>(pub(crate) Arc<AHashSet<K>>)
@@ -16,17 +21,11 @@ pub enum Distribution<K> {
     Empty,
 
     /// A distribution that uses the first available backend in an ordered list.
-    FirstAvailable(Arc<[K]>),
+    FirstAvailable(Arc<UnweightedKeys<K>>),
 
     /// A distribution that uses the first available backend when randomly
     /// selecting over a weighted distribution of backends.
     RandomAvailable(Arc<WeightedKeys<K>>),
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub struct WeightedKeys<K> {
-    keys: Vec<K>,
-    weights: Vec<u32>,
 }
 
 // === impl Backends ===
@@ -64,46 +63,46 @@ impl<K> Default for Distribution<K> {
 }
 
 impl<K> Distribution<K> {
-    pub fn first_available(keys: impl IntoIterator<Item = K>) -> Self {
-        let keys: Arc<[K]> = keys.into_iter().collect();
+    pub fn first_available(iter: impl IntoIterator<Item = K>) -> Self {
+        let keys = UnweightedKeys::new(iter.into_iter());
         if keys.is_empty() {
             return Self::Empty;
         }
-        Self::FirstAvailable(keys)
+
+        Self::FirstAvailable(Arc::new(keys))
     }
 
     pub fn random_available<T: IntoIterator<Item = (K, u32)>>(
         iter: T,
     ) -> Result<Self, WeightedError> {
-        let (keys, weights): (Vec<_>, Vec<_>) = iter.into_iter().filter(|(_, w)| *w > 0).unzip();
-        if keys.len() < 2 {
-            return Ok(Self::first_available(keys));
+        let weighted_keys = WeightedKeys::new(
+            iter.into_iter()
+                .map(|(key, weight)| WeightedKey { key, weight }),
+        );
+        if weighted_keys.len() < 2 {
+            return Ok(Self::FirstAvailable(Arc::new(
+                weighted_keys.into_unweighted(),
+            )));
         }
-        // Error if the distribution is invalid.
-        let _index = WeightedIndex::new(weights.iter().copied())?;
-        Ok(Self::RandomAvailable(Arc::new(WeightedKeys {
-            keys,
-            weights,
-        })))
+
+        weighted_keys.validate_weights()?;
+        Ok(Self::RandomAvailable(Arc::new(weighted_keys)))
     }
 
-    pub(crate) fn keys(&self) -> &[K] {
+    pub(crate) fn make_svc_from_keys<T>(
+        &self,
+        mut make_svc: impl FnMut(&K) -> T,
+    ) -> HashMap<KeyId, T> {
         match self {
-            Self::Empty => &[],
-            Self::FirstAvailable(keys) => keys,
-            Self::RandomAvailable(keys) => keys.keys(),
+            Distribution::Empty => HashMap::new(),
+            Distribution::FirstAvailable(keys) => keys
+                .iter()
+                .map(|&id| (id, make_svc(keys.get(id))))
+                .collect(),
+            Distribution::RandomAvailable(keys) => keys
+                .iter()
+                .map(|&id| (id, make_svc(&keys.get(id).key)))
+                .collect(),
         }
-    }
-}
-
-// === impl WeightedKeys ===
-
-impl<K> WeightedKeys<K> {
-    pub(crate) fn keys(&self) -> &[K] {
-        &self.keys
-    }
-
-    pub(crate) fn index(&self) -> WeightedIndex<u32> {
-        WeightedIndex::new(self.weights.iter().copied()).expect("distribution must be valid")
     }
 }

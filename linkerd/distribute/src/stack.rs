@@ -55,16 +55,11 @@ where
     /// Referencing other keys causes a panic.
     fn new_service(&self, target: T) -> Self::Service {
         let dist = self.extract.extract_param(&target);
-        tracing::debug!(backends = ?dist.keys(), "New distribution");
+        tracing::debug!(backends = ?dist, "New distribution");
 
         // Build the backends needed for this distribution, in the required
         // order (so that weighted indices align).
         let newk = self.inner.new_service(target);
-        let backends = dist
-            .keys()
-            .iter()
-            .map(|k| (k.clone(), newk.new_service(k.clone())))
-            .collect();
-        Distribute::new(backends, dist)
+        Distribute::new(dist, |k| newk.new_service(k.clone()))
     }
 }

@@ -4,13 +4,15 @@
 #![forbid(unsafe_code)]
 
 mod cache;
+mod keys;
 mod params;
 mod service;
 mod stack;
 
 pub use self::{
     cache::{BackendCache, NewBackendCache},
-    params::{Backends, Distribution, WeightedKeys},
+    keys::WeightedKeys,
+    params::{Backends, Distribution},
     service::Distribute,
     stack::NewDistribute,
 };
