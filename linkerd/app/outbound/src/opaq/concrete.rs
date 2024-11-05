@@ -72,8 +72,11 @@ struct Balance<T> {
     parent: T,
 }
 
+// TODO: Use crate::metrics::ConcreteLabels once we do not need the logical and concrete labels anymore
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ConcreteLabels {
+    parent: ParentRef,
+    backend: BackendRef,
     logical: Arc<str>,
     concrete: Arc<str>,
 }
@@ -81,7 +84,8 @@ pub struct ConcreteLabels {
 impl prom::EncodeLabelSetMut for ConcreteLabels {
     fn encode_label_set(&self, enc: &mut prom::encoding::LabelSetEncoder<'_>) -> std::fmt::Result {
         use prom::encoding::EncodeLabel;
-
+        self.parent.encode_label_set(enc)?;
+        self.backend.encode_label_set(enc)?;
         ("logical", &*self.logical).encode(enc.encode_label())?;
         ("concrete", &*self.concrete).encode(enc.encode_label())?;
         Ok(())
@@ -97,6 +101,8 @@ impl prom::encoding::EncodeLabelSet for ConcreteLabels {
 impl<T> svc::ExtractParam<balance::Metrics, Balance<T>> for BalancerMetricsParams<ConcreteLabels>
 where
     T: svc::Param<Option<profiles::LogicalAddr>>,
+    T: svc::Param<BackendRef>,
+    T: svc::Param<ParentRef>,
 {
     fn extract_param(&self, bal: &Balance<T>) -> balance::Metrics {
         // we are trying to preserve the original metrics format here.
@@ -113,6 +119,8 @@ where
         };
 
         self.metrics(&ConcreteLabels {
+            parent: bal.parent.param(),
+            backend: bal.parent.param(),
             logical: logical.into(),
             concrete: bal.addr.to_string().into(),
         })
@@ -145,6 +153,8 @@ impl<C> Outbound<C> {
         T: svc::Param<Dispatch>,
         T: svc::Param<Option<profiles::LogicalAddr>>,
         T: Clone + Debug + Send + Sync + 'static,
+        T: svc::Param<BackendRef>,
+        T: svc::Param<ParentRef>,
         // Server-side socket.
         I: io::AsyncRead + io::AsyncWrite + Debug + Send + Unpin + 'static,
         // Endpoint resolution.

@@ -88,6 +88,8 @@ where
     }
 }
 
+// === impl Concrete ===
+
 impl<T> svc::Param<concrete::Dispatch> for Concrete<T> {
     fn param(&self) -> concrete::Dispatch {
         self.target.clone()
@@ -100,5 +102,17 @@ where
 {
     fn param(&self) -> Option<profiles::LogicalAddr> {
         self.parent.param()
+    }
+}
+
+impl<T> svc::Param<ParentRef> for Concrete<T> {
+    fn param(&self) -> ParentRef {
+        self.parent_ref.clone()
+    }
+}
+
+impl<T> svc::Param<BackendRef> for Concrete<T> {
+    fn param(&self) -> BackendRef {
+        self.backend_ref.clone()
     }
 }
